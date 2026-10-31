@@ -2,7 +2,8 @@ package autonomous
 
 // Dependents failed behind a dependency that failed for an infrastructure
 // reason are marked so, on both the sequential and the concurrent path. The
-// dependency is seeded as already failed, so only the propagation runs.
+// dependency is seeded as already failed, so only the propagation runs. They
+// return to pending when that dependency recovers.
 
 import (
 	"strings"
@@ -29,6 +30,7 @@ var depPathModes = []struct {
 // the second behind the first.
 type depRig struct {
 	m     *Manager
+	api   *API
 	prdID string
 }
 
@@ -60,7 +62,8 @@ func newDepRig(t *testing.T, concurrency int, retryDependents *bool, seed func(*
 		t.Fatalf("Run: %v", err)
 	}
 	waitForPRDTerminal(t, m, prd.ID)
-	return &depRig{m: m, prdID: prd.ID}
+	api.execWG.Wait()
+	return &depRig{m: m, api: api, prdID: prd.ID}
 }
 
 func (r *depRig) task(t *testing.T, id string) Task {
@@ -227,5 +230,188 @@ func TestInfraRetry_DependentMarkingDisabledByConfig(t *testing.T) {
 			assertNotMarked(t, r.task(t, depChildID), depRootID, "failed")
 			assertNotMarked(t, r.task(t, depGrandID), depChildID, "failed")
 		})
+	}
+}
+
+// edit changes a stored task of the rig's Automaton under the store lock.
+func (r *depRig) edit(t *testing.T, id string, f func(*Task)) {
+	t.Helper()
+	p, ok := r.m.Store().GetPRD(r.prdID)
+	if !ok {
+		t.Fatalf("Automaton %s not found", r.prdID)
+	}
+	tk := lookupTask(p, id)
+	if tk == nil {
+		t.Fatalf("task %s not found", id)
+	}
+	r.m.Store().WithLock(func() { f(tk) })
+	if err := r.m.Store().SavePRD(p); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+}
+
+// recoveredDecisions counts the infra_dependents_recovered decisions.
+func (r *depRig) recoveredDecisions(t *testing.T) []Decision {
+	t.Helper()
+	p, _ := r.m.Store().SnapshotPRD(r.prdID)
+	var out []Decision
+	for _, d := range p.Decisions {
+		if d.Kind == infraDependentsRecoveredKind {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func (r *depRig) prd(t *testing.T) *PRD {
+	t.Helper()
+	p, ok := r.m.Store().GetPRD(r.prdID)
+	if !ok {
+		t.Fatalf("Automaton %s not found", r.prdID)
+	}
+	return p
+}
+
+func TestInfraRetry_DependentsRecover(t *testing.T) {
+	for _, mode := range depPathModes {
+		t.Run(mode.name, func(t *testing.T) {
+			r := newDepRig(t, mode.concurrency, nil, failedWith(infraRootReason()))
+			if c := r.task(t, depChildID); c.FailureReason == nil || c.FailureReason.Source != dependencyInfraSource {
+				t.Fatalf("child = %+v, want it marked dependency-infra before the reset", c.FailureReason)
+			}
+			// Keep the history a reset must not clear.
+			r.edit(t, depChildID, func(tk *Task) {
+				tk.Attempts = []TaskAttempt{{}}
+				tk.InfraRetries = []InfraRetryRecord{{Number: 1, Class: "spawn_error"}}
+				tk.InfraRetryCount = 1
+			})
+
+			// Retrying the dependency releases the dependents and, because the
+			// Automaton had ended failed, restarts the run with no second call.
+			if _, err := r.api.ResetTask(r.prdID, depRootID, "operator", false); err != nil {
+				t.Fatalf("ResetTask: %v", err)
+			}
+			if got := r.recoveredDecisions(t); len(got) != 1 {
+				t.Fatalf("infra_dependents_recovered decisions = %d, want 1", len(got))
+			} else if !strings.Contains(got[0].Note, "root="+depRootID) ||
+				!strings.Contains(got[0].Note, depChildID) || !strings.Contains(got[0].Note, depGrandID) {
+				t.Errorf("decision note = %q, want the root and both reset tasks", got[0].Note)
+			}
+			waitForPRDTerminal(t, r.m, r.prdID)
+			r.api.execWG.Wait()
+
+			for _, id := range []string{depRootID, depChildID, depGrandID} {
+				if tk := r.task(t, id); tk.Status != TaskCompleted {
+					t.Errorf("task %s status = %q, want completed (error %q)", id, tk.Status, tk.Error)
+				}
+			}
+			child := r.task(t, depChildID)
+			if child.FailureReason != nil || child.Error != "" {
+				t.Errorf("child kept error %q / reason %+v after the reset", child.Error, child.FailureReason)
+			}
+			if len(child.InfraRetries) != 1 || len(child.Attempts) == 0 {
+				t.Errorf("child history: InfraRetries=%d Attempts=%d, want the history kept", len(child.InfraRetries), len(child.Attempts))
+			}
+			if got := r.prd(t).Status; got != PRDCompleted {
+				t.Errorf("Automaton status = %q, want completed", got)
+			}
+		})
+	}
+}
+
+func TestInfraRetry_DependentsRecoverChain(t *testing.T) {
+	r := newDepRig(t, 0, nil, failedWith(infraRootReason()))
+	// The dependency completes outside any reset; one pass releases the whole
+	// chain, in dependency order.
+	r.edit(t, depRootID, func(tk *Task) { tk.Status = TaskCompleted })
+	r.edit(t, depChildID, func(tk *Task) { tk.InfraRetryCount = 2 })
+
+	got := r.m.recoverInfraDependents(r.prd(t))
+	if want := []string{depChildID, depGrandID}; len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("recovered = %v, want %v", got, want)
+	}
+	for _, id := range []string{depChildID, depGrandID} {
+		tk := r.task(t, id)
+		if normTaskStatus(tk.Status) != TaskPending || tk.Error != "" || tk.FailureReason != nil || tk.Verification != nil {
+			t.Errorf("task %s = status %q error %q reason %+v, want a clean pending task", id, tk.Status, tk.Error, tk.FailureReason)
+		}
+	}
+	if c := r.task(t, depChildID); c.InfraRetryCount != 0 {
+		t.Errorf("child InfraRetryCount = %d, want 0", c.InfraRetryCount)
+	}
+	if again := r.m.recoverInfraDependents(r.prd(t)); len(again) != 0 {
+		t.Errorf("second pass reset %v, want nothing", again)
+	}
+	if got := r.recoveredDecisions(t); len(got) != 1 {
+		t.Errorf("decisions = %d, want one for the pass", len(got))
+	}
+	// Nothing failed remains, so the Automaton that ended failed runs again.
+	if got := r.prd(t).Status; got != PRDRunning {
+		t.Errorf("Automaton status = %q, want running", got)
+	}
+}
+
+func TestInfraRetry_DependentWithOtherFailureStaysFailed(t *testing.T) {
+	r := newDepRig(t, 0, nil, failedWith(infraRootReason()))
+	// The child ran and failed on content after it was marked.
+	r.edit(t, depChildID, func(tk *Task) {
+		tk.Error = "verification failed"
+		tk.FailureReason = &FailureReason{Category: "content", Source: "verifier-ask", Detail: "the work is incomplete", OccurredAt: time.Now()}
+	})
+	if _, err := r.m.ResetTask(r.prdID, depRootID, "operator", false); err != nil {
+		t.Fatalf("ResetTask: %v", err)
+	}
+	child := r.task(t, depChildID)
+	if child.Status != TaskFailed || child.FailureReason == nil || child.FailureReason.Category != "content" {
+		t.Errorf("child = status %q reason %+v, want it failed on content", child.Status, child.FailureReason)
+	}
+	// The grandchild waits behind a child that is still failed.
+	if g := r.task(t, depGrandID); g.Status != TaskFailed || g.FailureReason == nil {
+		t.Errorf("grandchild = status %q reason %+v, want it still failed behind the child", g.Status, g.FailureReason)
+	}
+	if got := r.recoveredDecisions(t); len(got) != 0 {
+		t.Errorf("decisions = %d, want none", len(got))
+	}
+}
+
+func TestInfraRetry_DependentsNotResetWhileDependencyFailed(t *testing.T) {
+	r := newDepRig(t, 0, nil, failedWith(infraRootReason()))
+	for _, st := range []TaskStatus{TaskFailed, TaskCancelled, TaskBlocked, TaskReviewNeeded} {
+		r.edit(t, depRootID, func(tk *Task) { tk.Status = st })
+		if got := r.m.recoverInfraDependents(r.prd(t)); len(got) != 0 {
+			t.Errorf("root %s: reset %v, want nothing", st, got)
+		}
+		for _, id := range []string{depChildID, depGrandID} {
+			if tk := r.task(t, id); tk.Status != TaskFailed || tk.FailureReason == nil || tk.FailureReason.Source != dependencyInfraSource {
+				t.Errorf("root %s: task %s = status %q reason %+v, want it still failed behind the root", st, id, tk.Status, tk.FailureReason)
+			}
+		}
+	}
+	if got := r.recoveredDecisions(t); len(got) != 0 {
+		t.Errorf("decisions = %d, want none", len(got))
+	}
+}
+
+func TestInfraRetry_DependentsRecoverDisabledByConfig(t *testing.T) {
+	r := newDepRig(t, 0, nil, failedWith(infraRootReason()))
+	// The dependents were marked while the key was on; turning it off stops
+	// the recovery.
+	off := false
+	r.m.mu.Lock()
+	r.m.cfg.InfraRetry.RetryDependents = &off
+	r.m.mu.Unlock()
+	if _, err := r.api.ResetTask(r.prdID, depRootID, "operator", false); err != nil {
+		t.Fatalf("ResetTask: %v", err)
+	}
+	if got := r.m.recoverInfraDependents(r.prd(t)); len(got) != 0 {
+		t.Errorf("recovered %v, want nothing with retry_dependents off", got)
+	}
+	for _, id := range []string{depChildID, depGrandID} {
+		if tk := r.task(t, id); tk.Status != TaskFailed {
+			t.Errorf("task %s status = %q, want failed", id, tk.Status)
+		}
+	}
+	if got := r.recoveredDecisions(t); len(got) != 0 {
+		t.Errorf("decisions = %d, want none", len(got))
 	}
 }

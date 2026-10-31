@@ -8,15 +8,25 @@
 // dependent failed behind it. A dependency that was cancelled, or that failed
 // for content or scope, marks nothing, and nothing is marked when
 // autonomous.infra_retry.retry_dependents is off.
+//
+// recoverInfraDependents is the other half: when that root is no longer failed,
+// cancelled or held, the dependents marked behind it return to pending, so the
+// operator's recipe of resetting the dependency, then every dependent, then
+// running is done by the executor.
 package autonomous
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
+
+// infraDependentsRecoveredKind is the Decision kind recoverInfraDependents
+// records.
+const infraDependentsRecoveredKind = "infra_dependents_recovered"
 
 // dependencyInfraSource is the FailureReason.Source of a task failed because a
 // task it depends on failed for an infrastructure reason.
@@ -112,4 +122,145 @@ func dependencyInfraClass(detail string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// infraRootRecovered reports whether a dependency-infra root in status s has
+// recovered: it completed, or it is back in a state where it can still
+// complete. A root that is failed, cancelled, blocked or held for review has
+// not.
+func infraRootRecovered(s TaskStatus) bool {
+	switch s {
+	case TaskFailed, TaskCancelled, TaskBlocked, TaskReviewNeeded:
+		return false
+	}
+	return true
+}
+
+// recoverInfraDependents resets every task of prd that failed behind a
+// dependency (FailureReason.Source dependency-infra) whose root task has
+// recovered, and returns the ids it reset, in dependency order. Nothing runs
+// unless autonomous.infra_retry.retry_dependents is on.
+//
+// A reset task goes back to pending with its Error, FailureReason,
+// Verification and consecutive InfraRetryCount cleared; its Attempts and
+// InfraRetries stay as history. The tasks are processed in dependency order, so
+// a chain recovers in one pass. A task failed for any other reason, one whose
+// root is still failed, cancelled or held, and one with another dependency
+// that is still unmet, is left alone.
+//
+// When the Automaton had ended failed or blocked and no task failed, blocked or
+// held remains, it returns to running, the status reset_task restores. The
+// caller decides whether a run must be started for it. One
+// infra_dependents_recovered decision names each root and the tasks reset.
+func (m *Manager) recoverInfraDependents(prd *PRD) []string {
+	if prd == nil || !m.infraRetryConfig().EffectiveRetryDependents() {
+		return nil
+	}
+	type resetEntry struct {
+		t   *Task
+		old TaskStatus
+	}
+	var (
+		resets    []resetEntry
+		rootOrder []string
+		byRoot    = map[string][]string{}
+		reopened  PRDStatus
+		now       = time.Now()
+	)
+	m.store.WithLock(func() {
+		var all []*Task
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				all = append(all, &prd.Story[si].Tasks[ti])
+			}
+		}
+		order := all
+		if ids, err := topoSort(all); err == nil {
+			order = order[:0:0]
+			for _, id := range ids {
+				if t := lookupTask(prd, id); t != nil {
+					order = append(order, t)
+				}
+			}
+		}
+		for _, t := range order {
+			if t.Status != TaskFailed || t.FailureReason == nil || t.FailureReason.Source != dependencyInfraSource {
+				continue
+			}
+			rootID := t.FailureReason.DependsOnTaskID
+			if root := lookupTask(prd, rootID); root == nil || !infraRootRecovered(root.Status) {
+				continue
+			}
+			unmet := false
+			for _, dep := range t.DependsOn {
+				if d := lookupTask(prd, dep); d != nil && !infraRootRecovered(d.Status) {
+					unmet = true
+					break
+				}
+			}
+			if unmet {
+				continue
+			}
+			resets = append(resets, resetEntry{t: t, old: t.Status})
+			if _, seen := byRoot[rootID]; !seen {
+				rootOrder = append(rootOrder, rootID)
+			}
+			byRoot[rootID] = append(byRoot[rootID], t.ID)
+			t.Status = TaskPending
+			t.Error = ""
+			t.FailureReason = nil
+			t.Verification = nil
+			t.SessionID = ""
+			t.StartedAt = nil
+			t.CompletedAt = nil
+			t.UpdatedAt = now
+			clearInfraRetryCount(t)
+			if s := lookupStoryByTaskID(prd, t.ID); s != nil && (s.Status == StoryFailed || s.Status == StoryCompleted) {
+				s.Status = StoryPending
+			}
+		}
+		if len(resets) == 0 {
+			return
+		}
+		if prd.Status == PRDFailed || prd.Status == PRDBlocked {
+			stuck := false
+			for _, t := range all {
+				if t.Status == TaskFailed || t.Status == TaskBlocked || t.Status == TaskReviewNeeded {
+					stuck = true
+					break
+				}
+			}
+			if !stuck {
+				reopened = prd.Status
+				prd.Status = PRDRunning
+				prd.BlockedReason = ""
+			}
+		}
+		parts := make([]string, 0, len(rootOrder))
+		for _, rootID := range rootOrder {
+			parts = append(parts, fmt.Sprintf("root=%s reset=%s", rootID, strings.Join(byRoot[rootID], ",")))
+		}
+		note := "dependency recovered; dependents returned to pending: " + strings.Join(parts, "; ")
+		if reopened != "" {
+			note += fmt.Sprintf("; Automaton reopened from %s", reopened)
+		}
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: infraDependentsRecoveredKind, Actor: "autonomous", Note: note})
+	})
+	if len(resets) == 0 {
+		return nil
+	}
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s: save recovered infra dependents: %v", prd.ID, err)
+	}
+	dec := lastDecision(prd, infraDependentsRecoveredKind)
+	ids := make([]string, 0, len(resets))
+	for _, r := range resets {
+		ids = append(ids, r.t.ID)
+		m.emitTaskStatus(prd, r.t, r.old, dec, nil)
+	}
+	if reopened != "" {
+		m.emitPRDStatus(prd, reopened, dec, nil)
+	}
+	return ids
 }

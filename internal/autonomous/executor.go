@@ -325,6 +325,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 	}
 	m.loadSkillGuardrails(prd) // BL303 S2 T08
+	// A dependency that recovered since the last pass releases the dependents
+	// failed behind it, so they run in this pass.
+	m.recoverInfraDependents(prd)
 	tasks := flattenTasks(prd)
 	order, err := topoSort(tasks)
 	if err != nil {
@@ -411,6 +414,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if latest, _ := m.store.GetPRD(prdID); latest != nil {
 					prd = latest
 				}
+				m.recoverInfraDependents(prd)
 				var tasks []*Task
 				m.store.WithLock(func() { tasks = flattenTasks(prd) })
 				if o, err := topoSort(tasks); err != nil {
@@ -698,6 +702,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				return
 			}
 			prd = latest
+			// A dependency the operator retried releases the dependents
+			// failed behind it.
+			m.recoverInfraDependents(latest)
 			// The order leaves out tasks held for review, so a task the
 			// operator has since retried is not in it. Rebuild the order from
 			// the Automaton as it stands now. A cycle keeps the old order.
@@ -727,6 +734,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					completedIDs[tid] = true
 					if lt.Status == TaskFailed || lt.Status == TaskCancelled {
 						failedIDs[tid] = true
+					} else {
+						delete(failedIDs, tid)
 					}
 				case normTaskStatus(lt.Status) == TaskPending:
 					// Retried by the operator. It runs again, so it is no
@@ -786,6 +795,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		launch()
 
 		for remaining > 0 {
+			// A dependency that completed, or was retried, releases the
+			// dependents failed behind it without a new run.
+			if len(m.recoverInfraDependents(prd)) > 0 {
+				reviewDecisions()
+			}
 			if len(inFlight) == 0 {
 				// A decision can land just before the coordinator would exit.
 				// Process it, so a task it made ready is not left behind.

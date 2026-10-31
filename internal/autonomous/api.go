@@ -904,11 +904,52 @@ func (a *API) ResetTask(prdID, taskID, actor string, force bool) (any, error) {
 	return a.ResetTaskWithOptions(prdID, taskID, actor, force, false)
 }
 func (a *API) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error) {
+	before, _ := a.prdStatus(prdID)
+	started := time.Now()
 	out, err := a.M.ResetTaskWithOptions(prdID, taskID, actor, force, cleanRestart)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		if err := a.resumeAfterInfraRecovery(prdID, before, started); err != nil {
+			return nil, err
+		}
 	}
 	return out, err
+}
+
+// resumeAfterInfraRecovery starts the run again when a reset of a dependency
+// released the dependents failed behind it and so restored a run that an
+// infrastructure failure had ended: the Automaton was failed or blocked before
+// the reset (before) and recovered dependents at or after since. A live
+// executor is woken to re-scan and no second one is started. Any other reset
+// leaves the run to the operator, as before.
+func (a *API) resumeAfterInfraRecovery(prdID string, before PRDStatus, since time.Time) error {
+	if before != PRDFailed && before != PRDBlocked {
+		return nil
+	}
+	p, ok := a.M.Store().SnapshotPRD(prdID)
+	if !ok {
+		return nil
+	}
+	recovered := false
+	for i := len(p.Decisions) - 1; i >= 0 && !p.Decisions[i].At.Before(since); i-- {
+		if p.Decisions[i].Kind == infraDependentsRecoveredKind {
+			recovered = true
+			break
+		}
+	}
+	if !recovered {
+		return nil
+	}
+	a.runMu.Lock()
+	_, live := a.runCancels[prdID]
+	if live {
+		a.reviewWake.signal(prdID)
+	}
+	a.runMu.Unlock()
+	if !live && a.runnableStatus(prdID) {
+		return a.Run(prdID)
+	}
+	return nil
 }
 func (a *API) RejudgeCompletionGuardrail(id, actor string) (any, error) {
 	// Manager.RejudgeCompletionGuardrail records its own verdict and

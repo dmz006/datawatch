@@ -3204,6 +3204,22 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 // accepts a task held for review and applies the operator's changes in the
 // same save as the requeue, so the changes and the requeue land together.
 func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
+	out, err := m.resetTaskRecord(prdID, taskID, actor, force, cleanRestart, review)
+	if err != nil {
+		return out, err
+	}
+	// The task is back in play, so the dependents failed behind it for an
+	// infrastructure reason return to pending with it, whether the operator
+	// reset it or retried it after review.
+	if len(m.recoverInfraDependents(out)) > 0 {
+		out, _ = m.store.GetPRD(prdID)
+	}
+	return out, nil
+}
+
+// resetTaskRecord is the reset of one task that resetTask wraps: the requeue,
+// its decision and the status events, before the dependents are recovered.
+func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
