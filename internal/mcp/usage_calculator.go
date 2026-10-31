@@ -6,7 +6,7 @@
 //
 //	usage_advice            → GET    /api/usage/advice            (query: variant, policy, lanes, cost)
 //	usage_readings          → GET    /api/usage/readings
-//	usage_reading_add       → POST   /api/usage/readings          (exactly one figure; source defaults to typed)
+//	usage_reading_add       → POST   /api/usage/readings          (exactly one figure; source defaults to typed; lanes ignored)
 //	usage_reading_delete    → DELETE /api/usage/readings/<id>
 //	usage_extra_credit_set  → PUT    /api/usage/extra-credit      ({"points": n}, n >= 0)
 //	usage_remaining_work_set→ PUT    /api/usage/remaining-work    ({"points": n} to set, {"points": null} to clear)
@@ -33,10 +33,10 @@ const usagePercentReading = 100.0
 
 func (s *Server) toolUsageAdvice() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_advice",
-		mcpsdk.WithDescription("One advice result from the account usage calculator: the latest reading of the shared readings series (percent and/or spend, when, session percent, lanes), extra credit and ceiling, lane choice (recent lanes and the max), the pace line and headroom after the safety margin, the one burn figure (recent, with the weekly average and the fallback notice when the recent window fell back to 48h), the projected end of cycle for each burn line, run-out warnings, the finish-early estimate (queue × per-task cost vs the typed remaining work) when the run-flat-out policy is active, and the plain-English advice block naming the formulas used. Advice only — the calculator never stops or slows lanes. variant and policy are independent: the variant picks the answer shape, the policy picks the spend target. Each optional argument overrides the stored settings for this one call only; omitting it keeps the stored value."),
+		mcpsdk.WithDescription("One advice result from the account usage calculator: the latest reading of the shared readings series (percent and/or spend, when, session percent, and the Claude lanes the ledger stamped on it), extra credit and ceiling, lane choice (recent lanes and the max), the pace line and headroom after the safety margin, the one burn figure (recent, with the weekly average and the fallback notice when the recent window fell back to 48h), the projected end of cycle for each burn line, run-out warnings, the finish-early estimate (queue × per-task cost vs the typed remaining work) when the run-flat-out policy is active, and the plain-English advice block naming the formulas used. Advice only — the calculator never stops or slows lanes. variant and policy are independent: the variant picks the answer shape, the policy picks the spend target. Each optional argument overrides the stored settings for this one call only; omitting it keeps the stored value. lanes is the what-if lane count: the advice is shown for that many lanes, the result names it as not saved, and nothing is stored."),
 		mcpsdk.WithString("variant", mcpsdk.Description("Answer shape to ask for (for example pace-gauge); independent of policy")),
 		mcpsdk.WithString("policy", mcpsdk.Description("Spend target to ask for (for example steady or run-flat-out); independent of variant")),
-		mcpsdk.WithNumber("lanes", mcpsdk.Description("Parallel lanes to assume (integer, >= 0), overriding the stored setting for this call")),
+		mcpsdk.WithNumber("lanes", mcpsdk.Description("What-if lane count (integer, >= 0, 0 included): advise as if this many lanes were running; not saved, for this call only")),
 		mcpsdk.WithNumber("cost", mcpsdk.Description("Per-task cost in points (>= 0) for the finish-early estimate, overriding the stored setting for this call")),
 	)
 }
@@ -64,7 +64,7 @@ func (s *Server) handleUsageAdvice(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) toolUsageReadings() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_readings",
-		mcpsdk.WithDescription("The shared usage readings series: the readings the account has been measured at (percent and/or spend, when, session percent, lanes, source), the bought extra credit, and the per-policy remaining-work figure. The series is shared across federated daemons through a keeper; a read served from the last on-disk copy because the keeper could not be reached carries the stale markers (is_keeper, stale, stale_reason, copied_at). Advice only — the calculator behind these tools never stops or slows lanes."),
+		mcpsdk.WithDescription("The shared usage readings series: the readings the account has been measured at (percent and/or spend, when, session percent, lanes, lanes_source, source), the bought extra credit, and the per-policy remaining-work figure. lanes is the number of Claude lanes the ledger counted as running when the reading was stored, and lanes_source says where that count came from (the daemon stamps it; a reading carries no lane count from the caller). The series is shared across federated daemons through a keeper; a read served from the last on-disk copy because the keeper could not be reached carries the stale markers (is_keeper, stale, stale_reason, copied_at). Advice only — the calculator behind these tools never stops or slows lanes."),
 	)
 }
 
@@ -78,12 +78,12 @@ func (s *Server) handleUsageReadings(_ context.Context, _ mcpsdk.CallToolRequest
 
 func (s *Server) toolUsageReadingAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_reading_add",
-		mcpsdk.WithDescription("Append one usage reading to the shared series. Carry exactly one figure: percent (0-100, the account's own number) or spend_usd (>= 0); both together is rejected, as is neither. Optional at (RFC3339 time, now when omitted), session_percent (0-100, the account's session number, the secondary reading) and lanes (>= 0). The source defaults to the built kind (typed); the planned pasted and account sources are not built yet and answer 501 at REST. When this daemon is a peer the write is forwarded to the keeper and stored once. Advice only — the calculator behind these tools never stops or slows lanes."),
+		mcpsdk.WithDescription("Append one usage reading to the shared series. Carry exactly one figure: percent (0-100, the account's own number) or spend_usd (>= 0); both together is rejected, as is neither. Optional at (RFC3339 time, now when omitted) and session_percent (0-100, the account's session number, the secondary reading). The daemon stamps each reading with the Claude lanes running in the ledger; the lanes argument is deprecated and ignored. The source defaults to the built kind (typed); the planned pasted and account sources are not built yet and answer 501 at REST. When this daemon is a peer the write is forwarded to the keeper and stored once. Advice only — the calculator behind these tools never stops or slows lanes."),
 		mcpsdk.WithNumber("percent", mcpsdk.Description("Account percentage, 0-100; exclusive with spend_usd")),
 		mcpsdk.WithNumber("spend_usd", mcpsdk.Description("Spend in account dollars, >= 0; exclusive with percent")),
 		mcpsdk.WithString("at", mcpsdk.Description("Reading time, RFC3339 (default: now)")),
 		mcpsdk.WithNumber("session_percent", mcpsdk.Description("Session percentage, 0-100 (optional secondary)")),
-		mcpsdk.WithNumber("lanes", mcpsdk.Description("Lanes active when this reading was taken (integer, >= 0, optional)")),
+		mcpsdk.WithNumber("lanes", mcpsdk.Description("Deprecated, ignored: the daemon stamps each reading with the Claude lanes running in the ledger. Kept so older callers still work")),
 	)
 }
 
@@ -107,9 +107,6 @@ func (s *Server) handleUsageReadingAdd(_ context.Context, req mcpsdk.CallToolReq
 			return toolErrorf("usage_reading_add", "session_percent must be from 0 to 100"), nil
 		}
 	}
-	if args["lanes"] != nil && req.GetInt("lanes", 0) < 0 {
-		return toolErrorf("usage_reading_add", "lanes must be 0 or more"), nil
-	}
 	body := map[string]any{}
 	if hasPercent {
 		body["percent"] = req.GetFloat("percent", 0)
@@ -122,9 +119,6 @@ func (s *Server) handleUsageReadingAdd(_ context.Context, req mcpsdk.CallToolReq
 	}
 	if args["session_percent"] != nil {
 		body["session_percent"] = req.GetFloat("session_percent", 0)
-	}
-	if args["lanes"] != nil {
-		body["lanes"] = req.GetInt("lanes", 0)
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/usage/readings", body)
 	if err != nil {

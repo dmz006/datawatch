@@ -284,6 +284,7 @@ func TestUsageCalcAdviceOverrides(t *testing.T) {
 func TestUsageCalcReadingHandler(t *testing.T) {
 	r, recs := usageCalcStandInAdvice(t)
 
+	// lanes=2 still parses for older callers, but never reaches the daemon.
 	out := r.HandleTestMessage("usage reading 72.5 lanes=2 session=41")
 	if len(out) == 0 {
 		t.Fatal("no reply")
@@ -295,10 +296,19 @@ func TestUsageCalcReadingHandler(t *testing.T) {
 	if w.method != "POST" || w.path != "/api/usage/readings" {
 		t.Fatalf("first request = %s %s, want POST /api/usage/readings", w.method, w.path)
 	}
-	for _, sub := range []string{`"percent":72.5`, `"lanes":2`, `"session_percent":41`, `"source":"typed"`} {
+	for _, sub := range []string{`"percent":72.5`, `"session_percent":41`, `"source":"typed"`} {
 		if !strings.Contains(w.body, sub) {
 			t.Errorf("body does not contain %s: %s", sub, w.body)
 		}
+	}
+	if strings.Contains(w.body, "lanes") {
+		t.Errorf("lanes reached the request body: %s", w.body)
+	}
+	if w.query.Has("lanes") {
+		t.Errorf("lanes reached the query: %v", w.query)
+	}
+	if (*recs)[1].query.Get("lanes") != "" {
+		t.Errorf("the refreshed advice carried lanes: %v", (*recs)[1].query)
 	}
 	if (*recs)[1].method != "GET" || (*recs)[1].path != "/api/usage/advice" {
 		t.Fatalf("second request = %s %s, want the refreshed advice", (*recs)[1].method, (*recs)[1].path)
@@ -307,6 +317,24 @@ func TestUsageCalcReadingHandler(t *testing.T) {
 		t.Fatalf("reply = %q, wants the stored reading acknowledged", out)
 	}
 	assertUsageReply(t, out[0])
+}
+
+// An older caller's lanes=N on a reading parses (it is not an invalid form)
+// and is dropped, whatever its value.
+func TestUsageCalcReadingLanesParsedNotSent(t *testing.T) {
+	for _, form := range []string{"usage reading 40 lanes=1", "usage reading 40 lanes=3 session=10", "usage reading 40 session=10 lanes=2"} {
+		r, recs := usageCalcStandInAdvice(t)
+		out := r.HandleTestMessage(form)
+		if len(out) == 0 || !strings.Contains(out[0], "reading stored: 40%") {
+			t.Fatalf("%q: reply = %q, want the reading stored", form, out)
+		}
+		if len(*recs) == 0 || (*recs)[0].method != "POST" {
+			t.Fatalf("%q: requests = %v", form, *recs)
+		}
+		if strings.Contains((*recs)[0].body, "lanes") {
+			t.Errorf("%q: lanes reached the request body: %s", form, (*recs)[0].body)
+		}
+	}
 }
 
 func TestUsageCalcReadingBare(t *testing.T) {
@@ -409,9 +437,12 @@ func TestUsageCalcInvalidFormNoRequest(t *testing.T) {
 	for _, form := range []string{
 		"usage: usage",
 		"usage: usage advice [variant=V] [policy=P] [lanes=N]",
-		"usage: usage reading <percent> [lanes=N] [session=N]",
+		"usage: usage reading <percent> [session=N]",
 		"usage: usage extra <points>",
 		"usage: usage work <points|clear>",
+		// lanes is a what-if on the advice only.
+		"lanes=N on advice is a what-if, not saved.",
+		"A reading is stamped with the running lanes.",
 	} {
 		if !strings.Contains(out[0], form) {
 			t.Errorf("reply lacks the form %q:\n%s", form, out[0])
@@ -475,9 +506,10 @@ func assertUsageReply(t *testing.T, got string) {
 		// The grammar's reply hint closing the reply, one form per line.
 		"reply with one of:",
 		"usage advice [variant=V] [policy=P] [lanes=N]",
-		"usage reading <pct> [lanes=N] [session=N]",
+		"usage reading <pct> [session=N]",
 		"usage extra <pts>",
 		"usage work <pts|clear>",
+		"lanes=N is a what-if, not saved.",
 	} {
 		if !strings.Contains(got, sub) {
 			t.Errorf("reply lacks %q\nfull reply:\n%s", sub, got)

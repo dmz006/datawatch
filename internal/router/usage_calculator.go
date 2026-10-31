@@ -12,6 +12,10 @@
 //	usage extra <points>
 //	usage work <points|clear>
 //
+// lanes=N on the advice is the what-if lane count (not saved). A reading
+// still parses lanes=N for older callers but never sends it: the daemon
+// stamps each reading with the Claude lanes running in the ledger.
+//
 // The advice is rendered with the comm-channel form of the shared text layer
 // (usagecalc.FormatComm, 50 columns, ending in its own reply line), followed
 // by this grammar's reply hint. An invalid form answers the usage lines
@@ -32,13 +36,15 @@ import (
 // itself, one form per line.
 const usageUsageLines = `usage: usage
 usage: usage advice [variant=V] [policy=P] [lanes=N]
-usage: usage reading <percent> [lanes=N] [session=N]
+usage: usage reading <percent> [session=N]
 usage: usage extra <points>
-usage: usage work <points|clear>`
+usage: usage work <points|clear>
+lanes=N on advice is a what-if, not saved.
+A reading is stamped with the running lanes.`
 
 // usageReplyHint closes every usage calculator reply: the forms the operator
 // can send back, one per line, each within the comm channel's 50 columns.
-const usageReplyHint = "reply with one of:\n  usage advice [variant=V] [policy=P] [lanes=N]\n  usage reading <pct> [lanes=N] [session=N]\n  usage extra <pts>\n  usage work <pts|clear>"
+const usageReplyHint = "reply with one of:\n  usage advice [variant=V] [policy=P] [lanes=N]\n  usage reading <pct> [session=N]\n  usage extra <pts>\n  usage work <pts|clear>\nlanes=N is a what-if, not saved."
 
 // handleUsage serves the usage calculator grammar over the REST loopback.
 func (r *Router) handleUsage(cmd Command) {
@@ -63,9 +69,8 @@ func (r *Router) handleUsage(cmd Command) {
 			"percent": cmd.UsagePercent,
 			"source":  "typed",
 		}
-		if cmd.UsageLanes > 0 {
-			body["lanes"] = cmd.UsageLanes
-		}
+		// lanes=N is parsed for older callers but not sent: the daemon
+		// stamps the reading with the Claude lanes running in the ledger.
 		if cmd.UsageSession != nil {
 			body["session_percent"] = *cmd.UsageSession
 		}

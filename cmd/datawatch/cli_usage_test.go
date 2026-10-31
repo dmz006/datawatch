@@ -234,6 +234,82 @@ func TestUsageCalcAdviceJSON(t *testing.T) {
 	}
 }
 
+// --lanes stays on `reading add` for older scripts: it is accepted whatever
+// its value (no validation error), prints cobra's deprecation notice, and
+// never reaches the request.
+func TestUsageCalcReadingAddLanesDeprecated(t *testing.T) {
+	for _, lanes := range []string{"0", "2", "-1"} {
+		seen := usageDaemon(t)
+		c := newUsageReadingAddCmd()
+		c.SetArgs([]string{"--percent", "40", "--lanes", lanes})
+		if err := usageRun(t, c); err != nil {
+			t.Fatalf("--lanes %s: %v", lanes, err)
+		}
+		calls := seen()
+		if len(calls) != 1 {
+			t.Fatalf("--lanes %s: calls = %d, want 1", lanes, len(calls))
+		}
+		if _, ok := calls[0].body["lanes"]; ok {
+			t.Errorf("--lanes %s reached the request body: %v", lanes, calls[0].body)
+		}
+		if strings.Contains(calls[0].uri, "lanes") {
+			t.Errorf("--lanes %s reached the URL: %s", lanes, calls[0].uri)
+		}
+	}
+	f := newUsageReadingAddCmd().Flags().Lookup("lanes")
+	// cobra (pflag) prints "Flag --lanes has been deprecated, <this>" on use.
+	if f == nil || !strings.Contains(f.Deprecated, "stamps each reading") || !strings.Contains(f.Deprecated, "ignored") {
+		t.Fatalf("--lanes must stay as a flag with a deprecation notice: %+v", f)
+	}
+}
+
+// The text form the CLI prints names the what-if lanes as not saved, from the
+// lines the service text produces.
+func TestUsageCalcAdviceWhatIfLine(t *testing.T) {
+	prev := serverURL
+	t.Cleanup(func() { serverURL = prev })
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Replace(usageFixture, `"lanes":2,`, `"lanes":2, "what_if_lanes":0,`, 1)))
+	}))
+	t.Cleanup(srv.Close)
+	serverURL = srv.URL
+	var out strings.Builder
+	c := newUsageAdviceCmd()
+	c.SetOut(&out)
+	c.SetArgs([]string{"--lanes", "0"})
+	if err := usageRun(t, c); err != nil {
+		t.Fatal(err)
+	}
+	if text := usageNormalize(out.String()); !strings.Contains(text, "What-if lanes (not saved): 0") {
+		t.Errorf("the CLI text lacks the what-if line:\n%s", text)
+	}
+}
+
+// --lanes on `advice` is the what-if count: it is sent, 0 included, and the
+// help describes it as not saved.
+func TestUsageCalcAdviceLanesWhatIf(t *testing.T) {
+	for _, lanes := range []string{"0", "4"} {
+		seen := usageDaemon(t)
+		c := newUsageAdviceCmd()
+		c.SetArgs([]string{"--lanes", lanes})
+		if err := usageRun(t, c); err != nil {
+			t.Fatal(err)
+		}
+		calls := seen()
+		if len(calls) != 1 || calls[0].uri != "/api/usage/advice?lanes="+lanes {
+			t.Errorf("--lanes %s: calls = %+v, want /api/usage/advice?lanes=%s", lanes, calls, lanes)
+		}
+	}
+	c := newUsageAdviceCmd()
+	help := c.Flags().Lookup("lanes").Usage + c.Long
+	for _, sub := range []string{"what-if", "not saved"} {
+		if !strings.Contains(help, sub) {
+			t.Errorf("advice --lanes help lacks %q: %s", sub, help)
+		}
+	}
+}
+
 func TestUsageCalcReadingAddPercent(t *testing.T) {
 	seen := usageDaemon(t)
 	c := newUsageReadingAddCmd()
@@ -262,8 +338,8 @@ func TestUsageCalcReadingAddPercent(t *testing.T) {
 	if b["session_percent"] != float64(60) {
 		t.Errorf("session_percent = %v, want 60", b["session_percent"])
 	}
-	if b["lanes"] != float64(3) {
-		t.Errorf("lanes = %v, want 3", b["lanes"])
+	if _, ok := b["lanes"]; ok {
+		t.Errorf("a deprecated --lanes must not be sent: %v", b)
 	}
 	if b["source"] != "typed" {
 		t.Errorf("source = %v, want typed", b["source"])
