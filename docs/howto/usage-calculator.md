@@ -230,7 +230,7 @@ Where lanes show up on each method:
 
 | Where | What you see |
 |---|---|
-| PWA | The calculator screen (not yet shipped; see [parity status](../parity-status.md)) |
+| PWA | The calculator card (see [parity status](../parity-status.md) for what has shipped) |
 | Android and iOS | Pending, tracked in [parity status](../parity-status.md) |
 | CLI | `datawatch usage advice` |
 | REST | `GET /api/usage/advice` |
