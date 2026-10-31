@@ -73,6 +73,24 @@ var pendingTranslationKeys = map[string]bool{
 	// action lines as English placeholders until the translations arrive.
 	"automation_security_failure_action_stopped":    true,
 	"automation_security_failure_action_would_stop": true,
+	// v1 held-questions: the held section card ships its strings as the
+	// English placeholders until the app sends back DE/ES/FR/JA
+	// translations (the values name Automaton/Automata and must not be
+	// half-translated or swapped for the Automation word meanwhile).
+	"held_question_title":           true,
+	"held_question_mode_off":        true,
+	"held_question_mode_shadow":     true,
+	"held_question_mode_on":         true,
+	"held_question_empty":           true,
+	"held_question_recommended":     true,
+	"held_question_default_hold":    true,
+	"held_question_answer":          true,
+	"held_question_open_automaton":  true,
+	"held_question_open_task":       true,
+	"held_question_shadow_title":    true,
+	"held_question_failed":          true,
+	"held_question_settings_mode":   true,
+	"held_question_settings_states": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
