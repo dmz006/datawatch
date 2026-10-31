@@ -1358,6 +1358,10 @@ type Manager struct {
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
 	taskCommit TaskCommitFn
 
+	// discardFiles — removes the files an operator chose to discard from an
+	// uncommitted-work hold. nil means defaultDiscardFiles; tests inject a fake.
+	discardFiles discardFilesFn
+
 	// memoryVerifierFn (BL387 Phase 1a) — when set, called once per verification
 	// issue after verify() returns !OK. Writes the issue to prd-shared scope so
 	// retry tasks can seed from it. Nil = verifier writes silently skipped.
@@ -3332,6 +3336,8 @@ func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart boo
 				// BL427 — fired after the SavePRD below succeeds.
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
+				// A reset ends an uncommitted-work hold: the task runs again.
+				t.UncommittedWork = nil
 				t.RetryCount = 0
 				// A human reset starts a new count of failed attempts for the
 				// failure escalation policy, so the ladder restarts at step 1.

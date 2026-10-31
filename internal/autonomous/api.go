@@ -1100,9 +1100,15 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // the decision: a live executor is woken to re-scan, and no second one is
 // started; when no executor is live and a task is parked on it, the run is
 // relaunched the way ResolveTaskReview relaunches it. Other change kinds are
-// ignored: a withdrawn or expired decision keeps its task parked.
+// ignored: a withdrawn or expired decision keeps its task parked. An answered
+// uncommitted-work question is routed to its own handler instead
+// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold.
 func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
+		return
+	}
+	if c.Question.Label == UncommittedQuestionLabel {
+		a.onUncommittedWorkAnswered(c)
 		return
 	}
 	for _, p := range a.M.Store().ListPRDs() {
