@@ -861,18 +861,27 @@ func newAutonomousPRDSetGuidedModeCmd() *cobra.Command {
 }
 
 func newAutonomousPRDSetGitCmd() *cobra.Command {
-	var baseBranch string
+	var baseBranch, pushOnComplete string
 	cmd := &cobra.Command{
 		Use:   "prd-set-git <id> <on|off>",
-		Short: "Set AutoPR (push+open a PR on completion) and base-branch override for a PRD (BL407)",
+		Short: "Set AutoPR (push+open a PR on completion), base-branch and push-on-complete policy for a PRD",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
 			autoPR := args[1] == "on" || args[1] == "true" || args[1] == "1"
-			body, _ := json.Marshal(map[string]any{"auto_pr": autoPR, "base_branch": baseBranch})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", body)
+			body := map[string]any{"auto_pr": autoPR, "base_branch": baseBranch}
+			if c.Flags().Changed("push-on-complete") {
+				p := pushOnComplete
+				if p == "inherit" {
+					p = "" // clear the per-PRD override; inherit the daemon setting
+				}
+				body["push_on_complete"] = p
+			}
+			b, _ := json.Marshal(body)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", b)
 		},
 	}
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
+	cmd.Flags().StringVar(&pushOnComplete, "push-on-complete", "", "per-PRD push-on-complete override: never | branch | default_branch | inherit (inherit = clear the override, use the daemon's git.push_on_complete); omit to leave unchanged")
 	return cmd
 }
 

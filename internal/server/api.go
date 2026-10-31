@@ -748,6 +748,9 @@ type AutonomousAPI interface {
 	// or the executor continues into later, independent stories.
 	SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error)
 	SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error)
+	// Per-PRD push-on-complete override (never|branch|default_branch; "" clears
+	// the override so the daemon's git.push_on_complete applies).
+	SetPRDGitPush(prdID, policy string) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any

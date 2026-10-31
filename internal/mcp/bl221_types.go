@@ -189,22 +189,32 @@ func (s *Server) handleAutonomousPRDSetContinueOnStoryFailure(_ context.Context,
 	return textOK(string(out)), nil
 }
 
-// ----- autonomous_prd_set_git (BL407 Phase 5) -------------------------------
+// ----- autonomous_prd_set_git ----------------------------------------------
 
 func (s *Server) toolAutonomousPRDSetGit() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_git",
-		mcpsdk.WithDescription("BL407 — set per-PRD Git.AutoPR/BaseBranch overrides. AutoPR (default false) pushes the PRD's branch and opens a real PR automatically on successful completion — review before enabling on a PRD whose task specs you don't fully trust. Both fields are set unconditionally on every call (read the PRD first if you only want to change one)."),
+		mcpsdk.WithDescription("Set per-PRD Git.AutoPR/BaseBranch/push-on-complete overrides. AutoPR (default false) pushes the PRD's branch and opens a real PR automatically on successful completion — review before enabling on a PRD whose task specs you don't fully trust. AutoPR and base_branch are set unconditionally on every call (read the PRD first if you only want to change one). push_on_complete is only applied when supplied (never|branch|default_branch; empty = inherit the daemon's git.push_on_complete)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithBoolean("auto_pr", mcpsdk.Required(), mcpsdk.Description("Push + open a PR automatically on PRD completion")),
 		mcpsdk.WithString("base_branch", mcpsdk.Description("PR base branch override (empty = the repo's own default branch)")),
+		mcpsdk.WithString("push_on_complete", mcpsdk.Description("per-PRD push-on-complete override: never, branch or default_branch (empty = inherit the daemon setting). Omit to leave the PRD's current override unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDSetGit(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]any{
+	body := map[string]any{
 		"auto_pr":     req.GetBool("auto_pr", false),
 		"base_branch": req.GetString("base_branch", ""),
-	})
+	}
+	// push_on_complete is only forwarded when the caller supplied it, so an
+	// empty string still means "clear the override / inherit daemon setting".
+	if args, ok := req.Params.Arguments.(map[string]any); ok {
+		if v, ok := args["push_on_complete"]; ok {
+			if p, isStr := v.(string); isStr {
+				body["push_on_complete"] = p
+			}
+		}
+	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_git", body)
 	if err != nil {
 		return nil, err

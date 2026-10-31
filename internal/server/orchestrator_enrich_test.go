@@ -211,8 +211,13 @@ func (f *fakeOrchAutonomous) SetPRDContinueOnStoryFailure(string, bool) (any, er
 	return nil, nil
 }
 
-// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch stub.
+// Per-PRD Git.AutoPR/BaseBranch override stub.
 func (f *fakeOrchAutonomous) SetPRDGit(string, bool, string) (any, error) {
+	return nil, nil
+}
+
+// Per-PRD push-on-complete override stub.
+func (f *fakeOrchAutonomous) SetPRDGitPush(string, string) (any, error) {
 	return nil, nil
 }
 
