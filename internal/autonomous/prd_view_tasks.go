@@ -1,5 +1,7 @@
 package autonomous
 
+import "github.com/dmz006/datawatch/internal/requestwatch"
+
 // TasksView is a read-only view of a PRD for task-level listings. It embeds
 // SummaryView, so its JSON carries the summary fields plus a flat list of
 // per-task entries. Each entry holds only identity, status and outcome
@@ -39,6 +41,11 @@ type TaskEntry struct {
 	// UncommittedWork is the hold on a task whose worktree still has
 	// uncommitted files; omitted when the task carries none.
 	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
+	// ModelRequest is the request watch's observation of the task's in-flight
+	// model request (worker or verifier). It is filled by the server at
+	// response time, never stored, and omitted when the task has none. Its
+	// summary field carries the plain-text wait; Status is unchanged.
+	ModelRequest *requestwatch.Observation `json:"model_request,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately

@@ -2987,6 +2987,13 @@ paths:
         re-issue the same tool call on consecutive polls. `progress` is
         stripped the instant a task leaves the active statuses, so its
         absence means the task's worker is not running right now.
+        A task row (the `tasks` detail level, and each task of the `full` detail)
+        carries `model_request` when the request watch observes that task's
+        worker or verifier waiting on a model request: the same observation
+        the request-watch route lists (RequestWatchObservation), whose
+        `summary` says in plain words whether the request is generating or has
+        made no progress for N minutes. It is omitted when there is none, and
+        the task's `status` is unchanged.
         A task's `status` can be `waiting_decision`: its spec names an operator
         decision that has no answer yet and the decision gate is holding it. The
         task has not started; it is not a failure and not a retry. Its
@@ -7366,6 +7373,9 @@ components:
           items:
             type: string
           description: Tag IDs inherited from the owning Automaton; computed on read, read-only, empty outside an Automaton
+        model_request:
+          $ref: "#/components/schemas/RequestWatchObservation"
+          description: The request watch's observation of the session's in-flight model request, with state, node, model, no-progress time and a plain-text summary; computed on read, read-only, omitted when the session has none
         id:
           type: string
           description: Short 4-character hex ID

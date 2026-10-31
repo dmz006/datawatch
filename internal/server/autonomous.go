@@ -688,7 +688,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
 				return
 			}
-			writePRDDetail(w, prd, detail, s.prdDetailCap(r))
+			s.writePRDDetail(w, prd, detail, s.prdDetailCap(r))
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return
