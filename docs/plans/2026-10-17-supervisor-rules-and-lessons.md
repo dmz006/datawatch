@@ -483,7 +483,7 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    `Confirmed: yes` line in the proposal file.
 6. Merge procedure: `<workspace>/supervisor-scratch/sv/trial-merge.sh <id>` in a throwaway worktree; resolve conflicts (a helper subagent for
    semantic ones); changelog body = lines added by the branch against its merge-base; `BUMP=minor` for a feature,
-   patch for a fix or refactor; `<workspace>/supervisor-scratch/sv/finish-merge.sh` (lint plus full `go test` with `env -u TMUX -u TMUX_TMPDIR`);
+   patch for a fix or refactor; `<workspace>/supervisor-scratch/sv/finish-merge.sh` (lint, full `go test` with `env -u TMUX -u TMUX_TMPDIR`, and the PWA suite `node --test internal/server/web/*.test.js`; the PWA suite was missing until 2026-10-30 and a field-order test failed on main for three releases before a task gate caught it);
    ship only on go exit 0 and only with a clean main checkout; `<workspace>/supervisor-scratch/sv/ship-merge.sh`; cancel the PRD record only
    after the ship succeeded; update the registry row; redeploy when a release or setting needs it and no worker is
    on a final task (record in-flight sessions; resume PRDs the restart parked). After each redeploy run
