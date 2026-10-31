@@ -6752,6 +6752,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					amgr.SetDecisionGate(qstore, func() config.AutonomousQuestionsConfig {
 						return cfg.Autonomous.Questions
 					})
+					// The decision records: structured decisions whose queue
+					// question the daemon builds and keeps in step. The service
+					// reads both switches from the live config on every call.
+					if drstore, drerr := autonomouspkg.NewDecisionRecordStore(filepath.Join(expandHome(cfg.DataDir), "decision_records.jsonl")); drerr != nil {
+						fmt.Fprintf(os.Stderr, "[warn] decision record store: %v\n", drerr)
+					} else {
+						amgr.SetDecisionRecords(autonomouspkg.NewDecisionRecords(drstore, qstore,
+							func() config.AutonomousDecisionsConfig { return cfg.Autonomous.Decisions },
+							func() config.AutonomousQuestionsConfig { return cfg.Autonomous.Questions },
+							time.Now))
+					}
 					// The question lifecycle events (question.answered /
 					// question.withdrawn) fire through the same dispatcher and
 					// the engine's per-subscriber queue as every other kind:

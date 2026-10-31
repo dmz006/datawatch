@@ -112,6 +112,41 @@ func (c *Coordinator) questionPass(ctx context.Context) {
 		return
 	}
 	c.m.QuestionTick(ctx)
+	c.m.DecisionRecordTick(ctx)
+}
+
+// SetDecisionRecords attaches the decision record service the coordinator
+// tick reconciles on every poll.
+func (m *Manager) SetDecisionRecords(d *DecisionRecords) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.decisionRecords = d
+}
+
+// DecisionRecords returns the attached decision record service, or nil.
+func (m *Manager) DecisionRecords() *DecisionRecords {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.decisionRecords
+}
+
+// DecisionRecordTick runs one reconcile of the decision records against their
+// questions: it raises a missing question, brings a drifted open question
+// back to the record, and marks a record withdrawn when its question was
+// withdrawn. It does nothing when no service is attached or a switch is off.
+func (m *Manager) DecisionRecordTick(ctx context.Context) {
+	d := m.DecisionRecords()
+	if d == nil || ctx.Err() != nil {
+		return
+	}
+	rep := d.Reconcile()
+	for _, e := range rep.Errors {
+		log.Printf("[autonomous] decision record reconcile: %s", e)
+	}
+	if rep.Changed() {
+		log.Printf("[autonomous] decision record reconcile: raised=%d linked=%d updated=%d withdrawn=%d",
+			rep.Raised, rep.Linked, rep.Updated, rep.Withdrawn)
+	}
 }
 
 // QuestionTick runs one pass: it reads the answered and withdrawn questions
