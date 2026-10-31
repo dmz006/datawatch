@@ -156,10 +156,14 @@ not written here. Every phase's own checklist is the Phase Completion Checklist 
 - [x] Unit tests added and passing for everything new (`TestInfraRetry*`, `TestInfraFailure_*`,
       `TestInfraBackoff_*`, `TestInfraRetryCLI_*`, `TestInfraRetryComm_*`, the Node tests in
       `internal/server/web/app-infra-retry.test.js`).
-- [ ] Live/smoke test against a real running daemon: **pending the sandbox live check**; every
-      Validated cell in `docs/testing-tracker.md` stays No until it runs.
-- [x] The new infrastructure retry tests green; the full `go test ./...` and
-      `node --test internal/server/web/*.test.js` run is the branch's final gate.
+- [x] Live/smoke test against a real running daemon: run on 2026-10-31 against a sandbox daemon,
+      7 of 7 steps passed (`docs/plans/2026-10-30-infra-retry-live-check.md`). The PWA, MCP, comm
+      channel and the config surfaces other than REST were not driven, so their Validated cells in
+      `docs/testing-tracker.md` stay No.
+- [x] The new infrastructure retry tests green. The full `go test ./...` is green; the full
+      `node --test internal/server/web/*.test.js` has one failure that is already present at the
+      merge base and is not in this feature. Both are recorded in
+      `docs/plans/2026-10-30-infra-retry-final-gate-report.md`.
 - [x] General documentation checklist: `CHANGELOG.md`, `docs/config-reference.yaml`,
       `docs/operations.md`, `README.md`, the doc index in `README.md` and `docs/README.md`,
       `docs/testing-tracker.md`, no leaked tracker IDs (`scripts/check-no-internal-refs.sh`),
