@@ -323,6 +323,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automation_security_failure_action_report_only",
 		"automation_security_failure_action_other",
 		"automation_security_failure_note",
+		// The Infrastructure retries card in the Automation view.
+		"infra_retry_card_title",
+		"infra_retry_held_label",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
