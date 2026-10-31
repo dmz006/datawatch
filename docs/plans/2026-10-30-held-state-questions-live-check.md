@@ -53,6 +53,26 @@ daemon** — never the production daemon.
    `operator-*` string; the pending insert id is the *member* id (`234ba23f`), not the PRD id.
 4. Draft automations can't be cancelled — activate then cancel.
 
+## Addendum (fix of the check 6 FAIL)
+
+The check 6 routing bug was fixed in this branch: `heldAnswerAlreadyRecorded`
+(`internal/autonomous/held_question_answer.go`) now matches only the routed
+record — the entry the answer router writes, which always carries a
+`Result` — and deliberately does not match the submit-time `operator_answer`
+entry the question-change hook records on the PRD's decisions (which carries
+no `Result`). The regression test
+`TestHeldQuestionAnswerRoutedDespiteSubmitHook`
+(`internal/autonomous/held_question_answer_test.go`) wires the daemon's
+change hook (`QuestionStore.SetChangeHook` → `Manager.RecordQuestionChange`)
+exactly as `cmd/datawatch/main.go` does and proves the action runs exactly once even
+with the submit-time entry present; idempotence on re-routing still holds
+via the routed record. `go test ./internal/autonomous/ -count=1` passes.
+
+A live re-run of this check's answer step (the single FAIL above) on a
+rebuilt sandbox daemon is still pending; until it passes, the held-question
+rows in `docs/testing-tracker.md` keep **Validated = No** for the
+answer-routing path.
+
 ## Cleanup confirmation
 
 - Daemon `hsq-live-20261101` (PID 431140) stopped by SIGTERM; port 38655 free.

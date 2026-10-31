@@ -1032,6 +1032,62 @@ func TestHeldQuestionRefusedRevision(t *testing.T) {
 	})
 }
 
+func TestHeldQuestionAnswerRoutedDespiteSubmitHook(t *testing.T) {
+	// Regression for the wired-daemon bug: the daemon answers the question
+	// through the store, whose change hook (main.go: SetChangeHook →
+	// RecordQuestionChange) writes an operator_answer entry for the question
+	// and answer at SUBMIT time. If the idempotence probe matches that
+	// entry, routeHeldAnswer never runs: the action never happens and the
+	// question is re-raised every pass. The probe must match only the
+	// ROUTED record (the one with a Result), so routing runs even though
+	// the hook's raw submission entry is already on the PRD's decisions.
+	h := newAnswerHarness(t, 1)
+	f := h.useFakes()
+	h.qs.SetChangeHook(h.m.RecordQuestionChange) // the daemon's wiring
+	h.bootPark(0)
+	h.setMode("on")
+	h.c.heldQuestionPass()
+	q := h.oneHeld(t, HeldOptionResume)
+	_, a := h.storeAnswer(t, q.ID, HeldOptionResume, "")
+	if err := h.m.ProcessHeldAnswer(context.Background(), q, a); err != nil {
+		t.Fatalf("process held answer %q with the submit hook wired: %v", q.ID, err)
+	}
+	h.heldAnswerOutcome(t, q, a, heldResultApplied)
+	if n := len(f.resumeCalls()); n != 1 {
+		t.Fatalf("submit-time hook entry blocked routing: resume ran %d time(s), want exactly 1", n)
+	}
+	// Exactly two operator_answer entries now: the hook's raw submission
+	// (no Result) and the routed record (Result set).
+	p, ok := h.m.store.GetPRD(h.prds[0].ID)
+	if !ok {
+		t.Fatalf("prd missing")
+	}
+	hookEntries, routedEntries := 0, 0
+	for i := range p.Decisions {
+		d := &p.Decisions[i]
+		if d.Kind != heldAnswerDecisionKind || d.QuestionID != q.ID || d.AnswerID != a.ID {
+			continue
+		}
+		if d.Result == "" {
+			hookEntries++
+		} else {
+			routedEntries++
+		}
+	}
+	if hookEntries != 1 {
+		t.Fatalf("want exactly 1 submit-time operator_answer entry, got %d", hookEntries)
+	}
+	if routedEntries != 1 {
+		t.Fatalf("want exactly 1 routed operator_answer entry, got %d", routedEntries)
+	}
+	// Idempotence still holds: the routed record (with Result) is what the
+	// probe matches, so a second routing adds nothing and runs nothing.
+	h.processHeld(t, q, a)
+	if got := len(f.resumeCalls()); got != 1 {
+		t.Fatalf("rerouting re-ran resume: after=%d, want 1", got)
+	}
+}
+
 // ---- Answer: stale outcomes (nothing runs; ErrHeldStateChanged; withdrawn) --
 
 // processStale routes a q+a whose held state has moved, asserting the typed

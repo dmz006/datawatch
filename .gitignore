@@ -82,3 +82,7 @@ __pycache__/
 /etc/
 /ts706-upload.txt
 .aider*
+
+# sandbox live-check working dirs (daemon state, personas, session data) — never commit
+tmp-held-verify/
+tmp-sandbox/

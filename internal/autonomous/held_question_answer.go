@@ -338,15 +338,24 @@ func (m *Manager) ProcessHeldAnswer(ctx context.Context, q Question, ans Answer)
 }
 
 // heldAnswerAlreadyRecorded reports whether prd already carries the
-// operator_answer entry for this (question, answer). It is the idempotence
-// marker; see the package documentation.
+// ROUTED operator_answer entry for this (question, answer). It is the
+// idempotence marker; see the package documentation.
+//
+// It deliberately does NOT match the submit-time operator_answer entry the
+// daemon records on the PRD's decisions when the answer is submitted
+// (QuestionStore's change hook → RecordQuestionChange): that entry is a
+// plain log of the submission and carries no Result. Only recordHeldAnswer
+// sets Result, so Result is what distinguishes "an answer was routed" from
+// "an answer was submitted". Matching the hook's entry too would make the
+// probe hold every first routing — the action would never run in a wired
+// daemon.
 func heldAnswerAlreadyRecorded(prd *PRD, questionID, answerID string) bool {
 	if prd == nil {
 		return false
 	}
 	for i := range prd.Decisions {
 		d := &prd.Decisions[i]
-		if d.Kind == heldAnswerDecisionKind && d.QuestionID == questionID && d.AnswerID == answerID {
+		if d.Kind == heldAnswerDecisionKind && d.QuestionID == questionID && d.AnswerID == answerID && d.Result != "" {
 			return true
 		}
 	}

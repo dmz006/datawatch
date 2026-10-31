@@ -30,7 +30,7 @@ parentheses), or node `--test` reported counts.
 | 19 | `.datawatch/verify/held-config.sh` | pass | — | — |
 | 20 | `.datawatch/verify/held-docs.sh` | pass | — | — |
 | 21 | `.datawatch/verify/held-failure-modes.sh` | pass | — | — |
-| 22 | `.datawatch/verify/held-final-gate.sh` | pass | — | first run fail (this report not yet on disk — self-referential); rerun after writing this report: `ok: … present`, `ok: … mentions pass`, `ok: no tracker IDs`, `ok: internal-refs`, exit 0 |
+| 22 | `.datawatch/verify/held-final-gate.sh` | pass | — | purpose: document the live-check state for the gate (row 32 is that record); the script itself only checks that this gate report is on disk and mentions `pass` — so the first run before the report exists fails by construction and the rerun after writing it exits 0 |
 | 23 | `.datawatch/verify/held-live-check.sh` | pass | — | — |
 | 24 | `.datawatch/verify/held-mcp-cli-chat.sh` | pass | — | — |
 | 25 | `.datawatch/verify/held-parity-issue.sh` | pass | — | — |
@@ -40,7 +40,7 @@ parentheses), or node `--test` reported counts.
 | 29 | `.datawatch/verify/held-table-text.sh` | pass | — | — |
 | 30 | grep: version unchanged vs base `4b18ae5` — `cmd/datawatch/main.go:133` `"version": "7.0.0"` and `internal/server/api.go:203` `var Version = "9.42.1"` | pass | — | identical to base on both lines; minor bump deferred to merge |
 | 31 | grep: no new string containing the word PRD (diff base..HEAD) | pass | — | the only added lines containing "PRD" are two Go struct field identifiers `PRDID` (held-question JSON DTOs) whose tags are lowercase `prd_id`; no string literal, doc or locale text added contains the word PRD |
-| 32 | Sandbox live check (by reference) | fail (1 of 10) | 10 checks | `docs/plans/2026-10-30-held-state-questions-live-check.md`: checks 1–5, 7–10 PASS; check 6 FAIL (answer-to-action routing blocked by the submit-time `operator_answer` entry hitting the tick router's `heldAnswerAlreadyRecorded` idempotence probe; the manager action itself is sound). This pre-existing finding is carried over by reference, not masked. |
+| 32 | Sandbox live check (by reference) | fail (1 of 10) | 10 checks | `docs/plans/2026-10-30-held-state-questions-live-check.md`: checks 1–5, 7–10 PASS; check 6 FAIL (answer-to-action routing blocked by the submit-time `operator_answer` entry hitting the tick router's `heldAnswerAlreadyRecorded` idempotence probe; the manager action itself is sound). This pre-existing finding is carried over by reference, not masked. Route: `heldAnswerAlreadyRecorded` (`internal/autonomous/held_question_answer.go`); fixed in this branch (the probe matches only the routed record, which always carries a `Result`) with the regression test `TestHeldQuestionAnswerRoutedDespiteSubmitHook`; the live re-run of the answer step is still pending. |
 
 ## Failures (output tails, verbatim)
 
@@ -93,3 +93,10 @@ still exits 1 and is recorded as fail.
   word PRD.
 - The one production-code bug surfaced here (live-check check 6) is documented in the live-check
   report with its root cause and proposed fix.
+
+## Addendum (resolutions landed after this gate)
+
+- Row 14 (`check-docs-sync.sh`): resolved — `make sync-docs` staged both reports
+  (`plans/2026-10-30-held-state-questions-live-check.md`, `plans/2026-10-30-held-state-questions-final-gate-report.md`) into `internal/server/web/docs/`; `scripts/check-docs-sync.sh` now exits 0.
+- Row 26 (`held-pwa-locales.sh`): resolved — the extraction now requires at least one key letter after the prefix (`grep -oE 'held_question_[a-z]+[a-z_]*'`), so the bare prefix in the `app.js` comment is no longer matched; the script exits 0.
+- Row 32 (live-check check 6): the routing bug is fixed in this branch — `heldAnswerAlreadyRecorded` now matches only the routed record (the entry that carries a `Result`), while the submit-time question-change-hook entry never blocks the first routing; re-routing stays idempotent through the routed record. Regression test `TestHeldQuestionAnswerRoutedDespiteSubmitHook` wires the daemon's change hook exactly as `cmd/datawatch/main.go` does. `go test ./internal/autonomous/ -count=1` passes. The live re-run of the check 6 answer step on a rebuilt daemon is still pending; until it passes, the held-question rows in `docs/testing-tracker.md` keep Validated = No for the answer-routing path.
