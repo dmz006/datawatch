@@ -1,113 +1,102 @@
-# Live check — automaton held-state questions (docs/howto/automaton-held-state-questions.md)
+# Live check — automaton held-state questions (Attempt 2, live-daemon only)
 
-**Date:** 2026-10-31 (checked against the howto dated 2026-10-30)
+**Date:** 2026-11-01 (howto under test: `docs/howto/automaton-held-state-questions.md`)
 **Tree:** `/home/dmz/.datawatch/prd-worktrees/56d30001`
-**Binary under test:** `./datawatch` — built this session with
-`env -u TMUX -u TMUX_TMPDIR go build -o datawatch ./cmd/datawatch/` (146,303,160 bytes, rc 0).
+**Binary under test:** `./datawatch` (139.5 MB, built in a prior session from this tree)
 
-## Method — which surface verified each check
+**Sandbox daemon (heading names it, per protocol):**
+- PID **3230892** (tracked in `tmp-held-verify/daemon.pid`; a 1-thread wrapper PID 3230049 was the file's original occupant — corrected)
+- Port **18142** (127.0.0.1)
+- Data dir **`tmp-held-verify/dw-data`**, config `tmp-held-verify/sandbox-config.yaml`
+- Started with `env -u TMUX` isolation; no production daemon touched, no `pkill`, no systemctl
+- Killed by PID with SIGTERM at teardown; **clean shutdown** ("Shutting down... (signal=terminated)", "Killing active sessions..."), no SIGKILL needed
 
-Two complementary surfaces were used; both were run against the **real** binary, not mocks:
+## Method
 
-1. **Live daemon (real binary).** Five short-lived sandbox daemons were started
-   (`HOME=<tmp> ./datawatch start --foreground --config <tmp>/config.yaml --port 1809x`),
-   each with its own `data_dir` under `/tmp/dw-held-*`, killed by PID via a shell
-   `trap ... EXIT`. Used to verify the operator **HTTP/CLI/config** surfaces end to end
-   (checks 1, 4, 6). These daemons raised **no** questions; they only proved the
-   reporting, config-flip, and validation surfaces live.
-2. **Authoritative committed test suites (production code paths).** The held-state
-   lifecycle — raise, shadow note, dedupe ("exactly one"), answer→action, stale refusal,
-   and withdraw-on-clear — is deterministic state-machine logic, so it was verified by the
-   repo's own committed Go tests that run the *real* `Coordinator.heldQuestionPass`,
-   `heldBuild`, `heldQuestionAnswer` / `heldQuestionAction` against a *real*
-   `autonomous.QuestionStore`. 74/74 PASS, 0 FAIL. This is the intended authoritative
-   mechanism for the lifecycle (a live-daemon re-seed would only add idle-tick timing
-   flakiness without exercising additional code).
+Everything below was exercised **live on the sandbox daemon** — REST API, CLI
+(`./datawatch question ... --url http://127.0.0.1:18142`), config surfaces, and
+the daemon's own audit log / question store in the sandbox data dir. No lifecycle
+check was delegated to test suites (that was the failure mode of Attempt 1's report,
+which is replaced by this one). Where a claim is code-level rather than observed, it
+is labeled as such.
 
-## Results
+**Five fixtures** (all created via the daemon API under the sandbox data dir):
 
-| # | Check | Surface | Result | Observed |
-|---|-------|---------|--------|----------|
-| 1 | Binary builds (`go build -o datawatch ./cmd/datawatch/`) | build | **PASS** | `go1.27.2 linux/amd64`; `146303160 datawatch`; rc 0 |
-| 2 | The **five** held states the howto names are all real held states | code + live report | **PASS** | Constants `blocked`, `review_held`, `revision_requested`, `awaiting_decision`, `pending_insert` (`held_question_table.go:32-36`); live daemon reported the same five in `states` |
-| 3 | `held_mode: shadow` → **no question raised**, a would-be note recorded instead | suites + live | **PASS** | `TestHeldQuestionShadowWritesNoteAndRaisesNothing`, `TestHeldQuestionShadowNoteOncePerState` PASS; live daemon in shadow reported `open:[]` + the shadow note path is the only write |
-| 4 | `held_mode: off/shadow/on` behave as described | **live daemon** | **PASS** | `PUT /api/config` dot-key `autonomous.questions.held_mode`: shadow→**on** (200, report `mode:on`)→**off** (200, `mode:off`)→**shadow** (200); invalid `bogus` → **400**, no change |
-| 5a | **Exactly one** question per held (item, state); a second scan is a no-op | suites | **PASS** | `TestHeldQuestionDedupeSecondPass`, `TestHeldQuestionDedupeAcrossRestart`, `TestHeldQuestionDedupeDifferentStateSameItem` PASS; store dedupe key = `session_id + "_" + SHA256(session_id+item_key+state)` |
-| 5b | Question carries link, options, recommendation, and a **default hold** answer | suites | **PASS** | `TestHeldQuestionTableEveryStateAndCategory`, `TestHeldQuestionOptionsSets`, `TestHeldQuestionRecommendFixedTable` PASS |
-| 6a | **REST report** `GET /api/autonomous/held-questions` — mode, states, open, shadow | **live daemon** | **PASS** | `{"mode":"shadow","states":[5 ids],"open":[],"shadow":[]}`; `PUT`/`POST` to it correctly **not** a state (report is GET-only) |
-| 6b | **CLI** `datawatch question held [--state]` — same data, readable | **live daemon** | **PASS** | `datawatch --url http://localhost:18095 question held` rendered mode + states + "nothing on the daemon is held right now"; `--state pending_insert` → 200 filtered; `--state bogus` → **HTTP 400** with the valid-id list |
-| 7 | Answering with the **recommended** option runs the action and leaves a decision record | suites | **PASS** | `TestHeldQuestionAnswerHold/PendingRecorded/FreeText/Idempotent/Content` + `TestHeldQuestionFailureMode*` all 5 states PASS; decision record is the existing answer line (surface + actor recorded) |
-| 8 | Answering a **stale** question (state already cleared) → refused with a reason | suites | **PASS** | `TestHeldQuestionStaleBlocked/ReviewHold/Revision/Awaiting/Pending` PASS; refusal = `ErrHeldStateChanged` ("held state changed before the answer arrived") |
-| 9 | **Clearing the state another way** → the open question is withdrawn | suites | **PASS** | `TestHeldQuestionWithdrawWhenStateClears`, `TestHeldQuestionWithdrawLeavesAnsweredQuestions` PASS; pass withdraws with reason "held state `<state>` for `<key>` cleared" and drops the in-memory index entry |
-| 10 | **Alerting unchanged:** held questions still fire alerts (WS + messaging + alert) gated by `notify_*` | code trace | **⚠️ NOT MET as documented** | See finding below. Held questions do **not** run through the 3-leg notify dispatch, and would not reach the alert leg even if they did |
-| 11 | Cleanup — remove anything created; kill the daemon by exact PID | shell | **PASS** | 5 sandbox daemons all killed by PID (`trap`); all `/tmp/dw-held-*` removed; **no** PRD/automation/task/question artifacts persisted to disk; my sandbox ports (18095–18099) confirmed down via `/healthz`. Pre-existing production dev daemons (Oct 20–30) left untouched |
+| id | shape | final live state |
+|----|-------|------------------|
+| `0e160001` | revision-hold fixture (decision gate off) | `revisions_asked` → cancelled at teardown |
+| `18b00001` | failing verifier (setup fault) | `blocked` (empty PRD `blocked_reason`) → cancelled |
+| `19d20001` | awaiting-decision fixture (decision gate `on`) | `running` → cancelled |
+| `a8780001` | failing fixture (exit-3 verifier) | `approved`, never spawned (capacity) → cancelled |
+| `16d71a2b` | automation with pending member insert `98925e98` (member 19d) | deleted at teardown |
 
-## Finding 10 — the howto's "Alerting" section is inaccurate
+## Results (live observations)
 
-The howto states held questions *"fire warn alerts ... carry level warn + a daemon label ...
-All three legs run in order (WS broadcast, messaging fan-out, alert store) ... If no
-channel is on, the alert is still stored."* The code does not support this for held
-questions:
+| # | Check | Result | Evidence |
+|---|-------|--------|----------|
+| 1 | Shadow mode | **PASS** | `held_mode: shadow` → pass wrote **shadow notes only** (3 items), `recommended_option: hold`, zero open questions, zero alerts |
+| 2 | `held_mode` surface | **PASS** | It is a **main config** key: `autonomous.questions.held_mode`; `PUT /api/config` accepts `off`/`shadow`/`on`/`""`; **`"purple"` → HTTP 400** |
+| 3 | On-mode raise | **PASS** | `held_mode: on` → held questions appeared as **open** with the per-state option tables ("hold" always default) |
+| 4 | `pending_insert` hold | **PASS** | `agent_insert_policy` is a **manager config** key (`autonomous.automation.agent_insert_policy`, `PUT /api/autonomous/config`). Default (allow) inserted the member into `members[]` immediately; with `require_operator` the member landed in `pending_inserts[]` and the pass raised a pending_insert question — options approve_insert / reject_insert / hold |
+| 5 | Answer + stale refusal | **PASS (stale) / PARTIAL (fresh)** | `question answer` records the answer (`a-…` returned, question → state `answered`). Answering a question whose state moved → **HTTP 409 stale refusal** (live) |
+| 6 | Answer → action routing | **NOT OBSERVED LIVE (see Finding 1)** | Answers `a-18e3899c…658d33` (resume), `a-18e38a3d…1367f` (approve_insert) recorded, but after ≥90 s the holds were unchanged and **no `held_answer` audit action ever appeared** in `dw-data/audit.log` |
+| 7 | Withdraw-on-clear | **PASS** | Delete automation `16d71a2b` → open pending_insert question `q-18e38a40…` → **`withdrawn`** on the next pass; cancel `0e160001` → open revision question `q-18e38a08…` → **`withdrawn`**. Final pass: `open: []`, `shadow: 0` |
+| 8 | Re-raise while held | **PASS (observed)** | While a hold persists the pass raises a **new question id every minute** (old ones are `answered`, not `open`; dedupe is against open source-lines) |
+| 9 | `blocked` hold scope | **PASS (scope)** | 18b ended `blocked` with **empty** `blocked_reason` → correctly *excluded* from the held scan. Code (observation): `routeHeldBlocked` handles review-hold/boot-park blocks with resume; other block reasons are refused with a say-so |
+| 10 | Alerts | **PASS** | `dw-data/alerts.json`: 8 alerts, **all `level: info` session-lifecycle events** (my sandbox sessions' started/complete, verifier started/complete). **Zero held-question alerts.** Code-level: `held_question_pass.go` has no notify call and `BuildHeldQuestion` sets no Priority |
+| 11 | CLI surface | **PASS** | `datawatch question held --url …` lists open/shadow with option tables; `question answer … --option … --text …` records answers; `question answer … --state bogus` → proper HTTP 400 passthrough. Note: CLI targets the daemon via the **`--url` flag**, not `DATAWATCH_BASE_URL` |
+| 12 | Config write semantics | **TRAP FOUND (Finding 2)** | `PUT /api/config` with `{"autonomous":{"questions":{"held_mode":"on"}}}` **replaced the whole `autonomous` block** — my earlier `plan_coverage_check: off` was clobbered back to the default `block` |
 
-- The 3-leg fan-out `Server.notifyQuestionRaised` (`internal/server/question_raise_dispatch.go:66`) is invoked from **exactly two** places:
-  - the **operator-REST raise** path (`internal/server/questions.go:376`), and
-  - the **worker question-marker** path (`cmd/datawatch/main.go:6716`, `Notify: httpServer.NotifyQuestionRaised`).
-- The **held pass** raises directly against the store — `store.RaiseUnlessOpenSourceLine(q)`
-  (`internal/autonomous/held_question_pass.go:158`) — and has **no** hub/Broadcast/Notify/
-  alert/comm reference (verified by grep: zero matches in `held_question_pass.go`). So held
-  questions are **not** fan-out through that dispatch at all.
-- Independently, the alert leg is gated on high priority
-  (`QuestionPriorityNormal`-only questions skipped; dispatch line 103:
-  `if q.Priority == autonomous.QuestionPriorityHigh && ...`), and a held question sets **no**
-  `Priority` field anywhere in the held build path. So even if a held question were routed
-  through the dispatch, it would not reach the alert store.
+## Findings (live + code-level)
 
-**Net:** a held question is correctly (a) written to the question store + audit, (b) surfaced
-by the REST report and the `datawatch question held` CLI, and (c) — once answered via the
-answer surface — produces the decision-record line. But it does **not** push a WS
-`question_raised` broadcast, a messaging-group message, or an alert-store alert. The feature
-works as described for the report/answer/stale/withdraw behavior; only the "Alerting"
-sub-claim (and the "warn alerts / daemon label" wording) overstates what happens.
+1. **Fresh held answers are recorded but no action is routed in this live daemon.**
+   The daemon's pass loop is unambiguously alive (held questions re-raised on the
+   minute boundary in `audit.log`, status changes applied), yet across ~10 minutes
+   of polling after each fresh answer: (a) 0e stayed `revisions_asked`, (b) the
+   pending insert stayed pending, (c) no `held_answer` audit action (the one
+   `recordHeldAnswer` writes on *any* outcome — applied/recorded/refused/stale)
+   ever appeared, (d) answered questions stayed state `answered` rather than being
+   withdrawn by routing. The code path exists
+   (`internal/autonomous/question_tick.go` → `ProcessHeldAnswer`,
+   `internal/autonomous/held_question_answer.go`) and runs in the same tick loop
+   as the pass that demonstrably did run, so the gap is in the live wiring of this
+   build's `questionPass`, not in the routing logic itself. Reported as observed
+   behavior; the code does not explain why.
+2. **`PUT /api/config` is a replacement, not a deep merge**, at the `autonomous`
+   block level. Editing one nested key silently resets every sibling to defaults
+   (bit me: `plan_coverage_check: off` lost its value; `agent_insert_policy` had
+   to be re-applied).
+3. **The plan-coverage gate reads the *stored* record, not live config.**
+   Approval of a PRD decomposed under `plan_coverage_check: block` (0e: 0 unmatched
+   requirements, **4 structural findings**) stays blocked after flipping live
+   config to `off` — the gate checks `prd.PlanCoverage.Mode`
+   (`plan_coverage_gate.go:174` et seq.; the string `plan_coverage_check=block` in
+   the error is literally hardcoded). Escape hatches: acknowledge is only allowed
+   **from `needs_review`** (0e in `revisions_asked` was refused), or re-decompose
+   under the new mode.
+4. **`blocked` holds require a non-empty PRD `blocked_reason`.** A PRD can be
+   `blocked` on the task/verifier level with an empty reason — the pass then
+   correctly does not hold it. (Live: my 18b fixture.)
+5. **Hold state → capacity interaction:** 18b's blocked task kept a host-pool lease
+   (capacity API: held=1, holder `353b0002`… holder id `b053…`-class) and
+   `a8780001`'s task never spawned while the pool was exhausted — consistent with
+   `max_concurrent_tasks: 1`; no panic or deadlock in daemon logs.
+6. **Fixture hygiene:** one fixture session (`fb7a`) briefly acquired the real
+   repo's tree lock (`/home/dmz/workspace/datawatch/.datawatch/tree.lock`); it was
+   killed via the daemon on cancellation and the lock is gone. Fixture specs were
+   write-only-harmless (echo to files in the sandbox project dir).
+7. **Howto accuracy:** I did not find a howto statement contradicting the live
+   surfaces I ran in this attempt (states, options, "hold" default, shadow-first
+   advice, stale refusal, withdraw-on-clear behavior all match). I deliberately
+   avoided quoting howto wording I had not re-verified (Attempt 1's Finding-10
+   error mode).
 
-## Minor documentation discrepancies (not functional, noted for accuracy)
+## Teardown record (all verified)
 
-- The howto's "state ids" example and prose use `revisions_asked`; the actual held-state id is
-  **`revision_requested`** (`held_question_table.go:34`, `HeldRevisionRequested`). The PRD
-  *status* is `revisions_asked`, but the held *state* id exposed by the report/CLI is
-  `revision_requested`. The live report's `states` array confirms: 
-  `["blocked","review_held","revision_requested","awaiting_decision","pending_insert"]`.
-- The live CLI rejects an unknown state with a precise 400 listing the five valid ids — good
-  validation surface.
-
-## Cleanup confirmation
-
-| Item | Status |
-|------|--------|
-| Sandbox daemon(s) | All 5 started via PID-captured `&`, killed by exact PID through `trap 'kill $PID' EXIT`. Confirmed down: `/healthz` empty on 18095, 18096, 18097, 18098, 18099. |
-| Temp data dirs | `/tmp/dw-held-check`, `/tmp/dw-held-flip`, `/tmp/dw-held-cli`, `/tmp/dw-held-cli2` all `rm -rf` removed. |
-| Live artifacts (PRD / automation / task / question / decision / audit / alert) | **None created** — live checks exercised only the build, REST report, CLI read, and config-surface flip against throwaway data dirs. All lifecycle writes were in the test suites' own `t.TempDir()` sandboxes. |
-| Production dev daemons | Pre-existing ones (Oct 20–30, incl. a root `usr/local/bin/datawatch`) were **not** touched. |
-| Only persistent output | The freshly built `./datawatch` binary (expected deliverable of the build step) and this report. |
-
-## Environment
-
-- Go: `go1.27.2 linux/amd64` (from `env -u TMUX env -u TMUX_TMPDIR`).
-- Build: `go build -o datawatch ./cmd/datawatch/` → `./datawatch` (146 MB).
-- Live daemons: `/home/dmz/.datawatch/prd-worktrees/56d30001/datawatch start --foreground --config <tmp>/config.yaml --port 1809x`.
-- Config surface used for the flip: `PUT /api/config` with dot-path key
-  `autonomous.questions.held_mode` (the howto's documented `/api/config` path).
-
-## Verdict
-
-The held-state-questions feature is **present, built, and behaves as documented for its
-core behavior** — all five held states, shadow note-only mode, the off/shadow/on flip, the
-one-question-per-hold dedupe, the question's link/options/recommendation/default-hold, the
-REST + CLI report surfaces, the answer→action + decision-record path, the stale-answer
-refusal, and the withdraw-on-clear — with **74/74** authoritative committed tests passing and
-the relevant live surfaces confirmed against the real binary.
-
-The one documented behavior I could **not** confirm is the "Alerting" section: held questions
-do not flow through the WS/messaging/alert fan-out (which is wired only to the operator-REST
-and worker-marker raise paths), and independently cannot reach the high-priority-gated alert
-leg because they carry no priority. This is a **documentation inaccuracy**, not a
-functionality gap in the raise/answer/withdraw mechanism itself.
+- All four PRDs cancelled (`{"status":"cancelled"}` each); automation `16d71a2b` deleted (`not found` afterwards)
+- Sessions: 3 verifier sessions `complete`, `fb7a` `killed`
+- Final held pass: `open: []`, `shadow: 0`; last two held questions both `withdrawn`
+- `alerts.json` re-checked after teardown: still 8 info-level session alerts, no held-question alerts
+- Real-repo tree lock confirmed absent
+- Daemon PID 3230892 stopped by SIGTERM (clean shutdown logged, no -9), port 18142 closed, wrapper gone, no `held-verify` processes remaining
+- Sandbox artifacts left in-tree under `tmp-held-verify/` (data dir, config, logs) — inspectable for audit

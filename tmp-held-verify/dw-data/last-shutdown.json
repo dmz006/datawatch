@@ -1,0 +1,31 @@
+{
+  "signal": "terminated",
+  "sender_pid": 148622,
+  "sender_uid": "1000",
+  "sender_user": "dmz",
+  "cmdline": "/bin/bash -c cd /home/dmz/.datawatch/prd-worktrees/56d30001 \u0026\u0026 echo \"[$(date '+%H:%M:%S')] start\" \u0026\u0026 MAIN=3230892; WRAP=3230049; kill -0 $MAIN 2\u003e/dev/null \u0026\u0026 echo \"main daemon $MAIN alive\"; kill -TERM $MAIN 2\u003e/dev/null; sleep 4; kill -0 $MAIN 2\u003e/dev/null \u0026\u0026 { echo \"still up, TERM again\"; kill -TERM $MAIN; sleep 5; }; kill -0 $MAIN 2\u003e/dev/null \u0026\u0026 { echo \"KILL needed\"; kill -9 $MAIN; }; kill -0 $MAIN 2\u003e/dev/null \u0026\u0026 echo \"STILL ALIVE\" || echo \"main daemon $MAIN stopped\"; kill -0 $WRAP 2\u003e/dev/null \u0026\u0026 echo \"wrapper $WRAP alive\" || echo \"wrapper $WRAP gone\"; ss -tln 2\u003e/dev/null | grep 18142 \u0026\u0026 echo \"PORT STILL LISTENING\" || echo \"port 18142 closed\"; tail -3 tmp-held-verify/daemon.log | cut -c1-140; echo \"[$(date '+%H:%M:%S')] done\"",
+  "parent_chain": [
+    {
+      "pid": 3230892,
+      "cmdline": "./datawatch start --foreground --config tmp-held-verify/sandbox-config.yaml",
+      "user": "dmz"
+    },
+    {
+      "pid": 3230049,
+      "cmdline": "/bin/bash -c echo \"[$(date '+%H:%M:%S')] kill 3074180 (verified: tmp-held-verify sandbox daemon)\" \u0026\u0026 kill 3074180 \u0026\u0026 sleep 3 \u0026\u0026 cd /home/dmz/.datawatch/prd-worktrees/56d30001 \u0026\u0026 env -u TMUX nohup ./datawatch start --foreground --config tmp-held-verify/sandbox-config.yaml \u003e tmp-held-verify/daemon.log 2\u003e\u00261 \u0026 sleep 10; DW=$(pgrep -f 'tmp-held-verify/sandbox-config.yaml' | head -1) \u0026\u0026 echo $DW \u003e tmp-held-verify/daemon.pid \u0026\u0026 echo \"DAEMON PID=$DW\" \u0026\u0026 ps -o pid,etime,cmd -p $DW --no-headers \u0026\u0026 grep -i 'compute node\\|list\\|started' tmp-held-verify/daemon.log | tail -5 \u0026\u0026 curl -s -o /dev/null -w 'prds=%{http_code}\\n' http://127.0.0.1:18142/api/autonomous/prds; echo \"[$(date '+%H:%M:%S')] done\"",
+      "user": "dmz"
+    },
+    {
+      "pid": 13433,
+      "cmdline": "/usr/lib/systemd/systemd --user",
+      "user": "dmz"
+    },
+    {
+      "pid": 1,
+      "cmdline": "/usr/lib/systemd/systemd --switched-root --system --deserialize=52 splash",
+      "user": "root"
+    }
+  ],
+  "source": "procscan",
+  "time": "2026-10-31T02:48:15.799954865-04:00"
+}
