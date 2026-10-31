@@ -8907,6 +8907,7 @@ const DOCS_LINKS_BY_KEY = {
   view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
   view_automata_wizard: DOCS_DEFINITIONS + '#launch-automaton-form',
   merged_member_policy: DOCS_DEFINITIONS + '#merged-member-policy',
+  plan_coverage_filters: DOCS_DEFINITIONS + '#plan-coverage-filters',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -16454,6 +16455,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
     { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
+    // Plan-coverage filters (both on by default): suppress findings for
+    // files the plan itself creates, and count only the spec's
+    // scope/constraint sentences as requirements instead of every stray
+    // word.
+    { key: 'autonomous.plan_coverage_suppress_created_files', label: 'Plan coverage: skip files an Automaton plan creates (default on)', labelKey: 'settings_plan_coverage_suppress_created_files', helpKey: 'settings_plan_coverage_suppress_created_files_help', type: 'toggle', default: true },
+    { key: 'autonomous.plan_coverage_scoped_requirements', label: 'Plan coverage: count only scope and constraint sentences (default on)', labelKey: 'settings_plan_coverage_scoped_requirements', helpKey: 'settings_plan_coverage_scoped_requirements_help', type: 'toggle', default: true },
+    { key: 'autonomous.plan_coverage_requirement_sections', label: 'Plan coverage: requirement section names (comma separated)', labelKey: 'settings_plan_coverage_requirement_sections', helpKey: 'settings_plan_coverage_requirement_sections_help', type: 'text', placeholder: 'scope,constraints' },
+    { key: 'autonomous.plan_coverage_min_requirement_chars', label: 'Plan coverage: shortest requirement in characters (0 uses the default)', labelKey: 'settings_plan_coverage_min_requirement_chars', helpKey: 'settings_plan_coverage_min_requirement_chars_help', type: 'number', min: 0, placeholder: '30' },
     // Per-backend usage back-off — while one of a backend's sessions is
     // rate-limited, autonomous dispatch to that backend waits until the
     // parsed reset time (or the max back-off when the message has none).
@@ -26746,6 +26755,17 @@ function _prdPlanCoverageBlock(prd) {
   const acked = !!(ack && (ack.by || ack.note));
   const unmatched = Array.isArray(report.unmatched) ? report.unmatched : [];
 
+  // Findings the plan coverage filters suppressed (created files +
+  // out-of-scope sentences). Shown even when both counts are 0 so the
+  // operator can see the filters are active.
+  let suppressedHtml = '';
+  if (pc.suppressed && typeof pc.suppressed === 'object') {
+    const suppressed = pc.suppressed;
+    const nFiles = Math.max(0, Number(suppressed.created_files) || 0);
+    const nReqs = Math.max(0, Number(suppressed.requirements) || 0);
+    suppressedHtml = `<div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(t('prd_plan_coverage_suppressed_title') || 'Suppressed by the plan coverage filters')}: ${nFiles} ${escHtml(t('prd_plan_coverage_suppressed_files') || 'created-file findings')}, ${nReqs} ${escHtml(t('prd_plan_coverage_suppressed_requirements') || 'requirement findings')}</div>`;
+  }
+
   const color = !failing ? 'var(--success,#22c55e)'
             : mode === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)';
   const statusLine = !failing
@@ -26783,7 +26803,8 @@ function _prdPlanCoverageBlock(prd) {
   }
 
   return `<div class="prd-plan-coverage" style="margin-top:8px;padding:8px 10px;border-left:3px solid ${color};background:var(--bg2);border-radius:0 4px 4px 0;font-size:12px;">
-    <div style="font-weight:600;color:${color};">${escHtml(t('prd_plan_coverage_title') || 'Plan requirement coverage')} — ${escHtml(statusLine)}</div>
+    <div style="display:flex;align-items:center;gap:4px;font-weight:600;color:${color};">${escHtml(t('prd_plan_coverage_title') || 'Plan requirement coverage')} — ${escHtml(statusLine)}<a href="/diagrams.html#docs/datawatch-definitions.md#plan-coverage-filters" target="_blank" rel="noopener" title="${escHtml(t('prd_plan_coverage_filters_help') || 'Open the plan coverage filters definition')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;margin-left:auto;" aria-label="Help">?</a></div>
+    ${suppressedHtml}
     <div style="font-family:var(--mono,monospace);font-size:11px;margin-top:3px;">covered ${covered}/${total} · missing ${missing} · weakened ${weakened}${total > 0 ? ' · ratio ' + (ratio * 100).toFixed(0) + '% (min ' + (minRatio * 100).toFixed(0) + '%)' : ''}</div>
     ${listHtml}
     ${ackHtml}
