@@ -6758,10 +6758,22 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					if drstore, drerr := autonomouspkg.NewDecisionRecordStore(filepath.Join(expandHome(cfg.DataDir), "decision_records.jsonl")); drerr != nil {
 						fmt.Fprintf(os.Stderr, "[warn] decision record store: %v\n", drerr)
 					} else {
-						amgr.SetDecisionRecords(autonomouspkg.NewDecisionRecords(drstore, qstore,
+						decisionRecords := autonomouspkg.NewDecisionRecords(drstore, qstore,
 							func() config.AutonomousDecisionsConfig { return cfg.Autonomous.Decisions },
 							func() config.AutonomousQuestionsConfig { return cfg.Autonomous.Questions },
-							time.Now))
+							time.Now)
+						// An answered decision record question is applied to
+						// its record promptly: the service chains onto the
+						// change hook set above (it does not replace it) and
+						// wakes the executor holding a task on the answer the
+						// same way any other answered question does.
+						decisionRecords.SetAnswerRelease(func(c autonomouspkg.QuestionChange) {
+							if api := questionAPI.Load(); api != nil {
+								api.OnQuestionChange(c)
+							}
+						})
+						decisionRecords.ChainQuestionHook()
+						amgr.SetDecisionRecords(decisionRecords)
 					}
 					// The question lifecycle events (question.answered /
 					// question.withdrawn) fire through the same dispatcher and

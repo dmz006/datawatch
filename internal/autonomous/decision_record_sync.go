@@ -91,6 +91,9 @@ type DecisionReconcileReport struct {
 	Updated int `json:"updated"`
 	// Withdrawn counts records marked withdrawn because their question was.
 	Withdrawn int `json:"withdrawn"`
+	// Answered counts records that got the answer of their question applied
+	// because the prompt trigger missed it.
+	Answered int `json:"answered"`
 	// Errors holds one line per record that could not be repaired; the next
 	// pass tries again.
 	Errors []string `json:"errors,omitempty"`
@@ -98,7 +101,7 @@ type DecisionReconcileReport struct {
 
 // Changed reports whether the pass repaired anything.
 func (r DecisionReconcileReport) Changed() bool {
-	return r.Raised+r.Linked+r.Updated+r.Withdrawn > 0
+	return r.Raised+r.Linked+r.Updated+r.Withdrawn+r.Answered > 0
 }
 
 // DecisionRecords is the service. All methods are safe for concurrent use.
@@ -111,6 +114,13 @@ type DecisionRecords struct {
 	decisionsCfg func() config.AutonomousDecisionsConfig
 	questionsCfg func() config.AutonomousQuestionsConfig
 	now          func() time.Time
+
+	// effectsMu guards the answers waiting for their release and effects
+	// (decision_record_answer.go). It is never held while they run.
+	effectsMu   sync.Mutex
+	pending     []decisionAnswerApplied
+	release     func(QuestionChange)
+	effectsSeen func(DecisionRecord, Question, Answer) // test seam
 }
 
 // NewDecisionRecords builds the service. The config functions are read on
@@ -192,6 +202,7 @@ func (s *DecisionRecords) Create(rec DecisionRecord, source, sourceRef string) (
 	}
 	rec.Source, rec.SourceRef = source, sourceRef
 
+	defer s.drainAnswerEffects()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	findings, err := s.checkContent(rec)
@@ -219,6 +230,7 @@ func (s *DecisionRecords) Update(id string, content DecisionRecord) (DecisionRec
 	if err := s.available(); err != nil {
 		return DecisionRecordView{}, nil, err
 	}
+	defer s.drainAnswerEffects()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cur, ok := s.records.Get(id)
@@ -350,6 +362,7 @@ func (s *DecisionRecords) Reconcile() DecisionReconcileReport {
 	if s.available() != nil {
 		return rep
 	}
+	defer s.drainAnswerEffects()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, rec := range s.records.List(DecisionRecordFilter{State: DecisionRecordOpen, Limit: maxDecisionListLimit}) {
@@ -363,7 +376,8 @@ func (s *DecisionRecords) Reconcile() DecisionReconcileReport {
 // syncLocked brings the question of one open record in step with it: raises
 // it when missing (through the record-id dedupe), links it, applies the
 // record text to an open question, and marks the record withdrawn when its
-// question was withdrawn or expired. An answered question is left alone.
+// question was withdrawn or expired, and applies the answer of an answered
+// question that the record does not hold yet.
 func (s *DecisionRecords) syncLocked(rec DecisionRecord, rep *DecisionReconcileReport) error {
 	if rec.QuestionID == "" {
 		got, raised, err := s.questions.RaiseUnlessDecisionRecord(BuildQuestionFromDecision(rec))
@@ -398,6 +412,21 @@ func (s *DecisionRecords) syncLocked(rec DecisionRecord, rep *DecisionReconcileR
 			return fmt.Errorf("mark withdrawn: %w", err)
 		}
 		rep.Withdrawn++
+	case QuestionAnswered:
+		// The prompt trigger missed this answer (a restart, a hook that was
+		// not wired yet): apply it now. An answer already on the record
+		// changes nothing.
+		a, ok := s.questions.CurrentAnswer(q.ID)
+		if !ok {
+			return nil
+		}
+		applied, err := s.applyAnswerLocked(rec, q, a)
+		if err != nil {
+			return fmt.Errorf("apply answer: %w", err)
+		}
+		if applied {
+			rep.Answered++
+		}
 	}
 	return nil
 }
