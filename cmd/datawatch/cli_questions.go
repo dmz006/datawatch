@@ -391,6 +391,7 @@ switch; while it is off the daemon answers with a 503 naming the switch.`,
 		newQuestionAnswerCmd(),
 		newQuestionWithdrawCmd(),
 		newQuestionRaiseCmd(),
+		newQuestionHeldCmd(),
 	)
 	return cmd
 }

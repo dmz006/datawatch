@@ -663,6 +663,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLanePreference(), tracked(s.handleAutonomousPRDSetLanePreference))
 	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
+	mcpSrv.AddTool(s.toolHeldQuestions(), tracked(s.handleHeldQuestions))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
 	mcpSrv.AddTool(s.toolQuestionStats(), tracked(s.handleQuestionStats))
 	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
