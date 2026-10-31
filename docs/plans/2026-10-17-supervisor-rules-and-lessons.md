@@ -624,8 +624,8 @@ Operator, 2026-10-30, quoted: "What else are you doing by hand that datawatch sh
 4. Checking the hourly list (lanes, held tasks, CI, releases, disk, questions): the daemon-side supervisor watch (`85720001`) covers the findings; the hourly tick as a whole is not replaced.
 5. Reading a plan for coverage and approving it (acknowledging the false findings of the plan-coverage gate): draft PRD `a8e80001` (files a task creates and stray spec tokens stop being findings). Reading the plan itself stays a supervisor job.
 6. Moving a task to another backend when it is slow or stuck, and releasing a hung verification: the request progress observer (`8f040001`) and the model routing and per-task pin work (`b2220001`).
-7. Resetting tasks after a failure caused by the disk quota or a restart: draft PRD `ced90001` (transient infrastructure failures retry automatically and dependents recover); the held-state questions feature (`56d30001`) covers what still holds.
-8. Committing a worker's uncommitted work after a backend move or a cancel and reopen, and checking the worktree before a merge: draft PRD `83250001` (the executor refuses to complete a task whose work was not committed).
+7. Resetting tasks after a failure caused by the disk quota or a restart: shipped in 9.50.0 (transient infrastructure failures retry automatically and dependents recover); the held-state questions feature (`56d30001`) covers what still holds.
+8. Committing a worker's uncommitted work after a backend move or a cancel and reopen, and checking the worktree before a merge: shipped in 9.51.0 (the executor refuses to complete a task whose work was not committed).
 9. Writing the PRD specs, the follow-up PRDs after an answer, and the registry rows and decision records: decisions raising their own questions (`ee660001`) covers the question part; filing the follow-up PRD from an answer is the follow-up list in that feature; the registry row is no PRD yet. To file.
 10. Recording the operator's answers and their quotes in the design docs: decisions raising their own questions (`ee660001`).
 11. Reading the answered questions every tick: the same feature, applying an answer.
