@@ -368,6 +368,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/skills", api.handleSkills)                                         // BL255 (synced list)
 	apiMux.HandleFunc("/api/skills/", api.handleSkills)                                        // BL255 (synced get + content)
 	apiMux.HandleFunc("/api/identity", api.handleIdentity)                                     // BL257 P1 v6.8.0 (GET/PUT/PATCH)
+	apiMux.HandleFunc("/api/identity/backups", api.handleIdentityBackups)                      // identity backups (GET)
+	apiMux.HandleFunc("/api/identity/restore", api.handleIdentityRestore)                      // identity restore (POST)
+	apiMux.HandleFunc("/api/identity/reset", api.handleIdentityReset)                          // identity explicit clear (POST)
 	apiMux.HandleFunc("/api/algorithm", api.handleAlgorithm)                                   // BL258 v6.9.0 (list)
 	apiMux.HandleFunc("/api/algorithm/", api.handleAlgorithm)                                  // BL258 v6.9.0 (per-session + actions)
 	apiMux.HandleFunc("/api/evals", api.handleEvalsCompat)                                     // #42 compat: GET → { runs:[{id,name,status,score,created_at}] }
