@@ -502,6 +502,13 @@ type Manager struct {
 	// UIPromptStatsSnapshot). Zero value is production-ready.
 	uiPromptDismissStats uiPromptStatsState
 
+	// uiPromptEscalate / uiPromptEscalateWithdraw are the escalation-out
+	// seams (see ui_prompt_escalate.go): when the safe-dismiss rules could
+	// not clear a blocked prompt, the daemon asks the operator a question.
+	// Zero value = escalation not wired; the manager never sends anything.
+	uiPromptEscalate         uiPromptEscalateRoute
+	uiPromptEscalateWithdraw uiPromptEscalateWithdrawRoute
+
 	// journal receives the session end and pane-close lines (see end_reason.go).
 	// nil writes them to stdout; tests set it to capture them.
 	journal io.Writer

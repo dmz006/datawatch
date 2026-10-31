@@ -30,6 +30,7 @@ type uiPromptRecord struct {
 	lastKeyAt       time.Time // when the last dismiss key was sent (zero = none yet)
 	lastKey         string    // key name of the last sent dismiss key (guard-passed)
 	outcomeRecorded bool      // a final dismissal outcome (dismissed | not_cleared) was booked exactly once
+	escalated         bool      // the escalation for this occurrence was fired exactly once (ui_prompt_escalate.go)
 }
 
 // scanInterstitialTick runs one interstitial-prompt scan for the
@@ -59,6 +60,10 @@ func (m *Manager) scanInterstitialTick(sess *Session, stateCapture string, now t
 	// only key the manager ever sends to one of these prompts (see
 	// ui_prompt_dismiss.go).
 	m.maybeDismissUIPrompt(sess, action, now)
+	// If the dismissal rules could not clear the prompt, the operator
+	// needs to know: escalate (exactly once per occurrence; a no-op
+	// unless escalation is wired and a trigger condition holds).
+	m.maybeEscalateUIPrompt(sess, now)
 	return true
 }
 
@@ -193,6 +198,11 @@ func (m *Manager) clearUIPrompt(sess *Session, now time.Time) bool {
 	m.recordUIPromptEvent(sess, rec, "cleared")
 	if dismissedNow {
 		m.recordUIPromptOutcome(sess, rec, UIPromptOutcomeDismissed)
+	}
+	// The prompt cleared: if this occurrence was escalated, withdraw the
+	// still-open question (the daemon dedupes and is idempotent).
+	if rec.escalated {
+		m.emitUIPromptEscalationWithdraw(sess.FullID, rec, UIPromptEscalationReasonPromptCleared)
 	}
 	if restored {
 		m.debugf("ui-prompt: %q: cleared kind=%s, restored to %s", sess.TmuxSession, rec.kind, rec.fromState)

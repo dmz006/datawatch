@@ -170,6 +170,9 @@ func cascadeReason(parentWhy EndReason, parent *Session) EndReason {
 // a repeated end of a finished session does not duplicate that line.
 func (m *Manager) recordEnd(sess *Session, tracker *Tracker, from, to State, why EndReason) {
 	m.journalf("[session] ended %s: %s -> %s by=%s reason=%s\n", sess.ID, from, to, why.Caller, why.Reason)
+	// Session ended: any escalation question still open for it is
+	// withdrawn (idempotent daemon-side; no-op unless escalation is wired).
+	m.emitUIPromptEscalationEnd(sess.FullID)
 	if from == to {
 		return
 	}

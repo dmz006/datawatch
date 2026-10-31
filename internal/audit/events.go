@@ -202,4 +202,19 @@ const (
 	// key (the refused key name, "" when none was offered), attempt,
 	// selected_option.
 	ActionUIPromptRefused = "ui_prompt_refused"
+
+	// UI-prompt escalation — the daemon telling the operator that a
+	// recognised interstitial prompt could not be cleared and the session
+	// is stalled (session package owns the trigger rules; these are the
+	// audited daemon-side outcomes; see internal/autonomous/ui_prompt_escalation.go).
+
+	// ActionUIPromptEscalationRaised — the escalation question was new and
+	// raised. Details: session_id, kind, trigger, selected_option, token.
+	ActionUIPromptEscalationRaised = "ui_prompt_escalation_raised"
+	// ActionUIPromptEscalationRefused — the store refused the escalation
+	// question; the fallback alert was raised instead.
+	ActionUIPromptEscalationRefused = "ui_prompt_escalation_refused"
+	// ActionUIPromptEscalationWithdrawn — a still-open escalation question
+	// was withdrawn because its prompt cleared or its session ended.
+	ActionUIPromptEscalationWithdrawn = "ui_prompt_escalation_withdrawn"
 )

@@ -6859,6 +6859,52 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					mgr.SetWorkerQuestionHook(func(ev session.WorkerQuestionEvent) {
 						go autonomouspkg.RaiseWorkerQuestion(workerQuestionDeps, ev)
 					})
+					// UI prompt escalation: when the safe-dismiss rules could not
+					// clear a recognised interstitial prompt — the attempts cap is
+					// used up and the prompt is still on screen, or dismissal is
+					// off and the prompt has sat past the delay plus one clear
+					// bound — the session is stalled and the operator gets one
+					// question on this same question channel (deduped per prompt
+					// occurrence, withdrawn when the prompt clears or the session
+					// ends). When the channel is off or the raise failed, exactly
+					// one high-priority alert replaces it. The channel on/off is
+					// read live on each event, like the worker-question gate above.
+					uiPromptEscalationDeps := autonomouspkg.UIPromptEscalationDeps{
+						Store: qstore,
+						ChannelOn: func() bool {
+							return cfg.Autonomous.Questions.Enabled
+						},
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						FallbackAlert: func(sessionID, title, body string) {
+							alertStore.Add(alertspkg.LevelError, title, body, sessionID)
+						},
+						Logf: log.Printf,
+					}
+					mgr.SetUIPromptEscalateHook(func(ev session.UIPromptEscalateEvent) {
+						go func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("[autonomous] ui prompt escalation handler panic for %s: %v", ev.SessionFullID, r)
+									alertStore.Add(alertspkg.LevelError,
+										"ui prompt escalation for "+ev.SessionFullID+" failed",
+										fmt.Sprintf("the escalation handler panicked: %v", r),
+										ev.SessionFullID)
+								}
+							}()
+							autonomouspkg.RaiseUIPromptEscalation(uiPromptEscalationDeps, ev)
+						}()
+					})
+					mgr.SetUIPromptEscalateWithdrawHook(func(ev session.UIPromptEscalateWithdrawEvent) {
+						go func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("[autonomous] ui prompt escalation withdraw panic for %s: %v", ev.SessionFullID, r)
+								}
+							}()
+							autonomouspkg.WithdrawUIPromptEscalation(uiPromptEscalationDeps, ev)
+						}()
+					})
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
 				// forwarded event is re-emitted into this daemon's dispatcher.
