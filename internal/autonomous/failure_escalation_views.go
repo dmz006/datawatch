@@ -23,6 +23,9 @@ type ReviewNeededEntry struct {
 	LastBackend  string    `json:"last_backend,omitempty"`
 	LastModel    string    `json:"last_model,omitempty"`
 	HeldAt       time.Time `json:"held_at"`
+	// HeldCause names the infrastructure failure when the task is held because
+	// its infrastructure retries ran out. It is empty for any other hold.
+	HeldCause string `json:"held_cause,omitempty"`
 }
 
 // reviewNeededEntries lists the tasks of prd held in TaskReviewNeeded, in story
@@ -64,6 +67,9 @@ func reviewNeededEntry(story *Story, t *Task) ReviewNeededEntry {
 	}
 	if last := lastTaskAttempt(t); last != nil {
 		e.LastBackend, e.LastModel = last.Backend, last.Model
+	}
+	if fr := t.FailureReason; fr != nil && fr.Source == infraRetryHoldSource {
+		e.HeldCause = fr.Detail
 	}
 	return e
 }

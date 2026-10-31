@@ -161,6 +161,7 @@ func (r *Router) replyHeldForReview(status []byte) {
 			LastBackend    string `json:"last_backend"`
 			LastModel      string `json:"last_model"`
 			HeldAt         string `json:"held_at"`
+			HeldCause      string `json:"held_cause"`
 		} `json:"review_needed"`
 	}
 	if json.Unmarshal(status, &st) != nil || len(st.ReviewNeeded) == 0 {
@@ -172,8 +173,12 @@ func (r *Router) replyHeldForReview(status []byte) {
 		if h.LastModel != "" {
 			worker += ":" + h.LastModel
 		}
-		lines = append(lines, fmt.Sprintf("%s %q task %s %q: %d failed attempts, last worker %s, held since %s",
-			h.AutomatonID, h.AutomatonTitle, h.TaskID, h.TaskTitle, h.FailureCount, worker, h.HeldAt))
+		line := fmt.Sprintf("%s %q task %s %q: %d failed attempts, last worker %s, held since %s",
+			h.AutomatonID, h.AutomatonTitle, h.TaskID, h.TaskTitle, h.FailureCount, worker, h.HeldAt)
+		if h.HeldCause != "" {
+			line += "; held after infrastructure retries: " + h.HeldCause
+		}
+		lines = append(lines, line)
 	}
 	r.reply("autonomous held for review", strings.Join(lines, "\n")+"\nDecide with: autonomous review-task <automaton> <task> retry|cancel")
 }
