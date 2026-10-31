@@ -50,4 +50,12 @@ func (r *Registry) Observations() []Observation {
 	return out
 }
 
+// Observation returns the current observation of one session.
+func (r *Registry) Observation(sessionID string) (Observation, bool) {
+	r.mu.RLock()
+	o, ok := r.obs[sessionID]
+	r.mu.RUnlock()
+	return o, ok
+}
+
 var _ Reader = (*Registry)(nil)

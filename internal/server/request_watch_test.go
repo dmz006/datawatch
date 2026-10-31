@@ -17,6 +17,15 @@ type fakeRequestWatchReader struct{ obs []requestwatch.Observation }
 
 func (f *fakeRequestWatchReader) Observations() []requestwatch.Observation { return f.obs }
 
+func (f *fakeRequestWatchReader) Observation(id string) (requestwatch.Observation, bool) {
+	for _, o := range f.obs {
+		if o.SessionID == id {
+			return o, true
+		}
+	}
+	return requestwatch.Observation{}, false
+}
+
 func requestWatchFixture() []requestwatch.Observation {
 	return []requestwatch.Observation{
 		{SessionID: "s1", AutomatonID: "a1", TaskID: "t1", Role: requestwatch.RoleWorker, Node: "n1", Model: "m1",

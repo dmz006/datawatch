@@ -5,7 +5,11 @@ import "github.com/dmz006/datawatch/internal/config"
 // Reader is the read side of the watch: the current observation of every
 // watched session. An implementation must never make a model call.
 type Reader interface {
+	// Observations returns a copy of every current observation ordered by
+	// session id. It is never nil.
 	Observations() []Observation
+	// Observation returns the current observation of one session.
+	Observation(sessionID string) (Observation, bool)
 }
 
 // Filter narrows an observation list. An empty field matches everything.
