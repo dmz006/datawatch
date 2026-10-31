@@ -3,6 +3,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
@@ -32,6 +33,12 @@ type JudgeAdmit struct {
 	// preferNode is the node of a lease the judge held on entry (set by
 	// AdmitJudge): the tie breaker when placement finds equally loaded nodes.
 	preferNode string
+
+	// followNode is the worker's node a verifier must be placed on, and
+	// followExclude the other candidates kept out for it (set by AdmitJudge and
+	// JudgeFits when verifier_follows_worker_node applies; see verifier_node.go).
+	followNode    string
+	followExclude []string
 }
 
 // AdmitJudge takes the capacity lease a judge runs under and returns the node
@@ -68,6 +75,18 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 		j.preferNode = ls.Node
 		led.Release(j.Holder)
 	}
+	// A verifier admitted for a worker follows the node that worker ran on; its
+	// lease is read before it is handed over or released below. The verifier's
+	// own earlier lease is not the worker's node: it is the stale lease just
+	// released. An admission that names no worker is placed again like a new
+	// request.
+	if j.WorkerHolder != "" {
+		leaseNode := ""
+		if ls := led.LeaseOf(j.WorkerHolder); ls != nil {
+			leaseNode = ls.Node
+		}
+		m.followWorkerNode(ctx, &j, choices, leaseNode, true)
+	}
 	if j.WorkerHolder != "" {
 		if _, ok := judgeHandoff(led, keysFn, choicesFn, j.WorkerHolder, j.Holder, j.Backend, j.Model); ok {
 			return m.placeJudge(ctx, j, led, choices)
@@ -78,7 +97,7 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 	if len(pools) == 0 {
 		return "", noop, nil
 	}
-	if err := led.Acquire(ctx, m.judgeRequestRefreshed(j, pools, node, choices, nil), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
+	if err := led.Acquire(ctx, m.judgeRequestRefreshed(j, pools, node, choices, j.followExclude), j.Wait, judgeCancelled(j), func(string) {}); err != nil {
 		return "", noop, err
 	}
 	return m.placeJudge(ctx, j, led, choices)
@@ -121,7 +140,11 @@ func (m *Manager) JudgeFits(j JudgeAdmit) bool {
 	if len(pools) == 0 {
 		return true
 	}
-	return led.WouldGrant(m.judgeRequestRefreshed(j, pools, node, choices, nil))
+	// The worker's lease is gone by the time a verifier waits, so its node comes
+	// from the pin or the node recorded on the task. The verifier's real
+	// admission always names its worker, so the dry run follows as it does.
+	m.followWorkerNode(context.Background(), &j, choices, "", false)
+	return led.WouldGrant(m.judgeRequestRefreshed(j, pools, node, choices, j.followExclude))
 }
 
 // placeJudge finishes an admission: it reads the node the judge's lease holds,
@@ -140,7 +163,9 @@ func (m *Manager) placeJudge(ctx context.Context, j JudgeAdmit, led *capacity.Le
 	if ls := led.LeaseOf(j.Holder); ls != nil {
 		node = ls.Node
 	}
-	var excluded []string
+	// A verifier that follows its worker's node starts with every other
+	// candidate excluded, so a node that fails to load leaves none to move to.
+	excluded := slices.Clone(j.followExclude)
 	for loader != nil && node != "" {
 		lerr := loader(ctx, node, j.Model, func(string) {})
 		if lerr == nil {
@@ -197,7 +222,11 @@ func judgeRequest(j JudgeAdmit, pools []string, node string, choices []capacity.
 // carries over.
 func (m *Manager) judgeRequestRefreshed(j JudgeAdmit, pools []string, node string, choices []capacity.NodeChoice, exclude []string) capacity.Request {
 	req := judgeRequest(j, pools, node, choices, exclude)
-	req.Refresh = m.placementRefresh(req, j.Backend, j.Model, nil)
+	// A verifier that follows its worker's node keeps the exclusion while it
+	// waits: every refresh excludes all candidates but that node, including a
+	// node that joins the candidates meanwhile, and a refresh that finds the
+	// node gone leaves the request unplaceable instead of moving it.
+	req.Refresh = m.placementRefreshPinned(req, j.Backend, j.Model, nil, j.followNode, exclude)
 	return req
 }
 
