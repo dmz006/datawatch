@@ -23,6 +23,12 @@ const (
 	// after another Automaton that is not completed, or that resolves to no
 	// Automaton at all.
 	LaneFillReasonSequencedAfterUnshipped = "sequenced_after_unshipped"
+	// LaneFillReasonProposalNotConfirmed: an implementation Automaton whose
+	// named proposal file is readable but carries no Confirmed: yes line.
+	LaneFillReasonProposalNotConfirmed = "proposal_not_confirmed"
+	// LaneFillReasonProposalMissing: an implementation Automaton whose spec
+	// names no proposal file, or none of the named files can be read.
+	LaneFillReasonProposalMissing = "proposal_missing"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -201,6 +207,9 @@ func laneFillCandidateRefusal(c LaneFillCandidate) LaneFillRefusal {
 // laneFillExcludedText words the exclusion of a refused candidate for the
 // idle lane blocker.
 func laneFillExcludedText(id string, r LaneFillRefusal) string {
+	if r.Code == LaneFillReasonProposalNotConfirmed || r.Code == LaneFillReasonProposalMissing {
+		return r.Text // these texts already name the Automaton
+	}
 	if r.Code == LaneFillReasonHeld || r.Code == LaneFillReasonSequencedAfterUnshipped {
 		return fmt.Sprintf("PRD %s: held: %s", id, r.Text)
 	}
@@ -215,7 +224,10 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 //  1. held: the candidate carries a hold (HOLD line, do not run, sequenced
 //     last, a judge time-out, or sequenced after an unshipped Automaton);
 //  2. stale: a queued Automaton (draft, approved or needs_review) whose last
-//     update is older than the stale limit.
+//     update is older than the stale limit;
+//  3. proposal_not_confirmed / proposal_missing: an implementation Automaton
+//     whose proposal file does not carry a Confirmed: yes line, or which has
+//     no readable proposal file (only when require_confirmed_proposal is on).
 //
 // Work that is not queued (running, finished, cancelled) is never refused.
 func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) (code, text string) {
@@ -231,6 +243,11 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 	}
 	if text := laneFillStaleText(cfg, c, now); text != "" {
 		return LaneFillReasonStale, text
+	}
+	if cfg.EffectiveRequireConfirmedProposal() {
+		if code, text := laneFillProposalRefusal(c); code != "" {
+			return code, text
+		}
 	}
 	return "", ""
 }

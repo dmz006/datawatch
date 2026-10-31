@@ -195,6 +195,7 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.gpu_model` | empty | The model the GPU lanes run; empty means the backend's own model |
 | `autonomous.lane_fill.claude_backend` | `claude-code` | The backend the Claude lanes run |
 | `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
+| `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; `false` turns the rule off |
 
 Every key is settable at runtime with no restart:
 
@@ -325,6 +326,20 @@ needs no restart.
   line starting with `HOLD`, says "do not run" or "sequenced last", or is
   "sequenced after" an Automaton that has not completed. Held work is listed
   with its reason and is never silently dropped.
+- **It never starts an implementation Automaton whose proposal is not
+  confirmed.** The proposal files of an Automaton are the
+  `docs/plans/<name>.md` paths named in its spec. The Automaton is eligible only
+  when at least one of those files, read from the base repository, has a line
+  that starts with `Confirmed: yes` (case and markdown decoration such as bold
+  are ignored) within its first 200 lines. A readable file without the line
+  is refused as `proposal_not_confirmed`; a spec that names no file, or whose
+  named files cannot be read, is refused as `proposal_missing`. A reference that
+  is absolute, has a parent-directory element, or reaches outside the
+  repository through a symbolic link counts as unreadable and nothing outside
+  the repository is read. Research, operational and personal Automata are
+  exempt. A file that cannot be read for any other reason does not refuse the
+  Automaton. Set `autonomous.lane_fill.require_confirmed_proposal` to `false`
+  to turn the rule off.
 - **It never bypasses the normal start rules.** Lane fill adds no second way to
   start work. Admission, approval gates, quality gates and the stuck-task rules
   all still run.

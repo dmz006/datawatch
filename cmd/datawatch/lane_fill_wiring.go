@@ -3,7 +3,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"io/fs"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -93,4 +98,74 @@ func newLaneFillEvidenceSource(mgr *autonomous.Manager, httpServer *server.HTTPS
 		autonomous.NewHTTPModelFetcher(nil),
 		autonomous.PoolEvidenceGPUBackend(func() string { return mgr.Config().LaneFill.EffectiveGPUBackend() }),
 	)
+}
+
+// laneFillProposalHeadLimit caps how many bytes of a proposal file are read;
+// the rule looks only at the first 200 lines.
+const laneFillProposalHeadLimit = 64 * 1024
+
+// repoProposalReader reads proposal files for the confirmed-proposal rule,
+// under the Automaton base repository only. A reference that is absolute,
+// holds a parent-directory element or resolves (through symbolic links) to a
+// place outside the repository is reported as not existing, and nothing
+// outside the repository is opened.
+type repoProposalReader struct {
+	root func() string
+}
+
+// ReadHead returns up to the first 64 KiB of the file at rel, a
+// repository-relative path.
+func (r repoProposalReader) ReadHead(rel string) ([]byte, error) {
+	notFound := func(why string) error { return fmt.Errorf("proposal %q: %s: %w", rel, why, fs.ErrNotExist) }
+	if rel == "" || strings.HasPrefix(rel, "/") || strings.HasPrefix(rel, "\\") || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" {
+		return nil, notFound("absolute path")
+	}
+	for _, el := range strings.FieldsFunc(rel, func(c rune) bool { return c == '/' || c == '\\' }) {
+		if el == ".." {
+			return nil, notFound("parent-directory element")
+		}
+	}
+	base := ""
+	if r.root != nil {
+		base = strings.TrimSpace(r.root())
+	}
+	if base == "" {
+		return nil, errors.New("no Automaton base repository is configured")
+	}
+	realRoot, err := filepath.EvalSymlinks(base)
+	if err != nil {
+		return nil, err
+	}
+	realFile, err := filepath.EvalSymlinks(filepath.Join(realRoot, filepath.FromSlash(rel)))
+	if err != nil {
+		return nil, err // a missing file wraps fs.ErrNotExist
+	}
+	within, err := filepath.Rel(realRoot, realFile)
+	if err != nil || within == ".." || strings.HasPrefix(within, ".."+string(filepath.Separator)) || filepath.IsAbs(within) {
+		return nil, notFound("resolves outside the repository")
+	}
+	f, err := os.Open(realFile)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !st.Mode().IsRegular() {
+		return nil, notFound("not a regular file")
+	}
+	return io.ReadAll(io.LimitReader(f, laneFillProposalHeadLimit))
+}
+
+// newLaneFillProposalReader builds the proposal reader over the Automaton base
+// repository setting, read on every call so a config change applies at once.
+func newLaneFillProposalReader(mgr *autonomous.Manager) autonomous.LaneFillProposalReader {
+	return repoProposalReader{root: func() string {
+		if mgr == nil {
+			return ""
+		}
+		return mgr.Config().WorktreeBaseRepo
+	}}
 }

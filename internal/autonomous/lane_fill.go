@@ -102,8 +102,13 @@ type LaneFillCandidate struct {
 	HoldCode   string
 	// Refusal is filled by the snapshot from EvaluateLaneFillEligibility. When
 	// set, the candidate is never started or decomposed.
-	Refusal      LaneFillRefusal
-	AllTasksDone bool
+	Refusal LaneFillRefusal
+	// ProposalState and ProposalPath are the outcome of the confirmed-proposal
+	// check (see CheckLaneFillProposal), gathered by the snapshot. Empty means
+	// not checked, which never refuses.
+	ProposalState string
+	ProposalPath  string
+	AllTasksDone  bool
 	// NeedsMergeFlag: the finished work still needs a merge.
 	NeedsMergeFlag bool
 	// InAutomation: a member of an Automation, which starts it.

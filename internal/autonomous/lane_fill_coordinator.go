@@ -133,12 +133,15 @@ type laneFillState struct {
 	// pollMu serializes polls.
 	pollMu sync.Mutex
 
-	mu        sync.Mutex
-	records   *laneFillRecords
-	evidence  PoolEvidenceSource
-	probe     MergeProbe
-	status    LaneFillStatus
-	idleSince map[string]time.Time
+	mu       sync.Mutex
+	records  *laneFillRecords
+	evidence PoolEvidenceSource
+	probe    MergeProbe
+	proposal LaneFillProposalReader
+	// proposalWarned remembers which unreadable proposal paths were logged.
+	proposalWarned map[string]bool
+	status         LaneFillStatus
+	idleSince      map[string]time.Time
 	// workSince, alerted and alerts are the idle alert state (see
 	// lane_fill_alert.go): when each lane was first seen idle with eligible
 	// work, which episodes already alerted, and the recent alerts newest first.
@@ -369,6 +372,7 @@ type laneFillRaw struct {
 	workerStoryModel   string
 	tasks, tasksDone   int
 	template           bool
+	typ                string
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -401,7 +405,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				id: p.ID, title: p.Title, spec: p.Spec, status: p.Status,
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
 				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
-				template: p.IsTemplate,
+				template: p.IsTemplate, typ: p.Type,
 			}
 			picked := false
 			for si := range p.Story {
@@ -474,7 +478,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	lookup := laneFillRefLookup(raws)
 
 	c.lf.mu.Lock()
-	probe, src := c.lf.probe, c.lf.evidence
+	probe, src, proposalRd := c.lf.probe, c.lf.evidence, c.lf.proposal
 	started := make(map[string]laneFillStart, len(c.lf.started))
 	for id, s := range c.lf.started {
 		started[id] = s
@@ -527,6 +531,9 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
+		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
+			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.spec, proposalRd, c.laneFillProposalWarnOnce)
+		}
 		cands = append(cands, cand)
 	}
 	// Apply the refusal rules once, here, with no store lock held: every later
