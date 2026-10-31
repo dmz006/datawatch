@@ -14,6 +14,8 @@
 //   GET    /api/autonomous/prds/{id}/children  list child PRDs (BL191 Q4 — recursion)
 //   POST   /api/autonomous/prds/{id}/plan_coverage/acknowledge
 //                                                 operator-acknowledge a failing plan-coverage gate (actor + non-empty note)
+//   GET    /api/autonomous/prds/{id}/plan_coverage
+//                                                 read the stored plan coverage record + the filters in effect now
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
 
 package server
@@ -964,6 +966,45 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "acknowledge_plan_coverage", "automaton", id, map[string]any{"actor": req.Actor, "note": req.Note}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Plan-coverage record read — the stored plan coverage record for this
+	// Automaton (null when no report has been computed yet) plus the
+	// finding filters in effect NOW. The record carries its OWN pinned
+	// filters (computed at decompose time) inside `plan_coverage`; the
+	// top-level `filters` is the live config read, so the two can differ
+	// after a config change. `suppressed` is the record's own per-category
+	// withheld-finding counts (zeroes when the record is absent). Read
+	// capability, like the other GET sub-routes.
+	case "plan_coverage":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		raw, ok := s.autonomousMgr.GetPRD(id)
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		prd, err := toPRD(raw)
+		if err != nil {
+			http.Error(w, "plan coverage read: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		var record any
+		sup := autonomous.PlanCoverageSuppressed{}
+		if prd.PlanCoverage != nil {
+			record = prd.PlanCoverage
+			sup = prd.PlanCoverage.Suppressed
+		}
+		writeJSONOK(w, map[string]any{
+			"id":            id,
+			"status":        prd.Status,
+			"plan_coverage": record,
+			"filters":       s.cfg.Autonomous.EffectivePlanCoverageFilters(),
+			"suppressed":    map[string]int{"created_files": sup.CreatedFiles, "requirements": sup.Requirements, "total": sup.Total()},
+		})
 	// Plan review gate — operator-triggered re-run of the pre-approval
 	// reviewer judge. Same write gate as approve. Re-running replaces the
 	// stored verdict; with mode off the PRD is returned as stored.
