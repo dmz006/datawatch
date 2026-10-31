@@ -22,6 +22,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+### Fixed
+
+- **A shutdown report no longer names an unrelated process as the sender.** The daemon's PID used to be matched as a plain substring of a candidate process's command line, so any process whose arguments or paths merely contained the same digits (for example a value that has the daemon's digits inside a larger number) could be reported as the stop sender, with the smallest unrelated PID winning. The PID is now matched as a whole token — an argument equal to the PID, or a `--pid=123` style form — so a process is only named as the sender when its command line genuinely names the daemon's PID.
+
 ## v9.47.1 — CodeQL default setup kept, alert gate only, local scan
 
 ### Fixed

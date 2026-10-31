@@ -49,6 +49,40 @@ func TestProcIdentity(t *testing.T) {
 	}
 }
 
+// TestLooksLikeStopCommand covers the stop-sender classifier, in
+// particular the whole-token pid matching: an argument must equal the
+// daemon pid or be of the `--pid=<n>` form, never merely contain the
+// same digits inside a larger number.
+func TestLooksLikeStopCommand(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("looksLikeStopCommand lives in the linux capture file")
+	}
+	cases := []struct {
+		name    string
+		cmdline string
+		pid     string
+		want    bool
+	}{
+		{name: "kill with exact pid", cmdline: "kill 1234", pid: "1234", want: true},
+		{name: "kill with signal flag", cmdline: "kill -15 1234", pid: "1234", want: true},
+		{name: "kill with pid containing own digits as prefix", cmdline: "kill 12345", pid: "1234", want: false},
+		{name: "kill with own digits inside a larger pid", cmdline: "kill 4123", pid: "1234", want: false},
+		{name: "pkill naming parent pid", cmdline: "pkill -P 1234", pid: "1234", want: true},
+		{name: "systemctl stop via unit rule", cmdline: "systemctl --user stop datawatch", pid: "123456", want: true},
+		{name: "datawatch serve with port containing digits", cmdline: "datawatch serve --port 18443", pid: "184", want: false},
+		{name: "datawatch with pid flag form", cmdline: "datawatch --pid=184", pid: "184", want: true},
+		{name: "test binary re-exec kill form", cmdline: "./binary.test kill 1234", pid: "1234", want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := looksLikeStopCommand(tc.cmdline, tc.pid)
+			if got != tc.want {
+				t.Fatalf("looksLikeStopCommand(%q, %q) = %v, want %v", tc.cmdline, tc.pid, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestScanCandidates(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("requires /proc")
