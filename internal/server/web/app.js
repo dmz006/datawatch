@@ -16467,6 +16467,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Merge pending — off (default) does nothing, shadow records what it would do, on raises the alert.
     { key: 'autonomous.automation.merge_pending_mode', label: 'Automaton merge-pending check (off, shadow or on; default off)', labelKey: 'settings_automation_merge_pending_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'off' },
     { key: 'autonomous.automation.merge_pending_alert_minutes', label: 'Automaton merge-pending alert (minutes a finished Automaton branch may sit unmerged before an alert, 0 = off, default 30)', labelKey: 'settings_automation_merge_pending_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Cleanup — off does nothing, report (default) records what it would remove, on removes. The
     // status card in the Automata overview reads GET /api/autonomous/cleanup.
     { key: 'autonomous.automation.cleanup_mode', label: 'Automaton cleanup (off, report or on; default report)', labelKey: 'settings_automation_cleanup_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
@@ -16474,7 +16475,6 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.cleanup_max_removals_per_pass', label: 'Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)', labelKey: 'settings_automation_cleanup_max_removals_per_pass', type: 'number', placeholder: '10', min: 1, step: 1, default: '10' },
     { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
-    { key: 'autonomous.automation.merged_member_policy', label: 'Automaton merged-member policy (completed, manual or block; default completed)', labelKey: 'settings_automation_merged_member_policy', type: 'select', options: ['completed', 'manual', 'block'], default: 'completed' },
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
     // read-only status line in the Automaton view reads
     // GET /api/autonomous/repo-ci-watch; these settings configure the
