@@ -212,6 +212,8 @@ func cefSignature(action string) (int, string, int) {
 		return 60, "AutonomousStuckRunningBlocked", 5
 	case ActionQuestionMarkerRefused:
 		return 61, "QuestionMarkerRefused", 4
+	case ActionQuestionUpdated:
+		return 62, "QuestionUpdated", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

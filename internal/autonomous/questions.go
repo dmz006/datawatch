@@ -147,6 +147,10 @@ type Question struct {
 	Blocking         bool   `json:"blocking,omitempty"`
 	Source           string `json:"source,omitempty"`
 	SourceLineSHA256 string `json:"source_line_sha256,omitempty"`
+	// DecisionRecordID links the question to the decision record it asks
+	// about: empty, or a 'dr-' id. It is what lets a restart or a repeated
+	// call find the question that already exists for a record.
+	DecisionRecordID string `json:"decision_record_id,omitempty"`
 }
 
 // Answer is an immutable reply to a question, stored with the operator's
@@ -275,6 +279,16 @@ func ValidateNewQuestion(q *Question) error {
 	}
 	if q.SourceLineSHA256 != "" && !isLowerHexDigest(q.SourceLineSHA256) {
 		add("source_line_sha256 must be %d lowercase hex characters", questionLineSHA256Len)
+	}
+
+	// Decision record link: empty, or a 'dr-' id with something after the
+	// prefix.
+	if q.DecisionRecordID != "" {
+		if !strings.HasPrefix(q.DecisionRecordID, decisionIDPrefix) || len(q.DecisionRecordID) == len(decisionIDPrefix) {
+			add("decision_record_id %q must be empty or a %q id", q.DecisionRecordID, decisionIDPrefix)
+		} else if len(q.DecisionRecordID) > decisionLinkMaxBytes {
+			add("decision_record_id is %d bytes; the cap is %d", len(q.DecisionRecordID), decisionLinkMaxBytes)
+		}
 	}
 
 	// Text is required and capped.

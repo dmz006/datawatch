@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -44,7 +45,10 @@ const (
 	storeLineQuestionRaised    = "question_raised"
 	storeLineAnswerRecorded    = "answer_recorded"
 	storeLineQuestionWithdrawn = "question_withdrawn"
-	storeLineQuestionExpired   = "question_expired"
+	// storeLineQuestionUpdated carries the full new view of an open question
+	// that was edited in place; replay replaces the stored view with it.
+	storeLineQuestionUpdated = "question_updated"
+	storeLineQuestionExpired = "question_expired"
 	// storeLineQuestionEventEmitted marks that the lifecycle event for one
 	// answer (its answer_id) or one withdrawal (answer_id empty) of the
 	// question was enqueued into the event queue: the daemon writes it
@@ -181,13 +185,14 @@ const (
 	QuestionChangeAnswered  = "answered"
 	QuestionChangeWithdrawn = "withdrawn"
 	QuestionChangeExpired   = "expired"
+	QuestionChangeUpdated   = "updated"
 )
 
 // QuestionChange describes one successful change to a question. Kind is one
 // of the QuestionChange constants and Question is the question after the
 // change. Answer is the recorded answer for answered and nil otherwise.
-// Actor is who made a withdrawal and Reason why it was made or the question
-// expired; both are empty for the other kinds.
+// Actor is who made a withdrawal or an update and Reason why a withdrawal was
+// made or the question expired; both are empty for the other kinds.
 type QuestionChange struct {
 	Kind     string
 	Question Question
@@ -197,7 +202,7 @@ type QuestionChange struct {
 }
 
 // SetChangeHook wires a callback invoked after each successful Raise, Answer,
-// Withdraw and Expire, once the record is durable. It is called outside the
+// Withdraw, Expire and Update, once the record is durable. It is called outside the
 // store lock, so it may call back into the store; a nil fn disables it.
 func (s *QuestionStore) SetChangeHook(fn func(QuestionChange)) {
 	s.mu.Lock()
@@ -261,6 +266,10 @@ func parseStoreRecord(line string) (questionStoreRecord, error) {
 		if rec.Question == nil || rec.Question.ID == "" {
 			return rec, errors.New("question_raised line is missing the question")
 		}
+	case storeLineQuestionUpdated:
+		if rec.Question == nil || rec.Question.ID == "" {
+			return rec, errors.New("question_updated line is missing the question")
+		}
 	case storeLineAnswerRecorded:
 		if rec.Answer == nil || rec.Answer.ID == "" || rec.Answer.QuestionID == "" {
 			return rec, errors.New("answer_recorded line is missing the answer")
@@ -289,6 +298,15 @@ func (s *QuestionStore) applyRecord(rec questionStoreRecord) {
 	case storeLineQuestionRaised:
 		q := *rec.Question
 		s.questions[q.ID] = &q
+	case storeLineQuestionUpdated:
+		// The line carries the whole new view; the state stays whatever the
+		// replay has reached, because an update only ever applies to an open
+		// question and later lines move the state.
+		if have := s.questions[rec.Question.ID]; have != nil {
+			state := have.State
+			*have = *rec.Question
+			have.State = state
+		}
 	case storeLineAnswerRecorded:
 		a := *rec.Answer
 		s.answers[a.ID] = &a
@@ -414,7 +432,7 @@ func (s *QuestionStore) emitAudit(action string, details map[string]any) {
 // stores it. It never blocks on anything else: the asker keeps working.
 // The id and the state are never taken from the input.
 func (s *QuestionStore) Raise(q Question) (Question, error) {
-	out, _, err := s.raise(q, false)
+	out, _, err := s.raise(q, dedupeNone)
 	return out, err
 }
 
@@ -425,17 +443,38 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 // same line cannot both raise. A question without a session id or line hash
 // has no dedupe key and is raised like any other.
 func (s *QuestionStore) RaiseUnlessOpenSourceLine(q Question) (Question, bool, error) {
-	return s.raise(q, true)
+	return s.raise(q, dedupeSourceLine)
 }
 
-// raise is the shared Raise path. With dedupe set it first looks for an open
-// question with the same session id and source line hash.
-func (s *QuestionStore) raise(q Question, dedupe bool) (Question, bool, error) {
+// RaiseUnlessDecisionRecord is Raise for a question that asks about a decision
+// record: when an open or answered question already carries the same non-empty
+// DecisionRecordID, nothing is raised and that question is returned with
+// raised false. The check and the append run under one lock, so a restart or a
+// double call can never produce two questions for one record. A withdrawn or
+// expired question does not count, so a record can be asked again after its
+// question was withdrawn. A question without a decision record id has no
+// dedupe key and is raised like any other.
+func (s *QuestionStore) RaiseUnlessDecisionRecord(q Question) (Question, bool, error) {
+	return s.raise(q, dedupeDecisionRecord)
+}
+
+// raiseDedupe says which existing question, if any, stops a raise.
+type raiseDedupe int
+
+const (
+	dedupeNone raiseDedupe = iota
+	dedupeSourceLine
+	dedupeDecisionRecord
+)
+
+// raise is the shared Raise path. With a dedupe mode it first looks for an
+// existing question with the same dedupe key.
+func (s *QuestionStore) raise(q Question, dedupe raiseDedupe) (Question, bool, error) {
 	if err := ValidateNewQuestion(&q); err != nil {
 		return Question{}, false, err
 	}
 	s.mu.Lock()
-	if dedupe && q.SessionID != "" && q.SourceLineSHA256 != "" {
+	if dedupe == dedupeSourceLine && q.SessionID != "" && q.SourceLineSHA256 != "" {
 		for _, have := range s.questions {
 			if have.State == QuestionOpen && have.SessionID == q.SessionID &&
 				have.SourceLineSHA256 == q.SourceLineSHA256 {
@@ -443,6 +482,25 @@ func (s *QuestionStore) raise(q Question, dedupe bool) (Question, bool, error) {
 				s.mu.Unlock()
 				return dup, false, nil
 			}
+		}
+	}
+	if dedupe == dedupeDecisionRecord && q.DecisionRecordID != "" {
+		var found *Question
+		for _, have := range s.questions {
+			if have.DecisionRecordID != q.DecisionRecordID ||
+				(have.State != QuestionOpen && have.State != QuestionAnswered) {
+				continue
+			}
+			// More than one match cannot arise through this method; if an
+			// older store holds several, the oldest id is the stable pick.
+			if found == nil || have.ID < found.ID {
+				found = have
+			}
+		}
+		if found != nil {
+			dup := *found
+			s.mu.Unlock()
+			return dup, false, nil
 		}
 	}
 	now := s.now()
@@ -597,6 +655,155 @@ func (s *QuestionStore) Withdraw(id, actor, reason string) (Question, error) {
 		_ = s.MarkEventEmitted(ev)
 	}
 	s.emitChange(QuestionChange{Kind: QuestionChangeWithdrawn, Question: out, Actor: actor, Reason: reason})
+	return out, nil
+}
+
+// QuestionPatch is a change to an open question. A nil pointer or nil slice
+// leaves the field as it is; anything else replaces it. Options replaces the
+// whole option list. Recommendation set to a pointer to the zero value (an
+// empty option id) clears the recommendation.
+type QuestionPatch struct {
+	Label          *string
+	Text           *string
+	Options        []QuestionOption
+	Recommendation *QuestionRecommendation
+	Default        *string
+	PRDID          *string
+	TaskID         *string
+	ProposalPath   *string
+	RegistryRowKey *string
+	Context        *string
+}
+
+// cloneQuestion copies q so that the copy shares no slice or pointer with it.
+func cloneQuestion(q Question) Question {
+	if q.Options != nil {
+		q.Options = append([]QuestionOption(nil), q.Options...)
+	}
+	if q.Recommendation != nil {
+		rec := *q.Recommendation
+		q.Recommendation = &rec
+	}
+	return q
+}
+
+// applyQuestionPatch applies p to q.
+func applyQuestionPatch(q *Question, p QuestionPatch) {
+	if p.Label != nil {
+		q.Label = *p.Label
+	}
+	if p.Text != nil {
+		q.Text = *p.Text
+	}
+	if p.Options != nil {
+		q.Options = append([]QuestionOption(nil), p.Options...)
+	}
+	if p.Recommendation != nil {
+		if *p.Recommendation == (QuestionRecommendation{}) {
+			q.Recommendation = nil
+		} else {
+			rec := *p.Recommendation
+			q.Recommendation = &rec
+		}
+	}
+	if p.Default != nil {
+		q.Default = *p.Default
+	}
+	if p.PRDID != nil {
+		q.PRDID = *p.PRDID
+	}
+	if p.TaskID != nil {
+		q.TaskID = *p.TaskID
+	}
+	if p.ProposalPath != nil {
+		q.ProposalPath = *p.ProposalPath
+	}
+	if p.RegistryRowKey != nil {
+		q.RegistryRowKey = *p.RegistryRowKey
+	}
+	if p.Context != nil {
+		q.Context = *p.Context
+	}
+}
+
+// changedQuestionFields names the editable fields on which a and b differ.
+func changedQuestionFields(a, b Question) []string {
+	var out []string
+	check := func(name string, x, y any) {
+		if !reflect.DeepEqual(x, y) {
+			out = append(out, name)
+		}
+	}
+	check("label", a.Label, b.Label)
+	check("text", a.Text, b.Text)
+	check("options", a.Options, b.Options)
+	check("recommendation", a.Recommendation, b.Recommendation)
+	check("default", a.Default, b.Default)
+	check("context", a.Context, b.Context)
+	check("prd_id", a.PRDID, b.PRDID)
+	check("task_id", a.TaskID, b.TaskID)
+	check("proposal_path", a.ProposalPath, b.ProposalPath)
+	check("registry_row_key", a.RegistryRowKey, b.RegistryRowKey)
+	return out
+}
+
+// Update changes an open question in place. The patch is applied to a copy,
+// the copy goes through the same validation as a new question, and only then
+// is one question_updated line appended carrying the full new view; the
+// in-memory view changes after the append succeeds, so a refused or failed
+// update leaves the stored question exactly as it was. A question that is not
+// open is refused with ErrQuestionNotOpen, an unknown id with
+// ErrQuestionNotFound, and an invalid result with ErrInvalidQuestion. A patch
+// that changes nothing writes nothing and returns the question as it is.
+// Answers are never touched.
+func (s *QuestionStore) Update(id string, patch QuestionPatch, actor string) (Question, error) {
+	s.mu.Lock()
+	q, ok := s.questions[id]
+	if !ok {
+		s.mu.Unlock()
+		return Question{}, fmt.Errorf("question %s: %w", id, ErrQuestionNotFound)
+	}
+	if q.State != QuestionOpen {
+		s.mu.Unlock()
+		return Question{}, fmt.Errorf("question %s: %w", id, ErrQuestionNotOpen)
+	}
+	updated := cloneQuestion(*q)
+	applyQuestionPatch(&updated, patch)
+	if err := ValidateNewQuestion(&updated); err != nil {
+		s.mu.Unlock()
+		return Question{}, err
+	}
+	changed := changedQuestionFields(*q, updated)
+	if len(changed) == 0 {
+		out := cloneQuestion(*q)
+		s.mu.Unlock()
+		return out, nil
+	}
+	now := s.now()
+	rec := questionStoreRecord{
+		Type:       storeLineQuestionUpdated,
+		Question:   &updated,
+		QuestionID: id,
+		Actor:      actor,
+		At:         &now,
+	}
+	if err := s.appendLocked(rec); err != nil {
+		s.mu.Unlock()
+		return Question{}, err
+	}
+	// On a successful append the in-memory view changes; on failure the
+	// method returned above with the view untouched.
+	*q = cloneQuestion(updated)
+	out := cloneQuestion(updated)
+	s.mu.Unlock()
+
+	s.emitAudit(audit.ActionQuestionUpdated, map[string]any{
+		"question_id":  id,
+		"actor":        actor,
+		"changed":      strings.Join(changed, ","),
+		"option_count": len(out.Options),
+	})
+	s.emitChange(QuestionChange{Kind: QuestionChangeUpdated, Question: out, Actor: actor})
 	return out, nil
 }
 
