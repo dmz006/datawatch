@@ -83,7 +83,7 @@ A new optional object `uncommitted_work` appears on both the Automaton JSON and 
 | `question_id` | The question raised for the hold. Optional; absent when no question store was wired. |
 | `held_at` | When the hold was raised. |
 
-A held task also carries status `blocked` and an `error` that starts with `uncommitted_work:` followed by up to five of the paths. No new status value is added: a held task reads `blocked`, a held Automaton keeps its existing status.
+A held task also carries status `blocked` and an `error` that starts with `uncommitted_work:` followed by up to five of the paths. No new status value is added: a held task reads `blocked`, and a held Automaton also reads `blocked`: the check runs as the Automaton is about to finish, and the roll-up then commits `blocked` instead of `completed`, with a plain-sentence `blocked_reason` (the cause, up to five of the files, and what to do). A held Automaton is therefore never `completed` and never listed as merge ready.
 
 ## New config keys
 
@@ -181,3 +181,13 @@ Both the Android and the iPhone app:
 - Add all 26 locale keys above, with the English values, to the app's own string resources in all of its languages (EN, DE, ES, FR, JA), with the English text as the placeholder in DE, ES, FR and JA until translations land. Every new string says Automaton or Automata.
 
 Capability parity is required; implementation parity is not: each platform uses its idiomatic screens and delivery.
+
+## Correction comment posted
+
+The issue body as first posted said a held Automaton "keeps its existing status". That was wrong, and the text above is the corrected wording. This correction was posted as a comment on the issue (https://github.com/dmz006/datawatch-app/issues/320#issuecomment-6539494079):
+
+Correction to the issue text: it says a held Automaton "keeps its existing status". That is wrong.
+
+When the whole-worktree check holds an Automaton as it is about to finish, the daemon sets the Automaton status to `blocked` (not `completed`) and fills `blocked_reason` with a plain sentence: the cause, up to five of the files, and what to do. A held Automaton is therefore never `completed` and is never listed as merge ready. No new status value is added: both a held task and a held Automaton read `blocked`.
+
+Client impact: when `uncommitted_work` is present on an Automaton, expect `status` = `blocked` and show `blocked_reason` as the explanation. The acceptance criteria are otherwise unchanged.
