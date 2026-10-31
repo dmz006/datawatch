@@ -1206,7 +1206,7 @@ for the steps on every surface.
 | `get_identity` | Returns the saved identity. | Yes |
 | `set_identity` | Replaces the whole identity with the fields given. | No |
 | `update_identity` | Merges the non-empty fields given into the identity; omitted and empty fields are kept. | No |
-| `configure_identity` | Returns where the setup wizard lives (PWA, CLI) and how the backup tools fit; it changes nothing. | Yes |
+| `configure_identity` | Returns where the setup wizard lives (PWA, CLI) and how the backup tools fit; it changes nothing. | No (federation capability `config:write`) |
 | `identity_backups` | Lists the saved backups, newest first, with the number kept. | Yes |
 | `restore_identity` | Brings a backup back and returns the restored identity. | No |
 | `reset_identity` | Clears the identity on purpose, keeping a backup. | No |

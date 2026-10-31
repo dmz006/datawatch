@@ -28,7 +28,7 @@ func (s *Server) toolIdentityGet() mcpsdk.Tool {
 
 func (s *Server) toolIdentitySet() mcpsdk.Tool {
 	return mcpsdk.NewTool("set_identity",
-		mcpsdk.WithDescription("BL257 P1 — REPLACE the full operator identity. Use update_identity for partial merges. A call with no fields, or only empty fields, over a saved identity is refused (HTTP 409 identity_wipe_refused) and nothing is written; to clear the identity on purpose call reset_identity."),
+		mcpsdk.WithDescription("REPLACE the full operator identity. Use update_identity for partial merges. A call with no fields, or only empty fields, over a saved identity is refused (HTTP 409 identity_wipe_refused) and nothing is written; to clear the identity on purpose call reset_identity."),
 		mcpsdk.WithString("role", mcpsdk.Description("operator role / job title")),
 		mcpsdk.WithString("current_focus", mcpsdk.Description("what the operator is focused on right now")),
 		mcpsdk.WithString("context_notes", mcpsdk.Description("free-form notes the LLM should know")),

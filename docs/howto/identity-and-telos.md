@@ -57,9 +57,9 @@ fields, each with a defined purpose:
 |---|---|---|
 | `role` | What you do, day-to-day | "Platform SRE running a 3-cluster lab + 2 prod clusters for a 50-person eng org" |
 | `north_star_goals` | 1–3 outcomes you want over the next quarter | "Cut on-call pages 50%; ship k8s 1.31 cluster-by-cluster; no incidents from automation" |
-| `current_projects` | Active work; each can carry its own context block | "BL266 state engine debugging; v6.13.0 docs walk; cluster lifecycle review" |
+| `current_projects` | Active work; each can carry its own context block | "state engine debugging; docs walk; cluster lifecycle review" |
 | `values` | What you care about — drives trade-off resolution | "Simplicity over cleverness; audit over speed; low-toil over feature breadth" |
-| `current_focus` | What the LLM should default-prioritize today | "BL266 state engine — finish the structured-event path" |
+| `current_focus` | What the LLM should default-prioritize today | "state engine — finish the structured-event path" |
 | `context_notes` | Anything else (env quirks, team norms, vocabulary) | "We use 'eq' for k8s as a verb. Cluster names are pet-themed. Default new tools to Go." |
 
 The Telos additions (PAI's contribution) are the `north_star_goals` +
@@ -111,25 +111,28 @@ datawatch identity get
 #    current_focus: ""
 #    context_notes: ""
 
-# 2. Set the role + focus in one shot.
-datawatch identity set \
-  --role "Platform SRE running 3 lab + 2 prod k8s clusters for a 50-person eng org" \
-  --focus "BL266 state engine — finish the structured-event path"
+# 2. Set the role (one field per call; the others are preserved).
+datawatch identity set --field role \
+  --value "Platform SRE running 3 lab + 2 prod k8s clusters for a 50-person eng org"
 
-# 3. Add 3 north-star goals.
-datawatch identity set \
-  --goals "Cut on-call pages 50% by end of Q3,Ship k8s 1.31 cluster-by-cluster,Zero incidents from automation"
+# 3. Set the current focus.
+datawatch identity set --field current_focus \
+  --value "State engine — finish the structured-event path"
 
-# 4. Add 3 values.
-datawatch identity set \
-  --values "Simplicity over cleverness,Audit over speed,Low-toil over feature breadth"
+# 4. Set 3 north-star goals (list fields take comma-separated values).
+datawatch identity set --field north_star_goals \
+  --value "Cut on-call pages 50% by end of Q3,Ship k8s 1.31 cluster-by-cluster,Zero incidents from automation"
 
-# 5. Add a current project with context.
-datawatch identity set \
-  --add-project "BL266=Channel-driven state engine for datawatch sessions"
+# 5. Set 3 values.
+datawatch identity set --field values \
+  --value "Simplicity over cleverness,Audit over speed,Low-toil over feature breadth"
 
-# 6. Add free-form context notes (newlines preserved).
-datawatch identity set --context "$(cat <<'EOF'
+# 6. Set the current projects.
+datawatch identity set --field current_projects \
+  --value "Channel-driven state engine for datawatch sessions"
+
+# 6b. Set free-form context notes (newlines preserved).
+datawatch identity set --field context_notes --value "$(cat <<'EOF'
 - We use "eq" for kubectl as a verb.
 - Cluster names are pet-themed (kona / luna / pico).
 - Default new tooling to Go unless there's a strong reason not to.
@@ -163,7 +166,7 @@ End-to-end via the browser. Best the first time, when you want to see
 field examples and structure suggestions inline.
 
 1. Open the PWA → bottom nav **Settings** → top sub-tab strip
-   **Automate**.
+   **Automata**.
 2. Scroll to the **Identity** card. Click **Configure** (or click the
    🤖 robot icon in the page header — same destination).
 3. The wizard opens as a modal with six steps, one per field. Each
@@ -194,7 +197,7 @@ field examples and structure suggestions inline.
 
 ### 5a. Mobile (Compose Multiplatform)
 
-Same surface as the PWA: Settings → Automate → Identity card →
+Same surface as the PWA: Settings → Automata → Identity card →
 Configure. The wizard renders as a Material-style stepped form.
 Read-write parity is full. The 🤖 robot-icon shortcut isn't on the
 mobile header — open from Settings only.
@@ -213,7 +216,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/identity
 # PATCH — partial update; missing fields preserved.
 curl -sk -X PATCH -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"current_focus":"BL266 — finish structured-event path"}' \
+  -d '{"current_focus":"State engine — finish structured-event path"}' \
   $BASE/api/identity
 
 # PUT — full replacement; missing fields are CLEARED. A body with no content
@@ -225,9 +228,9 @@ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" \
 {
   "role": "Platform SRE running 3 lab + 2 prod k8s clusters",
   "north_star_goals": ["Cut on-call pages 50%","Ship k8s 1.31"],
-  "current_projects": [{"name":"BL266","context":"State engine work"}],
+  "current_projects": [{"name":"state-engine","context":"State engine work"}],
   "values": ["Simplicity over cleverness","Audit over speed"],
-  "current_focus": "BL266 structured-event path",
+  "current_focus": "State engine structured-event path",
   "context_notes": "Cluster names pet-themed. Default to Go."
 }
 EOF
@@ -242,15 +245,16 @@ Tools exposed through the daemon's MCP server. From any MCP host
 
 | Tool | Args | Returns |
 |---|---|---|
-| `identity_get` | `{}` | Full identity object. |
-| `identity_patch` | `{role?, focus?, goals?[], values?[], projects?[]}` | Updated object. |
-| `identity_set` | Same as PATCH; alias for symmetry with the CLI. |
+| `get_identity` | `{}` | Full identity object. |
+| `update_identity` | `{role?, north_star_goals?[], current_projects?[], values?[], current_focus?, context_notes?}` | Merges the non-empty fields; returns the updated object. |
+| `set_identity` | Same fields | Replaces the whole identity (PUT semantics). A call with no content over a saved identity is refused with `identity_wipe_refused`. |
+| `identity_backups`, `restore_identity`, `reset_identity` | see "Backups, restore and the empty-write guard" below | List, restore and explicitly clear. |
 
 Example invocation from a claude-code session:
 
 > *Operator:* "Update my current focus to debugging the state-engine bug."
 >
-> *Claude:* (calls `identity_patch {"focus": "Debugging the state-engine bug"}`)
+> *Claude:* (calls `update_identity {"current_focus": "Debugging the state-engine bug"}`)
 >
 > *Daemon:* returns the patched identity object.
 >
@@ -263,9 +267,10 @@ From any configured chat channel (Signal, Telegram, Slack, etc.):
 | Verb | Example |
 |---|---|
 | `identity get` | Returns the current identity as a chat message. |
-| `identity focus "<text>"` | Updates `current_focus` only. |
-| `identity goal add "<text>"` | Appends to `north_star_goals`. |
-| `identity goal remove <n>` | Removes by index (1-based, as listed in `identity get`). |
+| `identity get [field]` | Returns one field of the identity. |
+| `identity set <field> <value>` | Patches one field; list fields take comma-separated values. |
+| `identity backups` | Lists the saved copies, newest first. |
+| `identity restore <name\|latest>` | Brings a saved copy back. |
 
 The full edit surface is intentionally narrower in chat — chat is for
 quick adjustments, not full edits. Reach for CLI/PWA for substantive
@@ -287,7 +292,7 @@ north_star_goals:
   - No customer-visible incidents from automation
 
 current_projects:
-  - name: BL266
+  - name: state-engine
     context: Channel-driven state engine for datawatch sessions.
   - name: cluster-lifecycle-review
     context: Documenting + automating the create/upgrade/decommission flow.
@@ -298,7 +303,7 @@ values:
   - Low-toil over feature breadth
 
 current_focus: |
-  BL266 — finish the structured-event path for opencode-acp; verify
+  State engine — finish the structured-event path for opencode-acp; verify
   the gap-watcher 30s warm-up is enough.
 
 context_notes: |
@@ -366,10 +371,9 @@ on every surface. The settings page version of this explanation is
 ### Restore from a backup, on each surface
 
 A restore brings a saved copy back. It first backs up the identity it is about
-to replace, so a restore can be undone with another restore. The newest
-backup is called `latest`. The name `latest` means the newest backup that has
-content, so a backup made just before a reset is found even when later backups
-are empty.
+to replace, so a restore can be undone with another restore. The name `latest`
+stands for the newest backup that has content, not simply the newest file, so a
+backup made just before a reset is found even when later backups are empty.
 
 | Surface | List the backups | Restore | Clear on purpose |
 |---|---|---|---|
@@ -458,9 +462,11 @@ also open it in an editor to see what it holds before you copy it.
   `identity-backups`, for example because the disk is full or the folder is not
   writable by the daemon's user. The identity file was not changed. Fix the
   folder and save again.
-- **You edited `identity.yaml` by hand while the daemon ran.** The next save
-  reads the file from disk first and merges your edit, then backs the edited file
-  up. A hand edit does not need a restart.
+- **You edited `identity.yaml` by hand while the daemon ran.** The daemon reads
+  the file from disk on each save, so a hand edit needs no restart. A `PATCH` or
+  `POST` merges its fields onto your edit; a `PUT` replaces the whole identity
+  with its body, so your edit is overwritten by it. Either way the edited file is
+  backed up first, so the edit can be restored.
 
 ## Diagram
 
@@ -518,7 +524,7 @@ recall + L3 deep search), see `architecture-overview.md` § Wake-up.
 
 ## Screenshots needed (operator weekend pass)
 
-- [ ] PWA Identity card (Settings → Automate)
+- [ ] PWA Identity card (Settings → Automata)
 - [ ] Identity Wizard modal — Role step (with placeholder text visible)
 - [ ] Identity Wizard modal — Current projects step with 2 entries
 - [ ] Identity Wizard modal — completed example, Save button highlighted
