@@ -69,9 +69,19 @@ func laneFillConfigArgs(req mcpsdk.CallToolRequest) map[string]any {
 			lane[k] = req.GetFloat("lane_fill_"+k, 0)
 		}
 	}
-	for _, k := range []string{"mode", "gpu_backend", "gpu_model", "claude_backend"} {
+	for _, k := range []string{"mode", "gpu_backend", "gpu_model", "claude_backend", "gpu_mode", "claude_mode"} {
 		if v := req.GetString("lane_fill_"+k, ""); v != "" {
 			lane[k] = v
+		}
+	}
+	// The stale threshold is a number whose 0 means off, and the four switches
+	// are booleans whose false is a real setting: send them whenever given.
+	if _, ok := args["lane_fill_stale_after_hours"]; ok {
+		lane["stale_after_hours"] = req.GetFloat("lane_fill_stale_after_hours", 0)
+	}
+	for _, k := range []string{"require_confirmed_proposal", "check_main_carries", "require_worktree", "lane_counts_from_caps"} {
+		if _, ok := args["lane_fill_"+k]; ok {
+			lane[k] = req.GetBool("lane_fill_"+k, true)
 		}
 	}
 	return lane

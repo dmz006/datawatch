@@ -8362,7 +8362,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			laneFillKeyPrefix + "idle_alert_minutes", laneFillKeyPrefix + "decompose_ahead_min",
 			laneFillKeyPrefix + "poll_seconds", laneFillKeyPrefix + "gpu_backend",
 			laneFillKeyPrefix + "gpu_model", laneFillKeyPrefix + "claude_backend",
-			laneFillKeyPrefix + "count_verifier_wait":
+			laneFillKeyPrefix + "count_verifier_wait", laneFillKeyPrefix + "stale_after_hours",
+			laneFillKeyPrefix + "require_confirmed_proposal", laneFillKeyPrefix + "check_main_carries",
+			laneFillKeyPrefix + "require_worktree", laneFillKeyPrefix + "lane_counts_from_caps",
+			laneFillKeyPrefix + "gpu_mode", laneFillKeyPrefix + "claude_mode":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyLaneFillValue(&cfg.Autonomous.LaneFill, strings.TrimPrefix(k, laneFillKeyPrefix), v)

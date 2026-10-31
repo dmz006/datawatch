@@ -1509,9 +1509,9 @@ autonomous:
   #   Autonomous in the web app.
   # A bad value is rejected (400 on PUT /api/config, an error on config load)
   # and nothing is written. None of the keys is omitted from a saved file, so
-  # an explicit 0 survives a round trip; count_verifier_wait is the one
-  # exception — an absent key reads as its default (true), while an explicit
-  # false survives.
+  # an explicit 0 survives a round trip; count_verifier_wait, stale_after_hours
+  # and the four true/false switches are the exceptions — an absent key reads
+  # as its default, while an explicit false or 0 survives.
   #
   # mode: off | shadow | on (case-insensitive). Empty means shadow. off does
   #   nothing. shadow computes and records every decision and starts nothing.
@@ -1537,6 +1537,19 @@ autonomous:
   #   stays busy, as before. This key only changes which lanes count as
   #   available; the lane fill mode still decides whether anything starts —
   #   shadow starts nothing.
+  # stale_after_hours: whole number >= 0. How many hours an Automaton may sit
+  #   queued before lane fill treats it as stale and does not start it on its
+  #   own. An absent key reads 72; an explicit 0 turns the stale rule off and
+  #   survives a round trip.
+  # require_confirmed_proposal, check_main_carries, require_worktree,
+  #   lane_counts_from_caps: bool, each defaults true (an absent key reads as
+  #   true). They set whether an Automaton made from a proposal needs the
+  #   operator's confirmation, whether lane fill checks that the default branch
+  #   already carries the work, whether the Automaton must have its own
+  #   worktree, and whether the lane counts follow the in-flight caps.
+  # gpu_mode, claude_mode: off | shadow | on (case-insensitive), the mode for
+  #   one lane kind only. Empty (the default) inherits mode, so the shipped
+  #   default stays shadow for both kinds.
   lane_fill:
     mode: shadow
     gpu_lanes: 2
@@ -1548,6 +1561,13 @@ autonomous:
     gpu_model: ""
     claude_backend: claude-code
     count_verifier_wait: true
+    stale_after_hours: 72
+    require_confirmed_proposal: true
+    check_main_carries: true
+    require_worktree: true
+    lane_counts_from_caps: true
+    gpu_mode: ""
+    claude_mode: ""
 
   # Infrastructure retry: a task that fails because the machinery around it
   # failed (not because of its own work) is retried on a back-off schedule and

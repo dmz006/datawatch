@@ -66,7 +66,9 @@ func unknownLanePreferenceMsg(pref string) string {
 // validateLaneFillValue checks one autonomous.lane_fill.<field> value. The mode
 // must be off, shadow or on; the lane counts, the idle alert minutes, the
 // decompose-ahead minimum and the poll interval are whole numbers >= 0; the
-// backends and the model are strings; the verifier-wait rule is a boolean.
+// backends and the model are strings; the verifier-wait rule and the four
+// eligibility switches are booleans; gpu_mode and claude_mode take the mode
+// values or empty; stale_after_hours is a whole number >= 0.
 // A field this does not know is not checked here.
 func validateLaneFillValue(field string, v any) error {
 	switch field {
@@ -76,9 +78,20 @@ func validateLaneFillValue(field string, v any) error {
 			return fmt.Errorf("%smode: must be \"off\", \"shadow\" or \"on\"", laneFillKeyPrefix)
 		}
 		return config.ValidateLaneFillMode(str)
-	case "count_verifier_wait":
+	case "gpu_mode", "claude_mode":
+		str, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("%s%s: must be \"off\", \"shadow\" or \"on\" (empty inherits mode)", laneFillKeyPrefix, field)
+		}
+		return config.ValidateLaneFillKindMode(field, str)
+	case "count_verifier_wait", "require_confirmed_proposal", "check_main_carries",
+		"require_worktree", "lane_counts_from_caps":
 		if _, ok := v.(bool); !ok {
-			return fmt.Errorf("%scount_verifier_wait: must be true or false", laneFillKeyPrefix)
+			return fmt.Errorf("%s%s: must be true or false", laneFillKeyPrefix, field)
+		}
+	case "stale_after_hours":
+		if !isWholeNonNegative(v) {
+			return fmt.Errorf("%sstale_after_hours: must be a whole number >= 0 (0 turns the stale rule off)", laneFillKeyPrefix)
 		}
 	case "gpu_lanes", "claude_lanes", "idle_alert_minutes", "decompose_ahead_min", "poll_seconds":
 		if !isWholeNonNegative(v) {
@@ -112,9 +125,29 @@ func applyLaneFillValue(c *config.AutonomousLaneFillConfig, field string, v any)
 		}
 		return
 	}
+	if field == "gpu_mode" || field == "claude_mode" {
+		if str, ok := v.(string); ok && config.ValidateLaneFillKindMode(field, str) == nil {
+			norm := strings.ToLower(strings.TrimSpace(str))
+			if field == "gpu_mode" {
+				c.GPUMode = norm
+			} else {
+				c.ClaudeMode = norm
+			}
+		}
+		return
+	}
 	if b, ok := v.(bool); ok {
-		if field == "count_verifier_wait" {
+		switch field {
+		case "count_verifier_wait":
 			c.CountVerifierWait = &b
+		case "require_confirmed_proposal":
+			c.RequireConfirmedProposal = &b
+		case "check_main_carries":
+			c.CheckMainCarries = &b
+		case "require_worktree":
+			c.RequireWorktree = &b
+		case "lane_counts_from_caps":
+			c.LaneCountsFromCaps = &b
 		}
 		return
 	}
@@ -144,6 +177,8 @@ func applyLaneFillValue(c *config.AutonomousLaneFillConfig, field string, v any)
 		c.DecomposeAheadMin = n
 	case "poll_seconds":
 		c.PollSeconds = n
+	case "stale_after_hours":
+		c.StaleAfterHours = &n
 	}
 }
 
@@ -161,6 +196,14 @@ func laneFillConfigSurface(c config.AutonomousLaneFillConfig) map[string]interfa
 		"gpu_model":           c.GPUModel,
 		"claude_backend":      c.EffectiveClaudeBackend(),
 		"count_verifier_wait": c.EffectiveCountVerifierWait(),
+
+		"stale_after_hours":          c.EffectiveStaleAfterHours(),
+		"require_confirmed_proposal": c.EffectiveRequireConfirmedProposal(),
+		"check_main_carries":         c.EffectiveCheckMainCarries(),
+		"require_worktree":           c.EffectiveRequireWorktree(),
+		"lane_counts_from_caps":      c.EffectiveLaneCountsFromCaps(),
+		"gpu_mode":                   c.GPUMode,
+		"claude_mode":                c.ClaudeMode,
 	}
 }
 

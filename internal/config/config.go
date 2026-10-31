@@ -3011,6 +3011,7 @@ const (
 	MinLaneFillPollSeconds           = 5
 	DefaultLaneFillGPUBackend        = "pi-prompt"
 	DefaultLaneFillClaudeBackend     = "claude-code"
+	DefaultLaneFillStaleAfterHours   = 72
 )
 
 // AutonomousLaneFillConfig — autonomous.lane_fill sub-config: automatic lane
@@ -3021,9 +3022,11 @@ const (
 // raised (0 = off). DecomposeAheadMin is the minimum number of decomposed
 // Automata kept ready per lane. PollSeconds is the planner poll interval
 // (minimum 5). GPUBackend, GPUModel and ClaudeBackend choose the backends the
-// lanes run. None are omitempty, so an explicit zero survives a round trip;
-// CountVerifierWait is the lone pointer with omitempty, so an absent key
-// means the default (true) while an explicit false survives.
+// lanes run. The plain numbers are not omitempty, so an explicit zero survives
+// a round trip; the pointer fields (CountVerifierWait, StaleAfterHours and the
+// eligibility switches) are omitempty, so an absent key means the default
+// while an explicit false or 0 survives. GPUMode and ClaudeMode override Mode
+// for one lane kind; empty inherits Mode.
 type AutonomousLaneFillConfig struct {
 	Mode              string `yaml:"mode" json:"mode"`
 	GPULanes          int    `yaml:"gpu_lanes" json:"gpu_lanes"`
@@ -3038,6 +3041,28 @@ type AutonomousLaneFillConfig struct {
 	// whose Automata wait on a verifier slot counts as available; when false
 	// the lane stays busy.
 	CountVerifierWait *bool `yaml:"count_verifier_wait,omitempty" json:"count_verifier_wait,omitempty"`
+	// StaleAfterHours: an Automaton that has sat queued this many hours is
+	// treated as stale and is not started automatically. Nil (absent) means
+	// 72; an explicit 0 turns the stale rule off.
+	StaleAfterHours *int `yaml:"stale_after_hours,omitempty" json:"stale_after_hours,omitempty"`
+	// RequireConfirmedProposal: when true (the default, nil) an Automaton
+	// created from a proposal is eligible only once the operator has confirmed
+	// that proposal.
+	RequireConfirmedProposal *bool `yaml:"require_confirmed_proposal,omitempty" json:"require_confirmed_proposal,omitempty"`
+	// CheckMainCarries: when true (the default, nil) lane fill checks whether
+	// the project default branch already carries an Automaton's work before it
+	// counts as eligible.
+	CheckMainCarries *bool `yaml:"check_main_carries,omitempty" json:"check_main_carries,omitempty"`
+	// RequireWorktree: when true (the default, nil) an Automaton must have its
+	// own worktree to be eligible.
+	RequireWorktree *bool `yaml:"require_worktree,omitempty" json:"require_worktree,omitempty"`
+	// LaneCountsFromCaps: when true (the default, nil) the lane counts follow
+	// the in-flight caps; when false only gpu_lanes and claude_lanes apply.
+	LaneCountsFromCaps *bool `yaml:"lane_counts_from_caps,omitempty" json:"lane_counts_from_caps,omitempty"`
+	// GPUMode and ClaudeMode set the mode for one lane kind. Empty inherits
+	// Mode; otherwise "off", "shadow" or "on".
+	GPUMode    string `yaml:"gpu_mode" json:"gpu_mode"`
+	ClaudeMode string `yaml:"claude_mode" json:"claude_mode"`
 }
 
 // DefaultAutonomousLaneFill returns the shipped lane fill settings: shadow
@@ -3067,6 +3092,18 @@ func ValidateLaneFillMode(mode string) error {
 	}
 }
 
+// ValidateLaneFillKindMode checks a per-kind mode, autonomous.lane_fill.gpu_mode
+// or claude_mode, named by key. It accepts the same values as
+// ValidateLaneFillMode, including empty (inherit the shared mode).
+func ValidateLaneFillKindMode(key, mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", LaneFillModeOff, LaneFillModeShadow, LaneFillModeOn:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.lane_fill.%s: %q is not a valid value (must be \"off\", \"shadow\" or \"on\")", key, mode)
+	}
+}
+
 // EffectiveMode returns the mode in effect, normalized: an empty value means
 // shadow.
 func (c AutonomousLaneFillConfig) EffectiveMode() string {
@@ -3075,6 +3112,23 @@ func (c AutonomousLaneFillConfig) EffectiveMode() string {
 		return LaneFillModeShadow
 	}
 	return m
+}
+
+// EffectiveModeFor returns the mode in effect for one lane kind, "gpu" or
+// "claude": the per-kind value when set, otherwise EffectiveMode. Any other
+// kind reads the shared mode.
+func (c AutonomousLaneFillConfig) EffectiveModeFor(kind string) string {
+	var per string
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "gpu":
+		per = c.GPUMode
+	case "claude":
+		per = c.ClaudeMode
+	}
+	if m := strings.ToLower(strings.TrimSpace(per)); m != "" {
+		return m
+	}
+	return c.EffectiveMode()
 }
 
 // EffectiveGPULanes returns the GPU lane count in effect: a negative value
@@ -3153,10 +3207,55 @@ func (c AutonomousLaneFillConfig) EffectiveCountVerifierWait() bool {
 	return *c.CountVerifierWait
 }
 
+// EffectiveStaleAfterHours returns the stale threshold in effect: nil means
+// 72 and an explicit 0 turns the stale rule off.
+func (c AutonomousLaneFillConfig) EffectiveStaleAfterHours() int {
+	if c.StaleAfterHours == nil || *c.StaleAfterHours < 0 {
+		return DefaultLaneFillStaleAfterHours
+	}
+	return *c.StaleAfterHours
+}
+
+// laneFillBoolDefaultTrue reads a tri-state boolean: nil means true.
+func laneFillBoolDefaultTrue(b *bool) bool { return b == nil || *b }
+
+// EffectiveRequireConfirmedProposal returns the confirmed-proposal rule in
+// effect: unset means true.
+func (c AutonomousLaneFillConfig) EffectiveRequireConfirmedProposal() bool {
+	return laneFillBoolDefaultTrue(c.RequireConfirmedProposal)
+}
+
+// EffectiveCheckMainCarries returns the main-carries check in effect: unset
+// means true.
+func (c AutonomousLaneFillConfig) EffectiveCheckMainCarries() bool {
+	return laneFillBoolDefaultTrue(c.CheckMainCarries)
+}
+
+// EffectiveRequireWorktree returns the worktree rule in effect: unset means
+// true.
+func (c AutonomousLaneFillConfig) EffectiveRequireWorktree() bool {
+	return laneFillBoolDefaultTrue(c.RequireWorktree)
+}
+
+// EffectiveLaneCountsFromCaps returns the lane-counts-from-caps rule in
+// effect: unset means true.
+func (c AutonomousLaneFillConfig) EffectiveLaneCountsFromCaps() bool {
+	return laneFillBoolDefaultTrue(c.LaneCountsFromCaps)
+}
+
 // validate rejects negative numbers and an unknown mode.
 func (c AutonomousLaneFillConfig) validate() error {
 	if err := ValidateLaneFillMode(c.Mode); err != nil {
 		return err
+	}
+	if err := ValidateLaneFillKindMode("gpu_mode", c.GPUMode); err != nil {
+		return err
+	}
+	if err := ValidateLaneFillKindMode("claude_mode", c.ClaudeMode); err != nil {
+		return err
+	}
+	if c.StaleAfterHours != nil && *c.StaleAfterHours < 0 {
+		return fmt.Errorf("autonomous.lane_fill.stale_after_hours: %d must be >= 0", *c.StaleAfterHours)
 	}
 	for k, v := range map[string]int{
 		"gpu_lanes":           c.GPULanes,

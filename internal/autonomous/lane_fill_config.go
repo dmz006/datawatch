@@ -31,6 +31,19 @@ type LaneFillConfig struct {
 	// the lane stays busy. A pointer with omitempty, so an explicit false
 	// survives a round trip while an absent key keeps the default.
 	CountVerifierWait *bool `json:"count_verifier_wait,omitempty"`
+	// StaleAfterHours: hours an Automaton may sit queued before lane fill
+	// treats it as stale. Nil means 72; an explicit 0 turns the rule off.
+	StaleAfterHours *int `json:"stale_after_hours,omitempty"`
+	// RequireConfirmedProposal, CheckMainCarries, RequireWorktree and
+	// LaneCountsFromCaps are eligibility and counting rules; nil means true.
+	RequireConfirmedProposal *bool `json:"require_confirmed_proposal,omitempty"`
+	CheckMainCarries         *bool `json:"check_main_carries,omitempty"`
+	RequireWorktree          *bool `json:"require_worktree,omitempty"`
+	LaneCountsFromCaps       *bool `json:"lane_counts_from_caps,omitempty"`
+	// GPUMode and ClaudeMode set the mode for one lane kind; empty inherits
+	// Mode, otherwise "off", "shadow" or "on".
+	GPUMode    string `json:"gpu_mode"`
+	ClaudeMode string `json:"claude_mode"`
 }
 
 // DefaultLaneFillConfig returns the shipped lane fill settings (shadow mode).
@@ -51,6 +64,14 @@ func LaneFillConfigFromYAML(c config.AutonomousLaneFillConfig) LaneFillConfig {
 		GPUModel:          c.GPUModel,
 		ClaudeBackend:     c.ClaudeBackend,
 		CountVerifierWait: c.CountVerifierWait,
+
+		StaleAfterHours:          c.StaleAfterHours,
+		RequireConfirmedProposal: c.RequireConfirmedProposal,
+		CheckMainCarries:         c.CheckMainCarries,
+		RequireWorktree:          c.RequireWorktree,
+		LaneCountsFromCaps:       c.LaneCountsFromCaps,
+		GPUMode:                  c.GPUMode,
+		ClaudeMode:               c.ClaudeMode,
 	}
 }
 
@@ -68,6 +89,14 @@ func (c LaneFillConfig) yaml() config.AutonomousLaneFillConfig {
 		GPUModel:          c.GPUModel,
 		ClaudeBackend:     c.ClaudeBackend,
 		CountVerifierWait: c.CountVerifierWait,
+
+		StaleAfterHours:          c.StaleAfterHours,
+		RequireConfirmedProposal: c.RequireConfirmedProposal,
+		CheckMainCarries:         c.CheckMainCarries,
+		RequireWorktree:          c.RequireWorktree,
+		LaneCountsFromCaps:       c.LaneCountsFromCaps,
+		GPUMode:                  c.GPUMode,
+		ClaudeMode:               c.ClaudeMode,
 	}
 }
 
@@ -102,4 +131,33 @@ func (c LaneFillConfig) EffectiveClaudeBackend() string { return c.yaml().Effect
 // available; an explicit false keeps it busy).
 func (c LaneFillConfig) EffectiveCountVerifierWait() bool {
 	return c.yaml().EffectiveCountVerifierWait()
+}
+
+// EffectiveModeFor returns the mode in effect for one lane kind: the per-kind
+// value when set, otherwise the shared mode.
+func (c LaneFillConfig) EffectiveModeFor(t LaneType) string {
+	return c.yaml().EffectiveModeFor(string(t))
+}
+
+// EffectiveStaleAfterHours returns the stale threshold in effect (nil = 72,
+// explicit 0 = rule off).
+func (c LaneFillConfig) EffectiveStaleAfterHours() int { return c.yaml().EffectiveStaleAfterHours() }
+
+// EffectiveRequireConfirmedProposal returns the confirmed-proposal rule in
+// effect (unset = true).
+func (c LaneFillConfig) EffectiveRequireConfirmedProposal() bool {
+	return c.yaml().EffectiveRequireConfirmedProposal()
+}
+
+// EffectiveCheckMainCarries returns the main-carries check in effect (unset =
+// true).
+func (c LaneFillConfig) EffectiveCheckMainCarries() bool { return c.yaml().EffectiveCheckMainCarries() }
+
+// EffectiveRequireWorktree returns the worktree rule in effect (unset = true).
+func (c LaneFillConfig) EffectiveRequireWorktree() bool { return c.yaml().EffectiveRequireWorktree() }
+
+// EffectiveLaneCountsFromCaps returns the lane-counts-from-caps rule in
+// effect (unset = true).
+func (c LaneFillConfig) EffectiveLaneCountsFromCaps() bool {
+	return c.yaml().EffectiveLaneCountsFromCaps()
 }

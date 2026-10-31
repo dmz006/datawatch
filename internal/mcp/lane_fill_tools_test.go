@@ -253,3 +253,36 @@ func TestLaneFillCapabilityMapping(t *testing.T) {
 		t.Errorf("autonomous_prd_set_lane_preference = %q, want %q", got, federation.CapAutonomousWrite)
 	}
 }
+
+func TestLaneFillConfigSetSendsNewKeysIncludingFalseAndZero(t *testing.T) {
+	s, rec := activateServer(t, http.StatusOK, `{}`)
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"lane_fill_stale_after_hours":          float64(0),
+		"lane_fill_require_confirmed_proposal": false,
+		"lane_fill_check_main_carries":         false,
+		"lane_fill_require_worktree":           true,
+		"lane_fill_lane_counts_from_caps":      false,
+		"lane_fill_gpu_mode":                   "on",
+		"lane_fill_claude_mode":                "shadow",
+	})); err != nil {
+		t.Fatalf("config set: %v", err)
+	}
+	lane, _ := rec.body["lane_fill"].(map[string]any)
+	want := map[string]any{
+		"stale_after_hours":          float64(0),
+		"require_confirmed_proposal": false,
+		"check_main_carries":         false,
+		"require_worktree":           true,
+		"lane_counts_from_caps":      false,
+		"gpu_mode":                   "on",
+		"claude_mode":                "shadow",
+	}
+	if len(lane) != len(want) {
+		t.Errorf("lane_fill = %v, want %d keys", lane, len(want))
+	}
+	for k, v := range want {
+		if got, ok := lane[k]; !ok || got != v {
+			t.Errorf("lane_fill[%s] = %v (present=%v), want %v", k, got, ok, v)
+		}
+	}
+}
