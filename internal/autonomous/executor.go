@@ -1072,6 +1072,18 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		_ = m.store.SavePRD(prd)
 		return m.Run(ctx, prd.ID, spawn, verify)
 	}
+	// Last check before the Automaton is reported finished: the whole
+	// worktree must be committed, or the operator must decide. A blocked
+	// Automaton is never PRDCompleted, so the merge-pending pass never lists
+	// it as merge ready.
+	if blocked, err := m.checkWorktreeUncommittedAtFinish(ctx, prd); err != nil {
+		return err
+	} else if blocked {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, uncommittedRollupReason, uncommittedRollupBlockedReason(prd)); ok {
+			m.emitPRDStatus(prd, old, lastDecision(prd, uncommittedHeldDecisionKind), nil)
+		}
+		return nil
+	}
 	// BL451 — commit PRDCompleted first; completion side effects only
 	// run once the status actually landed.
 	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed", "")

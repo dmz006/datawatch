@@ -157,6 +157,10 @@ func ResolveTreeKey(prd *PRD, task *Task) (string, string, error) {
 	return treeKeyPrefix + treeRoot, treeRoot, nil
 }
 
+// treeLockRelPath is the advisory lock file's slash path inside its tree, as
+// git reports it.
+const treeLockRelPath = ".datawatch/tree.lock"
+
 // treeLockPath returns the advisory lock-file location for a resolved
 // tree key:
 //
@@ -172,7 +176,7 @@ func treeLockPath(key, treeRoot string) string {
 	if dir == key || !filepath.IsAbs(dir) {
 		dir = absClean(treeRoot)
 	}
-	return filepath.Join(dir, ".datawatch", "tree.lock")
+	return filepath.Join(dir, filepath.FromSlash(treeLockRelPath))
 }
 
 // ── Advisory acquisition machinery (BL428 decision 3a, operator (i)) ──

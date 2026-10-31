@@ -100,12 +100,13 @@ func parsePorcelainZ(out string) []UncommittedFile {
 }
 
 // isBookkeepingPath reports whether p is a scratch file the Automata runner
-// itself writes into a worktree: the worker checkpoint note and the decompose
-// output. They are git-ignored in normal runs; this covers the window before
-// that ignore entry exists.
+// itself writes into a worktree: the worker checkpoint note, the decompose
+// output and the advisory tree lock, which the Automaton still holds when it
+// finishes. They are git-ignored in normal runs; this covers the window before
+// that ignore entry exists, and repositories that never get one.
 func isBookkeepingPath(p string) bool {
 	base := path.Base(p)
-	if p == "CHECKPOINT.md" {
+	if p == "CHECKPOINT.md" || p == treeLockRelPath {
 		return true
 	}
 	ok, _ := path.Match(".decompose-output-*.json", base)

@@ -318,7 +318,9 @@ func (m *Manager) holdAutomatonForUncommittedWork(prd *PRD, files []UncommittedF
 		}
 	})
 	m.appendUncommittedDecision(prd, uncommittedHeldDecisionKind, uncommittedNote(prd, nil, files, cause), questionID)
-	if err := m.store.SavePRD(prd); err != nil {
+	// An executor-owned save: the roll-up commits the blocked status right
+	// after this and must not read its own revision bump as a concurrent write.
+	if err := m.savePRDOwn(prd); err != nil {
 		log.Printf("[autonomous] %s uncommitted-work: save Automaton: %v", prd.ID, err)
 	}
 	m.recordUncommittedEvent(prd, nil, files, cause, uncommittedHeldAuditAction, "Uncommitted work held")
@@ -330,7 +332,13 @@ func (m *Manager) holdAutomatonForUncommittedWork(prd *PRD, files []UncommittedF
 // question. t may be nil for the Automaton-wide warning.
 func (m *Manager) warnUncommittedWork(prd *PRD, t *Task, files []UncommittedFile, cause string) {
 	m.appendUncommittedDecision(prd, uncommittedWarnedDecisionKind, uncommittedNote(prd, t, files, cause), "")
-	if err := m.store.SavePRD(prd); err != nil {
+	save := m.store.SavePRD
+	if t == nil {
+		// The Automaton-wide warning comes from the roll-up, which completes
+		// the Automaton right after it: count the save as the executor's own.
+		save = m.savePRDOwn
+	}
+	if err := save(prd); err != nil {
 		log.Printf("[autonomous] %s uncommitted-work: save Automaton: %v", prd.ID, err)
 	}
 	m.recordUncommittedEvent(prd, t, files, cause, uncommittedWarnedAuditAction, "Uncommitted work warning")

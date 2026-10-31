@@ -321,9 +321,21 @@ func TestUncommittedTaskWarnModeCompletesWithDecision(t *testing.T) {
 	if qs := r.questions(); len(qs) != 0 {
 		t.Errorf("questions = %d; warn mode asks nothing", len(qs))
 	}
-	ds := r.decisions(uncommittedWarnedDecisionKind)
-	if len(ds) != 1 || !strings.Contains(ds[0].Note, "src/a.go") {
-		t.Fatalf("warned decisions = %+v; want one naming src/a.go", ds)
+	// The task warns once; the file is still uncommitted when the Automaton
+	// finishes, so the roll-up check adds its own Automaton-wide warning.
+	var taskWarned, rollupWarned []Decision
+	for _, d := range r.decisions(uncommittedWarnedDecisionKind) {
+		if strings.HasPrefix(d.Note, "task "+task.ID+": ") {
+			taskWarned = append(taskWarned, d)
+		} else {
+			rollupWarned = append(rollupWarned, d)
+		}
+	}
+	if len(taskWarned) != 1 || !strings.Contains(taskWarned[0].Note, "src/a.go") {
+		t.Fatalf("task warned decisions = %+v; want one naming src/a.go", taskWarned)
+	}
+	if len(rollupWarned) != 1 || !strings.Contains(rollupWarned[0].Note, "src/a.go") {
+		t.Fatalf("roll-up warned decisions = %+v; want one naming src/a.go", rollupWarned)
 	}
 	if len(r.decisions(uncommittedHeldDecisionKind)) != 0 {
 		t.Error("warn mode recorded a held decision")

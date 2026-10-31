@@ -71,7 +71,7 @@ func TestUncommittedDetectorErrors(t *testing.T) {
 }
 
 func TestUncommittedDetectorDropsBookkeeping(t *testing.T) {
-	out := "?? CHECKPOINT.md\x00?? .decompose-output-abc.json\x00?? node_modules/x/index.js\x00 M real.go\x00"
+	out := "?? CHECKPOINT.md\x00?? .decompose-output-abc.json\x00?? .datawatch/tree.lock\x00?? node_modules/x/index.js\x00 M real.go\x00"
 	dir := t.TempDir()
 	// The staging policy judges files on disk, so the ignored-directory file must exist.
 	if err := os.MkdirAll(filepath.Join(dir, "node_modules", "x"), 0o755); err != nil {
