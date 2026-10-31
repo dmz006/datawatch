@@ -20,7 +20,8 @@ func (f *fakeRequestWatchReader) Observations() []requestwatch.Observation { ret
 func requestWatchFixture() []requestwatch.Observation {
 	return []requestwatch.Observation{
 		{SessionID: "s1", AutomatonID: "a1", TaskID: "t1", Role: requestwatch.RoleWorker, Node: "n1", Model: "m1",
-			State: requestwatch.StateGenerating, Summary: "waiting on a model request: generating"},
+			State: requestwatch.StateGenerating, LastChange: "2026-10-31T03:00:00Z", LastPoll: "2026-10-31T03:00:30Z",
+			Summary: "waiting on a model request: generating"},
 		{SessionID: "s2", AutomatonID: "a1", TaskID: "t2", Role: requestwatch.RoleVerifier, Node: "n1", Model: "m1",
 			State: requestwatch.StateIdle, NoProgressSeconds: 2400, OverThreshold: true,
 			Summary: "waiting on a model request: no progress for 40 minutes"},
@@ -202,5 +203,19 @@ func TestRequestWatchNoReaderIs503(t *testing.T) {
 	}
 	if strings.TrimSpace(rec.Body.String()) == "" {
 		t.Error("503 should carry a plain note")
+	}
+}
+
+func TestRequestWatchHTTPServerWiring(t *testing.T) {
+	reg := requestwatch.NewRegistry()
+	reg.Put(requestwatch.Observation{SessionID: "s1", AutomatonID: "a1", State: requestwatch.StateIdle})
+	h := &HTTPServer{api: &Server{}}
+	h.SetRequestWatch(reg, nil)
+	rec := getRequestWatch(h.api, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := requestWatchIDs(decodeRequestWatch(t, rec)); got != "s1" {
+		t.Errorf("ids = %q, want s1", got)
 	}
 }

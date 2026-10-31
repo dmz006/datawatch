@@ -78,9 +78,9 @@ type Observation struct {
 	Node              string `json:"node"`
 	Model             string `json:"model"`
 	State             State  `json:"state"`
-	LastChange        string `json:"last_change"`
+	LastChange        string `json:"last_change,omitempty"`
 	NoProgressSeconds int64  `json:"no_progress_seconds"`
-	LastPoll          string `json:"last_poll"`
+	LastPoll          string `json:"last_poll,omitempty"`
 	OverThreshold     bool   `json:"over_threshold"`
 	Error             string `json:"error,omitempty"`
 	Summary           string `json:"summary"`

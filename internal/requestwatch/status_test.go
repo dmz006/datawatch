@@ -94,3 +94,19 @@ func TestBuildStatusDoesNotModifyInput(t *testing.T) {
 		t.Fatalf("input modified: %+v", obs)
 	}
 }
+
+func TestStatusUnsetTimesAreOmitted(t *testing.T) {
+	b, err := json.Marshal(NewTracker(Identity{SessionID: "s1"}).Observation())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"last_change", "last_poll", "error"} {
+		if _, ok := m[k]; ok {
+			t.Fatalf("%s present for an unsampled observation: %s", k, b)
+		}
+	}
+}

@@ -53,3 +53,9 @@ func (s *Server) handleRequestWatch(w http.ResponseWriter, r *http.Request) {
 		Automaton: q.Get("automaton"),
 	}))
 }
+
+// SetRequestWatch wires the request-watch reader and the live configuration
+// accessor behind GET /api/autonomous/request-watch.
+func (s *HTTPServer) SetRequestWatch(reader requestwatch.Reader, cfg func() config.RequestWatchConfig) {
+	s.api.SetRequestWatch(reader, cfg)
+}

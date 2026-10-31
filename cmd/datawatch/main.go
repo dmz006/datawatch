@@ -95,6 +95,7 @@ import (
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/router"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -6824,6 +6825,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					httpServer.SetAutonomousEvents(pq)
 				}
 			}
+			// GET /api/autonomous/request-watch reads the request-watch
+			// registry; the poller writes each watched session's observation
+			// into it. The live autonomous.request_watch block is read on
+			// every request.
+			requestWatchRegistry := requestwatch.NewRegistry()
+			httpServer.SetRequestWatch(requestWatchRegistry, func() config.RequestWatchConfig {
+				return cfg.Autonomous.RequestWatch
+			})
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)

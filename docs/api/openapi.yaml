@@ -6733,7 +6733,7 @@ components:
     RequestWatchObservation:
       type: object
       description: The watch's report for one worker or verifier session waiting on a model request.
-      required: [session_id, automaton_id, task_id, role, node, model, state, last_change, no_progress_seconds, last_poll, over_threshold, summary]
+      required: [session_id, automaton_id, task_id, role, node, model, state, no_progress_seconds, over_threshold, summary]
       properties:
         session_id: {type: string, description: The watched session}
         automaton_id: {type: string, description: The Automaton the session belongs to}
@@ -6742,9 +6742,9 @@ components:
         node: {type: string, description: The registered compute node the model runs on}
         model: {type: string, description: The model the request is waiting on}
         state: {type: string, enum: [generating, idle, unreachable, unknown], description: "generating when the node showed a sign of progress at the last poll; idle when it was readable and showed none; unreachable when it could not be read; unknown before the first sample"}
-        last_change: {type: string, format: date-time, description: When the node last showed a sign of progress}
+        last_change: {type: string, format: date-time, description: "When the node last showed a sign of progress (RFC 3339); absent before the first sample"}
         no_progress_seconds: {type: integer, format: int64, description: Seconds since the last sign of progress}
-        last_poll: {type: string, format: date-time, description: When the node was last read}
+        last_poll: {type: string, format: date-time, description: "When the node was last read (RFC 3339); absent before the first sample"}
         over_threshold: {type: boolean, description: True once no_progress_seconds has reached no_progress_minutes}
         error: {type: string, description: Why the node could not be read; absent when it could}
         summary: {type: string, description: "Plain-text line such as: waiting on a model request: no progress for 40 minutes"}
