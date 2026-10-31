@@ -1,7 +1,7 @@
 # Usage calculator lane stamp: final gate report
 
 **Date:** 2026-10-30
-**Commit under test:** `b731ca6af` (branch `automaton/b3270001`)
+**Commit under test:** `49324bc1c` (branch `automaton/b3270001`, worktree clean)
 **Toolchain:** go1.27.2 linux/amd64, node v24.15.0, golangci-lint 2.14.0
 
 Feature: the usage calculator no longer takes a Claude lane count from the person typing a
@@ -11,7 +11,12 @@ what-if, and `GET /api/usage/advice?lanes=N` is a what-if that is never saved.
 
 This is the final gate. It changed no code. Its only repository output is this report.
 Every command ran under `env -u TMUX -u TMUX_TMPDIR`, from the repository root, after the
-last code commit.
+last code commit. The commands ran one at a time with nothing else running, so no command
+overlapped another.
+
+**Gate rule:** the result is `Result: PASS` only if every recorded command exited 0. A command
+that exited non-zero is a failed command and makes the gate `Result: FAIL`, whatever a later
+rerun does; a rerun is recorded as extra evidence, never as a replacement.
 
 ## Parity surface
 
@@ -57,65 +62,39 @@ env -u TMUX -u TMUX_TMPDIR go test -count=1 ./internal/usagecalc/ ./internal/ser
 Exit code: **0**. Last lines:
 
 ```
-ok  	github.com/dmz006/datawatch/internal/usagecalc	0.074s
-ok  	github.com/dmz006/datawatch/internal/server	68.014s
-ok  	github.com/dmz006/datawatch/internal/mcp	1.916s
-ok  	github.com/dmz006/datawatch/internal/router	108.387s
-ok  	github.com/dmz006/datawatch/cmd/datawatch	114.326s
+ok  	github.com/dmz006/datawatch/internal/usagecalc	0.077s
+ok  	github.com/dmz006/datawatch/internal/server	68.117s
+ok  	github.com/dmz006/datawatch/internal/mcp	1.925s
+ok  	github.com/dmz006/datawatch/internal/router	108.413s
+ok  	github.com/dmz006/datawatch/cmd/datawatch	108.489s
 ```
 
-### 4. Test the whole repository, first run
-
-```
-env -u TMUX -u TMUX_TMPDIR go test ./...
-```
-
-Exit code: **1**. One package failed; every other package passed. Last lines:
-
-```
---- FAIL: TestDaemonCleanupHelper (31.84s)
-    --- FAIL: TestDaemonCleanupHelper/InterruptSighup (30.31s)
-        daemon_cleanup_test.go:359: driver did not end within 30s on mode wait
-FAIL
-FAIL	github.com/dmz006/datawatch/tests/ci	107.497s
-?   	github.com/dmz006/datawatch/tests/live-smoke/commitguard	[no test files]
-FAIL
-```
-
-Context: this run overlapped with command 10 (`make lint`, which runs `golangci-lint`) because
-both were started together. `TestDaemonCleanupHelper/InterruptSighup` is a 30 second signal
-timing test of the test-daemon cleanup helper. This branch does not touch `tests/ci` or
-`scripts/test-daemon-lib.sh`. The cause of the timeout is not proven; the load overlap is a
-likely contributor, not a confirmed cause. No code was changed in response.
-
-### 5. Test `tests/ci` alone
-
-```
-env -u TMUX -u TMUX_TMPDIR go test -count=1 ./tests/ci/
-```
-
-Exit code: **0**. Last line:
-
-```
-ok  	github.com/dmz006/datawatch/tests/ci	50.844s
-```
-
-### 6. Test the whole repository again, nothing else running
+### 4. Test the whole repository
 
 ```
 env -u TMUX -u TMUX_TMPDIR go test -count=1 ./...
 ```
 
-Exit code: **0**. 82 packages `ok`, none failed. Last lines:
+Exit code: **1 (FAILED)**. 81 packages `ok`, one package failed. Last lines:
 
 ```
-ok  	github.com/dmz006/datawatch/internal/websearch	0.065s
-?   	github.com/dmz006/datawatch/internal/wizard	[no test files]
-ok  	github.com/dmz006/datawatch/tests/ci	53.868s
+--- FAIL: TestDaemonCleanupHelper (31.87s)
+    --- FAIL: TestDaemonCleanupHelper/InterruptSighup (30.33s)
+        daemon_cleanup_test.go:359: driver did not end within 30s on mode wait
+FAIL
+FAIL	github.com/dmz006/datawatch/tests/ci	87.182s
 ?   	github.com/dmz006/datawatch/tests/live-smoke/commitguard	[no test files]
+FAIL
 ```
 
-### 7. PWA node suite
+Notes. `TestDaemonCleanupHelper/InterruptSighup` is a 30 second signal timing test of the
+test-daemon cleanup helper in `tests/ci`. This branch does not touch `tests/ci` or
+`scripts/test-daemon-lib.sh`. The same test failed the same way in an earlier whole-repository
+run of this gate, which overlapped `make lint`; this run had nothing else running, so lint load
+does not explain it. The cause is not proven. The failure is intermittent (see command 10).
+No code was changed in response.
+
+### 5. PWA node suite
 
 ```
 env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/*.test.js
@@ -131,10 +110,10 @@ Exit code: **0**. Last lines:
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 2024.453931
+ℹ duration_ms 2021.241144
 ```
 
-### 8. Internal-ref leak check
+### 6. Internal-ref leak check
 
 ```
 env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-internal-refs.sh
@@ -147,7 +126,7 @@ Exit code: **0**. Last lines:
 ✓ PASS: no internal refs in user-facing surfaces.
 ```
 
-### 9. Locale and story checks from the locales unit
+### 7. Locale and story checks from the locales unit
 
 ```
 env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/calculator-lanes-locales-story.sh
@@ -157,7 +136,7 @@ Exit code: **0**. Last lines:
 
 ```
 locales ok: 148 usage_calc keys in five bundles
-ok  	github.com/dmz006/datawatch/internal/server	0.265s
+ok  	github.com/dmz006/datawatch/internal/server	0.229s
 calculator-lanes-locales-story: ok
 ```
 
@@ -165,10 +144,10 @@ The script checks that every `usage_calc_*` key exists in all five bundles, that
 carries no PRD wording, that the locale guard test passes, and that story `TS-840` parses and
 is registered in `run-all.mjs`.
 
-### 10. Lint
+### 8. Lint
 
 ```
-PATH=$PATH:/home/dmz/go/bin env -u TMUX -u TMUX_TMPDIR make lint
+env -u TMUX -u TMUX_TMPDIR PATH=$PATH:/home/dmz/go/bin make lint
 ```
 
 `golangci-lint` is installed at `/home/dmz/go/bin/golangci-lint` and was not on the default
@@ -185,17 +164,57 @@ golangci-lint run ./...
 0 issues.
 ```
 
+A first attempt at this command in the gate runner exited 127 because the runner passed `-u`
+after the `PATH=` assignment, so `env` tried to run `-u` as a program. That was a mistake in
+how the command was written, not a lint result; lint had not run. The entry above is the
+corrected invocation and is the only lint run.
+
+### 9. Verification script
+
+```
+env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/usage-lanes-final-gate.sh
+```
+
+Exit code: **0**. Last lines:
+
+```
+ℹ tests 1665
+ℹ pass 1665
+ℹ fail 0
+usage-lanes-final-gate: ok
+```
+
+The script checks that this report exists with its three sections and a `Result: PASS` or
+`Result: FAIL` line, then runs vet, the touched-package tests and the PWA node suite. It
+passes for a report that reads FAIL; it does not test the whole repository, so a pass here does
+not clear command 4. It ran against the previous version of this report, and was run again
+against this one with the same exit code 0 after this file was written.
+
+### 10. Extra evidence: `tests/ci` alone
+
+```
+env -u TMUX -u TMUX_TMPDIR go test -count=1 ./tests/ci/
+```
+
+Exit code: **0**. Last line:
+
+```
+ok  	github.com/dmz006/datawatch/tests/ci	50.675s
+```
+
+This is not part of the required command list. It shows the failure in command 4 does not
+reproduce when `tests/ci` runs on its own, which fits a timing or load dependence under
+whole-repository package parallelism. It does not void command 4.
+
 ## Result
 
-Every command exited 0 except one: the first `go test ./...` run (command 4) exited 1 on
-`tests/ci` `TestDaemonCleanupHelper/InterruptSighup` (a 30 second signal timing test, in a
-package this branch does not touch). That run overlapped with `make lint`. `tests/ci` alone
-(command 5) and a second whole-repository `go test -count=1 ./...` with nothing else running
-(command 6) both exited 0, so the failure did not reproduce. The cause was not proven, and
-the first failure is recorded here rather than dropped; an operator who treats a single
-failed run as disqualifying should read this as FAIL on command 4.
+Commands 1, 2, 3, 5, 6, 7, 8 and 9 exited 0. Command 4 (`go test -count=1 ./...`) exited 1:
+`tests/ci` `TestDaemonCleanupHelper/InterruptSighup` timed out after 30 seconds. The same test
+failed in an earlier whole-repository run of this gate as well, and it passes when `tests/ci`
+runs alone, so it is an intermittent failure that is not proven to be a load effect and not
+shown to be unrelated to this branch beyond the fact that the branch does not touch `tests/ci`.
+Under the gate rule stated at the top, one failed command is a failed gate.
 
-Failed commands: none in the final runs; command 4 failed once on its first run and passed on
-the clean rerun (command 6).
+Failed commands: 4 (`env -u TMUX -u TMUX_TMPDIR go test -count=1 ./...`).
 
-Result: PASS
+Result: FAIL
