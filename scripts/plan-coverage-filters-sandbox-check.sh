@@ -38,8 +38,10 @@
 #      the four config keys read back to their pre-check values, the daemon
 #      is ended and confirmed dead, and no process is left behind
 #
-# If the decompose does not finish (planning backend unreachable or the PRD
-# rolls back to draft), checks 5-7 are recorded as SKIPPED with the reason;
+# If the decompose does not finish (planning backend unreachable, or the PRD
+# rolls back to draft — including when the product's own gates reject the
+# plan the local planner produced), checks 5-7 are recorded as SKIPPED with
+# the reason (the product's rejection detail, when one was recorded);
 # checks 1, 2, 3 and 8 still run and the script exits 0 provided every check
 # that ran passed.
 #
@@ -147,7 +149,10 @@ cleanup() {
     for d in /proc/[0-9]*; do
       pid=${d#/proc/}
       [[ -r "$d/environ" ]] || continue
-      if tr '\0' '\n' < "$d/environ" 2>/dev/null | grep -Fxq "HOME=$home_dir"; then
+      # tr must not open environ itself: bash reports the open failure on
+      # stderr even with `tr ... 2>/dev/null`. Open it in a controlled
+      # subshell instead (same result, no /proc/<pid>/environ noise).
+      if tr '\0' '\n' < <(cat "$d/environ" 2>/dev/null) | grep -Fxq "HOME=$home_dir"; then
         kill -9 "$pid" 2>/dev/null || true
       fi
     done
@@ -227,6 +232,46 @@ start_sandbox() {
   bin="$WORK/datawatch"
   tpl="$REPO_ROOT/testdata/datawatch.yaml"
   [[ -f "$tpl" ]] || { step "FATAL: sandbox config template missing: testdata/datawatch.yaml"; return 1; }
+  # The sandbox planning backend is a local ollama endpoint. Confirm it is
+  # actually serving the model the bootstrap config asks for; if it is not,
+  # record that so the check 4 skip reason is the truth (planner genuinely
+  # down) rather than an unremapped hostname. This preflight never blocks
+  # the sandbox boot itself — checks 1-3 and 8 do not need the planner.
+  # The template planner is the tiny qwen3:1.7b. It routinely omits the
+  # per-task verification_script that the product's verification-script-coverage
+  # gate demands (a file-changing task without its own check is rejected), so
+  # decompose only ever lands on a rejection record and checks 4-7 can only be
+  # SKIPPED. Prefer the strongest small local model available: any candidate
+  # the endpoint actually serves, in order, otherwise fall back to the
+  # template's own model.
+  #
+  # Candidate ORDER matters: the ollama adapter
+  # (internal/inference/adapters/ollama.go) reads only the generate "response"
+  # field. Thinking models (qwen3.8-* etc.) frequently emit their whole answer
+  # in "thinking" with an empty "response", which the adapter turns into a 200
+  # with an empty answer that decomparse drops as a non-retryable failure.
+  # Put non-thinking models first.
+  local tags template_model
+  template_model="$(grep -E '^  model:' "$tpl" | head -1 | awk '{print $2}')"
+  tags="$(curl -sf --max-time 5 http://127.0.0.1:11434/api/tags 2>/dev/null)"
+  local cand
+  PLAN_MODEL=""
+  if [[ -n "${DATAWATCH_PCF_PLANNER_MODEL:-}" ]] && printf '%s' "$tags" | jq -e --arg m "${DATAWATCH_PCF_PLANNER_MODEL}" '.models[]? | select((.name // "") | startswith($m))' >/dev/null 2>&1; then
+    PLAN_MODEL="${DATAWATCH_PCF_PLANNER_MODEL}"
+  else
+    for cand in mistral-small3.2:latest qwen3.8-64k:27b qwen3:8b "$template_model"; do
+      if [[ -n "$tags" ]] && printf '%s' "$tags" | jq -e --arg m "$cand" '.models[]? | select((.name // "") | startswith($m))' >/dev/null 2>&1; then
+        PLAN_MODEL="$cand"; break
+      fi
+    done
+  fi
+  PLANNER_OK=0; PLANNER_WHY="not preflighted"
+  if [[ -n "$PLAN_MODEL" ]] && printf '%s' "$tags" | jq -e --arg m "$PLAN_MODEL" '.models[]? | select((.name // "") | startswith($m))' >/dev/null 2>&1; then
+    PLANNER_OK=1; PLANNER_WHY=""
+  else
+    PLANNER_WHY="the local ollama endpoint has no usable planning model (tried mistral-small3.2:latest, qwen3.8-64k:27b, qwen3:8b, '$template_model')"
+  fi
+  step "planner preflight: local ollama at http://127.0.0.1:11434 model '$PLAN_MODEL' — $([[ $PLANNER_OK == 1 ]] && echo available || echo "($PLANNER_WHY)")"
   step "build the daemon from this tree"
   (cd "$REPO_ROOT" && go build -o "$bin" ./cmd/datawatch/) > "$WORK/build.log" 2>&1 \
     || { tail -30 "$WORK/build.log"; step "FATAL: go build of this tree failed"; return 1; }
@@ -238,12 +283,20 @@ start_sandbox() {
   mkdir -p "$sbx/data/projects" "$sbx/home"
   # proxy_sandbox_port: 0 disables the remote-PWA proxy listener; unset it
   # defaults to 8444, the production proxy's port.
+  # http://local-node:11434 is a docker-compose name that does not resolve
+  # on a bare host; the planning backend (and the llms[] refs that point at
+  # it) must be remapped to the local ollama endpoint or the decompose
+  # lane is dead on arrival and checks 4-7 can only be SKIPPED.
+  local planner_url="http://127.0.0.1:11434"
   sed \
     -e "s|data_dir: /data|data_dir: $sbx/data|g" \
     -e "s|default_project_dir: /data/projects|default_project_dir: $sbx/data/projects|g" \
     -e "s|port: 8080|port: $p_http|g" \
     -e "s|^  tls_port: 8443|  tls_port: $p_tls\n  proxy_sandbox_port: 0|" \
     -e "s|sse_port: 9090|sse_port: $p_mcp|g" \
+    -e "s|http://local-node:11434|$planner_url|g" \
+    -e "s|model: qwen3:1\.7b|model: $PLAN_MODEL|g" \
+    -e "s|^  planning_backend: ollama$|  planning_backend: ollama\n  planning_model: $PLAN_MODEL|" \
     -e "s|host: 0\.0\.0\.0|host: 127.0.0.1|g" \
     -e "s|token: \"\"|token: \"$TOKEN\"|g" \
     -e "s|token: \"WEBHOOK_NOAUTH\"|token: \"\"|g" \
@@ -254,6 +307,12 @@ start_sandbox() {
   cp "$sbx/config.yaml" "$sbx/data/config.yaml"
   grep -q '^  proxy_sandbox_port: 0$' "$sbx/config.yaml" \
     || { step "FATAL: the bootstrap config does not disable the proxy sandbox listener"; return 1; }
+  grep -q '^  host: http://127\.0\.0\.1:11434$' "$sbx/config.yaml" \
+    || { step "FATAL: the bootstrap config does not remap the planning backend to the local ollama endpoint"; return 1; }
+  grep -q "^  model: $PLAN_MODEL$" "$sbx/config.yaml" \
+    || { step "FATAL: the bootstrap config does not select the preflighted planning model '$PLAN_MODEL'"; return 1; }
+  grep -q "^  planning_model: $PLAN_MODEL$" "$sbx/config.yaml" \
+    || { step "FATAL: the bootstrap config does not set autonomous.planning_model to '$PLAN_MODEL'"; return 1; }
   python3 -I -c '
 import sys
 try:
@@ -427,7 +486,7 @@ step "check 4: create a scratch Automaton from a fixture spec; decompose; poll"
 # Scope sentence with "must", and a Constraints sentence. The stray tokens
 # are exactly the kinds of things the finding filters must keep out of the
 # coverage report.
-SPEC='Read first: internal/pcfsandbox/alpha.go, internal/pcfsandbox/alpha_test.go, docs/pcfsandbox-guide.md. Use the backend token qzx-eta-backend and the hyphenated phrase cross-cutting-hedge in the fixture notes. Scope: The plan must add the alpha widget end to end. Constraints: Keep the fixture tree under ten files.'
+SPEC='Read first: internal/pcfsandbox/alpha.go, internal/pcfsandbox/alpha_test.go, docs/pcfsandbox-guide.md. Use the backend token qzx-eta-backend and the hyphenated phrase cross-cutting-hedge in the fixture notes. Scope: The plan must add the alpha widget end to end. Constraints: Keep the fixture tree under ten files. Every task that will change files needs its own verification_script: a path under .datawatch/verify/ that checks only that task''s own files. A story-level script does not cover its tasks, and a task with no planned files is exempt.'
 
 api POST /api/autonomous/prds \
   "$(jq -cn --arg spec "$SPEC" --arg dir "$PROJ_DIR" \
@@ -470,10 +529,26 @@ if [[ "${DECOMPOSE_OK:-0}" == "1" ]]; then
       HAVE_RECORD=1
       ;;
     *)
+      # The record carries the product's own rejection reason when one was
+      # recorded (the last GET above is still in API_BODY). Surface it so the
+      # skip line states the truth — the common live failure is not a missing
+      # planner but the plan being rejected by a product gate (e.g.
+      # verification-script-coverage, which a headless ask planner cannot
+      # satisfy while the PRD has a project_dir set).
+      DECOMP_WHY="decompose did not finish (final status='$STATUS')"
+      LAST_FAIL_DETAIL="$(jget "$API_BODY" '.last_decompose_failure.detail')"
+      LAST_FAIL_CAT="$(jget "$API_BODY" '.last_decompose_failure.category')"
+      if [[ -n "$LAST_FAIL_DETAIL" ]]; then
+        DECOMP_WHY="$DECOMP_WHY; the product rejected the planner's plan (category=$LAST_FAIL_CAT): $(printf '%.240s' "$LAST_FAIL_DETAIL")"
+      elif [[ "${PLANNER_OK:-0}" != "1" ]]; then
+        DECOMP_WHY="$DECOMP_WHY; planner preflight said: $PLANNER_WHY"
+      else
+        DECOMP_WHY="$DECOMP_WHY; the local planner was reachable but the result did not reach a reviewable plan"
+      fi
       skip "scratch Automaton + decompose" \
-           "decompose did not finish (final status='$STATUS'); the planning backend was unavailable to the sandbox. Checks 5-7 have no coverage record to observe."
+           "$DECOMP_WHY. Checks 5-7 have no coverage record to observe."
       skip "GET /plan_coverage shows the filters in effect" \
-           "no coverage record was produced because the decompose did not finish" \
+           "no coverage record was produced because the decompose did not finish"
       skip "filters OFF read: live filters off, record pinned filters unchanged" \
            "no coverage record was produced because the decompose did not finish"
       skip "multi-surface parity" \
