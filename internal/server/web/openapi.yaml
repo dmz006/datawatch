@@ -1046,6 +1046,20 @@ paths:
         reset runs in UTC; the `/api/usage/advice` result then carries a note under
         `notes` telling the operator to set the zone explicitly, and its `zone` field
         reports the effective zone with `server_zone` set when the operator left it unset).
+
+        `session.dismiss_ui_prompts` (true|false; an unset key reads as true,
+        and an explicit `false` turns UI prompt dismissal off — a string such
+        as `"true"` is not a boolean like `1` in JSON and is rejected with 400),
+        `session.ui_prompt_dismiss_delay_seconds` (whole seconds >= 0; an unset
+        key reads as 5 and an explicit `0` sends at once),
+        `session.ui_prompt_clear_bound_seconds` (whole seconds >= 1; an unset key
+        reads as 30) and `session.ui_prompt_max_attempts` (whole number >= 1;
+        an unset key reads as 2). A wrong type (a string, a fraction, a
+        boolean or null), a non-integer, a zero or a negative value where the
+        key requires at least 1 all rejects the whole PUT with 400 — nothing
+        is written. GET returns the values in effect. None of these values is
+        hard-coded: the daemon re-reads the config on every use, so a PUT
+        takes effect immediately with no restart.
       operationId: updateConfig
       tags: [System]
       requestBody:

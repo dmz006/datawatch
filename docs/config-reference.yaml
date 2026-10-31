@@ -124,6 +124,26 @@ session:
   # Applies to ALL send sources (schedule, MCP, CLI, API) since v8.12.9.
   schedule_settle_ms: 200
 
+  # UI prompt handling — every value below is read live from this config,
+  # none is hard-coded, and a change applies immediately with no daemon
+  # restart. Unset keys read as their commented default; an explicit value
+  # (including false and 0) is stored and read back, and a bad value is
+  # rejected (nothing is written).
+  # Change any of these with PUT /api/config {"session.dismiss_ui_prompts": false},
+  # the comm channel (`configure session.ui_prompt_max_attempts=3`),
+  # the CLI (`datawatch config set session.ui_prompt_dismiss_delay_seconds 10`),
+  # or the MCP config_set tool (key session.ui_prompt_max_attempts, value 3)
+  # — every surface rides the same daemon PUT /api/config.
+  # Turn dismissing UI prompts off (unset reads true):
+  dismiss_ui_prompts: true
+  # Whole seconds to wait before sending the UI prompt dismissal.
+  # 0 = send at once (unset reads 5):
+  ui_prompt_dismiss_delay_seconds: 5
+  # Whole seconds for the UI prompt clear bound (>= 1; unset reads 30):
+  ui_prompt_clear_bound_seconds: 30
+  # Max UI prompt dismissal attempts (>= 1; unset reads 2):
+  ui_prompt_max_attempts: 2
+
   # Inject additional MCP servers into every spawned session's .mcp.json.
   # Each entry is merged alongside the built-in datawatch MCP bridge entry.
   # For non-claude-code backends, extras go via WriteProjectMCPConfig.

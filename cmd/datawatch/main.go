@@ -6798,6 +6798,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					mgr.SetWorkerQuestionGate(func() bool {
 						return cfg.Autonomous.Questions.Enabled && cfg.Autonomous.Questions.EffectiveWorkerMarker()
 					})
+					// UI prompt handling: the manager reads the live session config
+					// on every call, so a PUT /api/config (or configure / config_set
+					// / config set) takes effect with no daemon restart.
+					mgr.SetUIPromptSettings(func() session.UIPromptSettings {
+						return session.UIPromptSettings{
+							Enabled:           cfg.Session.EffectiveDismissUIPrompts(),
+							DelaySeconds:      cfg.Session.EffectiveUIPromptDismissDelaySeconds(),
+							ClearBoundSeconds: cfg.Session.EffectiveUIPromptClearBoundSeconds(),
+							MaxAttempts:       cfg.Session.EffectiveUIPromptMaxAttempts(),
+						}
+					})
 					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
 						Store:  qstore,
 						Audit:  lifecycleAuditFn,

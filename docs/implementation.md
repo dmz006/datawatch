@@ -956,7 +956,12 @@ All fields in `~/.datawatch/config.yaml`:
 | `session.store_archive_after_days` | int | `14` | Days after its last update that a finished session moves to the archive file; `0` disables archiving. Applies live |
 | `session.store_field_cap_kb` | int | `256` | Largest session text field kept inline in the session store, in KB; longer text is cut with a marker and the full text goes to a side file. Applies to later writes |
 | `session.store_side_file_cap_kb` | int | `64` | Automaton (PRD) text longer than this many KB is stored in a side file next to its record. Existing records are rewritten with the new value when their Automaton next changes |
-| `server.enabled` | bool | `true` | Whether to start the HTTP/WebSocket server |
+| `session.dismiss_ui_prompts` | bool | `true` (when unset) | Whether dismissing UI prompts is on. An explicit `false` turns it off and survives a round trip (pointer-typed, like `identity.backups_to_keep`). Read live on every use |
+| `session.ui_prompt_dismiss_delay_seconds` | int | `5` (when unset) | Whole seconds to wait before sending the UI prompt dismissal. `0` = send at once (only explicit, never the default) |
+| `session.ui_prompt_clear_bound_seconds` | int | `30` (when unset) | Whole seconds ≥ 1; the UI prompt clear bound. A wrong type, a fraction, a zero or a negative value is rejected (nothing applied) |
+| `session.ui_prompt_max_attempts` | int | `2` (when unset) | UI prompt dismissal attempts cap, whole number ≥ 1. A wrong type, a fraction, zero or a negative value is rejected (nothing applied) |
+
+None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.Manager.SetUIPromptSettings` a closure that re-reads the config on every call, so any surface's write (`PUT /api/config`, comm `configure`, CLI `config set`, MCP `config_set`) takes effect immediately with no daemon restart.| `server.enabled` | bool | `true` | Whether to start the HTTP/WebSocket server |
 | `server.host` | string | `0.0.0.0` | Bind address. Use `0.0.0.0` for all interfaces (including Tailscale) |
 | `server.port` | int | `8080` | HTTP/WebSocket listen port |
 | `server.token` | string | `""` | Optional bearer token for PWA authentication. Empty = no auth |
@@ -1349,6 +1354,72 @@ absent key reads as 10 and `GET /api/config` shows 10.
 
 **Live effect.** The next identity write uses the new number; no daemon restart
 is needed.
+
+**Live effect.** The next UI prompt dismissal uses the new values; no daemon
+restart is needed.
+
+### UI prompt handling settings (`session.dismiss_ui_prompts`, `session.ui_prompt_*`)
+
+Four keys size the daemon's dismissal of a session's UI prompt. None of the
+values is hard-coded: they are the only source, they are read live from the
+daemon config on every use, and a change from any surface applies immediately
+with no daemon restart.
+
+How it works, for someone reading the code:
+
+- `internal/config/config.go` carries the four keys as pointer fields in
+  `SessionConfig` (`DismissUIPrompts *bool`, `UIPromptDismissDelaySeconds`,
+  `UIPromptClearBoundSeconds`, `UIPromptMaxAttempts *int`), so an unset key
+  and an explicit value — including an explicit `false` or `0` — are distinct
+  and both survive a YAML round trip and a `PUT /api/config` write. The
+  `Effective*()` helpers resolve unset to the defaults `true`, `5`, `30`, `2`
+  (named `DefaultUIPrompt*` constants).
+- `internal/server/api.go`: `GET /api/config` returns the four effective
+  values under `session`; `PUT /api/config` accepts the four dot-path keys
+  and, before anything is applied, a pre-validation step rejects a wrong
+  type (a string where a boolean or number is expected, a fraction, a
+  boolean or null where a whole number is expected), a zero or a negative
+  value where the key requires at least 1, with HTTP 400 naming the key.
+  `session.ui_prompt_dismiss_delay_seconds` allows `0` (send at once); the
+  other two numbers and the boolean do not take zero. Validation rules live
+  once in `internal/config` (`ValidateUIPrompt*`), shared with the
+  config-load path.
+- `internal/session/ui_prompt_settings.go` defines `UIPromptSettings` and
+  `Manager.SetUIPromptSettings(func() UIPromptSettings)`: the getter is
+  read on every call, and with no getter the defaults apply.
+- `cmd/datawatch/main.go` wires the getter to re-read `cfg.Session`
+  effectively on every dismissal, so a write from any surface takes effect
+  with the next dismissal, no restart.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `session.dismiss_ui_prompts`, `session.ui_prompt_dismiss_delay_seconds`, `session.ui_prompt_clear_bound_seconds`, `session.ui_prompt_max_attempts` (see `docs/config-reference.yaml`) |
+| **CLI** | `datawatch config set session.dismiss_ui_prompts true\|false`, `datawatch config set session.ui_prompt_dismiss_delay_seconds 60`, `datawatch config set session.ui_prompt_clear_bound_seconds 45`, `datawatch config set session.ui_prompt_max_attempts 3` |
+| **REST API** | `PUT /api/config` with, e.g., `{"session.ui_prompt_max_attempts": 3}`; `GET /api/config` returns each under `session` with its effective value |
+| **MCP** | `config_set` with key `session.ui_prompt_clear_bound_seconds` (or any of the four) |
+| **Comm channel** | `configure session.ui_prompt_max_attempts=3` |
+
+**Keys.**
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `session.dismiss_ui_prompts` | boolean | `true` (when unset) | Whether dismissing UI prompts is on; an explicit `false` turns it off. |
+| `session.ui_prompt_dismiss_delay_seconds` | integer | `5` (when unset) | Whole seconds to wait before sending the dismissal; `0` = send at once. |
+| `session.ui_prompt_clear_bound_seconds` | integer | `30` (when unset) | Whole seconds ≥ 1; the clear bound. |
+| `session.ui_prompt_max_attempts` | integer | `2` (when unset) | Attempts cap, whole number ≥ 1. |
+
+**Validation.** Through `PUT /api/config` a bad value is rejected with HTTP
+400 naming the key, before anything is applied: `dismiss_ui_prompts` must be
+a real boolean (a string such as `"true"` is not — `1` in JSON is also not).
+The delay must be a whole number ≥ 0 (an explicit `0` sends at once); the
+bound and the attempts cap must be whole numbers ≥ 1 — a zero or a negative
+value, a fraction, a string, a boolean or null is rejected for all of them.
+The same rules apply when the config file loads: an out-of-range value makes
+the configuration fail to load with an error naming the key. `GET /api/config`
+always shows the value in effect, default or explicit.
+
+**Live effect.** The next UI prompt dismissal uses the new values; no daemon
+restart is needed.
 
 ### Dependencies
 

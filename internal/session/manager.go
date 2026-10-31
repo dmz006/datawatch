@@ -486,6 +486,10 @@ type Manager struct {
 	// (see question_marker.go). It is off unless a gate and a hook are set.
 	workerQuestion workerQuestionRoute
 
+	// uiPrompt holds the live UI prompt settings getter (see
+	// ui_prompt_settings.go). A nil getter means the defaults apply.
+	uiPrompt uiPromptRoute
+
 	// journal receives the session end and pane-close lines (see end_reason.go).
 	// nil writes them to stdout; tests set it to capture them.
 	journal io.Writer
