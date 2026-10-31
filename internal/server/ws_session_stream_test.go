@@ -418,7 +418,10 @@ func TestWSSessionStream_ConfigDefaultReadLive(t *testing.T) {
 	s.wireHubSessionStream()
 	go s.hub.Run()
 	ch := make(chan []byte, 16)
-	s.hub.register <- &client{hub: s.hub, send: ch, subscribed: map[string]bool{}}
+	// BroadcastSessions reads h.hasClient(...) on the caller's
+	// goroutine (broadcastSessionList / sendSessionState), so the client
+	// must actually be held by the hub before the first broadcast.
+	registerTestClient(t, s.hub, &client{hub: s.hub, send: ch, subscribed: map[string]bool{}})
 
 	next := func() MessageType {
 		select {
@@ -449,8 +452,8 @@ func TestWSSessionStream_SlowClientDropped(t *testing.T) {
 	// A full-mode client with the same tiny buffer is never offered the
 	// delta frames, so it must not be dropped by them.
 	slowFull := &client{hub: h, send: make(chan []byte, 1), subscribed: map[string]bool{}}
-	h.register <- slowDelta
-	h.register <- slowFull
+	registerTestClient(t, h, slowDelta)
+	registerTestClient(t, h, slowFull)
 
 	h.BroadcastSessions(nil) // seeds nothing, no frames for delta
 	<-slowFull.send          // the (empty) sessions frame
