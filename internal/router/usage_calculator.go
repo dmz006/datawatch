@@ -59,7 +59,7 @@ func (r *Router) handleUsage(cmd Command) {
 		if cmd.UsagePolicy != "" {
 			q.Set("policy", cmd.UsagePolicy)
 		}
-		if cmd.UsageLanes > 0 {
+		if cmd.UsageLanesSet {
 			q.Set("lanes", strconv.Itoa(cmd.UsageLanes))
 		}
 		r.replyUsageAdvice(q, "usage advice")
