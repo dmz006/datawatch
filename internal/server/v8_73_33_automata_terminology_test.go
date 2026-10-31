@@ -121,6 +121,17 @@ var pendingTranslationKeys = map[string]bool{
 	"settings_automata_questions_quality_min_text_chars":     true,
 	"settings_automata_questions_quality_tracker_id_pattern": true,
 	"settings_automata_questions_queue_preview_lines":        true,
+	// Uncommitted-work card, task chip, Automaton banner and settings labels: English until the app translation lands.
+	"uncommitted_work_card_title":                 true,
+	"uncommitted_work_read_only":                  true,
+	"uncommitted_work_empty":                      true,
+	"uncommitted_work_held_task":                  true,
+	"uncommitted_work_held_automaton":             true,
+	"uncommitted_work_failed":                     true,
+	"uncommitted_work_chip_tip":                   true,
+	"uncommitted_work_banner":                     true,
+	"settings_automation_uncommitted_work_policy": true,
+	"settings_automation_uncommitted_work_scope":  true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

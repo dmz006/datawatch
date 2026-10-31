@@ -323,6 +323,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automation_security_failure_action_report_only",
 		"automation_security_failure_action_other",
 		"automation_security_failure_note",
+		// Uncommitted-work check: the card title in the Automata overview and
+		// the two settings labels.
+		"uncommitted_work_card_title",
+		"settings_automation_uncommitted_work_policy",
+		"settings_automation_uncommitted_work_scope",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
