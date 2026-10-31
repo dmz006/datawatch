@@ -136,8 +136,13 @@ type DecisionDocChange struct {
 }
 
 // DecisionFollowUp reports a configured follow-up action after the answer.
+// Requested is true once the operator asked for one and Name is the entry of
+// autonomous.decisions.follow_ups they named; Kind and Target are filled from
+// that entry when it runs, together with Status (done, skipped or error) and
+// a one-line Result.
 type DecisionFollowUp struct {
 	Requested bool       `json:"requested"`
+	Name      string     `json:"name,omitempty"`
 	Kind      string     `json:"kind,omitempty"`
 	Target    string     `json:"target,omitempty"`
 	Status    string     `json:"status,omitempty"`

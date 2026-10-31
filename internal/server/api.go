@@ -512,6 +512,11 @@ type Server struct {
 	// backing /api/questions. Wired from main.go alongside the daemon's
 	// data; nil (default) makes the handlers return 503.
 	questionStore QuestionsAPI
+	// decisionFollowUps — records the follow-up an operator asks for when
+	// answering a decision record question; wired by main.go via
+	// SetDecisionFollowUps; nil (default) = a follow_up in an answer is
+	// refused with 503.
+	decisionFollowUps DecisionFollowUpAPI
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).

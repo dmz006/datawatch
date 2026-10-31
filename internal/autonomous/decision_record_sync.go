@@ -121,6 +121,14 @@ type DecisionRecords struct {
 	pending     []decisionAnswerApplied
 	release     func(QuestionChange)
 	effectsSeen func(DecisionRecord, Question, Answer) // test seam
+
+	// followMu guards the follow-up targets (decision_record_followup.go);
+	// followRunMu serialises the follow-up runs so one record's follow-up is
+	// checked, run and recorded as one step.
+	followMu    sync.Mutex
+	followStart DecisionTemplateStarter
+	followOpen  DecisionAutomatonOpener
+	followRunMu sync.Mutex
 }
 
 // NewDecisionRecords builds the service. The config functions are read on
@@ -450,4 +458,33 @@ func questionPatchFromBuilt(b Question) QuestionPatch {
 		RegistryRowKey: &b.RegistryRowKey,
 		Context:        &b.Context,
 	}
+}
+
+// RequestFollowUp records that the operator wants the named follow-up to run
+// once the question is answered. The name must be one of the entries of
+// autonomous.decisions.follow_ups, read live; an unknown name, or any name
+// while the list is empty, is refused with *ErrUnknownFollowUp, which says
+// which names are allowed (or that none are configured). The question must
+// belong to an open decision record, otherwise ErrNoDecisionRecord or
+// ErrDecisionRecordClosed comes back. Nothing runs here: the follow-up runs
+// when the answer is applied, and asking again before then replaces the
+// earlier request.
+func (s *DecisionRecords) RequestFollowUp(questionID, name string) error {
+	if err := s.available(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.records.GetByQuestionID(questionID)
+	if !ok {
+		return fmt.Errorf("question %s: %w", questionID, ErrNoDecisionRecord)
+	}
+	if rec.State != DecisionRecordOpen {
+		return fmt.Errorf("decision record %s is %s: %w", rec.ID, rec.State, ErrDecisionRecordClosed)
+	}
+	if _, err := lookupFollowUp(s.decisionsConfig().EffectiveFollowUps(), name); err != nil {
+		return err
+	}
+	_, err := s.records.RecordFollowUp(rec.ID, DecisionFollowUp{Requested: true, Name: name})
+	return err
 }

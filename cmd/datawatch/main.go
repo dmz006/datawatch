@@ -6791,6 +6791,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					applyQuestionEvents(cfg.Autonomous.Questions.Enabled)
 					httpServer.SetQuestionEventsSwitch(applyQuestionEvents)
 					httpServer.SetQuestions(qstore)
+					// An answer may name a configured follow-up; the decision
+					// record service records the request before the answer.
+					if dr := amgr.DecisionRecords(); dr != nil {
+						httpServer.SetDecisionFollowUps(dr)
+					}
 					// Question-raise notification (the "notify" legs beside the
 					// channel): the server dispatches non-blockingly on each
 					// successful raise — WS broadcast for the PWA, this fan-out to
@@ -7024,6 +7029,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
 			questionAPI.Store(aAPI)
+			// The follow-ups an answered decision record can run (the
+			// configured autonomous.decisions.follow_ups): start a template or
+			// open a held Automaton, through the same Automaton API calls the
+			// MCP tools use.
+			if dr := amgr.DecisionRecords(); dr != nil {
+				dr.SetFollowUpTargets(aAPI, autonomouspkg.NewDecisionAutomatonOpener(aAPI))
+			}
 			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).

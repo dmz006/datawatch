@@ -99,6 +99,33 @@ type QuestionsAPI interface {
 	AnswerCount(id string) int
 }
 
+// DecisionFollowUpAPI records the follow-up an operator asks for with an
+// answer. The decision record service implements it; the answer handler
+// calls it before it records the answer, so a refused follow-up stores
+// nothing.
+type DecisionFollowUpAPI interface {
+	RequestFollowUp(questionID, name string) error
+}
+
+// SetDecisionFollowUps wires the follow-up request into the server for the
+// optional follow_up field of POST /api/questions/{id}/answer. Nil (the
+// default) refuses an answer that names a follow-up with 503; an answer
+// without one is not affected.
+func (s *Server) SetDecisionFollowUps(api DecisionFollowUpAPI) {
+	if s == nil {
+		return
+	}
+	s.decisionFollowUps = api
+}
+
+// HTTPServer delegate, so main.go can wire it next to SetQuestions.
+func (s *HTTPServer) SetDecisionFollowUps(api DecisionFollowUpAPI) {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.SetDecisionFollowUps(api)
+}
+
 // raiseQuestionBody is the POST /api/questions body. Text, options, a
 // valid context and default are required (the store rejects a question
 // without them); an absent asker and asker kind default to the caller and
@@ -640,6 +667,10 @@ type answerQuestionBody struct {
 	Surface         string `json:"surface"`
 	SourceMessageID string `json:"source_message_id"`
 	Actor           string `json:"actor"`
+	// FollowUp optionally names one entry of autonomous.decisions.follow_ups
+	// to run once the answer is applied to the decision record. It needs a
+	// question that belongs to a decision record.
+	FollowUp string `json:"follow_up"`
 }
 
 // handleQuestionAnswer implements POST /api/questions/{id}/answer.
@@ -695,6 +726,21 @@ func (s *Server) handleQuestionAnswer(w http.ResponseWriter, r *http.Request, id
 		Quote:           reqBody.Quote, // exactly as received
 		Supersedes:      reqBody.Supersedes,
 		SourceMessageID: reqBody.SourceMessageID,
+	}
+
+	// A follow-up is requested before the answer is recorded: when it is
+	// refused (unknown name, empty list, no decision record) the caller gets
+	// the plain message and nothing is stored.
+	if name := strings.TrimSpace(reqBody.FollowUp); name != "" {
+		if s.decisionFollowUps == nil {
+			writeJSONError(w, http.StatusServiceUnavailable,
+				map[string]string{"error": "decision follow-ups are not available"})
+			return
+		}
+		if err := s.decisionFollowUps.RequestFollowUp(id, name); err != nil {
+			writeJSONError(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 
 	stored, err := s.questionStore.Answer(id, a)

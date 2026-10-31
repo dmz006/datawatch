@@ -181,7 +181,3 @@ func (s *DecisionRecords) applyAnswerEffects(rec DecisionRecord, q Question, a A
 	s.rewriteDocStatusLine(rec, q, a)
 	s.runFollowUp(rec, q, a)
 }
-
-// runFollowUp runs the configured follow-up steps for an answered record. It
-// does nothing yet.
-func (s *DecisionRecords) runFollowUp(_ DecisionRecord, _ Question, _ Answer) {}
