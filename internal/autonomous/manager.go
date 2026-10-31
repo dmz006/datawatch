@@ -1045,11 +1045,12 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu          sync.Mutex
-	cfg         Config
-	store       *Store
-	automations *AutomationStore
-	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	mu           sync.Mutex
+	cfg          Config
+	store        *Store
+	automations  *AutomationStore
+	pendingItems *PendingItemStore // pending items (pending_item_store.go): registry of named work with no Automaton yet
+	repoCIWatch  *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
@@ -2197,6 +2198,10 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	pending, err := NewPendingItemStore(st.dir)
+	if err != nil {
+		return nil, err
+	}
 	repoWatch, err := NewRepoCIWatchStore(st.dir)
 	if err != nil {
 		return nil, err
@@ -2212,6 +2217,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		cfg:                    cfg,
 		store:                  st,
 		automations:            automs,
+		pendingItems:           pending,
 		repoCIWatch:            repoWatch,
 		supervisorWatch:        supWatch,
 		supervisorWatchAlerted: map[string]bool{},
