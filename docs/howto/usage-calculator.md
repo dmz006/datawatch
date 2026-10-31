@@ -225,7 +225,6 @@ Where lanes show up on each method:
 | **MCP** | Deprecated, ignored | The what-if |
 | **CLI** | Deprecated, ignored (`--lanes` still parses) | The what-if |
 | **Comm channel** | Deprecated, ignored | The what-if |
-| **Web UI** (when the calculator screen ships) | Will offer no input; the daemon stamps it | Will show the what-if stepper, with the lanes running now beside it |
 
 ## Where to see it
 
