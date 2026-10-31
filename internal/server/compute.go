@@ -532,43 +532,11 @@ func (s *Server) handleComputeNodeModels(w http.ResponseWriter, r *http.Request,
 	case "ollama", "opencode":
 		// Ollama protocol — GET /api/tags returns {"models":[{"name":"llama3:70b",...}]}.
 		probeURL = strings.TrimRight(addr, "/") + "/api/tags"
-		parser = func(b []byte) []string {
-			var doc struct {
-				Models []struct {
-					Name string `json:"name"`
-				} `json:"models"`
-			}
-			if json.Unmarshal(b, &doc) != nil {
-				return nil
-			}
-			out := make([]string, 0, len(doc.Models))
-			for _, m := range doc.Models {
-				if m.Name != "" {
-					out = append(out, m.Name)
-				}
-			}
-			return out
-		}
+		parser = compute.ParseOllamaTags
 	case "openwebui":
 		// OpenWebUI exposes /api/v1/models — same OpenAI-compat shape.
 		probeURL = strings.TrimRight(addr, "/") + "/api/v1/models"
-		parser = func(b []byte) []string {
-			var doc struct {
-				Data []struct {
-					ID string `json:"id"`
-				} `json:"data"`
-			}
-			if json.Unmarshal(b, &doc) != nil {
-				return nil
-			}
-			out := make([]string, 0, len(doc.Data))
-			for _, m := range doc.Data {
-				if m.ID != "" {
-					out = append(out, m.ID)
-				}
-			}
-			return out
-		}
+		parser = compute.ParseOpenAIModels
 	default:
 		// Session-backend kinds (claude-code, aider, goose, gemini,
 		// shell, opencode-acp, opencode-prompt) don't expose a model
