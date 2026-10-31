@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Story: usage calculator Claude lane stamp
 /**
  * TS-840 — Usage calculator Claude lane stamp on a phone: the reading form no longer asks
@@ -7,7 +6,7 @@
  * tags: surface:pwa feature:usage-calculator group:usage
  *
  * Runs at a phone viewport (390x844). The calculator card sits on the Automata tab, in the
- * Automation sub-tab (the card TS-819 drives).
+ * Automation sub-tab, under its Overview second-row tab.
  *
  * Flow: seed an earlier reading through the API so the advice has a previous reading, open the
  * card, then
@@ -82,11 +81,14 @@ await runPerfStory(async (page) => {
     await openPWA(p, { timeout: 60000 });
     await p.evaluate(() => { try { localStorage.setItem('cs_theme', 'dark'); } catch { /* ignore */ } });
 
-    // Open the Automata tab, Automation sub-tab, and wait for the usage card to load.
+    // Open the Automata tab, Automation sub-tab, Overview second-row tab (the usage card's home),
+    // and wait for the usage card to load.
     await p.evaluate(() => {
       window.navigate('autonomous');
       const btn = document.querySelector('.automata-tabs-bar .output-tab[data-tab="automation"]');
       if (btn && !btn.classList.contains('active')) btn.click();
+      const overview = document.querySelector('.automation-subtabs .output-tab[data-subtab="overview"]');
+      if (overview && !overview.classList.contains('active')) overview.click();
     });
     await p.waitForSelector(`${CARD} .usage-calc-title`, { state: 'visible', timeout: 60000 });
     await p.waitForSelector(`${CARD} .usage-calc-verdict`, { state: 'visible', timeout: 30000 });
