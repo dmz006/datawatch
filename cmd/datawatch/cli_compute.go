@@ -199,6 +199,7 @@ func newComputeNodeCmd() *cobra.Command {
 			return daemonGet("/api/compute/nodes/" + args[0] + "/detail")
 		},
 	})
+	cmd.AddCommand(newComputeNodeServedModelsCmd())
 	cmd.AddCommand(newComputeNodeAddCmd(false))
 	cmd.AddCommand(newComputeNodeAddCmd(true))
 	cmd.AddCommand(&cobra.Command{
