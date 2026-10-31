@@ -635,6 +635,18 @@ type AutomationConfig struct {
 	// UncommittedWorkScope: task_files | worktree. Empty or an unrecognized
 	// value reads as task_files via EffectiveUncommittedWorkScope.
 	UncommittedWorkScope string `json:"uncommitted_work_scope,omitempty"`
+
+	// ProtectedPaths: the paths a task commit must not touch without the
+	// operator. Empty reads the default list via EffectiveProtectedPaths.
+	ProtectedPaths []string `json:"protected_paths,omitempty"`
+
+	// ProtectedPathsAction: hold | warn | block | off. Empty or an
+	// unrecognized value reads as hold via EffectiveProtectedPathsAction.
+	ProtectedPathsAction string `json:"protected_paths_action,omitempty"`
+
+	// RulesReviewSource: base_commit | worktree. Empty or an unrecognized
+	// value reads as base_commit via EffectiveRulesReviewSource.
+	RulesReviewSource string `json:"rules_review_source,omitempty"`
 }
 
 // DefaultAutomationTriageAlertMinutes — the autonomous.automation.
@@ -737,6 +749,28 @@ func (c AutomationConfig) EffectiveUncommittedWorkScope() string {
 		return config.UncommittedWorkScopeWorktree
 	}
 	return config.UncommittedWorkScopeTaskFiles
+}
+
+// EffectiveProtectedPaths returns the protected-path list in effect: the
+// normalised explicit list, or config.DefaultProtectedPaths(rulesFile) when it
+// is unset or empty. rulesFile is the effective rules file name (empty reads
+// AGENT.md).
+func (c AutomationConfig) EffectiveProtectedPaths(rulesFile string) []string {
+	return config.AutonomousAutomationConfig{ProtectedPaths: c.ProtectedPaths}.EffectiveProtectedPaths(rulesFile)
+}
+
+// EffectiveProtectedPathsAction returns the protected-paths action in effect:
+// warn, block and off are explicit operator choices, an empty or unknown
+// value reads config.ProtectedPathsActionHold, the safe default.
+func (c AutomationConfig) EffectiveProtectedPathsAction() string {
+	return config.AutonomousAutomationConfig{ProtectedPathsAction: c.ProtectedPathsAction}.EffectiveProtectedPathsAction()
+}
+
+// EffectiveRulesReviewSource returns where the rules review reads the project
+// rules from: worktree is the explicit choice, an empty or unknown value reads
+// config.RulesReviewSourceBaseCommit.
+func (c AutomationConfig) EffectiveRulesReviewSource() string {
+	return config.AutonomousAutomationConfig{RulesReviewSource: c.RulesReviewSource}.EffectiveRulesReviewSource()
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in
