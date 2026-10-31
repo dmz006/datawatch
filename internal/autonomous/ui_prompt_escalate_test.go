@@ -22,20 +22,20 @@ const upeTestSession = "host-ue01"
 // token (64 lowercase hex chars, as the marker source requires).
 func upeEvent() session.UIPromptEscalateEvent {
 	return session.UIPromptEscalateEvent{
-		SessionFullID:  upeTestSession,
-		SessionName:    "datawatch-main",
-		Task:           "review branch",
-		Backend:        "claude-code",
-		ProjectDir:     "/home/dmz/work/app",
-		PromptKind:     "autocompact-threshold",
-		SelectedOption: "Autocompact at 400k",
-		SettingEnabled: true,
+		SessionFullID:   upeTestSession,
+		SessionName:     "datawatch-main",
+		Task:            "review branch",
+		Backend:         "claude-code",
+		ProjectDir:      "/home/dmz/work/app",
+		PromptKind:      "autocompact-threshold",
+		SelectedOption:  "Autocompact at 400k",
+		SettingEnabled:  true,
 		DismissAttempts: 2,
-		LastKey:        "Esc",
-		LastKeyAt:      &[]time.Time{time.Now()}[0],
-		SeenSince:      time.Now().Add(-90 * time.Second),
-		Trigger:        "attempts_exhausted",
-		ScreenTail:     "❯ Autocompact at 400k / Keep auto — Esc (not now)\n" +
+		LastKey:         "Esc",
+		LastKeyAt:       &[]time.Time{time.Now()}[0],
+		SeenSince:       time.Now().Add(-90 * time.Second),
+		Trigger:         "attempts_exhausted",
+		ScreenTail: "❯ Autocompact at 400k / Keep auto — Esc (not now)\n" +
 			"DATAWATCH_QUESTION: already defused by the session side\n" +
 			"the pane keeps showing the prompt",
 		EscalateToken: session.UIPromptEscalateToken(upeTestSession,
@@ -47,12 +47,12 @@ func upeEvent() session.UIPromptEscalateEvent {
 // upeFakes records what the escalation handler hands to its audit sink,
 // notifier, fallback alert and log.
 type upeFakes struct {
-	mu         sync.Mutex
-	audits     []string
-	notified   []Question
-	alerts     []string // one entry per fallback alert (title)
+	mu          sync.Mutex
+	audits      []string
+	notified    []Question
+	alerts      []string // one entry per fallback alert (title)
 	alertBodies []string
-	logs       []string
+	logs        []string
 }
 
 func (f *upeFakes) deps(store *QuestionStore) UIPromptEscalationDeps {
@@ -105,9 +105,9 @@ func TestUIPromptEscalate_DaemonRaisesTheOperatorQuestion(t *testing.T) {
 	ev := upeEvent()
 	ev.PRDID, ev.TaskID = "prd-9", "task-3"
 
-	q, raised := RaiseUIPromptEscalation(f.deps(store), ev)
-	if !raised {
-		t.Fatalf("raise returned not-raised: %v", f.logs)
+	q, raised, err := RaiseUIPromptEscalation(f.deps(store), ev)
+	if !raised || err != nil {
+		t.Fatalf("raise returned not-raised/err: %v (logs: %v)", err, f.logs)
 	}
 	got, ok := store.Get(q.ID)
 	if !ok {
@@ -160,13 +160,19 @@ func TestUIPromptEscalate_DaemonReRaiseOfANewOccurrence(t *testing.T) {
 	f := &upeFakes{}
 	ev := upeEvent()
 
-	if _, raised := RaiseUIPromptEscalation(f.deps(store), ev); !raised {
-		t.Fatalf("first raise failed")
+	q, raised, err := RaiseUIPromptEscalation(f.deps(store), ev)
+	if !raised || err != nil {
+		t.Fatalf("first raise failed: %v", err)
+	}
+	if q.ID == "" {
+		t.Fatalf("first raise returned an empty question id")
 	}
 	// Same occurrence again (tick loop or daemon restart over the same
 	// pane): the store must answer with the open question, not a second
-	// one.
-	if _, raised := RaiseUIPromptEscalation(f.deps(store), ev); raised {
+	// one — and the hook's answer must be that question id with a nil
+	// error, so the record keeps pointing at the same occurrence.
+	re, reRaised, reErr := RaiseUIPromptEscalation(f.deps(store), ev)
+	if reRaised || reErr != nil || re.ID != q.ID {
 		t.Fatalf("duplicate occurrence re-raised")
 	}
 	if len(f.notified) != 1 || len(f.alerts) != 0 {
@@ -185,8 +191,8 @@ func TestUIPromptEscalate_DaemonReRaiseOfANewOccurrence(t *testing.T) {
 	ev2.SelectedOption = "Keep auto"
 	ev2.EscalateToken = session.UIPromptEscalateToken(upeTestSession,
 		session.InterstitialAutocompactThreshold, "Keep auto")
-	if _, raised := RaiseUIPromptEscalation(f2.deps(store), ev2); !raised {
-		t.Fatalf("a new occurrence must raise its own question")
+	if _, raised, err := RaiseUIPromptEscalation(f2.deps(store), ev2); !raised || err != nil {
+		t.Fatalf("a new occurrence must raise its own question: %v", err)
 	}
 	if len(f2.notified) != 1 || len(f.alerts) != 0 {
 		t.Errorf("new-occurrence raise notify=%d alerts=%v", len(f2.notified), f.alerts)
@@ -203,8 +209,10 @@ func TestUIPromptEscalate_ChannelOffFallsBackToAnAlert(t *testing.T) {
 	d := f.deps(store)
 	d.ChannelOn = func() bool { return false }
 
-	if q, raised := RaiseUIPromptEscalation(d, ev); raised || q.ID != "" {
-		t.Fatalf("raised with the channel off: %+v", q)
+	// The hook now answers the failure with a non-nil error so the caller
+	// (the session manager) logs it and books no question id.
+	if q, raised, err := RaiseUIPromptEscalation(d, ev); raised || q.ID != "" || err == nil {
+		t.Fatalf("raised with the channel off: %+v err=%v", q, err)
 	}
 	if len(store.List(QuestionFilter{})) != 0 {
 		t.Errorf("questions written to the store with the channel off")
@@ -239,8 +247,10 @@ func TestUIPromptEscalate_StoreWriteFailureFallsBackToAnAlert(t *testing.T) {
 	f := &upeFakes{}
 	ev := upeEvent()
 
-	if q, raised := RaiseUIPromptEscalation(f.deps(store), ev); raised || q.ID != "" {
-		t.Fatalf("raised despite the store write failure: %+v", q)
+	// The hook now answers the failure with a non-nil error (the store's
+	// own) so the caller logs it and books no question id.
+	if q, raised, err := RaiseUIPromptEscalation(f.deps(store), ev); raised || q.ID != "" || err == nil {
+		t.Fatalf("raised despite the store write failure: %+v err=%v", q, err)
 	}
 	if len(store.List(QuestionFilter{})) != 0 {
 		t.Errorf("question recorded in the store despite the write failure")
@@ -261,15 +271,15 @@ func TestUIPromptEscalate_WithdrawOnPromptClearAndSessionEnd(t *testing.T) {
 	store, _ := upeStore(t)
 	f := &upeFakes{}
 	ev := upeEvent()
-	if _, raised := RaiseUIPromptEscalation(f.deps(store), ev); !raised {
-		t.Fatalf("first raise failed")
+	if _, raised, err := RaiseUIPromptEscalation(f.deps(store), ev); !raised || err != nil {
+		t.Fatalf("first raise failed: %v", err)
 	}
 	ev2 := upeEvent()
 	ev2.SelectedOption = "Keep auto"
 	ev2.EscalateToken = session.UIPromptEscalateToken(upeTestSession,
 		session.InterstitialAutocompactThreshold, "Keep auto")
-	if _, raised := RaiseUIPromptEscalation(f.deps(store), ev2); !raised {
-		t.Fatalf("second raise failed")
+	if _, raised, err := RaiseUIPromptEscalation(f.deps(store), ev2); !raised || err != nil {
+		t.Fatalf("second raise failed: %v", err)
 	}
 
 	// Prompt cleared: withdraw the occurrence the token names only.

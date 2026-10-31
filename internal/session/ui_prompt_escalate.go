@@ -102,11 +102,15 @@ type UIPromptEscalateWithdrawEvent struct {
 	Reason        string
 }
 
-// uiPromptEscalateRoute holds the escalation hook behind its own lock, so a
-// setter called after the capture loop starts never races a read.
+// uiPromptEscalateRoute holds the escalation question hook behind its own
+// lock, so a setter called after the capture loop starts never races a
+// read. The hook returns the question id it stored (or the still-open
+// duplicate it reused) so the manager can attach it to the session's
+// UIPrompt record; a non-nil err means the daemon could not carry the
+// escalation and already fell back, exactly once, to an alert.
 type uiPromptEscalateRoute struct {
 	mu   sync.RWMutex
-	hook func(UIPromptEscalateEvent)
+	hook func(UIPromptEscalateEvent) (questionID string, err error)
 }
 
 // uiPromptEscalateWithdrawRoute holds the withdrawal hook behind its own
@@ -116,11 +120,15 @@ type uiPromptEscalateWithdrawRoute struct {
 	hook func(UIPromptEscalateWithdrawEvent)
 }
 
-// SetUIPromptEscalateHook sets the receiver for UI-prompt escalation
+// SetUIPromptQuestionHook sets the receiver for UI-prompt escalation
 // events. It runs on the capture loop, so it must return quickly: the
-// daemon side hands the event to a goroutine and never waits on a question
-// store here.
-func (m *Manager) SetUIPromptEscalateHook(fn func(UIPromptEscalateEvent)) {
+// daemon side raises against the in-memory question store and never does
+// network work in it. The hook returns the question id it stored (or the
+// still-open duplicate it reused) and an error when the store could not
+// carry it — the daemon has then already sent exactly one fallback alert
+// and logged the failure; the manager records the id on the session's
+// UIPrompt record and never re-raises the occurrence.
+func (m *Manager) SetUIPromptQuestionHook(fn func(UIPromptEscalateEvent) (questionID string, err error)) {
 	m.uiPromptEscalate.mu.Lock()
 	m.uiPromptEscalate.hook = fn
 	m.uiPromptEscalate.mu.Unlock()
@@ -134,7 +142,7 @@ func (m *Manager) SetUIPromptEscalateWithdrawHook(fn func(UIPromptEscalateWithdr
 	m.uiPromptEscalateWithdraw.mu.Unlock()
 }
 
-func (m *Manager) uiPromptEscalateHookFn() func(UIPromptEscalateEvent) {
+func (m *Manager) uiPromptEscalateHookFn() func(UIPromptEscalateEvent) (string, error) {
 	if m == nil {
 		return nil
 	}
@@ -247,13 +255,64 @@ func (m *Manager) maybeEscalateUIPrompt(sess *Session, now time.Time) {
 		EscalateToken:   UIPromptEscalateToken(sess.FullID, rec.kind, rec.selected),
 		At:              now,
 	}
-	hook(ev)
+	questionID, raiseErr := hook(ev)
+	m.bookUIPromptQuestion(sess, questionID, raiseErr)
 	m.debugf("ui-prompt: %s: escalated kind=%s trigger=%s attempts=%d token=%s…",
 		sess.FullID, string(rec.kind), trigger, rec.dismissAttempts, ev.EscalateToken[:8])
 }
 
-// escalationScreenTail captures the pane one more time and hands back the
-// last uiPromptEscalationTailLines non-empty lines: ANSI-stripped, marker
+// bookUIPromptQuestion records the answer to "where did this escalation
+// go": the question id from the hook lands on the in-memory occurrence
+// record (UIPromptFor snapshot) and, when present, on the session's
+// UIPrompt record (UIPromptInfo.QuestionID, persisted) so REST consumers
+// and the PWA can name the open question. A hook error means the daemon
+// fell back to its one alert already: log it here too and keep the record
+// without a question id. Best-effort — the capture loop is never
+// distressed by a tracking failure, and the occurrence is never re-raised
+// (the claim was already set above).
+func (m *Manager) bookUIPromptQuestion(sess *Session, questionID string, raiseErr error) {
+	if m == nil || sess == nil {
+		return
+	}
+	if raiseErr != nil {
+		// The daemon answered the failure (its one alert fallback already
+		// went out): leave the occurrence with no question id rather than
+		// pointing it at a question that was never stored.
+		m.uiPromptMu.Lock()
+		if r := m.uiPromptState[sess.FullID]; r != nil {
+			r.questionID = ""
+		}
+		m.uiPromptMu.Unlock()
+		m.debugf("ui-prompt: %s: escalation question not raised: %v (daemon fell back to its alert)", sess.FullID, raiseErr)
+		return
+	}
+	if questionID == "" {
+		return
+	}
+	m.uiPromptMu.Lock()
+	if r := m.uiPromptState[sess.FullID]; r != nil {
+		r.questionID = questionID
+	}
+	m.uiPromptMu.Unlock()
+	applied := false
+	m.store.Mutate(func() {
+		if sess.UIPrompt != nil && sess.UIPrompt.QuestionID == "" {
+			sess.UIPrompt.QuestionID = questionID
+			sess.UpdatedAt = m.now()
+			applied = true
+		}
+	})
+	if !applied {
+		return
+	}
+	if err := m.SaveSession(sess); err != nil {
+		m.debugf("ui-prompt: %s: save after question %s: %v", sess.FullID, questionID, err)
+	}
+	m.debugf("ui-prompt: %s: escalated question %s recorded on the UIPrompt record", sess.FullID, questionID)
+}
+
+// escalationScreenTail captures the pane one more time and hands back
+// the last uiPromptEscalationTailLines non-empty lines: ANSI-stripped, marker
 // lines neutralised (see the uiPromptEscalationMarkers rationale). A
 // capture failure or an empty pane yields the empty string — the
 // escalation still goes through without a screen excerpt, it is never

@@ -6881,19 +6881,27 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						},
 						Logf: log.Printf,
 					}
-					mgr.SetUIPromptEscalateHook(func(ev session.UIPromptEscalateEvent) {
-						go func() {
-							defer func() {
-								if r := recover(); r != nil {
-									log.Printf("[autonomous] ui prompt escalation handler panic for %s: %v", ev.SessionFullID, r)
-									alertStore.Add(alertspkg.LevelError,
-										"ui prompt escalation for "+ev.SessionFullID+" failed",
-										fmt.Sprintf("the escalation handler panicked: %v", r),
-										ev.SessionFullID)
-								}
-							}()
-							autonomouspkg.RaiseUIPromptEscalation(uiPromptEscalationDeps, ev)
+					mgr.SetUIPromptQuestionHook(func(ev session.UIPromptEscalateEvent) (questionID string, err error) {
+						// Runs on the capture loop: the raise is in-memory (the question
+						// store keeps its questions in RAM) and only the fallback path
+						// touches the alert store - safe to do synchronously, and the hook
+						// must answer with the question id so the manager can book it on
+						// the session's UIPrompt record (staying unlinked on failure, the
+						// daemon having already sent its one alert).
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("[autonomous] ui prompt escalation handler panic for %s: %v", ev.SessionFullID, r)
+								alertStore.Add(alertspkg.LevelError,
+									"ui prompt escalation for "+ev.SessionFullID+" failed",
+									fmt.Sprintf("the escalation handler panicked: %v", r),
+									ev.SessionFullID)
+							}
 						}()
+						q, _, err := autonomouspkg.RaiseUIPromptEscalation(uiPromptEscalationDeps, ev)
+						if err != nil {
+							return "", err
+						}
+						return q.ID, nil
 					})
 					mgr.SetUIPromptEscalateWithdrawHook(func(ev session.UIPromptEscalateWithdrawEvent) {
 						go func() {

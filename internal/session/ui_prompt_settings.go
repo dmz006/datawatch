@@ -25,10 +25,10 @@ type UIPromptSettings struct {
 // internal/config.DefaultUIPrompt* (the config package cannot import
 // internal/session); a parity test holds the two copies equal.
 const (
-	UIPromptDefaultEnabled             = true
-	UIPromptDefaultDelaySeconds        = 5
-	UIPromptDefaultClearBoundSeconds   = 30
-	UIPromptDefaultMaxAttempts         = 2
+	UIPromptDefaultEnabled           = true
+	UIPromptDefaultDelaySeconds      = 5
+	UIPromptDefaultClearBoundSeconds = 30
+	UIPromptDefaultMaxAttempts       = 2
 )
 
 // DefaultUIPromptSettings returns the UI prompt settings for an unset

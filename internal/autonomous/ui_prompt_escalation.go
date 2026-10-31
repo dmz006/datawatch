@@ -68,20 +68,35 @@ const (
 	uiPromptEscalationRisk     = "low"
 )
 
-// RaiseUIPromptEscalation raises the escalation question for one event. It
-// is idempotent per occurrence: the store refuses a second raise for an
-// open question with the same session id and occurrence token, and this
-// side logs the duplicate instead of alerting again. On a successful raise
-// it fires Notify (the WS + messaging + alert fan-out a REST raise runs).
-func RaiseUIPromptEscalation(d UIPromptEscalationDeps, ev session.UIPromptEscalateEvent) (Question, bool) {
+// ErrUIPromptEscalationChannelOff is returned by RaiseUIPromptEscalation when
+// the question channel is off; the one high-priority alert fallback has
+// already been sent.
+var ErrUIPromptEscalationChannelOff = errors.New("ui prompt escalation: question channel off")
+
+// ErrUIPromptEscalationNoStore is returned when this daemon has no question
+// store wired; the alert fallback path applies identically.
+var ErrUIPromptEscalationNoStore = errors.New("ui prompt escalation: no question store")
+
+// RaiseUIPromptEscalation raises the escalation question for one event and
+// returns it alongside raised=true and a nil error, so the caller — the
+// session package hook — can record the question id on the session's
+// UIPrompt record. It is idempotent per occurrence: the store refuses a
+// second raise for an open question with the same session id and
+// occurrence token; a still-open question is then returned with
+// raised=false and a nil error, logged once, never alerting or
+// re-notifying again. When the channel is off, the store is missing, or
+// the store refuses the write, the one fallback alert is sent and a
+// non-nil error is returned so the caller logs the failure; in those
+// cases no question is stored and nothing is notified.
+func RaiseUIPromptEscalation(d UIPromptEscalationDeps, ev session.UIPromptEscalateEvent) (Question, bool, error) {
 	if d.ChannelOn != nil && !d.ChannelOn() {
 		d.fallback(ev, "question channel off")
-		return Question{}, false
+		return Question{}, false, ErrUIPromptEscalationChannelOff
 	}
 	q := d.buildQuestion(ev)
 	if d.Store == nil {
 		d.fallback(ev, "no question store")
-		return Question{}, false
+		return Question{}, false, ErrUIPromptEscalationNoStore
 	}
 	raised, isNew, err := d.Store.RaiseUnlessOpenSourceLine(q)
 	if err != nil {
@@ -91,12 +106,12 @@ func RaiseUIPromptEscalation(d UIPromptEscalationDeps, ev session.UIPromptEscala
 			d.logf("[autonomous] ui prompt escalation for %s not stored: %v", ev.SessionFullID, err)
 		}
 		d.fallback(ev, "raise failed: "+err.Error())
-		return Question{}, false
+		return Question{}, false, err
 	}
 	if !isNew {
 		d.logf("[autonomous] ui prompt escalation for %s: duplicate of open question %s, not re-raised",
 			ev.SessionFullID, raised.ID)
-		return raised, false
+		return raised, false, nil
 	}
 	d.audit(ev, audit.ActionUIPromptEscalationRaised)
 	d.logf("[autonomous] ui prompt escalation question %s raised for %s (kind %s, trigger %s)",
@@ -104,7 +119,7 @@ func RaiseUIPromptEscalation(d UIPromptEscalationDeps, ev session.UIPromptEscala
 	if d.Notify != nil {
 		d.Notify(raised)
 	}
-	return raised, true
+	return raised, true, nil
 }
 
 // WithdrawUIPromptEscalation withdraws the still-open escalation question
@@ -201,20 +216,20 @@ func daemonActionsLine(ev session.UIPromptEscalateEvent) string {
 
 func (d UIPromptEscalationDeps) buildQuestion(ev session.UIPromptEscalateEvent) Question {
 	q := Question{
-		Label:        uiPromptEscalationLabel,
-		AskedBy:      uiPromptEscalationAsker,
-		AskerKind:    QuestionAskerSystem,
-		SessionID:    ev.SessionFullID,
-		Context:      uiPromptEscalationContext(ev),
-		PRDID:        ev.PRDID,
-		TaskID:       ev.TaskID,
-		Text:         uiPromptEscalationText(ev),
-		Default:      uiPromptEscalationDefault,
-		Risk:         uiPromptEscalationRisk,
-		Priority:     uiPromptEscalationPriority,
-		ReturnPath:   false,
-		Blocking:     true,
-		Source:       QuestionSourceMarker,
+		Label:            uiPromptEscalationLabel,
+		AskedBy:          uiPromptEscalationAsker,
+		AskerKind:        QuestionAskerSystem,
+		SessionID:        ev.SessionFullID,
+		Context:          uiPromptEscalationContext(ev),
+		PRDID:            ev.PRDID,
+		TaskID:           ev.TaskID,
+		Text:             uiPromptEscalationText(ev),
+		Default:          uiPromptEscalationDefault,
+		Risk:             uiPromptEscalationRisk,
+		Priority:         uiPromptEscalationPriority,
+		ReturnPath:       false,
+		Blocking:         true,
+		Source:           QuestionSourceMarker,
 		SourceLineSHA256: ev.EscalateToken,
 		Options: []QuestionOption{
 			{ID: "ack", Label: "Acknowledged — the operator will look at the session"},

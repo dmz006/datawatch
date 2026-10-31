@@ -30,7 +30,8 @@ type uiPromptRecord struct {
 	lastKeyAt       time.Time // when the last dismiss key was sent (zero = none yet)
 	lastKey         string    // key name of the last sent dismiss key (guard-passed)
 	outcomeRecorded bool      // a final dismissal outcome (dismissed | not_cleared) was booked exactly once
-	escalated         bool      // the escalation for this occurrence was fired exactly once (ui_prompt_escalate.go)
+	escalated       bool      // the escalation for this occurrence was fired exactly once (ui_prompt_escalate.go)
+	questionID      string    // id of the question the escalation raised (or the open duplicate it reused); "" when the fallback alert carried it
 }
 
 // scanInterstitialTick runs one interstitial-prompt scan for the
@@ -238,6 +239,7 @@ func (m *Manager) UIPromptFor(fullID string) *UIPromptInfo {
 		Since:           rec.firstSeen,
 		SelectedOption:  rec.selected,
 		DismissAttempts: rec.dismissAttempts,
+		QuestionID:      rec.questionID,
 	}
 	if !rec.lastKeyAt.IsZero() {
 		at := rec.lastKeyAt

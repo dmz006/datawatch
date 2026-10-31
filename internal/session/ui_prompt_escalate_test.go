@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/hex"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -16,12 +17,26 @@ type uiPromptEscalateHooks struct {
 	mu        sync.Mutex
 	raised    []UIPromptEscalateEvent
 	withdrawn []UIPromptEscalateWithdrawEvent
+	// raiseErr, when non-nil, is returned by the raise hook to simulate the
+	// daemon failing to carry the escalation (it has then already sent its
+	// one fallback alert); the hook still answers the question id it stored.
+	raiseErr error
 }
 
-func (h *uiPromptEscalateHooks) addRaised(e UIPromptEscalateEvent) {
+var errEscalateRaiseFailed = errors.New("fake: question store raise failed")
+
+// raise stands in for the daemon-side raise: on success it records the
+// event and returns a stable question id for it so the tests can assert
+// on the round-trip into the UIPrompt record; on error it answers the way
+// the daemon does — failure, and no stored question (empty id).
+func (h *uiPromptEscalateHooks) raise(e UIPromptEscalateEvent) (string, error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.raised = append(h.raised, e)
+	if h.raiseErr != nil {
+		return "", h.raiseErr
+	}
+	return "q-escalate-" + e.EscalateToken[:8], nil
 }
 
 func (h *uiPromptEscalateHooks) addWithdrawn(e UIPromptEscalateWithdrawEvent) {
@@ -55,8 +70,18 @@ func (h *uiPromptEscalateHooks) allWithdrawn() []UIPromptEscalateWithdrawEvent {
 
 // install wires the raise + withdraw hooks on the harness manager.
 func (h *uiPromptDismissHarness) installEscalateHooks(hk *uiPromptEscalateHooks) {
-	h.mgr.SetUIPromptEscalateHook(hk.addRaised)
+	h.mgr.SetUIPromptQuestionHook(hk.raise)
 	h.mgr.SetUIPromptEscalateWithdrawHook(hk.addWithdrawn)
+}
+
+// escalationQuestionID snapshots the question id the manager currently
+// reports for this occurrence ("" when none was booked).
+func (h *uiPromptDismissHarness) escalationQuestionID() string {
+	info := h.mgr.UIPromptFor(h.sess.FullID)
+	if info == nil {
+		return ""
+	}
+	return info.QuestionID
 }
 
 // TestUIPromptEscalate_FiresAfterMaxAttemptsThenStillBlocked: the dismissal
@@ -239,6 +264,64 @@ func TestUIPromptEscalate_TokenIsStablePerOccurrence(t *testing.T) {
 	}
 	if _, err := hex.DecodeString(a); err != nil {
 		t.Fatalf("token %q must be lowercase hex: %v", a, err)
+	}
+}
+
+// TestUIPromptEscalate_RecordsQuestionIDOnTheUIPromptRecord: the hook's
+// answer — the question id the daemon raised — lands on the session's
+// UIPrompt record (UIPromptInfo.QuestionID, persisted) and on the
+// in-memory occurrence snapshot (UIPromptFor), so consumers can name the
+// open question this escalation became.
+func TestUIPromptEscalate_RecordsQuestionIDOnTheUIPromptRecord(t *testing.T) {
+	h := newUIPromptDismissHarness(t)
+	hk := &uiPromptEscalateHooks{}
+	h.installEscalateHooks(hk)
+	h.mgr.SetUIPromptSettings(func() UIPromptSettings {
+		return UIPromptSettings{Enabled: false, DelaySeconds: 1, ClearBoundSeconds: 1, MaxAttempts: 10}
+	})
+	h.park()
+
+	*h.clockNow = h.clockNow.Add(3 * time.Second)
+	h.tickUntil(10*time.Second, func() bool { return hk.raisedCount() == 1 },
+		"escalation fired once")
+
+	if got := h.sess.UIPrompt; got == nil || got.QuestionID == "" {
+		t.Fatalf("session UIPrompt record = %+v, want a non-empty QuestionID", h.sess.UIPrompt)
+	}
+	if got := h.escalationQuestionID(); got != h.sess.UIPrompt.QuestionID {
+		t.Errorf("UIPromptFor snapshot QuestionID = %q, want %q (record value)", got, h.sess.UIPrompt.QuestionID)
+	}
+}
+
+// TestUIPromptEscalate_HookErrorIsLoggedAndStaysOneShot: the hook reports
+// the daemon could not carry the escalation (its one alert fallback already
+// went out). The manager records no question id, logs the failure, and —
+// critically — never re-raises the occurrence on later ticks.
+func TestUIPromptEscalate_HookErrorIsLoggedAndStaysOneShot(t *testing.T) {
+	h := newUIPromptDismissHarness(t)
+	hk := &uiPromptEscalateHooks{raiseErr: errEscalateRaiseFailed}
+	h.installEscalateHooks(hk)
+	h.mgr.SetUIPromptSettings(func() UIPromptSettings {
+		return UIPromptSettings{Enabled: false, DelaySeconds: 1, ClearBoundSeconds: 1, MaxAttempts: 10}
+	})
+	h.park()
+
+	*h.clockNow = h.clockNow.Add(3 * time.Second)
+	h.tickUntil(10*time.Second, func() bool { return hk.raisedCount() == 1 },
+		"escalation fired once")
+
+	if h.sess.UIPrompt != nil && h.sess.UIPrompt.QuestionID != "" {
+		t.Errorf("QuestionID = %q after a failed raise, want empty", h.sess.UIPrompt.QuestionID)
+	}
+	if got := h.escalationQuestionID(); got != "" {
+		t.Errorf("UIPromptFor snapshot QuestionID = %q after a failed raise, want empty", got)
+	}
+
+	// Well past any further window: the occurrence is still exactly once.
+	*h.clockNow = h.clockNow.Add(120 * time.Second)
+	time.Sleep(500 * time.Millisecond)
+	if n := hk.raisedCount(); n != 1 {
+		t.Fatalf("escalation fired %d times after a failed raise, want exactly 1", n)
 	}
 }
 

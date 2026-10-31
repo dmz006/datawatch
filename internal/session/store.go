@@ -36,6 +36,12 @@ type UIPromptInfo struct {
 	DismissAttempts int `json:"dismiss_attempts"`
 	// LastKeyAt is when the last dismiss key was sent, if any.
 	LastKeyAt *time.Time `json:"last_key_at,omitempty"`
+	// QuestionID is the id of the open question the daemon raised for this
+	// occurrence when its dismiss rules could not clear it (UI prompt
+	// escalation). "" until the escalation fires successfully — when the
+	// question channel was off or the raise failed the daemon fell back to
+	// its one alert and this stays empty.
+	QuestionID string `json:"question_id,omitempty"`
 }
 
 // State represents the lifecycle state of a claude-code session.
