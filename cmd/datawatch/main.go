@@ -18768,6 +18768,8 @@ func computeNodeFromConfig(c config.ComputeNodeYAML) compute.Node {
 		AllowModelSwap:        c.AllowModelSwap,
 		SessionSlots:          c.SessionSlots,
 		TLSInsecureSkipVerify: c.TLSInsecureSkipVerify,
+		TLSCAFile:             c.TLSCAFile,
+		TLSCertFingerprint:    c.TLSCertFingerprint,
 	}
 }
 
