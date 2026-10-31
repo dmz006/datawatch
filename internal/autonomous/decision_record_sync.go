@@ -129,6 +129,10 @@ type DecisionRecords struct {
 	followStart DecisionTemplateStarter
 	followOpen  DecisionAutomatonOpener
 	followRunMu sync.Mutex
+
+	// folder is the state of the decision folder watch
+	// (decision_record_folder.go).
+	folder decisionFolderState
 }
 
 // NewDecisionRecords builds the service. The config functions are read on

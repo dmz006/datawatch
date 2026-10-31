@@ -130,13 +130,21 @@ func (m *Manager) DecisionRecords() *DecisionRecords {
 	return m.decisionRecords
 }
 
-// DecisionRecordTick runs one reconcile of the decision records against their
-// questions: it raises a missing question, brings a drifted open question
-// back to the record, and marks a record withdrawn when its question was
-// withdrawn. It does nothing when no service is attached or a switch is off.
+// DecisionRecordTick runs one pass over the decision records. It first scans
+// the decision folder (autonomous.decisions.folder; empty means no scan) so a
+// new, edited or deleted file creates, updates or withdraws its record, then
+// reconciles the records against their questions: it raises a missing
+// question, brings a drifted open question back to the record, and marks a
+// record withdrawn when its question was withdrawn. It runs on the caller's
+// goroutine, starts none, and does nothing when no service is attached or a
+// switch is off.
 func (m *Manager) DecisionRecordTick(ctx context.Context) {
 	d := m.DecisionRecords()
 	if d == nil || ctx.Err() != nil {
+		return
+	}
+	d.ScanFolder()
+	if ctx.Err() != nil {
 		return
 	}
 	rep := d.Reconcile()
