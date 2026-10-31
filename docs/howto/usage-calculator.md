@@ -8,8 +8,8 @@ exec_steps:
     args: {limit: 10}
     read_only: true
   - tool: usage_reading_add
-    description: Worked example, a state-changing call. Type a reading, 42 percent of the weekly allowance used with 2 lanes running. Use your own provider figure in real use
-    args: {percent: 42, lanes: 2}
+    description: Worked example, a state-changing call. Type a reading, 42 percent of the weekly allowance used. The daemon stamps it with the Claude lanes running in the ledger. Use your own provider figure in real use
+    args: {percent: 42}
   - tool: usage_advice
     description: Ask whether you are within or over budget for the week and what each lane count costs against the rest of it. Advice only, nothing is stopped or slowed
     args: {}
@@ -31,8 +31,8 @@ allowance:
 2. What does **each lane count cost against the rest of the week**, so you can
    choose how many lanes to run?
 
-It takes readings you type, adds the lanes that were running, and returns
-advice. **It only advises. It never stops, slows or re-prioritises a lane.**
+It takes readings you type, stamps each one with the Claude lanes the daemon
+sees running, and returns advice. **It only advises. It never stops, slows or re-prioritises a lane.**
 The lane count is always yours to set.
 
 ## The three policies
@@ -58,12 +58,42 @@ A reading is one look at your provider's usage page.
 - **Session percent** (optional). The share of the current session window used.
   It is shown as a secondary line only and **has no verdict of its own**; the
   weekly figure is what sets lane counts.
-- **Lanes** (optional). How many lanes were running, so the burn per lane can
-  be worked out.
 - **At** (optional). When you read it; the default is now.
+
+You do not type the lane count. The daemon stamps each reading with the Claude
+lanes running in the capacity ledger, so the burn per lane can be worked out
+from a count you cannot mistype. A `lanes` value sent by an older script or tool
+is accepted and ignored.
 
 A mistyped reading can be deleted by its id (`usage_reading_delete`); the advice
 recomputes from the rest.
+
+## Lanes running, stamped and what-if
+
+Three lane numbers appear in the advice, and they are kept apart.
+
+- **Claude lanes running now** is the count in the capacity ledger at the moment
+  of the call (`lanes_running_now` in the JSON). It is `null`, shown as "not
+  known", when no ledger is wired on the daemon.
+- **Stamped lanes** is the count the daemon wrote on each reading when it was
+  stored (`lanes` on the reading). The advice works the burn per lane from the
+  newest reading that carries a usable stamp.
+- **What-if lanes** is the count you ask the advice to plan with. It is set on
+  the advice only, it is **not saved**, and it never changes how many lanes are
+  running. Leave it off and the advice uses the lanes running now.
+
+Each stamp carries a `lanes_source` that says where the count came from:
+
+| `lanes_source` | Meaning |
+|---|---|
+| `live` | The reading is at the clock; the count is the ledger count now. |
+| `recorded` | The reading is from an earlier time that the lane history covers; the count is the one recorded then. |
+| `current` | The reading is from an earlier time the lane history does not cover, so the ledger count now is used. |
+| `unavailable` | No ledger is wired, so the reading has no lane count (`lanes` is empty). |
+| `typed` | A reading stored before the stamp existed that carried a typed count. The value is kept as it was and never feeds the advice. |
+
+The keeper of the series does the stamping. A peer sends its reading to the
+keeper, which stamps it from its own ledger.
 
 ## The weekly reset
 
@@ -178,14 +208,24 @@ changing the advice.
 | Method | How |
 |---|---|
 | **YAML** | `usage.calculator.*` in `~/.datawatch/config.yaml` (policy, variant, `safety_points`, `cost_per_task_points`, `baseline_per_24h`, `max_lanes`, `reset_weekday`, `reset_time`, `reset_zone`, `keeper`) |
-| **CLI** | `datawatch usage advice`, `datawatch usage reading add --percent 42 --lanes 2`, `datawatch usage reading list`, `datawatch usage reading delete <id>`, `datawatch usage extra-credit <points>`, `datawatch usage remaining-work <points\|clear>`; settings with `datawatch config set usage.calculator.<key> <value>` |
+| **CLI** | `datawatch usage advice [--lanes N]` (the what-if), `datawatch usage reading add --percent 42`, `datawatch usage reading list`, `datawatch usage reading delete <id>`, `datawatch usage extra-credit <points>`, `datawatch usage remaining-work <points\|clear>`; settings with `datawatch config set usage.calculator.<key> <value>` |
 | **Web UI** | The calculator screen in the PWA and its Settings fields. These are on file and not yet shipped; use one of the other methods until then. |
-| **REST API** | `GET /api/usage/advice`, `GET` and `POST /api/usage/readings`, `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT /api/usage/remaining-work`; settings with `PUT /api/config` |
-| **Comm channel** | `usage advice`, `usage reading <percent> [lanes=N] [session=N]`, `usage extra <points>`, `usage work <points\|clear>`; settings with `configure usage.calculator.<key>=<value>` |
+| **REST API** | `GET /api/usage/advice` (`lanes` is the what-if), `GET` and `POST /api/usage/readings` (`lanes` on the body is deprecated and ignored), `DELETE /api/usage/readings/<id>`, `PUT /api/usage/extra-credit`, `PUT /api/usage/remaining-work`; settings with `PUT /api/config` |
+| **Comm channel** | `usage advice [lanes=N]` (the what-if), `usage reading <percent> [session=N]`, `usage extra <points>`, `usage work <points\|clear>`; settings with `configure usage.calculator.<key>=<value>` |
 
 The same actions are MCP tools: `usage_advice`, `usage_readings`,
 `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set` and
 `usage_remaining_work_set`.
+
+Where lanes show up on each method:
+
+| Method | Reading `lanes` | Advice `lanes` |
+|---|---|---|
+| **REST API** | Deprecated, ignored | The what-if |
+| **MCP** | Deprecated, ignored | The what-if |
+| **CLI** | Deprecated, ignored (`--lanes` still parses) | The what-if |
+| **Comm channel** | Deprecated, ignored | The what-if |
+| **Web UI** | No input; the daemon stamps it | The what-if stepper, with the lanes running now beside it |
 
 ## Where to see it
 
