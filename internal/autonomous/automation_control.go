@@ -174,6 +174,9 @@ func (m *Manager) ResumeAutomation(id, actor string, expectedVersion int64) (*Au
 			st := *a.BudgetState
 			episode = &st
 		}
+		if pendingHoldOpen(a) {
+			a.IdleSince = nil // the hold is re-checked below and re-applied if the item still waits
+		}
 		a.Status = AutomationActive
 		a.BudgetState = nil
 		if episode != nil {
@@ -687,7 +690,7 @@ func checkReorderable(a *Automation, memberID, onCompleted, onBlocked, onFailed 
 // resumableStatuses are the statuses ResumeAutomation accepts for a: paused,
 // and blocked when a budget breach blocked it.
 func resumableStatuses(a *Automation) []AutomationStatus {
-	if budgetEpisodeOpen(a) && a.Status == AutomationBlocked {
+	if a.Status == AutomationBlocked && (budgetEpisodeOpen(a) || pendingHoldOpen(a)) {
 		return []AutomationStatus{AutomationPaused, AutomationBlocked}
 	}
 	return []AutomationStatus{AutomationPaused}

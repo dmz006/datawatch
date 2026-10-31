@@ -435,6 +435,7 @@ func (c *Coordinator) assistEmptyEdge(autoID string, in *stepInput) (paused bool
 // snapshotMembers reads every member's live facts once, for a step.
 func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 	snap := make(map[string]memberInfo, len(a.Members))
+	policy := "" // the pending item policy, read once when a pending member needs it
 	for i, m := range a.Members {
 		switch m.kind() {
 		case MemberKindPRD:
@@ -455,11 +456,10 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 		case MemberKindJoin:
 			snap[m.ID] = memberInfo{name: "join " + m.ID}
 		case MemberKindPending:
-			name := "pending item " + m.PendingItemID
-			if item, ok := c.m.pendingItemByID(m.PendingItemID); ok && item.Title != "" {
-				name = item.Title
+			if policy == "" {
+				policy = c.m.Config().Automation.EffectivePendingItemPolicy()
 			}
-			snap[m.ID] = memberInfo{name: name} // no Automaton and no budget gate
+			snap[m.ID] = c.pendingMemberInfo(m, policy) // no Automaton and no budget gate
 		default:
 			snap[m.ID] = memberInfo{name: "fork " + m.ID, verdict: c.startVerdict(a, &a.Members[i])}
 		}
@@ -937,6 +937,9 @@ func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automa
 		entry := automationMember(a, a.EntryMemberID)
 		if entry == nil {
 			return nil, fmt.Errorf("automation %s has no entry member", id)
+		}
+		if entry.kind() == MemberKindPending {
+			return c.activatePendingEntry(id, actor, a.Version)
 		}
 		name, _, _ := c.prdState(entry.PRDID)
 		mode, status := c.startGate(entry.PRDID)

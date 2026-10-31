@@ -77,6 +77,9 @@ type memberInfo struct {
 	// of the snapshot; the zero verdict gates nothing. A fork carries the
 	// Automation-level verdict.
 	verdict BudgetVerdict
+	// pending carries a pending item member's registry facts (kind
+	// pending_item); nil for every other kind.
+	pending *pendingFacts
 }
 
 // stepInput names the member that ended and how it ended.
@@ -89,6 +92,10 @@ type stepInput struct {
 	// startPending enters a cursor member (a nested Automation or a fork) that
 	// was deferred and never started, now that the budget gate may allow it.
 	startPending bool
+	// pendingCheck re-evaluates a pending item member that already holds the
+	// cursor (a resume, a restart or an activation): it holds again, skips or
+	// passes the member on, and starts nothing.
+	pendingCheck bool
 	// now is the step's clock reading, set by the coordinator so tests control
 	// time; zero means the wall clock.
 	now time.Time
@@ -161,6 +168,9 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	}
 	if in.startPending {
 		return stepStartPending(a, in, snap)
+	}
+	if in.pendingCheck {
+		return stepPendingCheck(a, in, snap)
 	}
 	mem := automationMember(a, in.memberID)
 	if mem == nil || !isLiveCursor(a, mem.ID) {
@@ -324,6 +334,12 @@ func (st *stepper) enter(next *AutomationMember) {
 	if st.a.Status == AutomationPaused {
 		addCursor(st.a, next.ID)
 		st.idle = true
+		return
+	}
+	if next.kind() == MemberKindPending {
+		// A pending item runs nothing: it holds the cursor, is skipped, or is
+		// passed on when its work is done (pending_item_hold.go).
+		st.enterPending(next)
 		return
 	}
 	if next.kind() != MemberKindJoin {
