@@ -788,6 +788,10 @@ paths:
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.plan_coverage_suppress_created_files` (true|false, default true; hide findings for files the plan itself creates),
+        `autonomous.plan_coverage_scoped_requirements` (true|false, default true; only count requirement wording inside the configured spec sections),
+        `autonomous.plan_coverage_requirement_sections` (comma-separated string of spec section names, default "scope,constraints"; empty restores the default),
+        `autonomous.plan_coverage_min_requirement_chars` (whole number >= 0, 0 reads the 30-character default; the shortest requirement sentence that counts),
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
         stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
@@ -2438,6 +2442,12 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        The finding filters are also exposed: `plan_coverage_suppress_created_files`
+        (boolean, default true) and `plan_coverage_scoped_requirements` (boolean,
+        default true), `plan_coverage_requirement_sections` (comma-separated string,
+        default "scope,constraints") and `plan_coverage_min_requirement_chars`
+        (whole number >= 0, 0 reads the 30-character default). A wrong type on any of
+        them is rejected with 400, same as the two gate fields above.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
         It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
@@ -2511,7 +2521,12 @@ paths:
       description: |
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
-        default 1.0). Values outside the allowed range are rejected with 400.
+        default 1.0), plus the finding filters `plan_coverage_suppress_created_files`
+        (boolean, default true), `plan_coverage_scoped_requirements` (boolean,
+        default true), `plan_coverage_requirement_sections` (comma-separated string,
+        empty = the "scope,constraints" default) and `plan_coverage_min_requirement_chars`
+        (whole number >= 0, 0 = the 30-character default). Values outside the allowed
+        range are rejected with 400.
         `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
         lint mode; any other value is rejected with 400. `PUT /api/config` accepts
         it as `autonomous.scope_lint`.

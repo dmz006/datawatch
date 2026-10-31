@@ -6147,6 +6147,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// Plan-coverage finding filters — render the EFFECTIVE values
+			// so the unset state shows its safe defaults (both filters on,
+			// the scope,constraints section list, the 30-character minimum)
+			// rather than zero values.
+			"plan_coverage_suppress_created_files": s.cfg.Autonomous.EffectivePlanCoverageFilters().SuppressCreatedFiles,
+			"plan_coverage_scoped_requirements":    s.cfg.Autonomous.EffectivePlanCoverageFilters().ScopedRequirements,
+			"plan_coverage_requirement_sections":   strings.Join(s.cfg.Autonomous.EffectivePlanCoverageFilters().RequirementSections, ","),
+			"plan_coverage_min_requirement_chars":  s.cfg.Autonomous.EffectivePlanCoverageFilters().MinRequirementChars,
 			// Tag browser settings (autonomous.tags) — the effective values, so an
 			// unset block shows its defaults. Validated by ValidateTagSetting.
 			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
@@ -6541,6 +6549,33 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Plan-coverage finding filters (plan_coverage) — same whole-PUT
+	// rejection rule as the two plan-coverage keys above: a bad type
+	// refuses the whole PUT instead of storing a half-applied set.
+	for _, k := range []string{
+		"autonomous.plan_coverage_suppress_created_files",
+		"autonomous.plan_coverage_scoped_requirements",
+	} {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_requirement_sections"]; ok {
+		if _, isStr := v.(string); !isStr {
+			http.Error(w, "autonomous.plan_coverage_requirement_sections: must be a comma-separated string of spec section names (empty = the scope,constraints default)", http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_min_requirement_chars"]; ok {
+		f, err := configPatchFloat(v)
+		if err != nil || f != math.Trunc(f) || f < 0 {
+			http.Error(w, "autonomous.plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -8188,6 +8223,35 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// non-numeric values loudly before applyConfigPatch runs.
 			if ratio, err := configPatchFloat(v); err == nil {
 				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
+			}
+		case "autonomous.plan_coverage_suppress_created_files":
+			// Plan-coverage "file the plan itself creates" suppression
+			// filter. Stored as an explicit pointer value: a nil pointer
+			// would read back as ON (the default), so the written value
+			// must be stored verbatim. handlePutConfig rejects non-bool
+			// values before applyConfigPatch runs.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PlanCoverageSuppressCreatedFiles = &b
+			}
+		case "autonomous.plan_coverage_scoped_requirements":
+			// Scoped requirement-extraction filter (default on when nil);
+			// same explicit-pointer storage rule as the suppress filter.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PlanCoverageScopedRequirements = &b
+			}
+		case "autonomous.plan_coverage_requirement_sections":
+			// Validated (string) in handlePutConfig; stored trimmed as
+			// written — empty clears it back to the scope,constraints
+			// default, and entries are normalized again by
+			// EffectivePlanCoverageFilters at read time.
+			if str, ok := v.(string); ok {
+				cfg.Autonomous.PlanCoverageRequirementSections = strings.TrimSpace(str)
+			}
+		case "autonomous.plan_coverage_min_requirement_chars":
+			// Validated (whole number >= 0) in handlePutConfig; 0 is
+			// stored as 0 and reads back as the 30-character default.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.PlanCoverageMinRequirementChars = n
 			}
 		case "autonomous.usage_backoff":
 			// Validated in handlePutConfig; stored lower-cased and trimmed.

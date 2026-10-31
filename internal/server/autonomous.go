@@ -252,6 +252,57 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// Plan-coverage finding filters: the two toggles accept only
+			// JSON booleans, the section list only a string, and the
+			// minimum length only a whole number >= 0 (0 = the 30-character
+			// default). A null value is absent (merge-onto-current in
+			// SetConfig, and nil/empty resolve to the same defaults) and
+			// passes; any present wrong type rejects the whole PUT instead
+			// of being merged into the live manager.
+			for _, filterKey := range []string{"plan_coverage_suppress_created_files", "plan_coverage_scoped_requirements"} {
+				raw, ok := top[filterKey]
+				if !ok || string(raw) == "null" {
+					continue
+				}
+				var b bool
+				if json.Unmarshal(raw, &b) != nil {
+					http.Error(w, filterKey+": must be a boolean (true or false)", http.StatusBadRequest)
+					return
+				}
+			}
+			if rawSections, ok := top["plan_coverage_requirement_sections"]; ok && string(rawSections) != "null" {
+				var sections string
+				if json.Unmarshal(rawSections, &sections) != nil {
+					http.Error(w, "plan_coverage_requirement_sections: must be a comma-separated string of spec section names (empty = the scope,constraints default)", http.StatusBadRequest)
+					return
+				}
+			}
+			if rawMinChars, ok := top["plan_coverage_min_requirement_chars"]; ok && string(rawMinChars) != "null" {
+				var minChars interface{}
+				if json.Unmarshal(rawMinChars, &minChars) != nil {
+					http.Error(w, "plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
+					return
+				}
+				var f float64
+				switch t := minChars.(type) {
+				case float64:
+					f = t
+				case json.Number:
+					nv, err := t.Float64()
+					if err != nil {
+						http.Error(w, "plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
+						return
+					}
+					f = nv
+				default:
+					http.Error(w, "plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
+					return
+				}
+				if math.IsNaN(f) || math.IsInf(f, 0) || f != math.Trunc(f) || f < 0 {
+					http.Error(w, "plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
+					return
+				}
+			}
 			// plan_tier_max_inflight — validate tier keys at the API boundary so a
 			// bad key (e.g. "max-5x") gets an actionable 400 here instead of
 			// landing in the manager Config and being sync-baked into the daemon
