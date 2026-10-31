@@ -106,6 +106,7 @@ func TestLaunchFailureRetry_BoundedAndFailsInfra_NeverBlocked(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		t.Run(fmt.Sprintf("iter-%d", i), func(t *testing.T) {
 			m, api, _, _ := apiFixture(t)
+			useInfraCountAction(m) // the legacy failed path, not a hold for review
 			// A fresh real project dir per iteration: a fake nonexistent dir
 			// is precisely what the boot-resume gate treats as "park this PRD",
 			// so every iteration gets a new existing one (t.TempDir() is unique

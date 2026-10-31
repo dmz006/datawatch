@@ -1099,10 +1099,15 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // decision_gate_hold.go). For every running Automaton with a task that names
 // the decision: a live executor is woken to re-scan, and no second one is
 // started; when no executor is live and a task is parked on it, the run is
-// relaunched the way ResolveTaskReview relaunches it. Other change kinds are
-// ignored: a withdrawn or expired decision keeps its task parked.
+// relaunched the way ResolveTaskReview relaunches it. The answer to the
+// question an Automaton raises when it holds a task after infrastructure
+// retries resolves that held task (see resolveInfraHoldAnswer). Other change
+// kinds are ignored: a withdrawn or expired decision keeps its task parked.
 func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
+		return
+	}
+	if a.resolveInfraHoldAnswer(c) {
 		return
 	}
 	for _, p := range a.M.Store().ListPRDs() {

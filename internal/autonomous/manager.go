@@ -3568,6 +3568,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	}
 	m.releaseCapacity(taskID)
 	emitCancelled()
+	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
