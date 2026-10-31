@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.51.1 — Finished work is pushed to the remote
+
+### Added
+- **When work finishes, datawatch now pushes it to the remote according to a new setting.** `git.push_on_complete` selects the policy — `never` (no push, with a visible "not pushed" warning), `branch` (the default: push the finished work branch), or `default_branch` (push onto the remote's default branch, only after the final gates have passed at completion) — and `git.push_remote` picks the remote name (default `origin`). The value is read live on every push, so changing it applies to the next push without a restart.
+- **Pushes never force.** Every push datawatch performs is a plain fast-forward-only push, so finished work can never rewrite or destroy history on the remote. If the local work has diverged, that push simply fails and is treated like any failed push.
+- **A failed push keeps the work instead of losing it.** The commit stays in the local checkout, a visible "not pushed" warning is shown with the reason, and an alert is raised so it is not silently dropped.
+- **Each automaton can override the daemon default for itself.** A per-PRD push policy set in the web UI, REST API, MCP or CLI always wins over the daemon's `git.push_on_complete`; the remote name always comes from `git.push_remote`.
+- **Work is no longer lost in teardowns.** One-shot sessions push their validated commits before ending, and when a session or worker container is about to be torn down with committed-but-unpushed work, that work branch is pushed first. Under the `default_branch` policy a teardown that sits on the default branch deliberately does not push — that push waits for the final gates anyway.
+- **Pushed / not-pushed is now visible everywhere.** The per-PRD state shows in the web UI, in `prd-get`, in the REST API, and in the settings screens; a failed push also leaves its warning and reason there.
+- **The new settings and labels are available in all five web UI languages** (English, German, Spanish, French, Japanese).
+
 ## v9.5.28
 
 ### Fixed
