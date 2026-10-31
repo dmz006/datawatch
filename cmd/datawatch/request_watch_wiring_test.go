@@ -205,3 +205,22 @@ func TestRequestWatchGPULocalAndSwitch(t *testing.T) {
 		t.Fatal("use_gpu_signal off must report not ok")
 	}
 }
+
+func TestRequestWatchCallbacksWiring(t *testing.T) {
+	if cb := requestWatchCallbacks(nil); cb.OnNoProgress != nil || cb.OnRecovered != nil || cb.OnEnded != nil {
+		t.Errorf("a nil manager must give no callbacks: %+v", cb)
+	}
+	amgr, err := autonomouspkg.NewManager(t.TempDir(), autonomouspkg.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	cb := requestWatchCallbacks(amgr)
+	if cb.OnNoProgress == nil || cb.OnRecovered == nil || cb.OnEnded == nil {
+		t.Fatalf("all three callbacks must be wired: %+v", cb)
+	}
+	// With no Automaton and no question store these are quiet no-ops.
+	o := requestwatch.Observation{SessionID: "s", AutomatonID: "a", TaskID: "t"}
+	cb.OnNoProgress(o)
+	cb.OnRecovered(o)
+	cb.OnEnded(o)
+}

@@ -200,16 +200,40 @@ func requestWatchSources(gpu func(ctx context.Context, node requestwatch.NodeRef
 	}
 }
 
+// requestWatchCallbacks wires the watcher's callbacks to the Automata manager.
+// A request past the threshold raises the alert and the question; a request
+// that recovers, or a session that ends, withdraws the open question of its
+// task so it never waits for an answer that no longer matters. Nothing here
+// ends a session or changes a task. A nil manager gives no callbacks.
+func requestWatchCallbacks(amgr *autonomouspkg.Manager) requestwatch.Callbacks {
+	if amgr == nil {
+		return requestwatch.Callbacks{}
+	}
+	finished := func(reason string) func(requestwatch.Observation) {
+		return func(o requestwatch.Observation) {
+			amgr.ForgetRequestWatchEpisode(o.SessionID)
+			amgr.WithdrawRequestWatchQuestions(o.AutomatonID, o.TaskID, "", reason)
+		}
+	}
+	return requestwatch.Callbacks{
+		OnNoProgress: amgr.RaiseRequestWatchNoProgress,
+		OnRecovered:  finished("the model request is making progress again"),
+		OnEnded:      finished("the session ended"),
+	}
+}
+
 // startRequestWatch builds the watcher and starts its poll loop. cfg is read on
 // every tick, so a change to autonomous.request_watch applies with no restart.
 // peers returns the observer peer registry at call time (it is wired after the
-// watcher starts); it may be nil.
+// watcher starts); it may be nil. amgr receives the no-progress, recovery and
+// end callbacks; it may be nil.
 func startRequestWatch(
 	ctx context.Context,
 	cfg func() config.RequestWatchConfig,
 	lister requestwatch.TargetLister,
 	hostname string,
 	peers func(peer string) *observerpkg.StatsResponse,
+	amgr *autonomouspkg.Manager,
 ) *requestwatch.Watcher {
 	gpu := requestWatchGPU{
 		enabled:     func() bool { return cfg().EffectiveUseGPUSignal() },
@@ -222,7 +246,10 @@ func startRequestWatch(
 			return requestWatchLocalStats()
 		},
 	}
-	w := requestwatch.NewWatcher(lister, requestWatchSources(gpu.Read), cfg, nil, requestwatch.Callbacks{})
+	if amgr != nil {
+		amgr.SetRequestWatchConfig(cfg)
+	}
+	w := requestwatch.NewWatcher(lister, requestWatchSources(gpu.Read), cfg, nil, requestWatchCallbacks(amgr))
 	w.Start(ctx)
 	return w
 }

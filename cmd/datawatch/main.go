@@ -6842,7 +6842,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						return reg.LastPayload(peer)
 					}
 					return nil
-				})
+				}, amgr)
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {

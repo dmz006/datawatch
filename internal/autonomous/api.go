@@ -1153,6 +1153,11 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	if a.resolveInfraHoldAnswer(c) {
 		return
 	}
+	// The answer to a stuck model request question is only recorded on the
+	// decision log; it never changes a task (request_watch_question.go).
+	if a.M.recordRequestWatchAnswer(c) {
+		return
+	}
 	if c.Question.Label == UncommittedQuestionLabel {
 		a.onUncommittedWorkAnswered(c)
 		return

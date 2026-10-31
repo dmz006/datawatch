@@ -1349,6 +1349,14 @@ type Manager struct {
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
 
+	// requestWatchCfg reads the live autonomous.request_watch block and
+	// requestWatchEpisodes holds, per watched session, the key of the
+	// no-progress episode already alerted and asked about
+	// (request_watch_question.go). Guarded by mu. A nil function reads the
+	// defaults.
+	requestWatchCfg      func() config.RequestWatchConfig
+	requestWatchEpisodes map[string]string
+
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.
