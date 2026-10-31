@@ -131,7 +131,16 @@ func coverageRequirementKey(s string) string {
 }
 
 // ExtractRequirements returns the ordered, deduplicated list of
-// requirement strings in spec, per the extractable set:
+// requirement strings in spec, per the full extractable set (numbered
+// items, obligation sentences, test-mentioning sentences, and every
+// named path / config key token). See ExtractRequirementsScoped for
+// the scoped variant used to keep loose paths out of the gate.
+func ExtractRequirements(spec string) []string {
+	return extractRequirementsFrom(spec, true)
+}
+
+// extractRequirementsFrom returns the ordered, deduplicated list of
+// requirement strings in text, per the extractable set:
 //
 //  1. numbered items ("1. text", "1) text", "(1) text") — their text,
 //     numbering stripped;
@@ -139,12 +148,15 @@ func coverageRequirementKey(s string) string {
 //     / should, case-insensitive);
 //  3. sentences mentioning a test that name something (test / tests /
 //     test cases / test suites plus at least one non-stopword token);
-//  4. every named file path, dotted config key or snake_case key token
-//     appearing anywhere in the spec.
+//  4. when includeTokens is true, every named file path, dotted config
+//     key or snake_case key token appearing anywhere in the spec.
 //
 // A spec with none of these yields an empty list; that is not an
-// error — the caller just gets a zero-count report.
-func ExtractRequirements(spec string) []string {
+// error — the caller just gets a zero-count report. With
+// includeTokens false, steps 1–3 run on text but a path or key only
+// counts through the numbered item, obligation sentence or test
+// sentence that holds it, never as a standalone token.
+func extractRequirementsFrom(text string, includeTokens bool) []string {
 	var out []string
 	seen := make(map[string]bool)
 	add := func(s string) {
@@ -159,7 +171,7 @@ func ExtractRequirements(spec string) []string {
 		out = append(out, norm)
 	}
 
-	lines := strings.Split(spec, "\n")
+	lines := strings.Split(text, "\n")
 
 	// 1. Numbered items keep line order.
 	for _, line := range lines {
@@ -185,16 +197,20 @@ func ExtractRequirements(spec string) []string {
 		}
 	}
 
-	// 4. Named paths / config keys, in order of appearance.
-	low := strings.ToLower(spec)
-	for _, tok := range pathTokenRe.FindAllString(low, -1) {
-		if len(tok) >= 4 && !isPureNumeric(tok) {
-			add(tok)
+	// 4. Named paths / config keys, in order of appearance. Skipped
+	// when includeTokens is false so loose tokens never count on their
+	// own.
+	if includeTokens {
+		low := strings.ToLower(text)
+		for _, tok := range pathTokenRe.FindAllString(low, -1) {
+			if len(tok) >= 4 && !isPureNumeric(tok) {
+				add(tok)
+			}
 		}
-	}
-	for _, tok := range snakeKeyRe.FindAllString(low, -1) {
-		if len(tok) >= 3 && !isPureNumeric(tok) {
-			add(tok)
+		for _, tok := range snakeKeyRe.FindAllString(low, -1) {
+			if len(tok) >= 3 && !isPureNumeric(tok) {
+				add(tok)
+			}
 		}
 	}
 	return out
