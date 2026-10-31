@@ -502,6 +502,24 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 
 ---
 
+### Claude Code interstitial prompts
+
+Some Claude Code sessions pause on interstitial prompts that block the session's input — a question awaiting a keypress, a confirmation, or an update notice. Left alone, such a prompt makes the session look healthy while it sits idle.
+
+datawatch recognises the known interstitial prompts inside a session's terminal output and closes them by sending a safe key for that prompt type instead of typing anything into the prompt. Every dismissal is audited so an operator can see what was closed and when; if a prompt survives the dismissal attempts, the session is flagged for the operator to answer it manually.
+The four Settings → Sessions controls behind this behaviour:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `session.dismiss_ui_prompts` | on | Recognise and dismiss known interstitial prompts automatically. Switch off to answer them yourself. |
+| `session.ui_prompt_dismiss_delay_seconds` | `5` | How long datawatch waits after detecting a prompt before sending the dismissal. `0` sends it at once. |
+| `session.ui_prompt_clear_bound_seconds` | `30` | How long the dismissal must hold before the prompt counts as cleared. A prompt that reappears inside the bound is retried. |
+| `session.ui_prompt_max_attempts` | `2` | How many dismissal attempts datawatch makes before flagging the session and asking the operator to step in. |
+
+**See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md)
+
+---
+
 ### Inside a session — terminal area
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.

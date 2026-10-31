@@ -2961,5 +2961,13 @@
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
   "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
-  "settings_identity_backups_to_keep": "Identity backups to keep (whole number, minimum 1, default 10)"
+  "settings_identity_backups_to_keep": "Identity backups to keep (whole number, minimum 1, default 10)",
+  "settings_dismiss_ui_prompts": "Dismiss Claude Code interstitial prompts (default on)",
+  "settings_dismiss_ui_prompts_help": "datawatch detects known Claude Code interstitial prompts and closes them with a safe key. Switch it off to answer them yourself.",
+  "settings_ui_prompt_dismiss_delay_seconds": "UI prompt dismiss delay (whole seconds, 0 = at once, default 5)",
+  "settings_ui_prompt_dismiss_delay_seconds_help": "How long datawatch waits before sending the dismissal. 0 sends it at once.",
+  "settings_ui_prompt_clear_bound_seconds": "UI prompt clear bound (whole seconds, minimum 1, default 30)",
+  "settings_ui_prompt_clear_bound_seconds_help": "How long the dismissal must hold for the prompt to count as cleared.",
+  "settings_ui_prompt_max_attempts": "UI prompt max attempts (whole number, minimum 1, default 2)",
+  "settings_ui_prompt_max_attempts_help": "How many times datawatch retries the dismissal before asking you to step in."
 }

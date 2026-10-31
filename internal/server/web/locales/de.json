@@ -2961,5 +2961,13 @@
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
   "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
-  "settings_identity_backups_to_keep": "Aufzubewahrende Identitätssicherungen (ganze Zahl, mindestens 1, Standard 10)"
+  "settings_identity_backups_to_keep": "Aufzubewahrende Identitätssicherungen (ganze Zahl, mindestens 1, Standard 10)",
+  "settings_dismiss_ui_prompts": "Claude-Code-Zwischenfragen automatisch schließen (standardmäßig an)",
+  "settings_dismiss_ui_prompts_help": "datawatch erkennt bekannte Claude-Code-Zwischenfragen und schließt sie mit einer sicheren Taste. Zum Selbstbeantworten ausschalten.",
+  "settings_ui_prompt_dismiss_delay_seconds": "Schließverzögerung der UI-Fragen (ganze Sekunden, 0 = sofort, Standard 5)",
+  "settings_ui_prompt_dismiss_delay_seconds_help": "Wie lange datawatch wartet, bevor es das Schließen sendet. 0 sendet es sofort.",
+  "settings_ui_prompt_clear_bound_seconds": "Schließgrenze der UI-Fragen (ganze Sekunden, mindestens 1, Standard 30)",
+  "settings_ui_prompt_clear_bound_seconds_help": "Wie lange das Schließen bestehen muss, damit die Frage als geklärt zählt.",
+  "settings_ui_prompt_max_attempts": "Maximale Schließversuche (ganze Zahl, mindestens 1, Standard 2)",
+  "settings_ui_prompt_max_attempts_help": "Wie oft datawatch das Schließen wiederholt, bevor es Sie um Handlung bittet."
 }

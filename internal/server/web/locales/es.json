@@ -2961,5 +2961,13 @@
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
   "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
-  "settings_identity_backups_to_keep": "Copias de seguridad de la identidad que conservar (número entero, mínimo 1, por defecto 10)"
+  "settings_identity_backups_to_keep": "Copias de seguridad de la identidad que conservar (número entero, mínimo 1, por defecto 10)",
+  "settings_dismiss_ui_prompts": "Descartar las preguntas intermedias de Claude Code (activado por defecto)",
+  "settings_dismiss_ui_prompts_help": "datawatch detecta las preguntas intermedias conocidas de Claude Code y las cierra con una tecla segura. Desactívalo para responderlas tú.",
+  "settings_ui_prompt_dismiss_delay_seconds": "Retardo de descarte de la interfaz (segundos enteros, 0 = al momento, por defecto 5)",
+  "settings_ui_prompt_dismiss_delay_seconds_help": "Cuánto espera datawatch antes de enviar el descarte. 0 lo envía al momento.",
+  "settings_ui_prompt_clear_bound_seconds": "Límite de despeje de la interfaz (segundos enteros, mínimo 1, por defecto 30)",
+  "settings_ui_prompt_clear_bound_seconds_help": "Cuánto debe mantenerse el descarte para que la pregunta cuente como despejada.",
+  "settings_ui_prompt_max_attempts": "Intendidos máximos de descarte de la interfaz (número entero, mínimo 1, por defecto 2)",
+  "settings_ui_prompt_max_attempts_help": "Cuántas veces reintenta datawatch el descarte antes de pedirte que intervengas."
 }
