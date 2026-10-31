@@ -61,7 +61,7 @@ you can list in `autonomous.infra_retry.categories`.
 
 Everything else is not an infrastructure failure and takes the usual path: a
 verifier failure, a task that failed on its content or its file scope, a worker
-that stalled after it had started, and a usage or rate limit. The classifier
+that stalled after it had started, and a provider throttle. The classifier
 looks only at what kind of error it is, never at what the task was doing.
 
 A session that never started is not on this list either. It has its own start
@@ -198,9 +198,13 @@ default.
 | `autonomous.infra_retry.retry_dependents` | `true` | `true`, `false` | Mark dependents failed behind an infrastructure failure, and return them to pending once the root recovers. |
 | `autonomous.infra_retry.raise_question` | `true` | `true`, `false` | Raise an operator question when a task is held. Needs `autonomous.questions.enabled`. |
 
-A bad value is refused and nothing is written: the refusal names the key and the
-valid values. Both lists accept a JSON array or a comma list, for example
-`60,300,540`. A value of `[]` or an empty string is kept as an explicit empty
+A bad value sent through `PUT /api/config`, MCP, the CLI, the comm channel or the
+web app is refused and nothing is written: the refusal names the key and the
+valid values. A bad value written by hand into `config.yaml` is not checked when
+the file loads, so check it yourself: a try limit below 1 reads as 3, an
+unknown `exhausted_action` reads as `hold`, a negative delay waits no time, and
+an unknown class never matches, so that class is never retried. Both lists
+accept a JSON array or a comma list, for example `60,300,540`. A value of `[]` or an empty string is kept as an explicit empty
 list, which is different from leaving the key unset.
 
 ## Surfaces
@@ -261,8 +265,10 @@ Bot: Infrastructure retry: on, 3 tries, back-off 60s/300s/540s, hold when used u
 ```
 
 The comm channel reply is cut to fit one chat message. It drops the oldest tasks
-first, always keeps the newest, and says how many it left out; add an Automaton
-id or a smaller limit to narrow the list.
+first and always keeps the newest. When the newest task alone is still too long,
+it drops that task's oldest retries instead, keeping at least the latest one,
+and as a last resort cuts the text. The reply says how many tasks and retries it
+left out; add an Automaton id or a smaller limit to narrow the list.
 
 ## Limits
 
@@ -284,8 +290,8 @@ id or a smaller limit to narrow the list.
   infrastructure failures on a task. A retry that works, or a reset of a
   dependent, ends it and starts the next incident from zero. The history of
   retries on the task stays, up to the newest 50.
-- **Throttling is not an infrastructure failure.** Usage and rate limits have
-  their own handling and are never retried by this feature.
+- **Throttling is not an infrastructure failure.** A throttle from the model
+  provider has its own handling and is never retried by this feature.
 
 ## See also
 

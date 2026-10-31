@@ -1505,10 +1505,12 @@ autonomous:
   # Read the retried and held tasks with GET /api/autonomous/infra-retries,
   # MCP autonomous_infra_retries, CLI `datawatch autonomous infra-retries`
   # and comm `autonomous infra-retries`.
-  # A bad value is rejected (400 on PUT /api/config, an error on config load)
-  # and nothing is written. An unset key reads its default. The two lists keep
-  # "unset" (reads the default) apart from an explicit empty list (kept as
-  # written).
+  # A bad value on those write surfaces is rejected (400 on PUT /api/config)
+  # and nothing is written. A bad value typed by hand into config.yaml is not
+  # checked on load: a max_tries below 1 reads as 3, an unknown exhausted_action
+  # reads as hold, a negative delay waits no time and an unknown class is never
+  # retried. An unset key reads its default. The two lists keep "unset" (reads
+  # the default) apart from an explicit empty list (kept as written).
   #
   # enabled: true | false. Default true. false makes an infrastructure failure
   #   an ordinary failure.
@@ -1534,18 +1536,18 @@ autonomous:
   #   root task is no longer failed, cancelled or held.
   # raise_question: true | false. Default true. Raises one operator question
   #   when a task is held; needs autonomous.questions.enabled.
-  infra_retry:
-    enabled: true
-    max_tries: 3
-    backoff_seconds: [60, 300, 540]
-    categories:
-      - spawn_error
-      - storage_write
-      - session_killed_before_delivery
-      - daemon_restart
-    exhausted_action: hold
-    retry_dependents: true
-    raise_question: true
+  # infra_retry:
+  #   enabled: true
+  #   max_tries: 3
+  #   backoff_seconds: [60, 300, 540]
+  #   categories:
+  #     - spawn_error
+  #     - storage_write
+  #     - session_killed_before_delivery
+  #     - daemon_restart
+  #   exhausted_action: hold
+  #   retry_dependents: true
+  #   raise_question: true
 
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on
