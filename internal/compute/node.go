@@ -236,6 +236,21 @@ type Node struct {
 	// certificate is self-signed.
 	TLSInsecureSkipVerify bool `yaml:"tls_insecure_skip_verify,omitempty" json:"tls_insecure_skip_verify,omitempty"`
 
+	// TLSCAFile is the path to a PEM CA bundle trusted in addition to the
+	// system roots when the daemon probes this node's HTTPS endpoints. Use it
+	// for a node whose certificate is signed by a private CA. Default empty =
+	// system roots only (which already honour SSL_CERT_FILE and SSL_CERT_DIR).
+	// Cannot be combined with tls_insecure_skip_verify.
+	TLSCAFile string `yaml:"tls_ca_file,omitempty" json:"tls_ca_file,omitempty"`
+
+	// TLSCertFingerprint pins the SHA-256 of this node's leaf certificate
+	// (hex, case-insensitive, colons optional; stored as 64 lowercase hex
+	// chars). Without tls_ca_file the node is trusted only when its leaf
+	// matches and the hostname is not checked; with tls_ca_file the chain must
+	// also verify. Default empty = no pin. Cannot be combined with
+	// tls_insecure_skip_verify.
+	TLSCertFingerprint string `yaml:"tls_cert_fingerprint,omitempty" json:"tls_cert_fingerprint,omitempty"`
+
 	// Scheduler hint: 0..100, higher = preferred when multiple
 	// Nodes are eligible for the same workload. Default 50.
 	SchedulingPriority int `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
@@ -383,6 +398,17 @@ func (n *Node) Validate() error {
 		if strings.TrimSpace(n.Address) == "" {
 			return fmt.Errorf("compute node: kind %q requires address", n.Kind)
 		}
+	}
+	n.TLSCAFile = strings.TrimSpace(n.TLSCAFile)
+	if n.TLSCertFingerprint != "" {
+		fp, err := normalizeCertFingerprint(n.TLSCertFingerprint)
+		if err != nil {
+			return err
+		}
+		n.TLSCertFingerprint = fp
+	}
+	if n.TLSInsecureSkipVerify && (n.TLSCAFile != "" || n.TLSCertFingerprint != "") {
+		return errors.New("compute node: tls_insecure_skip_verify cannot be combined with tls_ca_file or tls_cert_fingerprint (choose one: verify, pin or skip)")
 	}
 	if n.MaxConcurrentSessions < 0 {
 		return fmt.Errorf("compute node: max_concurrent_sessions %d must be >= 0", n.MaxConcurrentSessions)
