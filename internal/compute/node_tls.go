@@ -123,6 +123,12 @@ func NodeTLSConfig(n *Node) (cfg *tls.Config, mode TLSMode, err error) {
 	}
 }
 
+// TLSSettingsKey returns a string that changes whenever any of the node's
+// three TLS settings changes, for callers that cache a client per node.
+func (n *Node) TLSSettingsKey() string {
+	return fmt.Sprintf("%q|%q|%t", n.TLSCAFile, n.TLSCertFingerprint, n.TLSInsecureSkipVerify)
+}
+
 func checkLeafFingerprint(raw []byte, want string) error {
 	sum := sha256.Sum256(raw)
 	if got := hex.EncodeToString(sum[:]); got != want {

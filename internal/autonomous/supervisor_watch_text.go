@@ -60,3 +60,18 @@ func SupervisorWatchText(kind SupervisorWatchKind, subject string) (string, erro
 			kind, strings.Join(supervisorWatchKindStrings(), ", "))
 	}
 }
+
+// supervisorWatchUnverifiedNoteText is the fixed clause added to a
+// finding raised about a node that was probed with certificate
+// verification turned off.
+const supervisorWatchUnverifiedNoteText = "certificate verification is turned off for this node"
+
+// SupervisorWatchUnverifiedNote appends the fixed unverified-node clause
+// to a finding text, keeping it one line.
+func SupervisorWatchUnverifiedNote(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return supervisorWatchUnverifiedNoteText
+	}
+	return text + "; " + supervisorWatchUnverifiedNoteText
+}

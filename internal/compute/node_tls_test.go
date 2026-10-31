@@ -257,3 +257,22 @@ func TestNodeTLSValidateTrimsCAFile(t *testing.T) {
 		t.Errorf("TLSCAFile = %q, want trimmed", n.TLSCAFile)
 	}
 }
+
+func TestNodeTLSSettingsKeyChangesWithEachSetting(t *testing.T) {
+	base := &Node{Name: "n"}
+	seen := map[string]string{base.TLSSettingsKey(): "base"}
+	for label, n := range map[string]*Node{
+		"ca":          {TLSCAFile: "/x/ca.pem"},
+		"fingerprint": {TLSCertFingerprint: strings.Repeat("ab", 32)},
+		"opt-out":     {TLSInsecureSkipVerify: true},
+	} {
+		k := n.TLSSettingsKey()
+		if prev, dup := seen[k]; dup {
+			t.Errorf("%s key collides with %s: %q", label, prev, k)
+		}
+		seen[k] = label
+	}
+	if (&Node{Name: "a"}).TLSSettingsKey() != (&Node{Name: "b"}).TLSSettingsKey() {
+		t.Error("the key must depend only on the TLS settings")
+	}
+}

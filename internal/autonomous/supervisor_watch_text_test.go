@@ -109,3 +109,39 @@ func TestSupervisorWatchTextWiring(t *testing.T) {
 		t.Fatalf("stored Text is not operator-safe: %q", out.Text)
 	}
 }
+
+// TestSupervisorWatchUnverifiedNoteStaysOperatorSafe: the unverified-node
+// clause keeps the finding one line, with no PRD word and no tracker id,
+// whatever the node name, and says what it means.
+func TestSupervisorWatchUnverifiedNoteStaysOperatorSafe(t *testing.T) {
+	for _, subject := range []string{"aut-7f3e8066", "edge-node-3", "424242", "  "} {
+		base, err := SupervisorWatchText(SupervisorWatchModelNotResident, subject)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := SupervisorWatchUnverifiedNote(base)
+		if !strings.HasPrefix(text, base) {
+			t.Errorf("note must be a suffix of %q, got %q", base, text)
+		}
+		if !strings.Contains(text, "certificate verification is turned off for this node") {
+			t.Errorf("note wording missing: %q", text)
+		}
+		if strings.ContainsAny(text, "\r\n") {
+			t.Errorf("text is not a single line: %q", text)
+		}
+		if supervisorWatchPRDRe.MatchString(text) || supervisorWatchTrackerRe.MatchString(text) {
+			t.Errorf("text is not operator-safe: %q", text)
+		}
+		lower := strings.ToLower(text)
+		if !strings.Contains(lower, "automaton") && !strings.Contains(lower, "automata") {
+			t.Errorf("text must still name the Automaton or Automata: %q", text)
+		}
+	}
+	// A multi-line base is not allowed to leak a newline through the helper's trim.
+	if got := SupervisorWatchUnverifiedNote("  base \n"); strings.ContainsAny(got, "\r\n") {
+		t.Errorf("trailing newline must be trimmed: %q", got)
+	}
+	if got := SupervisorWatchUnverifiedNote(""); got == "" || strings.HasPrefix(got, ";") {
+		t.Errorf("empty base must yield the bare note, got %q", got)
+	}
+}

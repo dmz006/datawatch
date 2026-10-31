@@ -7019,8 +7019,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}
 					}
 				}
-				amgr.SetSupervisorWatchProbe(
-					autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname))
+				watchProbe := autonomouspkg.NewShellSupervisorWatchHostProbe(nodeAddresses, cfg.Hostname)
+				if computeReg != nil {
+					// Live lookup: a node added or edited after startup is
+					// probed with its current address and TLS settings.
+					watchProbe.SetNodeLookup(func(name string) (*compute.Node, bool) {
+						n, err := computeReg.Get(name)
+						return n, err == nil && n != nil
+					})
+				}
+				amgr.SetSupervisorWatchProbe(watchProbe)
 				if computeReg != nil {
 					amgr.SetSupervisorWatchNodeView(computeReg)
 				}
