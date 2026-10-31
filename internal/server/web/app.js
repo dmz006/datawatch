@@ -9093,6 +9093,11 @@ function docsLinkForLlmBackend(name) {
   return DOCS_LLM_BACKENDS[String(name || '').toLowerCase().replace(/-/g, '_')] || (DOCS_DEFINITIONS + '#llm-registry');
 }
 
+// The infrastructure retry settings and the Infrastructure retries card share
+// one glossary section.
+const DOCS_INFRA_RETRY_LINK = DOCS_DEFINITIONS + '#infrastructure-retry';
+const DOCS_INFRA_RETRY_PREFIXES = ['autonomous.infra_retry.', 'settings_infra_retry_', 'infra_retry_'];
+
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
 // dialogs, per-channel-type config, dashboard cards without their own
@@ -9103,6 +9108,7 @@ function docsLinkForKey(key) {
   if (key.startsWith('lc_backend_')) return docsLinkForLlmBackend(key.slice('lc_backend_'.length));
   if (key.startsWith('cc_global_')) return docsLinkForChannelType(key.slice('cc_global_'.length));
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
+  if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
   return null;
 }
 
@@ -14169,6 +14175,8 @@ function renderTask(prd, story, task, editable) {
   const heldBadge = task.status === 'review_needed'
     ? `<span class="prd-task-review-badge" title="${escHtml(t('review_held_help'))}">&#9873; ${escHtml(t('task_status_review_needed'))}</span>`
     : '';
+  // Infrastructure retry: "Retry n of max" and the hold cause, from the task's own record.
+  const infraRetryBadges = window.infraRetryTaskBadgesHtml(task, _infraRetryMaxTries());
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
@@ -14308,7 +14316,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}${heldBadge}
+      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -16597,6 +16605,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.lane_fill.count_verifier_wait', label: 'Lane fill count verifier wait (on by default)', labelKey: 'settings_lane_fill_count_verifier_wait', type: 'toggle' },
+    // Infrastructure retry — retry a task when the machinery around it failed. The lists
+    // are comma separated; the daemon validates the delays and the failure classes.
+    { key: 'autonomous.infra_retry.enabled', label: 'Infrastructure retry (on by default)', labelKey: 'settings_infra_retry_enabled', hintKey: 'settings_infra_retry_enabled_hint', docsKey: 'autonomous.infra_retry.enabled', type: 'toggle' },
+    { key: 'autonomous.infra_retry.max_tries', label: 'Infrastructure retry tries per task (whole number, minimum 1, default 3)', labelKey: 'settings_infra_retry_max_tries', hintKey: 'settings_infra_retry_max_tries_hint', docsKey: 'autonomous.infra_retry.max_tries', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
+    { key: 'autonomous.infra_retry.backoff_seconds', label: 'Infrastructure retry delays (seconds, comma separated, default 60, 300, 540)', labelKey: 'settings_infra_retry_backoff_seconds', hintKey: 'settings_infra_retry_backoff_seconds_hint', docsKey: 'autonomous.infra_retry.backoff_seconds', type: 'text', placeholder: '60, 300, 540', csv: true },
+    { key: 'autonomous.infra_retry.categories', label: 'Infrastructure retry failure classes (comma separated, default all four)', labelKey: 'settings_infra_retry_categories', hintKey: 'settings_infra_retry_categories_hint', docsKey: 'autonomous.infra_retry.categories', type: 'text', placeholder: 'spawn_error, storage_write, session_killed_before_delivery, daemon_restart', csv: true },
+    { key: 'autonomous.infra_retry.exhausted_action', label: 'Infrastructure retry when the tries are spent (hold or count, default hold)', labelKey: 'settings_infra_retry_exhausted_action', hintKey: 'settings_infra_retry_exhausted_action_hint', docsKey: 'autonomous.infra_retry.exhausted_action', type: 'select', options: ['hold', 'count'], optionLabelKeys: { hold: 'settings_infra_retry_exhausted_hold', count: 'settings_infra_retry_exhausted_count' }, default: 'hold' },
+    { key: 'autonomous.infra_retry.retry_dependents', label: 'Infrastructure retry also retries blocked dependents (on by default)', labelKey: 'settings_infra_retry_retry_dependents', hintKey: 'settings_infra_retry_retry_dependents_hint', docsKey: 'autonomous.infra_retry.retry_dependents', type: 'toggle' },
+    { key: 'autonomous.infra_retry.raise_question', label: 'Infrastructure retry raises a question when the tries are spent (on by default)', labelKey: 'settings_infra_retry_raise_question', hintKey: 'settings_infra_retry_raise_question_hint', docsKey: 'autonomous.infra_retry.raise_question', type: 'toggle' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     { key: 'autonomous.questions.enabled', label: 'Operator questions for Automata (off by default)', labelKey: 'settings_automata_questions_enabled', type: 'toggle' },
     { key: 'autonomous.questions.notify_messaging', label: 'Notify on question asked and answered (on by default)', labelKey: 'settings_automata_questions_notify_messaging', type: 'toggle' },
@@ -17449,12 +17466,14 @@ function loadGeneralConfig() {
             </div>`;
           } else if (f.type === 'toggle') {
             const checked = !!val;
-            html += `<div class="settings-row" style="justify-content:space-between;">
-              <div class="settings-label">${escHtml(fLabel)}</div>
+            const _togHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="justify-content:space-between;${_togHint ? 'flex-wrap:wrap;' : ''}">
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <label class="toggle-switch">
                 <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
                 <span class="toggle-slider"></span>
               </label>
+              ${_togHint}
             </div>`;
           } else if (f.type === 'dir_browse') {
             const fid = 'cfg_dir_' + f.key.replace(/\./g, '_');
@@ -18204,7 +18223,7 @@ function _taskReviewPanelHTML(prd, task) {
         <button class="prd-task-cancel-btn" onclick="event.stopPropagation();prdReviewCancel(${pid},${tid})">${escHtml(t('review_action_cancel'))}</button>
       </div>`
     : '';
-  return actions + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
+  return actions + window.infraRetryHeldCauseHtml(task) + _taskAttemptsHTML(task) + _failureEscalationEditorHTML(prd.id, task.id, task.failure_escalation);
 }
 
 function saveGeneralConfigPut(key, value) {
@@ -23999,6 +24018,8 @@ function renderPRDDetailView(prdId, breadcrumbAppend) {
   apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId))
     .then(prd => {
       if (!prd || !prd.id) throw new Error('PRD not found');
+      const limitRead = _infraRetryLoadMax(prd);
+      if (limitRead) return limitRead.then(() => _renderDetailContent(prd));
       _renderDetailContent(prd);
     })
     .catch(err => {
@@ -25531,6 +25552,122 @@ window.laneFillCardHtml = function(status) {
     _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
 };
+
+// ── Infrastructure retries card ─────────────────────────────────────────────
+// infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
+// body into the Automation Overview card: whether automatic retry is on and how
+// many tries a task gets, then one block per task that was retried or is held,
+// newest first. Each retry reads "Retry n of max" with its class, reason and
+// time; a held task also shows the cause and, when the daemon raised one, a
+// button that opens the question. A missing status renders the placeholder; the
+// loader owns the failed state. Every value is escaped. The key maps hold
+// literal locale keys, so the key-coverage guard can see them.
+const INFRA_RETRY_TASK_ROWS = 20;
+const INFRA_RETRY_ENTRY_ROWS = 3;
+const INFRA_RETRY_HOLD_SOURCE = 'infra-retry-hold';
+const INFRA_RETRY_POLICY_KEYS = { hold: 'infra_retry_policy_on_hold', count: 'infra_retry_policy_on_count' };
+// _infraRetryTime formats a server time; the zero time the server sends when
+// unset has no reading, so it renders as nothing.
+function _infraRetryTime(at) {
+  const ms = Date.parse(at);
+  return (isNaN(ms) || ms <= 0 || new Date(ms).getUTCFullYear() < 2000) ? '' : new Date(ms).toLocaleString();
+}
+// _infraRetryNumber is the retry number a badge shows: the count in the current
+// incident, else the number of the newest recorded retry.
+function _infraRetryNumber(count, retries) {
+  const n = Number(count) || 0;
+  if (n > 0) return n;
+  const list = Array.isArray(retries) ? retries : [];
+  return list.length ? (Number(list[list.length - 1].number) || list.length) : 0;
+}
+function _infraRetryBadgeText(n, max) {
+  return Number(max) > 0 ? t('infra_retry_count_of', [n, Number(max)]) : t('infra_retry_count', [n]);
+}
+function _infraRetryEntryHtml(r, max) {
+  const when = _infraRetryTime(r.at);
+  const next = _infraRetryTime(r.next_at);
+  const parts = [`<span style="font-weight:600;">${escHtml(_infraRetryBadgeText(Number(r.number) || 0, max))}</span>`,
+    `<span>${escHtml(t('infra_retry_class', [r.class || '']))}</span>`];
+  if (r.reason) parts.push(`<span style="overflow-wrap:anywhere;">${escHtml(t('infra_retry_reason', [r.reason]))}</span>`);
+  if (when) parts.push(`<span style="color:var(--text2);">${escHtml(t('infra_retry_time', [when]))}</span>`);
+  if (next) parts.push(`<span style="color:var(--text2);">${escHtml(t('infra_retry_next', [next]))}</span>`);
+  return `<div class="infra-retry-entry" style="display:flex;flex-wrap:wrap;gap:2px 8px;min-width:0;">${parts.join('')}</div>`;
+}
+function _infraRetryTaskHtml(task, max) {
+  const n = _infraRetryNumber(task.retry_count, task.retries);
+  const taskMax = Number(task.max_tries) > 0 ? task.max_tries : max;
+  const retries = Array.isArray(task.retries) ? task.retries : [];
+  const name = [task.automaton_title || task.automaton_id, task.task_title || task.task_id].filter(Boolean).join(' · ');
+  const badge = n > 0
+    ? `<span class="prd-task-llm-badge infra-retry-badge">${escHtml(_infraRetryBadgeText(n, taskMax))}</span>` : '';
+  const held = task.held
+    ? `<span class="prd-task-review-badge infra-retry-held">&#9873; ${escHtml(t('infra_retry_held_label'))}</span>` : '';
+  const entries = retries.slice(-INFRA_RETRY_ENTRY_ROWS).map(r => _infraRetryEntryHtml(r, taskMax)).join('');
+  const cause = task.held && task.held_cause
+    ? `<div class="infra-retry-cause" style="overflow-wrap:anywhere;">${escHtml(t('infra_retry_held_cause', [task.held_cause]))}</div>` : '';
+  const question = task.held && task.question_id
+    ? `<div><button type="button" class="btn-secondary infra-retry-question-btn" style="font-size:11px;padding:3px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escHtml(task.question_id)}')">${escHtml(t('infra_retry_open_question'))}</button></div>` : '';
+  return `<div class="infra-retry-task" style="padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;min-width:0;"><span style="font-weight:600;overflow-wrap:anywhere;">${escHtml(name)}</span>${badge}${held}</div>` +
+    entries + cause + question + `</div>`;
+}
+window.infraRetryCardHtml = function(status) {
+  const head = `<div class="cap-title">${escHtml(t('infra_retry_card_title'))}${defsLink('infra_retry_card_title')}</div>`;
+  if (!status || typeof status !== 'object') {
+    return `<div class="prd-capacity-card infra-retry-card">${head}<div style="color:var(--text2);">${escHtml(t('infra_retry_empty'))}</div></div>`;
+  }
+  const max = Number(status.max_tries) || 0;
+  const policyKey = status.enabled === false ? 'infra_retry_policy_off'
+    : (_laneFillKey(INFRA_RETRY_POLICY_KEYS, status.exhausted_action) || INFRA_RETRY_POLICY_KEYS.hold);
+  const policy = `<div class="infra-retry-policy" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t(policyKey, [max]))}</div>`;
+  const tasks = (Array.isArray(status.tasks) ? status.tasks : []).slice(0, INFRA_RETRY_TASK_ROWS);
+  const body = tasks.length ? tasks.map(tk => _infraRetryTaskHtml(tk, max)).join('')
+    : `<div style="color:var(--text2);">${escHtml(t('infra_retry_empty'))}</div>`;
+  return `<div class="prd-capacity-card infra-retry-card" style="min-width:0;">${head}${policy}<div style="margin-top:6px;">${body}</div></div>`;
+};
+
+// infraRetryTaskBadgesHtml(task, maxTries) is the Automaton detail's task row
+// addition: a small "Retry n of max" badge when the task carries infrastructure
+// retries, and a badge naming the hold when it was held for an infrastructure
+// reason (the cause is its tooltip). maxTries <= 0 drops the "of max" part.
+window.infraRetryTaskBadgesHtml = function(task, maxTries) {
+  if (!task || typeof task !== 'object') return '';
+  let out = '';
+  const n = _infraRetryNumber(task.infra_retry_count, task.infra_retries);
+  if (n > 0) out += `<span class="prd-task-llm-badge infra-retry-badge">${escHtml(_infraRetryBadgeText(n, maxTries))}</span>`;
+  if (window.infraRetryTaskHeld(task)) {
+    const cause = task.failure_reason.detail ? t('infra_retry_held_cause', [task.failure_reason.detail]) : '';
+    out += `<span class="prd-task-review-badge infra-retry-held"${cause ? ` title="${escHtml(cause)}"` : ''}>&#9873; ${escHtml(t('infra_retry_held_label'))}</span>`;
+  }
+  return out;
+};
+window.infraRetryTaskHeld = function(task) {
+  return !!(task && task.status === 'review_needed' && task.failure_reason &&
+    task.failure_reason.source === INFRA_RETRY_HOLD_SOURCE);
+};
+// infraRetryHeldCauseHtml is the cause line shown in the expanded body of a task
+// held for an infrastructure reason; empty for any other task.
+window.infraRetryHeldCauseHtml = function(task) {
+  if (!window.infraRetryTaskHeld(task) || !task.failure_reason.detail) return '';
+  return `<div class="infra-retry-cause" style="font-size:11px;margin:6px 0;overflow-wrap:anywhere;">${escHtml(t('infra_retry_held_cause', [task.failure_reason.detail]))}</div>`;
+};
+// _infraRetryMaxTries is the tries-per-task limit the task rows compare against;
+// 0 while it is not known, which drops the "of max" part of the badge. The
+// Infrastructure retries card sets it on every load, and the Automaton detail
+// reads it once before its first paint when a task carries retries.
+function _infraRetryMaxTries() {
+  return Number(window._infraRetryMax) > 0 ? Number(window._infraRetryMax) : 0;
+}
+// _infraRetryLoadMax resolves once the limit is known or the read failed; a
+// failed read leaves the badge without the limit.
+function _infraRetryLoadMax(prd) {
+  const carries = (prd.stories || prd.story || []).some(st => (st.tasks || []).some(tk =>
+    (Number(tk.infra_retry_count) || 0) > 0 || (Array.isArray(tk.infra_retries) && tk.infra_retries.length > 0)));
+  if (!carries || _infraRetryMaxTries() > 0) return null;
+  return Promise.resolve(apiFetch('/api/autonomous/infra-retries?limit=1'))
+    .then(d => { if (d && Number(d.max_tries) > 0) window._infraRetryMax = d.max_tries; })
+    .catch(() => {});
+}
 
 // ── Triage card ─────────────────────────────────────────────────────────────
 // triageCardHtml(record) turns one triage record — the single self-contained
@@ -28383,15 +28520,16 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_safe_delete', 'automation_cleanup']); },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup']); },
   },
   {
     id: 'chains',
@@ -28474,7 +28612,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -28565,6 +28703,21 @@ function _automationLaneFillLoader() {
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
     render: status => window.laneFillCardHtml(status),
+  });
+}
+
+// _automationInfraRetryLoader polls the infrastructure retry view beside the
+// lane fill card. It keeps the tries-per-task limit for the task rows; its
+// failed state is the list loader's banner.
+function _automationInfraRetryLoader() {
+  return window._listLoaders.automation_infra_retry || listLoader({
+    key: 'automation_infra_retry', el: 'automationInfraRetryCard', url: '/api/autonomous/infra-retries?limit=20', pollMs: 10000,
+    failedText: msg => t('infra_retry_failed', [msg]),
+    active: () => !!document.getElementById('automationInfraRetryCard'),
+    render: status => {
+      if (status && Number(status.max_tries) > 0) window._infraRetryMax = status.max_tries;
+      return window.infraRetryCardHtml(status);
+    },
   });
 }
 

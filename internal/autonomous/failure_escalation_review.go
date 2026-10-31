@@ -53,9 +53,13 @@ func (r *reviewRequeue) apply(t *Task, now time.Time) {
 		t.History = append(t.History, TaskHistoryEntry{At: now, Note: "review report cleared by operator retry:\n" + r.held.Text})
 	}
 	t.ReviewSummary = nil
-	if t.FailureReason != nil && t.FailureReason.Source == failureEscalationHoldSource {
+	if t.FailureReason != nil && (t.FailureReason.Source == failureEscalationHoldSource ||
+		t.FailureReason.Source == infraRetryHoldSource) {
 		t.FailureReason = nil
 	}
+	// The operator's retry starts a new incident: the task gets a full set of
+	// infrastructure retries again.
+	clearInfraRetryCount(t)
 	if r.req.Spec != "" {
 		t.History = append(t.History, TaskHistoryEntry{At: now, Note: "spec replaced by operator; previous spec:\n" + t.Spec})
 		t.Spec = r.req.Spec
@@ -161,7 +165,11 @@ func (m *Manager) ResolveTaskReview(prdID, taskID string, req ReviewResolution, 
 	if err != nil {
 		return nil, err
 	}
-	return m.resetTask(prdID, taskID, actor, false, false, r)
+	out, err := m.resetTask(prdID, taskID, actor, false, false, r)
+	if err == nil {
+		m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task retried by "+actor+" without answering the question")
+	}
+	return out, err
 }
 
 // reviewRetryChanges checks a retry's changes against the held task and

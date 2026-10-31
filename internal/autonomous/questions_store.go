@@ -418,12 +418,14 @@ func (s *QuestionStore) Raise(q Question) (Question, error) {
 	return out, err
 }
 
-// RaiseUnlessOpenSourceLine is Raise for a question that came from a pane
-// line: when an open question already carries the same session id and source
-// line hash, nothing is raised and that question is returned with raised
-// false. The check and the append run under one lock, so two scans of the
-// same line cannot both raise. A question without a session id or line hash
-// has no dedupe key and is raised like any other.
+// RaiseUnlessOpenSourceLine is Raise for a question that carries a source line
+// hash: a pane line, or the key an Automaton derives for a question it raises
+// itself. When an open question already carries the same session id and
+// source line hash, nothing is raised and that question is returned with
+// raised false. The check and the append run under one lock, so two scans of
+// the same line cannot both raise. A question without a line hash has no
+// dedupe key and is raised like any other; a question without a session id
+// is matched against open questions that have none.
 func (s *QuestionStore) RaiseUnlessOpenSourceLine(q Question) (Question, bool, error) {
 	return s.raise(q, true)
 }
@@ -435,7 +437,7 @@ func (s *QuestionStore) raise(q Question, dedupe bool) (Question, bool, error) {
 		return Question{}, false, err
 	}
 	s.mu.Lock()
-	if dedupe && q.SessionID != "" && q.SourceLineSHA256 != "" {
+	if dedupe && q.SourceLineSHA256 != "" {
 		for _, have := range s.questions {
 			if have.State == QuestionOpen && have.SessionID == q.SessionID &&
 				have.SourceLineSHA256 == q.SourceLineSHA256 {

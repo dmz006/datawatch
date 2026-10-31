@@ -83,4 +83,11 @@ type FailureReason struct {
 	// not just whether its category is generally retryable.
 	Retryable  bool      `json:"retryable"`
 	OccurredAt time.Time `json:"occurred_at"`
+	// DependsOnTaskID is set only on a task that failed because a task it
+	// depends on failed for an infrastructure reason (Source
+	// "dependency-infra"). It names the task where the chain began, the one
+	// whose own failure was the infrastructure failure, so a later reset of
+	// that root can find every dependent that was failed behind it. Empty on
+	// every other failure.
+	DependsOnTaskID string `json:"depends_on_task,omitempty"`
 }

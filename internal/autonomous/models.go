@@ -807,6 +807,19 @@ type DeliveryFailureEvent struct {
 	Reason string    `json:"reason"`
 }
 
+// InfraRetryRecord is one scheduled retry of a task after an infrastructure
+// failure: which retry it was, the failure class and text, when it was
+// decided, the back-off delay and when the retry is due.
+type InfraRetryRecord struct {
+	Number       int       `json:"number"`
+	Class        string    `json:"class"`
+	Reason       string    `json:"reason,omitempty"`
+	At           time.Time `json:"at"`
+	DelaySeconds int       `json:"delay_seconds"`
+	NextAt       time.Time `json:"next_at,omitempty"`
+	Source       string    `json:"source,omitempty"`
+}
+
 // Task is a single unit of work — runs as a session under
 // session.Manager. Maps 1:1 to a pipeline.Task once enqueued.
 //
@@ -919,6 +932,14 @@ type Task struct {
 	// executor uses for every attempt, so a daemon restart mid-streak keeps
 	// the count. JSON omitempty: 0 is invisible on the wire.
 	StartFailures int `json:"start_failures,omitempty"`
+	// InfraRetries is the history of infrastructure retries of this task:
+	// one record per retry the Automaton scheduled, newest last, the newest
+	// maxInfraRetryRecords kept. The records stay when the incident is over.
+	InfraRetries []InfraRetryRecord `json:"infra_retries,omitempty"`
+	// InfraRetryCount is the consecutive infrastructure retries within the
+	// current incident. It is reset when the task gets a fair attempt; the
+	// InfraRetries history is not.
+	InfraRetryCount int `json:"infra_retry_count,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`

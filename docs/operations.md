@@ -659,6 +659,33 @@ All three keys can be read and set through the autonomous config on REST, MCP (`
 
 **Counters.** `GET /api/capacity` carries a `verifier` object (`capacity_status` over MCP returns it too) with `runs`, queue wait and run time totals, averages and maxima in seconds, `categories` (`pass`, `content`, `infra`, `watchdog`, `timeout`, `capacity`, `escalated`), `watchdog_ends`, `escalations` and `since`. The CLI and comm channel status text adds one line, for example `verifiers: 12 runs, avg wait 38s, avg run 6m, infra 3, watchdog 1`, or `verifiers: no runs yet`. Prometheus exposes `datawatch_verifier_runs_total{category}`, `datawatch_verifier_wait_seconds_total` and `datawatch_verifier_run_seconds_total`. The aggregates are kept since the daemon started.
 
+### Infrastructure retry
+
+A task that fails because the machinery around it failed, not because of its own work, is retried on a back-off schedule and the failure is not counted against the task. Four failure classes qualify: `spawn_error` (the worker could not be started), `storage_write` (the device is full, the quota is used up or the file system is read-only), `session_killed_before_delivery` (the worker session ended before the task reached it) and `daemon_restart` (the daemon restarted while the task ran). A session that never started keeps its own start budget and is never classified here, and a throttle from the model provider is never retried by this feature. By default a task gets 3 tries with delays of 1, 5 and 9 minutes (15 minutes in all). While it waits, the task shows `infrastructure retry n of max at <time> (<class>)`, and the retry is recorded on the task (`infra_retries`) and as an `infra_retry` decision on the Automaton.
+
+When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold` (the default) parks the task in `review_needed` with the cause on it, raises one error-level alert titled "Automaton task held after infrastructure retries" and, when `autonomous.infra_retry.raise_question` and `autonomous.questions.enabled` are both on, one operator question that offers retry or cancel; answering it, or resolving the task review, retries with a fresh set of tries or cancels. `count` books one ordinary failed attempt and the task follows the failure escalation path. Dependents that failed behind an infrastructure failure are marked and return to pending on their own once the root is no longer failed, cancelled or held (`autonomous.infra_retry.retry_dependents`). A retry caused by a daemon restart waits no longer than the first delay. The operator guide is [howto/infrastructure-retry.md](howto/infrastructure-retry.md).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.infra_retry:` with `enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents` and `raise_question` |
+| **CLI** | `datawatch autonomous infra-retries [automaton] [--limit N] [--json]` shows the policy in effect and the retried or held tasks; `datawatch config set autonomous.infra_retry.max_tries 5`; a held task is decided with `datawatch autonomous resolve-review <automaton> --task <task> --action retry\|cancel` |
+| **Web UI** | Settings → General → Autonomous (the seven keys); the Infrastructure retries card on the Automation view; the `Retry n of max` and held badges on each task row in the Automaton detail |
+| **REST API** | `GET /api/autonomous/infra-retries` with `automaton` and `limit` (1 to 1000, default 50); `PUT /api/config` with `autonomous.infra_retry.<key>` (the two lists take a JSON array or a comma list); `GET /api/config` shows the block with defaults filled in |
+| **Comm channel** | `autonomous infra-retries [automaton] [limit]`; `configure autonomous.infra_retry.max_tries=5`; a held task is decided with `autonomous review-task <automaton> <task> retry\|cancel` |
+| **MCP** | `autonomous_infra_retries` (read-only), `autonomous_config_set` with the `infra_retry_*` arguments, `config_set`, `autonomous_prd_resolve_task_review` |
+
+| Key | Default | Allowed values and effect |
+|-----|---------|---------------------------|
+| `autonomous.infra_retry.enabled` | `true` | `true` or `false`. `false` makes an infrastructure failure an ordinary failure. |
+| `autonomous.infra_retry.max_tries` | `3` | Whole number from 1 to 1000. Tries a task gets in a row before the exhausted action applies. |
+| `autonomous.infra_retry.backoff_seconds` | `[60, 300, 540]` | List of whole seconds (0 to 604800 each, at most 1000 entries), as a JSON array or comma list. The delay before each retry; the last entry repeats. `[]` means retry with no delay. |
+| `autonomous.infra_retry.categories` | all four classes | Any of `spawn_error`, `storage_write`, `session_killed_before_delivery`, `daemon_restart`, as a JSON array or comma list. A class left out takes the ordinary failure path; `[]` retries none. |
+| `autonomous.infra_retry.exhausted_action` | `hold` | `hold` holds the task for the operator; `count` counts it as one ordinary failed attempt. |
+| `autonomous.infra_retry.retry_dependents` | `true` | `true` or `false`. Marks dependents failed behind an infrastructure failure and returns them to pending when the root recovers. |
+| `autonomous.infra_retry.raise_question` | `true` | `true` or `false`. Raises an operator question when a task is held; needs `autonomous.questions.enabled`. |
+
+A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; the refusal names the key and the valid values. A bad value written by hand into `config.yaml` is not checked on load: a try limit below 1 reads as 3, an unknown `exhausted_action` reads as `hold`, a negative delay waits no time and an unknown class is never retried. Changes made through the write surfaces apply at once, with no restart.
+
 ---
 
 ## 5. Signal Account Management

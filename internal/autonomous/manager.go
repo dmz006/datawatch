@@ -452,6 +452,11 @@ type Config struct {
 	// win per field; see resolveFailureEscalation. An unset MaxFailures reads
 	// as 3 and a nil Enabled reads as true.
 	FailureEscalation FailureEscalationPolicy `json:"failure_escalation"`
+	// InfraRetry mirrors autonomous.infra_retry: the retry policy for
+	// infrastructure failures. Unset keys read their defaults through the
+	// Effective* accessors; the live config round-trip carries the block so
+	// a config write takes effect without a restart.
+	InfraRetry config.InfraRetryConfig `json:"infra_retry"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -3199,6 +3204,22 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 // accepts a task held for review and applies the operator's changes in the
 // same save as the requeue, so the changes and the requeue land together.
 func (m *Manager) resetTask(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
+	out, err := m.resetTaskRecord(prdID, taskID, actor, force, cleanRestart, review)
+	if err != nil {
+		return out, err
+	}
+	// The task is back in play, so the dependents failed behind it for an
+	// infrastructure reason return to pending with it, whether the operator
+	// reset it or retried it after review.
+	if len(m.recoverInfraDependents(out)) > 0 {
+		out, _ = m.store.GetPRD(prdID)
+	}
+	return out, nil
+}
+
+// resetTaskRecord is the reset of one task that resetTask wraps: the requeue,
+// its decision and the status events, before the dependents are recovered.
+func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanRestart bool, review *reviewRequeue) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3563,6 +3584,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	}
 	m.releaseCapacity(taskID)
 	emitCancelled()
+	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }

@@ -1016,6 +1016,20 @@ paths:
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
         `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.infra_retry.enabled` (true|false, default true),
+        `autonomous.infra_retry.max_tries` (whole number from 1 to 1000, default 3),
+        `autonomous.infra_retry.backoff_seconds` (a JSON array of whole seconds, or a
+        comma list such as `60,300,540`; each 0 to 604800; the last entry repeats when
+        there are more tries than entries; an empty list means no delay),
+        `autonomous.infra_retry.categories` (a JSON array of failure classes, or a
+        comma list; `spawn_error`, `storage_write`, `session_killed_before_delivery`,
+        `daemon_restart`; an empty list retries no class),
+        `autonomous.infra_retry.exhausted_action` (`hold` or `count`, default `hold`),
+        `autonomous.infra_retry.retry_dependents` (true|false, default true) and
+        `autonomous.infra_retry.raise_question` (true|false, default true). A bad
+        infrastructure retry value rejects the whole PUT with 400 and nothing is
+        written. GET returns all seven values in effect under `autonomous.infra_retry`
+        and the running Automaton manager picks up changes without a restart.
         `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
         claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
         list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
@@ -1420,6 +1434,43 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/infra-retries:
+    get:
+      summary: Infrastructure retries
+      description: |
+        The infrastructure retry policy in effect (`enabled`, `max_tries`,
+        `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents` and
+        `raise_question`) and the tasks that were retried, or are held, because the
+        machinery around them failed: a worker that could not be spawned, a failed
+        storage write, a session killed before the task was delivered or a daemon
+        restart. Each task lists its retries with the failure class, the reason, when
+        each was decided, the delay and when it was due. A task is `held` while it
+        waits for the operator after its retries ran out, with `held_cause` and, when
+        an operator question is open for it, `question_id`. Tasks are listed with the
+        most recently retried first. `automaton` limits the list to one Automaton; an
+        Automaton that does not exist gives an empty list. `count` is the number of
+        tasks listed. Read-only; needs the autonomous read capability when called by
+        a federated peer.
+      operationId: autonomousInfraRetries
+      tags: [Autonomous]
+      parameters:
+        - {name: automaton, in: query, required: false, description: Only the tasks of this Automaton, schema: {type: string}}
+        - {name: limit, in: query, required: false, description: "Tasks to return, most recently retried first; a whole number from 1 to 1000, default 50", schema: {type: integer, minimum: 1, maximum: 1000, default: 50}}
+      responses:
+        "200":
+          description: The retry policy and the tasks retried or held
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InfraRetryStatus"
+        "400": {description: limit is not a whole number from 1 to 1000}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The Automaton manager does not offer the infrastructure retry read}
         "503": {description: Autonomous is disabled}
 
   /api/autonomous/decisions:
@@ -6726,6 +6777,53 @@ components:
         id: {type: string, description: "The Automaton id, task id or registry row key; empty for a proposal or no context"}
         doc_path: {type: string, description: "A proposal's repository-relative path; empty when the stored path is not repository-relative"}
         viewer_url: {type: string, description: "The in-app documents viewer link for a proposal that is a markdown file inside the served docs tree (for example /diagrams.html#docs/plans/plan.md); empty for any other path"}
+    InfraRetryStatus:
+      type: object
+      description: The infrastructure retry policy in effect and the tasks retried or held, as GET /api/autonomous/infra-retries returns it.
+      properties:
+        enabled: {type: boolean}
+        max_tries: {type: integer, description: "Tries a task gets before the exhausted action applies"}
+        backoff_seconds:
+          type: array
+          items: {type: integer}
+          description: "Delay in seconds before each retry; the last entry repeats"
+        categories:
+          type: array
+          items: {type: string, enum: [spawn_error, storage_write, session_killed_before_delivery, daemon_restart]}
+        exhausted_action: {type: string, enum: [hold, count]}
+        retry_dependents: {type: boolean}
+        raise_question: {type: boolean}
+        tasks:
+          type: array
+          items: {$ref: "#/components/schemas/InfraRetryTask"}
+        count: {type: integer, description: "Number of tasks listed"}
+    InfraRetryTask:
+      type: object
+      description: A task with infrastructure retries, or held for an infrastructure reason.
+      properties:
+        automaton_id: {type: string}
+        automaton_title: {type: string}
+        task_id: {type: string}
+        task_title: {type: string}
+        status: {type: string, description: "The task's status, for example review_needed while it is held"}
+        retry_count: {type: integer, description: "Consecutive retries in the current incident; 0 once the task got a fair attempt"}
+        max_tries: {type: integer}
+        retries:
+          type: array
+          items: {$ref: "#/components/schemas/InfraRetryEntry"}
+        held: {type: boolean, description: "True while the task waits for the operator after its retries ran out"}
+        held_cause: {type: string, description: "The failure class and cause; present only while held"}
+        question_id: {type: string, description: "The open operator question for the hold; present only when one is open"}
+    InfraRetryEntry:
+      type: object
+      description: One scheduled retry of a task.
+      properties:
+        number: {type: integer}
+        class: {type: string, enum: [spawn_error, storage_write, session_killed_before_delivery, daemon_restart]}
+        reason: {type: string}
+        at: {type: string, format: date-time, description: "When the retry was decided"}
+        delay_seconds: {type: integer}
+        next_at: {type: string, format: date-time, description: "When the retry was due"}
     UsageReading:
       type: object
       description: One usage reading in the shared series.

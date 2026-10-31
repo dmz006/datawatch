@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -324,6 +325,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 	}
 	m.loadSkillGuardrails(prd) // BL303 S2 T08
+	// A dependency that recovered since the last pass releases the dependents
+	// failed behind it, so they run in this pass.
+	m.recoverInfraDependents(prd)
 	tasks := flattenTasks(prd)
 	order, err := topoSort(tasks)
 	if err != nil {
@@ -410,6 +414,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if latest, _ := m.store.GetPRD(prdID); latest != nil {
 					prd = latest
 				}
+				m.recoverInfraDependents(prd)
 				var tasks []*Task
 				m.store.WithLock(func() { tasks = flattenTasks(prd) })
 				if o, err := topoSort(tasks); err != nil {
@@ -466,11 +471,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					t.Status = TaskFailed
 				})
 				verb := "failed"
-				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
+				depTask := lookupTask(prd, depFailed)
+				if depTask != nil && depTask.Status == TaskCancelled {
 					verb = "was cancelled"
 				}
+				infraReason := m.infraDependentReason(depTask)
 				m.store.WithLock(func() {
 					t.Error = "dependency " + depFailed + " " + verb
+					if infraReason != nil {
+						t.FailureReason = infraReason
+					}
 				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
@@ -624,9 +634,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				if depFailed != "" {
 					oldStatus := t.Status
+					infraReason := m.infraDependentReason(lookupTask(prd, depFailed))
 					m.store.WithLock(func() {
 						t.Status = TaskFailed
 						t.Error = "dependency " + depFailed + " failed"
+						if infraReason != nil {
+							t.FailureReason = infraReason
+						}
 					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
@@ -688,6 +702,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				return
 			}
 			prd = latest
+			// A dependency the operator retried releases the dependents
+			// failed behind it.
+			m.recoverInfraDependents(latest)
 			// The order leaves out tasks held for review, so a task the
 			// operator has since retried is not in it. Rebuild the order from
 			// the Automaton as it stands now. A cycle keeps the old order.
@@ -717,6 +734,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					completedIDs[tid] = true
 					if lt.Status == TaskFailed || lt.Status == TaskCancelled {
 						failedIDs[tid] = true
+					} else {
+						delete(failedIDs, tid)
 					}
 				case normTaskStatus(lt.Status) == TaskPending:
 					// Retried by the operator. It runs again, so it is no
@@ -776,6 +795,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		launch()
 
 		for remaining > 0 {
+			// A dependency that completed, or was retried, releases the
+			// dependents failed behind it without a new run.
+			if len(m.recoverInfraDependents(prd)) > 0 {
+				reviewDecisions()
+			}
 			if len(inFlight) == 0 {
 				// A decision can land just before the coordinator would exit.
 				// Process it, so a task it made ready is not left behind.
@@ -1241,9 +1265,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		budget = esc.MaxFailures - m.escalationFailureCount(t)
 	}
 	var run attemptRun
+	// inherited is true only on the first pass: a task that arrives with a
+	// session and an in-flight status was left that way by an earlier daemon
+	// run. Later passes (including re-queued ones) carry their own session.
+	inherited := true
 	for attempt := 0; attempt < budget; attempt++ {
 		var err error
 		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
+		inheritedSession := inherited
+		inherited = false
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -1291,12 +1321,26 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						attempt-- // offset the loop's post-iteration attempt++
 						continue
 					}
+					// A transient infrastructure failure retries the attempt on a
+					// back-off without costing the task a failure.
+					m.store.WithLock(func() { t.AdoptedSession = false })
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, werr)
+					switch act {
+					case infraFailureRetry:
+						_ = m.store.SaveTask(t)
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					case infraFailureStop:
+						return ierr
+					}
 					// A stall or a failed/killed session takes the normal retry path:
 					// free the lease; the retry kills the leftover session and
 					// re-admits a fresh spawn like any other failed attempt.
 					lastFailureCategory = "infra"
 					hint = werr.Error()
-					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeForError(werr), Category: lastFailureCategory, Summary: hint})
+					if act != infraFailureCounted {
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeForError(werr), Category: lastFailureCategory, Summary: hint})
+					}
 					m.store.WithLock(func() { t.Error = hint; t.AdoptedSession = false })
 					_ = m.store.SaveTask(t)
 					continue
@@ -1339,6 +1383,23 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// running as an orphan — wasting resources and confusing session
 			// tracking — while t.SessionID gets silently overwritten below.
 			oldStatus, oldSession := t.Status, t.SessionID
+			// The daemon restarted under this task: it holds a session and an
+			// in-flight status from the earlier run, and the liveness check
+			// above found no live worker. That is an infrastructure retry, not
+			// a failed attempt, and waits no longer than the first delay.
+			if inheritedSession && t.SessionID != "" && (t.Status == TaskInProgress || t.Status == TaskVerifying) {
+				retried, stop := m.retryAfterDaemonRestart(ctx, prd, t)
+				if stop {
+					return nil
+				}
+				if retried {
+					// Offset the loop's post-iteration attempt++: the restart
+					// costs the task no attempt. The next pass spawns the
+					// replacement (inherited is false by then).
+					attempt--
+					continue
+				}
+			}
 			if t.SessionID != "" {
 				m.mu.Lock()
 				killerFn := m.sessionKillerFn
@@ -1550,6 +1611,27 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// automatic retries restore again.
 			m.store.WithLock(func() { t.CleanRestart = false })
 			if err != nil {
+				// A spawn error means the worker never started, so it is judged as
+				// an infrastructure failure. The wrap is for classification only:
+				// the error returned when it is not retried keeps its own text. A
+				// capacity, workspace-lock or cooldown refusal is a wait, not a
+				// fault, and is never wrapped.
+				if !isSpawnWaitError(err) {
+					spawnErr := &InfraSpawnError{Cause: err}
+					act, ierr := m.handleInfraFailure(ctx, prd, t, run, spawnErr)
+					switch act {
+					case infraFailureRetry:
+						attempt-- // offset the loop's post-iteration attempt++
+						continue
+					case infraFailureStop:
+						return ierr
+					case infraFailureCounted:
+						// The retries are used up and the failure is booked as an
+						// ordinary one that ends the task here. Say why it failed,
+						// so the tasks behind it are marked and recover with it.
+						m.markInfraCounted(t, spawnErr)
+					}
+				}
 				return fmt.Errorf("spawn: %w", err)
 			}
 			if led := m.Capacity(); led != nil {
@@ -1633,6 +1715,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					attempt-- // offset the loop's post-iteration attempt++
 					continue
 				}
+				// A session killed before delivery (a launch failure arrives as a
+				// stall too) or a storage write error is an infrastructure failure:
+				// retry it before the generic stall retry sees it.
+				act, ierr := m.handleInfraFailure(ctx, prd, t, run, err)
+				switch act {
+				case infraFailureRetry:
+					attempt-- // offset the loop's post-iteration attempt++
+					continue
+				case infraFailureStop:
+					return ierr
+				}
 				if errors.Is(err, ErrWorkerStalled) {
 					// A stall (SSE, or no log output past stale_task_seconds) is a
 					// retryable verification failure, not a fatal error — it consumes
@@ -1644,7 +1737,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					m.releaseCapacity(t.ID)
 					log.Printf("[autonomous] task %s/%s: stall retry %d of %d after session %s (%s)", prd.ID, t.ID, attempt+1, budget-attempt-1, t.SessionID, StallRetryReason(err))
 					hint = err.Error()
-					m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
+					if act != infraFailureCounted {
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeStalled, Category: lastFailureCategory, Summary: hint})
+					}
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 					}
@@ -1658,6 +1753,29 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 		} else {
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
+		}
+		// The attempt got past delivery and produced a verification result, so an
+		// earlier infrastructure incident is over. A failed result the verifier
+		// itself marks as an infrastructure failure, and whose summary reports a
+		// storage write error, is still that incident. A content failure is never
+		// read as one, even when its text quotes such a phrase.
+		infraText := ""
+		if !vr.OK && vr.Category == "infra" && isInfraText(vr.Summary) {
+			infraText = vr.Summary
+		}
+		textCounted := false
+		if infraText != "" {
+			act, ierr := m.handleInfraFailure(ctx, prd, t, run, errors.New(infraText))
+			switch act {
+			case infraFailureRetry:
+				attempt-- // offset the loop's post-iteration attempt++
+				continue
+			case infraFailureStop:
+				return ierr
+			}
+			textCounted = act == infraFailureCounted
+		} else {
+			m.store.WithLock(func() { clearInfraRetryCount(t) })
 		}
 		vrFinal := vr
 		m.store.WithLock(func() { t.Verification = &vrFinal })
@@ -1769,7 +1887,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			done := time.Now()
-			m.store.WithLock(func() { t.CompletedAt = &done })
+			m.store.WithLock(func() {
+				t.CompletedAt = &done
+				clearInfraRetryCount(t)
+			})
 			// Pin this task's own commit (HEAD in its resolved dir — BL465
 			// fires the deterministic commit at DATAWATCH_COMPLETE, before
 			// verify) so the PRD-completion CI guardrail watches that commit
@@ -1884,7 +2005,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return nil
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
-		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
+		if !textCounted {
+			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
+		}
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -1985,6 +2108,82 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true})
 	_ = m.store.SaveTask(t)
 	return false, nil
+}
+
+// infraFailureAction is what handleInfraFailure decided for one failed attempt.
+type infraFailureAction int
+
+const (
+	// infraFailureNone: not retried; the caller follows its existing failure path.
+	infraFailureNone infraFailureAction = iota
+	// infraFailureRetry: the attempt is recorded and waited out; run it again.
+	infraFailureRetry
+	// infraFailureStop: the caller returns the accompanying error (nil when the
+	// context ended during the wait).
+	infraFailureStop
+	// infraFailureCounted: the retries are used up and the failure was counted as
+	// one normal failed attempt; the caller continues its failure path without
+	// recording the attempt again.
+	infraFailureCounted
+)
+
+// handleInfraFailure decides what the error that ended one attempt means for
+// the infrastructure retry. A retried failure releases the capacity lease,
+// records the attempt as re-queued (it does not count toward the task's
+// failures, auto_fix_retries or the Automaton's retry ceiling), records the
+// retry and waits out the back-off. Anything else, including a disabled
+// feature or an error that is not transient, returns infraFailureNone.
+func (m *Manager) handleInfraFailure(ctx context.Context, prd *PRD, t *Task, run attemptRun, err error) (infraFailureAction, error) {
+	if err == nil || ctx.Err() != nil {
+		return infraFailureNone, nil
+	}
+	if plan, ok := m.planInfraRetry(prd, t, err); ok {
+		m.releaseCapacity(t.ID)
+		log.Printf("[autonomous] prd=%s task=%s: infrastructure failure (%s), retry %d of %d in %s: %v",
+			prd.ID, t.ID, plan.Class, plan.Number, plan.MaxTries, plan.Delay, err)
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{
+			Outcome: attemptOutcomeForError(err), Category: infraRetryFailureCategory, Summary: plan.Reason, Requeue: true,
+		})
+		m.store.WithLock(func() { t.Error = plan.Reason })
+		m.recordInfraRetry(prd, t, plan)
+		if werr := m.waitInfraRetry(ctx, prd, t, plan); werr != nil {
+			return infraFailureStop, nil
+		}
+		return infraFailureRetry, nil
+	}
+	if m.infraRetriesUsedUp(t, err) {
+		if handled, rerr := m.infraRetriesExhausted(ctx, prd, t, run, err); handled {
+			return infraFailureStop, rerr
+		}
+		if m.infraRetryConfig().EffectiveExhaustedAction() == config.ExhaustedActionCount {
+			return infraFailureCounted, nil
+		}
+	}
+	return infraFailureNone, nil
+}
+
+// retryAfterDaemonRestart records a daemon restart under a task whose worker is
+// gone as an infrastructure retry (class daemon_restart), not as a failed
+// attempt, and waits at most the first configured delay before the caller
+// launches the replacement. It reports retried when the restart was recorded
+// and waited out (the caller offsets its attempt counter) and stop when the
+// context ended during the wait. With the feature off, or the class not
+// retried, it does nothing.
+func (m *Manager) retryAfterDaemonRestart(ctx context.Context, prd *PRD, t *Task) (retried, stop bool) {
+	plan, ok := m.planInfraRetry(prd, t, ErrDaemonRestart)
+	if !ok {
+		return false, false
+	}
+	if first := infraBackoffDelay(m.infraRetryConfig(), 1); plan.Delay > first {
+		plan.Delay = first
+	}
+	log.Printf("[autonomous] prd=%s task=%s: daemon restarted while the task was running, retry %d of %d in %s",
+		prd.ID, t.ID, plan.Number, plan.MaxTries, plan.Delay)
+	m.recordInfraRetry(prd, t, plan)
+	if m.waitInfraRetry(ctx, prd, t, plan) != nil {
+		return false, true
+	}
+	return true, false
 }
 
 func (m *Manager) deleteTaskSession(sessionID string) {

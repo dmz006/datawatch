@@ -6327,7 +6327,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"cleanup_max_removals_per_pass": s.cfg.Autonomous.Automation.EffectiveCleanupMaxRemovalsPerPass(),
 				"disk_alert_percent":            s.cfg.Autonomous.Automation.EffectiveDiskAlertPercent(),
 			},
-			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
+			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
+			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6815,6 +6816,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The failure escalation block is checked as a whole, the same way: a bad
 	// max_failures, steps value or enabled flag refuses the whole PUT.
 	if err := validateFailureEscalationPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The infrastructure retry block is checked as a whole too: one bad value
+	// among its seven keys refuses the whole PUT.
+	if err := validateInfraRetryPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8965,6 +8972,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// autonomous.failure_escalation.{enabled,max_failures,steps}; the
 			// values were checked by validateFailureEscalationPatch.
 			if applyFailureEscalationPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.infra_retry.*; the values were checked by
+			// validateInfraRetryPatch.
+			if applyInfraRetryPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>

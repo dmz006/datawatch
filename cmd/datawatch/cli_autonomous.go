@@ -29,6 +29,9 @@ Subcommands:
                                   Progress counts, rates, work left and the completion range
   progress-trend [--days N] [--json]  How the completion range moved over the saved daily snapshots
   lane-fill [--limit N] [--json]  Lane fill: each lane, queued eligible counts and the newest decisions
+  infra-retries [automaton-id] [--limit N] [--json]
+                                  Infrastructure retries: the retry policy in effect and the tasks retried
+                                  or held because the machinery around them failed, newest first
   triage [--automation ID] [--prd ID] [--status failed|blocked] [--json]
                                   Triage read: the failed and blocked Automata waiting for operator triage,
                                   newest first, beside the alert threshold — the same text the comm verb
@@ -147,6 +150,7 @@ Subcommands:
 		newAutonomousProgressCmd(),
 		newAutonomousProgressTrendCmd(),
 		newAutonomousLaneFillCmd(),
+		newAutonomousInfraRetriesCmd(),
 		newAutonomousStatusCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),

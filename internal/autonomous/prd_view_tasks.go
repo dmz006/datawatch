@@ -10,8 +10,8 @@ type TasksView struct {
 }
 
 // TaskEntry is one task's row in a TasksView. Error, Verification,
-// FailureCategory, SessionID and the failure escalation fields are omitted when
-// empty. ReviewSummary is the plain-text report of a task held for review.
+// FailureCategory, SessionID, the failure escalation fields and the
+// infrastructure retry fields are omitted when empty. ReviewSummary is the plain-text report of a task held for review.
 // Progress and
 // LoopingWarning are omitted when unset — i.e. for every task that is not
 // actively in progress (the store clears them at persist time), so their
@@ -28,10 +28,14 @@ type TaskEntry struct {
 	// EscalationFailures counts failed attempts since the last operator action.
 	EscalationFailures int `json:"escalation_failures,omitempty"`
 	// AttemptCount is the number of recorded attempts of the task.
-	AttemptCount   int           `json:"attempt_count,omitempty"`
-	ReviewSummary  string        `json:"review_summary,omitempty"`
-	Progress       *TaskProgress `json:"progress,omitempty"`
-	LoopingWarning string        `json:"looping_warning,omitempty"`
+	AttemptCount  int    `json:"attempt_count,omitempty"`
+	ReviewSummary string `json:"review_summary,omitempty"`
+	// InfraRetries is the history of infrastructure retries of the task and
+	// InfraRetryCount the consecutive ones in the current incident.
+	InfraRetries    []InfraRetryEntry `json:"infra_retries,omitempty"`
+	InfraRetryCount int               `json:"infra_retry_count,omitempty"`
+	Progress        *TaskProgress     `json:"progress,omitempty"`
+	LoopingWarning  string            `json:"looping_warning,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -84,6 +88,13 @@ func buildTaskEntry(task *Task) TaskEntry {
 	entry.AttemptCount = len(task.Attempts)
 	if task.ReviewSummary != nil {
 		entry.ReviewSummary = task.ReviewSummary.Text
+	}
+	entry.InfraRetryCount = task.InfraRetryCount
+	for _, r := range task.InfraRetries {
+		entry.InfraRetries = append(entry.InfraRetries, InfraRetryEntry{
+			Number: r.Number, Class: r.Class, Reason: r.Reason,
+			At: r.At, DelaySeconds: r.DelaySeconds, NextAt: r.NextAt,
+		})
 	}
 	return entry
 }

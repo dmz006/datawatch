@@ -60,6 +60,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Launch Automaton form](#launch-automaton-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
+  - [Infrastructure retry](#infrastructure-retry)
 - [Automation](#automation)
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
@@ -1643,7 +1644,35 @@ Four settings in Settings → Automata (Autonomous Automata planning) control ho
 
 **Tag registry keeper** — the one daemon that holds the shared tag registry for a federation. The keeper is named by `autonomous.tags.registry_keeper`: on a peer it is the name of the keeper peer, and on the keeper it is the keeper's own name. A peer keeps a cached copy and forwards its tag edits to the keeper; when the keeper is unreachable the peer shows its last copy as stale. See [howto/automata-tag-registry.md](howto/automata-tag-registry.md).
 
+### Infrastructure retry
+
+**Infrastructure failure** — a task attempt that ended because the machinery around the task broke, not because the work was wrong. The task never got a fair attempt, so the daemon does not count it as a failed attempt. Only four classes count, and nothing else is ever treated this way:
+
+- `spawn_error` — the worker could not be started at all.
+- `storage_write` — a write failed because the disk is full, the quota is used up or the file system is read-only.
+- `session_killed_before_delivery` — the worker session ended before the task text reached it.
+- `daemon_restart` — the daemon restarted or shut down while the task was running.
+
+A wrong answer, a failed check, a task that went out of scope or a stall that is not a launch failure is the task's own fault and follows the normal failure path. A session that never started has its own start budget and is not classified here. A throttle or usage limit from a model provider is not an infrastructure failure either, and it is never retried by this feature.
+
+**Infrastructure retry** (`autonomous.infra_retry.enabled`, on by default) — when an infrastructure failure ends a task attempt, the Automaton waits and tries the task again instead of counting a failure against it. This is the master switch for the whole feature; with it off, every failure takes the normal path as before.
+
+**Back-off** (`autonomous.infra_retry.max_tries`, `autonomous.infra_retry.backoff_seconds`) — how many tries a task gets (default 3, a whole number from 1 to 1000) and how long the Automaton waits before each retry, in seconds. The default delays are 60, 300 and 540: one, five and nine minutes, 15 minutes in all. When a task has more tries than delays the last delay repeats, and an empty list means retry with no delay. While a task waits, its row says *infrastructure retry 2 of 3 at 14:05:09 (storage_write)*. A retry that follows a daemon restart waits no longer than the first delay, because the cause is already gone.
+
+**Retried failure classes** (`autonomous.infra_retry.categories`) — which of the four classes are retried. The default is all four; an empty list retries none, so every infrastructure failure takes the normal path.
+
+**Retry record** — what the task keeps about its retries. Each retry is written to the task as an entry with its number, class, a short reason (the error text, cut to 500 characters), the time, the delay and the time the next try starts; the task keeps the newest 50. A separate count of consecutive retries decides when the tries are spent, and it goes back to zero when the incident ends while the entries stay as history. Each retry is also logged as an `infra_retry` decision on the Automaton. The Automata page and the Automaton detail show it as **Retry n of max** on the task, and the Automation view carries an Infrastructure retries card with the policy line and every retried or held task.
+
+**Held task** (`autonomous.infra_retry.exhausted_action`) — what a task becomes when its tries are spent and the action is `hold` (the default). The task stops for the operator's review without a failure counted against it, so the failure escalation budget is untouched. It carries the infrastructure cause, a report that lists every retry, and one error-level alert titled *Automaton task held after infrastructure retries*. With the action set to `count`, the failure is booked as one ordinary failed attempt and the normal failure handling applies.
+
+**Held-task question** (`autonomous.infra_retry.raise_question`, on by default) — when a task is held and the operator question channel (`autonomous.questions.enabled`) is on, the daemon raises one high-priority, blocking question for the hold. It names the task, the Automaton, the failure class and the cause, and offers two answers: **Retry the task now** (the default), which runs the task again with a fresh set of tries and holds it again if the cause persists, or **Cancel the task**, which cancels it so that tasks depending on it do not run. Answering the question has the same effect as resolving the task review. If the task is resolved some other way, the question is withdrawn. With the question switched off, or the question channel off, the alert and the review report carry the cause.
+
+**Dependents that recover** (`autonomous.infra_retry.retry_dependents`, on by default) — when a task fails for an infrastructure reason and the tasks that depend on it fail behind it, each of those dependents is marked as failed because of the dependency, with the original task named as the root. Once the root is no longer failed, cancelled, blocked or held, the dependents return to pending on their own, in dependency order, so a chain recovers in one pass, and an Automaton that ended failed or blocked only because of them returns to running. A dependent that failed for any other reason, or that still waits on another unmet dependency, is left alone. A dependency that was cancelled or that failed on its own merits marks nothing. The recovery is logged as an `infra_dependents_recovered` decision. With the setting off, dependents fail as before and stay failed until reset by hand.
+
+The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
+
 ---
+
 
 ## Core feature reference matrix
 

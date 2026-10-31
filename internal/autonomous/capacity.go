@@ -817,6 +817,15 @@ func IsWorkspaceLockError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "workspace lock:")
 }
 
+// isSpawnWaitError reports whether a spawn error is a refusal to wait out
+// (a full session cap, a workspace-lock collision, the global cooldown or the
+// capacity wait timeout) rather than a worker that failed to start. These are
+// never infrastructure failures.
+func isSpawnWaitError(err error) bool {
+	return IsCapacityError(err) || IsWorkspaceLockError(err) ||
+		errors.Is(err, session.ErrGlobalCooldown) || errors.Is(err, capacity.ErrWaitTimeout)
+}
+
 // capacityRetrySpawn wraps a SpawnFn so a full session cap, a workspace-lock
 // collision between two of the same PRD's own cluster-dispatched tasks
 // (BL407 Phase 4), or the BL30 global cooldown (session.ErrGlobalCooldown)

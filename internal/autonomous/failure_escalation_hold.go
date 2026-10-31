@@ -38,6 +38,13 @@ func buildReviewSummary(t *Task, now time.Time) *ReviewSummary {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Task %s (%s) is held for operator review after %d failed attempts.\n\n",
 		t.ID, t.Title, t.EscalationFailures)
+	return finishReviewSummary(&b, t, now)
+}
+
+// finishReviewSummary appends every recorded attempt of t and the total time
+// spent to the heading already written to b, and returns the bounded report.
+// It reads t without locking.
+func finishReviewSummary(b *strings.Builder, t *Task, now time.Time) *ReviewSummary {
 	if len(t.Attempts) == 0 {
 		b.WriteString("No attempts were recorded.\n")
 	}
@@ -47,13 +54,79 @@ func buildReviewSummary(t *Task, now time.Time) *ReviewSummary {
 		b.WriteString("\n")
 		total += a.DurationSeconds
 	}
-	fmt.Fprintf(&b, "Total time spent: %d s across %d recorded attempts.\n", total, len(t.Attempts))
+	fmt.Fprintf(b, "Total time spent: %d s across %d recorded attempts.\n", total, len(t.Attempts))
 	return &ReviewSummary{
 		HeldAt:       now,
 		FailureCount: t.EscalationFailures,
 		TotalSeconds: total,
 		Text:         truncateEscalationText(b.String(), reviewSummaryMaxChars),
 	}
+}
+
+// reviewParking is what differs between the holds that park a task in
+// TaskReviewNeeded: the failure reason, the Error line and the review_needed
+// decision note, the report, and any further decisions written with it.
+type reviewParking struct {
+	// reason is the task's FailureReason; OccurredAt is set when it is parked.
+	reason FailureReason
+	// describe returns the task's Error line and the review_needed decision
+	// note. It runs under the store lock.
+	describe func(t *Task) (errText, note string)
+	// report builds the review report. It runs under the store lock.
+	report func(t *Task, now time.Time) *ReviewSummary
+	// extraDecisions are appended to the Automaton after review_needed. Their
+	// At is set when they are written.
+	extraDecisions []Decision
+}
+
+// parkTaskForReview parks t in TaskReviewNeeded as p describes. The task keeps
+// its attempts. It is saved and announced, a review_needed decision (and p's
+// extra decisions) is appended to the Automaton, and the failure is recorded as
+// a learning. It returns a copy of the task's last attempt, or nil, and the
+// error from saving the task; the other side effects are best effort. The
+// caller raises the alert.
+func (m *Manager) parkTaskForReview(prd *PRD, t *Task, p reviewParking) (*TaskAttempt, error) {
+	now := m.attemptNow()
+	var oldStatus TaskStatus
+	var note string
+	var last *TaskAttempt
+	m.store.WithLock(func() {
+		oldStatus = t.Status
+		t.Status = TaskReviewNeeded
+		t.Error, note = p.describe(t)
+		t.ReviewSummary = p.report(t, now)
+		reason := p.reason
+		reason.Retryable, reason.OccurredAt = false, now
+		t.FailureReason = &reason
+		last = lastTaskAttempt(t)
+	})
+	if err := m.store.SaveTask(t); err != nil {
+		return last, err
+	}
+	dec := Decision{
+		At:    now,
+		Kind:  reviewNeededDecisionKind,
+		Actor: "autonomous",
+		Note:  note,
+	}
+	if last != nil {
+		dec.Backend, dec.Model = last.Backend, last.Model
+	}
+	if prdNow, ok := m.store.GetPRD(prd.ID); ok {
+		m.store.WithLock(func() {
+			prdNow.Decisions = append(prdNow.Decisions, dec)
+			for _, extra := range p.extraDecisions {
+				extra.At = now
+				prdNow.Decisions = append(prdNow.Decisions, extra)
+			}
+		})
+		if err := m.store.SavePRD(prdNow); err != nil {
+			log.Printf("[autonomous] prd=%s save review_needed decision: %v", prd.ID, err)
+		}
+	}
+	m.emitTaskStatus(prd, t, oldStatus, &dec, nil)
+	m.recordFailureLearning(prd, t.ID, p.reason.Category, p.reason.Detail)
+	return last, nil
 }
 
 // holdTaskForReview parks t in TaskReviewNeeded once its failed attempts have
@@ -65,42 +138,19 @@ func buildReviewSummary(t *Task, now time.Time) *ReviewSummary {
 // the Automaton, and one error alert is raised. It returns the error from
 // saving the task; the other side effects are best effort.
 func (m *Manager) holdTaskForReview(prd *PRD, t *Task, lastCategory, detail string) error {
-	now := m.attemptNow()
-	var oldStatus TaskStatus
 	var failures int
-	var last *TaskAttempt
-	m.store.WithLock(func() {
-		oldStatus = t.Status
-		failures = t.EscalationFailures
-		t.Status = TaskReviewNeeded
-		t.Error = fmt.Sprintf("held for operator review after %d failed attempts", failures)
-		t.ReviewSummary = buildReviewSummary(t, now)
-		t.FailureReason = &FailureReason{
-			Category: orContentCategory(lastCategory), Detail: detail,
-			Source: failureEscalationHoldSource, Retryable: false, OccurredAt: now,
-		}
-		last = lastTaskAttempt(t)
+	m.store.WithLock(func() { failures = t.EscalationFailures })
+	last, err := m.parkTaskForReview(prd, t, reviewParking{
+		reason: FailureReason{Category: orContentCategory(lastCategory), Detail: detail, Source: failureEscalationHoldSource},
+		describe: func(t *Task) (string, string) {
+			return fmt.Sprintf("held for operator review after %d failed attempts", t.EscalationFailures),
+				fmt.Sprintf("task %s held for operator review after %d failed attempts", t.ID, t.EscalationFailures)
+		},
+		report: buildReviewSummary,
 	})
-	if err := m.store.SaveTask(t); err != nil {
+	if err != nil {
 		return err
 	}
-	dec := Decision{
-		At:    now,
-		Kind:  reviewNeededDecisionKind,
-		Actor: "autonomous",
-		Note:  fmt.Sprintf("task %s held for operator review after %d failed attempts", t.ID, failures),
-	}
-	if last != nil {
-		dec.Backend, dec.Model = last.Backend, last.Model
-	}
-	if p, ok := m.store.GetPRD(prd.ID); ok {
-		m.store.WithLock(func() { p.Decisions = append(p.Decisions, dec) })
-		if err := m.store.SavePRD(p); err != nil {
-			log.Printf("[autonomous] prd=%s save review_needed decision: %v", prd.ID, err)
-		}
-	}
-	m.emitTaskStatus(prd, t, oldStatus, &dec, nil)
-	m.recordFailureLearning(prd, t.ID, lastCategory, detail)
 	m.raiseReviewAlert(prd, t, failures, last)
 	return nil
 }

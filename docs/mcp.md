@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -349,6 +349,35 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_infra_retries`** — read the infrastructure retry state: the retry policy in effect (`enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents`, `raise_question`) and the tasks of Automata that were retried, or are held, because the machinery around them failed rather than their own work. Each task carries its Automaton, `retry_count`, `max_tries`, the `retries[]` history, and `held` with `held_cause` and `question_id` when it waits for the operator. The most recently retried task comes first. Read-only; returns the same object as `GET /api/autonomous/infra-retries`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `automaton` | no | An Automaton ID; only its tasks are listed |
+  | `limit` | no | How many tasks to return, a whole number from 1 to 1000 (default 50) |
+
+  ```
+  autonomous_infra_retries()
+  autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
+  ```
+
+  A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer. The policy keys are set with `config_set` under `autonomous.infra_retry.*` (for example `config_set(key="autonomous.infra_retry.max_tries", value="5")`) or with the `infra_retry_*` arguments of `autonomous_config_set`, and read with `autonomous_config_get`, which returns the `infra_retry` block with the rest of the config. `autonomous_config_set` builds its request from a fixed list of arguments, so the block is reachable there only through these arguments:
+
+  | Argument | Sets | Type |
+  |----------|------|------|
+  | `infra_retry_enabled` | `autonomous.infra_retry.enabled` | boolean |
+  | `infra_retry_max_tries` | `autonomous.infra_retry.max_tries` | whole number from 1 to 1000 |
+  | `infra_retry_backoff_seconds` | `autonomous.infra_retry.backoff_seconds` | array of whole numbers of seconds; `[]` means no delay |
+  | `infra_retry_categories` | `autonomous.infra_retry.categories` | array of failure class names; `[]` retries none |
+  | `infra_retry_exhausted_action` | `autonomous.infra_retry.exhausted_action` | `hold` or `count` |
+  | `infra_retry_retry_dependents` | `autonomous.infra_retry.retry_dependents` | boolean |
+  | `infra_retry_raise_question` | `autonomous.infra_retry.raise_question` | boolean |
+
+  Each one is sent only when given, so an explicit `false`, `0` or `[]` is applied and an argument left out changes nothing. They travel as dotted keys in a `PUT /api/config` body, where the daemon checks every value and a refused value comes back as a tool error naming the key and the valid values. The two lists replace the whole list.
+
+  ```
+  autonomous_config_set(infra_retry_max_tries=5, infra_retry_backoff_seconds=[30, 120])
+  ```
 - **`autonomous_triage`** — read the triage records: one record per failed or blocked Automaton (newest first), with its identity (`prd_id`, `prd_title` when it has one, `automation_id`, `automation_name`, `member_id`), the failed or blocked task (`task_id`, `task_title` when present) with its `error` and `blocked_reason` and `session_end_reason` (each truncated to 2000 chars by the pass), `first_seen_at`, `updated_at` and, once set, `alerted_at`, the retry budgets shown as given (all four categories with `limit`, `used`, `left`, plus `ceiling_total` and `ceiling_left` when an overall ceiling is set), and the append-only notes — beside `alert_minutes`, the triage alert threshold in minutes currently in effect (`0` = alert off), which rides the list body, not each record. Read-only: listing never starts, retries or edits anything. Returns the same object as `GET /api/autonomous/triage`.
 
   | Parameter | Required | Description |
