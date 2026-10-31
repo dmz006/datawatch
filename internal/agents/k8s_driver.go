@@ -418,6 +418,19 @@ func (d *K8sDriver) Terminate(ctx context.Context, a *Agent) error {
 	return nil
 }
 
+// PushUnpushed implements TeardownPusher. The k8s driver has no
+// `kubectl exec` path wired into the worker pod, so it cannot run git
+// inside the worker. The Manager's teardown-push hook still fires
+// (Attempted=false is reported as a non-pushed result) so operators
+// see the gap; the Pod is then destroyed as usual and the branch may
+// be left unpushed.
+func (d *K8sDriver) PushUnpushed(_ context.Context, _ *Agent) (TeardownPushReport, error) {
+	return TeardownPushReport{
+		Attempted: false,
+		Reason:    "driver cannot run commands in the worker",
+	}, nil
+}
+
 // ── helpers ────────────────────────────────────────────────────────────
 
 // imageRef mirrors DockerDriver.imageRef — keeps the compose logic

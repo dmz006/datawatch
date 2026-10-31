@@ -267,6 +267,151 @@ func (d *DockerDriver) Terminate(ctx context.Context, a *Agent) error {
 	return nil
 }
 
+// pushUnpushedScript is run inside the worker container via
+// `docker exec <cid> sh -c <script>`. It locates the cloned repo
+// (workers clone into /workspace/<repo>), reports the current branch
+// and the number of commits on HEAD that are not on any remote ref,
+// then pushes the branch to origin with upstream tracking. The push
+// is a plain `git push --set-upstream` — fast-forward only, never a
+// force. Output lines the driver parses:
+//
+//	NO_REPO_FOUND | NO_CURRENT_BRANCH | BRANCH=<b> | UNPUSHED=<n> | PUSH_OK | PUSH_FAILED
+func pushUnpushedScript(repoName string) string {
+	if repoName != "" {
+		repoName = shellQuote(repoName)
+	} else {
+		repoName = `""`
+	}
+	return `repo=` + repoName + `
+r=""
+for c in "$repo" /workspace/* /workspace .; do
+  if git -C "$c" rev-parse --git-dir >/dev/null 2>&1; then r="$c"; break; fi
+done
+if [ -z "$r" ]; then echo NO_REPO_FOUND; exit 1; fi
+b=$(git -C "$r" symbolic-ref --short HEAD 2>/dev/null)
+if [ -z "$b" ]; then echo NO_CURRENT_BRANCH; exit 1; fi
+echo "BRANCH=$b"
+n=$(git -C "$r" rev-list --count HEAD --not --remotes=origin 2>/dev/null)
+case "$n" in ''|*[!0-9]*) n=0;; esac
+echo "UNPUSHED=$n"
+out=$(git -C "$r" push --set-upstream origin "$b" 2>&1)
+status=$?
+echo "$out"
+if [ "$status" -eq 0 ]; then echo PUSH_OK; else echo PUSH_FAILED; exit "$status"; fi
+`
+}
+
+func shellQuote(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"`
+}
+
+// PushUnpushed implements TeardownPusher: inside the worker container
+// it counts the commits not yet on the remote and pushes the current
+// branch with upstream tracking (fast-forward only, never force), so
+// the container can be destroyed without losing the worker's work.
+// Always returns a report; errors are folded into the report's
+// Reason rather than returned, so termination is never blocked.
+func (d *DockerDriver) PushUnpushed(ctx context.Context, a *Agent) (TeardownPushReport, error) {
+	var rep TeardownPushReport
+	if a.DriverInstance == "" {
+		rep.Attempted = false
+		rep.Reason = "agent has no container to exec into"
+		return rep, nil
+	}
+	repoName := repoNameFromGitURL(agentGitURL(a))
+	out, err := d.runDocker(ctx, "exec", a.DriverInstance, "sh", "-c", pushUnpushedScript(repoName))
+	rep.Attempted = true
+	if branch := pushScriptField(out, "BRANCH="); branch != "" {
+		rep.Branch = branch
+	}
+	if count, ok := pushScriptCount(out); ok {
+		rep.Count = count
+	}
+	switch {
+	case strings.Contains(out, "NO_REPO_FOUND"):
+		rep.Reason = "no git repo found in worker container"
+	case strings.Contains(out, "NO_CURRENT_BRANCH"):
+		rep.Reason = "worker on a detached HEAD (no current branch)"
+	case strings.Contains(out, "PUSH_OK"):
+		rep.Pushed = true
+	default:
+		tail := strings.TrimSpace(outputTail(out, 3))
+		if err != nil {
+			reason := "docker exec failed: " + err.Error()
+			if tail != "" {
+				reason += "; " + tail
+			}
+			rep.Reason = reason
+		} else if tail != "" {
+			rep.Reason = tail + " (fast-forward only; never force)"
+		}
+	}
+	return rep, nil
+}
+
+func outputTail(s string, n int) string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "; ")
+}
+
+// pushScriptField extracts the last "KEY=value" line emitted by
+// pushUnpushedScript (e.g. "BRANCH=worker-42").
+func pushScriptField(out, key string) string {
+	val := ""
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, key); ok {
+			val = strings.TrimSpace(v)
+		}
+	}
+	return val
+}
+
+func pushScriptCount(out string) (int, bool) {
+	raw := pushScriptField(out, "UNPUSHED=")
+	if raw == "" {
+		return 0, false
+	}
+	n := 0
+	for _, r := range raw {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, true
+}
+
+// repoNameFromGitURL extracts the bare repository name from a clone
+// URL (https://host/owner/repo(.git) or git@host:owner/repo(.git)).
+// Empty input yields "".
+func repoNameFromGitURL(u string) string {
+	u = strings.TrimSuffix(u, ".git")
+	if i := strings.LastIndex(u, ":"); i > 0 && !strings.Contains(u[:i], "/") {
+		u = u[i+1:]
+	}
+	u = strings.TrimSuffix(u, "/")
+	if i := strings.LastIndex(u, "/"); i >= 0 {
+		u = u[i+1:]
+	}
+	return u
+}
+
+// agentGitURL best-effort resolves the worker's repository URL from
+// its Project Profile (via the manager's cache); empty when unknown.
+func agentGitURL(a *Agent) string {
+	if a == nil {
+		return ""
+	}
+	if a.project != nil {
+		return a.project.Git.URL
+	}
+	return ""
+}
+
 // ── helpers ────────────────────────────────────────────────────────────
 
 // imageRef assembles the full image reference from (cluster registry

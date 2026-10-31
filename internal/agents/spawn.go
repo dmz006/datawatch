@@ -100,6 +100,12 @@ type Agent struct {
 	// when not overridden at spawn time.
 	Branch          string          `json:"branch,omitempty"`
 
+	// TeardownPush records the outcome of the push-first step
+	// Manager.Terminate runs BEFORE the driver destroys the worker
+	// (TeardownPusher). Nil when the push-first step did not run
+	// (driver without a TeardownPusher, or push_on_complete=never).
+	TeardownPush *TeardownPushReport `json:"teardown_push,omitempty"`
+
 	// BL407 Phase 0 (B114) — see SpawnRequest's fields of the same
 	// name; copied from the request at Spawn time, re-surfaced to the
 	// worker via the bootstrap response.
@@ -294,6 +300,19 @@ type Manager struct {
 	// Auditor receives one AuditEvent per Manager mutation
 	// (F10 S8.4). Optional — nil disables audit emission.
 	Auditor Auditor
+
+	// PushPolicy, when non-nil, returns the effective
+	// git.push_on_complete policy at teardown time. When it reports
+	// the "never" policy the Manager skips the push-first step in
+	// Terminate entirely. Nil = no policy gating.
+	PushPolicy func() string
+
+	// OnTeardownPushFailure (optional) fires whenever the push-first
+	// step did not end with a successful push — a failed push, a
+	// driver that cannot run commands in the worker, or a pusher
+	// error/timeout. It must be fast and non-blocking; termination
+	// proceeds regardless of it.
+	OnTeardownPushFailure func(a *Agent, rep TeardownPushReport)
 
 	// SecretsProvider (BL111) is consulted by ResolveCreds to read the
 	// secret named by a ClusterProfile.CredsRef. Optional — when nil
@@ -754,6 +773,12 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	// Push-first: give the driver a bounded window to push the
+	// worker's unpushed commits back to its remote BEFORE the
+	// container is destroyed. Best-effort by contract — a failure
+	// here is recorded on the Agent + surfaced via the
+	// OnTeardownPushFailure hook and NEVER blocks termination.
+	m.runTeardownPush(ctx, a, driver)
 	if err := driver.Terminate(ctx, a); err != nil {
 		return fmt.Errorf("driver terminate: %w", err)
 	}
@@ -789,8 +814,17 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	a.State = StateStopped
 	a.StoppedAt = time.Now().UTC()
 	m.mu.Unlock()
+	extra := map[string]interface{}{}
+	if a.TeardownPush != nil {
+		rep := *a.TeardownPush
+		extra["teardown_push"] = &rep
+	}
+	detail := ""
+	if a.TeardownPush != nil && !a.TeardownPush.Pushed {
+		detail = "teardown push not pushed: " + a.TeardownPush.Reason
+	}
 	emitWithParent(m.Auditor, "terminate", a.ID, a.ParentAgentID, a.ProjectProfile, a.ClusterProfile,
-		string(a.State), "", nil)
+		string(a.State), detail, extra)
 	return nil
 }
 
@@ -1228,6 +1262,10 @@ func cloneAgent(a *Agent) *Agent {
 	out := *a
 	if a.SessionIDs != nil {
 		out.SessionIDs = append([]string(nil), a.SessionIDs...)
+	}
+	if a.TeardownPush != nil {
+		rep := *a.TeardownPush
+		out.TeardownPush = &rep
 	}
 	// Never leak bootstrap token in snapshots returned outside of
 	// ConsumeBootstrap; it's redacted via the json:"-" tag but zero

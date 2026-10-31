@@ -2116,6 +2116,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	k8sDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(k8sDriver)
 
+	// Teardown push (push-first on Terminate): honour the operator's
+	// git.push_on_complete policy ("never" skips the step entirely)
+	// and surface a push that did not land as a warn-level system
+	// alert. The hook runs inline inside Terminate and must be fast;
+	// alertStore.AddSystem is a local mutex-guarded append, which it
+	// is.
+	agentMgr.PushPolicy = func() string { return cfg.Git.EffectivePushOnComplete() }
+	agentMgr.OnTeardownPushFailure = func(a *agentspkg.Agent, rep agentspkg.TeardownPushReport) {
+		reason := rep.Reason
+		if reason == "" {
+			reason = "unknown reason"
+		}
+		body := fmt.Sprintf(
+			"agent %s (project %s): teardown push did not land (attempted=%t, branch=%q, unpushed=%d) — %s",
+			a.ID, a.ProjectProfile, rep.Attempted, rep.Branch, rep.Count, reason)
+		alertStore.AddSystem(alertspkg.LevelWarn, "Agent teardown push failed", body)
+		fmt.Fprintf(os.Stderr, "[agents] teardown push for agent %s: %v\n", a.ID, rep)
+	}
+
 	// v7.0.0 S5 — outer-scope handle so the daemon can wire the
 	// memory backend into httpServer for the /api/memory/scopes/*
 	// endpoints later (the existing memStore variable is scoped to
