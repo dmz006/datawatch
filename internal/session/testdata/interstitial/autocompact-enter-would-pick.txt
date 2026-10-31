@@ -1,0 +1,12 @@
+  Done. The lane-fill summary is written to notes/lane-fill.md and the
+  retry wrapper now backs off between attempts.
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │                                                                        │
+  │  Want to autocompact at 400k tokens instead?                           │
+  │                                                                        │
+  │  ❯ Autocompact at 400k                                                 │
+  │    Keep auto (1m tokens)                                               │
+  │                                                                        │
+  └────────────────────────────────────────────────────────────────────────┘
+  ↑ ↓ to choose · Enter to confirm · Esc not now
