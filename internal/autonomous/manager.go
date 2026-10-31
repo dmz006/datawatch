@@ -457,6 +457,11 @@ type Config struct {
 	// Effective* accessors; the live config round-trip carries the block so
 	// a config write takes effect without a restart.
 	InfraRetry config.InfraRetryConfig `json:"infra_retry"`
+	// RequestWatch mirrors autonomous.request_watch: the policy of the
+	// request watch. Unset keys read their defaults through the Effective*
+	// accessors; the live config round-trip carries the block so a config
+	// write takes effect without a restart.
+	RequestWatch config.RequestWatchConfig `json:"request_watch"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what

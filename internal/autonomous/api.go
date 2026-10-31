@@ -448,6 +448,17 @@ func (a *API) SetConfig(v any) error {
 			return fmt.Errorf("autonomous.loop_detect_turns must be >= 0 (0 turns loop detection off; default is 3)")
 		}
 	}
+	// request_watch is checked with the same rules as PUT /api/config, so
+	// every write path (REST, MCP, comm) refuses a bad value the same way
+	// before anything is merged. An omitted or null block passes.
+	var watchProbe struct {
+		RequestWatch *config.RequestWatchConfig `json:"request_watch"`
+	}
+	if err := json.Unmarshal(raw, &watchProbe); err == nil && watchProbe.RequestWatch != nil {
+		if verr := watchProbe.RequestWatch.Validate(); verr != nil {
+			return verr
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)

@@ -6338,6 +6338,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
+			// Effective, not raw: all eleven request watch values with the
+			// defaults filled in; remediation_options is the list in effect.
+			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6847,6 +6850,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The infrastructure retry block is checked as a whole too: one bad value
 	// among its seven keys refuses the whole PUT.
 	if err := validateInfraRetryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The request watch block is checked as a whole too: poll_seconds and
+	// no_progress_minutes of at least 1, gpu_busy_percent from 1 to 100, only
+	// known remediation option ids and real booleans. One bad value among its
+	// eleven keys refuses the whole PUT with a message naming the key.
+	if err := validateRequestWatchPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9013,6 +9024,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// autonomous.infra_retry.*; the values were checked by
 			// validateInfraRetryPatch.
 			if applyInfraRetryPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.request_watch.*; the values were checked by
+			// validateRequestWatchPatch. The watcher reads the live block on
+			// every tick, so the change applies with no restart.
+			if applyRequestWatchPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
