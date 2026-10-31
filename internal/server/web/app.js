@@ -8990,6 +8990,7 @@ const DOCS_LINKS_BY_KEY = {
   gc_autonomous: 'howto/autonomous-planning.md',
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
+  settings_identity_backups_to_keep: DOCS_DEFINITIONS + '#identity-backups-and-restore',
   settings_automata_questions_quality_mode: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_min_text_chars: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
@@ -42123,12 +42124,126 @@ function _renderIdentityForm(panel, id) {
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('identity_field_notes')||'Context Notes')}</label>
       <textarea id="idNotes" rows="4" style="font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:inherit;">${escHtml(notes)}</textarea>
 
-      <div style="display:flex;gap:6px;margin-top:6px;">
+      <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap;">
         <button class="btn-primary" style="font-size:12px;padding:6px 14px;" onclick="saveIdentity()">${escHtml(t('identity_btn_save')||'Save')}</button>
-        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="loadIdentityPanel()">${escHtml(t('identity_btn_reset')||'Reset')}</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="loadIdentityPanel()">${escHtml(t('identity_btn_revert')||'Revert')}</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="identityReset()">${escHtml(t('identity_btn_reset')||'Reset')}</button>
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="identityRestoreOpen()">${escHtml(t('identity_btn_restore')||'Restore')}</button>
+      </div>
+
+      <label for="idBackupsKeep" style="font-size:11px;color:var(--text2);margin-top:10px;">${escHtml(t('settings_identity_backups_to_keep')||'Identity backups to keep (whole number, minimum 1, default 10)')}${defsLink('settings_identity_backups_to_keep')}</label>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <input id="idBackupsKeep" type="number" min="1" step="1" placeholder="10" style="width:90px;font-size:12px;padding:6px 8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);" />
+        <button class="btn-secondary" style="font-size:12px;padding:6px 14px;" onclick="saveIdentityBackupsKeep()">${escHtml(t('identity_btn_save')||'Save')}</button>
       </div>
     </div>`;
+  _loadIdentityBackupsKeep();
 }
+
+// identityErrorText turns the rejection apiFetch gives for a failed request
+// into the sentence to show. apiFetch rejects with Error(<response body>), so
+// a JSON error body such as the 409 identity_wipe_refused answer
+// {"error": "...", "code": "..."} arrives as raw JSON text: show its error
+// sentence, and fall back to the text itself for a plain-text body.
+function identityErrorText(e) {
+  const raw = String((e && e.message) || e || '');
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o.error === 'string' && o.error) return o.error;
+  } catch (_) { /* plain text body */ }
+  return raw;
+}
+
+// _loadIdentityBackupsKeep fills the backups-to-keep field from the config.
+function _loadIdentityBackupsKeep() {
+  apiFetch('/api/config').then(cfg => {
+    const el = document.getElementById('idBackupsKeep');
+    const v = cfg && cfg.identity && cfg.identity.backups_to_keep;
+    if (el && v !== undefined && v !== null) el.value = String(v);
+  }).catch(() => { /* the field stays empty; the placeholder shows the default */ });
+}
+
+window.saveIdentityBackupsKeep = function() {
+  const raw = ((document.getElementById('idBackupsKeep')||{}).value || '').trim();
+  const n = Number(raw);
+  if (raw === '' || !Number.isInteger(n) || n < 1) {
+    showToast(t('identity_backups_keep_invalid')||'Use a whole number of 1 or more', 'error');
+    return;
+  }
+  apiFetch('/api/config', { method: 'PUT', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ 'identity.backups_to_keep': n }) })
+    .then(() => showToast(t('identity_backups_keep_saved_toast')||'Backup limit saved', 'success', 2000))
+    .catch(e => showToast(identityErrorText(e), 'error'));
+};
+
+// identityReset is the explicit clear: ask first, then POST /api/identity/reset.
+// The daemon keeps a backup of what it replaced, so Restore can undo it.
+window.identityReset = function() {
+  showConfirmModal(t('identity_reset_confirm')||'Clear the saved identity? A backup is kept and Restore can undo this.', () => {
+    apiFetch('/api/identity/reset', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      .then(() => { showToast(t('identity_reset_done_toast')||'Identity cleared; a backup was kept', 'success', 2500); loadIdentityPanel(); })
+      .catch(e => showToast(identityErrorText(e), 'error'));
+  });
+};
+
+// identityRestoreOpen lists the saved backups in a modal shaped like the
+// Identity Wizard's, each row with its local time, role and field count.
+window.identityRestoreOpen = function() {
+  apiFetch('/api/identity/backups').then(data => {
+    _renderIdentityRestore((data && data.backups) || []);
+  }).catch(e => showToast(identityErrorText(e), 'error'));
+};
+
+function _renderIdentityRestore(backups) {
+  let modal = document.getElementById('identityRestoreModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'identityRestoreModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1000;';
+    document.body.appendChild(modal);
+  }
+  const rows = backups.map(b => {
+    const when = b.created_at ? new Date(b.created_at).toLocaleString() : '';
+    const role = b.role || '';
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);">
+        <div style="font-size:12px;min-width:0;">
+          <div>${escHtml(when)}</div>
+          <div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(role)}${role ? ' · ' : ''}${escHtml(t('identity_restore_row_fields', [b.field_count||0])||'')}</div>
+        </div>
+        <button class="btn-secondary" data-backup="${escHtml(b.name||'')}" data-when="${escHtml(when)}" onclick="identityRestoreChoose(this.dataset.backup, this.dataset.when)" style="font-size:12px;padding:4px 12px;flex-shrink:0;">${escHtml(t('identity_btn_restore')||'Restore')}</button>
+      </div>`;
+  }).join('');
+  const body = backups.length
+    ? rows
+    : `<div style="font-size:12px;color:var(--text2);padding:8px 0;">${escHtml(t('identity_restore_none')||'No identity backups yet.')}</div>`;
+  modal.innerHTML = `
+    <div style="background:var(--bg2,#1f2937);border:1px solid var(--border);border-radius:10px;padding:20px;max-width:520px;width:90%;max-height:80vh;overflow:auto;color:var(--text);box-shadow:0 8px 30px rgba(0,0,0,0.4);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <strong style="font-size:15px;">${escHtml(t('identity_restore_title')||'Restore identity')}</strong>
+        <button onclick="closeIdentityRestore()" style="background:transparent;border:none;color:var(--text2);font-size:18px;cursor:pointer;">&times;</button>
+      </div>
+      <div>${body}</div>
+    </div>`;
+}
+
+window.closeIdentityRestore = function() {
+  const m = document.getElementById('identityRestoreModal');
+  if (m) m.remove();
+};
+
+// identityRestoreChoose confirms, then POSTs the chosen backup name.
+window.identityRestoreChoose = function(name, when) {
+  showConfirmModal(t('identity_restore_confirm', [when||''])||'Restore this backup?', () => {
+    apiFetch('/api/identity/restore', { method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ backup: name }) })
+      .then(() => {
+        showToast(t('identity_restore_done_toast')||'Identity restored', 'success', 2500);
+        closeIdentityRestore();
+        loadIdentityPanel();
+      })
+      .catch(e => showToast(identityErrorText(e), 'error'));
+  });
+};
 
 window.saveIdentity = function() {
   const linesOf = id => {
@@ -42146,7 +42261,9 @@ window.saveIdentity = function() {
   apiFetch('/api/identity', { method: 'PUT', headers: {'Content-Type':'application/json'},
     body: JSON.stringify(body) })
     .then(() => { showToast(t('identity_saved_toast')||'Identity saved', 'success', 2000); loadIdentityPanel(); })
-    .catch(e => showToast(String(e.message||e), 'error'));
+    // A 409 identity_wipe_refused lands here: show the daemon's sentence and
+    // leave the form alone so the typed text is kept.
+    .catch(e => showToast(identityErrorText(e), 'error'));
 };
 
 // ── BL257 Phase 2 v6.8.1 — Identity Wizard ──────────────────────────────
@@ -42268,7 +42385,8 @@ window.identityWizardNext = function() {
       closeIdentityWizard();
       if (typeof loadIdentityPanel === 'function') loadIdentityPanel();
     })
-    .catch(e => showToast(String(e.message||e), 'error'));
+    // Refused (409): keep the wizard open with its answers intact.
+    .catch(e => showToast(identityErrorText(e), 'error'));
 };
 
 window.closeIdentityWizard = function() {

@@ -5759,6 +5759,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]interface{}{
 		"hostname":       s.cfg.Hostname,
 		"notify_exclude": s.cfg.NotifyExclude,
+		// Identity backup retention: the effective value (10 when absent).
+		"identity": map[string]interface{}{
+			"backups_to_keep": s.cfg.Identity.EffectiveBackupsToKeep(),
+		},
 		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
 		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
 		"pin_check_seconds": s.cfg.PinCheckSeconds,
@@ -6865,6 +6869,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// whole PUT before anything is applied, by the same rules the config file
 	// load uses.
 	if err := validateQuestionQualityPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// identity.backups_to_keep: a bad value rejects the whole PUT before
+	// anything is applied, by the same rule the config file load uses.
+	if err := validateIdentityBackupsPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8464,6 +8474,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.Questions.QueuePreviewLines = &n
 			}
+		case "identity.backups_to_keep":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Identity.BackupsToKeep = &n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -9985,6 +10000,21 @@ func validateQuestionQualityPatch(patch map[string]interface{}) error {
 		}
 	}
 	return nil
+}
+
+// validateIdentityBackupsPatch checks identity.backups_to_keep: a whole
+// number >= 1.
+func validateIdentityBackupsPatch(patch map[string]interface{}) error {
+	v, ok := patch["identity.backups_to_keep"]
+	if !ok {
+		return nil
+	}
+	n, whole := wholeNumber(v)
+	if !whole {
+		return fmt.Errorf("identity.backups_to_keep: %v is invalid; use a whole number >= 1 (default %d)",
+			v, config.DefaultIdentityBackupsToKeep)
+	}
+	return config.ValidateIdentityBackupsToKeep(n)
 }
 
 // wholeNumber reports v as an int when it is a JSON number with no fractional

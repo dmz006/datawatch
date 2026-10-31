@@ -2119,22 +2119,53 @@ else
 fi
 
 H "13. v6.8.0 BL257 P1 — Identity / Telos: GET → PATCH round-trip"
+# The write steps run only against the scratch daemon this script started
+# (EXTERNAL_DAEMON=0). With DW_BASE set the daemon may be the operator's live
+# one, so that mode reads the identity and writes nothing. No step here ever
+# sends an empty body to the identity route.
+ID_IS_EMPTY='import json,sys
+d=json.load(sys.stdin)
+keys=("role","north_star_goals","current_projects","values","current_focus","context_notes")
+sys.exit(0 if not any(d.get(k) for k in keys) else 1)'
 ID_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/identity" 2>/dev/null || echo "000")
 if [[ "$ID_GET" != "200" ]]; then
   skip "identity disabled or endpoint unreachable (HTTP $ID_GET)"
 else
   ok "identity GET reachable"
-  PATCH_RESP=$(curl "${curl_args[@]}" -X PATCH -H "Content-Type: application/json" \
-    -d '{"role":"smoke-test-role"}' "$BASE/api/identity")
-  ROLE_BACK=$(echo "$PATCH_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "")
-  if [[ "$ROLE_BACK" == "smoke-test-role" ]]; then
-    ok "identity PATCH round-trip: role merged"
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "identity PATCH round-trip: external daemon (DW_BASE set) may hold the operator's live identity; write steps not run"
   else
-    ko "identity PATCH round-trip: got role=$ROLE_BACK"
+    ID_SAVED=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null || echo "")
+    if echo "$ID_SAVED" | python3 -c "$ID_IS_EMPTY" 2>/dev/null; then
+      ID_WAS_EMPTY=1
+    else
+      ID_WAS_EMPTY=0
+    fi
+    PATCH_RESP=$(curl "${curl_args[@]}" -X PATCH -H "Content-Type: application/json" \
+      -d '{"role":"smoke-test-role"}' "$BASE/api/identity")
+    ROLE_BACK=$(echo "$PATCH_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "")
+    if [[ "$ROLE_BACK" == "smoke-test-role" ]]; then
+      ok "identity PATCH round-trip: role merged"
+    else
+      ko "identity PATCH round-trip: got role=$ROLE_BACK"
+    fi
+    # Put back what the daemon held: the saved identity when it had content,
+    # the explicit reset when it was empty.
+    if [[ "$ID_WAS_EMPTY" -eq 1 ]]; then
+      curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/identity/reset" 2>/dev/null || true
+    else
+      curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+        --data-binary "$ID_SAVED" -o /dev/null "$BASE/api/identity" 2>/dev/null || true
+    fi
+    ID_AFTER=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null || echo "")
+    ID_ROLE_AFTER=$(echo "$ID_AFTER" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?")
+    ID_ROLE_SAVED=$(echo "$ID_SAVED" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?")
+    if [[ "$ID_ROLE_AFTER" == "$ID_ROLE_SAVED" ]]; then
+      ok "identity PATCH round-trip: saved identity put back"
+    else
+      ko "identity PATCH round-trip: role after restore '$ID_ROLE_AFTER', saved '$ID_ROLE_SAVED'"
+    fi
   fi
-  # Cleanup: clear the role so subsequent runs don't accumulate state.
-  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
-    -d '{}' "$BASE/api/identity" >/dev/null 2>&1 || true
 fi
 
 # ---------------------------------------------------------------------------
@@ -6055,6 +6086,85 @@ assert 'usage: autonomous supervisor-watch' in resp, 'extra arguments not answer
     ok "supervisor watch: comm verb answers extra arguments with its usage line"
   else
     ko "supervisor watch: usage reply failed: $(echo "$SW_USAGE" | head -c 200)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "91. Identity backups: backup on write, empty-write refusal, restore"
+# Writes the identity on the scratch daemon this script started, so it runs
+# only when EXTERNAL_DAEMON=0. The identity is left reset at the end. The
+# empty-write step sends an all-empty body to prove the daemon refuses it; that
+# one line carries the identity-wipe-ok marker so the identity-wipe checker
+# knows it is a refusal assertion, not a wipe.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "identity backups: external daemon (DW_BASE set) may hold the operator's live identity; write steps not run"
+  else
+    _id_role() { python3 -c 'import json,sys;print(json.load(sys.stdin).get("role",""))' 2>/dev/null || echo "?"; }
+    _id_put() { curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" -o /dev/null -w '%{http_code}' "$BASE/api/identity" 2>/dev/null || echo "000"; }
+
+    A_CODE=$(_id_put '{"role":"smoke-role-a","north_star_goals":["smoke goal"]}')
+    B_CODE=$(_id_put '{"role":"smoke-role-b"}')
+    if [[ "$A_CODE" == "200" && "$B_CODE" == "200" ]]; then
+      ok "identity backups: two writes (A then B) accepted"
+    else
+      ko "identity backups: PUT A answered HTTP $A_CODE, PUT B answered HTTP $B_CODE (expected 200 and 200)"
+    fi
+
+    BK_JSON=$(curl "${curl_args[@]}" "$BASE/api/identity/backups" 2>/dev/null || echo "")
+    if echo "$BK_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert any(b.get("role")=="smoke-role-a" for b in d["backups"]), "no backup with role smoke-role-a"
+' 2>/dev/null; then
+      ok "identity backups: GET /api/identity/backups lists a backup whose role is smoke-role-a"
+    else
+      ko "identity backups: no backup with role smoke-role-a: $(echo "$BK_JSON" | head -c 200)"
+    fi
+
+    EMPTY_RESP=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"role":"","north_star_goals":[],"values":[]}' "$BASE/api/identity" 2>/dev/null || true) # identity-wipe-ok: asserts the refusal
+    EMPTY_CODE=$(echo "$EMPTY_RESP" | tail -n1)
+    EMPTY_BODY=$(echo "$EMPTY_RESP" | sed '$d')
+    EMPTY_ERRCODE=$(echo "$EMPTY_BODY" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code",""))' 2>/dev/null || echo "")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$EMPTY_CODE" == "409" && "$EMPTY_ERRCODE" == "identity_wipe_refused" && "$ROLE_NOW" == "smoke-role-b" ]]; then
+      ok "identity backups: an all-empty write is refused (409 identity_wipe_refused) and the identity is kept"
+    else
+      ko "identity backups: empty write answered HTTP $EMPTY_CODE code='$EMPTY_ERRCODE', role now '$ROLE_NOW' (expected 409, identity_wipe_refused, smoke-role-b)"
+    fi
+
+    RS_CODE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"backup":"latest"}' -o /dev/null -w '%{http_code}' "$BASE/api/identity/restore" 2>/dev/null || echo "000")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$RS_CODE" == "200" && "$ROLE_NOW" == "smoke-role-a" ]]; then
+      ok "identity backups: restore latest brings back smoke-role-a"
+    else
+      ko "identity backups: restore latest answered HTTP $RS_CODE, role now '$ROLE_NOW' (expected 200, smoke-role-a)"
+    fi
+
+    RST_CODE=$(curl "${curl_args[@]}" -X POST -o /dev/null -w '%{http_code}' "$BASE/api/identity/reset" 2>/dev/null || echo "000")
+    if [[ "$RST_CODE" == "200" ]] && curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | python3 -c "$ID_IS_EMPTY" 2>/dev/null; then
+      ok "identity backups: POST /api/identity/reset leaves an empty identity"
+    else
+      ko "identity backups: reset answered HTTP $RST_CODE or the identity still has content"
+    fi
+
+    BK_JSON=$(curl "${curl_args[@]}" "$BASE/api/identity/backups" 2>/dev/null || echo "")
+    if echo "$BK_JSON" | python3 -c 'import json,sys;assert len(json.load(sys.stdin)["backups"])>0' 2>/dev/null; then
+      ok "identity backups: the backups list is still non-empty after the reset"
+    else
+      ko "identity backups: backups list empty after the reset: $(echo "$BK_JSON" | head -c 200)"
+    fi
+
+    RS_CODE=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"backup":"latest"}' -o /dev/null -w '%{http_code}' "$BASE/api/identity/restore" 2>/dev/null || echo "000")
+    ROLE_NOW=$(curl "${curl_args[@]}" "$BASE/api/identity" 2>/dev/null | _id_role)
+    if [[ "$RS_CODE" == "200" && -n "$ROLE_NOW" && "$ROLE_NOW" != "?" ]]; then
+      ok "identity backups: restore latest after the reset brings a role back ($ROLE_NOW)"
+    else
+      ko "identity backups: restore latest after the reset answered HTTP $RS_CODE, role '$ROLE_NOW'"
+    fi
+
+    # Leave the scratch daemon's identity reset.
+    curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/identity/reset" 2>/dev/null || true
   fi
 fi
 

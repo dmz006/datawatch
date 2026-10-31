@@ -463,6 +463,11 @@ type Config struct {
 	// through every config channel per the parity rule.
 	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
 
+	// Identity holds the operator identity settings (identity.*). The
+	// top-level key is `identity`; the "Identity" banner in template.go is
+	// only a comment heading about machine identification.
+	Identity IdentityConfig `yaml:"identity" json:"identity"`
+
 	// Usage holds the usage and cost calculator settings (usage.calculator.*).
 	// All keys are reachable through every config channel per the parity rule.
 	Usage UsageConfig `yaml:"usage,omitempty" json:"usage,omitempty"`
@@ -3917,6 +3922,48 @@ type AutonomousQuestionsConfig struct {
 	QueuePreviewLines *int `yaml:"queue_preview_lines" json:"queue_preview_lines"`
 }
 
+// IdentityConfig holds the operator identity settings (identity.*).
+type IdentityConfig struct {
+	// BackupsToKeep is how many timestamped identity backups the daemon
+	// keeps; a whole number >= 1 (default DefaultIdentityBackupsToKeep).
+	// A pointer so an absent key and an explicit value differ; no
+	// omitempty, so an explicit value survives a YAML/JSON round trip and
+	// a PUT /api/config write.
+	BackupsToKeep *int `yaml:"backups_to_keep" json:"backups_to_keep"`
+}
+
+// DefaultIdentityBackupsToKeep is the number of identity backups kept when
+// identity.backups_to_keep is absent. It repeats DefaultBackupsToKeep in
+// internal/identity (config cannot import that package).
+const DefaultIdentityBackupsToKeep = 10
+
+// EffectiveBackupsToKeep returns identity.backups_to_keep: 10 when the key
+// is absent.
+func (c IdentityConfig) EffectiveBackupsToKeep() int {
+	if c.BackupsToKeep == nil {
+		return DefaultIdentityBackupsToKeep
+	}
+	return *c.BackupsToKeep
+}
+
+// ValidateIdentityBackupsToKeep refuses a retention count below 1. The
+// config file load, PUT /api/config and every surface that rides it share
+// this rule.
+func ValidateIdentityBackupsToKeep(n int) error {
+	if n < 1 {
+		return fmt.Errorf("identity.backups_to_keep: %d is invalid (use a whole number >= 1; default %d)",
+			n, DefaultIdentityBackupsToKeep)
+	}
+	return nil
+}
+
+func (c IdentityConfig) validate() error {
+	if c.BackupsToKeep != nil {
+		return ValidateIdentityBackupsToKeep(*c.BackupsToKeep)
+	}
+	return nil
+}
+
 // Question quality modes (autonomous.questions.quality_mode).
 const (
 	QuestionQualityModeOff    = "off"
@@ -5407,6 +5454,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Questions.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Identity.validate(); err != nil {
 		return err
 	}
 	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.

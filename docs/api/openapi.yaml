@@ -759,6 +759,107 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  # Operator identity — read, write, backups, restore and the explicit reset
+  /api/identity:
+    get:
+      summary: Read the operator identity
+      operationId: getIdentity
+      tags: [Identity]
+      responses:
+        "200": {description: The identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: Identity is disabled (no identity manager wired)}
+    put:
+      summary: Replace the operator identity
+      description: |
+        Replaces the whole identity after copying the file it replaces into the backups.
+        An all-empty body over a saved identity is refused with 409 (`identity_wipe_refused`)
+        and nothing is written; use `POST /api/identity/reset` to clear on purpose.
+      operationId: putIdentity
+      tags: [Identity]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      responses:
+        "200": {description: The identity as saved, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "400": {description: Body is not valid JSON}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:write}
+        "409": {description: Refused - an empty body over a saved identity; nothing was written, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "500": {description: The identity could not be written}
+        "503": {description: Identity is disabled}
+    patch:
+      summary: Merge fields into the operator identity
+      description: Merges the non-empty body fields; omitted and empty fields keep their saved value, so an all-empty body changes nothing.
+      operationId: patchIdentity
+      tags: [Identity]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      responses:
+        "200": {description: The merged identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "400": {description: Body is not valid JSON}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:write}
+        "409": {description: Refused - the write would leave the saved identity empty, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "500": {description: The identity could not be written}
+        "503": {description: Identity is disabled}
+    post:
+      summary: Merge fields into the operator identity (alias of PATCH)
+      operationId: postIdentity
+      tags: [Identity]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      responses:
+        "200": {description: The merged identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "400": {description: Body is not valid JSON}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:write}
+        "409": {description: Refused - the write would leave the saved identity empty, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "500": {description: The identity could not be written}
+        "503": {description: Identity is disabled}
+  /api/identity/backups:
+    get:
+      summary: List identity backups, newest first, with the retention limit
+      operationId: listIdentityBackups
+      tags: [Identity]
+      responses:
+        "200": {description: "Backups and the effective identity.backups_to_keep", content: {application/json: {schema: {$ref: "#/components/schemas/IdentityBackupList"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:read}
+        "405": {description: Method not allowed (GET only)}
+        "500": {description: The backup directory could not be read}
+        "503": {description: Identity is disabled}
+  /api/identity/restore:
+    post:
+      summary: Restore the identity from a backup name or `latest`
+      description: The identity being replaced is backed up first, so a restore can be undone. Audit action `identity_restore`.
+      operationId: restoreIdentity
+      tags: [Identity]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [backup], properties: {backup: {type: string, description: "A name from GET /api/identity/backups, or latest"}}}
+      responses:
+        "200": {description: The restored identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "400": {description: Bad JSON or no backup given}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:write}
+        "404": {description: Unknown backup, or a name that is not a backup file name}
+        "405": {description: Method not allowed (POST only)}
+        "422": {description: The backup has no operator content}
+        "500": {description: The identity could not be written}
+        "503": {description: Identity is disabled}
+  /api/identity/reset:
+    post:
+      summary: Clear the identity on purpose (backs it up first)
+      description: The only way to empty a saved identity. Audit action `identity_reset`.
+      operationId: resetIdentity
+      tags: [Identity]
+      responses:
+        "200": {description: The empty identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Token lacks config:write}
+        "405": {description: Method not allowed (POST only)}
+        "500": {description: The identity could not be written}
+        "503": {description: Identity is disabled}
+
   /api/config:
     get:
       summary: Get configuration
@@ -6160,6 +6261,40 @@ components:
             example: "unauthorized"
 
   schemas:
+    Identity:
+      type: object
+      description: The operator identity; every field is optional.
+      properties:
+        role: {type: string}
+        north_star_goals: {type: array, items: {type: string}}
+        current_projects: {type: array, items: {type: string}}
+        values: {type: array, items: {type: string}}
+        current_focus: {type: string}
+        context_notes: {type: string}
+        updated_at: {type: string, format: date-time}
+    IdentityWipeRefused:
+      type: object
+      description: 409 body for a write that would replace a saved identity with an empty one.
+      required: [error, code, fields_kept]
+      properties:
+        error: {type: string}
+        code: {type: string, enum: [identity_wipe_refused]}
+        fields_kept: {type: array, items: {type: string}}
+    IdentityBackup:
+      type: object
+      required: [name, created_at, size_bytes, role, field_count]
+      properties:
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        size_bytes: {type: integer, format: int64}
+        role: {type: string}
+        field_count: {type: integer}
+    IdentityBackupList:
+      type: object
+      required: [backups, keep]
+      properties:
+        backups: {type: array, items: {$ref: "#/components/schemas/IdentityBackup"}}
+        keep: {type: integer}
     DecisionLine:
       type: object
       description: The operator decisions, as GET /api/autonomous/decisions returns them.

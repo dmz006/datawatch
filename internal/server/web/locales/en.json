@@ -574,6 +574,17 @@
   "guardrail_type_skill": "skill",
   "identity_btn_reset": "Reset",
   "identity_btn_save": "Save",
+  "identity_btn_revert": "Revert",
+  "identity_btn_restore": "Restore",
+  "identity_reset_confirm": "Clear the saved identity? A backup is kept, and Restore can bring it back.",
+  "identity_reset_done_toast": "Identity cleared; a backup was kept",
+  "identity_restore_title": "Restore identity from a backup",
+  "identity_restore_none": "No identity backups yet.",
+  "identity_restore_confirm": "Restore the identity saved on %1$s? The current identity is backed up first, so this can be undone.",
+  "identity_restore_done_toast": "Identity restored",
+  "identity_restore_row_fields": "%1$d fields filled in",
+  "identity_backups_keep_saved_toast": "Backup limit saved",
+  "identity_backups_keep_invalid": "Use a whole number of 1 or more",
   "identity_field_focus": "Current Focus",
   "identity_field_focus_ph": "what you are focused on right now",
   "identity_field_goals": "North-Star Goals (one per line)",
@@ -2938,5 +2949,6 @@
   "cleanup_disk_alert_badge": "Automata disk alert",
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
-  "cleanup_failed": "Could not load the Automata cleanup status: %1$s"
+  "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
+  "settings_identity_backups_to_keep": "Identity backups to keep (whole number, minimum 1, default 10)"
 }

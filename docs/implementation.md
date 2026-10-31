@@ -1296,6 +1296,58 @@ of at least 1.
 **Live effect.** The sink and the forwarder read these settings on every call,
 so a change applies to the next event with no daemon restart.
 
+### Identity backups setting (`identity.backups_to_keep`)
+
+The daemon keeps timestamped backups of the operator identity file and refuses a
+write that would empty a saved identity. One key sets how many backups are kept.
+
+How it works, for someone reading the code:
+
+- `internal/identity` owns the file. Every write (`Set`, `Update`, `Reset`,
+  `Restore`) runs under one lock: it re-reads `identity.yaml` from disk, so an
+  edit made outside the daemon is merged rather than overwritten, copies the
+  existing file to `identity-backups/identity-<UTC timestamp>.yaml` next to it,
+  prunes to the retention limit, then writes the new content through a temp file,
+  fsync and rename. A file that is missing, empty, or equal to the newest backup
+  (ignoring `updated_at`) is not backed up. If the backup fails the write is
+  aborted.
+- `Set` returns `ErrEmptyOverwrite` when the new identity is empty and the saved
+  one is not. The server turns that into HTTP 409 with the code
+  `identity_wipe_refused` and the fields kept; `Reset` is the only way to clear.
+- The routes are `GET /api/identity/backups`, `POST /api/identity/restore` and
+  `POST /api/identity/reset` (`internal/server/identity.go`); the MCP tools are
+  `identity_backups`, `restore_identity` and `reset_identity`; the CLI is
+  `datawatch identity backups|restore|reset`; chat has `identity backups` and
+  `identity restore` and deliberately no reset.
+- The retention limit is read on every write through a provider, so a change to
+  the key applies to the next write with no restart. A missing provider, or a
+  value below 1 at that point, reads as the default, so the protection cannot be
+  switched off.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `identity.backups_to_keep` (see `docs/config-reference.yaml`) |
+| **CLI** | `datawatch config set identity.backups_to_keep 20` |
+| **Web UI** | Settings → Automata → **Identity** card → *Identity backups to keep* |
+| **REST API** | `PUT /api/config` with `{"identity.backups_to_keep": 20}`; `GET /api/config` returns it under `identity.backups_to_keep` |
+| **MCP** | `config_set` with key `identity.backups_to_keep` |
+| **Comm channel** | `configure identity.backups_to_keep=20` |
+
+**Key.**
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `identity.backups_to_keep` | integer | `10` | How many identity backups are kept; the oldest beyond this are removed at the next write. |
+
+**Validation.** A whole number of 1 or more. Through `PUT /api/config` a value
+below 1, a fraction, or anything that is not a JSON number is rejected with
+HTTP 400 naming the key, before anything is applied. A value below 1 in the YAML
+file makes the configuration fail to load with an error naming the key. An
+absent key reads as 10 and `GET /api/config` shows 10.
+
+**Live effect.** The next identity write uses the new number; no daemon restart
+is needed.
+
 ### Dependencies
 
 - **fsnotify** — used for interrupt-driven log file monitoring (replaces polling). Each session's `monitorOutput` goroutine watches the log file via fsnotify and reads new lines on write events, reducing CPU usage and improving latency.
@@ -1343,6 +1395,8 @@ All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
 | `daemon.pid` | PID file written in daemon mode |
 | `daemon.log` | Daemon log in daemon mode |
 | `last-shutdown.json` | Most recent shutdown cause (see Shutdown Cause capture below) |
+| `identity.yaml` | Operator identity (role, goals, projects, values, focus, notes); written atomically, mode 0600 |
+| `identity-backups/identity-<UTC timestamp>.yaml` | Timestamped copy of `identity.yaml` made before each write; the newest `identity.backups_to_keep` are kept (see Identity backups setting above) |
 
 ### Shutdown Cause Capture
 

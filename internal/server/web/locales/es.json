@@ -600,6 +600,17 @@
   "guardrail_type_skill": "skill",
   "identity_btn_reset": "Restablecer",
   "identity_btn_save": "Guardar",
+  "identity_btn_revert": "Revertir",
+  "identity_btn_restore": "Restaurar",
+  "identity_reset_confirm": "¿Borrar la identidad guardada? Se conserva una copia de seguridad y Restaurar puede recuperarla.",
+  "identity_reset_done_toast": "Identidad borrada; se conservó una copia de seguridad",
+  "identity_restore_title": "Restaurar la identidad desde una copia de seguridad",
+  "identity_restore_none": "Aún no hay copias de seguridad de la identidad.",
+  "identity_restore_confirm": "¿Restaurar la identidad guardada el %1$s? Primero se hace una copia de la identidad actual, así que se puede deshacer.",
+  "identity_restore_done_toast": "Identidad restaurada",
+  "identity_restore_row_fields": "%1$d campos rellenados",
+  "identity_backups_keep_saved_toast": "Límite de copias guardado",
+  "identity_backups_keep_invalid": "Usa un número entero de 1 o más",
   "identity_field_focus": "Foco actual",
   "identity_field_focus_ph": "en qué se concentra ahora",
   "identity_field_goals": "Metas Estrella (una por línea)",
@@ -2938,5 +2949,6 @@
   "cleanup_disk_alert_badge": "Automata disk alert",
   "cleanup_disk_ok_badge": "Automata disk ok",
   "cleanup_disk_alert_last": "Last Automata disk alert: %1$s",
-  "cleanup_failed": "Could not load the Automata cleanup status: %1$s"
+  "cleanup_failed": "Could not load the Automata cleanup status: %1$s",
+  "settings_identity_backups_to_keep": "Copias de seguridad de la identidad que conservar (número entero, mínimo 1, por defecto 10)"
 }

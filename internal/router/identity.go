@@ -5,12 +5,17 @@
 //	identity show             → alias for above
 //	identity get [field]      → print everything (or one field)
 //	identity set <f> <value>  → PATCH one field (comma-separated for lists)
+//	identity backups          → list the saved copies, newest first
+//	identity restore <name>   → bring a saved copy back ("latest" for the newest)
+//	identity reset            → points at the CLI, PWA or MCP tool; never clears from chat
 
 package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 )
 
 const identityUsage = `Usage:
@@ -18,7 +23,10 @@ const identityUsage = `Usage:
   identity show                       alias for above
   identity get [field]                show one field (role|north_star_goals|current_projects|values|current_focus|context_notes)
   identity set <field> <value>        patch one field (comma-separated for list fields)
-  identity configure                  open the PWA Identity Wizard or run "datawatch identity configure" locally`
+  identity configure                  open the PWA Identity Wizard or run "datawatch identity configure" locally
+  identity backups                    list saved copies of the identity, newest first
+  identity restore <name|latest>      bring a saved copy back
+  identity reset                      not available here; clear it with "datawatch identity reset", the PWA or the MCP reset_identity tool`
 
 func (r *Router) handleIdentityCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -57,6 +65,26 @@ func (r *Router) handleIdentityCmd(cmd Command) {
 		}
 		b, _ := json.MarshalIndent(v, "", "  ")
 		r.reply("identity "+field, string(b))
+		return
+	}
+
+	if lower == "backups" {
+		r.identityBackups()
+		return
+	}
+
+	if lower == "restore" || strings.HasPrefix(lower, "restore ") {
+		r.identityRestore(strings.TrimSpace(text[len("restore"):]))
+		return
+	}
+
+	if lower == "reset" {
+		// Clearing the identity is deliberately not a chat verb: one
+		// mistyped line must not empty it. A backup is kept, so
+		// "identity restore latest" undoes a reset made elsewhere.
+		r.reply("identity reset",
+			"Clearing the identity is not done from chat. Use `datawatch identity reset` on the CLI, the PWA, or the MCP reset_identity tool.\n"+
+				"A backup is kept, so `identity restore latest` undoes it.")
 		return
 	}
 
@@ -129,4 +157,59 @@ func identityFieldPatch(field, value string) map[string]any {
 		return map[string]any{"context_notes": value}
 	}
 	return nil
+}
+
+// identityBackupList is the GET /api/identity/backups answer.
+type identityBackupList struct {
+	Backups []struct {
+		Name       string    `json:"name"`
+		CreatedAt  time.Time `json:"created_at"`
+		Role       string    `json:"role"`
+		FieldCount int       `json:"field_count"`
+	} `json:"backups"`
+}
+
+// identityBackups replies with one short line per saved copy, newest first
+// as the daemon lists them.
+func (r *Router) identityBackups() {
+	out, err := r.commGet("/api/identity/backups", nil)
+	if err != nil {
+		r.reply("identity backups", err.Error())
+		return
+	}
+	var list identityBackupList
+	if err := json.Unmarshal([]byte(out), &list); err != nil {
+		r.reply("identity backups", err.Error())
+		return
+	}
+	if len(list.Backups) == 0 {
+		r.reply("identity backups", "no backups yet")
+		return
+	}
+	lines := make([]string, 0, len(list.Backups))
+	for _, b := range list.Backups {
+		role := b.Role
+		if role == "" {
+			role = "(no role)"
+		}
+		lines = append(lines, fmt.Sprintf("%s  %s  %s  %d fields",
+			b.Name, b.CreatedAt.Local().Format("2006-01-02 15:04:05"), role, b.FieldCount))
+	}
+	r.reply("identity backups", strings.Join(lines, "\n"))
+}
+
+// identityRestore asks the daemon to bring a saved copy back and replies
+// with the restored identity, or with the daemon's own error text.
+func (r *Router) identityRestore(name string) {
+	if name == "" {
+		r.reply("identity restore", identityUsage)
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"backup": name})
+	out, err := r.commJSON("POST", "/api/identity/restore", string(body))
+	if err != nil {
+		r.reply("identity restore", err.Error())
+		return
+	}
+	r.reply("identity restore "+name, prettyJSON(out))
 }
