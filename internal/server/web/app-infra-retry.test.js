@@ -358,3 +358,12 @@ test('the card, the task row and the settings fields carry no PRD wording or tra
     }
   }
 });
+
+test('the glossary has the section the help link opens', () => {
+  const doc = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'docs', 'datawatch-definitions.md'), 'utf8');
+  const anchor = GLOSSARY_LINK.split('#')[1];
+  const slugs = doc.split('\n')
+    .filter((l) => /^#{2,4} /.test(l))
+    .map((l) => l.replace(/^#+ /, '').toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().replace(/ /g, '-'));
+  assert.ok(slugs.includes(anchor), 'docs/datawatch-definitions.md has no heading for #' + anchor);
+});

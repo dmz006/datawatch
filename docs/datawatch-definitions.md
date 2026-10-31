@@ -1602,6 +1602,20 @@ Four settings in Settings → Automata (Autonomous Automata planning) control ho
 
 **Tag registry keeper** — the one daemon that holds the shared tag registry for a federation. The keeper is named by `autonomous.tags.registry_keeper`: on a peer it is the name of the keeper peer, and on the keeper it is the keeper's own name. A peer keeps a cached copy and forwards its tag edits to the keeper; when the keeper is unreachable the peer shows its last copy as stale. See [howto/automata-tag-registry.md](howto/automata-tag-registry.md).
 
+### Infrastructure retry
+
+**Infrastructure retry** — the daemon's own answer to a task that failed because the machinery around it broke, not because its work was wrong. Four failure classes count: `spawn_error` (the session could not start), `storage_write` (a record could not be saved), `session_killed_before_delivery` (the session died before it received the task) and `daemon_restart` (the daemon restarted under the task). When one of them ends a task, the daemon schedules a retry after a delay instead of counting a failure against the task. The Automata page shows each retried task as **Retry n of max** with its class, reason and time, and the task row on the Automaton detail carries the same badge.
+
+**Retry tries and delays** (`autonomous.infra_retry.max_tries`, `autonomous.infra_retry.backoff_seconds`) — how many retries one task gets (default 3, a whole number from 1 to 1000) and how long the daemon waits before each, in seconds. The default delays are 60, 300 and 540; the last delay repeats when a task has more tries than delays, and an empty list means no delay.
+
+**Retried failure classes** (`autonomous.infra_retry.categories`) — which of the four classes are retried. The default is all four; an empty list retries none. **Infrastructure retry** (`autonomous.infra_retry.enabled`, on by default) is the master switch.
+
+**Held task** — what a task becomes when its tries are spent and `autonomous.infra_retry.exhausted_action` is `hold` (the default): it stops for the operator's review, and the card and the task row show the cause. With `autonomous.infra_retry.raise_question` on (the default) the daemon also opens an operator question for the hold, and the card points to it. The task waits until the operator acts on it. With `exhausted_action` set to `count`, the failure is counted against the task like any other and the normal failure handling applies.
+
+**Retry dependents** (`autonomous.infra_retry.retry_dependents`, on by default) — when on, tasks that were blocked because the retried task failed are retried together with it.
+
+The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, the CLI and the comm channel. See [mcp.md](mcp.md) for the arguments that set the policy.
+
 ---
 
 ## Core feature reference matrix
