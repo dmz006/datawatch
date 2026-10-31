@@ -86,6 +86,20 @@ func TestUsageCalcAdviceOmitsOmittedArguments(t *testing.T) {
 	}
 }
 
+// lanes on the advice is the what-if count: it is sent, zero included, and
+// stays out of the query only when omitted.
+func TestUsageCalcAdviceLanesIsTheWhatIf(t *testing.T) {
+	s, rec := usageCalcServer(t, http.StatusOK, `{"percent":42}`)
+	for lanes, want := range map[float64]string{0: "lanes=0", 2: "lanes=2"} {
+		if _, err := s.handleUsageAdvice(context.Background(), callReq(map[string]any{"lanes": lanes})); err != nil {
+			t.Fatal(err)
+		}
+		if rec.rawQuery != want {
+			t.Errorf("lanes %v: query = %q, want %q", lanes, rec.rawQuery, want)
+		}
+	}
+}
+
 func TestUsageCalcReadingsProxiesGet(t *testing.T) {
 	s, rec := usageCalcServer(t, http.StatusOK, `{"readings":[{"id":"r1","percent":42.5,"session_percent":33,"lanes":2,"source":"typed"}],"extra_credit_points":25,"is_keeper":true,"stale":false}`)
 	res, err := s.handleUsageReadings(context.Background(), callReq(nil))
@@ -105,7 +119,7 @@ func TestUsageCalcReadingAdd(t *testing.T) {
 
 	// A percent reading with the optional secondary fields.
 	res, err := s.handleUsageReadingAdd(context.Background(), callReq(map[string]any{
-		"percent": 42.5, "at": "2026-12-15T09:00:00Z", "session_percent": 33, "lanes": 2.0,
+		"percent": 42.5, "at": "2026-12-15T09:00:00Z", "session_percent": 33,
 	}))
 	if err != nil || res == nil {
 		t.Fatalf("err=%v res=%v", err, res)
@@ -113,7 +127,7 @@ func TestUsageCalcReadingAdd(t *testing.T) {
 	if rec.method != http.MethodPost || rec.path != "/api/usage/readings" {
 		t.Errorf("proxied %s %s", rec.method, rec.path)
 	}
-	if rec.body["percent"] != 42.5 || rec.body["session_percent"] != 33.0 || rec.body["lanes"] != 2.0 || rec.body["at"] != "2026-12-15T09:00:00Z" {
+	if rec.body["percent"] != 42.5 || rec.body["session_percent"] != 33.0 || rec.body["at"] != "2026-12-15T09:00:00Z" {
 		t.Errorf("body = %v", rec.body)
 	}
 	if _, ok := rec.body["spend_usd"]; ok {
@@ -137,6 +151,34 @@ func TestUsageCalcReadingAdd(t *testing.T) {
 	}
 }
 
+// lanes on a reading is deprecated and ignored: it is neither validated
+// (even a negative one) nor sent, because the daemon stamps the lanes.
+func TestUsageCalcReadingAddIgnoresLanes(t *testing.T) {
+	s, rec := usageCalcServer(t, http.StatusOK, `{"ok":true}`)
+	for name, lanes := range map[string]any{"positive": 2.0, "zero": 0.0, "negative": -1.0, "text": "many"} {
+		rec.method, rec.rawQuery = "", ""
+		res, err := s.handleUsageReadingAdd(context.Background(), callReq(map[string]any{"percent": 40, "lanes": lanes}))
+		if err != nil || res == nil {
+			t.Fatalf("%s: err=%v res=%v", name, err, res)
+		}
+		if res.IsError {
+			t.Errorf("%s: a lanes value must not be an error: %s", name, automationText(t, res))
+		}
+		if rec.method != http.MethodPost || rec.path != "/api/usage/readings" {
+			t.Errorf("%s: proxied %s %s", name, rec.method, rec.path)
+		}
+		if _, ok := rec.body["lanes"]; ok {
+			t.Errorf("%s: lanes reached the request body: %v", name, rec.body)
+		}
+		if rec.body["percent"] != 40.0 {
+			t.Errorf("%s: body = %v", name, rec.body)
+		}
+		if strings.Contains(rec.rawQuery, "lanes") {
+			t.Errorf("%s: lanes reached the query: %s", name, rec.rawQuery)
+		}
+	}
+}
+
 func TestUsageCalcReadingAddRejectsBadInput(t *testing.T) {
 	s, rec := usageCalcServer(t, http.StatusOK, `{"ok":true}`)
 	ctx := context.Background()
@@ -146,7 +188,6 @@ func TestUsageCalcReadingAddRejectsBadInput(t *testing.T) {
 		"percent above 100": {"percent": 101},
 		"percent below 0":   {"percent": -4},
 		"negative spend":    {"spend_usd": -1},
-		"negative lanes":    {"percent": 40, "lanes": -1.0},
 		"session above 100": {"percent": 40, "session_percent": 101},
 	} {
 		rec.method = ""
@@ -400,6 +441,24 @@ func TestUsageCalcToolsRegisteredAndCapped(t *testing.T) {
 		if _, ok := props[arg]; !ok {
 			t.Errorf("usage_reading_add argument %s missing", arg)
 		}
+	}
+
+	// The lanes descriptions: a what-if on the advice, deprecated and ignored
+	// on a reading, and the stamped lanes on the readings list.
+	if d := strings.ToLower(tools["usage_advice"].Description); !strings.Contains(d, "what-if") || !strings.Contains(d, "not saved") {
+		t.Errorf("usage_advice description does not name the what-if lanes as not saved: %s", d)
+	}
+	if d, _ := props["lanes"].(map[string]any)["description"].(string); !strings.Contains(strings.ToLower(d), "deprecated") || !strings.Contains(strings.ToLower(d), "ignored") || !strings.Contains(d, "stamps") {
+		t.Errorf("usage_reading_add lanes argument is not marked deprecated and ignored: %q", d)
+	}
+	if d := tools["usage_reading_add"].Description; !strings.Contains(d, "deprecated and ignored") || !strings.Contains(d, "stamps each reading") {
+		t.Errorf("usage_reading_add description does not explain the ignored lanes: %s", d)
+	}
+	if d := tools["usage_readings"].Description; !strings.Contains(d, "lanes_source") || !strings.Contains(d, "lanes is the number of Claude lanes") {
+		t.Errorf("usage_readings description does not describe lanes and lanes_source: %s", d)
+	}
+	if d, _ := tools["usage_advice"].InputSchema.Properties["lanes"].(map[string]any)["description"].(string); !strings.Contains(d, "What-if") || !strings.Contains(d, "not saved") {
+		t.Errorf("usage_advice lanes argument does not say what-if, not saved: %q", d)
 	}
 
 	// The descriptions state the operator decisions that shape the tools.

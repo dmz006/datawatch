@@ -128,13 +128,13 @@ func TestUsageCalcParseAdvice(t *testing.T) {
 }
 
 func TestUsageCalcParseReading(t *testing.T) {
-	t.Run("percent with lanes and an optional session", func(t *testing.T) {
+	t.Run("percent with an ignored lanes and an optional session", func(t *testing.T) {
 		c := router.Parse("usage reading 72.5 lanes=2 session=41")
 		if c.Type != router.CmdUsage || c.UsageVerb != "reading" {
 			t.Fatalf("got type=%s verb=%q", c.Type, c.UsageVerb)
 		}
-		if c.UsagePercent != 72.5 || c.UsageLanes != 2 {
-			t.Fatalf("got percent=%v lanes=%d", c.UsagePercent, c.UsageLanes)
+		if c.UsagePercent != 72.5 || c.UsageLanes != 0 || c.UsageLanesSet {
+			t.Fatalf("got percent=%v lanes=%d set=%v, want lanes ignored", c.UsagePercent, c.UsageLanes, c.UsageLanesSet)
 		}
 		if c.UsageSession == nil || *c.UsageSession != 41 {
 			t.Fatalf("session = %v, want 41", c.UsageSession)
@@ -188,8 +188,8 @@ func TestUsageCalcParseExtraWork(t *testing.T) {
 func TestUsageCalcParseInvalid(t *testing.T) {
 	badForms := []string{
 		"usage help",
-		"usage advice lanes=0",
 		"usage advice lanes=x",
+		"usage advice lanes=-1",
 		"usage advice variant=",
 		"usage advice variant=a variant=b",
 		"usage advice variant=a VARIANT=b", // same key twice, any case
@@ -284,6 +284,7 @@ func TestUsageCalcAdviceOverrides(t *testing.T) {
 func TestUsageCalcReadingHandler(t *testing.T) {
 	r, recs := usageCalcStandInAdvice(t)
 
+	// lanes=2 still parses for older callers, but never reaches the daemon.
 	out := r.HandleTestMessage("usage reading 72.5 lanes=2 session=41")
 	if len(out) == 0 {
 		t.Fatal("no reply")
@@ -295,10 +296,19 @@ func TestUsageCalcReadingHandler(t *testing.T) {
 	if w.method != "POST" || w.path != "/api/usage/readings" {
 		t.Fatalf("first request = %s %s, want POST /api/usage/readings", w.method, w.path)
 	}
-	for _, sub := range []string{`"percent":72.5`, `"lanes":2`, `"session_percent":41`, `"source":"typed"`} {
+	for _, sub := range []string{`"percent":72.5`, `"session_percent":41`, `"source":"typed"`} {
 		if !strings.Contains(w.body, sub) {
 			t.Errorf("body does not contain %s: %s", sub, w.body)
 		}
+	}
+	if strings.Contains(w.body, "lanes") {
+		t.Errorf("lanes reached the request body: %s", w.body)
+	}
+	if w.query.Has("lanes") {
+		t.Errorf("lanes reached the query: %v", w.query)
+	}
+	if (*recs)[1].query.Get("lanes") != "" {
+		t.Errorf("the refreshed advice carried lanes: %v", (*recs)[1].query)
 	}
 	if (*recs)[1].method != "GET" || (*recs)[1].path != "/api/usage/advice" {
 		t.Fatalf("second request = %s %s, want the refreshed advice", (*recs)[1].method, (*recs)[1].path)
@@ -307,6 +317,49 @@ func TestUsageCalcReadingHandler(t *testing.T) {
 		t.Fatalf("reply = %q, wants the stored reading acknowledged", out)
 	}
 	assertUsageReply(t, out[0])
+}
+
+// An older caller's lanes=N on a reading parses (it is not an invalid form)
+// and is dropped, whatever its value.
+func TestUsageCalcReadingLanesParsedNotSent(t *testing.T) {
+	for _, form := range []string{"usage reading 40 lanes=1", "usage reading 40 lanes=3 session=10", "usage reading 40 session=10 lanes=2", "usage reading 40 lanes=0", "usage reading 40 lanes=-1", "usage reading 40 lanes=x"} {
+		r, recs := usageCalcStandInAdvice(t)
+		out := r.HandleTestMessage(form)
+		if len(out) == 0 || !strings.Contains(out[0], "reading stored: 40%") {
+			t.Fatalf("%q: reply = %q, want the reading stored", form, out)
+		}
+		if len(*recs) == 0 || (*recs)[0].method != "POST" {
+			t.Fatalf("%q: requests = %v", form, *recs)
+		}
+		if strings.Contains((*recs)[0].body, "lanes") {
+			t.Errorf("%q: lanes reached the request body: %s", form, (*recs)[0].body)
+		}
+	}
+}
+
+// usage advice lanes=N is the what-if count and is sent, including 0.
+func TestUsageCalcAdviceLanesWhatIfIncludingZero(t *testing.T) {
+	for _, tc := range []struct{ form, want string }{
+		{"usage advice lanes=0", "0"},
+		{"usage advice lanes=3", "3"},
+	} {
+		r, recs := usageCalcStandInAdvice(t)
+		if out := r.HandleTestMessage(tc.form); len(out) == 0 {
+			t.Fatalf("%q: no reply", tc.form)
+		}
+		if len(*recs) != 1 {
+			t.Fatalf("%q: requests = %v, want one", tc.form, *recs)
+		}
+		if got := (*recs)[0].query; !got.Has("lanes") || got.Get("lanes") != tc.want {
+			t.Errorf("%q: query = %v, want lanes=%s", tc.form, got, tc.want)
+		}
+	}
+	// No lanes given: nothing is sent.
+	r, recs := usageCalcStandInAdvice(t)
+	r.HandleTestMessage("usage advice")
+	if len(*recs) != 1 || (*recs)[0].query.Has("lanes") {
+		t.Errorf("bare advice sent lanes: %v", *recs)
+	}
 }
 
 func TestUsageCalcReadingBare(t *testing.T) {
@@ -409,9 +462,12 @@ func TestUsageCalcInvalidFormNoRequest(t *testing.T) {
 	for _, form := range []string{
 		"usage: usage",
 		"usage: usage advice [variant=V] [policy=P] [lanes=N]",
-		"usage: usage reading <percent> [lanes=N] [session=N]",
+		"usage: usage reading <percent> [session=N]",
 		"usage: usage extra <points>",
 		"usage: usage work <points|clear>",
+		// lanes is a what-if on the advice only.
+		"lanes=N on advice is a what-if, not saved.",
+		"A reading is stamped with the running lanes.",
 	} {
 		if !strings.Contains(out[0], form) {
 			t.Errorf("reply lacks the form %q:\n%s", form, out[0])
@@ -475,9 +531,10 @@ func assertUsageReply(t *testing.T, got string) {
 		// The grammar's reply hint closing the reply, one form per line.
 		"reply with one of:",
 		"usage advice [variant=V] [policy=P] [lanes=N]",
-		"usage reading <pct> [lanes=N] [session=N]",
+		"usage reading <pct> [session=N]",
 		"usage extra <pts>",
 		"usage work <pts|clear>",
+		"lanes=N is a what-if, not saved.",
 	} {
 		if !strings.Contains(got, sub) {
 			t.Errorf("reply lacks %q\nfull reply:\n%s", sub, got)

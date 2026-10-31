@@ -5610,7 +5610,22 @@ paths:
       summary: The account's shared usage record — the keeper's live series, or the peer's copy of the keeper (its last known copy when the keeper is unreachable, marked stale / copied_at)
       operationId: usageReadingsGet
       tags: [Singletons]
-      responses: {"200": {description: OK}, "503": {description: No series locally or from the peer, or the series is not available}}
+      responses:
+        "200":
+          description: OK. Each reading carries the Claude lane count the keeper stamped on it (lanes) and where that count came from (lanes_source)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  readings:
+                    type: array
+                    items: {$ref: "#/components/schemas/UsageReading"}
+                  is_keeper: {type: boolean, description: True when this daemon owns the series}
+                  stale: {type: boolean, description: On a peer, true when the keeper could not be read and the record is the last copy found on disk}
+                  stale_reason: {type: string, description: Why the record is stale; present only when stale}
+                  copied_at: {type: string, format: date-time, description: When the stale copy was taken; present only when stale}
+        "503": {description: No series locally or from the peer, or the series is not available}
     post:
       summary: Append one reading to the shared record. source must be typed; pasted and account are planned and return 501. On a peer the write is forwarded to the keeper, which refuses the write when it is unreachable
       operationId: usageReadingAdd
@@ -5625,9 +5640,17 @@ paths:
               properties:
                 at: {type: string, format: date-time, description: Defaults to now; more than 5 minutes in the future is rejected}
                 percent: {type: number, minimum: 0, maximum: 1000}
+                lanes:
+                  type: integer
+                  deprecated: true
+                  description: Deprecated and ignored, accepted whatever it holds so older callers still work. The keeper stamps each reading with the Claude lanes running in its ledger; the stamp comes back as lanes and lanes_source on the stored reading
                 source: {type: string, enum: [typed], description: empty means typed; pasted and account return 501}
       responses:
-        "200": {description: Appended; the stored record is returned}
+        "200":
+          description: Appended; the stored reading is returned, carrying the lane stamp
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UsageReading"}
         "400": {description: Invalid reading, or an unknown source}
         "403": {description: Missing the usage write capability}
         "501": {description: source is planned but not built yet (pasted, account)}
@@ -5701,14 +5724,30 @@ paths:
       parameters:
         - {name: variant, in: query, required: false, schema: {type: string, enum: [pace-gauge, lane-planner, burn-ledger, all]}}
         - {name: policy, in: query, required: false, schema: {type: string, enum: [use-all, pace, finish-early]}}
-        - {name: lanes, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - name: lanes
+          in: query
+          required: false
+          schema: {type: integer, minimum: 0}
+          description: The what-if lane count (0 included). The advice plans with this many Claude lanes for this call only; it is not saved and does not change how many lanes are running. Without it the advice uses the lanes running now. The count the ledger reports is returned as lanes_running_now
         - name: cost
           in: query
           required: false
           schema: {type: number, minimum: 0}
           description: Per-task cost override (points/week) for the finish-early estimate
       responses:
-        "200": {description: The advice (numbers plus the selected rendering); carries X-Usage-Stale / X-Usage-Copied-At when the series is stale}
+        "200":
+          description: The advice (numbers plus the selected rendering); carries X-Usage-Stale / X-Usage-Copied-At when the series is stale
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lanes_running_now:
+                    type: integer
+                    nullable: true
+                    description: The Claude lane count in the capacity ledger at the moment of the call; null when no ledger is wired. Kept apart from lanes_stamped (the stamp on the newest usable reading) and what_if_lanes (the count asked for with the lanes parameter)
+                  lanes_stamped: {type: integer, nullable: true, description: The lane count stamped on the newest reading whose lanes_source is live, recorded or current; null when no reading has one}
+                  what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
   /api/budget:
@@ -6462,6 +6501,21 @@ components:
         id: {type: string, description: "The Automaton id, task id or registry row key; empty for a proposal or no context"}
         doc_path: {type: string, description: "A proposal's repository-relative path; empty when the stored path is not repository-relative"}
         viewer_url: {type: string, description: "The in-app documents viewer link for a proposal that is a markdown file inside the served docs tree (for example /diagrams.html#docs/plans/plan.md); empty for any other path"}
+    UsageReading:
+      type: object
+      description: One usage reading in the shared series.
+      properties:
+        id: {type: string}
+        at: {type: string, format: date-time}
+        percent: {type: number}
+        spend_usd: {type: number}
+        session_percent: {type: number}
+        lanes: {type: integer, description: "The Claude lane count the keeper stamped on the reading; absent when lanes_source is unavailable"}
+        lanes_source:
+          type: string
+          enum: [live, recorded, current, unavailable, typed]
+          description: "Where the lane count came from: live (the ledger count at the clock), recorded (an earlier time the lane history covers), current (an earlier time the history does not cover, so the ledger count now), unavailable (no ledger wired; no count), typed (a reading stored before the stamp existed; kept as it was and never feeds the advice)"
+        source: {type: string}
     LaneFillStatus:
       type: object
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -227,7 +228,6 @@ func TestStoreAppendValidation(t *testing.T) {
 		"percent above limit":     {At: at, Percent: fptr(1000.1)},
 		"negative spend":          {At: at, SpendUSD: fptr(-1)},
 		"session percent too big": {At: at, Percent: fptr(10), SessionPercent: fptr(2000)},
-		"negative lanes":          {At: at, Percent: fptr(10), Lanes: iptr(-1)},
 		"no time":                 {Percent: fptr(10)},
 		"six minutes ahead":       {At: storeTestNow.Add(6 * time.Minute), Percent: fptr(10)},
 	}
@@ -562,5 +562,48 @@ func TestStoreConcurrentSameTimestamp(t *testing.T) {
 	wg.Wait()
 	if n := len(s.List(time.Time{})); n != 1 {
 		t.Fatalf("same timestamp must leave one reading, got %d", n)
+	}
+}
+
+// TestStoreAcceptsRequestLanes: validateReading no longer rejects a lanes value, older
+// callers still send one; a bare count with no source is stored as typed.
+func TestStoreAcceptsRequestLanes(t *testing.T) {
+	clock := newFakeClock(storeTestNow)
+	s, _ := openTestStore(t, t.TempDir(), clock)
+	got, err := s.Append(Reading{At: storeTestNow.Add(-time.Hour), Percent: fptr(10), Lanes: iptr(-1), Source: SourceTyped})
+	if err != nil {
+		t.Fatalf("Append with lanes: %v", err)
+	}
+	if got.Lanes == nil || *got.Lanes != -1 || got.LanesSource != LanesTyped {
+		t.Fatalf("stored lanes = %v source %q, want the value kept with source typed", got.Lanes, got.LanesSource)
+	}
+}
+
+// TestStoreLegacyTypedLanesLoad: a reading stored before the stamp, with a typed lane count
+// and no lanes_source, loads with source typed and its value unchanged.
+func TestStoreLegacyTypedLanesLoad(t *testing.T) {
+	dir := t.TempDir()
+	clock := newFakeClock(storeTestNow)
+	s, _ := openTestStore(t, dir, clock)
+	at := storeTestNow.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+	legacy := `{"version":` + strconv.Itoa(StoreSchemaVersion) + `,"account":{"readings":[` +
+		`{"id":"old1","at":"` + at + `","percent":40,"lanes":2,"source":"typed"},` +
+		`{"id":"old2","at":"` + storeTestNow.Add(-time.Hour).UTC().Format(time.RFC3339) + `","percent":45,"source":"typed"}]}}`
+	if err := os.WriteFile(s.FilePath(), []byte(legacy), 0o600); err != nil {
+		t.Fatalf("write legacy file: %v", err)
+	}
+	reopened, rec := openTestStore(t, dir, clock)
+	if rec.count() != 0 {
+		t.Fatalf("legacy file logged: %v", rec.lines)
+	}
+	got := reopened.Snapshot().Account.Readings
+	if len(got) != 2 {
+		t.Fatalf("readings = %+v", got)
+	}
+	if got[0].Lanes == nil || *got[0].Lanes != 2 || got[0].LanesSource != LanesTyped {
+		t.Fatalf("legacy reading lanes = %v source %q, want 2 typed", got[0].Lanes, got[0].LanesSource)
+	}
+	if got[1].Lanes != nil || got[1].LanesSource != "" {
+		t.Fatalf("reading without lanes = %v source %q, want untouched", got[1].Lanes, got[1].LanesSource)
 	}
 }

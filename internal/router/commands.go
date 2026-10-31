@@ -510,14 +510,15 @@ type Command struct {
 	// CmdUsage fields (the usage calculator's comm grammar). UsageVerb is
 	// one of "advice", "reading", "extra", "work" or "invalid"; "" is a
 	// bare `usage`, answered with the advice, as is "advice".
-	UsageVerb    string
-	UsageVariant string   // advice: variant=<one of pace-gauge|burn-ledger|lane-planner|weekly-trend>
-	UsagePolicy  string   // advice: policy=<one of pace|pace-with-safety|burn|lane-budget|use-all|finish-early>
-	UsageLanes   int      // advice / reading: lanes=
-	UsagePercent float64  // reading: the weekly percentage
-	UsageSession *float64 // reading: session= (the secondary percentage)
-	UsagePoints  float64  // extra / work: the points figure
-	UsageClear   bool     // work: clear the typed figure
+	UsageVerb     string
+	UsageVariant  string   // advice: variant=<one of pace-gauge|burn-ledger|lane-planner|weekly-trend>
+	UsagePolicy   string   // advice: policy=<one of pace|pace-with-safety|burn|lane-budget|use-all|finish-early>
+	UsageLanes    int      // advice: lanes= (the what-if count; 0 is valid)
+	UsageLanesSet bool     // advice: lanes= was given
+	UsagePercent  float64  // reading: the weekly percentage
+	UsageSession  *float64 // reading: session= (the secondary percentage)
+	UsagePoints   float64  // extra / work: the points figure
+	UsageClear    bool     // work: clear the typed figure
 
 	// BL353 — schedule targeting fields.
 	SessionName  string // for schedule: resolve session by name at fire time
@@ -1893,8 +1894,8 @@ usage_backoff clear [backend|all]  clear one back-off, or all (default)
 usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
 budget [status] [<llm>]          per-LLM dollar spend, ceiling, window end and rollover
 usage                            account usage calculator: verdict, lanes, advice
-usage advice [variant=V] [...]   advice with a per-call variant / policy / lane override
-usage reading <pct> [..]         store a typed weekly percent (optionally with lanes and session percent)
+usage advice [variant=V] [...]   advice with a per-call variant / policy override and a what-if lanes=N
+usage reading <pct> [..]         store a typed weekly percent (optionally with a session percent; lanes=N is ignored)
 usage extra <points>             set the bought extra credit
 usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
@@ -1946,34 +1947,29 @@ func parseBudget(rest string) Command {
 
 // usageKV parses the "key=value" tail tokens shared by the usage calculator's
 // verbs. Recognized keys (case-insensitive, like the verbs): variant, policy,
-// lanes, session. A duplicate or unknown key, or a lanes / session value
-// that is not a usable number, makes the form invalid; the result is nil so
-// the caller can reject the form. Values pass through verbatim.
-func usageKV(tokens []string) (out map[string]string, lanes int, ok bool) {
+// lanes, session. A duplicate or unknown key, or an empty value, makes the
+// form invalid; the result is nil so the caller can reject the form. Values
+// pass through verbatim: lanes is validated only by the advice, because a
+// reading ignores it.
+func usageKV(tokens []string) (out map[string]string, ok bool) {
 	out = make(map[string]string, len(tokens))
 	for _, tok := range tokens {
 		key, val, found := strings.Cut(tok, "=")
 		if !found || val == "" {
-			return nil, 0, false
+			return nil, false
 		}
 		key = strings.ToLower(key)
 		if _, dup := out[key]; dup {
-			return nil, 0, false
+			return nil, false
 		}
 		switch key {
-		case "variant", "policy", "session":
+		case "variant", "policy", "session", "lanes":
 			out[key] = val
-		case "lanes":
-			n, err := strconv.Atoi(val)
-			if err != nil || n <= 0 {
-				return nil, 0, false
-			}
-			lanes = n
 		default:
-			return nil, 0, false
+			return nil, false
 		}
 	}
-	return out, lanes, true
+	return out, true
 }
 
 func usageNumber(tok string) (float64, bool) {
@@ -2001,7 +1997,7 @@ func parseUsage(rest string) Command {
 	switch strings.ToLower(fields[0]) {
 	case "advice":
 		cmd.UsageVerb = "advice"
-		kv, lanes, ok := usageKV(fields[1:])
+		kv, ok := usageKV(fields[1:])
 		if !ok {
 			cmd.UsageVerb = "invalid"
 			return cmd
@@ -2013,7 +2009,16 @@ func parseUsage(rest string) Command {
 		}
 		cmd.UsageVariant = kv["variant"]
 		cmd.UsagePolicy = kv["policy"]
-		cmd.UsageLanes = lanes
+		if v, present := kv["lanes"]; present {
+			// The what-if lane count: zero is a valid what-if.
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 0 {
+				cmd.UsageVerb = "invalid"
+				return cmd
+			}
+			cmd.UsageLanes = n
+			cmd.UsageLanesSet = true
+		}
 		return cmd
 	case "reading":
 		if len(fields) < 2 {
@@ -2026,12 +2031,12 @@ func parseUsage(rest string) Command {
 			return cmd
 		}
 		cmd.UsagePercent = pct
-		kv, lanes, ok := usageKV(fields[2:])
+		// A lanes value on a reading is ignored, so it is never validated.
+		kv, ok := usageKV(fields[2:])
 		if !ok {
 			cmd.UsageVerb = "invalid"
 			return cmd
 		}
-		cmd.UsageLanes = lanes
 		sess, present := kv["session"]
 		if present {
 			s, ok := usageNumber(sess)

@@ -54,6 +54,10 @@ type usageSeriesCache struct {
 	// store is this daemon's local record behind the shared series (decision 6:
 	// the typed remaining-work figure is daemon-local). Built with the series.
 	store *usagecalc.Store
+	// lanes is the Claude lane history the keeper's stamper reads and the sampler
+	// writes; sampling is set once the sampler is running.
+	lanes    *usagecalc.LaneHistory
+	sampling bool
 }
 
 func (s *Server) usageSeriesCache() *usageSeriesCache {
@@ -84,7 +88,8 @@ func (s *Server) usageSeries() (*usagecalc.SharedSeries, error) {
 	return series, nil
 }
 
-func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, *usagecalc.Store, error) {
+// usageDataDir is the data directory the usage store and the lane history live in.
+func (s *Server) usageDataDir() string {
 	dataDir := ""
 	if s.cfg != nil {
 		dataDir = s.cfg.DataDir
@@ -94,11 +99,23 @@ func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, *usag
 			dataDir = filepath.Join(home, ".datawatch")
 		}
 	}
-	store, err := usagecalc.OpenStore(dataDir, time.Now)
+	return dataDir
+}
+
+// buildUsageSeries opens the store and wires the keeper's lane stamper: the ledger count
+// now for a reading at the clock, the lane history for an earlier one. The caller holds the
+// series cache lock.
+func (s *Server) buildUsageSeries(keeper string) (*usagecalc.SharedSeries, *usagecalc.Store, error) {
+	store, err := usagecalc.OpenStore(s.usageDataDir(), time.Now)
 	if err != nil {
 		return nil, nil, err
 	}
-	return usagecalc.NewSharedSeries(store, keeper, s.usagePeerLookup), store, nil
+	history, err := s.usageLaneHistoryLocked(s.usageSeriesCache())
+	if err != nil {
+		return nil, nil, err
+	}
+	stamp := usagecalc.NewLaneStamper(usageLaneCounter{s: s}, history)
+	return usagecalc.NewSharedSeries(store, keeper, s.usagePeerLookup, usagecalc.WithLaneStamper(stamp)), store, nil
 }
 
 // usagePeerLookup resolves a registered peer's REST API, the PeerLookup seam the
@@ -170,11 +187,19 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, usageCapabilityWrite) {
 		return
 	}
-	var in usagecalc.Reading
-	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&in); err != nil {
+	// An older caller may still send lanes. It is decoded as raw JSON, so it is accepted
+	// whatever it holds, and it is not passed on: the keeper stamps the lane count from its
+	// own ledger.
+	var body struct {
+		usagecalc.Reading
+		Lanes json.RawMessage `json:"lanes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
 		http.Error(w, "invalid reading: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	in := body.Reading
+	in.Lanes, in.LanesSource = nil, ""
 	if status, msg := usageSourceGate(in.Source); status != http.StatusOK {
 		http.Error(w, msg, status)
 		return
@@ -192,29 +217,14 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
-	// As keeper the store appends directly and hands back the stored reading
-	// (with its final time and id) for the audit entry; as a peer the read is
-	// forwarded and the keeper's handler emits the single entry.
+	// As keeper the series stamps the lane count and appends to the store, handing back the
+	// stored reading (with its final time, id and stamp) for the audit entry; as a peer the
+	// read is forwarded and the keeper's handler emits the single entry. A keeper on the old
+	// {"ok":true} shape still confirms the write; the reply just omits the reading.
 	var stored *usagecalc.Reading
-	if series.Keeper() == "" {
-		cache := s.usageSeriesCache()
-		cache.mu.Lock()
-		store := cache.store
-		cache.mu.Unlock()
-		rec, aerr := store.Append(in)
-		err = aerr
-		if aerr == nil {
-			stored = &rec
-		}
-	} else {
-		// As a peer the keeper's answer carries the stored reading (id, final time).
-		// A keeper on the old {"ok":true} shape still confirms the write; the reply
-		// just omits the reading.
-		var rec usagecalc.Reading
-		rec, err = series.AddReading(r.Context(), in)
-		if err == nil {
-			stored = &rec
-		}
+	rec, err := series.AddReading(r.Context(), in)
+	if err == nil && (series.Keeper() == "" || rec.ID != "") {
+		stored = &rec
 	}
 	switch {
 	case err == nil:

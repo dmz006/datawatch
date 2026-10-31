@@ -749,3 +749,34 @@ func TestFormatPoints(t *testing.T) {
 		t.Errorf("lane wording is wrong")
 	}
 }
+
+func TestAdviseLeavesLaneNumbersToTheService(t *testing.T) {
+	// Advise is pure and has no ledger: the three lane numbers are the service's to fill,
+	// and the running count serialises as null rather than 0.
+	a := Advise(workedExample(t))
+	if a.LanesRunningNow != nil || a.LanesStamped != nil || a.WhatIfLanes != nil {
+		t.Errorf("lane numbers set by Advise: %v %v %v", a.LanesRunningNow, a.LanesStamped, a.WhatIfLanes)
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, k := range []string{"lanes_running_now", "lanes_stamped"} {
+		if v, ok := m[k]; !ok || string(v) != "null" {
+			t.Errorf("%s: got %s (present %v); want null", k, v, ok)
+		}
+	}
+	if _, ok := m["what_if_lanes"]; ok {
+		t.Errorf("what_if_lanes is present without a what-if")
+	}
+	n := 2
+	a.LanesRunningNow = &n
+	raw, _ = json.Marshal(a)
+	if !strings.Contains(string(raw), `"lanes_running_now":2`) {
+		t.Errorf("lanes_running_now 2 not serialised: %s", raw)
+	}
+}

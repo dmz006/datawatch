@@ -8,7 +8,9 @@
 //	GET    /api/usage/advice            usage:read   one AdviceResult; the variant=,
 //	                                                policy=, lanes= and cost= query
 //	                                                parameters override the stored
-//	                                                settings for this one call
+//	                                                settings for this one call; lanes=
+//	                                                is a what-if (0 is honoured) and is
+//	                                                never saved
 //	PUT    /api/usage/remaining-work    usage:write  set the operator's typed remaining
 //	                                                work: {"points": 15.5}
 //	DELETE /api/usage/remaining-work    usage:write  remove the typed figure
@@ -122,7 +124,8 @@ func (s *Server) AttachUsageCalculator(queue usagecalc.QueueCounter) error {
 		}
 		return UsageCalculatorSettings(s.cfg.Usage.Calculator)
 	}
-	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue))
+	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue,
+		usagecalc.WithLiveLanes(usageLaneCounter{s: s})))
 	return nil
 }
 
@@ -165,7 +168,9 @@ func (s *Server) handleUsageAdvice(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "lanes: a whole number of 0 or more is needed", http.StatusBadRequest)
 			return
 		}
-		o.Lanes = n
+		// An explicit lanes=0 is a what-if of zero lanes; only a missing parameter
+		// leaves Lanes nil.
+		o.Lanes = &n
 	}
 	if v := strings.TrimSpace(r.URL.Query().Get("cost")); v != "" {
 		n, err := strconv.ParseFloat(v, 64)

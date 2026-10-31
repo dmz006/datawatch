@@ -5,7 +5,7 @@
 // the CLI never recomputes or rewords anything.
 //
 //	 usage advice [--variant V] [--policy P] [--lanes N] [--json]
-//	 usage reading add --percent N | --spend-usd N [--at RFC3339] [--session-percent N] [--lanes N]
+//	 usage reading add --percent N | --spend-usd N [--at RFC3339] [--session-percent N] [--lanes N (deprecated, ignored)]
 //	 usage reading list
 //	 usage reading delete <id>
 //	 usage extra-credit <points>
@@ -65,7 +65,8 @@ func newUsageAdviceCmd() *cobra.Command {
 		Long: "GETs the reference model's AdviceResult from the daemon and prints it as the\n" +
 			"CLI text form: one sentence per field, in the design doc's field order.\n" +
 			"--variant and --policy pick one call each and are validated against the\n" +
-			"calculator's own variant and policy lists; they are not stored.",
+			"calculator's own variant and policy lists; they are not stored.\n" +
+			"--lanes is the what-if lane count (0 included); it is not saved.",
 		Args: cobra.NoArgs,
 		RunE: func(c *cobra.Command, _ []string) error {
 			q := url.Values{}
@@ -123,7 +124,7 @@ func newUsageAdviceCmd() *cobra.Command {
 		"display variant for this one call: pace-gauge, lane-planner, burn-ledger or all (validated; not stored)")
 	f.StringVar(&policy, "policy", "",
 		"policy for this one call: use-all, pace or finish-early (validated; not stored)")
-	f.IntVar(&lanes, "lanes", 0, "advise for this many running lanes (0 or more; default: the daemon's count)")
+	f.IntVar(&lanes, "lanes", 0, "what-if lane count: advise as if this many lanes were running (0 or more; not saved; default: the lanes the ledger counts)")
 	f.BoolVar(&asJSON, "json", false, "print the raw AdviceResult body as JSON instead of the text form")
 	return c
 }
@@ -144,7 +145,7 @@ func newUsageReadingCmd() *cobra.Command {
 func newUsageReadingAddCmd() *cobra.Command {
 	var percent, spendUSD, sessionPercent float64
 	var at string
-	var lanes int
+	var lanes int // deprecated and ignored: the daemon stamps the lanes
 	c := &cobra.Command{
 		Use:   "add --percent N | --spend-usd N",
 		Short: "Append a weekly reading: a percentage, or a spend figure with the session percent",
@@ -179,13 +180,6 @@ func newUsageReadingAddCmd() *cobra.Command {
 				sp := sessionPercent
 				r.SessionPercent = &sp
 			}
-			if c.Flags().Changed("lanes") {
-				if lanes < 0 {
-					return fmt.Errorf("lanes must be 0 or more")
-				}
-				l := lanes
-				r.Lanes = &l
-			}
 			t := time.Now().UTC()
 			if s := strings.TrimSpace(at); s != "" {
 				v, err := time.Parse(time.RFC3339, s)
@@ -208,7 +202,8 @@ func newUsageReadingAddCmd() *cobra.Command {
 	f.Float64Var(&spendUSD, "spend-usd", 0, "the spend figure in dollars, 0 or more (exactly one of --percent / --spend-usd)")
 	f.StringVar(&at, "at", "", "when the reading was taken, RFC3339 (default: now)")
 	f.Float64Var(&sessionPercent, "session-percent", 0, "the in-session percentage, secondary (0 or more)")
-	f.IntVar(&lanes, "lanes", 0, "the lanes running when the reading was taken (0 or more)")
+	f.IntVar(&lanes, "lanes", 0, "ignored: the daemon stamps each reading with the Claude lanes running in the ledger")
+	_ = f.MarkDeprecated("lanes", "the daemon stamps each reading with the Claude lanes running; the value is ignored and not sent")
 	return c
 }
 
