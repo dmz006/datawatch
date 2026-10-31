@@ -23,6 +23,12 @@ type SummaryView struct {
 	// CIWatch is copied unchanged from the PRD. It is small, and it is the
 	// automaton's own record of whether CI passed for its pushed commit.
 	CIWatch *CIWatchResult `json:"ci_watch,omitempty"`
+	// PushState / PushWarning surface the PRD's push outcome even in the
+	// trimmed summary view, so list reads and the MCP default detail
+	// ("summary") show pushed / not pushed state without a full fetch.
+	// Empty when no push outcome was recorded yet.
+	PushState   string `json:"push_state,omitempty"`
+	PushWarning string `json:"push_warning,omitempty"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -55,6 +61,8 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Stories:       make([]StorySummary, 0, len(prd.Story)),
 		StoryCount:    len(prd.Story),
 		CIWatch:       prd.CIWatch,
+		PushState:     prd.Git.PushState,
+		PushWarning:   prd.Git.PushWarning,
 	}
 
 	for i := range prd.Story {

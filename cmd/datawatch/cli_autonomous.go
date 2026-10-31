@@ -263,11 +263,60 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if detail != "" {
 				path += "?" + url.Values{"detail": {detail}}.Encode()
 			}
-			return daemonGet(path)
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if len(body) > 0 {
+				prettyPrint(body)
+			}
+			if line := prdPushLine(body); line != "" {
+				fmt.Println(line)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary, tasks or full (default: the daemon's full view)")
 	return cmd
+}
+
+// prdPushLine renders the one-line git push status for prd-get from the
+// daemon's reply JSON: "push: pushed <ref>@<sha>" after a successful push,
+// "push: NOT PUSHED — <reason>" after a refused one, and "" when no push
+// outcome was recorded (nothing to report). It reads the push state from
+// the PRD's git object (full detail) or from the top-level push_state /
+// push_warning of the trimmed summary view.
+func prdPushLine(prdJSON []byte) string {
+	var v struct {
+		PushState   string `json:"push_state"`
+		PushedRef   string `json:"pushed_ref"`
+		PushedSHA   string `json:"pushed_sha"`
+		PushWarning string `json:"push_warning"`
+		Git         struct {
+			PushState   string `json:"push_state"`
+			PushedRef   string `json:"pushed_ref"`
+			PushedSHA   string `json:"pushed_sha"`
+			PushWarning string `json:"push_warning"`
+		} `json:"git"`
+	}
+	if err := json.Unmarshal(prdJSON, &v); err != nil {
+		return ""
+	}
+	state, ref, sha, warning := v.Git.PushState, v.Git.PushedRef, v.Git.PushedSHA, v.Git.PushWarning
+	if state == "" {
+		state, ref, sha, warning = v.PushState, v.PushedRef, v.PushedSHA, v.PushWarning
+	}
+	switch state {
+	case "pushed":
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		return fmt.Sprintf("push: pushed %s@%s", ref, sha)
+	case "not_pushed":
+		return "push: NOT PUSHED — " + warning
+	default:
+		return ""
+	}
 }
 
 func newAutonomousPRDPlanCmd() *cobra.Command {

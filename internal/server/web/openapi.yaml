@@ -996,7 +996,13 @@ paths:
       summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: PRD list (newest first); each item carries the PRD's git state including its push outcome
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousPrdList'
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate
@@ -1018,9 +1024,26 @@ paths:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
       summary: Fetch one PRD with story+task tree
+      description: |
+        The `detail` query picks the shape: summary (ids, titles, statuses
+        and counts; still carries `push_state` + `push_warning` at the top
+        level of the reply), tasks, or full (everything, including specs,
+        logs and the PRD's git state with its push outcome:
+        `push_state`, `pushed_ref`, `pushed_sha`, `pushed_at`,
+        `push_warning`).
       operationId: autonomousPRDGet
       tags: [Autonomous]
-      responses: {"200": {description: OK}, "404": {description: Not found}}
+      parameters:
+        - {name: detail, in: query, required: false, schema: {type: string, enum: [summary, tasks, full]}, description: "Response level (default: full)")}
+      responses:
+        "200":
+          description: The PRD (full detail shown; summary/trims are subsets of it)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutonomousPrdListItem'
+        "404":
+          description: Not found
     delete:
       summary: Cancel + archive a PRD
       description: |
@@ -2630,6 +2653,57 @@ components:
             example: "unauthorized"
 
   schemas:
+    AutonomousPrdGit:
+      type: object
+      description: |
+        PRD-level git workflow state, returned as `git` inside an
+        /api/autonomous/prds item. Provider/branch/PR URL are
+        executor-managed; the push fields record the PRD's push outcome.
+      properties:
+        provider: {type: string, description: 'git provider ("<none>" when unset)'}
+        url: {type: string, description: remote URL}
+        base_branch: {type: string}
+        branch: {type: string, description: worktree branch, `automaton/<sha8>`}
+        auto_pr: {type: boolean}
+        pr_url: {type: string, description: created PR, if any}
+        push_on_complete: {type: string, enum: ['', never, branch, default_branch], description: 'per-PRD push policy override; "" clears it'}
+        push_state:
+          type: string
+          enum: [pushed, not_pushed]
+          description: last recorded push outcome; absent when no push was attempted yet
+        pushed_ref: {type: string, description: ref last successfully pushed (push_state=pushed only)}
+        pushed_sha: {type: string, description: HEAD SHA last successfully pushed (push_state=pushed only), 40 hex}
+        pushed_at: {type: string, format: date-time, description: UTC time of the last successful push (push_state=pushed only)}
+        push_warning: {type: string, description: human reason no push was made (push_state=not_pushed only)}
+
+    AutonomousPrdListItem:
+      type: object
+      description: One PRD as listed by GET /api/autonomous/prds.
+      required: [id, status]
+      properties:
+        id: {type: string, description: '8-hex PRD id'}
+        spec: {type: string}
+        title: {type: string}
+        status: {type: string}
+        project_dir: {type: string}
+        project_profile: {type: string}
+        cluster_profile: {type: string}
+        rev: {type: integer}
+        git: {$ref: '#/components/schemas/AutonomousPrdGit'}
+        stories: {type: array, items: {type: object}, description: story+task tree (full view)}
+        ci_watch: {type: object, description: ci-watch completion guardrail result, when it ran}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
+    AutonomousPrdList:
+      type: object
+      description: Response of GET /api/autonomous/prds.
+      required: [prds]
+      properties:
+        prds:
+          type: array
+          items: {$ref: '#/components/schemas/AutonomousPrdListItem'}
+
     SessionAutomatonDetail:
       type: object
       description: |
