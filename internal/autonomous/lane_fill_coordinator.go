@@ -339,6 +339,9 @@ func (c *Coordinator) laneFillAudit(rec *laneFillRecords, e *laneFillEntry) {
 	if d.Error != "" {
 		details["error"] = d.Error
 	}
+	if d.EligibilityReason != "" {
+		details["eligibility_reason"] = d.EligibilityReason
+	}
 	if d.WaitReason != "" {
 		// The verifier-wait basis of the decision, when it rests on one: the
 		// shadow record says why the planner thought the lane was free, not
@@ -356,6 +359,7 @@ type laneFillRaw struct {
 	pref            string
 	priority        int
 	created         time.Time
+	updated         time.Time
 	automationID    string
 	backend, model  string
 	// worker is the task whose backend stands for the Automaton's worker: one
@@ -396,7 +400,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 			r := laneFillRaw{
 				id: p.ID, title: p.Title, spec: p.Spec, status: p.Status,
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
-				automationID: p.AutomationID, backend: p.Backend, model: p.Model,
+				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
 				template: p.IsTemplate,
 			}
 			picked := false
@@ -511,16 +515,25 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			continue // a decompose lane fill started is still running
 		}
 		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec}
+		holdCode, holdText := PRDHoldCode(prd, lookup)
 		cand := LaneFillCandidate{
 			ID: r.id, Title: r.title, Status: NormalizePRDStatus(r.status),
 			LanePreference: r.pref, Backend: backend, Priority: r.priority, CreatedAt: r.created,
-			HoldReason:           PRDHoldReason(prd, lookup),
+			UpdatedAt:            r.updated,
+			HoldReason:           holdText,
+			HoldCode:             holdCode,
 			AllTasksDone:         r.tasks > 0 && r.tasks == r.tasksDone,
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
 		cands = append(cands, cand)
+	}
+	// Apply the refusal rules once, here, with no store lock held: every later
+	// reader (the planner, the queued count, the alerts) honours the result.
+	for i := range cands {
+		code, text := EvaluateLaneFillEligibility(cfg, cands[i], now)
+		cands[i].Refusal = LaneFillRefusal{Code: code, Text: text}
 	}
 	for id, t := range decomposing {
 		inFlight[id] = t

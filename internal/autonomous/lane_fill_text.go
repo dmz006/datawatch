@@ -80,10 +80,13 @@ func laneFillDecisionText(d LaneFillDecision) string {
 	if d.PRDID != "" {
 		s += " " + d.PRDID
 	}
+	if d.EligibilityReason != "" {
+		s += " [" + d.EligibilityReason + "]"
+	}
 	if d.Reason != "" {
 		s += ": " + d.Reason
 	}
-	if d.Blocker != "" {
+	if d.Blocker != "" && d.Blocker != d.Reason {
 		s += " (blocked: " + d.Blocker + ")"
 	}
 	if d.WaitReason != "" {

@@ -6,6 +6,7 @@ package autonomous
 
 import (
 	"testing"
+	"time"
 )
 
 // Fake views the checks read from, in place of the coordinator, the
@@ -387,5 +388,30 @@ func TestSupervisorWatchTriageNamesFailedTask(t *testing.T) {
 	p.Triage.TaskID = "t-gone"
 	if supervisorWatchTriageNamesFailedTask(p, TaskFailed) {
 		t.Error("a task id that names no task of the Automaton must not match")
+	}
+}
+
+// TestSupervisorWatchWorkIdleLaneIgnoresStaleQueuedWork: when the only queued
+// work is refused as stale, the lane fill status counts none of it as
+// eligible, so CheckIdleLane raises no idle_lane_eligible_work finding. The
+// same work, fresh, does raise one.
+func TestSupervisorWatchWorkIdleLaneIgnoresStaleQueuedWork(t *testing.T) {
+	run := func(t *testing.T, age time.Duration) []SupervisorWatchFinding {
+		t.Helper()
+		h := newLaneFillHarness(t, "shadow")
+		h.c.SetReady()
+		h.now = time.Now().Add(age)
+		h.c.SetLaneFillEvidenceSource(&laneFillEvidenceFake{ev: PoolEvidence{CheckedAt: h.now}})
+		h.addPRD("queued work", PRDApproved, "", "pi-prompt")
+		h.poll()
+		st := h.status()
+		w := NewSupervisorWatchWork(nil, &fakeSupervisorWatchLaneFill{st: st, ok: true}, nil)
+		return w.CheckIdleLane()
+	}
+	if got := run(t, time.Minute); len(got) == 0 {
+		t.Fatal("control: fresh queued work on idle lanes must raise a finding")
+	}
+	if got := run(t, 200*time.Hour); len(got) != 0 {
+		t.Fatalf("stale queued work must not raise idle_lane_eligible_work, got %+v", got)
 	}
 }

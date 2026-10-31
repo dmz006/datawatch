@@ -92,8 +92,17 @@ type LaneFillCandidate struct {
 	Backend   string
 	Priority  int
 	CreatedAt time.Time
+	// UpdatedAt is when the Automaton last changed; the stale rule reads it,
+	// falling back to CreatedAt when it is zero.
+	UpdatedAt time.Time
 	// HoldReason is empty when nothing holds the Automaton; see PRDHoldReason.
-	HoldReason   string
+	// HoldCode is its refusal code (see PRDHoldCode); empty with a HoldReason
+	// means held.
+	HoldReason string
+	HoldCode   string
+	// Refusal is filled by the snapshot from EvaluateLaneFillEligibility. When
+	// set, the candidate is never started or decomposed.
+	Refusal      LaneFillRefusal
 	AllTasksDone bool
 	// NeedsMergeFlag: the finished work still needs a merge.
 	NeedsMergeFlag bool
@@ -154,6 +163,9 @@ type LaneFillDecision struct {
 	Title    string         `json:"title"`
 	Reason   string         `json:"reason"`
 	Blocker  string         `json:"blocker"`
+	// EligibilityReason is the stable refusal code (see the codes in
+	// lane_fill_eligibility.go) on a blocked decision for a refused Automaton.
+	EligibilityReason string `json:"eligibility_reason,omitempty"`
 	// WaitReason, when set, names the basis a decision rests on: the reason
 	// the lane's occupant reports while waiting on a verifier slot (see
 	// LaneOccupant), which is what made the lane count available. So the
@@ -369,7 +381,10 @@ func startReason(cfg LaneFillConfig, lane Lane, c LaneFillCandidate, pref string
 // whose ready queue is short.
 //
 // Decisions come out in a fixed order: lane decisions (GPU lanes, then Claude
-// lanes), blocked Automata, merge reports, decompose-ahead (GPU, then Claude).
+// lanes), refused Automata, other blocked Automata, merge reports,
+// decompose-ahead (GPU, then Claude). A refused Automaton (held, stale) is
+// never picked, counted or decomposed; it gets one blocked decision carrying
+// its eligibility_reason code.
 func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	cfg := in.Config
 	mode := LaneFillMode(cfg.EffectiveMode())
@@ -389,11 +404,15 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	// Classify every candidate.
 	var ready, drafts, merges []LaneFillCandidate
 	var exclusions []laneFillExclusion
+	var refused []LaneFillCandidate
 	for _, c := range in.Candidates {
 		if occupied[c.ID] {
 			continue
 		}
 		src, why := ClassifyLaneFillCandidate(c)
+		if src == LaneFillSourceNone && laneFillCandidateRefusal(c).Refused() {
+			refused = append(refused, c)
+		}
 		switch src {
 		case LaneFillSourceReady:
 			ready = append(ready, c)
@@ -412,6 +431,15 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	laneFillOrder(merges)
 	sort.SliceStable(exclusions, func(i, j int) bool {
 		a, b := exclusions[i].cand, exclusions[j].cand
+		ar, br := statusRank(a.Status), statusRank(b.Status)
+		if ar != br {
+			return ar < br
+		}
+		return candidateBefore(a, b)
+	})
+
+	sort.SliceStable(refused, func(i, j int) bool {
+		a, b := refused[i], refused[j]
 		ar, br := statusRank(a.Status), statusRank(b.Status)
 		if ar != br {
 			return ar < br
@@ -521,6 +549,18 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 
 	var out []LaneFillDecision
 	out = append(out, laneDecisions...)
+
+	// One blocked decision per refused queued Automaton, with the stable
+	// refusal code, so the record shows what was kept out and why.
+	for _, c := range refused {
+		r := laneFillCandidateRefusal(c)
+		out = append(out, LaneFillDecision{
+			At: in.Now, Mode: mode, Action: LaneFillActionBlocked,
+			PRDID: c.ID, Title: c.Title,
+			Reason: r.Text, Blocker: r.Text, EligibilityReason: r.Code,
+			RepeatCount: 1, LastSeenAt: in.Now,
+		})
+	}
 
 	for _, c := range blockedPref {
 		out = append(out, LaneFillDecision{

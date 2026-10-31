@@ -2,9 +2,39 @@ package autonomous
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// This is the single home of the lane fill refusal codes. Every reason lane
+// fill has for refusing a queued Automaton is a constant in this one list; a
+// new rule adds its code here and nowhere else, so the status views, the
+// decision records and the audit trail all speak the same names.
+const (
+	// LaneFillReasonStale: a queued Automaton that has not been touched for
+	// longer than the stale limit (probes and old drafts).
+	LaneFillReasonStale = "stale"
+	// LaneFillReasonHeld: a HOLD line, the words "do not run" or "sequenced
+	// last", or a judge that timed out while the Automaton needs review.
+	LaneFillReasonHeld = "held"
+	// LaneFillReasonSequencedAfterUnshipped: the spec says it is sequenced
+	// after another Automaton that is not completed, or that resolves to no
+	// Automaton at all.
+	LaneFillReasonSequencedAfterUnshipped = "sequenced_after_unshipped"
+)
+
+// LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
+// code from the list above and a readable text. The zero value means not
+// refused.
+type LaneFillRefusal struct {
+	Code string `json:"code"`
+	Text string `json:"text"`
+}
+
+// Refused reports whether the refusal is set.
+func (r LaneFillRefusal) Refused() bool { return r.Code != "" }
 
 // LaneFillSource says which fill source a queued Automaton belongs to. The
 // sources are tried in this order for every idle lane.
@@ -48,36 +78,47 @@ var (
 const maxHoldRefChars = 80
 
 // PRDHoldReason returns why the Automaton must not be started, or the empty
-// string when nothing holds it. The title and the spec are searched, as data,
-// with regular expressions only: nothing in them is ever run. A hold is any of:
+// string when nothing holds it. It is the text half of PRDHoldCode; see there
+// for the rules.
+func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
+	_, text := PRDHoldCode(prd, lookup)
+	return text
+}
+
+// PRDHoldCode returns the refusal code and the readable text for an
+// Automaton that must not be started, or two empty strings when nothing holds
+// it. The title and the spec are searched, as data, with regular expressions
+// only: nothing in them is ever run. A hold is any of:
 //
-//   - a judge that timed out on every backend, while the PRD needs review;
-//   - a line starting with HOLD (any case);
-//   - the words "do not run";
-//   - the words "sequenced last";
+//   - a judge that timed out on every backend, while the PRD needs review
+//     (code held);
+//   - a line starting with HOLD (any case) (code held);
+//   - the words "do not run" (code held);
+//   - the words "sequenced last" (code held);
 //   - "sequenced after <ref>", where <ref> is an Automaton id or a title
 //     fragment that does not resolve, through lookup, to a completed
-//     Automaton. A ref that resolves to nothing counts as unshipped.
+//     Automaton (code sequenced_after_unshipped). A ref that resolves to
+//     nothing counts as unshipped.
 //
 // A nil lookup resolves nothing.
-func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
+func PRDHoldCode(prd *PRD, lookup PRDRefLookup) (code, text string) {
 	if prd == nil {
-		return ""
+		return "", ""
 	}
 	if judgeHoldHeld(prd) {
-		return "its judge timed out on every backend and it needs review"
+		return LaneFillReasonHeld, "its judge timed out on every backend and it needs review"
 	}
-	text := prd.Title + "\n" + prd.Spec
-	if holdLinePattern.MatchString(text) {
-		return "a line starts with HOLD"
+	body := prd.Title + "\n" + prd.Spec
+	if holdLinePattern.MatchString(body) {
+		return LaneFillReasonHeld, "a line starts with HOLD"
 	}
-	if doNotRunPattern.MatchString(text) {
-		return "the text says do not run"
+	if doNotRunPattern.MatchString(body) {
+		return LaneFillReasonHeld, "the text says do not run"
 	}
-	if sequencedLastPattern.MatchString(text) {
-		return "the text says sequenced last"
+	if sequencedLastPattern.MatchString(body) {
+		return LaneFillReasonHeld, "the text says sequenced last"
 	}
-	for _, m := range sequencedAfterPattern.FindAllStringSubmatch(text, -1) {
+	for _, m := range sequencedAfterPattern.FindAllStringSubmatch(body, -1) {
 		ref := firstNonEmpty(m[1], m[2], m[3])
 		ref = cleanHoldRef(ref)
 		if ref == "" {
@@ -87,10 +128,10 @@ func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
 			ref = strings.ToLower(ref)
 		}
 		if reason := unshippedRefReason(ref, lookup); reason != "" {
-			return reason
+			return LaneFillReasonSequencedAfterUnshipped, reason
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // cleanHoldRef trims a captured reference: surrounding space, a leading
@@ -126,17 +167,108 @@ func unshippedRefReason(ref string, lookup PRDRefLookup) string {
 	return ""
 }
 
+// laneFillQueuedStatus says the status is queued work: a draft, approved or
+// needs_review Automaton, the ones lane fill may refuse.
+func laneFillQueuedStatus(s PRDStatus) bool {
+	switch NormalizePRDStatus(s) {
+	case PRDDraft, PRDApproved, PRDNeedsReview:
+		return true
+	}
+	return false
+}
+
+// laneFillCandidateRefusal is the refusal in effect for a candidate: the one
+// the snapshot filled in, else a held refusal built from HoldReason (the
+// field a candidate carries when it was built without the evaluator), else
+// none. Only queued work is ever refused.
+func laneFillCandidateRefusal(c LaneFillCandidate) LaneFillRefusal {
+	if !laneFillQueuedStatus(c.Status) {
+		return LaneFillRefusal{}
+	}
+	if c.Refusal.Refused() {
+		return c.Refusal
+	}
+	if c.HoldReason != "" {
+		code := c.HoldCode
+		if code == "" {
+			code = LaneFillReasonHeld
+		}
+		return LaneFillRefusal{Code: code, Text: c.HoldReason}
+	}
+	return LaneFillRefusal{}
+}
+
+// laneFillExcludedText words the exclusion of a refused candidate for the
+// idle lane blocker.
+func laneFillExcludedText(id string, r LaneFillRefusal) string {
+	if r.Code == LaneFillReasonHeld || r.Code == LaneFillReasonSequencedAfterUnshipped {
+		return fmt.Sprintf("PRD %s: held: %s", id, r.Text)
+	}
+	return fmt.Sprintf("Automaton %s: %s: %s", id, r.Code, r.Text)
+}
+
+// EvaluateLaneFillEligibility applies the refusal rules to one candidate, in a
+// fixed order, and returns the code and text of the first that refuses it, or
+// two empty strings when the candidate is eligible. It is pure: the clock is
+// the now argument. The rules, in order:
+//
+//  1. held: the candidate carries a hold (HOLD line, do not run, sequenced
+//     last, a judge time-out, or sequenced after an unshipped Automaton);
+//  2. stale: a queued Automaton (draft, approved or needs_review) whose last
+//     update is older than the stale limit.
+//
+// Work that is not queued (running, finished, cancelled) is never refused.
+func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) (code, text string) {
+	if !laneFillQueuedStatus(c.Status) {
+		return "", ""
+	}
+	if c.HoldReason != "" {
+		code = c.HoldCode
+		if code == "" {
+			code = LaneFillReasonHeld
+		}
+		return code, c.HoldReason
+	}
+	if text := laneFillStaleText(cfg, c, now); text != "" {
+		return LaneFillReasonStale, text
+	}
+	return "", ""
+}
+
+// laneFillStaleText returns the stale refusal text, or "" when the candidate
+// is fresh, has no timestamp, or the rule is off (0 hours).
+func laneFillStaleText(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) string {
+	limit := cfg.EffectiveStaleAfterHours()
+	if limit <= 0 {
+		return ""
+	}
+	last := c.UpdatedAt
+	if last.IsZero() {
+		last = c.CreatedAt
+	}
+	if last.IsZero() {
+		return ""
+	}
+	age := now.Sub(last)
+	if age <= time.Duration(limit)*time.Hour {
+		return ""
+	}
+	return fmt.Sprintf("Automaton last updated %d hours ago, older than the %d hour stale limit",
+		int(math.Ceil(age.Hours())), limit)
+}
+
 // ClassifyLaneFillCandidate says which fill source the candidate belongs to.
 // When the candidate is queued work that is kept out, the source is
 // LaneFillSourceNone and excluded gives the reason; for work that is simply
 // not queued (running, completed, cancelled) both are empty.
 //
-//   - Source 1 (ready): status approved or needs_review, not held, not a
-//     member of an Automation (the Automation starts its members), not
-//     already running.
+//   - Source 1 (ready): status approved or needs_review, not refused (held,
+//     stale), not a member of an Automation (the Automation starts its
+//     members), not already running.
 //   - Source 2 (merge): every task done and the merge flag set. Reported
 //     only, whatever the status.
-//   - Source 3 (draft): status draft, not held, not a member of an Automation.
+//   - Source 3 (draft): status draft, not refused, not a member of an
+//     Automation.
 func ClassifyLaneFillCandidate(c LaneFillCandidate) (source LaneFillSource, excluded string) {
 	if c.AllTasksDone && c.NeedsMergeFlag {
 		return LaneFillSourceMerge, ""
@@ -150,8 +282,8 @@ func ClassifyLaneFillCandidate(c LaneFillCandidate) (source LaneFillSource, excl
 	default:
 		return LaneFillSourceNone, ""
 	}
-	if c.HoldReason != "" {
-		return LaneFillSourceNone, fmt.Sprintf("PRD %s: held: %s", c.ID, c.HoldReason)
+	if r := laneFillCandidateRefusal(c); r.Refused() {
+		return LaneFillSourceNone, laneFillExcludedText(c.ID, r)
 	}
 	if c.InAutomation {
 		return LaneFillSourceNone, fmt.Sprintf("PRD %s: member of an Automation, which starts it", c.ID)
