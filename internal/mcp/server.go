@@ -661,6 +661,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousProgressTrend(), tracked(s.handleAutonomousProgressTrend))
 	mcpSrv.AddTool(s.toolAutonomousLaneFillStatus(), tracked(s.handleAutonomousLaneFillStatus))
 	mcpSrv.AddTool(s.toolAutonomousInfraRetries(), tracked(s.handleAutonomousInfraRetries))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskNode(), tracked(s.handleAutonomousPRDSetTaskNode))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryNode(), tracked(s.handleAutonomousPRDSetStoryNode))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLanePreference(), tracked(s.handleAutonomousPRDSetLanePreference))
 	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
@@ -837,6 +839,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeHealth(), tracked(s.handleComputeNodeHealthMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
 	mcpSrv.AddTool(s.toolComputePinSettings(), tracked(s.handleComputePinSettingsMCP))
+	mcpSrv.AddTool(s.toolComputeServedModels(), tracked(s.handleComputeServedModels))
 	// alpha.23b — observer-peer attach/detach + free-list.
 	mcpSrv.AddTool(s.toolObserverPeersFree(), tracked(s.handleObserverPeersFreeMCP))
 	mcpSrv.AddTool(s.toolComputeNodeAttachObserver(), tracked(s.handleComputeNodeAttachObserverMCP))
