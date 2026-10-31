@@ -180,6 +180,22 @@ const (
 	EffortThorough Effort = "thorough" // session.EffortLevels alias
 )
 
+// UncommittedWorkHold records why a task or an Automaton is held on files git
+// still sees as uncommitted in the Automaton worktree. Kind is "task" or
+// "worktree". Policy is the uncommitted-work policy in force when the hold was
+// raised. Files lists the held paths and OutsideScope the subset the task did
+// not declare. QuestionID names the operator question raised for the hold; it
+// is empty when no question store was wired.
+type UncommittedWorkHold struct {
+	Kind         string    `json:"kind"`
+	Policy       string    `json:"policy,omitempty"`
+	Files        []string  `json:"files,omitempty"`
+	OutsideScope []string  `json:"outside_scope,omitempty"`
+	Reason       string    `json:"reason,omitempty"`
+	QuestionID   string    `json:"question_id,omitempty"`
+	HeldAt       time.Time `json:"held_at"`
+}
+
 // PRD is the operator-supplied feature description.
 type PRD struct {
 	// Truncated is set only on the capped copy the default detail GET
@@ -268,9 +284,12 @@ type PRD struct {
 	// Same convention as Task.WaitReason for waiting tasks; empty unless the
 	// planner is (or was) waiting. Set and cleared by
 	// setPRDWaitReason/clearPRDWaitReason so it never outlives the wait.
-	WaitReason string    `json:"wait_reason,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	WaitReason string `json:"wait_reason,omitempty"`
+	// UncommittedWork — set while the Automaton's worktree holds uncommitted
+	// files that no single task owns (see holdAutomatonForUncommittedWork).
+	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
+	CreatedAt       time.Time            `json:"created_at"`
+	UpdatedAt       time.Time            `json:"updated_at"`
 	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
 	// (and Store.CommitPRDIfRev) on every save. 0 for PRDs persisted
 	// before BL451; load tolerates the missing field.
@@ -1026,6 +1045,10 @@ type Task struct {
 	// Empty when there is no usable git repo (or the capture failed); the
 	// guardrail then falls back to live HEAD.
 	PostVerifySHA string `json:"post_verify_sha,omitempty"`
+	// UncommittedWork — set while the task is held because its worktree
+	// still carries uncommitted files after the task finished (see
+	// holdForUncommittedWork). Nil when no hold was ever recorded.
+	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
 	// AttemptCommitSHAs — the deterministic commit shas recorded for this
 	// task's finished attempts, in order (RecordAttemptCommit; duplicates
 	// and empty values are ignored).
