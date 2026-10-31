@@ -36,12 +36,12 @@ import (
 
 // State enumerates the lifecycle of a spawned worker.
 //
-//   pending  — driver.Spawn has been called, container not yet created
-//   starting — container created; worker hasn't called bootstrap yet
-//   ready    — worker completed bootstrap + /readyz=200
-//   running  — ready AND the parent has delegated at least one session
-//   failed   — driver or bootstrap reported an unrecoverable error
-//   stopped  — driver.Terminate returned; safe to reap from memory
+//	pending  — driver.Spawn has been called, container not yet created
+//	starting — container created; worker hasn't called bootstrap yet
+//	ready    — worker completed bootstrap + /readyz=200
+//	running  — ready AND the parent has delegated at least one session
+//	failed   — driver or bootstrap reported an unrecoverable error
+//	stopped  — driver.Terminate returned; safe to reap from memory
 type State string
 
 const (
@@ -57,29 +57,29 @@ const (
 // Fields the Manager mutates are guarded by its own mutex; callers
 // should treat values returned via Get/List as snapshots.
 type Agent struct {
-	ID              string          `json:"id"`             // UUIDv4
-	ProjectProfile  string          `json:"project_profile"` // name
-	ClusterProfile  string          `json:"cluster_profile"` // name
-	Task            string          `json:"task"`
-	State           State           `json:"state"`
-	CreatedAt       time.Time       `json:"created_at"`
-	ReadyAt         time.Time       `json:"ready_at,omitempty"`
-	StoppedAt       time.Time       `json:"stopped_at,omitempty"`
-	FailureReason   string          `json:"failure_reason,omitempty"`
+	ID             string    `json:"id"`              // UUIDv4
+	ProjectProfile string    `json:"project_profile"` // name
+	ClusterProfile string    `json:"cluster_profile"` // name
+	Task           string    `json:"task"`
+	State          State     `json:"state"`
+	CreatedAt      time.Time `json:"created_at"`
+	ReadyAt        time.Time `json:"ready_at,omitempty"`
+	StoppedAt      time.Time `json:"stopped_at,omitempty"`
+	FailureReason  string    `json:"failure_reason,omitempty"`
 
 	// DriverInstance is a driver-specific handle (docker container
 	// ID, k8s pod name, etc). Opaque to the Manager.
-	DriverInstance  string          `json:"driver_instance,omitempty"`
+	DriverInstance string `json:"driver_instance,omitempty"`
 
 	// ContainerAddr is how the parent reaches the worker's HTTP API
 	// for the reverse-proxy path. Usually "container-ip:8080" for
 	// docker bridge, "pod-name.ns.svc:8080" for k8s.
-	ContainerAddr   string          `json:"container_addr,omitempty"`
+	ContainerAddr string `json:"container_addr,omitempty"`
 
 	// BootstrapToken is a single-use, never-logged secret minted at
 	// spawn. The worker presents it to POST /api/agents/bootstrap to
 	// retrieve its config. Burned on first call.
-	BootstrapToken  string          `json:"-"`
+	BootstrapToken string `json:"-"`
 
 	// PQCKeys is set when the spawn was opted into PQC bootstrap
 	// (Manager.PQCBootstrap or AgentsConfig.PQCBootstrap = true).
@@ -93,12 +93,12 @@ type Agent struct {
 	// SessionIDs tracks which sessions the parent has bound to this
 	// agent. Session lifecycle manages its own state; this list is
 	// informational for the UI and for reaping decisions.
-	SessionIDs      []string        `json:"session_ids,omitempty"`
+	SessionIDs []string `json:"session_ids,omitempty"`
 
 	// Branch is the git working-branch this worker owns (F10 S7.3
 	// workspace lock). Defaults to the Project Profile's Git.Branch
 	// when not overridden at spawn time.
-	Branch          string          `json:"branch,omitempty"`
+	Branch string `json:"branch,omitempty"`
 
 	// TeardownPush records the outcome of the push-first step
 	// Manager.Terminate runs BEFORE the driver destroys the worker
@@ -116,7 +116,7 @@ type Agent struct {
 
 	// ParentAgentID is set when this agent was spawned recursively by
 	// another worker (F10 S7.4). Empty for top-level operator spawns.
-	ParentAgentID   string          `json:"parent_agent_id,omitempty"`
+	ParentAgentID string `json:"parent_agent_id,omitempty"`
 
 	// Result is the worker's structured output captured via
 	// POST /api/agents/{id}/result (F10 S7.2 fan-in). Empty when
@@ -202,19 +202,19 @@ type SpawnRequest struct {
 // Driver plugs container-platform-specific behaviour into the Manager.
 // Implementations:
 //
-//   DockerDriver — local docker daemon (sprint 3)
-//   K8sDriver    — in-cluster (sprint 4)
-//   CFDriver     — Cloud Foundry stub (sprint 8+)
+//	DockerDriver — local docker daemon (sprint 3)
+//	K8sDriver    — in-cluster (sprint 4)
+//	CFDriver     — Cloud Foundry stub (sprint 8+)
 //
 // Contract:
 //
-//   Spawn    — blocking: returns when the container exists in the
-//              platform's state (NOT when it's reachable). Must set
-//              DriverInstance on the passed *Agent.
-//   Status   — cheap poll; returns the current State or "" if the
-//              driver can't tell (e.g. container gone).
-//   Logs     — streams up to `lines` tail lines.
-//   Terminate — synchronous; must leave no zombie container behind.
+//	Spawn    — blocking: returns when the container exists in the
+//	           platform's state (NOT when it's reachable). Must set
+//	           DriverInstance on the passed *Agent.
+//	Status   — cheap poll; returns the current State or "" if the
+//	           driver can't tell (e.g. container gone).
+//	Logs     — streams up to `lines` tail lines.
+//	Terminate — synchronous; must leave no zombie container behind.
 type Driver interface {
 	Kind() string
 	Spawn(ctx context.Context, a *Agent) error
@@ -248,7 +248,7 @@ type DiscoveredInstance struct {
 	DriverInstance string
 	// AgentID is the original agent ID, read back from the
 	// `datawatch.agent_id` label.
-	AgentID        string
+	AgentID string
 	// ProjectProfile + ClusterProfile are read from the matching labels.
 	ProjectProfile string
 	ClusterProfile string
@@ -365,8 +365,8 @@ type Manager struct {
 	// one scoped to that single callback, same pattern as
 	// secretsTokens above. resultTokens: token → agentID.
 	// resultTokenIndex: agentID → token (for revocation in Terminate).
-	resultTokens      map[string]string
-	resultTokenIndex  map[string]string
+	resultTokens     map[string]string
+	resultTokenIndex map[string]string
 }
 
 // ObserverPeerRegistry is the narrow surface Manager needs from
@@ -379,8 +379,8 @@ type ObserverPeerRegistry interface {
 
 // crashState is the per-spawn-key respawn book-keeping for BL106.
 type crashState struct {
-	count   int       // how many respawns have already been attempted
-	lastAt  time.Time // when the most recent respawn fired (backoff clock)
+	count  int       // how many respawns have already been attempted
+	lastAt time.Time // when the most recent respawn fired (backoff clock)
 }
 
 // GitTokenMinter is the narrow surface agents.Manager needs from
@@ -711,8 +711,10 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 }
 
 // repoFromGitURL extracts "owner/repo" from common GitHub URL forms:
-//   https://github.com/owner/repo(.git)
-//   git@github.com:owner/repo(.git)
+//
+//	https://github.com/owner/repo(.git)
+//	git@github.com:owner/repo(.git)
+//
 // Falls back to the raw URL when nothing matches — broker callers
 // then surface a "check token scope" error from gh which is
 // actionable enough.
@@ -963,12 +965,13 @@ func (m *Manager) checkWorkspaceLock(projectProfile, branch string) error {
 // checkRecursionBudget (F10 S7.4) enforces the parent agent's
 // Project Profile spawn-budget when the spawn is recursive
 // (req.ParentAgentID is set). Three checks:
-//   1. AllowSpawnChildren must be true
-//   2. SpawnBudgetTotal — count of all child agents whose
-//      ParentAgentID == this parent's id, including stopped ones,
-//      must be < the cap
-//   3. SpawnBudgetPerMinute — count of children spawned in the
-//      last 60 seconds must be < the cap
+//  1. AllowSpawnChildren must be true
+//  2. SpawnBudgetTotal — count of all child agents whose
+//     ParentAgentID == this parent's id, including stopped ones,
+//     must be < the cap
+//  3. SpawnBudgetPerMinute — count of children spawned in the
+//     last 60 seconds must be < the cap
+//
 // All checks skip when the corresponding budget field is zero
 // (= "no cap"). Operator-tunable via every channel through the
 // existing ProjectProfile.SpawnBudget* fields.

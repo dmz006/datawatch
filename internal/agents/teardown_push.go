@@ -11,15 +11,15 @@ import (
 // TeardownPushReport is the outcome of the push-first step that runs
 // inside Manager.Terminate, BEFORE the driver tears the worker down.
 //
-//   Attempted — the driver actually tried to run the push (false when
-//     the driver cannot run commands in the worker, e.g. the k8s
-//     driver, or when no container existed).
-//   Pushed    — the worker's branch reached its remote (plain,
-//     fast-forward-only push; never a force).
-//   Count     — commits on the worker's HEAD that were not present on
-//     any remote ref at teardown time (0 when unknown).
-//   Branch    — the branch that was (attempted to be) pushed.
-//   Reason    — operator-readable failure detail; empty on success.
+//	Attempted — the driver actually tried to run the push (false when
+//	  the driver cannot run commands in the worker, e.g. the k8s
+//	  driver, or when no container existed).
+//	Pushed    — the worker's branch reached its remote (plain,
+//	  fast-forward-only push; never a force).
+//	Count     — commits on the worker's HEAD that were not present on
+//	  any remote ref at teardown time (0 when unknown).
+//	Branch    — the branch that was (attempted to be) pushed.
+//	Reason    — operator-readable failure detail; empty on success.
 type TeardownPushReport struct {
 	Attempted bool   `json:"attempted"`
 	Pushed    bool   `json:"pushed"`
@@ -38,10 +38,10 @@ type TeardownPushReport struct {
 //
 // Contract:
 //
-//   PushUnpushed — best-effort. It must NEVER return a value or an
-//     error that blocks termination; the Manager caps the call with a
-//     timeout, records the report on the Agent, and still runs
-//     Driver.Terminate no matter what happened here.
+//	PushUnpushed — best-effort. It must NEVER return a value or an
+//	  error that blocks termination; the Manager caps the call with a
+//	  timeout, records the report on the Agent, and still runs
+//	  Driver.Terminate no matter what happened here.
 type TeardownPusher interface {
 	PushUnpushed(ctx context.Context, a *Agent) (TeardownPushReport, error)
 }

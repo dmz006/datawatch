@@ -16,14 +16,14 @@ import (
 // docker daemon by shelling out to the `docker` CLI.
 //
 // Rationale for CLI over the github.com/docker/docker Go client:
-//   * ~1000 fewer transitive dependencies
-//   * zero vendor risk (docker client's API surface changes often)
-//   * trivial to debug — every call is reproducible at a shell prompt
-//   * matches the existing datawatch pattern (rtk, signal-cli, etc.)
+//   - ~1000 fewer transitive dependencies
+//   - zero vendor risk (docker client's API surface changes often)
+//   - trivial to debug — every call is reproducible at a shell prompt
+//   - matches the existing datawatch pattern (rtk, signal-cli, etc.)
 //
 // Trade-offs:
-//   * every call forks `docker` once (~10ms overhead)
-//   * log streaming uses `docker logs -f` which means goroutine-per-stream
+//   - every call forks `docker` once (~10ms overhead)
+//   - log streaming uses `docker logs -f` which means goroutine-per-stream
 //     — acceptable at small N, revisit with the Go client if we ever
 //     run 50+ concurrent workers per host.
 //

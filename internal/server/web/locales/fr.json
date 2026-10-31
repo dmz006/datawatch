@@ -993,7 +993,7 @@
   "prd_settings_git_base_branch_label": "Remplacement de la branche de base (vide = branche par défaut du dépôt)",
   "prd_settings_git_push_label": "Push à la fin",
   "prd_settings_git_push_inherit": "Hériter du réglage du démon",
-  "prd_settings_git_push_hint": "Remplace la politique de push du démon uniquement pour cette PRD ; laissez l’option « hériter » pour suivre le réglage du démon.",
+  "prd_settings_git_push_hint": "Remplace la politique de push du démon uniquement pour cet automate ; laissez l’option « hériter » pour suivre le réglage du démon.",
   "prd_settings_git_branch_label": "Branche",
   "prd_settings_git_pr_label": "PR",
   "prd_settings_modal_title": "Paramètres de l'automate",

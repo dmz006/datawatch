@@ -265,11 +265,11 @@ type podTemplateData struct {
 	// volumeMounts.
 	SharedVolumes []profile.SharedVolume
 	// BL243 — tailscale sidecar; empty TailscaleEnabled omits the block.
-	TailscaleEnabled    bool
-	TailscaleImage      string
-	TailscaleAuthKey    string
+	TailscaleEnabled     bool
+	TailscaleImage       string
+	TailscaleAuthKey     string
 	TailscaleLoginServer string
-	TailscaleTags       string
+	TailscaleTags        string
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -297,12 +297,12 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		BootstrapDeadlineSeconds: d.WorkerBootstrapDeadlineSeconds,
 		ParentCertFingerprint:    d.ParentCertFingerprint,
 		ProjectEnv: func() map[string]string {
-				if a.EnvOverride != nil {
-					return a.EnvOverride // BL242 Phase 4 resolved refs
-				}
-				return a.project.Env
-			}(),
-		Resources:                a.cluster.DefaultResources,
+			if a.EnvOverride != nil {
+				return a.EnvOverride // BL242 Phase 4 resolved refs
+			}
+			return a.project.Env
+		}(),
+		Resources: a.cluster.DefaultResources,
 	}
 	if a.PQCKeys != nil {
 		data.PQCKEMPriv = a.PQCKeys.KEMPrivateB64

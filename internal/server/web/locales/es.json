@@ -993,7 +993,7 @@
   "prd_settings_git_base_branch_label": "Anulación de rama base (vacío = rama predeterminada del repositorio)",
   "prd_settings_git_push_label": "Push al completar",
   "prd_settings_git_push_inherit": "Heredar la configuración del demonio",
-  "prd_settings_git_push_hint": "Anula la política de push del demonio solo para esta PRD; deja la opción «heredar» para seguir la configuración del demonio.",
+  "prd_settings_git_push_hint": "Anula la política de push del demonio solo para este autómata; deja la opción «heredar» para seguir la configuración del demonio.",
   "prd_settings_git_branch_label": "Rama",
   "prd_settings_git_pr_label": "PR",
   "prd_settings_modal_title": "Ajustes del autómata",

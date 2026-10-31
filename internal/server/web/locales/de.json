@@ -993,7 +993,7 @@
   "prd_settings_git_base_branch_label": "Basis-Branch-Override (leer = Standard-Branch des Repos)",
   "prd_settings_git_push_label": "Push beim Abschluss",
   "prd_settings_git_push_inherit": "Daemon-Einstellung übernehmen",
-  "prd_settings_git_push_hint": "Überschreibt die Push-beim-Abschluss-Policy des Daemons nur für diese eine PRD; bei „übernehmen“ gilt die Daemon-Einstellung.",
+  "prd_settings_git_push_hint": "Überschreibt die Push-beim-Abschluss-Policy des Daemons nur für diesen einen Automaten; bei „übernehmen“ gilt die Daemon-Einstellung.",
   "prd_settings_git_branch_label": "Branch",
   "prd_settings_git_pr_label": "PR",
   "prd_settings_modal_title": "Automaten-Einstellungen",

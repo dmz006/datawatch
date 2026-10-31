@@ -993,7 +993,7 @@
   "prd_settings_git_base_branch_label": "ベースブランチの上書き（空 = リポジトリ自身のデフォルトブランチ）",
   "prd_settings_git_push_label": "完了時のプッシュ",
   "prd_settings_git_push_inherit": "デーモンの設定を継承",
-  "prd_settings_git_push_hint": "このPRDに限りデーモンの完了時push方針を上書きします。デーモンの設定に従う場合は「継承」のままにしてください。",
+  "prd_settings_git_push_hint": "このオートマトンに限りデーモンの完了時push方針を上書きします。デーモンの設定に従う場合は「継承」のままにしてください。",
   "prd_settings_git_branch_label": "ブランチ",
   "prd_settings_git_pr_label": "PR",
   "prd_settings_modal_title": "オートマトンの設定",

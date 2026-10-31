@@ -939,7 +939,7 @@
   "prd_settings_git_base_branch_label": "Base branch override (empty = repo’s own default branch)",
   "prd_settings_git_push_label": "Push on completion",
   "prd_settings_git_push_inherit": "Inherit daemon setting",
-  "prd_settings_git_push_hint": "Overrides the daemon’s push-on-completion policy for this one PRD only; leave on inherit to follow the daemon setting.",
+  "prd_settings_git_push_hint": "Overrides the daemon’s push-on-completion policy for this one Automaton only; leave on inherit to follow the daemon setting.",
   "prd_settings_git_branch_label": "Branch",
   "prd_settings_git_pr_label": "PR",
   "prd_settings_modal_title": "Automaton settings",
