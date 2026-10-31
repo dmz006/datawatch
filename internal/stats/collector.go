@@ -138,6 +138,13 @@ type SystemStats struct {
 	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
 	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
 
+	// UI prompt interstitials (ui_prompt.* settings): the daemon-side
+	// dismissal outcome counters for recognised interstitial prompts, since
+	// daemon start (in-memory only — reset on restart). Filled by the
+	// session manager through SetUIPromptsFunc; nil when the daemon never
+	// wired it.
+	UIPrompts *UIPromptStats `json:"ui_prompts,omitempty"`
+
 	// Supervisor watch: the mode in effect, seconds since the coordinator
 	// last polled (-1 when it never has), the unresolved findings (and
 	// how many of them are would-alert or alerted) and the days of full
@@ -193,6 +200,35 @@ type CommChannelStat struct {
 }
 
 // SessionStat holds resource usage for a single session.
+// UIPromptKindStats is one dismissal outcome row for interstitial UI
+// prompts (see UIPromptStats).
+type UIPromptKindStats struct {
+	// Dismissed counts prompt occurrences whose safe dismiss key cleared the
+	// prompt (the daemon pressed it and the screen got back to work).
+	Dismissed int `json:"dismissed"`
+	// NotCleared counts occurrences where the attempts cap was used up with
+	// the prompt still on screen (the daemon gave up on keys for it).
+	NotCleared int `json:"not_cleared"`
+	// Refused counts dismiss keys the send-site guard refused to send
+	// (safety events: the guard worked, nothing was sent).
+	Refused int `json:"refused"`
+}
+
+// UIPromptStats is the daemon-side in-memory dismissal outcome snapshot for
+// interstitial UI prompts: totals plus one row per prompt kind. All fields
+// are counted since daemon start and reset on restart.
+type UIPromptStats struct {
+	// Dismissed is the total across kinds.
+	Dismissed int `json:"dismissed"`
+	// NotCleared is the total across kinds.
+	NotCleared int `json:"not_cleared"`
+	// Refused is the total across kinds.
+	Refused int `json:"refused"`
+	// ByKind breaks the totals down per interstitial prompt kind (e.g.
+	// autocompact).
+	ByKind map[string]UIPromptKindStats `json:"by_kind,omitempty"`
+}
+
 type SessionStat struct {
 	SessionID  string  `json:"session_id"`
 	Name       string  `json:"name"`
@@ -261,6 +297,10 @@ type Collector struct {
 	// webSearchStatsFn populates web search stats (BL372)
 	webSearchStatsFn func(*SystemStats)
 
+	// uiPromptsFn returns the daemon-side in-memory interstitial UI-prompt
+	// dismissal outcome counters (from the session manager).
+	uiPromptsFn func() *UIPromptStats
+
 	// ollamaHost is the Ollama API URL for stats polling
 	ollamaHost string
 
@@ -305,6 +345,15 @@ func (c *Collector) SetBoundInterfaces(ifaces []string) {
 // SetSessionStatsFunc sets the callback for per-session resource stats.
 func (c *Collector) SetSessionStatsFunc(fn func() []SessionStat) {
 	c.sessionStatsFn = fn
+}
+
+// SetUIPromptsFunc sets the callback that returns the daemon-side in-memory
+// interstitial UI-prompt dismissal outcome counters (dismissed /
+// not_cleared / refused, with a by-kind breakdown). It is snapshotted into
+// the ui_prompts field of every collected SystemStats, so it is visible in
+// GET /api/stats and the get_stats MCP tool.
+func (c *Collector) SetUIPromptsFunc(fn func() *UIPromptStats) {
+	c.uiPromptsFn = fn
 }
 
 // SetEBPFStatus sets the eBPF status for display in the dashboard.
@@ -484,6 +533,9 @@ func (c *Collector) collect() {
 	}
 	if c.commStatsFn != nil {
 		s.CommStats = c.commStatsFn()
+	}
+	if c.uiPromptsFn != nil {
+		s.UIPrompts = c.uiPromptsFn()
 	}
 	if c.accessLogStatsFn != nil {
 		c.accessLogStatsFn(&s)

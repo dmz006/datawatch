@@ -181,4 +181,25 @@ const (
 	// to blocked after re-firing the completion rollup once. Details: prd_id,
 	// caller, stuck_seconds, bound_seconds, old_status, new_status.
 	ActionStuckRunningBlocked = "autonomous_stuck_running_blocked"
+
+	// Interstitial UI-prompt dismissal — the outcome of the daemon pressing
+	// the safe dismiss key on a recognised interstitial prompt (the session
+	// package owns the safe-send rules; these are the audited outcomes).
+	// Every entry is subjected by the session id.
+
+	// ActionUIPromptDismissed — a safe dismiss key was sent and the prompt
+	// then cleared: the dismissal is recorded as successful. Details:
+	// backend, kind, key, attempt, selected_option.
+	ActionUIPromptDismissed = "ui_prompt_dismissed"
+	// ActionUIPromptNotCleared — the attempts cap was used up with the
+	// prompt still on screen: the daemon has given up on keys for this
+	// occurrence (recorded once per occurrence). Details: backend, kind,
+	// key, attempt, selected_option.
+	ActionUIPromptNotCleared = "ui_prompt_not_cleared"
+	// ActionUIPromptRefused — the send-site guard refused a classified
+	// dismiss key (or none was classified as safe), so NOTHING was sent. A
+	// refusal is a safety event: the guard worked. Details: backend, kind,
+	// key (the refused key name, "" when none was offered), attempt,
+	// selected_option.
+	ActionUIPromptRefused = "ui_prompt_refused"
 )

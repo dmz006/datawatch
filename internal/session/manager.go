@@ -490,6 +490,18 @@ type Manager struct {
 	// ui_prompt_settings.go). A nil getter means the defaults apply.
 	uiPrompt uiPromptRoute
 
+	// uiPromptAudit receives the final UI-prompt dismissal outcomes for the
+	// daemon's audit log and metrics (see ui_prompt_dismiss.go). The session
+	// package cannot import the daemon's audit writer, so outcomes flow out
+	// through this hook — same seam as workerQuestion. Zero value (nil hook)
+	// means outcomes are counted and recorded but not audited externally.
+	uiPromptAudit uiPromptAuditRoute
+
+	// uiPromptDismissStats is the in-memory dismissal outcome counter
+	// (reset at daemon restart; see ui_prompt_dismiss.go and
+	// UIPromptStatsSnapshot). Zero value is production-ready.
+	uiPromptDismissStats uiPromptStatsState
+
 	// journal receives the session end and pane-close lines (see end_reason.go).
 	// nil writes them to stdout; tests set it to capture them.
 	journal io.Writer

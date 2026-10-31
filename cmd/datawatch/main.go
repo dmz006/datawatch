@@ -6809,6 +6809,47 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							MaxAttempts:       cfg.Session.EffectiveUIPromptMaxAttempts(),
 						}
 					})
+					// Interstitial UI-prompt dismissals: every final outcome
+					// (dismissed, not_cleared, refused) the session manager books
+					// arrives on the capture goroutine — the hook is invoked
+					// synchronously at the moment of the decision — and lands as
+					// one audit-log line (and CEF mirror line) plus one
+					// Prometheus counter increment. It must never block or fail
+					// the capture loop: both sinks are non-fatal.
+					mgr.SetUIPromptAuditHook(func(ev session.UIPromptAuditEvent) {
+						action := ""
+						switch ev.Outcome {
+						case session.UIPromptOutcomeDismissed:
+							action = auditpkg.ActionUIPromptDismissed
+						case session.UIPromptOutcomeNotCleared:
+							action = auditpkg.ActionUIPromptNotCleared
+						case session.UIPromptOutcomeRefused:
+							action = auditpkg.ActionUIPromptRefused
+						default:
+							return
+						}
+						details := map[string]any{
+							"session_id": ev.SessionFullID,
+							"backend":    ev.Backend,
+							"kind":       ev.Kind,
+							"key":        ev.Key,
+							"attempt":    ev.Attempt,
+						}
+						if ev.SelectedOption != "" {
+							details["selected_option"] = ev.SelectedOption
+						}
+						if wiredAuditLog != nil {
+							_ = wiredAuditLog.Write(auditpkg.Entry{
+								Timestamp: time.Now(),
+								Actor:     "autonomous",
+								Action:    action,
+								SessionID: ev.SessionFullID,
+								Subject:   ev.SessionFullID,
+								Details:   details,
+							})
+						}
+						metricsPkg.UIPromptDismissalsTotal.WithLabelValues(ev.Kind, ev.Outcome).Inc()
+					})
 					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
 						Store:  qstore,
 						Audit:  lifecycleAuditFn,
@@ -8000,6 +8041,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				statsCollector.SetEBPFStatus(true, false, "Degraded — run: datawatch setup ebpf")
 			}
 		}
+		// Interstitial UI-prompt dismissal outcome counters (in-memory on the
+		// manager, reset at daemon restart) surfaced as ui_prompts in every
+		// collected stats snapshot — GET /api/stats and the get_stats MCP
+		// tool both marshal SystemStats, so the field rides along.
+		statsCollector.SetUIPromptsFunc(func() *statspkg.UIPromptStats {
+			dismissed, notCleared, refused, byKind := mgr.UIPromptStatsSnapshot()
+			if dismissed == 0 && notCleared == 0 && refused == 0 {
+				return nil
+			}
+			out := &statspkg.UIPromptStats{Dismissed: dismissed, NotCleared: notCleared, Refused: refused}
+			if len(byKind) > 0 {
+				out.ByKind = make(map[string]statspkg.UIPromptKindStats, len(byKind))
+				for kind, c := range byKind {
+					out.ByKind[kind] = statspkg.UIPromptKindStats{Dismissed: c.Dismissed, NotCleared: c.NotCleared, Refused: c.Refused}
+				}
+			}
+			return out
+		})
 		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
 			var stats []statspkg.SessionStat
 			// Observer session attribution: the pane PIDs resolved

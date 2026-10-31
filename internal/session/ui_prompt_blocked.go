@@ -26,8 +26,10 @@ type uiPromptRecord struct {
 	changesSetting  bool      // Enter on this prompt would change a setting
 	moved           bool      // true when this phase transitioned the session
 	fromState       State     // state we transitioned from (restore target)
-	dismissAttempts int       // reserved for the dismissal phase (0 this phase)
-	lastKeyAt       time.Time // zero until the dismissal phase
+	dismissAttempts int       // safe dismiss keys already sent for this occurrence
+	lastKeyAt       time.Time // when the last dismiss key was sent (zero = none yet)
+	lastKey         string    // key name of the last sent dismiss key (guard-passed)
+	outcomeRecorded bool      // a final dismissal outcome (dismissed | not_cleared) was booked exactly once
 }
 
 // scanInterstitialTick runs one interstitial-prompt scan for the
@@ -51,7 +53,13 @@ func (m *Manager) scanInterstitialTick(sess *Session, stateCapture string, now t
 	if action.Kind == InterstitialNone {
 		return m.clearUIPrompt(sess, now)
 	}
-	return m.recogniseUIPrompt(sess, action, now)
+	m.recogniseUIPrompt(sess, action, now)
+	// The pane is on an interstitial prompt: run the safe-dismiss path.
+	// Detection and park already happened above; a dismissal key is the
+	// only key the manager ever sends to one of these prompts (see
+	// ui_prompt_dismiss.go).
+	m.maybeDismissUIPrompt(sess, action, now)
+	return true
 }
 
 // recogniseUIPrompt records the occurrence (first tick that recognises) or
@@ -145,6 +153,15 @@ func (m *Manager) clearUIPrompt(sess *Session, now time.Time) bool {
 		m.uiPromptMu.Unlock()
 		return false
 	}
+	// If safe keys were sent and the prompt is now gone, book the
+	// dismissed outcome NOW: the claim under uiPromptMu is atomic with the
+	// delete, so the not_cleared path (which needs the record still live)
+	// can never claim it too. See ui_prompt_dismiss.go.
+	dismissedNow := false
+	if rec.dismissAttempts > 0 && !rec.outcomeRecorded {
+		rec.outcomeRecorded = true
+		dismissedNow = true
+	}
 	delete(m.uiPromptState, sess.FullID)
 	m.uiPromptMu.Unlock()
 
@@ -174,6 +191,9 @@ func (m *Manager) clearUIPrompt(sess *Session, now time.Time) bool {
 		m.onStateChange(sess, StateWaitingInput)
 	}
 	m.recordUIPromptEvent(sess, rec, "cleared")
+	if dismissedNow {
+		m.recordUIPromptOutcome(sess, rec, UIPromptOutcomeDismissed)
+	}
 	if restored {
 		m.debugf("ui-prompt: %q: cleared kind=%s, restored to %s", sess.TmuxSession, rec.kind, rec.fromState)
 	}
