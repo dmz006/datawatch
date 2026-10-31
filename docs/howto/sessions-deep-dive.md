@@ -446,6 +446,21 @@ automatically against the seeded fixture. See
        output.log (append-only, ANSI preserved)
 ```
 
+## Claude Code interstitial prompts — recognised and dismissed for you
+
+A lane can sit blocked on a Claude Code interstitial prompt — a question, an idle notice or the autocompact threshold prompt — and look healthy the whole time. datawatch watches the terminal and takes the safe action itself instead of waiting:
+
+1. **It recognises the prompt kind.** Claude Code interstitial prompts are a small, built-in, per-kind table (a fixed set of known kinds), not fuzzy text matching — today the table holds the autocompact threshold question ("Want to autocompact at 400k tokens instead?" with the Autocompact / Keep auto options and the "choose · confirm · Esc not now" hint line). Matching is deliberately strict: all of the prompt's anchor phrases plus its hint line must appear in the pane's last 20 non-empty lines (ANSI stripped), and when a capture is partial or in doubt the classifier returns *none* — a quoted prompt line in output, an idle prompt, or a startup dialog is never acted on.
+2. **It dismisses with the safe key, never a blind Enter.** Each kind has one safe dismissal key. For prompts where Enter would pick a choice and change a setting (the autocompact question), the key sent is **Esc** — the "not now" / "dismiss" path — because a wrong Enter is worse than a missed dismissal. It only types when the prompt kind is known and its key is safe.
+3. **It is bounded and auditable.** Three timing knobs bound how aggressively it acts, and a switch turns it all off:
+   - `session.dismiss_ui_prompts` (default **on**) — the feature switch; `false` restores the old wait-for-you behaviour.
+   - `session.ui_prompt_dismiss_delay_seconds` (default **5**) — settle wait after the prompt appears, before the dismissal key is sent, so a transient prompt the session itself resolves in time is left alone.
+   - `session.ui_prompt_clear_bound_seconds` (default **30**) — how long datawatch will keep considering the prompt "the one it dismissed" before treating a re-appearance as a fresh prompt needing action.
+   - `session.ui_prompt_max_attempts` (default **2**) — retries before the session is flagged for the operator instead of being spamming further keys. When the budget is spent and the prompt is still on screen, or the switch is off, the escalation goes to the operator through the question channel.
+4. **When it can't clear it, it hands you the session.** A prompt that survives the retries (or one seen with the switch off) is escalated as an operator question describing the session and the prompt. The session transitions to `waiting_input` (its previous state is restored the moment the prompt clears), and the audit log records the outcome: `ui_prompt_dismissed` (prompt kind, session, key), `ui_prompt_not_cleared` after the budget, `ui_prompt_refused` if a key would not pass the safety allow-list. Counters show up in `ui_prompts` of `GET /api/stats` / the `get_stats` MCP tool and in the `datawatch_ui_prompt_dismissals_total` Prometheus metric.
+
+Change any of the four from the PWA (Settings → Sessions), REST config, MCP `config_set`, `datawatch config set`, or the comm channel — e.g. `configure session.dismiss_ui_prompts=false` to hand the decision back to yourself. There is no per-kind pattern list to hand-edit: the kinds are a built-in table, and adding a new one is a code change with tests, not a config knob. See `datawatch-definitions.md` § Claude Code interstitial prompts.
+
 ## Where to look when something is wrong
 
 ### "State stuck on `waiting_input` but the session is producing output"

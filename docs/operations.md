@@ -415,6 +415,25 @@ session:
   # Default: false
   skip_permissions: false
 
+  # Claude Code interstitial-prompt dismissal (the “Want to autocompact at 400k
+  # tokens instead?” question and other recognised safe-to-dismiss prompts).
+  # Master switch: when false datawatch never sends a key for these prompts.
+  # Default: true
+  dismiss_ui_prompts: true
+
+  # Seconds to wait after a prompt is recognised before sending the safe
+  # dismissal key (Esc, never Enter on a choice). 0 = send at once.
+  # Default: 5
+  ui_prompt_dismiss_delay_seconds: 5
+
+  # Seconds after the last dismissal key before another key may be sent for
+  # the same still-visible prompt. Default: 30
+  ui_prompt_clear_bound_seconds: 30
+
+  # How many dismissal keys to try before flagging the session to the
+  # operator (question channel). Default: 2
+  ui_prompt_max_attempts: 2
+
   # Kill all active sessions when the daemon exits (SIGINT/SIGTERM).
   # If false, sessions continue running in tmux after the daemon stops.
   # Default: false
@@ -2002,6 +2021,56 @@ datawatch reload                # apply (the flag is read at runtime so reload p
 # Reachable through every parity surface — REST PUT /api/config,
 # MCP config_set, comm `configure session.claude_auto_accept_disclaimer true`,
 # PWA Settings → LLM → Auto-accept startup disclaimer toggle.
+```
+
+### Claude Code interstitial prompt dismissal
+
+**Config keys:** `session.dismiss_ui_prompts` (default: `true`),
+`session.ui_prompt_dismiss_delay_seconds` (default: `5`, 0 = send at once),
+`session.ui_prompt_clear_bound_seconds` (default: `30`, minimum 1),
+`session.ui_prompt_max_attempts` (default: `2`, minimum 1)
+
+Claude Code pauses mid-session on interstitial prompts — the documented
+threshold question is *“Want to autocompact at 400k tokens instead?”* with the
+**Autocompact at 400k** / **Keep auto (1m tokens)** options, where pressing
+Enter confirms the highlighted row and changes a setting. These sit on the
+session’s input path: a lane blocked on the prompt looks healthy while it idles,
+holding its slot, until a supervisor watch flags it as silent.
+datawatch recognises the known prompt shapes on a claude-code pane (a small,
+explicit per-kind table matched on the pane’s last 20 non-empty lines after
+ANSI stripping; when in doubt it classifies *none*) and dismisses them with the
+one safe key for that kind — **Esc** (“not now”), never Enter on a choice that
+would change a setting (Enter and every other key are outside the closed
+safe-key allow-list).
+
+The dismissal is bounded and reversible:
+
+| Behaviour | Setting |
+|---|---|
+| Wait before the first key | `ui_prompt_dismiss_delay_seconds` (default 5 s) |
+| Gap between keys to the same still-visible prompt | `ui_prompt_clear_bound_seconds` (default 30 s) |
+| Keys per prompt-occurrence before flagging you | `ui_prompt_max_attempts` (default 2) |
+| Master switch | `dismiss_ui_prompts` (`false` = never send a key) |
+
+When the prompt survives the attempt budget, `dismiss_ui_prompts` is off, or a
+key is refused by the allow-list, the session is **flagged as
+waiting-for-input** the way any other blocked input is: it shows up in the
+usual session list / PWA `waiting_input` state, and an operator question is
+raised describing the prompt and the captured tail of the pane so you can
+dismiss it by hand. Every outcome is audited
+(`ui_prompt_dismissed` / `ui_prompt_not_cleared` / `ui_prompt_refused`, with
+kind, key and option), and counters appear as the `ui_prompts` block in the
+stats API plus the `datawatch_ui_prompt_dismissals_total` Prometheus counter, so you can
+watch how often the daemon is dismissing these on your behalf.
+
+```bash
+# Turn auto-dismissal off for a host (or one lane via the PWA) —
+# prompts then escalate to the operator question instead of being dismissed.
+datawatch config set session.dismiss_ui_prompts false
+
+# Reachable through every parity surface — REST PUT /api/config,
+# MCP config_set, comm `configure session.dismiss_ui_prompts=false`,
+# PWA Settings → Session → Claude interstitial prompts (the four rows).
 ```
 
 ### ANSI Terminal (xterm.js)

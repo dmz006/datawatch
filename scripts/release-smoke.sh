@@ -6169,6 +6169,75 @@ assert any(b.get("role")=="smoke-role-a" for b in d["backups"]), "no backup with
 fi
 
 # ---------------------------------------------------------------------------
+H "92. Claude Code interstitial prompt dismissal — session.ui_prompt* config keys + stats ui_prompts"
+# session.dismiss_ui_prompts (bool, default true),
+# session.ui_prompt_dismiss_delay_seconds (0+, default 5),
+# session.ui_prompt_clear_bound_seconds (1+, default 30),
+# session.ui_prompt_max_attempts (1+, default 2).
+# The daemon recognises the built-in per-kind table (today: autocompact-threshold)
+# and dismisses with the classifier's safe key (Esc, never Enter);
+# counters feed the ui_prompts object of GET /api/stats and the Prometheus
+# datawatch_ui_prompt_dismissals_total counter.
+CFG92=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null || echo "")
+if echo "$CFG92" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+s=d.get("session",{})
+assert isinstance(s.get("dismiss_ui_prompts"),bool)
+assert s.get("ui_prompt_dismiss_delay_seconds")==5
+assert s.get("ui_prompt_clear_bound_seconds")==30
+assert s.get("ui_prompt_max_attempts")==2
+' 2>/dev/null; then
+  ok "config: all four session.ui_prompt* keys readable with their defaults (dismiss_ui_prompts=true, delay=5, bound=30, max_attempts=2)"
+else
+  ko "config: ui_prompt* keys missing or not at defaults: $(echo "$CFG92" | head -c 200)"
+fi
+STATS92=$(curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null || echo "")
+if echo "$STATS92" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+if "ui_prompts" in d:
+    u=d["ui_prompts"]
+    assert isinstance(u.get("dismissed"),int) and isinstance(u.get("not_cleared"),int) and isinstance(u.get("refused"),int)
+    assert isinstance(u.get("by_kind"),dict)
+' 2>/dev/null; then
+  ok "stats: ui_prompts object absent (nothing tracked yet) or well-shaped (dismissed/not_cleared/refused/by_kind)"
+else
+  ko "stats: ui_prompts present but malformed or stats shape broken: $(echo "$STATS92" | head -c 200)"
+fi
+if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "ui_prompt round-trip: external daemon (DW_BASE set) may hold the operator's live settings; write steps not run"
+else
+  _ip_val() { curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get(\"session\",{}).get('$1',''))" 2>/dev/null || echo "?"; }
+  _IP_DISMISS=$(_ip_val dismiss_ui_prompts)
+  _IP_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+  _IP_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+  _IP_MAX=$(_ip_val ui_prompt_max_attempts)
+  if [[ "$_IP_DISMISS" == "?" || "$_IP_DELAY" == "?" || "$_IP_BOUND" == "?" || "$_IP_MAX" == "?" ]]; then
+    skip "ui_prompt round-trip: config read could not resolve all four keys"
+  else
+    _IP_BOOL=$([[ "$_IP_DISMISS" == "true" ]] && echo true || echo false)
+    _IP_PUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+      -d "{\"session.dismiss_ui_prompts\": $_IP_BOOL, \"session.ui_prompt_dismiss_delay_seconds\": $_IP_DELAY, \"session.ui_prompt_clear_bound_seconds\": $_IP_BOUND, \"session.ui_prompt_max_attempts\": $_IP_MAX}" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000")
+    _IP_DISMISS2=$(_ip_val dismiss_ui_prompts)
+    if [[ "$_IP_PUT" == "200" && "$_IP_DISMISS2" == "$_IP_DISMISS" ]]; then
+      ok "ui_prompt round-trip: the four keys are accepted by PUT /api/config and read back unchanged (operator values preserved)"
+    else
+      ko "ui_prompt round-trip: PUT answered HTTP $_IP_PUT, dismiss_ui_prompts readback=$_IP_DISMISS2 (expected HTTP 200 and $_IP_DISMISS)"
+    fi
+    _IP_BAD=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+      -d '{"session.ui_prompt_clear_bound_seconds": 0}' \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000")
+    if [[ "$_IP_BAD" == "400" ]]; then
+      ok "ui_prompt validation: ui_prompt_clear_bound_seconds=0 (below the minimum of 1) is refused with 400 and changes nothing"
+    else
+      ko "ui_prompt validation: bad value answered HTTP $_IP_BAD (expected 400)"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"
