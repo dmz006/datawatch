@@ -24361,7 +24361,8 @@ const USAGE_CALC_COUNTER_KEY = 'datawatch.usageCalc.counts';
 const USAGE_CALC_COUNTER_ON_KEY = 'datawatch.usageCalc.countsOn';
 const USAGE_CALC_CHART_W = 320;
 const USAGE_CALC_CHART_H = 110;
-window._usageCalc = window._usageCalc || { body: null, error: '', variant: '', policy: '', showCounts: false };
+// whatIf is the operator's lane count for the what-if control: null until set, held in memory only.
+window._usageCalc = window._usageCalc || { body: null, error: '', variant: '', policy: '', showCounts: false, whatIf: null };
 
 // Browser storage is a per-viewer convenience only: every access is guarded,
 // and the card renders the same without it.
@@ -24476,7 +24477,7 @@ function usageCalcReadingBody(input) {
   const percentText = String(input.percent === undefined || input.percent === null ? '' : input.percent).trim();
   const pct = Number(percentText);
   if (percentText === '' || !isFinite(pct) || pct < 0 || pct > 1000) return { error: t('usage_calc_percent_range') };
-  const body = { percent: pct, lanes: Number(input.lanes) || 0, source: 'typed' };
+  const body = { percent: pct, source: 'typed' };
   const sessionText = String(input.session === undefined || input.session === null ? '' : input.session).trim();
   if (sessionText !== '') {
     const s = Number(sessionText);
@@ -24590,54 +24591,67 @@ function _usageCalcVariantBody(res, active, opts) {
 
 function _usageCalcReadingForm(res, opts) {
   const a = res && res.advice && !res.advice.needs ? res.advice : null;
-  const max = a && a.max_lanes ? a.max_lanes : 3;
-  const lanes = a && a.lanes ? a.lanes : 0;
   const percent = a ? _usageCalcNum(a.percent, 0) : '';
   const now = opts.now === undefined ? Date.now() : opts.now;
   return `<div class="usage-calc-section" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:8px;">` +
     `<div style="font-weight:600;">${escHtml(t('usage_calc_reading_title'))}</div>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_percent_label'))} <input id="usageCalcPercent" type="number" min="0" max="1000" step="any" value="${escHtml(percent)}" style="width:100%;max-width:200px;"></label>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_session_label'))} <input id="usageCalcSession" type="number" min="0" max="100" step="any" value="" style="width:100%;max-width:200px;"></label>` +
-    `<div class="usage-calc-stepper" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;">` +
-    `<span>${escHtml(t('usage_calc_lanes_label'))}</span>` +
-    `<button type="button" id="usageCalcLanesMinus" aria-label="${escHtml(t('usage_calc_lanes_minus'))}" onclick="usageCalcStepLanes(-1)"${lanes <= 0 ? ' disabled' : ''}>−</button>` +
-    `<span id="usageCalcLanes" data-value="${lanes}" data-max="${max}" style="min-width:18px;text-align:center;">${lanes}</span>` +
-    `<button type="button" id="usageCalcLanesPlus" aria-label="${escHtml(t('usage_calc_lanes_plus'))}" onclick="usageCalcStepLanes(1)"${lanes >= max ? ' disabled' : ''}>+</button>` +
-    `<span id="usageCalcZeroNote" style="color:var(--text2);">${lanes === 0 ? escHtml(t('usage_calc_zero_lanes')) : ''}</span></div>` +
     `<label style="font-size:12px;">${escHtml(t('usage_calc_read_at_label'))} <input id="usageCalcReadAt" type="datetime-local" value="${_usageCalcLocalInput(now)}" style="max-width:100%;"></label>` +
     `<div><button type="button" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="usageCalcSubmitReading()">${escHtml(t('usage_calc_save_reading'))}</button></div>` +
     `<div id="usageCalcFormMsg" role="status" style="font-size:12px;color:var(--error,#ef4444);"></div>` +
     `</div>`;
 }
 
+// The what-if stepper: how many lanes to run in this what-if. It is never
+// saved and never changes the lanes running. Until the operator sets it, it
+// shows the count the advice chose and no lanes query value is sent.
+function _usageCalcWhatIfHtml(res) {
+  const a = res && res.advice && !res.advice.needs ? res.advice : null;
+  const max = a && a.max_lanes ? a.max_lanes : 3;
+  const set = _usageCalc.whatIf !== null && _usageCalc.whatIf !== undefined;
+  const lanes = set ? _usageCalc.whatIf : (a && a.lanes ? a.lanes : 0);
+  return `<div class="usage-calc-whatif" id="usageCalcWhatIf" data-whatif-set="${set}" style="display:flex;flex-direction:column;gap:4px;">` +
+    `<div style="font-weight:600;font-size:12px;">${escHtml(t('usage_calc_whatif_label'))}</div>` +
+    `<div class="usage-calc-stepper" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:12px;">` +
+    `<button type="button" id="usageCalcLanesMinus" aria-label="${escHtml(t('usage_calc_lanes_minus'))}" onclick="usageCalcStepLanes(-1)"${lanes <= 0 ? ' disabled' : ''}>−</button>` +
+    `<span id="usageCalcLanes" data-value="${lanes}" data-max="${max}" style="min-width:18px;text-align:center;">${lanes}</span>` +
+    `<button type="button" id="usageCalcLanesPlus" aria-label="${escHtml(t('usage_calc_lanes_plus'))}" onclick="usageCalcStepLanes(1)"${lanes >= max ? ' disabled' : ''}>+</button>` +
+    `<span id="usageCalcZeroNote" style="color:var(--text2);">${lanes === 0 ? escHtml(t('usage_calc_zero_lanes')) : ''}</span></div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_whatif_hint'))}</div>` +
+    `</div>`;
+}
+
+// The lanes running now, from the stamped readings: a number, or not known.
+function _usageCalcRunningNowHtml(res) {
+  const a = res && res.advice && !res.advice.needs ? res.advice : null;
+  if (!a) return '';
+  const n = a.lanes_running_now;
+  if (n === null || n === undefined) {
+    return `<div class="usage-calc-running" data-running-now="unknown" style="font-size:12px;color:var(--text2);">${escHtml(t('usage_calc_running_unknown'))}</div>`;
+  }
+  return `<div class="usage-calc-running" data-running-now="${escHtml(String(n))}" style="font-size:12px;">${escHtml(t('usage_calc_running_now', [String(n)]))}</div>`;
+}
+
+// Stepping the what-if sets it and refetches the advice at that lane count.
 window.usageCalcStepLanes = function (delta) {
   const el = document.getElementById('usageCalcLanes');
   if (!el) return;
   const cur = Number(el.getAttribute('data-value')) || 0;
-  usageCalcSetLanes(cur + delta);
+  return usageCalcSetLanes(cur + delta);
 };
 function usageCalcSetLanes(n) {
-  const el = document.getElementById('usageCalcLanes');
-  if (!el) return;
-  const max = Number(el.getAttribute('data-max')) || 0;
-  const v = Math.min(max, Math.max(0, n));
-  el.setAttribute('data-value', String(v));
-  el.textContent = String(v);
-  const minus = document.getElementById('usageCalcLanesMinus');
-  if (minus) minus.disabled = v <= 0;
-  const plus = document.getElementById('usageCalcLanesPlus');
-  if (plus) plus.disabled = v >= max;
-  const zero = document.getElementById('usageCalcZeroNote');
-  if (zero) zero.textContent = v === 0 ? t('usage_calc_zero_lanes') : '';
+  const res = _usageCalc.body;
+  const max = res && res.advice && res.advice.max_lanes ? res.advice.max_lanes : 3;
+  _usageCalc.whatIf = Math.min(max, Math.max(0, Number(n) || 0));
+  return usageCalcRefresh();
 }
 
 window.usageCalcSubmitReading = function () {
   const val = id => { const el = document.getElementById(id); return el ? el.value : ''; };
-  const lanesEl = document.getElementById('usageCalcLanes');
   const built = usageCalcReadingBody({
     percent: val('usageCalcPercent'),
     session: val('usageCalcSession'),
-    lanes: lanesEl ? lanesEl.getAttribute('data-value') : 0,
     readAt: val('usageCalcReadAt'),
     now: Date.now(),
   });
@@ -24657,6 +24671,8 @@ function _usageCalcPolicyForm(res, opts) {
     `<div style="font-weight:600;">${escHtml(t('usage_calc_policy_title'))}</div>` +
     `<div role="radiogroup" aria-label="${escHtml(t('usage_calc_policy_title'))}" style="display:flex;flex-direction:column;gap:2px;">${radios}</div>` +
     `<div style="font-size:11px;color:var(--text2);">${escHtml(t('usage_calc_policy_hint'))}</div>` +
+    _usageCalcWhatIfHtml(res) +
+    _usageCalcRunningNowHtml(res) +
     `</div>`;
 }
 
@@ -24680,8 +24696,8 @@ window.usageCalcUseSuggested = function () {
   if (!res || !res.advice || !res.advice.advice) return;
   const n = res.advice.advice.lanes_suggested;
   if (!(n >= 0)) return;
-  usageCalcSetLanes(n);
   _usageCalcCountBump(_usageCalcActive(_usageCalcVariantList(res), _usageCalc.variant), 'used');
+  return usageCalcSetLanes(n);
 };
 
 function _usageCalcExtraForm(res) {
@@ -25181,12 +25197,15 @@ function usageCalcRerender() {
 // the first load, the daemon's error plainly with Retry, and the last good body
 // kept beneath it. It does not poll; the card refreshes when the operator asks
 // (refresh, a saved reading, a changed policy). The request is one GET of
-// /api/usage/advice, with the chosen policy as a query value when one is picked.
+// /api/usage/advice, with the chosen policy and the what-if lane count as query values when set.
 function _automationUsageLoader() {
   return window._listLoaders.automation_usage || listLoader({
     key: 'automation_usage', el: 'automationUsageCard', url: '/api/usage/advice',
     fetch: (url, init) => {
-      const q = _usageCalc.policy ? '?policy=' + encodeURIComponent(_usageCalc.policy) : '';
+      const params = [];
+      if (_usageCalc.policy) params.push('policy=' + encodeURIComponent(_usageCalc.policy));
+      if (_usageCalc.whatIf !== null && _usageCalc.whatIf !== undefined) params.push('lanes=' + encodeURIComponent(String(_usageCalc.whatIf)));
+      const q = params.length ? '?' + params.join('&') : '';
       _usageCalc.error = '';
       return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
     },

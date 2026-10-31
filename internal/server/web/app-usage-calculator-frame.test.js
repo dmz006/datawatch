@@ -206,22 +206,22 @@ test('the card sits right after the capacity card on the Automata tab and loads 
 
 test('the reading body is built from the form values and rejects an out-of-range percent', () => {
   const s = loadApp();
-  const ok = vm.runInContext("usageCalcReadingBody({ percent: '72', session: '', lanes: 2, readAt: '2026-10-23T22:08', now: 0 })", s);
+  const ok = vm.runInContext("usageCalcReadingBody({ percent: '72', session: '', readAt: '2026-10-23T22:08', now: 0 })", s);
   assert.equal(ok.body.percent, 72);
-  assert.equal(ok.body.lanes, 2);
+  assert.equal('lanes' in ok.body, false, 'the reading no longer carries a lanes field');
   assert.equal(ok.body.source, 'typed');
   assert.equal('session_percent' in ok.body, false, 'an empty session field is not sent');
   assert.match(ok.body.at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
 
-  const withSession = vm.runInContext("usageCalcReadingBody({ percent: '70', session: '12.5', lanes: 0, readAt: '', now: Date.UTC(2026, 9, 23, 22, 8) })", s);
+  const withSession = vm.runInContext("usageCalcReadingBody({ percent: '70', session: '12.5', readAt: '', now: Date.UTC(2026, 9, 23, 22, 8) })", s);
   assert.equal(withSession.body.session_percent, 12.5);
   assert.equal(withSession.body.at, '2026-10-23T22:08:00.000Z', 'an empty read time falls back to the given now');
 
   for (const percent of ['1001', '-1', '']) {
-    const bad = vm.runInContext(`usageCalcReadingBody({ percent: '${percent}', session: '', lanes: 0, readAt: '', now: 0 })`, s);
+    const bad = vm.runInContext(`usageCalcReadingBody({ percent: '${percent}', session: '', readAt: '', now: 0 })`, s);
     assert.equal(bad.error, 'Enter a number from 0 to 1000.', 'percent ' + JSON.stringify(percent));
   }
-  const badSession = vm.runInContext("usageCalcReadingBody({ percent: '70', session: '101', lanes: 0, readAt: '', now: 0 })", s);
+  const badSession = vm.runInContext("usageCalcReadingBody({ percent: '70', session: '101', readAt: '', now: 0 })", s);
   assert.equal(badSession.error, 'Enter a number from 0 to 100, or leave it empty.');
 });
 
@@ -232,7 +232,7 @@ test('a points figure must be a number of 0 or more', () => {
   assert.equal(vm.runInContext("usageCalcPointsBody('').error", s), 'Enter a number of points, 0 or more.');
 });
 
-test('the reading time defaults to now and the lanes stepper goes up to the maximum', () => {
+test('the reading time defaults to now and the what-if stepper goes up to the maximum', () => {
   const s = loadApp();
   const html = frame(s, workedExampleBody(), { now: Date.UTC(2026, 9, 23, 22, 8) });
   assert.match(html, /id="usageCalcReadAt" type="datetime-local" value="\d{4}-\d{2}-\d{2}T\d{2}:\d{2}"/);
@@ -254,5 +254,6 @@ test('the suggested-lanes button shows the advised count, and using it counts on
   vm.runInContext('window.usageCalcUseSuggested()', s);
   const counts = JSON.parse(s.localStorage.getItem('datawatch.usageCalc.counts'));
   assert.equal(counts['pace-gauge'].used, 1, 'the active variant records one use');
-  assert.equal(s.fetchCalls.length, 0, 'using the suggestion never calls the daemon');
+  assert.equal(s.fetchCalls.length, 2, 'each use of the suggestion refetches the advice once');
+  for (const call of s.fetchCalls) assert.match(call.url, /\/api\/usage\/advice\?lanes=1$/, 'the what-if is the suggested count');
 });
