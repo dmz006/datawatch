@@ -488,6 +488,12 @@ type PRD struct {
 	// fails rather than continuing into later, independent stories.
 	ContinueOnStoryFailure *bool `json:"continue_on_story_failure,omitempty"`
 
+	// AuthorizedProtectedPaths lists the protected paths (exact files,
+	// directories with a trailing slash, or globs) this Automaton's tasks may
+	// change without an operator decision. Set by SetAuthorizedProtectedPaths;
+	// empty means nothing is authorised.
+	AuthorizedProtectedPaths []string `json:"authorized_paths,omitempty"`
+
 	// BL428 §3a ii — refuse-dirty-tree override for this PRD's tasks.
 	// nil inherits the daemon-wide config.Autonomous.refuse_dirty_tree_start
 	// default (resolveRefuseDirtyTree).
