@@ -14,7 +14,7 @@
 //   node run-all.mjs --dry-run --group load   — list the load group's stories, then exit
 //   node run-all.mjs --group wire             — run the websocket byte-budget group (TS-816)
 //   node run-all.mjs --group shared-nav       — run the shared navigation phone-width scenario
-//   node run-all.mjs --group usage            — run the usage calculator group (TS-819, TS-832)
+//   node run-all.mjs --group usage            — run the usage calculator group (TS-819, TS-832, TS-840)
 //   node run-all.mjs --group automation       — run the automation sub-tabs group (TS-833)
 
 import { spawnSync } from 'node:child_process';
@@ -32,7 +32,8 @@ const GROUPS = {
   load: ['TS-802', 'TS-803', 'TS-804', 'TS-805', 'TS-806', 'TS-807', 'TS-808', 'TS-809', 'TS-810', 'TS-811', 'TS-812'],
   wire: ['TS-816'],
   'shared-nav': ['shared-nav-mobile-fit'],
-  usage: ['TS-819', 'TS-832'],
+  // usage: TS-819.mjs, TS-832.mjs, TS-840.mjs (the Claude lane stamp story)
+  usage: ['TS-819', 'TS-832', 'TS-840'],
   automation: ['TS-833'],
 };
 
