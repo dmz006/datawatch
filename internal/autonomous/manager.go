@@ -1343,6 +1343,12 @@ type Manager struct {
 	// raising a warning alongside the alert can link the event to it.
 	alertSink func(level, title, body string) (id string)
 
+	// modelHostCheck and modelRoutingSettings feed the pin-time model
+	// check (model_route.go). Guarded by mu. A nil check lets every pin
+	// through; nil settings read as the defaults.
+	modelHostCheck       ModelHostCheckFn
+	modelRoutingSettings func() ModelRoutingSettings
+
 	// decisionStore and decisionGateCfg feed the decision gate
 	// (decision_gate_hold.go). Guarded by mu. A nil store reads as no
 	// decisions on file; a nil config function leaves the gate off.
@@ -4319,6 +4325,10 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkPinnedModelHosted(prdID, "story "+storyID, &Task{}, &Story{Backend: backend, Model: model}, prd, model)
+	if err != nil {
+		return nil, err
+	}
 	story.Backend = backend
 	story.Effort = Effort(effort)
 	story.Model = model
@@ -4328,6 +4338,7 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 		At: time.Now(), Kind: "set_story_llm", Actor: actor,
 		Note: fmt.Sprintf("story=%s backend=%s effort=%s model=%s", storyID, backend, effort, model),
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4359,6 +4370,10 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkPinnedModelHosted(prdID, "task "+taskID, &Task{Backend: backend, Model: model}, story, prd, model)
+	if err != nil {
+		return nil, err
+	}
 	task.Backend = backend
 	task.Effort = Effort(effort)
 	task.Model = model
@@ -4368,6 +4383,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 		At: time.Now(), Kind: "set_task_llm", Actor: actor,
 		Note: fmt.Sprintf("task=%s backend=%s effort=%s model=%s", taskID, backend, effort, model),
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4794,6 +4810,10 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	if err := checkLevelPair(prdID, backend, model, prd.Backend, prd.Model); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkLevelModelHosted(prdID, "Automaton worker", backend, model, prd.Backend)
+	if err != nil {
+		return nil, err
+	}
 	if backend != nil {
 		prd.Backend = *backend
 	}
@@ -4833,6 +4853,7 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
 		Note: note,
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5065,6 +5086,10 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 	if err := checkLevelPair(prdID, backend, model, task.VerificationBackend, task.VerificationModel); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkLevelModelHosted(prdID, "task "+taskID+" verifier", backend, model, task.VerificationBackend)
+	if err != nil {
+		return nil, err
+	}
 	applyVerificationLLM(&task.VerificationBackend, &task.VerificationModel, &task.VerificationEffort, backend, model, effort)
 	task.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
@@ -5073,6 +5098,7 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 		Note: fmt.Sprintf("task=%s verification_backend=%s verification_model=%s verification_effort=%s",
 			taskID, task.VerificationBackend, task.VerificationModel, task.VerificationEffort),
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5109,6 +5135,10 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 	if err := checkLevelPair(prdID, backend, model, story.VerificationBackend, story.VerificationModel); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkLevelModelHosted(prdID, "story "+storyID+" verifier", backend, model, story.VerificationBackend)
+	if err != nil {
+		return nil, err
+	}
 	applyVerificationLLM(&story.VerificationBackend, &story.VerificationModel, &story.VerificationEffort, backend, model, effort)
 	story.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
@@ -5117,6 +5147,7 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 		Note: fmt.Sprintf("story=%s verification_backend=%s verification_model=%s verification_effort=%s",
 			storyID, story.VerificationBackend, story.VerificationModel, story.VerificationEffort),
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5142,6 +5173,10 @@ func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *st
 	if err := checkLevelPair(prdID, backend, model, prd.VerificationBackend, prd.VerificationModel); err != nil {
 		return nil, err
 	}
+	warning, err := m.checkLevelModelHosted(prdID, "Automaton verifier", backend, model, prd.VerificationBackend)
+	if err != nil {
+		return nil, err
+	}
 	applyVerificationLLM(&prd.VerificationBackend, &prd.VerificationModel, &prd.VerificationEffort, backend, model, effort)
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
@@ -5149,6 +5184,7 @@ func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *st
 		Note: fmt.Sprintf("verification_backend=%s verification_model=%s verification_effort=%s",
 			prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort),
 	})
+	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
