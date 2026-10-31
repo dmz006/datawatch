@@ -397,3 +397,44 @@ func (s *Server) seriesAppendLocal(t *testing.T) error {
 	_, err = store.Append(usagecalc.Reading{At: time.Now().UTC().Add(-2 * time.Hour), Percent: fptrUsage(42), Source: usagecalc.SourceTyped})
 	return err
 }
+
+// TestUsageReadingResponseCarriesLaneStamp checks the REST shape of a stored reading: it
+// carries lanes and lanes_source, and a lanes value an older caller sends is accepted
+// (200) and ignored.
+func TestUsageReadingResponseCarriesLaneStamp(t *testing.T) {
+	s := newUsageTestServer(t, t.TempDir(), "", "", "", "")
+	s.inferenceReg = laneFakeRegistry(t)
+	s.SetCapacity(laneFakeLedger(t, "task-a", "task-b"))
+
+	post := func(body string) map[string]any {
+		req := withUsageCaps(httptest.NewRequest(http.MethodPost, "/api/usage/readings", nil),
+			federation.CapUsageRead, federation.CapUsageWrite)
+		req.Body = io.NopCloser(strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		s.handleUsageReadings(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("POST %s = %d: %s", body, rr.Code, rr.Body.String())
+		}
+		var resp struct {
+			Reading map[string]any `json:"reading"`
+		}
+		if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil || resp.Reading == nil {
+			t.Fatalf("decode reply: %v (body=%s)", err, rr.Body.String())
+		}
+		return resp.Reading
+	}
+
+	for _, body := range []string{
+		`{"percent":50,"source":"typed"}`,
+		`{"percent":51,"source":"typed","lanes":7}`,
+		`{"percent":52,"source":"typed","lanes":"not a number"}`, // accepted without validation
+	} {
+		got := post(body)
+		if lanes, ok := got["lanes"].(float64); !ok || lanes != 2 {
+			t.Fatalf("POST %s: lanes = %v, want the stamped 2", body, got["lanes"])
+		}
+		if got["lanes_source"] != usagecalc.LanesLive {
+			t.Fatalf("POST %s: lanes_source = %v, want %q", body, got["lanes_source"], usagecalc.LanesLive)
+		}
+	}
+}

@@ -1414,6 +1414,9 @@ func (s *HTTPServer) BroadcastChannelReply(sessionID, text string) {
 func (s *HTTPServer) Start(ctx context.Context) error {
 	go s.hub.Run()
 
+	// The Claude lane history samples with the daemon and stops when ctx ends.
+	s.StartUsageLaneHistory(ctx)
+
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).
 	if s.api.statsCollector != nil {

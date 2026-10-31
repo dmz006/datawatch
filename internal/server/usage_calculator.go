@@ -80,8 +80,12 @@ func (s *Server) auditUsageReadingAdded(r *http.Request, rec usagecalc.Reading) 
 	if rec.SessionPercent != nil {
 		details["session_percent"] = *rec.SessionPercent
 	}
+	// The stamp the keeper put on the reading, never a value the caller sent.
 	if rec.Lanes != nil {
 		details["lanes"] = *rec.Lanes
+	}
+	if rec.LanesSource != "" {
+		details["lanes_source"] = rec.LanesSource
 	}
 	s.audit(r.Context(), audit.ActionUsageReadingAdded, usageCalcResourceType, rec.ID, details)
 }
