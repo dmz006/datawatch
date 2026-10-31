@@ -509,6 +509,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
 	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                // lane fill status: lanes, decisions, alerts
+	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)        // infrastructure retry policy and the tasks retried or held, newest first
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                     // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)               // decisions: operator questions with their tasks and answers, newest first
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                   // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
