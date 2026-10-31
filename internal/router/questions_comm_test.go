@@ -182,6 +182,7 @@ func questionRouterWithManager(t *testing.T) *Router {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	return &Router{

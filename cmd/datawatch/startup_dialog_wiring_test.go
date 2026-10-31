@@ -28,6 +28,7 @@ func newStartupWiringManager(t *testing.T, fixture string) (*session.Manager, *s
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(m)
+	trackSessionManager(t, m)
 	fake := m.WithFakeTmux()
 	_ = m.SaveSession(&session.Session{
 		ID:            "startup-1",

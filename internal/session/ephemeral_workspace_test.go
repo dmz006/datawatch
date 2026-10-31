@@ -17,6 +17,7 @@ func TestDelete_ReapsEphemeralWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
@@ -60,6 +61,7 @@ func TestDelete_LeavesOperatorProjectDirAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
@@ -102,6 +104,7 @@ func TestReapOrphanWorkspaces_RemovesUnreferencedDirs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
@@ -156,6 +159,7 @@ func TestReapOrphanWorkspaces_NoRootDirIsHarmless(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 
@@ -176,6 +180,7 @@ func TestDelete_RefusesReapOutsideWorkspaceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 

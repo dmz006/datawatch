@@ -74,6 +74,7 @@ func newTestServer(t *testing.T, mem MemoryAPI, mcpFn func() interface{}) *Serve
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	mgr.WithFakeTmux()
 	// Close the store first so its background flush writer stops before the

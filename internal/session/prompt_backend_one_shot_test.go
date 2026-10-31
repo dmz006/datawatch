@@ -209,6 +209,7 @@ func TestExistingSessionRecordUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second NewManager: %v", err)
 	}
+	t.Cleanup(func() { _ = m2.Close() })
 	allowTestTemp(m2)
 	_ = m2.WithFakeTmux()
 

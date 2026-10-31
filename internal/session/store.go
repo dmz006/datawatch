@@ -487,6 +487,7 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 			return nil, err
 		}
 		s.mergeSessionDirsAndPersist(filepath.Dir(path))
+		s.liveGuardRegister()
 		return s, nil
 	}
 
@@ -557,7 +558,19 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 			}
 		}
 	}
+	s.liveGuardRegister()
 	return s, nil
+}
+
+// liveGuardRegister / liveGuardUnregister plug the leak guard (see
+// store_leak_guard.go) into the store lifecycle. Production cost: one map
+// entry per live store.
+func (s *Store) liveGuardRegister() {
+	liveStoreRegister(s, liveTestCreator())
+}
+
+func (s *Store) liveGuardUnregister() {
+	liveStoreUnregister(s)
 }
 
 // mergeSessionDirsAndPersist is the per-session-directory merge for a store
@@ -870,9 +883,32 @@ func (s *Store) FlushIfDirty() error {
 	return s.flush(false)
 }
 
+// Path is the store's backing file (diagnostics; tests name it in
+// failures so the leaking store is unambiguous).
+func (s *Store) Path() string { return s.path }
+
+// WriterRunning reports whether the background flush may still fire for
+// this store (constructed, writer started, not yet Closed). Tests use it
+// to fail the offending test by name instead of blaming a bystander.
+func (s *Store) WriterRunning() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.started && !s.closed
+}
+
+// IsClosed reports whether Close has run (idempotent; false before it).
+func (s *Store) IsClosed() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.closed
+}
+
 // Close flushes pending changes and stops the background writer. The store
 // stays usable afterwards: later Saves write through synchronously.
 func (s *Store) Close() error {
+	if s == nil {
+		return nil
+	}
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
@@ -886,7 +922,9 @@ func (s *Store) Close() error {
 		<-s.doneCh
 	}
 	s.arc.wg.Wait()
-	return s.flush(false)
+	err := s.flush(false)
+	s.liveGuardUnregister()
+	return err
 }
 
 // flush writes the store to disk. force writes even when not dirty.

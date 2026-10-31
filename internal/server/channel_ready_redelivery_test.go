@@ -34,6 +34,7 @@ func channelReadyServer(t *testing.T, dir string) (*Server, *session.FakeTmux) {
 		t.Fatal(err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	t.Cleanup(mgr.WaitBackground)
 	fake := mgr.WithFakeTmux()
 	s := &Server{
@@ -98,7 +99,11 @@ func setWaiting(t *testing.T, s *Server, sessID string) {
 	if !ok {
 		t.Fatal("session vanished")
 	}
-	sess.State = session.StateWaitingInput
+	// Mutate under the store lock: the background flusher marshals live
+	// *Session pointers, and an unlocked field write races with it
+	// (string writes are not atomic, so this is a data race, not just
+	// torn reads).
+	s.manager.Store().Mutate(func() { sess.State = session.StateWaitingInput })
 	if err := s.manager.SaveSession(sess); err != nil {
 		t.Fatal(err)
 	}

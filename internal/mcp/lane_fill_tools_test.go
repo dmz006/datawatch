@@ -18,6 +18,7 @@ func TestLaneFillToolsAreListed(t *testing.T) {
 		t.Fatalf("session.NewManager: %v", err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	mgr.WithFakeTmux()
 	s := New("testhost", mgr, &config.MCPConfig{Enabled: true}, dir, Options{Version: "test"})
 	tools, err := s.ListTools()

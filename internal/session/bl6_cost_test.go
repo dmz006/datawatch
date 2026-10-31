@@ -55,6 +55,7 @@ func TestBL6_AddUsage_UpdatesSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 	_ = mgr.SaveSession(&Session{
@@ -76,6 +77,7 @@ func TestBL6_AddUsage_UpdatesSession(t *testing.T) {
 
 func TestBL6_CostRate_FamilyFallback(t *testing.T) {
 	mgr, _ := NewManager("h", t.TempDir(), "/bin/echo", 0)
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	r, ok := mgr.costRate("opencode-acp")
 	if !ok {

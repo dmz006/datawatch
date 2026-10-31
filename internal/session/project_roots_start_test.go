@@ -21,6 +21,7 @@ func rootsManager(t *testing.T, worktreeBase, workspace string, extra ...string)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	fake := mgr.WithFakeTmux()
 	cfg := config.DefaultConfig()
 	cfg.Autonomous.WorktreeDir = worktreeBase

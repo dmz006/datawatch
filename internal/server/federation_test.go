@@ -22,6 +22,7 @@ func federationFixture(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)

@@ -53,6 +53,7 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	mgr.WithFakeTmux()
 	t.Cleanup(func() { _ = mgr.Close() })

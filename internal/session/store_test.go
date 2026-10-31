@@ -29,6 +29,7 @@ func TestStore_NewEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	if n := len(s.List()); n != 0 {
 		t.Errorf("new store has %d sessions, want 0", n)
 	}
@@ -41,6 +42,7 @@ func TestStore_NewFromMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore with missing file: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	if s == nil {
 		t.Fatal("store should not be nil")
 	}
@@ -49,6 +51,7 @@ func TestStore_NewFromMissingFile(t *testing.T) {
 func TestStore_Save_Get(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	sess := makeTestSession("ab12", "myhost", StateRunning)
 	if err := s.Save(sess); err != nil {
@@ -76,6 +79,7 @@ func TestStore_Save_Get_AgentID(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 
 	s, _ := NewStore(path)
+	t.Cleanup(func() { _ = s.Close() })
 	sess := makeTestSession("cd34", "myhost", StateRunning)
 	sess.AgentID = "agent-abc-123"
 	if err := s.Save(sess); err != nil {
@@ -85,6 +89,7 @@ func TestStore_Save_Get_AgentID(t *testing.T) {
 	// Reload from disk via a fresh Store to ensure the field made it
 	// through JSON serialisation, not just the in-memory map.
 	s2, _ := NewStore(path)
+	t.Cleanup(func() { _ = s2.Close() })
 	got, ok := s2.Get("myhost-cd34")
 	if !ok {
 		t.Fatal("Get returned not found for persisted session")
@@ -99,6 +104,7 @@ func TestStore_Save_Get_CommitAndCompletion(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 
 	s, _ := NewStore(path)
+	t.Cleanup(func() { _ = s.Close() })
 	sess := makeTestSession("cp12", "myhost", StateComplete)
 	sess.CommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
 	sess.CompletionSummary = "fixed the bug and verified with tests"
@@ -109,6 +115,7 @@ func TestStore_Save_Get_CommitAndCompletion(t *testing.T) {
 	// Reload from disk via a fresh Store to ensure both fields made it
 	// through JSON serialisation, not just the in-memory map.
 	s2, _ := NewStore(path)
+	t.Cleanup(func() { _ = s2.Close() })
 	got, ok := s2.Get("myhost-cp12")
 	if !ok {
 		t.Fatal("Get returned not found for persisted session")
@@ -124,6 +131,7 @@ func TestStore_Save_Get_CommitAndCompletion(t *testing.T) {
 func TestStore_GetMissing(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	_, ok := s.Get("nonexistent-1234")
 	if ok {
@@ -134,6 +142,7 @@ func TestStore_GetMissing(t *testing.T) {
 func TestStore_GetByShortID(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	sess := makeTestSession("cd34", "myhost", StateWaitingInput)
 	s.Save(sess) //nolint:errcheck
@@ -150,6 +159,7 @@ func TestStore_GetByShortID(t *testing.T) {
 func TestStore_GetByShortID_CaseInsensitive(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 	s.Save(makeTestSession("ef56", "myhost", StateRunning)) //nolint:errcheck
 
 	_, ok := s.GetByShortID("EF56")
@@ -165,6 +175,7 @@ func TestStore_GetByShortID_CaseInsensitive(t *testing.T) {
 func TestStore_GetByShortID_Missing(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	_, ok := s.GetByShortID("zzzz")
 	if ok {
@@ -175,6 +186,7 @@ func TestStore_GetByShortID_Missing(t *testing.T) {
 func TestStore_List(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	s.Save(makeTestSession("aa11", "host1", StateRunning))  //nolint:errcheck
 	s.Save(makeTestSession("bb22", "host1", StateComplete)) //nolint:errcheck
@@ -189,6 +201,7 @@ func TestStore_List(t *testing.T) {
 func TestStore_ListEmpty(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	list := s.List()
 	if list == nil {
@@ -202,6 +215,7 @@ func TestStore_ListEmpty(t *testing.T) {
 func TestStore_Update(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	sess := makeTestSession("dd44", "myhost", StateRunning)
 	s.Save(sess) //nolint:errcheck
@@ -222,6 +236,7 @@ func TestStore_Update(t *testing.T) {
 func TestStore_Delete(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	s.Save(makeTestSession("ee55", "myhost", StateComplete)) //nolint:errcheck
 	s.Save(makeTestSession("ff66", "myhost", StateRunning))  //nolint:errcheck
@@ -244,6 +259,7 @@ func TestStore_Delete(t *testing.T) {
 func TestStore_DeleteMissing(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	// Deleting a non-existent session should not error
 	if err := s.Delete("nonexistent-1234"); err != nil {
@@ -257,6 +273,7 @@ func TestStore_Persistence(t *testing.T) {
 
 	// Write two sessions
 	s1, _ := NewStore(path)
+	t.Cleanup(func() { _ = s1.Close() })
 	s1.Save(makeTestSession("gg77", "myhost", StateRunning))      //nolint:errcheck
 	s1.Save(makeTestSession("hh88", "myhost", StateWaitingInput)) //nolint:errcheck
 
@@ -265,6 +282,7 @@ func TestStore_Persistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	if len(s2.List()) != 2 {
 		t.Errorf("reloaded store has %d sessions, want 2", len(s2.List()))
 	}
@@ -291,11 +309,13 @@ func TestStore_PersistAfterDelete(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 
 	s1, _ := NewStore(path)
+	t.Cleanup(func() { _ = s1.Close() })
 	s1.Save(makeTestSession("ii99", "myhost", StateComplete)) //nolint:errcheck
 	s1.Save(makeTestSession("jj00", "myhost", StateKilled))   //nolint:errcheck
 	s1.Delete("myhost-ii99")                                  //nolint:errcheck
 
 	s2, _ := NewStore(path)
+	t.Cleanup(func() { _ = s2.Close() })
 	if len(s2.List()) != 1 {
 		t.Errorf("after delete+reload, got %d sessions, want 1", len(s2.List()))
 	}
@@ -307,6 +327,7 @@ func TestStore_PersistAfterDelete(t *testing.T) {
 func TestStore_MultipleSavesSameID(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
+	t.Cleanup(func() { _ = s.Close() })
 
 	sess := makeTestSession("kk11", "myhost", StateRunning)
 	s.Save(sess) //nolint:errcheck
@@ -330,6 +351,7 @@ func TestStore_Save_WriteThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	sess := makeTestSession("wt01", "host", StateRunning)
 	if err := s.Save(sess); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -341,6 +363,7 @@ func TestStore_Save_WriteThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("re-open: %v", err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	if got, ok := s2.Get(sess.FullID); !ok {
 		t.Fatalf("session not on disk after Save")
 	} else if got.State != StateRunning {
@@ -352,6 +375,7 @@ func TestStore_Flush_PersistsCurrentState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")
 	s, _ := NewStore(path)
+	t.Cleanup(func() { _ = s.Close() })
 	sess := makeTestSession("fl01", "host", StateRunning)
 	_ = s.Save(sess)
 
@@ -360,6 +384,7 @@ func TestStore_Flush_PersistsCurrentState(t *testing.T) {
 		t.Fatalf("Flush: %v", err)
 	}
 	s2, _ := NewStore(path)
+	t.Cleanup(func() { _ = s2.Close() })
 	if _, ok := s2.Get(sess.FullID); !ok {
 		t.Fatal("session lost after Flush")
 	}
@@ -403,6 +428,7 @@ func TestStore_CorruptedSessionsJson_AutoRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore should auto-recover, got: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 
 	// First two sessions survive.
 	if _, ok := store.Get("host-aaaa"); !ok {
@@ -452,6 +478,7 @@ func TestStore_CorruptedSessionsJson_SubdirMerge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	for _, id := range []string{"host-aaaa", "host-bbbb", "host-cccc"} {
 		if _, ok := store.Get(id); !ok {
 			t.Errorf("session %q missing after subdir merge", id)
@@ -475,6 +502,7 @@ func TestSecfile_AtomicWrite_SurvivesPartialFlush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{ID: "new", FullID: "host-new", Name: "fresh"}
 	if err := store.Save(sess); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -499,10 +527,12 @@ func TestStore_ConcurrentPersist_NoCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore s1: %v", err)
 	}
+	t.Cleanup(func() { _ = s1.Close() })
 	s2, err := NewStore(path)
 	if err != nil {
 		t.Fatalf("NewStore s2: %v", err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 
 	// Pre-populate each store's in-memory map so their persist() calls write
 	// disjoint but overlapping session sets.
@@ -545,6 +575,7 @@ func TestStore_ConcurrentPersist_NoCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload after concurrent persist: %v", err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got := len(re.List()); got != 4 {
 		t.Errorf("reloaded %d sessions after concurrent persist, want 4", got)
 	}

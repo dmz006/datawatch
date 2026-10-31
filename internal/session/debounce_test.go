@@ -14,6 +14,7 @@ func TestPromptDebounce_SuppressesFalsePositives(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-session", ID: "test", State: StateRunning}
 	_ = store.Save(sess)
 
@@ -49,6 +50,7 @@ func TestPromptDebounce_ResetOnNewOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-session", ID: "test", State: StateRunning}
 	_ = store.Save(sess)
 
@@ -86,6 +88,7 @@ func TestPromptDebounce_SkipDebounce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	sess := &Session{FullID: "test-skip", ID: "skip", State: StateRunning}
 	_ = store.Save(sess)
 
@@ -120,6 +123,7 @@ func TestNotifyCooldown_SuppressesDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 
 	notifyCount := 0
 	m := &Manager{

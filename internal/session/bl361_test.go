@@ -14,6 +14,7 @@ func bl361MakeManager(t *testing.T) *Manager {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 
 	alive := true

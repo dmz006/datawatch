@@ -27,6 +27,7 @@ func newManagerWithSession(t *testing.T, logPath string) (*Manager, *Session) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	sess := &Session{
 		ID:      "ab01",

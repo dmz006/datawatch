@@ -27,6 +27,7 @@ func TestStoreCoalesce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	defer func() { _ = st.Close() }()
 	sess := coalesceSession(1, "t")
 	const saves = 200
@@ -48,6 +49,7 @@ func TestStoreCoalesce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	got, ok := re.Get(sess.FullID)
 	if !ok || got.InputCount != saves-1 {
 		t.Fatalf("reloaded session = %+v ok=%v, want InputCount %d", got, ok, saves-1)
@@ -61,6 +63,7 @@ func TestStoreFlushOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if err := st.Save(coalesceSession(1, "one")); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +83,7 @@ func TestStoreFlushOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if _, ok := re.Get("co-0001"); ok {
 		t.Fatal("deleted session survived Close")
 	}
@@ -90,7 +94,9 @@ func TestStoreFlushOnClose(t *testing.T) {
 	if err := st.Save(coalesceSession(3, "three")); err != nil {
 		t.Fatal(err)
 	}
+	_ = re.Close()
 	re, _ = NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if _, ok := re.Get("co-0003"); !ok {
 		t.Fatal("post-Close Save was not written through")
 	}
@@ -102,12 +108,14 @@ func TestStoreFlushOnClose(t *testing.T) {
 func TestStoreFlushExplicit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(time.Hour))
+	t.Cleanup(func() { _ = st.Close() })
 	defer func() { _ = st.Close() }()
 	_ = st.Save(coalesceSession(1, "x"))
 	if err := st.Flush(); err != nil {
 		t.Fatal(err)
 	}
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if _, ok := re.Get("co-0001"); !ok {
 		t.Fatal("Flush did not write the saved session")
 	}
@@ -121,6 +129,7 @@ func TestStoreFlushExplicit(t *testing.T) {
 func TestStoreWriteThrough(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = st.Close() })
 	for i := 0; i < 5; i++ {
 		_ = st.Save(coalesceSession(i, "x"))
 	}
@@ -131,6 +140,7 @@ func TestStoreWriteThrough(t *testing.T) {
 	st.SetFlushInterval(-1)
 	_ = st.Delete("co-0000")
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if _, ok := re.Get("co-0000"); ok {
 		t.Fatal("write-through Delete not on disk")
 	}
@@ -167,6 +177,7 @@ func TestStoreCrashSafetyHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	for gen := 1; ; gen++ {
 		st.Mutate(func() {
 			for _, s := range crashState(gen) {
@@ -190,6 +201,7 @@ func TestStoreCrashSafety(t *testing.T) {
 	path := filepath.Join(dir, "sessions.json")
 	// Seed a valid previous state so the file always exists.
 	seed, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = seed.Close() })
 	seed.Mutate(func() {
 		for _, s := range crashState(0) {
 			seed.sessions[s.FullID] = s
@@ -257,6 +269,7 @@ func TestStoreCrashSafety(t *testing.T) {
 		if err != nil {
 			t.Fatalf("round %d: reload: %v", round, err)
 		}
+		t.Cleanup(func() { _ = re.Close() })
 		if got := len(re.List()); got != crashSessions {
 			t.Fatalf("round %d: reloaded %d sessions, want %d", round, got, crashSessions)
 		}
@@ -275,6 +288,7 @@ func TestStoreConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	const workers = 8
 	const iters = 150
 	var wg sync.WaitGroup
@@ -311,6 +325,7 @@ func TestStoreConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got, want := len(re.List()), len(st.List()); got != want {
 		t.Fatalf("reloaded %d sessions, in memory %d", got, want)
 	}

@@ -39,6 +39,7 @@ func TestEndAttributionCommChannelKill(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	sm.WithFakeTmux()
 	j := &endAttrJournal{}
 	sm.SetJournal(j)

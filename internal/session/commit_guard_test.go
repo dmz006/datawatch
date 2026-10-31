@@ -128,6 +128,7 @@ func TestAdoptCommitGuardsKeepsLiveRemovesStale(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	m := &Manager{hostname: "host", store: st, tmux: NewFakeTmux()}
 	sess := &Session{FullID: "host-live1", PRDID: "p", TmuxSession: "cs-live"}
 	m.adoptCommitGuards([]*Session{sess})
@@ -212,6 +213,7 @@ func commitGuardOneShotManager(t *testing.T, dir string, validate []string) (*Ma
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	m := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "cg01", FullID: "testhost-cg01", Hostname: "testhost",
