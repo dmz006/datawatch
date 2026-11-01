@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,151 @@ func TestLaneFillLoadRejectsBadValues(t *testing.T) {
 			}
 			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "autonomous.lane_fill") {
 				t.Fatalf("Load error = %v, want one naming autonomous.lane_fill", err)
+			}
+		})
+	}
+}
+
+func TestLaneFillNewKeyDefaults(t *testing.T) {
+	for name, lf := range map[string]AutonomousLaneFillConfig{
+		"shipped defaults": DefaultConfig().Autonomous.LaneFill,
+		"zero value":       {},
+	} {
+		if got := lf.EffectiveStaleAfterHours(); got != 72 {
+			t.Errorf("%s: stale_after_hours = %d, want 72", name, got)
+		}
+		if !lf.EffectiveRequireConfirmedProposal() || !lf.EffectiveCheckMainCarries() ||
+			!lf.EffectiveRequireWorktree() || !lf.EffectiveLaneCountsFromCaps() {
+			t.Errorf("%s: the four switches must default to true", name)
+		}
+		if lf.GPUMode != "" || lf.ClaudeMode != "" {
+			t.Errorf("%s: gpu_mode/claude_mode = %q/%q, want empty", name, lf.GPUMode, lf.ClaudeMode)
+		}
+	}
+	d := DefaultConfig().Autonomous.LaneFill
+	if d.EffectiveModeFor("gpu") != "shadow" || d.EffectiveModeFor("claude") != "shadow" {
+		t.Fatalf("shipped default must stay shadow for both kinds, got %q/%q", d.EffectiveModeFor("gpu"), d.EffectiveModeFor("claude"))
+	}
+}
+
+func TestLaneFillStaleAfterHoursZeroSurvivesRoundTrips(t *testing.T) {
+	zero := 0
+	in := AutonomousLaneFillConfig{Mode: "shadow", StaleAfterHours: &zero}
+	raw, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "stale_after_hours: 0") {
+		t.Fatalf("yaml must carry the explicit 0:\n%s", raw)
+	}
+	var fromYAML AutonomousLaneFillConfig
+	if err := yaml.Unmarshal(raw, &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if fromYAML.StaleAfterHours == nil || fromYAML.EffectiveStaleAfterHours() != 0 {
+		t.Fatalf("yaml round trip lost the explicit 0: %+v", fromYAML.StaleAfterHours)
+	}
+	jraw, err := json.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(jraw), `"stale_after_hours":0`) {
+		t.Fatalf("json must carry the explicit 0: %s", jraw)
+	}
+	var fromJSON AutonomousLaneFillConfig
+	if err := json.Unmarshal(jraw, &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if fromJSON.StaleAfterHours == nil || fromJSON.EffectiveStaleAfterHours() != 0 {
+		t.Fatalf("json round trip lost the explicit 0: %+v", fromJSON.StaleAfterHours)
+	}
+}
+
+func TestLaneFillStaleAfterHoursAbsentKeyReads72(t *testing.T) {
+	var fromYAML, fromJSON AutonomousLaneFillConfig
+	if err := yaml.Unmarshal([]byte("mode: shadow\n"), &fromYAML); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(`{"mode":"shadow"}`), &fromJSON); err != nil {
+		t.Fatal(err)
+	}
+	if fromYAML.StaleAfterHours != nil || fromJSON.StaleAfterHours != nil {
+		t.Fatal("an absent stale_after_hours must stay nil")
+	}
+	if fromYAML.EffectiveStaleAfterHours() != 72 || fromJSON.EffectiveStaleAfterHours() != 72 {
+		t.Fatal("an absent stale_after_hours must read 72")
+	}
+	raw, _ := yaml.Marshal(fromYAML)
+	for _, k := range []string{"stale_after_hours", "require_confirmed_proposal", "check_main_carries", "require_worktree", "lane_counts_from_caps"} {
+		if strings.Contains(string(raw), k) {
+			t.Fatalf("an unset %s must not be written to yaml:\n%s", k, raw)
+		}
+	}
+}
+
+func TestLaneFillSwitchesExplicitFalseSurvives(t *testing.T) {
+	f := false
+	in := AutonomousLaneFillConfig{
+		RequireConfirmedProposal: &f, CheckMainCarries: &f, RequireWorktree: &f, LaneCountsFromCaps: &f,
+	}
+	raw, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out AutonomousLaneFillConfig
+	if err := yaml.Unmarshal(raw, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.EffectiveRequireConfirmedProposal() || out.EffectiveCheckMainCarries() ||
+		out.EffectiveRequireWorktree() || out.EffectiveLaneCountsFromCaps() {
+		t.Fatalf("explicit false must survive the round trip:\n%s", raw)
+	}
+}
+
+func TestLaneFillEffectiveModeForKind(t *testing.T) {
+	c := AutonomousLaneFillConfig{Mode: "shadow", GPUMode: " ON "}
+	if got := c.EffectiveModeFor("gpu"); got != "on" {
+		t.Errorf("gpu mode = %q, want on", got)
+	}
+	if got := c.EffectiveModeFor("claude"); got != "shadow" {
+		t.Errorf("claude mode = %q, want shadow (inherited)", got)
+	}
+	c = AutonomousLaneFillConfig{Mode: "on", ClaudeMode: "off"}
+	if c.EffectiveModeFor("gpu") != "on" || c.EffectiveModeFor("claude") != "off" {
+		t.Errorf("got gpu=%q claude=%q, want on/off", c.EffectiveModeFor("gpu"), c.EffectiveModeFor("claude"))
+	}
+	if got := (AutonomousLaneFillConfig{}).EffectiveModeFor("gpu"); got != "shadow" {
+		t.Errorf("empty config gpu mode = %q, want shadow", got)
+	}
+}
+
+func TestLaneFillKindModeValidation(t *testing.T) {
+	for _, ok := range []string{"", "off", "shadow", "on", " ON "} {
+		if err := ValidateLaneFillKindMode("gpu_mode", ok); err != nil {
+			t.Errorf("ValidateLaneFillKindMode(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, key := range []string{"gpu_mode", "claude_mode"} {
+		err := ValidateLaneFillKindMode(key, "auto")
+		if err == nil || !strings.Contains(err.Error(), "autonomous.lane_fill."+key) || !strings.Contains(err.Error(), `must be "off", "shadow" or "on"`) {
+			t.Errorf("ValidateLaneFillKindMode(%s, auto) = %v, want an error naming the key", key, err)
+		}
+	}
+}
+
+func TestLaneFillLoadRejectsBadKindModeAndStale(t *testing.T) {
+	for name, tc := range map[string]struct{ body, key string }{
+		"gpu_mode":    {"gpu_mode: auto", "gpu_mode"},
+		"claude_mode": {"claude_mode: yes", "claude_mode"},
+		"stale":       {"stale_after_hours: -1", "stale_after_hours"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("autonomous:\n  lane_fill:\n    "+tc.body+"\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "autonomous.lane_fill."+tc.key) {
+				t.Fatalf("Load error = %v, want one naming autonomous.lane_fill.%s", err, tc.key)
 			}
 		})
 	}

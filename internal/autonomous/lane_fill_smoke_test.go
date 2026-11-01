@@ -209,8 +209,8 @@ func TestLaneFillSmokeRestartShadowThenOn(t *testing.T) {
 		t.Fatalf("shadow mode made starter calls: %v", calls)
 	}
 	persisted := readLaneFillSmokeFile(t, first.m)
-	if len(persisted) != 3 {
-		t.Errorf("persisted %d decisions, want 3 (one per lane); repeats must not add records: %+v", len(persisted), persisted)
+	if len(persisted) != 4 {
+		t.Errorf("persisted %d decisions, want 4 (one per lane plus the held Automaton's refusal); repeats must not add records: %+v", len(persisted), persisted)
 	}
 	starts := laneFillSmokeStartDecisions(persisted)
 	for role, id := range map[string]string{"gpu": ids.gpu, "review": ids.review, "any": ids.anyPref} {
@@ -225,6 +225,9 @@ func TestLaneFillSmokeRestartShadowThenOn(t *testing.T) {
 		}
 	}
 	for _, d := range persisted {
+		if d.PRDID == ids.held && d.Action == LaneFillActionBlocked && d.EligibilityReason == LaneFillReasonHeld {
+			continue // the refusal record for the held Automaton
+		}
 		if d.PRDID == ids.held || d.PRDID == ids.draft {
 			t.Errorf("shadow planned %s for %s, which must not be started or decomposed here", d.Action, d.PRDID)
 		}

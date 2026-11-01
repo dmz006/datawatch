@@ -33,7 +33,8 @@ type fakeModelFetcher struct {
 	calls  int
 }
 
-func (f *fakeModelFetcher) LoadedModels(ctx context.Context, endpoint string) ([]string, error) {
+func (f *fakeModelFetcher) LoadedModels(ctx context.Context, host PoolHost) ([]string, error) {
+	endpoint := host.Endpoint
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -58,7 +59,7 @@ func TestLaneFillEvidenceFetchLoadedModels(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"models":[{"name":"qwen3.8:27b","model":"qwen3.8:27b"},{"model":"llama3:8b"}]}`))
 	})
-	got, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), srv.URL+"/")
+	got, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: srv.URL + "/"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func TestLaneFillEvidenceFetchLoadedModels(t *testing.T) {
 
 func TestLaneFillEvidenceFetchEmptyList(t *testing.T) {
 	srv := psServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"models":[]}`)) })
-	got, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), srv.URL)
+	got, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: srv.URL})
 	if err != nil || len(got) != 0 {
 		t.Fatalf("models = %v, err = %v; want none, no error", got, err)
 	}
@@ -77,7 +78,7 @@ func TestLaneFillEvidenceFetchEmptyList(t *testing.T) {
 
 func TestLaneFillEvidenceFetchHTTPError(t *testing.T) {
 	srv := psServer(t, func(w http.ResponseWriter, r *http.Request) { http.Error(w, "boom", http.StatusInternalServerError) })
-	_, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), srv.URL)
+	_, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: srv.URL})
 	if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
 		t.Fatalf("err = %v, want an HTTP 500 error", err)
 	}
@@ -95,7 +96,7 @@ func TestLaneFillEvidenceFetchTimeout(t *testing.T) {
 	f := NewHTTPModelFetcher(nil).(*httpModelFetcher)
 	f.timeout = 50 * time.Millisecond
 	start := time.Now()
-	_, err := f.LoadedModels(context.Background(), srv.URL)
+	_, err := f.LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: srv.URL})
 	if err == nil {
 		t.Fatal("a hanging host did not error")
 	}
@@ -110,7 +111,7 @@ func TestLaneFillEvidenceFetchOversizedBody(t *testing.T) {
 	})
 	f := NewHTTPModelFetcher(nil).(*httpModelFetcher)
 	f.maxBytes = 1024
-	_, err := f.LoadedModels(context.Background(), srv.URL)
+	_, err := f.LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: srv.URL})
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Fatalf("err = %v, want an oversized-body error", err)
 	}
@@ -120,7 +121,7 @@ func TestLaneFillEvidenceFetchErrorsCarryNoCredentials(t *testing.T) {
 	srv := psServer(t, func(w http.ResponseWriter, r *http.Request) {})
 	srv.Close() // the connection is refused
 	endpoint := strings.Replace(srv.URL, "http://", "http://user:s3cret@", 1)
-	_, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), endpoint)
+	_, err := NewHTTPModelFetcher(nil).LoadedModels(context.Background(), PoolHost{Name: "x", Endpoint: endpoint})
 	if err == nil {
 		t.Fatal("a closed host did not error")
 	}

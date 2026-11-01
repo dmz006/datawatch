@@ -7082,6 +7082,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// member lifecycle events (nil-safe if it could not be built).
 			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
 			autoCoord.SetLaneFillEvidenceSource(newLaneFillEvidenceSource(amgr, httpServer, computeReg, cfg.Ollama.Host))
+			autoCoord.SetLaneFillProposalReader(newLaneFillProposalReader(amgr))
+			autoCoord.SetLaneFillMainProbe(newLaneFillMainProbe(amgr))
+			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
+			autoCoord.SetLaneCapSource(newLaneFillCapSource(httpServer.InferenceRegistry,
+				func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }))
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

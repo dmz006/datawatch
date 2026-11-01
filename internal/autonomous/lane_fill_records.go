@@ -93,8 +93,17 @@ func laneFillSlotKey(d LaneFillDecision) string {
 // Automaton, blocker, wait reason, and the mode they were made in. The wait
 // reason is in the key, so a lane whose occupant goes from working to waiting
 // starts a new record instead of folding the wait in over the old decision.
+// The refusal code is in the key too: the same refusal folds into one record
+// with a repeat count across polls, and a different code starts a new one.
+// The stale text carries an age that grows every hour, so for that code the
+// text stays out of the key; otherwise the same stale Automaton would get a
+// new record each hour.
 func laneFillDecisionKey(d LaneFillDecision) string {
-	return fmt.Sprintf("%s|%s|%s|%s|%s|%s", d.LaneID, d.Action, d.PRDID, d.Blocker, d.WaitReason, d.Mode)
+	blocker := d.Blocker
+	if d.EligibilityReason == LaneFillReasonStale {
+		blocker = ""
+	}
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s", d.LaneID, d.Action, d.PRDID, blocker, d.WaitReason, d.Mode, d.EligibilityReason)
 }
 
 // observe stores one decision from the running poll. It returns the entry that
@@ -106,6 +115,11 @@ func (r *laneFillRecords) observe(d LaneFillDecision, now time.Time) (e *laneFil
 	if p := r.prev[slot]; p != nil && p.key == key {
 		p.d.LastSeenAt = now
 		p.d.RepeatCount++
+		if d.EligibilityReason != "" {
+			// A refusal's text can change while its code stays (the stale
+			// age); keep the latest wording on the one record.
+			p.d.Reason, p.d.Blocker = d.Reason, d.Blocker
+		}
 		r.cur[slot] = p
 		r.dirty = true
 		return p, false

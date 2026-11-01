@@ -1537,9 +1537,9 @@ autonomous:
   #   Autonomous in the web app.
   # A bad value is rejected (400 on PUT /api/config, an error on config load)
   # and nothing is written. None of the keys is omitted from a saved file, so
-  # an explicit 0 survives a round trip; count_verifier_wait is the one
-  # exception — an absent key reads as its default (true), while an explicit
-  # false survives.
+  # an explicit 0 survives a round trip; count_verifier_wait, stale_after_hours
+  # and the four true/false switches are the exceptions — an absent key reads
+  # as its default, while an explicit false or 0 survives.
   #
   # mode: off | shadow | on (case-insensitive). Empty means shadow. off does
   #   nothing. shadow computes and records every decision and starts nothing.
@@ -1565,6 +1565,42 @@ autonomous:
   #   stays busy, as before. This key only changes which lanes count as
   #   available; the lane fill mode still decides whether anything starts —
   #   shadow starts nothing.
+  # stale_after_hours: whole number >= 0, default 72. How many hours a queued
+  #   Automaton (draft, approved or waiting for review) may go without any
+  #   update before lane fill calls it stale (reason code "stale") and does not
+  #   start it. An absent key reads 72; an explicit 0 turns the stale rule off
+  #   and survives a round trip.
+  # require_confirmed_proposal: bool, default true (an absent key reads true).
+  #   An implementation Automaton is taken only when a proposal file named in
+  #   its spec (docs/plans/<name>.md, read from the base repository) has a line
+  #   starting "Confirmed: yes" in its first 200 lines. Otherwise it is refused
+  #   as proposal_not_confirmed (the file has no such line) or proposal_missing
+  #   (no readable file is named). Research, operational and personal
+  #   Automata are exempt. false turns the rule off.
+  # check_main_carries: bool, default true. An Automaton whose work the default
+  #   branch already carries (a merge or task commit for it, or its branch is
+  #   entirely on the default branch) is refused as main_carries_work. A check
+  #   that cannot be made never refuses. false turns the check off.
+  # require_worktree: bool, default true. An Automaton with a recorded
+  #   worktree is taken only when that worktree exists, has a .git entry and
+  #   is in the repository's registered worktree list; otherwise it is refused
+  #   as worktree_invalid. An Automaton with no worktree yet is fine. false
+  #   turns the check off.
+  # lane_counts_from_caps: bool, default true. With it on, a lane type's count
+  #   is the sum of the in-flight caps of the enabled LLM entries on its
+  #   backend (the same caps the capacity pools use). An unlimited entry, no
+  #   matching entry or no cap source keeps the configured gpu_lanes or
+  #   claude_lanes count, and a configured 0 stays none. The status
+  #   lane_counts object shows the configured count, the count in use and its
+  #   source (llm_caps or config) for gpu and claude. false uses gpu_lanes and
+  #   claude_lanes as written.
+  # gpu_mode, claude_mode: off | shadow | on (case-insensitive), string, the
+  #   mode for one lane kind only. Empty (the default) inherits mode, so the
+  #   shipped default stays shadow for both kinds. Only the decisions of a
+  #   kind whose mode is on are carried out; a kind set to off plans nothing
+  #   for its lanes. Turn GPU lanes on first (gpu_mode: on), watch, and only
+  #   then claude_mode. Each change is written to the audit log as
+  #   lane_fill_mode. See docs/howto/automation-lane-fill.md.
   lane_fill:
     mode: shadow
     gpu_lanes: 2
@@ -1576,6 +1612,13 @@ autonomous:
     gpu_model: ""
     claude_backend: claude-code
     count_verifier_wait: true
+    stale_after_hours: 72
+    require_confirmed_proposal: true
+    check_main_carries: true
+    require_worktree: true
+    lane_counts_from_caps: true
+    gpu_mode: ""
+    claude_mode: ""
 
   # Infrastructure retry: a task that fails because the machinery around it
   # failed (not because of its own work) is retried on a back-off schedule and

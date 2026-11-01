@@ -62,6 +62,44 @@ type laneFillStarter interface {
 	SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (any, error)
 }
 
+// LaneFillKindModes is the lane fill mode in effect for each lane kind: the
+// kind's own setting when it has one, otherwise the base mode.
+type LaneFillKindModes struct {
+	GPU    string `json:"gpu"`
+	Claude string `json:"claude"`
+}
+
+// laneFillNormalizeMode maps any configured value to off, shadow or on; an
+// empty or unknown value is shadow, so nothing starts on a typo.
+func laneFillNormalizeMode(m string) string {
+	switch LaneFillMode(m) {
+	case LaneFillModeOff, LaneFillModeOn:
+		return m
+	}
+	return string(LaneFillModeShadow)
+}
+
+// laneFillKindModes returns the normalized effective mode of each lane kind.
+func laneFillKindModes(cfg LaneFillConfig) LaneFillKindModes {
+	return LaneFillKindModes{
+		GPU:    laneFillNormalizeMode(cfg.EffectiveModeFor(LaneTypeGPU)),
+		Claude: laneFillNormalizeMode(cfg.EffectiveModeFor(LaneTypeClaude)),
+	}
+}
+
+// For returns the mode for one lane kind.
+func (k LaneFillKindModes) For(t LaneType) string {
+	if t == LaneTypeGPU {
+		return k.GPU
+	}
+	return k.Claude
+}
+
+// allOff reports whether both lane kinds are off.
+func (k LaneFillKindModes) allOff() bool {
+	return k.GPU == string(LaneFillModeOff) && k.Claude == string(LaneFillModeOff)
+}
+
 // LaneFillQueued counts the ready work per lane type.
 type LaneFillQueued struct {
 	GPU    int `json:"gpu"`
@@ -106,13 +144,18 @@ type LaneFillAlert struct {
 // LaneFillStatus is the lane fill status: the mode, the lanes and evidence of
 // the last poll, and the decision history newest first.
 type LaneFillStatus struct {
+	// Mode is the base mode; Modes is the mode in effect for each lane kind.
 	Mode           string               `json:"mode"`
+	Modes          LaneFillKindModes    `json:"modes"`
 	LastPollAt     time.Time            `json:"last_poll_at"`
 	Lanes          []LaneFillLaneStatus `json:"lanes"`
 	QueuedEligible LaneFillQueued       `json:"queued_eligible"`
 	Evidence       LaneFillEvidence     `json:"evidence"`
 	Decisions      []LaneFillDecision   `json:"decisions"`
 	Alerts         []LaneFillAlert      `json:"alerts"`
+	// LaneCounts: per lane type, the configured count, the count the last
+	// poll used and where it came from.
+	LaneCounts LaneFillLaneCounts `json:"lane_counts"`
 }
 
 // laneFillStart remembers an Automaton lane fill started, until the store
@@ -133,12 +176,22 @@ type laneFillState struct {
 	// pollMu serializes polls.
 	pollMu sync.Mutex
 
-	mu        sync.Mutex
-	records   *laneFillRecords
-	evidence  PoolEvidenceSource
-	probe     MergeProbe
-	status    LaneFillStatus
-	idleSince map[string]time.Time
+	mu       sync.Mutex
+	records  *laneFillRecords
+	evidence PoolEvidenceSource
+	probe    MergeProbe
+	proposal LaneFillProposalReader
+	// caps supplies the LLM caps the lane counts follow (lane_fill_caps.go).
+	caps LaneCapSource
+	// mainProbe, mainCache and worktreeFS belong to the main-carries and
+	// worktree rules (lane_fill_main_worktree.go).
+	mainProbe  LaneFillMainProbe
+	mainCache  map[string]laneFillMainCached
+	worktreeFS SupervisorWatchWorktreeFS
+	// proposalWarned remembers which unreadable proposal paths were logged.
+	proposalWarned map[string]bool
+	status         LaneFillStatus
+	idleSince      map[string]time.Time
 	// workSince, alerted and alerts are the idle alert state (see
 	// lane_fill_alert.go): when each lane was first seen idle with eligible
 	// work, which episodes already alerted, and the recent alerts newest first.
@@ -148,6 +201,11 @@ type laneFillState struct {
 	started     map[string]laneFillStart
 	decomposing map[string]LaneType
 	wg          sync.WaitGroup
+	// kindModes is the effective mode of each lane kind at the last poll;
+	// kindModesSeen is false until the first poll has set it, so a change is
+	// audited only against a mode this process saw.
+	kindModes     LaneFillKindModes
+	kindModesSeen bool
 }
 
 func newLaneFillState() laneFillState {
@@ -192,7 +250,9 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 		Evidence:  LaneFillEvidence{LoadedModels: []LoadedModel{}},
 	}
 	if m == nil {
-		empty.Mode = DefaultLaneFillConfig().EffectiveMode()
+		def := DefaultLaneFillConfig()
+		empty.Mode = def.EffectiveMode()
+		empty.Modes = laneFillKindModes(def)
 		return empty
 	}
 	m.mu.Lock()
@@ -201,6 +261,7 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 	m.mu.Unlock()
 	if c == nil {
 		empty.Mode = cfg.EffectiveMode()
+		empty.Modes = laneFillKindModes(cfg)
 		return empty
 	}
 	return c.laneFillStatus(cfg, limit)
@@ -213,8 +274,14 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	st.Alerts = append([]LaneFillAlert{}, c.lf.alerts...)
 	c.lf.mu.Unlock()
 	st.Mode = cfg.EffectiveMode()
-	if st.Mode == string(LaneFillModeOff) {
-		st.Lanes, st.QueuedEligible = nil, LaneFillQueued{}
+	st.Modes = laneFillKindModes(cfg)
+	// A kind whose mode is off shows no lanes and no queued work.
+	st.Lanes = laneFillKeepLanes(st.Lanes, st.Modes)
+	if st.Modes.GPU == string(LaneFillModeOff) {
+		st.QueuedEligible.GPU = 0
+	}
+	if st.Modes.Claude == string(LaneFillModeOff) {
+		st.QueuedEligible.Claude = 0
 	}
 	if st.Lanes == nil {
 		st.Lanes = []LaneFillLaneStatus{}
@@ -224,6 +291,10 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	}
 	if st.Alerts == nil {
 		st.Alerts = []LaneFillAlert{}
+	}
+	if st.LaneCounts.GPU.Source == "" {
+		// No poll has run yet: show the counts the next poll would use.
+		_, st.LaneCounts = laneFillDeriveCounts(cfg, c.laneFillCapSource())
 	}
 	st.Decisions = []LaneFillDecision{}
 	if rec != nil {
@@ -276,18 +347,23 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	defer c.lf.pollMu.Unlock()
 
 	cfg := c.m.Config().LaneFill
-	mode := cfg.EffectiveMode()
-	if mode == string(LaneFillModeOff) {
-		c.laneFillResetAlerts()
-		return
-	}
+	// The mode in effect is decided per lane kind: a kind's own setting when
+	// it has one, else the base mode. The values are normalized once here and
+	// written back, so the planner and the executor read the same modes.
+	kinds := laneFillKindModes(cfg)
+	cfg.Mode = laneFillNormalizeMode(cfg.EffectiveMode())
+	cfg.GPUMode, cfg.ClaudeMode = kinds.GPU, kinds.Claude
 	if !c.Ready() {
 		return
 	}
-	if mode != string(LaneFillModeOn) {
-		mode = string(LaneFillModeShadow)
+	c.laneFillAuditModeChange(kinds)
+	if kinds.allOff() {
+		c.laneFillResetAlerts()
+		return
 	}
-	cfg.Mode = mode
+	// One set of lane counts for the whole poll: the lanes, the planner, the
+	// idle alert and the decompose-ahead room all read this configuration.
+	cfg, counts := laneFillDeriveCounts(cfg, c.laneFillCapSource())
 
 	c.lf.mu.Lock()
 	rec := c.lf.records
@@ -298,7 +374,11 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 
 	now := c.now()
 	in, status := c.laneFillSnapshot(ctx, cfg, now)
-	decisions := PlanLaneFill(in)
+	// A kind whose mode is off plans nothing: its lanes are not handed to the
+	// planner and not watched for idle alerts, and no decision of that kind is
+	// recorded.
+	in.Lanes = laneFillKeepLaneObjects(in.Lanes, kinds)
+	decisions := laneFillKeepDecisions(PlanLaneFill(in), kinds)
 	c.laneFillCheckAlerts(cfg, in.Lanes, in.Candidates, now)
 
 	candidates := make(map[string]LaneFillCandidate, len(in.Candidates))
@@ -307,7 +387,9 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	}
 	for _, d := range decisions {
 		e, appended := rec.observe(d, now)
-		if mode == string(LaneFillModeOn) {
+		// Execution follows the mode of the decision's lane kind; decisions
+		// with no lane kind (merge reports, a blocked Automaton) never run.
+		if d.LaneType != "" && kinds.For(d.LaneType) == string(LaneFillModeOn) {
 			c.laneFillExecute(ctx, cfg, rec, e, candidates[d.PRDID], now)
 		}
 		if appended {
@@ -316,11 +398,75 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	}
 	rec.endPoll()
 
-	status.Mode = mode
+	status.Mode = cfg.Mode
+	status.Modes = kinds
+	status.Lanes = laneFillKeepLanes(status.Lanes, kinds)
 	status.LastPollAt = now
+	status.LaneCounts = counts
 	c.lf.mu.Lock()
 	c.lf.status = status
 	c.lf.mu.Unlock()
+}
+
+// laneFillKeepLanes drops the status rows of lanes whose kind is off.
+func laneFillKeepLanes(lanes []LaneFillLaneStatus, kinds LaneFillKindModes) []LaneFillLaneStatus {
+	if lanes == nil {
+		return nil
+	}
+	out := make([]LaneFillLaneStatus, 0, len(lanes))
+	for _, l := range lanes {
+		if kinds.For(l.Type) != string(LaneFillModeOff) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// laneFillKeepDecisions drops the decisions of a lane kind whose mode is off.
+// Decisions with no lane kind stay.
+func laneFillKeepDecisions(ds []LaneFillDecision, kinds LaneFillKindModes) []LaneFillDecision {
+	out := ds[:0:0]
+	for _, d := range ds {
+		if d.LaneType != "" && kinds.For(d.LaneType) == string(LaneFillModeOff) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// laneFillKeepLaneObjects drops the lanes whose kind is off.
+func laneFillKeepLaneObjects(lanes []Lane, kinds LaneFillKindModes) []Lane {
+	out := make([]Lane, 0, len(lanes))
+	for _, l := range lanes {
+		if kinds.For(l.Type) != string(LaneFillModeOff) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// laneFillAuditModeChange writes one lane_fill_mode audit entry for each lane
+// kind whose effective mode differs from the previous poll. The first poll
+// after start only records the modes, so a restart writes nothing.
+func (c *Coordinator) laneFillAuditModeChange(now LaneFillKindModes) {
+	c.lf.mu.Lock()
+	prev, seen := c.lf.kindModes, c.lf.kindModesSeen
+	c.lf.kindModes, c.lf.kindModesSeen = now, true
+	c.lf.mu.Unlock()
+	if !seen {
+		return
+	}
+	for _, t := range []LaneType{LaneTypeGPU, LaneTypeClaude} {
+		if prev.For(t) == now.For(t) {
+			continue
+		}
+		c.audit("lane_fill_mode", map[string]any{
+			"kind":     string(t),
+			"old_mode": prev.For(t),
+			"new_mode": now.For(t),
+		})
+	}
 }
 
 // laneFillAudit sends the audit record for an appended decision.
@@ -339,6 +485,9 @@ func (c *Coordinator) laneFillAudit(rec *laneFillRecords, e *laneFillEntry) {
 	if d.Error != "" {
 		details["error"] = d.Error
 	}
+	if d.EligibilityReason != "" {
+		details["eligibility_reason"] = d.EligibilityReason
+	}
 	if d.WaitReason != "" {
 		// The verifier-wait basis of the decision, when it rests on one: the
 		// shadow record says why the planner thought the lane was free, not
@@ -356,6 +505,7 @@ type laneFillRaw struct {
 	pref            string
 	priority        int
 	created         time.Time
+	updated         time.Time
 	automationID    string
 	backend, model  string
 	// worker is the task whose backend stands for the Automaton's worker: one
@@ -365,6 +515,10 @@ type laneFillRaw struct {
 	workerStoryModel   string
 	tasks, tasksDone   int
 	template           bool
+	typ                string
+	// branch and worktreeDir are the recorded Automaton branch and, for an
+	// Automaton that runs in its own worktree, that worktree directory.
+	branch, worktreeDir string
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -396,8 +550,11 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 			r := laneFillRaw{
 				id: p.ID, title: p.Title, spec: p.Spec, status: p.Status,
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
-				automationID: p.AutomationID, backend: p.Backend, model: p.Model,
-				template: p.IsTemplate,
+				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
+				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
+			}
+			if p.Git.Branch != "" && p.ProjectDir != "" && p.ProjectProfile == "" && p.ClusterProfile == "" {
+				r.worktreeDir = p.ProjectDir
 			}
 			picked := false
 			for si := range p.Story {
@@ -470,7 +627,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 	lookup := laneFillRefLookup(raws)
 
 	c.lf.mu.Lock()
-	probe, src := c.lf.probe, c.lf.evidence
+	probe, src, proposalRd := c.lf.probe, c.lf.evidence, c.lf.proposal
 	started := make(map[string]laneFillStart, len(c.lf.started))
 	for id, s := range c.lf.started {
 		started[id] = s
@@ -484,6 +641,8 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 
 	var running []LaneOccupant
 	var cands []LaneFillCandidate
+	branches := map[string]string{}
+	worktrees := map[string]string{}
 	inFlight := map[string]LaneType{}
 	for _, r := range raws {
 		if r.template {
@@ -511,16 +670,36 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 			continue // a decompose lane fill started is still running
 		}
 		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec}
+		holdCode, holdText := PRDHoldCode(prd, lookup)
 		cand := LaneFillCandidate{
 			ID: r.id, Title: r.title, Status: NormalizePRDStatus(r.status),
 			LanePreference: r.pref, Backend: backend, Priority: r.priority, CreatedAt: r.created,
-			HoldReason:           PRDHoldReason(prd, lookup),
+			UpdatedAt:            r.updated,
+			HoldReason:           holdText,
+			HoldCode:             holdCode,
 			AllTasksDone:         r.tasks > 0 && r.tasks == r.tasksDone,
 			InAutomation:         r.automationID != "",
 			BackendChangeAllowed: prdLLMOverrideAllowed(r.status),
 		}
 		cand.NeedsMergeFlag = c.laneFillNeedsMerge(ctx, probe, cand)
+		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
+			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.spec, proposalRd, c.laneFillProposalWarnOnce)
+		}
+		branches[r.id] = r.branch
+		if r.worktreeDir != "" {
+			worktrees[r.id] = r.worktreeDir
+		}
 		cands = append(cands, cand)
+	}
+	// The git and filesystem facts of the last two rules, gathered here with
+	// no store lock held.
+	c.laneFillProbeMain(ctx, cfg, cands, branches, now)
+	c.laneFillCheckWorktrees(cfg, cands, worktrees, c.m.Config().WorktreeBaseRepo)
+	// Apply the refusal rules once, here, with no store lock held: every later
+	// reader (the planner, the queued count, the alerts) honours the result.
+	for i := range cands {
+		code, text := EvaluateLaneFillEligibility(cfg, cands[i], now)
+		cands[i].Refusal = LaneFillRefusal{Code: code, Text: text}
 	}
 	for id, t := range decomposing {
 		inFlight[id] = t

@@ -4752,6 +4752,12 @@ Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks a
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.lane_fill.mode` | `shadow` | `off` (nothing runs), `shadow` (decide and record, start nothing) or `on` (carry the decisions out). |
+| `autonomous.lane_fill.gpu_mode`, `autonomous.lane_fill.claude_mode` | empty | The mode for one lane kind. Empty inherits `mode`, so both kinds read shadow by default. Only the decisions of a kind whose mode is `on` are carried out; a kind set to `off` plans and records nothing for its lanes; the other kind is unaffected. Set it back to `shadow` and execution stops on the next poll, with no restart and without touching anything already started. Each change of a kind's effective mode writes a `lane_fill_mode` audit entry (kind, old mode, new mode). The status `modes` object (`{"gpu": ..., "claude": ...}`) shows the mode in effect per kind, and `mode` stays the base mode. Automata lane fill refuses are never started in any mode. |
+| `autonomous.lane_fill.stale_after_hours` | `72` | Hours an Automaton may go without a change before lane fill calls it stale and does not start it. `0` turns the rule off. |
+| `autonomous.lane_fill.require_confirmed_proposal` | `true` | An implementation Automaton is taken only when its proposal file carries a `Confirmed: yes` line. |
+| `autonomous.lane_fill.check_main_carries` | `true` | An Automaton whose work the default branch already has is skipped. |
+| `autonomous.lane_fill.require_worktree` | `true` | An Automaton with a recorded worktree is taken only when the worktree is real and registered. |
+| `autonomous.lane_fill.lane_counts_from_caps` | `true` | The lane count of a type is the sum of the in-flight caps of its enabled LLM entries. `false` uses `gpu_lanes` and `claude_lanes` as written. |
 | `autonomous.lane_fill.gpu_lanes` | `2` | GPU lanes on the local model pool. |
 | `autonomous.lane_fill.claude_lanes` | `3` | Claude lanes. `0` means none. |
 | `autonomous.lane_fill.idle_alert_minutes` | `30` | How long a lane may sit idle with eligible work waiting before one alert. `0` turns the alert off. |
@@ -4774,6 +4780,14 @@ Every key is read live. Mode and threshold changes apply on the next poll, with 
 | CLI | `datawatch autonomous lane-fill [--limit N] [--json]` | `datawatch config set autonomous.lane_fill.mode on` | `datawatch autonomous prd-set-lane-preference <id> gpu\|claude\|any` |
 | Comm channel | `autonomous lane-fill [limit]` | `configure autonomous.lane_fill.mode=on` | `autonomous set-lane-preference <prd-id> gpu\|claude\|any` |
 | PWA | Automata tab, Automation sub-tab, the **Lane fill** card (reloads every 5 seconds) | Settings → General → Autonomous, the Lane fill fields | Automaton settings form, **Lane preference** select |
+
+**Eligibility reasons.** Before a queued Automaton gets a lane, lane fill checks seven rules and the first that refuses it gives the `eligibility_reason` on the `blocked` decision: `held`, `sequenced_after_unshipped`, `stale`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. A refused Automaton is never started in any mode, and it no longer counts as eligible work, so the supervisor watch's `idle_lane_eligible_work` finding does not fire for it. A check that cannot be made (git or the filesystem cannot be read) gives no answer and never refuses. What each reason means and how to clear it is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
+
+**Lane counts.** With `lane_counts_from_caps` on, the number of lanes of a type follows the LLM concurrency caps, the same ones the capacity pools use: a Claude backend capped at one session gets one Claude lane however high `claude_lanes` is. The configured count is kept when an enabled entry on that backend is unlimited, when no enabled entry runs that backend, or when the configured count is `0`. The status `lane_counts` object shows `configured`, `effective` and `source` (`llm_caps` or `config`); the CLI prints `Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`. Raise the cap on the LLM entry to get more lanes.
+
+**Pool evidence and node certificates.** Lane fill reads the loaded models of each pool host over `/api/ps`. A registered compute node on https is read with the node's own certificate settings (`tls_ca_file`, `tls_cert_fingerprint` or `tls_insecure_skip_verify`). If the certificate is not trusted, `evidence.error` names the node and says which of the three to set; the address is not shown, and the GPU lanes stay blocked rather than being reported idle until the node is fixed. See [howto/compute-nodes.md](howto/compute-nodes.md).
+
+**Turning it on, GPU first.** Both lane kinds ship in shadow. Compare lane fill's decisions with the supervisor's own checks for a full day, then set `autonomous.lane_fill.gpu_mode` to `on`, watch, and only then set `claude_mode` to `on`. To go back, set the kind to `shadow`; it takes effect on the next poll and leaves started work alone. The full procedure is in [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **What the status shows.** Each lane with its occupant or its blocker, the queued eligible counts for GPU and Claude work, the pool evidence (active GPU sessions and loaded models, or the error when a pool host could not be read), the newest decisions with whether each was executed, and the idle-lane alerts. In shadow mode a decision with `executed: false` is a would-start and must not be read as a start.
 

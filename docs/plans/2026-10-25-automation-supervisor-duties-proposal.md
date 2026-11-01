@@ -187,7 +187,14 @@ worktree, and take its lane counts from the LLM concurrency cap so there is one 
 3 Claude lanes while the live cap is 1). Also fix pool-evidence reading for a registered host whose certificate the
 daemon does not trust. Switch-over: compare shadow decisions with the supervisor's for a day, then turn the mode to
 `on` for the GPU lanes first.
-Proposed status: Planned (design not confirmed).
+Proposed status: Built, ships in shadow mode (the version is set at merge). The seven rules, the lane counts from the
+LLM caps, the pool-evidence certificate fix and the per-lane-kind mode (`gpu_mode`, `claude_mode`) are in, with the
+reasons on REST, MCP, CLI, comm and the PWA, and a sandbox live check passed (see
+`docs/plans/2026-10-31-lane-fill-eligibility-live-check.md`). Both lane kinds stay in shadow until the operator sets a
+mode; the switch-over procedure is in `docs/howto/automation-lane-fill.md`. The one-day comparison against the
+supervisor on the live daemon has not been run.
+Filing: the operator's instruction of 2026-10-30, quoted, answering whether to file the supervisor duties Steps 9 and
+10: "1 why would you not file it?".
 - Docs checklist: `CHANGELOG.md`; the lane-fill section of `docs/operations.md`; `docs/config-reference.yaml`;
   `docs/testing-tracker.md`; full phase completion checklist.
 - Parity surface: config, REST, MCP, CLI, comm channel and PWA already exist for lane fill; new eligibility reasons
@@ -304,3 +311,4 @@ This document changes nothing on any surface; it names where future steps would 
 | Confirmed | yes, Step 1 only (operator, 2026-10-25); Q1 to Q8 decided |
 | Date | 2026-10-25 |
 | Step 5 (merge pending and safe-to-delete report) | Implemented, 2026-10-30 |
+| Step 10 (lane fill eligibility, lane counts from caps, per-lane-kind mode) | Built, ships in shadow mode |
