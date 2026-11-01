@@ -25,6 +25,9 @@ func ParseLaneFillStatus(body []byte) (LaneFillStatus, error) {
 func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Lane fill: mode %s\n", st.Mode)
+	if (st.Modes.GPU != "" && st.Modes.GPU != st.Mode) || (st.Modes.Claude != "" && st.Modes.Claude != st.Mode) {
+		fmt.Fprintf(&b, "Mode per lane kind: gpu %s, claude %s\n", st.Modes.GPU, st.Modes.Claude)
+	}
 	for _, l := range st.Lanes {
 		fmt.Fprintf(&b, "%s: %s\n", l.ID, laneFillLaneText(l))
 	}

@@ -25,8 +25,8 @@ const (
 )
 
 // LaneFillMode is the lane fill mode. The planner itself does not branch on
-// it; the mode is carried on each decision so the coordinator and the status
-// views can say what was done with it.
+// it; the mode of the decision's lane kind is carried on each decision so the
+// coordinator and the status views can say what was done with it.
 type LaneFillMode string
 
 const (
@@ -382,7 +382,10 @@ func startReason(cfg LaneFillConfig, lane Lane, c LaneFillCandidate, pref string
 }
 
 // PlanLaneFill decides, for one snapshot, what each idle lane should take.
-// It is the whole lane fill rule set and is independent of the mode.
+// It is the whole lane fill rule set and does not branch on the mode: each
+// decision only carries the mode of its lane kind (the shared mode when it
+// has none). Leaving a lane kind with mode off out of the plan is the
+// coordinator's job, by not handing the planner that kind's lanes.
 //
 // Per idle GPU lane, then per idle Claude lane, in lane order, it takes the
 // first eligible Automaton by source (ready, then draft to decompose),
@@ -400,7 +403,13 @@ func startReason(cfg LaneFillConfig, lane Lane, c LaneFillCandidate, pref string
 // its eligibility_reason code.
 func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	cfg := in.Config
-	mode := LaneFillMode(cfg.EffectiveMode())
+	baseMode := LaneFillMode(cfg.EffectiveMode())
+	modeOf := func(t LaneType) LaneFillMode {
+		if t != LaneTypeGPU && t != LaneTypeClaude {
+			return baseMode
+		}
+		return LaneFillMode(cfg.EffectiveModeFor(t))
+	}
 
 	// Lanes in a fixed order: GPU first, input order within a type.
 	lanes := append([]Lane(nil), in.Lanes...)
@@ -488,7 +497,7 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 
 	newDecision := func(l Lane, a LaneFillAction) LaneFillDecision {
 		d := LaneFillDecision{
-			At: in.Now, Mode: mode, LaneID: l.ID, LaneType: l.Type, Action: a,
+			At: in.Now, Mode: modeOf(l.Type), LaneID: l.ID, LaneType: l.Type, Action: a,
 			RepeatCount: 1, LastSeenAt: in.Now,
 		}
 		// A lane decision on a lane the verifier-wait rule counted available
@@ -568,7 +577,7 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 	for _, c := range refused {
 		r := laneFillCandidateRefusal(c)
 		out = append(out, LaneFillDecision{
-			At: in.Now, Mode: mode, Action: LaneFillActionBlocked,
+			At: in.Now, Mode: baseMode, Action: LaneFillActionBlocked,
 			PRDID: c.ID, Title: c.Title,
 			Reason: r.Text, Blocker: r.Text, EligibilityReason: r.Code,
 			RepeatCount: 1, LastSeenAt: in.Now,
@@ -577,7 +586,7 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 
 	for _, c := range blockedPref {
 		out = append(out, LaneFillDecision{
-			At: in.Now, Mode: mode, LaneType: LaneTypeGPU, Action: LaneFillActionBlocked,
+			At: in.Now, Mode: modeOf(LaneTypeGPU), LaneType: LaneTypeGPU, Action: LaneFillActionBlocked,
 			PRDID: c.ID, Title: c.Title,
 			Reason:      "gpu preference, but the worker backend cannot move to the pool; never started on a Claude lane",
 			Blocker:     backendFixedReason(c),
@@ -587,7 +596,7 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 
 	for _, c := range merges {
 		out = append(out, LaneFillDecision{
-			At: in.Now, Mode: mode, Action: LaneFillActionReportMerge,
+			At: in.Now, Mode: baseMode, Action: LaneFillActionReportMerge,
 			PRDID: c.ID, Title: c.Title,
 			Reason:      "all tasks done and the work needs a merge; reported only, lane fill never merges",
 			RepeatCount: 1, LastSeenAt: in.Now,
@@ -612,7 +621,7 @@ func PlanLaneFill(in LaneFillInput) []LaneFillDecision {
 		used[c.ID] = true
 		decomposing[t]++
 		out = append(out, LaneFillDecision{
-			At: in.Now, Mode: mode, LaneType: t, Action: LaneFillActionDecomposeAhead,
+			At: in.Now, Mode: modeOf(t), LaneType: t, Action: LaneFillActionDecomposeAhead,
 			PRDID: c.ID, Title: c.Title,
 			Reason:      fmt.Sprintf("%d ready for %s lanes, fewer than %d; decompose the oldest fitting draft", queued[t], t, minReady),
 			RepeatCount: 1, LastSeenAt: in.Now,

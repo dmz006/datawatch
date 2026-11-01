@@ -4573,6 +4573,7 @@ Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks a
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.lane_fill.mode` | `shadow` | `off` (nothing runs), `shadow` (decide and record, start nothing) or `on` (carry the decisions out). |
+| `autonomous.lane_fill.gpu_mode`, `autonomous.lane_fill.claude_mode` | empty | The mode for one lane kind. Empty inherits `mode`, so both kinds read shadow by default. Only the decisions of a kind whose mode is `on` are carried out; a kind set to `off` plans and records nothing for its lanes; the other kind is unaffected. Set it back to `shadow` and execution stops on the next poll, with no restart and without touching anything already started. Each change of a kind's effective mode writes a `lane_fill_mode` audit entry (kind, old mode, new mode). The status `modes` object (`{"gpu": ..., "claude": ...}`) shows the mode in effect per kind, and `mode` stays the base mode. Automata lane fill refuses are never started in any mode. |
 | `autonomous.lane_fill.gpu_lanes` | `2` | GPU lanes on the local model pool. |
 | `autonomous.lane_fill.claude_lanes` | `3` | Claude lanes. `0` means none. |
 | `autonomous.lane_fill.idle_alert_minutes` | `30` | How long a lane may sit idle with eligible work waiting before one alert. `0` turns the alert off. |

@@ -62,6 +62,44 @@ type laneFillStarter interface {
 	SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (any, error)
 }
 
+// LaneFillKindModes is the lane fill mode in effect for each lane kind: the
+// kind's own setting when it has one, otherwise the base mode.
+type LaneFillKindModes struct {
+	GPU    string `json:"gpu"`
+	Claude string `json:"claude"`
+}
+
+// laneFillNormalizeMode maps any configured value to off, shadow or on; an
+// empty or unknown value is shadow, so nothing starts on a typo.
+func laneFillNormalizeMode(m string) string {
+	switch LaneFillMode(m) {
+	case LaneFillModeOff, LaneFillModeOn:
+		return m
+	}
+	return string(LaneFillModeShadow)
+}
+
+// laneFillKindModes returns the normalized effective mode of each lane kind.
+func laneFillKindModes(cfg LaneFillConfig) LaneFillKindModes {
+	return LaneFillKindModes{
+		GPU:    laneFillNormalizeMode(cfg.EffectiveModeFor(LaneTypeGPU)),
+		Claude: laneFillNormalizeMode(cfg.EffectiveModeFor(LaneTypeClaude)),
+	}
+}
+
+// For returns the mode for one lane kind.
+func (k LaneFillKindModes) For(t LaneType) string {
+	if t == LaneTypeGPU {
+		return k.GPU
+	}
+	return k.Claude
+}
+
+// allOff reports whether both lane kinds are off.
+func (k LaneFillKindModes) allOff() bool {
+	return k.GPU == string(LaneFillModeOff) && k.Claude == string(LaneFillModeOff)
+}
+
 // LaneFillQueued counts the ready work per lane type.
 type LaneFillQueued struct {
 	GPU    int `json:"gpu"`
@@ -106,7 +144,9 @@ type LaneFillAlert struct {
 // LaneFillStatus is the lane fill status: the mode, the lanes and evidence of
 // the last poll, and the decision history newest first.
 type LaneFillStatus struct {
+	// Mode is the base mode; Modes is the mode in effect for each lane kind.
 	Mode           string               `json:"mode"`
+	Modes          LaneFillKindModes    `json:"modes"`
 	LastPollAt     time.Time            `json:"last_poll_at"`
 	Lanes          []LaneFillLaneStatus `json:"lanes"`
 	QueuedEligible LaneFillQueued       `json:"queued_eligible"`
@@ -161,6 +201,11 @@ type laneFillState struct {
 	started     map[string]laneFillStart
 	decomposing map[string]LaneType
 	wg          sync.WaitGroup
+	// kindModes is the effective mode of each lane kind at the last poll;
+	// kindModesSeen is false until the first poll has set it, so a change is
+	// audited only against a mode this process saw.
+	kindModes     LaneFillKindModes
+	kindModesSeen bool
 }
 
 func newLaneFillState() laneFillState {
@@ -205,7 +250,9 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 		Evidence:  LaneFillEvidence{LoadedModels: []LoadedModel{}},
 	}
 	if m == nil {
-		empty.Mode = DefaultLaneFillConfig().EffectiveMode()
+		def := DefaultLaneFillConfig()
+		empty.Mode = def.EffectiveMode()
+		empty.Modes = laneFillKindModes(def)
 		return empty
 	}
 	m.mu.Lock()
@@ -214,6 +261,7 @@ func (m *Manager) LaneFillStatus(limit int) LaneFillStatus {
 	m.mu.Unlock()
 	if c == nil {
 		empty.Mode = cfg.EffectiveMode()
+		empty.Modes = laneFillKindModes(cfg)
 		return empty
 	}
 	return c.laneFillStatus(cfg, limit)
@@ -226,8 +274,14 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	st.Alerts = append([]LaneFillAlert{}, c.lf.alerts...)
 	c.lf.mu.Unlock()
 	st.Mode = cfg.EffectiveMode()
-	if st.Mode == string(LaneFillModeOff) {
-		st.Lanes, st.QueuedEligible = nil, LaneFillQueued{}
+	st.Modes = laneFillKindModes(cfg)
+	// A kind whose mode is off shows no lanes and no queued work.
+	st.Lanes = laneFillKeepLanes(st.Lanes, st.Modes)
+	if st.Modes.GPU == string(LaneFillModeOff) {
+		st.QueuedEligible.GPU = 0
+	}
+	if st.Modes.Claude == string(LaneFillModeOff) {
+		st.QueuedEligible.Claude = 0
 	}
 	if st.Lanes == nil {
 		st.Lanes = []LaneFillLaneStatus{}
@@ -293,18 +347,20 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	defer c.lf.pollMu.Unlock()
 
 	cfg := c.m.Config().LaneFill
-	mode := cfg.EffectiveMode()
-	if mode == string(LaneFillModeOff) {
-		c.laneFillResetAlerts()
-		return
-	}
+	// The mode in effect is decided per lane kind: a kind's own setting when
+	// it has one, else the base mode. The values are normalized once here and
+	// written back, so the planner and the executor read the same modes.
+	kinds := laneFillKindModes(cfg)
+	cfg.Mode = laneFillNormalizeMode(cfg.EffectiveMode())
+	cfg.GPUMode, cfg.ClaudeMode = kinds.GPU, kinds.Claude
 	if !c.Ready() {
 		return
 	}
-	if mode != string(LaneFillModeOn) {
-		mode = string(LaneFillModeShadow)
+	c.laneFillAuditModeChange(kinds)
+	if kinds.allOff() {
+		c.laneFillResetAlerts()
+		return
 	}
-	cfg.Mode = mode
 	// One set of lane counts for the whole poll: the lanes, the planner, the
 	// idle alert and the decompose-ahead room all read this configuration.
 	cfg, counts := laneFillDeriveCounts(cfg, c.laneFillCapSource())
@@ -318,7 +374,11 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 
 	now := c.now()
 	in, status := c.laneFillSnapshot(ctx, cfg, now)
-	decisions := PlanLaneFill(in)
+	// A kind whose mode is off plans nothing: its lanes are not handed to the
+	// planner and not watched for idle alerts, and no decision of that kind is
+	// recorded.
+	in.Lanes = laneFillKeepLaneObjects(in.Lanes, kinds)
+	decisions := laneFillKeepDecisions(PlanLaneFill(in), kinds)
 	c.laneFillCheckAlerts(cfg, in.Lanes, in.Candidates, now)
 
 	candidates := make(map[string]LaneFillCandidate, len(in.Candidates))
@@ -327,7 +387,9 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	}
 	for _, d := range decisions {
 		e, appended := rec.observe(d, now)
-		if mode == string(LaneFillModeOn) {
+		// Execution follows the mode of the decision's lane kind; decisions
+		// with no lane kind (merge reports, a blocked Automaton) never run.
+		if d.LaneType != "" && kinds.For(d.LaneType) == string(LaneFillModeOn) {
 			c.laneFillExecute(ctx, cfg, rec, e, candidates[d.PRDID], now)
 		}
 		if appended {
@@ -336,12 +398,75 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	}
 	rec.endPoll()
 
-	status.Mode = mode
+	status.Mode = cfg.Mode
+	status.Modes = kinds
+	status.Lanes = laneFillKeepLanes(status.Lanes, kinds)
 	status.LastPollAt = now
 	status.LaneCounts = counts
 	c.lf.mu.Lock()
 	c.lf.status = status
 	c.lf.mu.Unlock()
+}
+
+// laneFillKeepLanes drops the status rows of lanes whose kind is off.
+func laneFillKeepLanes(lanes []LaneFillLaneStatus, kinds LaneFillKindModes) []LaneFillLaneStatus {
+	if lanes == nil {
+		return nil
+	}
+	out := make([]LaneFillLaneStatus, 0, len(lanes))
+	for _, l := range lanes {
+		if kinds.For(l.Type) != string(LaneFillModeOff) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// laneFillKeepDecisions drops the decisions of a lane kind whose mode is off.
+// Decisions with no lane kind stay.
+func laneFillKeepDecisions(ds []LaneFillDecision, kinds LaneFillKindModes) []LaneFillDecision {
+	out := ds[:0:0]
+	for _, d := range ds {
+		if d.LaneType != "" && kinds.For(d.LaneType) == string(LaneFillModeOff) {
+			continue
+		}
+		out = append(out, d)
+	}
+	return out
+}
+
+// laneFillKeepLaneObjects drops the lanes whose kind is off.
+func laneFillKeepLaneObjects(lanes []Lane, kinds LaneFillKindModes) []Lane {
+	out := make([]Lane, 0, len(lanes))
+	for _, l := range lanes {
+		if kinds.For(l.Type) != string(LaneFillModeOff) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// laneFillAuditModeChange writes one lane_fill_mode audit entry for each lane
+// kind whose effective mode differs from the previous poll. The first poll
+// after start only records the modes, so a restart writes nothing.
+func (c *Coordinator) laneFillAuditModeChange(now LaneFillKindModes) {
+	c.lf.mu.Lock()
+	prev, seen := c.lf.kindModes, c.lf.kindModesSeen
+	c.lf.kindModes, c.lf.kindModesSeen = now, true
+	c.lf.mu.Unlock()
+	if !seen {
+		return
+	}
+	for _, t := range []LaneType{LaneTypeGPU, LaneTypeClaude} {
+		if prev.For(t) == now.For(t) {
+			continue
+		}
+		c.audit("lane_fill_mode", map[string]any{
+			"kind":     string(t),
+			"old_mode": prev.For(t),
+			"new_mode": now.For(t),
+		})
+	}
 }
 
 // laneFillAudit sends the audit record for an appended decision.
