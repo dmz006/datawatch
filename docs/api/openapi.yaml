@@ -1527,6 +1527,88 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/automation/onboarding-report:
+    get:
+      summary: Automation onboarding report
+      description: |
+        A read-only report that helps a user set up and use datawatch for Automation.
+        It answers three questions in order. `configured` lists the backends and
+        models available, the project directories registered, the comm channels, whether
+        memory is on, and the merge pipeline source (`file`, `record` or `default`)
+        each project uses. `checks` says what is missing: each check has an `id`, a
+        plain `title`, a `status` of `ok`, `missing` or `optional`, and a one-sentence
+        `reason`. `next_steps` lists ordered suggestions for every check that is not
+        `ok`, each with a `howto` path, a definitions `anchor`, and the `command`, MCP
+        tool (`mcp_tool`) or web app place (`pwa_place`) that does it. The
+        `onboarding_report` settings switch the report: `enabled` (default true),
+        `include_next_steps` (default true) and `disabled_checks` (check ids left out).
+        With `?format=text` the answer is the plain text every surface shows. The
+        report never changes configuration. A federated peer needs the autonomous read
+        capability.
+      operationId: automationOnboardingReport
+      tags: [Automation]
+      parameters:
+        - {name: format, in: query, required: false, description: "json (default) or text", schema: {type: string, enum: [json, text]}}
+      responses:
+        "200":
+          description: The report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean, description: "False when the report is switched off; nothing else is set"}
+                  configured:
+                    type: object
+                    properties:
+                      backends: {type: array, items: {type: string}}
+                      models: {type: array, items: {type: string}}
+                      projects:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: {type: string}
+                            dir: {type: string}
+                      channels: {type: array, items: {type: string}}
+                      memory: {type: boolean}
+                      merge_pipeline:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            project: {type: string}
+                            source: {type: string, enum: [file, record, default]}
+                  checks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        title: {type: string}
+                        status: {type: string, enum: [ok, missing, optional]}
+                        reason: {type: string}
+                  next_steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        check_id: {type: string}
+                        title: {type: string}
+                        howto: {type: string}
+                        anchor: {type: string}
+                        command: {type: string}
+                        mcp_tool: {type: string}
+                        pwa_place: {type: string}
+            text/plain:
+              schema: {type: string}
+        "400": {description: The format is not json or text}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: The daemon configuration is not available}
+
   /api/autonomous/merge-pipeline:
     get:
       summary: Merge pipeline in effect for a project

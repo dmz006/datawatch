@@ -469,6 +469,11 @@ type Config struct {
 	// the base backend config with custom env vars, binary, or model.
 	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty"`
 
+	// OnboardingReport — switches for the Automation onboarding report
+	// (what is configured, what is missing, what to try next). An unset key
+	// reads its default. See OnboardingReportConfig.
+	OnboardingReport OnboardingReportConfig `yaml:"onboarding_report,omitempty" json:"onboarding_report,omitempty"`
+
 	// Projects (BL27) — operator-registered named project directories.
 	// Each entry is a quick alias for `new: @<project>: <task>` and the
 	// REST start handler. Optional default_backend overrides
