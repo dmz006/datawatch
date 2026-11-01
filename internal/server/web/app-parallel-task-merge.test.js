@@ -16,7 +16,7 @@ const SETTING_KEYS = [
   'autonomous.parallel.merge_conflict_model',
 ];
 const LOCALE_KEYS = [
-  'settings_parallel_task_group', 'settings_parallel_worktree_per_task',
+  'settings_parallel_task_group', 'settings_parallel_read_only_tasks', 'settings_parallel_worktree_per_task',
   'settings_parallel_merge_conflict_policy', 'settings_parallel_merge_conflict_model',
   'parallel_policy_additive_then_model', 'parallel_policy_block', 'parallel_policy_triage',
   'task_merge_state_pending', 'task_merge_state_merged', 'task_merge_state_conflict',

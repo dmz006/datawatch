@@ -3122,6 +3122,7 @@
   "request_watch_row_error": "Error: %1$s",
   "request_watch_more": "%1$s more not shown",
   "settings_parallel_task_group": "Parallel task worktrees",
+  "settings_parallel_read_only_tasks": "Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)",
   "settings_parallel_worktree_per_task": "Worktree per task (each parallel task of an Automaton runs in its own worktree and branch, merged back in order; on by default)",
   "settings_parallel_merge_conflict_policy": "Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)",
   "settings_parallel_merge_conflict_model": "Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)",

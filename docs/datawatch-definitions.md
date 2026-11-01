@@ -1992,3 +1992,11 @@ When an Automaton completes it records how well its tasks ran in parallel. `tota
 **Merge conflict policy** (`autonomous.parallel.merge_conflict_policy`) — what happens when a task branch does not merge cleanly. `additive_then_model` (the default) keeps both sides when the two changes only add lines, and asks the merge conflict model to resolve anything else. `block` holds the task at once. `triage` raises the conflict as a question for the operator.
 
 **Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.
+
+### Read-only tasks
+
+A **read-only task** is a task flagged `read_only` because it changes no files, for example a task that only reads code and reports. While `autonomous.parallel.read_only_tasks` is on (the default), a read-only task skips the per-tree write lock and runs beside other tasks of the same Automaton instead of waiting for them. A task that is not flagged still takes the lock. Flag a task when you add or edit it (the `read_only` option of `autonomous_prd_add_task` and `autonomous_prd_edit_task`, or the task edit in the web app). The default is on because that is the operator's choice for this installation; other users may switch it off with `autonomous.parallel.read_only_tasks: false`, and every task then takes the lock as before.
+
+### Parallel speedup
+
+**Parallel speedup** is how much faster an Automaton's tasks finished than they would have one at a time: the sum of the task durations divided by the time from the first task start to the last task end. It is recorded when the Automaton completes and shown with the read-only share in the Parallel execution card; see "Parallel execution metrics" above for every field. A speedup of 1 means no overlap. The default settings are the operator's choice and other users may change them; the how-to is [howto/automaton-parallel-tasks.md](howto/automaton-parallel-tasks.md).

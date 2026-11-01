@@ -1949,6 +1949,20 @@ the operator view and the "Supervisor watch" section of `docs/operations.md`.
   `internal/router/supervisor_watch_comm_test.go`, and the web tests
   `app-supervisor-watch.test.js` and `app-supervisor-watch-stats.test.js`.
 
+## Parallel tasks in one Automaton (autonomous.parallel)
+
+Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks", "Parallel task worktrees" and "Parallel speedup" in `docs/datawatch-definitions.md`.
+
+- **Config:** the `autonomous.parallel` block (`config.AutonomousParallelConfig` in `internal/config/config.go`). The two toggles are pointers so an explicit `false` survives a YAML/JSON round trip and a `PUT /api/config` write; the defaults are applied only by the getters in `internal/autonomous/parallel_config.go`. The defaults are the operator's choice for this installation and other users may change them.
+  - `read_only_tasks` — default `true` (`EffectiveReadOnlyTasks`). A task with `read_only` set skips the per-tree write lock (`internal/autonomous/read_only_parallel.go`).
+  - `worktree_per_task` — default `true` (`EffectiveWorktreePerTask`). Each parallel task runs in its own worktree and branch (`task_worktree.go`).
+  - `merge_conflict_policy` — default `additive_then_model` (`EffectiveMergeConflictPolicy`); valid `additive_then_model`, `block`, `triage`; checked by `config.ValidateMergeConflictPolicy`, which refuses an unknown value on load and on write.
+  - `merge_conflict_model` — default empty (`EffectiveMergeConflictModel`); empty means the strongest configured planning model.
+- **Merge back:** task branches merge into the Automaton branch in dependency order, one at a time, under the conflict policy (`internal/autonomous/task_merge.go`). The merge state (`pending`, `merged`, `conflict`, `held`) and the merge commit are fields of the task.
+- **Metrics:** `internal/autonomous/parallel_metrics.go` records total and read-only task counts, concurrent tasks, wall-clock and serial seconds and the speedup when an Automaton completes; they ride on the Automaton read.
+- **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
+- **Tests:** `internal/config/parallel_policy_test.go`, `internal/autonomous/parallel_config_test.go`, `parallel_metrics_test.go`, `internal/mcp/parallel_config_test.go`, `internal/router/parallel_config_surface_test.go`, `cmd/datawatch/parallel_config_cli_test.go`, and the web tests `app-parallel-task-merge.test.js` and `app-parallel-metrics.test.js`.
+
 ## Search-before-create (autonomous.automation.create_search_mode, autonomous.automation.create_search_threshold)
 
 - **Config keys:** `autonomous.automation.create_search_mode` (string: `off`, `shadow` default, `on`) and `autonomous.automation.create_search_threshold` (number in the open-closed interval (0, 1]; unset reads `DefaultAutomationCreateSearchThreshold` (0.5)) on `config.AutonomousAutomationConfig` in `internal/config/config.go`, with the exported validators `ValidateCreateSearchMode` / `ValidateCreateSearchThreshold` and the effective getters `EffectiveCreateSearchMode` / `EffectiveCreateSearchThreshold`. A mode outside `off`/`shadow`/`on` is refused (400 on the write paths, an error on config load in `validateLoaded`); a threshold that is zero, negative, above 1, non-finite or non-numeric is refused the same way.

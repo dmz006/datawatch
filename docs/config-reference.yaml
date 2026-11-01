@@ -2137,6 +2137,32 @@ autonomous:
   # project tree has uncommitted changes (git status --porcelain
   # non-empty). Default false.
   refuse_dirty_tree_start: false
+  # Parallel tasks inside one Automaton (autonomous.parallel.*). Every default
+  # below is the operator's choice for this installation; other users may
+  # change any of them. Operator guide: docs/howto/automaton-parallel-tasks.md;
+  # terms: docs/datawatch-definitions.md -> "Read-only tasks", "Parallel task
+  # worktrees" and "Parallel speedup". Changeable from the web app, PUT
+  # /api/config, `datawatch config set`, chat `configure` and MCP
+  # `autonomous_config_set` (parallel_* arguments), with no restart.
+  parallel:
+    # read_only_tasks: a task flagged read_only skips the per-tree write lock
+    # and runs beside other tasks. Default true. An explicit false is kept and
+    # makes every task take the lock.
+    read_only_tasks: true
+    # worktree_per_task: each task that runs alongside others gets its own
+    # worktree and branch off the Automaton branch; the branch is merged back
+    # in dependency order when the task is verified. Default true. false keeps
+    # all tasks in the one worktree.
+    worktree_per_task: true
+    # merge_conflict_policy: what happens when a task branch does not merge
+    # cleanly. additive_then_model (default) keeps both sides of additive
+    # changes and asks merge_conflict_model for the rest; block holds the task
+    # at once; triage raises the conflict as an operator question. Any other
+    # value is refused.
+    merge_conflict_policy: additive_then_model
+    # merge_conflict_model: the model that resolves a conflict. Default empty,
+    # which uses the strongest configured planning model.
+    merge_conflict_model: ""
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node session_slots (0 = derive from observer GPU
