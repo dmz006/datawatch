@@ -1232,7 +1232,7 @@ default. Recorded as a follow-up in the backlog.
 | `node --check internal/server/web/app.js` | PASS |
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
 | `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
-| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-30 the script carries 92 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86, the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET) and the operator questions step 4 section 88 (the worker marker switch, the question stats read, the REST-raised source and the answer log the decision link opens) and the security failure report section 89 (the REST route and the comm verb, read only) and the supervisor watch section 90 (the REST routes and the comm verb) and the identity backups section 91 (backup on write, the refusal of an empty write, restore and reset; scratch daemon only, skipped against an external daemon); section 73 covers capabilities, the summary list, alert counts and API gzip) |
+| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections at the time of that run; as of 2026-10-30 the script carries 93 top-level numbered section headers, incl. the usage calculator section 85, the stuck-running watchdog bound section 86, the operator questions step 2 section 87 (notification toggles, the answered and withdrawn events through the events read, the return-path record, the polled single GET) and the operator questions step 4 section 88 (the worker marker switch, the question stats read, the REST-raised source and the answer log the decision link opens) and the security failure report section 89 (the REST route and the comm verb, read only) and the supervisor watch section 90 (the REST routes and the comm verb) and the identity backups section 91 (backup on write, the refusal of an empty write, restore and reset; scratch daemon only, skipped against an external daemon); section 73 covers capabilities, the summary list, alert counts and API gzip) |
 
 ## v9.0.83 — Session-tracker git growth: output.log out of history, no implicit auto-gc (2026-10-14)
 
@@ -2306,3 +2306,24 @@ Not run live: the park path for a blocking worker question (covered by the Go te
 Notes from the run: the shell backend echoes its `task` as a comment and does not run it, so the lines were started with `POST /api/sessions/send`; the marker-off line was printed from a second session because the first was still inside its `sleep`; and the refusal's one daemon log line landed in `data/daemon-crash.log`.
 
 Go tests behind the Tested column (all passed on 2026-10-29): `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ -run 'WorkerQuestion' -count=1`, `go test ./internal/autonomous/ -run 'TestWorkerQuestion|TestAwaitDecision|TestQuestionTick|TestWaitReason_AwaitDecision' -count=1`, `go test ./internal/audit/ -run 'TestQuestionMarkerRefusedAudit' -count=1`, `go test ./internal/config/ ./internal/server/ -run 'TestQuestionsWorkerMarker' -count=1`.
+
+## Lane fill eligibility, lane counts and per-lane-kind mode (2026-11-01)
+
+Results for the lane fill eligibility work. The row-by-row list is the "Lane fill eligibility, lane counts and per-lane-kind mode" section of [testing-tracker.md](testing-tracker.md); the sandbox live check report is [plans/2026-10-31-lane-fill-eligibility-live-check.md](plans/2026-10-31-lane-fill-eligibility-live-check.md) and the gate report is [plans/2026-10-31-lane-fill-eligibility-final-gate-report.md](plans/2026-10-31-lane-fill-eligibility-final-gate-report.md).
+
+| Check | Result | Seen |
+|-------|--------|------|
+| `go build ./...` | Pass | no output |
+| `go vet` on the touched packages (`cmd`, `audit`, `autonomous`, `server`, `config`, `mcp`, `router`) | Pass | no output |
+| `golangci-lint run ./...` (and `make lint`, which also runs the repository check scripts) | Pass | 0 issues |
+| `go test ./...` | Pass | 83 packages ok; the first full run had two failures that did not come from this work (a daemon-cleanup helper test that timed out while lint ran beside it, and a section-count line in this file that was one behind the release smoke script); `tests/ci` and `cmd/datawatch` were rerun on their own and pass |
+| `node --test internal/server/web/*.test.js` | Pass | 1849 of 1849, including the 49 lane fill tests |
+| `node --check internal/server/web/app.js` | Pass | no output |
+| `make build` | Pass | built with the docs mirror and the docs index regenerated |
+| Sandbox live check, `scripts/lane-fill-eligibility-live-check.sh` | Pass | 8 of 8 checks, sandbox daemon only, daemons ended by recorded pid |
+| Release smoke section 92 (`scripts/release-smoke.sh`) | Pass | 5 of 5 against a scratch daemon started from this worktree's binary; run on its own with the script's helpers, because running the script with `SMOKE_ONLY` left the daemon unreachable for section 92 and for the existing section 90 alike |
+| Audit tests for the `lane_fill_mode` entry | Pass | `TestLaneFillModeEvent_JSONLinesRoundTrip`, `TestLaneFillModeEvent_CEFEscaping` (`internal/audit/lane_fill_mode_events_test.go`) |
+| Locale guard (`TestLocales_CommonNavKeysPresent`) | Pass | 20 lane fill keys added to its list |
+| Browser story TS-842 (`scripts/test-stories/pwa/lane-fill-card.mjs`) | Not run | `node --check` and `bash -n` pass; the Playwright package is outside this worktree, so the story still needs a run where the PWA stories run |
+
+Still owed, and not claimed as done: the one-day shadow comparison on the operator's own daemon, and a run of TS-842 in a browser.

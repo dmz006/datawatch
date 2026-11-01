@@ -60,17 +60,17 @@ func TestLaneFillPoolHostsListsOllamaNodesAndLocalOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range []*compute.Node{
-		{Name: "gpu-box", Kind: compute.KindOllama, Address: "http://10.0.0.5:11434/"},
-		{Name: "off", Kind: compute.KindOllama, Address: "http://10.0.0.6:11434", Disabled: true},
-		{Name: "api", Kind: compute.KindOpenAICompat, Address: "http://10.0.0.7:8000"},
+		{Name: "gpu-box", Kind: compute.KindOllama, Address: "http://192.0.2.5:11434/"},
+		{Name: "off", Kind: compute.KindOllama, Address: "http://192.0.2.6:11434", Disabled: true},
+		{Name: "api", Kind: compute.KindOpenAICompat, Address: "http://192.0.2.7:8000"},
 	} {
 		if err := reg.Add(n); err != nil {
 			t.Fatal(err)
 		}
 	}
-	h := computePoolHosts{reg: reg, localHost: func() string { return "http://10.0.0.5:11434" }}
+	h := computePoolHosts{reg: reg, localHost: func() string { return "http://192.0.2.5:11434" }}
 	got := h.PoolHosts(context.Background())
-	if len(got) != 1 || got[0].Name != "gpu-box" || got[0].Node != "gpu-box" || got[0].Endpoint != "http://10.0.0.5:11434" {
+	if len(got) != 1 || got[0].Name != "gpu-box" || got[0].Node != "gpu-box" || got[0].Endpoint != "http://192.0.2.5:11434" {
 		t.Fatalf("hosts = %+v, want gpu-box once", got)
 	}
 

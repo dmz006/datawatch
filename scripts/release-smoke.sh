@@ -6169,6 +6169,79 @@ assert any(b.get("role")=="smoke-role-a" for b in d["backups"]), "no backup with
 fi
 
 # ---------------------------------------------------------------------------
+H "92. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
+# The lane fill read GET /api/autonomous/lane-fill carries, beside the base
+# mode, the mode in effect for each lane kind (`modes`), the effective and the
+# configured lane count for each kind (`lane_counts`), and on a refused
+# Automaton's `blocked` decision a stable `eligibility_reason` code. This checks
+# the shape of the read, that a bad per-kind mode is refused with a 400 naming
+# the key and stores nothing, and (scratch daemon only) that a per-kind mode set
+# to shadow reads back in `modes` and the original value is restored. It never
+# sets a mode to `on`, so nothing is started here; shadow stays the default.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  LF_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/lane-fill?limit=50" 2>/dev/null || true)
+  LF_CODE=$(echo "$LF_BODY" | tail -n1)
+  LF_JSON=$(echo "$LF_BODY" | sed '$d')
+  if [[ "$LF_CODE" == "200" ]] && echo "$LF_JSON" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+modes=("off","shadow","on")
+assert d["mode"] in modes, d["mode"]
+assert d["modes"]["gpu"] in modes and d["modes"]["claude"] in modes, d["modes"]
+for kind in ("gpu","claude"):
+    c=d["lane_counts"][kind]
+    assert isinstance(c["effective"], int) and isinstance(c["configured"], int), c
+    assert c["source"] in ("config","llm_caps"), c["source"]
+codes={"stale","held","sequenced_after_unshipped","proposal_not_confirmed","proposal_missing","main_carries_work","worktree_invalid"}
+for dec in d.get("decisions") or []:
+    r=dec.get("eligibility_reason","")
+    assert r=="" or r in codes, r
+    assert r=="" or dec["action"]=="blocked", dec
+' 2>/dev/null; then
+    ok "lane fill: GET /api/autonomous/lane-fill answers 200 with the mode, the per-kind modes, the lane counts and only known refusal codes"
+  else
+    ko "lane fill: read returned HTTP $LF_CODE or a malformed body: $(echo "$LF_JSON" | head -c 300)"
+  fi
+
+  LF_BAD=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.gpu_mode":"auto"}' "$BASE/api/config" 2>/dev/null || true)
+  LF_BAD_CODE=$(echo "$LF_BAD" | tail -n1)
+  if [[ "$LF_BAD_CODE" == "400" ]] && echo "$LF_BAD" | grep -q "autonomous.lane_fill.gpu_mode"; then
+    ok "lane fill: a bad gpu_mode is refused with a 400 that names the key"
+  else
+    ko "lane fill: bad gpu_mode answered HTTP $LF_BAD_CODE, expected 400 naming autonomous.lane_fill.gpu_mode: $(echo "$LF_BAD" | head -c 200)"
+  fi
+
+  LF_NEG=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.stale_after_hours":-1}' "$BASE/api/config" 2>/dev/null || true)
+  if [[ "$LF_NEG" == "400" ]]; then
+    ok "lane fill: a negative stale_after_hours is refused with a 400"
+  else
+    ko "lane fill: negative stale_after_hours answered HTTP $LF_NEG, expected 400"
+  fi
+
+  LF_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/autonomous/lane-fill" 2>/dev/null || true)
+  if [[ "$LF_POST" == "405" ]]; then
+    ok "lane fill: the status route is read only (POST answers 405)"
+  else
+    ko "lane fill: POST answered HTTP $LF_POST, expected 405"
+  fi
+
+  if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+    skip "lane fill: external daemon (DW_BASE set); the per-kind mode round trip is not run"
+  else
+    LF_ORIG=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin).get("autonomous",{}).get("lane_fill",{}).get("gpu_mode",""))' 2>/dev/null || echo "")
+    LF_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"autonomous.lane_fill.gpu_mode":"shadow"}' "$BASE/api/config" 2>/dev/null || echo "000")
+    LF_GPU=$(curl "${curl_args[@]}" "$BASE/api/autonomous/lane-fill" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["modes"]["gpu"])' 2>/dev/null || echo "?")
+    if [[ "$LF_SET" == "200" && "$LF_GPU" == "shadow" ]]; then
+      ok "lane fill: gpu_mode set to shadow reads back in modes.gpu"
+    else
+      ko "lane fill: gpu_mode PUT answered HTTP $LF_SET and modes.gpu reads '$LF_GPU' (expected 200 and shadow)"
+    fi
+    # Restore the original value (empty means inherit the base mode).
+    curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"autonomous.lane_fill.gpu_mode\":\"$LF_ORIG\"}" "$BASE/api/config" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

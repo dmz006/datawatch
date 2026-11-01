@@ -219,7 +219,7 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 		return r.Text // these texts already name the Automaton
 	}
 	if r.Code == LaneFillReasonHeld || r.Code == LaneFillReasonSequencedAfterUnshipped {
-		return fmt.Sprintf("PRD %s: held: %s", id, r.Text)
+		return fmt.Sprintf("Automaton %s: held: %s", id, r.Text)
 	}
 	return fmt.Sprintf("Automaton %s: %s: %s", id, r.Code, r.Text)
 }
@@ -325,7 +325,7 @@ func ClassifyLaneFillCandidate(c LaneFillCandidate) (source LaneFillSource, excl
 		return LaneFillSourceNone, laneFillExcludedText(c.ID, r)
 	}
 	if c.InAutomation {
-		return LaneFillSourceNone, fmt.Sprintf("PRD %s: member of an Automation, which starts it", c.ID)
+		return LaneFillSourceNone, fmt.Sprintf("Automaton %s: member of an Automation, which starts it", c.ID)
 	}
 	return want, ""
 }

@@ -90,6 +90,6 @@ Android and iOS both:
 
 ## Filing record
 
-Checked for an open issue first: `gh issue list -R dmz006/datawatch-app --search 'lane fill' --state open` on 2026-11-01 returned the open lane fill status view issue #301 (and an unrelated infrastructure retry issue), so no new issue was created. The text from "Parent release" through "Acceptance (mobile)" was added to #301 as a comment instead.
+Checked for an open issue first: `gh issue list -R dmz006/datawatch-app --state all --search '"lane fill" in:title'` on 2026-11-01 returned only #301, the verifier-wait lane view issue, which covers a different change. A new issue was filed for this work, once, with the text from "Parent release" through "Acceptance (mobile)" as its body.
 
-Filed as #301 (https://github.com/dmz006/datawatch-app/issues/301#issuecomment-6562807953), a comment on the existing open issue.
+Filed: https://github.com/dmz006/datawatch-app/issues/327 (2026-11-01, via `gh issue create -R dmz006/datawatch-app --title "[sync] feat(lane-fill): eligibility reasons, lane counts and per-lane-kind mode (datawatch next minor release)" --body-file <scratch draft>`).

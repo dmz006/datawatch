@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // This file runs the lane fill planner (lane_fill.go) from the Automation
@@ -461,7 +463,7 @@ func (c *Coordinator) laneFillAuditModeChange(now LaneFillKindModes) {
 		if prev.For(t) == now.For(t) {
 			continue
 		}
-		c.audit("lane_fill_mode", map[string]any{
+		c.audit(audit.ActionLaneFillMode, map[string]any{
 			"kind":     string(t),
 			"old_mode": prev.For(t),
 			"new_mode": now.For(t),
