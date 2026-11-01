@@ -69,6 +69,12 @@ the daemon acts on them. A decision recorded in shadow mode shows
 
 Switching mode takes effect on the next poll. No restart is needed.
 
+The mode can also be set for one lane kind alone with `gpu_mode` and
+`claude_mode`, so GPU lanes can go to `on` while Claude lanes stay in shadow
+(see "Switching to on, one lane kind at a time" below). A kind with no mode of
+its own takes `mode`. The status shows the mode in effect for each kind under
+`modes`.
+
 ## Reading the status
 
 The status shows the same facts on every surface:
@@ -195,7 +201,19 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.gpu_model` | empty | The model the GPU lanes run; empty means the backend's own model |
 | `autonomous.lane_fill.claude_backend` | `claude-code` | The backend the Claude lanes run |
 | `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
+| `autonomous.lane_fill.stale_after_hours` | `72` | How many hours an Automaton may go without any change before lane fill calls it stale and will not start it; `0` turns the rule off |
 | `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; `false` turns the rule off |
+| `autonomous.lane_fill.check_main_carries` | `true` | Whether lane fill skips an Automaton whose work the default branch already has; `false` turns the check off |
+| `autonomous.lane_fill.require_worktree` | `true` | Whether an Automaton that has a recorded worktree is taken only when that worktree is real and registered; `false` turns the check off |
+| `autonomous.lane_fill.lane_counts_from_caps` | `true` | Whether the number of lanes follows the LLM concurrency caps; `false` uses `gpu_lanes` and `claude_lanes` as written |
+| `autonomous.lane_fill.gpu_mode` | empty | The mode for GPU lanes only: `off`, `shadow` or `on`; empty inherits `mode` |
+| `autonomous.lane_fill.claude_mode` | empty | The mode for Claude lanes only: `off`, `shadow` or `on`; empty inherits `mode` |
+
+The seven keys from `stale_after_hours` down are the eligibility and
+per-lane-kind keys. The four switches (`require_confirmed_proposal`,
+`check_main_carries`, `require_worktree`, `lane_counts_from_caps`) are on when
+the key is absent, and an explicit `false` is kept. An explicit
+`stale_after_hours: 0` is kept as well.
 
 Every key is settable at runtime with no restart:
 
@@ -205,10 +223,108 @@ Every key is settable at runtime with no restart:
 | CLI | `datawatch config set autonomous.lane_fill.mode shadow` |
 | Chat | `configure autonomous.lane_fill.mode=shadow` |
 | REST | `PUT /api/config` with the same key |
-| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`) |
+| MCP | `autonomous_config_set` with `lane_fill_mode` (and `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`, `lane_fill_idle_alert_minutes`, `lane_fill_decompose_ahead_min`, `lane_fill_poll_seconds`, `lane_fill_gpu_backend`, `lane_fill_gpu_model`, `lane_fill_claude_backend`, `lane_fill_stale_after_hours`, `lane_fill_require_confirmed_proposal`, `lane_fill_check_main_carries`, `lane_fill_require_worktree`, `lane_fill_lane_counts_from_caps`, `lane_fill_gpu_mode`, `lane_fill_claude_mode`) |
 | PWA | Settings → General → Autonomous, the Lane fill fields |
 
 A bad value is refused, and nothing is written. An explicit `0` is kept.
+
+## Why lane fill skips an Automaton
+
+Before it hands a lane to a queued Automaton (a draft, an approved one or one
+waiting for review), lane fill checks it against seven rules. The first rule
+that refuses it gives the **eligibility reason**, a short fixed code with a
+sentence of detail. A refused Automaton is never started in any mode, and it
+does not count as eligible work: not in the queued counts, not in the idle-lane
+alert, and not in the supervisor watch's `idle_lane_eligible_work` finding.
+Work that is already running, finished or cancelled is never refused.
+
+The rules run in this order:
+
+| Reason code | What it means | How to clear it |
+|---|---|---|
+| `held` | The title or spec has a line that starts with `HOLD`, says "do not run" or "sequenced last", or the judge timed out on every backend while the Automaton needed review. | Remove the line from the spec if the hold is over. If the hold is right, leave it: this is the rule working. |
+| `sequenced_after_unshipped` | The spec says it is "sequenced after" another Automaton, and that one is not completed, or the reference matches no Automaton at all (an unknown reference counts as unfinished). | Finish the other Automaton, or fix the reference so it names the right one (an 8-character id is the most reliable). |
+| `stale` | The Automaton has had no change for longer than `stale_after_hours` (72 by default). Old probes and forgotten drafts end up here. | If it still matters, edit it, which refreshes its last-updated time; if it does not, cancel it. To change the limit, set `stale_after_hours`; `0` turns the rule off. |
+| `proposal_not_confirmed` | An implementation Automaton whose spec names a `docs/plans/<name>.md` proposal that can be read, but the file has no line starting `Confirmed: yes` in its first 200 lines. | Read the proposal, and if you agree, add the line `Confirmed: yes`. The file is read again on every poll. |
+| `proposal_missing` | An implementation Automaton whose spec names no proposal file, or none of the named files can be read. | Name the proposal file in the spec, or fix its path. A path that is absolute, has a `..` element, or leaves the repository is treated as unreadable. Research, operational and personal Automata are exempt. |
+| `main_carries_work` | The default branch already has the work: a merge or a task commit for this Automaton, or its whole branch is already on the default branch. The detail names the commit. | The work has shipped, so cancel the Automaton. If the match is wrong, set `check_main_carries` to `false`. |
+| `worktree_invalid` | The Automaton has a recorded worktree that is gone, has no `.git` entry, or is not in the repository's registered worktree list. | Restore the worktree, or clear the stale entry in the repository (`git worktree prune`), then let the Automaton make a new one. An Automaton with no worktree yet is fine: it gets one when it runs. |
+
+Two rules turn their own check on and off: `proposal_not_confirmed` and
+`proposal_missing` need `require_confirmed_proposal`, `main_carries_work` needs
+`check_main_carries`, `worktree_invalid` needs `require_worktree` and `stale`
+needs a non-zero `stale_after_hours`. The `held` and `sequenced_after_unshipped`
+rules have no switch: a hold is a person's instruction.
+
+If a check cannot be made (git cannot be read, the filesystem view is not
+there), the answer is "unknown" and **never** refuses. The base-branch check
+looks at a few Automata per poll, newest first, and remembers each answer until
+the default branch moves, so a long queue never stalls a poll.
+
+### Where to read the reasons
+
+A refusal is a `blocked` decision. Its code is `eligibility_reason`; the key is
+absent on a decision that is not a refusal.
+
+| Surface | Where it shows |
+|---|---|
+| REST | `GET /api/autonomous/lane-fill`: `decisions[].eligibility_reason`, with the sentence in `decisions[].reason` |
+| MCP | `autonomous_lane_fill_status`: the same object |
+| CLI | `datawatch autonomous lane-fill`: a decision line reads `blocked <id>: [stale] <sentence>`, the code in brackets |
+| Comm channel | `autonomous lane-fill [limit]`: the same lines, newest five decisions |
+| PWA | The **Lane fill** card: each refused Automaton carries a chip with the reason in plain words. Settings → General → Autonomous has the rows for the seven keys. |
+| Audit | A change of a lane kind's mode writes a `lane_fill_mode` entry (kind, old mode, new mode). |
+
+### The lane counts rule
+
+How many lanes lane fill plans for is no longer only a number you type. With
+`lane_counts_from_caps` on (the default), the count for a lane type is the
+**sum of the in-flight caps of the enabled LLM entries that run its backend**.
+These are the same caps the capacity pools use, so the lanes and the admission
+rules cannot disagree. A Claude backend that admits one session at a time gets
+one Claude lane, even if `claude_lanes` is 3.
+
+The configured count is kept when the caps cannot give a better answer:
+
+- an enabled entry on that backend is **unlimited** (cap `0`);
+- no enabled entry runs that backend, or no cap source is available;
+- the configured count is `0`, which always means no lane of that type;
+- `lane_counts_from_caps` is `false`.
+
+The status shows what it did. `lane_counts` gives, for `gpu` and `claude`, the
+`configured` count, the `effective` count the last poll used and the `source`
+(`llm_caps` or `config`, with a `reason` when the configured count was kept).
+The CLI and comm channel print it on one line, for example
+`Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`. To get more
+Claude lanes, raise the cap on the LLM entry; do not raise `claude_lanes` and
+expect it to win.
+
+### Pool evidence and a node with a private certificate
+
+Before a GPU lane is called idle, lane fill reads the pool: which sessions use
+it and which models each host has loaded. If a registered compute node serves
+its API over https with a certificate your machine does not trust (a private
+certificate authority or a self-signed one), the read used to fail and the GPU
+lanes stayed blocked. Now the read uses **that node's own TLS settings**, the
+ones you set on the compute node:
+
+- `tls_ca_file`: trust this certificate authority file as well as the system
+  roots;
+- `tls_cert_fingerprint`: trust the node whose certificate has this SHA-256
+  fingerprint;
+- `tls_insecure_skip_verify`: turn verification off for this node (it cannot
+  be combined with the other two).
+
+When the certificate is not trusted, the pool evidence error names the node and
+the fix, for example `pool host <node> unreadable (loaded models): ollama
+/api/ps: node <node> certificate not trusted: ...: set tls_ca_file or
+tls_cert_fingerprint on the node, or tls_insecure_skip_verify to turn
+verification off for it`. The address is never shown. It appears in the
+status `evidence.error`, the CLI and the PWA card. Set one of the three on the
+node (`PUT /api/compute/nodes/{name}`, the `compute_node_update` MCP tool or the
+compute node settings in the PWA; the how-to [Compute nodes](compute-nodes.md)
+has the certificate options in full), and the next poll reads the pool. A node on plain http, and
+the host's own local Ollama, are read as before.
 
 ## The day-long shadow comparison
 
@@ -233,7 +349,11 @@ hand. Then compare:
    supervisor had a reason to leave them that way; and any decision that named a
    held or sequenced Automaton.
 5. **Check the criteria before switching**:
-   - no decision named a held or sequenced Automaton;
+   - no decision named a held or sequenced Automaton, and every refusal
+     (`eligibility_reason`) is one you agree with: a stale, unconfirmed or
+     already-shipped Automaton the supervisor would also have left alone;
+   - the lane counts line matches the lanes the supervisor treats as real
+     (`lane_counts` shows `llm_caps` where the LLM caps should decide);
    - every difference is explained, and either accepted or fixed;
    - the pool evidence never reported a busy pool as idle, and an unreadable
      host always appeared as an error or a blocker, never as an idle lane;
@@ -242,17 +362,53 @@ hand. Then compare:
 
 If any criterion fails, stay in shadow mode, fix the cause, and run another day.
 
-## Switching to on
+## Switching to on, one lane kind at a time
 
-Once the criteria pass, set the mode:
+Lane fill ships with both lane kinds in shadow, and nothing in this feature
+starts work on its own until you change a mode. The base `mode` key and the two
+per-kind keys, `gpu_mode` and `claude_mode`, decide what each kind does. An
+empty per-kind key inherits `mode`, so a fresh install reads shadow for both.
 
-```bash
-datawatch config set autonomous.lane_fill.mode on
-```
+**The procedure.** GPU lanes cost no Claude usage, so they go first.
 
-The change takes effect on the next poll. To go back, set it to `shadow` or
-`off`; no restart is needed either way. `off` stops the planner. Work already
-running keeps running.
+1. **Leave both kinds on shadow** (`mode: shadow`, `gpu_mode` and `claude_mode`
+   empty). Check the status: `modes` shows `gpu: shadow` and `claude: shadow`.
+2. **Compare for a full day**, as in the section above: lane fill's decisions
+   against the supervisor's own checks. Fix or accept every difference, and
+   check that each refusal reason is right.
+3. **Set `gpu_mode` to `on`** and leave `claude_mode` alone:
+
+   ```bash
+   datawatch config set autonomous.lane_fill.gpu_mode on
+   ```
+
+   The status now reads `modes: {gpu: on, claude: shadow}` while `mode` stays
+   `shadow`. Only decisions on GPU lanes are carried out; Claude-lane decisions
+   are still recorded and not started.
+4. **Watch.** Read the status and the decisions for a while (a day is a
+   sensible time): every GPU start should be one you would have made, no
+   refused Automaton should start, and the lanes should be busy. Each change of
+   a kind's mode is also in the audit log as `lane_fill_mode`.
+5. **Only then set `claude_mode` to `on`**:
+
+   ```bash
+   datawatch config set autonomous.lane_fill.claude_mode on
+   ```
+
+   Claude starts spend Claude usage, so look at the usage pace before and after.
+
+Setting the base `mode` to `on` switches both kinds at once (for any kind with
+no mode of its own). Use it only after both kinds have proved themselves.
+
+**A kind set to `off`** plans nothing for its lanes: its lanes, its queued
+count and its decisions vanish from the status, and it raises no idle alert.
+The other kind is not affected.
+
+**Going back.** Set the kind back to `shadow` (or empty, to inherit `mode`).
+The change applies on the next poll, with no restart, and stops new starts of
+that kind. Work already started keeps running; nothing is cancelled and nothing
+is undone. `off` stops the planner for that kind altogether. To stop everything
+in one step, set `mode` to `shadow` and clear `gpu_mode` and `claude_mode`.
 
 In `on` mode, each decision goes through the existing start path:
 
@@ -340,6 +496,10 @@ needs no restart.
   exempt. A file that cannot be read for any other reason does not refuse the
   Automaton. Set `autonomous.lane_fill.require_confirmed_proposal` to `false`
   to turn the rule off.
+- **It never starts an Automaton it has refused.** The seven eligibility
+  reasons (see "Why lane fill skips an Automaton") apply in every mode, and a
+  refused Automaton is not counted as eligible work anywhere, including the
+  supervisor watch's idle-lane finding.
 - **It never bypasses the normal start rules.** Lane fill adds no second way to
   start work. Admission, approval gates, quality gates and the stuck-task rules
   all still run.
@@ -353,5 +513,6 @@ needs no restart.
 
 - [Automation queue advance](automation-queue-advance.md): how an Automation starts its next Automaton.
 - [Automata capacity](automata-capacity.md): the admission rules every start goes through.
+- [Compute nodes](compute-nodes.md): the certificate settings a GPU pool node can need.
 - [Automation view](automation-tab.md): the Automation sub-tab where the Lane fill card appears.
 - [Automation decision assistant](automation-decision-assistant.md): the other shadow-mode feature, for comparison.
