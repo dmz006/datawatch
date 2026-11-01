@@ -9003,6 +9003,11 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  settings_parallel_task_group: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
   'autonomous.request_watch.poll_seconds': DOCS_DEFINITIONS + '#autonomous-request-watch-poll-seconds',
@@ -14209,6 +14214,7 @@ function renderTask(prd, story, task, editable) {
   const readOnlyBadge = task.read_only
     ? `<span class="prd-task-llm-badge prd-task-readonly-badge" title="${escHtml(t('prd_task_read_only_badge_tip')||'Read-only task: changes no files')}">${escHtml(t('prd_task_read_only_badge')||'read-only')}</span>`
     : '';
+  const mergeStateBadge = taskMergeBadgeHtml(task);
   // 2026-10-17 — smoke/final-gate kind chip. The decomposer tags these
   // tasks as smoke-verification targets; when the pair is configured
   // they get a dedicated verifier LLM (smoke_verification_backend/model),
@@ -14369,7 +14375,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
+      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -16720,6 +16726,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.main_checkout', label: 'Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)', labelKey: 'settings_supervisor_watch_main_checkout', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.working_model', label: 'Supervisor watch working model (model every compute node should keep resident, empty = not checked)', labelKey: 'settings_supervisor_watch_working_model', type: 'text', placeholder: '' },
+    // Parallel task worktrees (autonomous.parallel.*) — each parallel task of an Automaton can run in its
+    // own worktree and branch; the branches are merged back in dependency order, and the merge conflict
+    // policy says what happens when one does not merge cleanly.
+    { label: 'Parallel task worktrees', labelKey: 'settings_parallel_task_group', docsKey: 'settings_parallel_task_group', type: 'group' },
+    { key: 'autonomous.parallel.worktree_per_task', label: 'Worktree per task (each parallel task of an Automaton runs in its own worktree and branch, merged back in order; on by default)', labelKey: 'settings_parallel_worktree_per_task', docsKey: 'autonomous.parallel.worktree_per_task', type: 'toggle' },
+    { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
+      optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
+    { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -26187,6 +26201,32 @@ window.openDecisionAnswerPanel = function(btn) {
   btn.setAttribute('aria-expanded', 'true');
   return window.loadDecisionAnswerPanel(btn.getAttribute('data-question'), btn.getAttribute('data-answer'), panel);
 };
+
+// ── Task merge-state badge ──────────────────────────────────────────────────
+// A task that ran in its own worktree carries merge_state (pending, merged,
+// conflict or held) and, once merged, merge_commit, the Automaton branch commit
+// that holds its work. taskMergeBadgeHtml(task) draws the badge; a task without
+// a known merge state draws nothing. Every value is escaped, and the key map
+// holds literal locale keys so the key-coverage guard can see them.
+const TASK_MERGE_STATE_KEYS = {
+  pending: 'task_merge_state_pending', merged: 'task_merge_state_merged',
+  conflict: 'task_merge_state_conflict', held: 'task_merge_state_held',
+};
+const TASK_MERGE_STATE_COLORS = {
+  pending: 'var(--warning,#a06b00)', merged: 'var(--success,#2a7d46)',
+  conflict: 'var(--error,#c00)', held: 'var(--error,#c00)',
+};
+function taskMergeBadgeHtml(task) {
+  if (!task || typeof task !== 'object') return '';
+  const state = String(task.merge_state || '');
+  if (!Object.prototype.hasOwnProperty.call(TASK_MERGE_STATE_KEYS, state)) return '';
+  const label = t(TASK_MERGE_STATE_KEYS[state]);
+  const commit = typeof task.merge_commit === 'string' ? task.merge_commit.slice(0, 7) : '';
+  const tip = commit ? t('task_merge_badge_tip_commit', [label, commit]) : t('task_merge_badge_tip', [label]);
+  const color = TASK_MERGE_STATE_COLORS[state];
+  return `<span class="prd-task-llm-badge prd-task-merge-badge prd-task-merge-${state}" title="${escHtml(tip)}" style="border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
+}
+window.taskMergeBadgeHtml = taskMergeBadgeHtml;
 
 // ── Merge-pending badge and safe-to-delete report ───────────────────────────
 // GET /api/autonomous/merge lists every completed Automaton with a work branch

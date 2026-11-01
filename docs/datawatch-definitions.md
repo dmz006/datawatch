@@ -1978,3 +1978,13 @@ Memory + ops:
 - [`plans/historical-releasenotes/`](plans/historical-releasenotes/) — off-minor release notes
 
 For per-feature attribution to upstream projects, see [`plan-attribution.md`](plan-attribution.md).
+
+### Parallel task worktrees
+
+**Worktree per task** (`autonomous.parallel.worktree_per_task`, on by default) — each task of an Automaton that runs alongside other tasks gets its own worktree and branch off the Automaton branch, so two tasks never write into the same files at once. When the task is verified, its branch is merged back into the Automaton branch, in dependency order, one merge at a time.
+
+**Task merge state** — where the merge of a task branch stands, shown as a badge on the task card, in `datawatch autonomous prd-get`, in the chat `autonomous get` reply and as `merge_state` in the task read. `pending` means the branch is waiting to be merged, `merged` means it is in the Automaton branch (the task then also carries `merge_commit`, the Automaton branch commit that holds its work), `conflict` means the merge hit a conflict and `held` means the conflict policy stopped the task for the operator.
+
+**Merge conflict policy** (`autonomous.parallel.merge_conflict_policy`) — what happens when a task branch does not merge cleanly. `additive_then_model` (the default) keeps both sides when the two changes only add lines, and asks the merge conflict model to resolve anything else. `block` holds the task at once. `triage` raises the conflict as a question for the operator.
+
+**Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.

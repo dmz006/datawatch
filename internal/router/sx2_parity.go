@@ -543,7 +543,11 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous get failed", err.Error())
 			return
 		}
-		r.reply("autonomous get", prettyJSON(out))
+		reply := prettyJSON(out)
+		if lines := taskMergeStatusLines(out); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
+		}
+		r.reply("autonomous get", reply)
 	case "decompose":
 		if len(args) < 2 {
 			r.reply("autonomous decompose failed", "usage: autonomous decompose <prd-id>")

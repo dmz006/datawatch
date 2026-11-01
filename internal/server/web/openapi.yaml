@@ -974,6 +974,10 @@ paths:
         `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
         `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
+        `autonomous.parallel.read_only_tasks` (true|false, default true; tasks flagged read_only skip the tree lock),
+        `autonomous.parallel.worktree_per_task` (true|false, default true; each parallel task runs in its own worktree and its branch is merged back into the PRD branch),
+        `autonomous.parallel.merge_conflict_policy` (additive_then_model|block|triage, default additive_then_model; what happens when a task branch conflicts on merge),
+        `autonomous.parallel.merge_conflict_model` (string, default empty = the strongest configured planning model; the model that resolves a merge conflict),
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
         `autonomous.plan_coverage_suppress_created_files` (true|false, default true; hide findings for files the plan itself creates),
@@ -7981,6 +7985,8 @@ components:
         spec: {type: string}
         depends_on: {type: array, items: {type: string}}
         read_only: {type: boolean, description: "The task changes no files, so it may skip the tree lock when autonomous.parallel.read_only_tasks is on. Absent = false. Set through add_task and edit_task, or by decompose"}
+        merge_state: {type: string, enum: [pending, merged, conflict, held], description: "State of the merge of the task branch into the PRD branch (worktree-per-task mode). Absent for a task that works in the PRD worktree"}
+        merge_commit: {type: string, description: "The PRD branch commit that carries the task work once merge_state is merged"}
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}
