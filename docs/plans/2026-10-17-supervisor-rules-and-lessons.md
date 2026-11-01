@@ -646,3 +646,12 @@ Rules from this:
 3. **Retries on Claude are bounded.** After three failed attempts of one task stop and bring it to the operator; six Sonnet high attempts on one documentation task were spent on 2026-10-31, each one rebuilding the context.
 4. **A lane approval ends at its stated time** and the cap returns to 1 then without being asked.
 5. The daemon-side fix is the burn guard PRD (registry row 278).
+
+### Shipped work is not cancelled (2026-11-01)
+
+Operator, 2026-11-01, quoted: "Closed automation are canceled?  That is a terrible state,  how do we tell the difference from real canceled?" Counted from git history: 29 of 30 cancelled Automations and 178 of 281 cancelled PRDs were merged into main; the genuinely cancelled are 1 Automation and about 103 PRDs. The supervisor's close step after a ship was "cancel the PRD record, then cancel the Automation", because nothing better existed, and the state alone cannot tell the two apart.
+
+Rules from now on:
+1. **After a ship, do not cancel the PRD or the Automation.** Leave the PRD completed and let the Automation finish through the merged-member rule (9.45.0, `autonomous.automation.merged_member_policy` completed). The worktree and temp cleanup (9.43.0) removes the branch and worktree after the retention time. `cancel` means abandoned work only.
+2. The registry row and the release name the PRD that shipped; the branch audit already treats a completed PRD whose commits are on main as landed.
+3. How shipped work is shown in the product (merged fields, a shipped status, or both) is a queue question; the filed PRD is `Shipped state for Automata and Automations` with a backfill from git history.
