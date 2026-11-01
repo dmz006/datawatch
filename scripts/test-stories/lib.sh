@@ -314,7 +314,12 @@ run_pwa_story() {
   fi
 
   mkdir -p "${EVIDENCE_DIR:-/tmp}/${story_id}"
-  export TEST_HTTP TEST_TLS TEST_TOKEN EVIDENCE_DIR CURRENT_STORY="$story_id"
+  # Default TEST_TLS_CA to this daemon's own self-signed cert when the caller
+  # did not set one and the file exists (data_dir = $TEST_DATA).
+  if [[ -z "${TEST_TLS_CA:-}" && -n "${TEST_DATA:-}" && -f "$TEST_DATA/tls/server/cert.pem" ]]; then
+    TEST_TLS_CA="$TEST_DATA/tls/server/cert.pem"
+  fi
+  export TEST_HTTP TEST_TLS TEST_TOKEN EVIDENCE_DIR CURRENT_STORY="$story_id" TEST_TLS_CA="${TEST_TLS_CA:-}"
 
   local pwa_rc=0
   "$node_bin" "$pwa_script" 2>"${EVIDENCE_DIR:-/tmp}/${story_id}/playwright.log" || pwa_rc=$?

@@ -160,8 +160,11 @@ fi
 # --- story -------------------------------------------------------------------
 if [[ -n "${RUN_DIR:-}" ]]; then
   EVIDENCE_DIR="${EVIDENCE_DIR:-$RUN_DIR/evidence}"   # local-daemon mode
+  # own-daemon mode: trust the daemon's own self-signed cert (data_dir is $RUN_DIR/data).
+  TEST_TLS_CA="${TEST_TLS_CA:-$RUN_DIR/data/tls/server/cert.pem}"
 else
   EVIDENCE_DIR="${EVIDENCE_DIR:-/tmp/dw-e2e-pwa-evidence}"  # external-daemon mode
+  # external-daemon mode: keep any TEST_TLS_CA the caller already set; never invent one.
 fi
 mkdir -p "$EVIDENCE_DIR/$STORY"
 
@@ -173,7 +176,7 @@ else
     || fail "npm install failed in $PWA_DIR"
 fi
 
-export TEST_HTTP TEST_TLS TEST_TOKEN="${TEST_TOKEN:-dw-e2e-pwa-token}" EVIDENCE_DIR
+export TEST_HTTP TEST_TLS TEST_TOKEN="${TEST_TOKEN:-dw-e2e-pwa-token}" EVIDENCE_DIR TEST_TLS_CA="${TEST_TLS_CA:-}"
 [[ -n "${TEST_TRUSTED_TLS:-}" ]] && export TEST_TRUSTED_TLS
 
 if [[ -n "$GROUP" ]]; then

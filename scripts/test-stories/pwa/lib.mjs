@@ -6,6 +6,10 @@
 // Env vars (set by lib.sh / run_pwa_story):
 //   TEST_HTTP      — daemon HTTP base URL (e.g. http://127.0.0.1:18080)
 //   TEST_TLS       — daemon HTTPS base URL (e.g. https://127.0.0.1:18443)
+//   TEST_TLS_CA    — path to the daemon's own PEM certificate (self-signed,
+//                    generated at <data_dir>/tls/server/cert.pem), used as the
+//                    CA for sandboxTlsAgent(). Unset, sandboxTlsAgent() falls
+//                    back to $TEST_DATA/tls/server/cert.pem.
 //   TEST_TOKEN     — auth token
 //   EVIDENCE_DIR   — where to write screenshots + logs
 //   CURRENT_STORY  — story ID (e.g. TS-130), used for evidence subdirectory
@@ -30,6 +34,7 @@ function resolveChromeExecutable() {
 export const env = {
   http:    process.env.TEST_HTTP    || 'http://127.0.0.1:18080',
   tls:     process.env.TEST_TLS    || 'https://127.0.0.1:18443',
+  tlsCa:   process.env.TEST_TLS_CA || '',
   token:   process.env.TEST_TOKEN  || 'dw-test-token-12345',
   evidenceDir: process.env.EVIDENCE_DIR || '/tmp/dw-pwa-evidence',
   story:   process.env.CURRENT_STORY || 'TS-000',
@@ -38,6 +43,12 @@ export const env = {
 export function storyEvidenceDir() {
   return path.join(env.evidenceDir, env.story);
 }
+
+// --- TLS trust --------------------------------------------------------------
+// sandboxTlsAgent()/resetSandboxTlsAgent() live in ./tls-trust.mjs (node
+// builtins only, no playwright) so a standalone node:test file can import
+// them even where pwa/node_modules has not been installed.
+export { sandboxTlsAgent, resetSandboxTlsAgent } from './tls-trust.mjs';
 
 // --- browser ----------------------------------------------------------------
 
