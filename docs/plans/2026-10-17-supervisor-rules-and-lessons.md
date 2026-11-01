@@ -657,3 +657,12 @@ Rules from now on:
 3. How shipped work is shown in the product (merged fields, a shipped status, or both) is a queue question; the filed PRD is `Shipped state for Automata and Automations` with a backfill from git history.
 
 Correction, same day, 15:55: the first ship after that rule showed why the cancel step existed. PRD `8f040001` finished all 17 tasks, was pushed, got a warn verdict from the rules review at 15:46 and then stayed `running` indefinitely (its record had not been updated since the verdict), and its Automation stayed active; the watch keeps listing it as merge ready. Until the shipped state PRD (`89560001`) adds a proper close action and the backfill, the supervisor still cancels the PRD and Automation after a ship so the lists stay usable, and that cancel is the exact mislabel the backfill corrects from git history. The stuck-after-warn behaviour is its own defect (row 283).
+
+### Shipped a PRD whose review had blocked it (2026-11-01)
+
+At 16:07 the supervisor shipped `a5db0001` (lane fill step 10, v9.56.0) while its completion rules review had returned **block** at 15:52 and the daemon's content auto-fix was running. The watch had reported "MERGE READY" because all 13 tasks were done, and the supervisor did not read the verdicts. The block listed: lint findings (the supervisor fixed these in the merge before shipping), operator identifiers in tracked reports, "PRD" wording in operator text, missing documentation, end-to-end, audit and smoke coverage, and the parity note on an old issue instead of a new one. This is exactly "never merge around the judge".
+
+Rules:
+1. **Read the verdicts before a merge.** Merge only when the latest completion rules review is pass or warn. A block with the daemon's auto-fix running is waited out; the corrective commits are merged afterwards as their own release. The watch script now reports `JUDGE BLOCKED` and `MERGE WAIT` instead of `MERGE READY` for those cases.
+2. **Generated reports leak operator identifiers.** PRD workers write the host name and home paths into plan documents; scrub tracked files for them at every merge until the leak check PRD (`5fab0001`) exists. Done at 16:05 for the 10 files this merge brought.
+3. What remains open on `a5db0001`: the daemon's corrective task, the wording fix in the lane fill text, the missing coverage and a new parity issue; the PRD is left running and will be merged again.
