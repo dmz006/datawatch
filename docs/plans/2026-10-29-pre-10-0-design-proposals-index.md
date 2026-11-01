@@ -61,3 +61,24 @@ Answered in the PWA (surface pwa) unless noted; the quotes are the operator's wo
 | 13:42 | BL620 rules files | Confirm the recommended option (B first) and its default answers | "These questions should be configurable,  other datawatch users may want their own settings, my selection is default" |
 
 Standing design rule from these answers (operator, 2026-10-30, quoted: "need to remember most options need to be configurable since others may use datawatch in their own way, my answers are default and our use case"): every behaviour choice a PRD builds is a configuration key whose default is the operator's answer, because other datawatch users will run it their own way. Consequences recorded: the BL644 answer says the registry the coordinator tracks should be an internal datawatch function that also supports a file registry (a README table) as one source, not the README numbering as the source of truth; the chain advance rule, the push on complete behaviour and the BL620 protected paths are all configurable with these answers as defaults.
+
+
+## Answers given in the question queue, 2026-10-31 to 2026-11-01
+
+All thirteen open questions were answered while Claude was at its limit and the supervisor could not read them; they were read on 2026-11-01 14:30. Each answer is immutable in the queue; the quotes below are verbatim. Every behaviour stays a setting with these answers as the default, so other users can choose their own.
+
+| Question | Answer | Operator's words | Follow-up |
+|---|---|---|---|
+| Five open code scanning alerts, all in test code | Fix the test code so the alerts disappear | (no words) | PRD filed: fix the five alerts in test code |
+| What the dashboard is for | Console first, boards later | "We already have the observer,  we don't need to replicate what is there in boards,  but boards for a dashboard are different and higher level,  some observer cards may be good dashboard cards" | PRD filed: dashboard card audit and the operator console; boards follow |
+| What the daemon does alone at a merge conflict | Additive conflicts mechanically; for the rest a strong model proposes a resolution that must pass the tests, otherwise ask | "This should be an option for others and be able to select model of they code what i did" | in the pipeline PRD: conflict policy and model are settings |
+| Who runs the supervisor loop for other users | Plain daemon code for the mechanical steps, a small local model for narrow jobs behind validators, escalate after two failures | "The model and style,  long running or not,  should be selectable,  and results and documentation observable to see how it is performing and needs tuning" | PRD filed: the supervisor loop in the daemon |
+| Where a project's merge pipeline is defined | Both, the file winning over the record | "When we make tutorial and onboarding stuff this should be part of that,  set up a report for datawatch automation,  help users use datawatch" | pipeline PRD re-filed with the onboarding report |
+| Where evals run: placing models on nodes | Pin a model to a node, and load the model when a node has the resources | "It can be pinned but should also ask and add model of enough resources,  no reason to fail when we can load a model " | PRD filed: load a missing model on a node with resources |
+| Keeping dependencies and images patched | Dependabot plus a small scheduled job for what it cannot see | "And this is just for us in maintaining datawatch,  not part of what users of datawatch need as they are not maintaining datawatch code" | PRD filed: maintainer-only upstream monitoring |
+| Claude model tiering eval and the mismatch event | Park until after 10.0 | (no words) | none, parked |
+| What things cost | One cost report on the existing data | "Add per call costs when ready" | PRD filed: cost report; per-call costs later |
+| Who may change settings from a session | Fold the switch into the capability system as a built-in group | (no words) | PRD filed |
+| Per-project automation settings | A project policy for the settings the coordinator reads first | (no words) | PRD filed |
+| Automation coordinator and the manual checks | The checks feature plus the daemon pushes and tags each finished release and watches its CI | "But again should be configurable,  other users may want to adjust and use differently,  be flexable and creative" | PRD filed |
+| Parallel tasks in one Automaton | Each task in its own worktree, merged back in order | "A and b, read only should be able to run parallel,  work tree is an option users can use and should be default" | PRD filed: read-only tasks in parallel and a worktree per task as the default |
