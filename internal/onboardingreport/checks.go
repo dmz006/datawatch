@@ -77,7 +77,7 @@ func checkDefs() []checkDef {
 			Step: Step{
 				Title: "Register a project directory", HowTo: "docs/howto/automation-tab.md",
 				Anchor:  definitionsPage + "#project-profiles",
-				Command: "datawatch projects add", MCPTool: "project_upsert", PWAPlace: "Settings > Projects",
+				Command: "datawatch projects upsert <name>", MCPTool: "project_upsert", PWAPlace: "Settings > Projects",
 			},
 		},
 		{
@@ -128,7 +128,7 @@ func checkDefs() []checkDef {
 			Step: Step{
 				Title: "Give a project its own merge pipeline", HowTo: "docs/howto/automation-merged-member.md",
 				Anchor:  definitionsPage + "#automation-detail-and-pipeline-strip",
-				Command: "datawatch autonomous merge-pipeline", MCPTool: "autonomous_merge", PWAPlace: "Settings > Automation > Merge pipeline",
+				Command: "datawatch autonomous merge-pipeline show", MCPTool: "autonomous_merge_pipeline_get", PWAPlace: "Settings > Automation > Merge pipeline",
 			},
 		},
 	}

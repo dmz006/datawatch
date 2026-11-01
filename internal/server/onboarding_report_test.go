@@ -3,10 +3,12 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/onboardingreport"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
 func TestOnboardingReportRoute(t *testing.T) {
@@ -74,5 +76,29 @@ func TestOnboardingReportRouteRefusals(t *testing.T) {
 	}
 	if rec := mpDo(s.handleOnboardingReport, http.MethodGet, "/api/automation/onboarding-report?format=xml", ""); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad format: want 400, got %d", rec.Code)
+	}
+}
+
+// A federation peer without the autonomous read capability is refused (403);
+// one with it passes the gate (503 here only because this server has no config).
+func TestOnboardingReportRouteFederationRefusal(t *testing.T) {
+	s, store, _ := newFedTestServer(t)
+	for name, caps := range map[string][]string{"peer-limited": {"sessions:list"}, "peer-reader": {"read-only"}} {
+		if err := store.Add(&multiserver.Entry{
+			Name: name, Token: "tok-" + name, URL: "http://" + name + ":8080",
+			Enabled: true, Federated: true, Capabilities: caps,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wrapped := s.fedAuthMiddleware(http.HandlerFunc(s.handleOnboardingReport))
+	for token, want := range map[string]int{"tok-peer-limited": http.StatusForbidden, "tok-peer-reader": http.StatusServiceUnavailable} {
+		req := httptest.NewRequest(http.MethodGet, "/api/automation/onboarding-report", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rr := httptest.NewRecorder()
+		wrapped.ServeHTTP(rr, req)
+		if rr.Code != want {
+			t.Errorf("%s: want %d, got %d: %s", token, want, rr.Code, rr.Body.String())
+		}
 	}
 }

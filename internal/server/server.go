@@ -511,27 +511,27 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/autonomous/progress", api.handleAutonomousProgress)
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
-	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                // lane fill status: lanes, decisions, alerts
-	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)        // infrastructure retry policy and the tasks retried or held, newest first
-	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport) // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)
-	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline) // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
-	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord) // PUT sets and DELETE removes a project's daemon-held pipeline record
+	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                  // lane fill status: lanes, decisions, alerts
+	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)          // infrastructure retry policy and the tasks retried or held, newest first
+	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport)            // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)
+	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                  // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
+	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)     // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate) // POST checks a pipeline body or a repository file without saving
-	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                     // triage records: the Automata waiting (failed/blocked), newest first
-	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)               // decisions: operator questions with their tasks and answers, newest first
-	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)      // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
-	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                   // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
-	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                       // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
-	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun) // run a merge through the resolved pipeline, recording each step
-	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)       // safe-to-delete report of finished Automaton branches and worktrees
-	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                       // cleanup status: both passes, disk readings, rate-limited disk-alert flag
-	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)            // uncommitted-work holds: policy, scope, held tasks and Automata
-	apiMux.HandleFunc("/api/autonomous/request-watch", api.handleRequestWatch)                  // request watch: state of the in-flight model request of watched worker and verifier sessions
-	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                   // search before create: overlaps for a title and spec
-	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)          // stored security failure reports with their run identity, newest first
-	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)            // supervisor watch state: mode, last poll, findings, comparison
-	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats) // supervisor watch numbers: mode, poll age, finding counts, agreed days
-	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                   // read-only admission query
+	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                       // triage records: the Automata waiting (failed/blocked), newest first
+	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                 // decisions: operator questions with their tasks and answers, newest first
+	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                  // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
+	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                     // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
+	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                         // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
+	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                  // run a merge through the resolved pipeline, recording each step
+	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)         // safe-to-delete report of finished Automaton branches and worktrees
+	apiMux.HandleFunc("/api/autonomous/cleanup", api.handleCleanupStatus)                         // cleanup status: both passes, disk readings, rate-limited disk-alert flag
+	apiMux.HandleFunc("/api/autonomous/uncommitted-work", api.handleUncommittedWork)              // uncommitted-work holds: policy, scope, held tasks and Automata
+	apiMux.HandleFunc("/api/autonomous/request-watch", api.handleRequestWatch)                    // request watch: state of the in-flight model request of watched worker and verifier sessions
+	apiMux.HandleFunc("/api/autonomous/overlap", api.handleAutonomousOverlap)                     // search before create: overlaps for a title and spec
+	apiMux.HandleFunc("/api/autonomous/security-failures", api.handleSecurityFailures)            // stored security failure reports with their run identity, newest first
+	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)              // supervisor watch state: mode, last poll, findings, comparison
+	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)   // supervisor watch numbers: mode, poll age, finding counts, agreed days
+	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                     // read-only admission query
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)
