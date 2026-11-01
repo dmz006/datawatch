@@ -59,6 +59,7 @@ Subcommands:
                       --backend, --model, --mode shadow|live, --hooks, --threshold hook=value,
                       --member, --clear)
   import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
+  onboarding-report   Show what is configured, what is missing and what to try next (--format text|json)
 
 Every control takes --actor, --reason and --expected-version; when the flag
 is omitted the CLI reads the current version first, and a stale expected
@@ -84,6 +85,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetBudgetCmd())
 	cmd.AddCommand(newAutomationSetDecisionAssistantCmd())
 	cmd.AddCommand(newAutomationImportGraphCmd())
+	cmd.AddCommand(newAutomationOnboardingReportCmd())
 	return cmd
 }
 
