@@ -82,3 +82,9 @@ All thirteen open questions were answered while Claude was at its limit and the 
 | Per-project automation settings | A project policy for the settings the coordinator reads first | (no words) | PRD filed |
 | Automation coordinator and the manual checks | The checks feature plus the daemon pushes and tags each finished release and watches its CI | "But again should be configurable,  other users may want to adjust and use differently,  be flexable and creative" | PRD filed |
 | Parallel tasks in one Automaton | Each task in its own worktree, merged back in order | "A and b, read only should be able to run parallel,  work tree is an option users can use and should be default" | PRD filed: read-only tasks in parallel and a worktree per task as the default |
+
+## Answer given in chat, 2026-11-01
+
+| Question | Answer | Operator's words | Follow-up |
+|---|---|---|---|
+| How a shipped Automaton or Automation is shown | Both: completed plus merged fields, and a shipped filter | "both, and backfill the old ones" | PRD `89560001` unblocked: merged fields, the Shipped chip and filter, and a backfill of the 207 mislabelled records from git history |
