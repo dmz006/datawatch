@@ -61,6 +61,10 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
   - [Infrastructure retry](#infrastructure-retry)
+  - [Merge pipeline](#merge-pipeline)
+  - [Merge pipeline source](#merge-pipeline-source)
+  - [Merge conflict policy](#merge-conflict-policy)
+  - [Merge conflict model](#merge-conflict-model)
   - [Onboarding report](#onboarding-report)
   - [Onboarding report checks](#onboarding-report-checks)
   - [Onboarding report next steps](#onboarding-report-next-steps)
@@ -1699,6 +1703,32 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 **Dependents that recover** (`autonomous.infra_retry.retry_dependents`, on by default) — when a task fails for an infrastructure reason and the tasks that depend on it fail behind it, each of those dependents is marked as failed because of the dependency, with the original task named as the root. Once the root is no longer failed, cancelled, blocked or held, the dependents return to pending on their own, in dependency order, so a chain recovers in one pass, and an Automaton that ended failed or blocked only because of them returns to running. A dependent that failed for any other reason, or that still waits on another unmet dependency, is left alone. A dependency that was cancelled or that failed on its own merits marks nothing. The recovery is logged as an `infra_dependents_recovered` decision. With the setting off, dependents fail as before and stay failed until reset by hand.
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
+
+### Merge pipeline
+
+The merge pipeline is the ordered list of steps that takes finished branches to shipped: checks, merge, version bump, changelog, tag, push and deploy. Each project has one. It is shown as the Merge pipeline card in Settings > Automation, which names the source in effect, the reason, the steps in order, the conflict policy and the conflict model, and lets you edit or remove the daemon record. It is read with `GET /api/autonomous/merge-pipeline`, the `autonomous_merge_pipeline_get` MCP tool, `datawatch autonomous merge-pipeline show` and the comm channel verb `autonomous merge-pipeline`. A pipeline is checked before it is kept or used, and every problem is named (`autonomous_merge_pipeline_validate`, `datawatch autonomous merge-pipeline validate`). See [howto/merge-pipeline.md](howto/merge-pipeline.md) for the walkthrough.
+
+**Merge pipeline file** (`autonomous.merge_pipeline.file_name`, default `.datawatch/merge-pipeline.yaml`) — the file looked for in each project, relative to the project. An absolute path or one that leaves the project is refused. It is for the operator who keeps the pipeline in the repository under another name.
+
+**Merge pipeline version files** (`autonomous.merge_pipeline.version_files`, none by default) — the project files, relative to the project, that carry the `var Version = "X.Y.Z"` line the release-version step sets. With none, a pipeline that bumps the version fails that step until the files are named.
+
+Every key of the block can be overridden for one project under `autonomous.merge_pipeline.projects.<project>.<key>`; an unset key inherits the global value, then the default.
+
+### Merge pipeline source
+
+Where a project's pipeline comes from, and what happens when that source is bad.
+
+**Merge pipeline sources** (`autonomous.merge_pipeline.source_order`, `file` then `record` by default) — the sources tried first to last: `file` is the project's own pipeline file, `record` is the pipeline the daemon keeps for the project. The built-in pipeline always applies after them, so a project with neither still has one. The first source that yields a usable pipeline wins, and the card and `show` output name it with the reason.
+
+**When the project file is bad** (`autonomous.merge_pipeline.fallback_on_bad_file`, `record` by default) — what is used when the file exists but cannot be used (unreadable, too large, not valid or failing validation). `record` uses the daemon record, `default` uses the built-in pipeline, `none` uses nothing and the merge run does not start. The problem is always reported whichever you choose.
+
+### Merge conflict policy
+
+**Merge conflict policy** (`autonomous.merge_pipeline.conflict_policy`, `mechanical_and_model` by default) — what a merge does when a branch conflicts. `stop_and_ask` aborts the merge, leaves the project unchanged and asks you. `mechanical` resolves conflicts where both sides only added lines and asks you about anything left. `mechanical_and_model` does that first, then asks the conflict model for the rest and keeps its proposal only if the pipeline's test step passes on it. A policy that needs a model degrades to `stop_and_ask` when no model is set or none can be reached, and the card says so.
+
+### Merge conflict model
+
+**Merge conflict model** (`autonomous.merge_pipeline.conflict_model`, a built-in default model name) — the LLM registry entry that proposes a conflict resolution. An unset key uses the default name; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
 
 ### Onboarding report
 
