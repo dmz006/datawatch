@@ -181,4 +181,9 @@ const (
 	// to blocked after re-firing the completion rollup once. Details: prd_id,
 	// caller, stuck_seconds, bound_seconds, old_status, new_status.
 	ActionStuckRunningBlocked = "autonomous_stuck_running_blocked"
+	// ActionLaneFillMode — the lane fill mode in effect for one lane kind
+	// changed between two polls (the operator set gpu_mode, claude_mode or
+	// mode). Details: kind (gpu or claude), old_mode, new_mode. The first poll
+	// after a daemon start writes nothing.
+	ActionLaneFillMode = "lane_fill_mode"
 )

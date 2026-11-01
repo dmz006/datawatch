@@ -1,7 +1,7 @@
 # Lane fill eligibility: final gate report
 
 **Date:** 2026-11-01
-**Commit under test:** `459322a52` (branch `automaton/a5db0001`, worktree clean at the start of the gate)
+**Commit under test:** `329bc4f1c` (branch `automaton/a5db0001`) plus the rules-review follow-up in section 8, which is committed with this report
 **Toolchain:** go1.27.2 linux/amd64, node v24.15.0
 
 Feature: lane fill now says why it refuses a queued Automaton (seven stable codes in
@@ -11,8 +11,9 @@ reads pool evidence from a registered host with an untrusted certificate with a 
 node and the fix. The default mode stays `shadow` for both lane kinds: nothing starts work on its own
 unless the operator sets a mode to `on`.
 
-This is the final gate. It changed no code. Its repository output is this report, plus the live check
-report that the script rewrites on every run. Every command ran under `env -u TMUX -u TMUX_TMPDIR`, from
+This is the final gate. The first pass of it changed no code; the rules-review follow-up in section 8 did
+(lint fixes, wording, an audit constant, tests, a story and a smoke section). Its repository output is this
+report, plus the live check report that the script rewrites on every run. Every command ran under `env -u TMUX -u TMUX_TMPDIR`, from
 the repository root, after the last code commit, one at a time.
 
 **Gate rule:** the result is `Result: PASS` only if every recorded command exited 0 and every live check
@@ -25,6 +26,7 @@ passed. Nothing below exited non-zero.
 | 1 | go build | 0 | daemon binary built |
 | 1 | go vet (six packages) | 0 | no findings |
 | 1 | gofmt -l (38 changed Go files) | 0 | nothing listed |
+| 1 | golangci-lint run ./... (follow-up, section 8) | 0 | 0 issues |
 | 2 | go test | 0 | 83 packages passed, 0 failed, 12 without test files |
 | 2 | node --test | 0 | 1849 tests passed, 0 failed |
 | 3 | Live check | 0 | 8 of 8 checks passed |
@@ -127,9 +129,9 @@ certificate gives an evidence error that names the node and the fix without show
 
 ## 4. Parity
 
-**datawatch-app issue:** `dmz006/datawatch-app#301`. An open issue for the lane fill status view already
-existed, so no new issue was filed; the sync text was posted as a comment on it
-(`https://github.com/dmz006/datawatch-app/issues/301#issuecomment-6562807953`). The record is
+**datawatch-app issue:** `dmz006/datawatch-app#327`, a new `[sync]` issue filed on 2026-11-01 for this work
+(`https://github.com/dmz006/datawatch-app/issues/327`). The existing issue #301 covers the verifier-wait lane
+view, a different change, so it was not reused. The record is
 `docs/plans/parity-issues/2026-10-31-lane-fill-eligibility.md`, "Filing record".
 
 | Surface | What it carries | Test that covers it |
@@ -185,7 +187,7 @@ changes no behaviour.
   - [x] No leaked tracker ids: done (`scripts/check-no-internal-refs.sh` clean).
   - [x] The plan's own Parity surface section still accurate: done (`docs/parity-status.md`, `docs/api-mcp-mapping.md` and the supervisor duties proposal's Step 10 status were updated).
 - [x] Conditional docs: `docs/datawatch-definitions.md` done (glossary entries); `docs/howto/automation-lane-fill.md` done (reasons, lane counts, the day-long comparison, the one-kind-at-a-time switch); `docs/flow/*.md` N/A (no new data flow, lane fill has no flow diagram and this adds no new component).
-- [x] Mobile-Parity Rule: done (datawatch-app issue #301 commented, see section 4).
+- [x] Mobile-Parity Rule: done (a new `[sync]` issue, datawatch-app#327, see section 4).
 - [x] Localization Rule: done (every new `t('key')` has an entry in all five bundles, covered by the tests in section 4).
 - [x] Version bumped in `cmd/datawatch/main.go` and `internal/server/api.go`: **deferred to merge time by instruction** (the version is set at merge; none was written anywhere in this work).
 - [x] The plan's phase-status line updated: done (the supervisor duties proposal reads "Built, ships in shadow mode", with the version set at merge).
@@ -212,3 +214,67 @@ raises `idle_lane_eligible_work` only for the idle lanes of a kind that lane fil
 (the GPU lanes, never a Claude lane), and once lane fill refuses the control as stale the finding clears.
 The script itself is written for the operator's own daemon and was applied to the sandbox state as a
 module, not run as a program; every difference is listed in the live check report.
+
+## 8. Rules-review follow-up (2026-11-01)
+
+The rules review found real problems with the first pass. Each is fixed; the commands below were run after
+the fixes, from the repository root, under `env -u TMUX -u TMUX_TMPDIR`.
+
+| Finding | Fix |
+|---|---|
+| Lint: one unchecked `f.Close`, two capitalized error strings in `cmd/datawatch/lane_fill_wiring.go`, two staticcheck QF findings in `internal/autonomous` tests | `defer func() { _ = f.Close() }()`, lower-case error strings, the declaration and the negated condition rewritten. `golangci-lint run ./...` reports 0 issues; `make lint` passes. |
+| The operator's host name in tracked files | Removed from `docs/testing-tracker.md` (the lane fill section) and from the live check report; the sandbox host is named as "the sandbox host". The infrastructure retry rows that carried it before this branch were left as they were. A test fixture that used 10.0.0.x addresses now uses the 192.0.2.x documentation range. |
+| `laneFillExcludedText` worded blockers as "PRD <id>: held" | It now says "Automaton <id>: held: ..." and the Automation-member blocker says "Automaton <id>: member of an Automation, which starts it". |
+| Mobile parity was a comment on #301 | A new `[sync]` issue was filed: `dmz006/datawatch-app#327`. The parity record, this report, `docs/parity-status.md` carry it. |
+| Seven new config keys missing from `docs/implementation.md` | The "Fields" entry under "Lane fill" lists each key, its type, default, `Effective*` helper and the rule it controls. |
+| No Playwright story for the PWA lane fill view | `scripts/test-stories/TS-842.sh` with `pwa/lane-fill-card.mjs` (route-fulfilled: chips, counts, modes, hostile text as text, phone width, an older daemon, the failed state). Checked with `node --check` and `bash -n` only; it needs a run where the PWA stories run, because the Playwright package is outside this worktree. |
+| Count-only tests for the `lane_fill_mode` audit event | `ActionLaneFillMode` (CEF signature 62 `AutonomousLaneFillMode`) and `internal/audit/lane_fill_mode_events_test.go`: a JSON-lines round-trip and a CEF escape test. |
+| No release smoke coverage | `scripts/release-smoke.sh` section 92. It passed 5 of 5 against a scratch daemon started from this worktree's binary. Run through the script itself with `SMOKE_ONLY`, the daemon was unreachable (HTTP 000) for section 92 and for the existing section 90 alike, so that run is not counted. |
+| No lane fill results in `docs/testing.md` | A results section was added there, and four rows were added to the tracker. |
+| Locale guard list not updated | 20 lane fill keys added to `TestLocales_CommonNavKeysPresent`. |
+| Audit tokens absent | Below, and in the final commit message. |
+
+**Results after the fixes.** `go build ./...` ok; `go vet` on the touched packages ok; `gofmt -l` nothing;
+`golangci-lint run ./...` 0 issues; `go test ./...` 83 packages ok (a first full run failed
+`TestDaemonCleanupHelper/InterruptSighup`, which timed out while lint ran beside it, and
+`TestSmokeSectionCountDocMatches`, because `docs/testing.md` still said 92 smoke sections; the count was
+fixed to 93 and `tests/ci` and `cmd/datawatch` were rerun alone and pass); `node --test
+internal/server/web/*.test.js` 1849 of 1849; `node --check` on `app.js` ok; `make build` ok. The sandbox
+live check (8 of 8) was run on the earlier commit and was not rerun, because the script writes its scratch
+area under `/tmp` and this follow-up was limited to the project directory; the changes since are wording,
+lint, an audit constant, tests and docs, and smoke section 92 ran against a fresh binary.
+
+**Per-sprint audit tokens** (also in the final commit message):
+
+| Row | Token |
+|---|---|
+| A1 | `rules: Make-Lint-Clean, No-Local-Environment-Leaks, Terminology (Automaton), Mobile-Parity, Configuration-Accessibility, Testing-Requirements (Playwright story, smoke, testing.md), Audit-Logging, Locale-Guard, Localization` |
+| A2 | `tests: ok` |
+| A3 | `version: N/A — set at merge by instruction; neither version file changed on the branch` |
+| A4 | `changelog: added` (one Added entry under Unreleased, no tracker ids) |
+| A5 | `readme: N/A — the lane fill how-to is already linked; no new top-level concept` |
+| A6 | `backlog: N/A — no tracker item closed by this follow-up` |
+| A7 | `id-check: clean` |
+| A8 | `leak-check: clean` |
+| A9 | `node-check: ok` |
+| A10 | `make-build: ok` |
+| A11 | `ci: N/A — not pushed from this session` |
+| A12 | `lint: 5 findings fixed` (now 0 issues) |
+| B1 | `tracker: Lane fill eligibility, lane counts and per-lane-kind mode (docs/testing-tracker.md)` |
+| B2 | `locales: lane_fill_eligibility_*, lane_fill_lane_counts*, lane_fill_kind_modes*, settings_lane_fill_*` (en, de, es, fr, ja) |
+| B3 | `locale-guard: added 20 lane fill keys to TestLocales_CommonNavKeysPresent` |
+| B4 | `mobile-parity: datawatch-app#327` |
+| B5 | `plans: N/A — no internal bug row` |
+| B6 | `config-parity: verified` (YAML, REST, MCP, CLI, comm and PWA for the seven keys) |
+| B7 | `observability: N/A — lane fill already has its status read on every surface; the new mode change is in the audit log and no new subsystem state was added` |
+| B8 | `access-docs: added` (`docs/howto/automation-lane-fill.md`, `docs/operations.md`, `docs/implementation.md`, `docs/config-reference.yaml`) |
+| B9 | `reuse-audit: extends the lane fill planner, status read, config pipeline, audit package and PWA settings framework; nothing new was built where one existed` |
+| B10 | `skills-hook: N/A — no new session, Automaton, agent, channel or plugin path` |
+| B11 | `smoke-cleanup: N/A — smoke section 92 creates no entity and restores the one setting it changes` |
+| B12 | `smoke-extended: 92. Lane fill eligibility` |
+| B13 | `cookbook: N/A — not a multi-sprint project` |
+| B14 | `sec-downstream: N/A — no scanner finding patched` |
+| B15 | `secrets-store: N/A — no backend or credential field` |
+| B16 | `audit-tests: added` |
+| B17 | `deps: N/A — no module added` |
+| B18 | `fed-parity: N/A — no new case in internal/server/autonomous.go; the status route stays a read` |

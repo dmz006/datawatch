@@ -92,7 +92,7 @@ func TestLaneFillTextLaneCountsLine(t *testing.T) {
 		t.Fatalf("missing %q:\n%s", want, out)
 	}
 	lane, counts, queued := strings.Index(out, "gpu-1:"), strings.Index(out, "Lane counts:"), strings.Index(out, "Queued eligible:")
-	if !(lane < counts && counts < queued) {
+	if lane >= counts || counts >= queued {
 		t.Errorf("the lane counts line must sit under the lane lines:\n%s", out)
 	}
 }
