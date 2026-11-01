@@ -172,6 +172,37 @@ test('every new key is in all five bundles; the old keys are kept', () => {
   LANGS.forEach(l => NEW_KEYS.forEach(k => assert.equal(ph(bundles[l][k]), ph(en[k]), l + ' placeholders for ' + k)));
 });
 
+test('the id line has no negative margin, and nothing before the question text uses a negative top margin', () => {
+  const ALERTS_Q = Object.assign({}, Q, { text: 'Five open code scanning alerts, all in test code' });
+  const html = makeSandbox(ALERTS_Q)._questionAnswerBodyHTML(ALERTS_Q, null);
+  assert.ok(html.includes('Five open code scanning alerts, all in test code'), 'the question text renders');
+
+  // The first element of the body is the .question-answer-id-line (the
+  // dialog title carries the label; the id stays visible as that small line).
+  const idLineOpen = /(<div[^>]*class="question-answer-id-line"[^>]*>)/.exec(html);
+  assert.ok(idLineOpen, 'id line element present');
+  assert.equal(html.indexOf(idLineOpen[1]), 0, 'the id line is the first element of the body');
+  const styleMatch = /style="([^"]*)"/.exec(idLineOpen[1]);
+  assert.ok(styleMatch, 'the id line carries an inline style');
+  const idStyle = styleMatch[1];
+  assert.ok(!/margin:\s*-/.test(idStyle), `id line style ${idStyle} has no negative margin`);
+  assert.ok(!/margin-top:\s*-/.test(idStyle), `id line style ${idStyle} has no negative top margin`);
+  assert.match(idStyle, /margin:0\s+0\s+\d+px/, 'the id line has a zero top margin');
+
+  // No element before the question text uses a negative top margin: a
+  // negative margin would pull the first line above the scroll origin,
+  // where the body padding-top can no longer keep it visible.
+  const textIdx = html.indexOf('class="question-answer-text"');
+  assert.ok(textIdx > 0, 'the question text element comes after the id line');
+  const beforeText = html.slice(0, textIdx);
+  const styles = (beforeText.match(/style="[^"]*"/g) || []).map(s => s.slice(6, -1));
+  assert.ok(styles.length >= 1, 'there are inline styles before the question text');
+  for (const s of styles) {
+    assert.ok(!/margin:\s*-/.test(s), `no negative margin in ${s}`);
+    assert.ok(!/margin-top:\s*-/.test(s), `no negative top margin in ${s}`);
+  }
+});
+
 test('the existing answer tests still pass', () => {
   const r = spawnSync(process.execPath, ['--test', path.join(__dirname, 'app-questions-answer.test.js')], { encoding: 'utf8' });
   assert.equal(r.status, 0, 'app-questions-answer.test.js failed:\n' + r.stdout + r.stderr);
