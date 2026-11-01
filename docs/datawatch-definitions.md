@@ -1685,6 +1685,118 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
 
+### Model request progress
+
+When a worker or verifier session's model runs on a registered compute node, the daemon can see the model request that session is waiting on. This section explains what it sees and how to read it. The feature is the *request watch*; its settings are in Settings → General → Automata settings → **Model request watch**, and each help link in those rows opens the entry for that setting below.
+
+**What is observed** — on every poll the daemon asks the node for its own running-models signal: which models it holds loaded and for how long. When the node has an attached observer and `autonomous.request_watch.use_gpu_signal` is on, it also reads the GPU activity of the node. A change in the running-models signal, or a GPU at or above `autonomous.request_watch.gpu_busy_percent`, counts as progress. The daemon makes no model call to find this out.
+
+**The states** — an observation is in one of three states, plus *unknown* before the first sample:
+
+- `generating` — the request shows signs of progress: the running-models signal changed or the GPU is busy.
+- `idle` — the node answers but shows no sign of progress.
+- `unreachable` — the node did not answer the poll.
+
+**No progress for N minutes** — the time since the last sign of progress, counted from the last change. It is shown as *waiting on a model request: no progress for N minutes*, and for an unreachable node as *waiting on a model request: node unreachable, no progress for N minutes*. When it reaches `autonomous.request_watch.no_progress_minutes` the observation is over the threshold. An unreachable node counts toward this only while `autonomous.request_watch.unreachable_counts` is on. A request that is generating is never over the threshold.
+
+**A slow request looks like a stall for a while** — a large model can take many minutes to give its first response, and during that time neither signal moves, so the request reads as idle with a growing no-progress time. It is only a stall once the threshold has passed and nothing has changed. Raise `autonomous.request_watch.no_progress_minutes` for slow models, and attach an observer to the node so that GPU activity can show the work.
+
+**Observation only** — the request watch never ends a worker, never retries on another backend and never unloads a model. It makes no model call and changes no task. It only reports, so that a hung request can be told from a slow one and you decide what to do.
+
+**The alert and the question** — when a request first reaches the threshold the daemon raises one alert (`autonomous.request_watch.raise_alert`) and one question (`autonomous.request_watch.raise_question`). The question is not blocking and does not park or change the task; the worker keeps running. It offers up to four choices: *keep waiting* (always offered and always the default), *end the worker*, *retry on another backend* and *unload and reload the model*. The choices are recorded only; choosing one does not do it. Both are raised once per episode: they are raised again only after the request has shown progress and then stalled again. The question is raised only while the operator question channel is on and at least two choices are offered; otherwise the alert lists the choices itself. A question still open when the request recovers or the session ends is withdrawn.
+
+**Where to see it** — the request watch status card on the Automata page, the chips on the session and task views, `GET /api/autonomous/request-watch` (optional `session` and `automaton` query parameters), the `autonomous_request_watch` MCP tool, `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]`, and the chat verb `autonomous request-watch`. Each observation carries the session, the Automaton, the task, the role (`worker` or `verifier`), the node, the model, the state, the time of the last change, the no-progress seconds, the last poll, whether it is over the threshold and a plain-text summary.
+
+The keys below are in the `autonomous.request_watch` block. Every key has a default, so an unset key reads as its default.
+
+#### autonomous.request_watch.enabled
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+The master switch for the whole feature. With it off the daemon takes no sample, keeps no observation and raises no alert or question, and the read surfaces return an empty list. Turning it on again starts a fresh observation for each running worker or verifier.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `enabled: true`; with `datawatch config set autonomous.request_watch.enabled true`; with `PUT /api/config` and the body `{"autonomous.request_watch.enabled": true}`; from a chat channel with `configure autonomous.request_watch.enabled=true`; from MCP with `autonomous_config_set` with `request_watch_enabled`; or in the Settings tab with the toggle **Model request watch** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.poll_seconds
+
+**Default** 30. **Accepted values** a whole number of 1 or more.
+
+How often, in seconds, the daemon samples each watched request. A smaller number notices a change sooner and asks the compute node more often; a larger number is quieter. The value is read again on every poll, so a change applies without a restart. A value below 1 is refused.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `poll_seconds: 15`; with `datawatch config set autonomous.request_watch.poll_seconds 15`; with `PUT /api/config` and the body `{"autonomous.request_watch.poll_seconds": 15}`; from a chat channel with `configure autonomous.request_watch.poll_seconds=15`; from MCP with `autonomous_config_set` with `request_watch_poll_seconds`; or in the Settings tab with the number field **Model request watch poll interval** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.no_progress_minutes
+
+**Default** 30. **Accepted values** a whole number of 1 or more.
+
+How many minutes a request may show no sign of progress before the observation counts as over the threshold. Reaching it is what raises the alert and the question, once per episode. Raise it for large models whose first response is slow; lower it to hear about a hung request sooner. A value below 1 is refused.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `no_progress_minutes: 45`; with `datawatch config set autonomous.request_watch.no_progress_minutes 45`; with `PUT /api/config` and the body `{"autonomous.request_watch.no_progress_minutes": 45}`; from a chat channel with `configure autonomous.request_watch.no_progress_minutes=45`; from MCP with `autonomous_config_set` with `request_watch_no_progress_minutes`; or in the Settings tab with the number field **Model request watch no-progress threshold** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.observe_workers
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether the sessions that carry out the tasks of an Automaton are watched. With it off, worker sessions get no observation, chip, alert or question, while verifier sessions are still watched when `autonomous.request_watch.observe_verifiers` is on.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `observe_workers: false`; with `datawatch config set autonomous.request_watch.observe_workers false`; with `PUT /api/config` and the body `{"autonomous.request_watch.observe_workers": false}`; from a chat channel with `configure autonomous.request_watch.observe_workers=false`; from MCP with `autonomous_config_set` with `request_watch_observe_workers`; or in the Settings tab with the toggle **Watch worker requests** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.observe_verifiers
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether the sessions that check a finished task are watched. With it off, verifier sessions get no observation, chip, alert or question, while worker sessions are still watched when `autonomous.request_watch.observe_workers` is on.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `observe_verifiers: false`; with `datawatch config set autonomous.request_watch.observe_verifiers false`; with `PUT /api/config` and the body `{"autonomous.request_watch.observe_verifiers": false}`; from a chat channel with `configure autonomous.request_watch.observe_verifiers=false`; from MCP with `autonomous_config_set` with `request_watch_observe_verifiers`; or in the Settings tab with the toggle **Watch verifier requests** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.use_gpu_signal
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether GPU activity counts as progress. When the compute node has an attached observer, a GPU at or above `autonomous.request_watch.gpu_busy_percent` shows the request as generating even if the node's running-models signal has not changed. With it off, or when the node has no observer, only the running-models signal is used, and a long first response on a large model reads as idle until it changes.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `use_gpu_signal: false`; with `datawatch config set autonomous.request_watch.use_gpu_signal false`; with `PUT /api/config` and the body `{"autonomous.request_watch.use_gpu_signal": false}`; from a chat channel with `configure autonomous.request_watch.use_gpu_signal=false`; from MCP with `autonomous_config_set` with `request_watch_use_gpu_signal`; or in the Settings tab with the toggle **Use the compute node GPU signal** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.gpu_busy_percent
+
+**Default** 10. **Accepted values** a whole number from 1 to 100.
+
+The GPU utilisation, in percent, at or above which the node counts as generating. It is used only when `autonomous.request_watch.use_gpu_signal` is on and the node has an observer. Set it above the idle load of the node so that background use does not hide a stall. A value outside 1 to 100 is refused.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `gpu_busy_percent: 20`; with `datawatch config set autonomous.request_watch.gpu_busy_percent 20`; with `PUT /api/config` and the body `{"autonomous.request_watch.gpu_busy_percent": 20}`; from a chat channel with `configure autonomous.request_watch.gpu_busy_percent=20`; from MCP with `autonomous_config_set` with `request_watch_gpu_busy_percent`; or in the Settings tab with the number field **GPU busy threshold** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.unreachable_counts
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether time spent with the compute node unreachable counts as no progress. On, an unreachable node reaches the threshold like an idle one, and the summary reads *waiting on a model request: node unreachable, no progress for N minutes*. Off, the unreachable time does not move the clock toward the threshold, so a short network break raises nothing.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `unreachable_counts: false`; with `datawatch config set autonomous.request_watch.unreachable_counts false`; with `PUT /api/config` and the body `{"autonomous.request_watch.unreachable_counts": false}`; from a chat channel with `configure autonomous.request_watch.unreachable_counts=false`; from MCP with `autonomous_config_set` with `request_watch_unreachable_counts`; or in the Settings tab with the toggle **Count an unreachable node as no progress** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.raise_alert
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether one alert is raised when a request first reaches the threshold. The alert names the Automaton, the task, the role, the node and the model, and how long the request has shown no progress. When no question is raised it also lists the choices in plain words, so it alone carries them. It is raised once per episode: not again until the request has shown progress and then stalled again. Observation continues either way.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `raise_alert: false`; with `datawatch config set autonomous.request_watch.raise_alert false`; with `PUT /api/config` and the body `{"autonomous.request_watch.raise_alert": false}`; from a chat channel with `configure autonomous.request_watch.raise_alert=false`; from MCP with `autonomous_config_set` with `request_watch_raise_alert`; or in the Settings tab with the toggle **Raise an alert at the threshold** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.raise_question
+
+**Default** on (`true`). **Accepted values** `true` or `false`.
+
+Whether one question is raised at the threshold, offering the choices in `autonomous.request_watch.remediation_options`. The question does not block: it does not park the task or change it, and the worker keeps running. Answering it only records the choice. It is raised only while the operator question channel (`autonomous.questions.enabled`) is on and at least two choices are offered. The question is withdrawn on its own when the request shows progress again or the session ends.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `raise_question: false`; with `datawatch config set autonomous.request_watch.raise_question false`; with `PUT /api/config` and the body `{"autonomous.request_watch.raise_question": false}`; from a chat channel with `configure autonomous.request_watch.raise_question=false`; from MCP with `autonomous_config_set` with `request_watch_raise_question`; or in the Settings tab with the toggle **Raise a question at the threshold** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
+#### autonomous.request_watch.remediation_options
+
+**Default** unset, which reads as all four choices. **Accepted values** a list of `end_worker`, `retry_other_backend` and `unload_reload_model`; `keep_waiting` is always offered and is always the default answer.
+
+Which choices the threshold question offers. Unset offers all four: `keep_waiting`, `end_worker`, `retry_other_backend` and `unload_reload_model`. An explicit empty list offers `keep_waiting` only, which is different from unset; with a single choice no question is raised and the alert carries the situation. The choices are recorded only: the feature never ends a worker, retries on another backend or unloads a model, so an answer is a note for the operator to act on by hand. The list replaces the whole list each time it is set.
+
+**How to set it** — in YAML under `autonomous:` then `request_watch:` as `remediation_options: [end_worker, unload_reload_model]`; with `datawatch config set autonomous.request_watch.remediation_options end_worker,unload_reload_model`; with `PUT /api/config` and the body `{"autonomous.request_watch.remediation_options": ["end_worker", "unload_reload_model"]}`; from a chat channel with `configure autonomous.request_watch.remediation_options=end_worker,unload_reload_model`; from MCP with `autonomous_config_set` with `request_watch_remediation_options`; or in the Settings tab with the comma separated field **Remediation options offered in the question** in the **Model request watch** group. A refused value comes back naming the key and the valid values.
+
 ---
 
 
