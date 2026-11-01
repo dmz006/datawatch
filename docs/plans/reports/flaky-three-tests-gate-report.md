@@ -1,7 +1,7 @@
 # Flaky-three-tests gate report (run of 2026-05-31, 09:06–09:12 local)
 
 Gate: `.datawatch/verify/flaky-three-tests-gate.sh` from repository root of
-worktree `/home/dmz/.datawatch/prd-worktrees/60070001` (branch `automaton/60070001`, HEAD 7876cac18).
+worktree `/home/user/.datawatch/prd-worktrees/60070001` (branch `automaton/60070001`, HEAD 7876cac18).
 Read-only run; no repository files were modified by this task. Full raw log: `.datawatch/verify/gate-run.log`.
 
 ## Step results and timings

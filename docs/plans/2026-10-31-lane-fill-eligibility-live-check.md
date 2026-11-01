@@ -1,7 +1,7 @@
 # Lane fill eligibility — live check on a sandbox daemon
 
 **Date:** 2026-11-01 (run started 15:33:11, local time)
-**Host:** johnnyjohnny
+**Host:** local-node
 **Binary version output:** `datawatch <release number omitted>` (built from this worktree at source revision `459322a52`)
 **Script:** `scripts/lane-fill-eligibility-live-check.sh` (run as `env -u TMUX -u TMUX_TMPDIR bash scripts/lane-fill-eligibility-live-check.sh`)
 **Scope:** the lane fill eligibility rules (stale, held, sequenced after, proposal, base branch, worktree), their read surfaces, the lane counts, the per-lane-kind mode and the pool evidence, against a throwaway project repository whose default branch is `trunk`; the default mode stays shadow throughout except where check 5 sets it on for one lane kind.

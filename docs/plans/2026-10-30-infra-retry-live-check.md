@@ -3,7 +3,7 @@
 Date: 2026-10-31 · Branch: `automaton/ced90001` (tree at commit `9597e6803`)
 
 **Sandbox daemon: `datawatch v9.47.1`** (`GET /api/health` read `"version":"9.47.1"`), built from this worktree with
-`go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/`. Host: `johnnyjohnny`, Linux 7.0.0-34-generic, tmux 3.6. It ran from its own config and
+`go build -o .datawatch/live-check/bin/datawatch ./cmd/datawatch/`. Host: `local-node`, Linux 7.0.0-34-generic, tmux 3.6. It ran from its own config and
 data directory under `.datawatch/live-check/` (git-ignored, deleted at the end). The production daemon, its
 service unit and its ports were never touched.
 

@@ -147,10 +147,10 @@ is registered in `run-all.mjs`.
 ### 8. Lint
 
 ```
-env -u TMUX -u TMUX_TMPDIR PATH=$PATH:/home/dmz/go/bin make lint
+env -u TMUX -u TMUX_TMPDIR PATH=$PATH:/home/user/go/bin make lint
 ```
 
-`golangci-lint` is installed at `/home/dmz/go/bin/golangci-lint` and was not on the default
+`golangci-lint` is installed at `/home/user/go/bin/golangci-lint` and was not on the default
 `PATH`, so the home go bin directory was appended. Exit code: **0**. Last lines:
 
 ```

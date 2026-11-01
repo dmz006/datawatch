@@ -95,5 +95,5 @@ snapshot existed, so after the last run I took a snapshot and checked it (`OK: n
 daemons that belong to other sessions; none of them is from these runs. Nothing was killed.
 
 Two scratch data directories were kept by `KEEP_TEST_DIR=1` during diagnosis and sit next to this worktree:
-`/home/dmz/.datawatch/prd-worktrees/datawatch-smoke-f72fa3` and `/home/dmz/.datawatch/prd-worktrees/datawatch-smoke-dcf346`
+`/home/user/.datawatch/prd-worktrees/datawatch-smoke-f72fa3` and `/home/user/.datawatch/prd-worktrees/datawatch-smoke-dcf346`
 (they hold the daemon logs). They are outside the project directory, so I left them for the operator to remove.
