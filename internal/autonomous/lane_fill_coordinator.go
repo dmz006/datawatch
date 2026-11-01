@@ -113,6 +113,9 @@ type LaneFillStatus struct {
 	Evidence       LaneFillEvidence     `json:"evidence"`
 	Decisions      []LaneFillDecision   `json:"decisions"`
 	Alerts         []LaneFillAlert      `json:"alerts"`
+	// LaneCounts: per lane type, the configured count, the count the last
+	// poll used and where it came from.
+	LaneCounts LaneFillLaneCounts `json:"lane_counts"`
 }
 
 // laneFillStart remembers an Automaton lane fill started, until the store
@@ -138,6 +141,8 @@ type laneFillState struct {
 	evidence PoolEvidenceSource
 	probe    MergeProbe
 	proposal LaneFillProposalReader
+	// caps supplies the LLM caps the lane counts follow (lane_fill_caps.go).
+	caps LaneCapSource
 	// mainProbe, mainCache and worktreeFS belong to the main-carries and
 	// worktree rules (lane_fill_main_worktree.go).
 	mainProbe  LaneFillMainProbe
@@ -233,6 +238,10 @@ func (c *Coordinator) laneFillStatus(cfg LaneFillConfig, limit int) LaneFillStat
 	if st.Alerts == nil {
 		st.Alerts = []LaneFillAlert{}
 	}
+	if st.LaneCounts.GPU.Source == "" {
+		// No poll has run yet: show the counts the next poll would use.
+		_, st.LaneCounts = laneFillDeriveCounts(cfg, c.laneFillCapSource())
+	}
 	st.Decisions = []LaneFillDecision{}
 	if rec != nil {
 		st.Decisions = rec.list(limit)
@@ -296,6 +305,9 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 		mode = string(LaneFillModeShadow)
 	}
 	cfg.Mode = mode
+	// One set of lane counts for the whole poll: the lanes, the planner, the
+	// idle alert and the decompose-ahead room all read this configuration.
+	cfg, counts := laneFillDeriveCounts(cfg, c.laneFillCapSource())
 
 	c.lf.mu.Lock()
 	rec := c.lf.records
@@ -326,6 +338,7 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 
 	status.Mode = mode
 	status.LastPollAt = now
+	status.LaneCounts = counts
 	c.lf.mu.Lock()
 	c.lf.status = status
 	c.lf.mu.Unlock()

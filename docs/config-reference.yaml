@@ -1546,7 +1546,13 @@ autonomous:
   #   true). They set whether an Automaton made from a proposal needs the
   #   operator's confirmation, whether lane fill checks that the default branch
   #   already carries the work, whether the Automaton must have its own
-  #   worktree, and whether the lane counts follow the in-flight caps.
+  #   worktree, and whether the lane counts follow the in-flight caps. With
+  #   lane_counts_from_caps on, a lane type's count is the sum of the caps of
+  #   the enabled LLM entries on its backend (the same caps the capacity pools
+  #   use); an unlimited entry, no matching entry or no cap source keeps the
+  #   configured gpu_lanes or claude_lanes count, and a configured 0 stays
+  #   none. The status lane_counts object shows the configured count, the
+  #   count in use and its source (llm_caps or config) for gpu and claude.
   # gpu_mode, claude_mode: off | shadow | on (case-insensitive), the mode for
   #   one lane kind only. Empty (the default) inherits mode, so the shipped
   #   default stays shadow for both kinds.

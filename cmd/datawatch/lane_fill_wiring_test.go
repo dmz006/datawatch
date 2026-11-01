@@ -13,6 +13,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -413,5 +414,65 @@ func TestLaneFillRealWorktreeViewRegisteredAndUnregisteredDirectories(t *testing
 	bad := func() ([]string, error) { return fsys.RegisteredWorktrees(t.TempDir()) }
 	if state, _ := autonomous.CheckLaneFillWorktree(other, bad); state != autonomous.LaneFillWorktreeUnknown {
 		t.Errorf("an unreadable list: state %q, want unknown", state)
+	}
+}
+
+func TestLaneFillCapSourceFollowsRegistryCaps(t *testing.T) {
+	reg := inference.NewRegistry()
+	for _, l := range []inference.LLM{
+		{Name: "claude-code", Kind: inference.KindClaudeCode},                // subscription kind: 1
+		{Name: "claude-pro", Kind: inference.KindClaudeCode, MaxInflight: 4}, // explicit cap
+		{Name: "pi-prompt", Kind: inference.KindPiPrompt, Disabled: true},
+		{Name: "ollama-local", Kind: inference.KindOllama}, // local kind: unlimited
+	} {
+		l := l
+		if err := reg.Add(&l); err != nil {
+			t.Fatalf("add %s: %v", l.Name, err)
+		}
+	}
+	table := map[string]int{}
+	src := newLaneFillCapSource(func() *inference.Registry { return reg }, func() map[string]int { return table })
+
+	byBackend := map[string]autonomous.LaneCapEntry{}
+	for _, e := range src.LaneCapEntries() {
+		byBackend[e.Backend] = e
+	}
+	// The source reports exactly the number the capacity ledger limit is set from.
+	for _, l := range reg.List() {
+		e, ok := byBackend[l.Name]
+		if !ok {
+			t.Fatalf("no entry for %s", l.Name)
+		}
+		if want := inference.EffectiveMaxInflight(*l, table); e.Cap != want {
+			t.Errorf("%s cap = %d, want %d", l.Name, e.Cap, want)
+		}
+		if e.Enabled != !l.Disabled {
+			t.Errorf("%s enabled = %v", l.Name, e.Enabled)
+		}
+	}
+	if byBackend["claude-code"].Cap != 1 || byBackend["claude-pro"].Cap != 4 || byBackend["ollama-local"].Cap != 0 {
+		t.Errorf("caps = %+v", byBackend)
+	}
+
+	// A lowered cap shows on the next read of the registry.
+	cc, _ := reg.Get("claude-code")
+	cc.MaxInflight = 3
+	if err := reg.Update(cc); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range src.LaneCapEntries() {
+		if e.Backend == "claude-code" && e.Cap != 3 {
+			t.Errorf("claude-code cap after update = %d, want 3", e.Cap)
+		}
+	}
+}
+
+func TestLaneFillCapSourceNilRegistryIsEmpty(t *testing.T) {
+	if got := newLaneFillCapSource(nil, nil).LaneCapEntries(); len(got) != 0 {
+		t.Errorf("entries = %v", got)
+	}
+	src := newLaneFillCapSource(func() *inference.Registry { return nil }, nil)
+	if got := src.LaneCapEntries(); len(got) != 0 {
+		t.Errorf("entries = %v", got)
 	}
 }

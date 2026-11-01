@@ -7014,6 +7014,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			autoCoord.SetLaneFillProposalReader(newLaneFillProposalReader(amgr))
 			autoCoord.SetLaneFillMainProbe(newLaneFillMainProbe(amgr))
 			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
+			autoCoord.SetLaneCapSource(newLaneFillCapSource(httpServer.InferenceRegistry,
+				func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }))
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

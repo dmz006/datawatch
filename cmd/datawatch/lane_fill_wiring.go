@@ -15,6 +15,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -314,4 +315,43 @@ func (p *repoMainProbe) Carries(ctx context.Context, id, branch string) (bool, s
 		return false, "", errors.New(cmp.Error)
 	}
 	return false, "", nil
+}
+
+// llmLaneCapSource is the real lane count cap source: the enabled-state and
+// effective in-flight cap of every entry in the inference registry. The cap is
+// inference.EffectiveMaxInflight, the same function syncLLMLimits sets the
+// capacity ledger limit llm:<name> from, so lane counts and admission agree.
+type llmLaneCapSource struct {
+	reg   func() *inference.Registry
+	table func() map[string]int
+}
+
+func (s llmLaneCapSource) LaneCapEntries() []autonomous.LaneCapEntry {
+	if s.reg == nil {
+		return nil
+	}
+	reg := s.reg()
+	if reg == nil {
+		return nil
+	}
+	var table map[string]int
+	if s.table != nil {
+		table = s.table()
+	}
+	var out []autonomous.LaneCapEntry
+	for _, l := range reg.List() {
+		out = append(out, autonomous.LaneCapEntry{
+			Backend: l.Name,
+			Enabled: l.Enabled(),
+			Cap:     inference.EffectiveMaxInflight(*l, table),
+		})
+	}
+	return out
+}
+
+// newLaneFillCapSource builds the cap source over a registry and the live
+// plan tier table, both read on every poll so a changed cap applies to the
+// next poll.
+func newLaneFillCapSource(reg func() *inference.Registry, table func() map[string]int) autonomous.LaneCapSource {
+	return llmLaneCapSource{reg: reg, table: table}
 }
