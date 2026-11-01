@@ -337,7 +337,7 @@ func TestLaneFillReasonRefusalsComeAfterLaneDecisionsInFixedOrder(t *testing.T) 
 		t.Fatalf("a second run differs from the first")
 	}
 
-	var laneEnd, refusalStart int = -1, -1
+	laneEnd, refusalStart := -1, -1
 	var refusalIDs []string
 	for i, d := range first {
 		if d.LaneID != "" {

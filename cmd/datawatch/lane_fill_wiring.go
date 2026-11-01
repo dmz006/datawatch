@@ -166,7 +166,7 @@ func (r repoProposalReader) ReadHead(rel string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil {
 		return nil, err
@@ -266,7 +266,7 @@ func (p *repoMainProbe) MainHead(ctx context.Context) (string, error) {
 // Carries implements autonomous.LaneFillMainProbe.
 func (p *repoMainProbe) Carries(ctx context.Context, id, branch string) (bool, string, error) {
 	if !laneFillIDPattern.MatchString(id) {
-		return false, "", fmt.Errorf("Automaton id %q is not 8 hex characters", id)
+		return false, "", fmt.Errorf("automaton id %q is not 8 hex characters", id)
 	}
 	repo, err := p.repo()
 	if err != nil {
@@ -317,7 +317,7 @@ func (p *repoMainProbe) Carries(ctx context.Context, id, branch string) (bool, s
 		return false, "", nil // no branch, no commits: nothing to compare
 	}
 	if strings.HasPrefix(branch, "-") || strings.ContainsAny(branch, " \t\n") {
-		return false, "", fmt.Errorf("Automaton branch %q is not a usable branch name", branch)
+		return false, "", fmt.Errorf("automaton branch %q is not a usable branch name", branch)
 	}
 	if _, err := git.Run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
 		return false, "", nil // the branch is not in the repository: nothing to compare
