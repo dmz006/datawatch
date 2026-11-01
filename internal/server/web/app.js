@@ -9114,6 +9114,17 @@ function docsLinkForLlmBackend(name) {
 const DOCS_INFRA_RETRY_LINK = DOCS_DEFINITIONS + '#infrastructure-retry';
 const DOCS_INFRA_RETRY_PREFIXES = ['autonomous.infra_retry.', 'settings_infra_retry_', 'infra_retry_'];
 
+// The onboarding report settings and the Onboarding report card map to three
+// glossary sections: the report, its checks and its next-step suggestions. The
+// first matching prefix wins, so the specific ones come first.
+const DOCS_ONBOARDING_REPORT_LINKS = [
+  [['onboarding_report.disabled_checks', 'settings_onboarding_report_disabled_checks', 'onboarding_report_checks'],
+    DOCS_DEFINITIONS + '#onboarding-report-checks'],
+  [['onboarding_report.include_next_steps', 'settings_onboarding_report_include_next_steps', 'onboarding_report_next_steps'],
+    DOCS_DEFINITIONS + '#onboarding-report-next-steps'],
+  [['onboarding_report.', 'settings_onboarding_report_', 'onboarding_report_'], DOCS_DEFINITIONS + '#onboarding-report'],
+];
+
 // The merge pipeline settings and the Merge pipeline card map to four glossary
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
@@ -9140,6 +9151,9 @@ function docsLinkForKey(key) {
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
   if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
   for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   return null;
@@ -16753,6 +16767,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    // Onboarding report — what is configured, what is missing and what to try next. The
+    // list is comma separated; an id that names no check is ignored.
+    { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
+    { key: 'onboarding_report.enabled', label: 'Onboarding report (on by default)', labelKey: 'settings_onboarding_report_enabled', hintKey: 'settings_onboarding_report_enabled_hint', docsKey: 'onboarding_report.enabled', type: 'toggle' },
+    { key: 'onboarding_report.include_next_steps', label: 'Onboarding report suggests what to try next (on by default)', labelKey: 'settings_onboarding_report_include_next_steps', hintKey: 'settings_onboarding_report_include_next_steps_hint', docsKey: 'onboarding_report.include_next_steps', type: 'toggle' },
+    { key: 'onboarding_report.disabled_checks', label: 'Onboarding report checks left out (comma separated check ids; none by default)', labelKey: 'settings_onboarding_report_disabled_checks', hintKey: 'settings_onboarding_report_disabled_checks_hint', docsKey: 'onboarding_report.disabled_checks', type: 'text', placeholder: '', csv: true },
     // Model request watch — observe the in-flight model request of a worker or verifier
     // session on a registered compute node. Observation only; the list is comma separated.
     { label: 'Model request watch', labelKey: 'settings_request_watch_group', docsKey: 'settings_request_watch', type: 'group' },
@@ -29105,18 +29125,19 @@ const _AUTOMATION_SUBTABS = [
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationMergePipelineLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationMergePipelineLoader(), _automationOnboardingReportLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_merge_pipeline', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
+    stop() { _automationStopLoaders(['automation_merge_pipeline', 'automation_onboarding_report', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -29207,7 +29228,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions', 'automation_onboarding_report'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -29313,6 +29334,96 @@ function _automationInfraRetryLoader() {
       if (status && Number(status.max_tries) > 0) window._infraRetryMax = status.max_tries;
       return window.infraRetryCardHtml(status);
     },
+  });
+}
+
+// ── Onboarding report card ──────────────────────────────────────────────────
+// onboardingReportCardHtml(report) turns the decoded
+// GET /api/automation/onboarding-report body into the Automation Overview card
+// with three parts: what is configured, what is missing (each check with its
+// reason) and what to try next (each suggestion with its how-to link). A report
+// that is switched off shows one line. A refresh button reads the report again.
+// Every value is escaped. The key map holds literal locale keys.
+const ONBOARDING_REPORT_LOADER = 'automation_onboarding_report';
+const ONBOARDING_REPORT_STATUS_KEYS = { missing: 'onboarding_report_status_missing', optional: 'onboarding_report_status_optional' };
+function _onboardingReportList(items) {
+  const list = (Array.isArray(items) ? items : []).map(x => String(x)).filter(x => x !== '');
+  return list.length ? list.join(', ') : t('onboarding_report_none');
+}
+function _onboardingReportDocsHref(path) {
+  const p = String(path || '').replace(/^docs\//, '');
+  return p ? '/diagrams.html#docs/' + p : '';
+}
+function _onboardingReportLink(path, label) {
+  const href = _onboardingReportDocsHref(path);
+  if (!href) return '';
+  return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" class="docs-link onboarding-report-link">${escHtml(label)}</a>`;
+}
+function _onboardingReportConfiguredHtml(c) {
+  c = (c && typeof c === 'object') ? c : {};
+  const pipeline = (Array.isArray(c.merge_pipeline) ? c.merge_pipeline : []).map(p => `${p && p.project || ''}: ${p && p.source || ''}`);
+  const projects = (Array.isArray(c.projects) ? c.projects : []).map(p => p && p.name || '');
+  const rows = [
+    t('onboarding_report_backends', [_onboardingReportList(c.backends)]),
+    t('onboarding_report_models', [_onboardingReportList(c.models)]),
+    t('onboarding_report_projects', [_onboardingReportList(projects)]),
+    t('onboarding_report_channels', [_onboardingReportList(c.channels)]),
+    c.memory ? t('onboarding_report_memory_on') : t('onboarding_report_memory_off'),
+    t('onboarding_report_pipeline', [_onboardingReportList(pipeline)]),
+  ];
+  return rows.map(r => `<div class="onboarding-report-configured-row" style="overflow-wrap:anywhere;">${escHtml(r)}</div>`).join('');
+}
+function _onboardingReportMissingHtml(checks) {
+  const open = (Array.isArray(checks) ? checks : []).filter(c => c && c.status !== 'ok');
+  if (!open.length) return `<div class="onboarding-report-all-ok" style="color:var(--text2);">${escHtml(t('onboarding_report_all_ok'))}</div>`;
+  return open.map(c => {
+    const label = _laneFillKey(ONBOARDING_REPORT_STATUS_KEYS, c.status);
+    const badge = label ? `<span class="prd-task-review-badge">${escHtml(t(label))}</span> ` : '';
+    return `<div class="onboarding-report-check" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">` +
+      `<div style="font-weight:600;">${badge}${escHtml(c.title || c.id || '')}</div>` +
+      `<div class="onboarding-report-reason" style="font-size:12px;color:var(--text2);">${escHtml(c.reason || '')}</div></div>`;
+  }).join('');
+}
+function _onboardingReportStepHtml(s) {
+  const links = [_onboardingReportLink(s.howto, t('onboarding_report_howto')), _onboardingReportLink(s.anchor, t('onboarding_report_definitions'))].filter(Boolean).join(' ');
+  const where = [];
+  if (s.command) where.push(t('onboarding_report_command', [s.command]));
+  if (s.mcp_tool) where.push(t('onboarding_report_mcp_tool', [s.mcp_tool]));
+  if (s.pwa_place) where.push(t('onboarding_report_pwa_place', [s.pwa_place]));
+  return `<div class="onboarding-report-step" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">` +
+    `<div style="font-weight:600;">${escHtml(s.title || s.check_id || '')} ${links}</div>` +
+    (where.length ? `<div style="font-size:12px;color:var(--text2);">${escHtml(where.join(' · '))}</div>` : '') + `</div>`;
+}
+function _onboardingReportSection(titleKey, linkKey, body) {
+  return `<div class="onboarding-report-part" style="margin-top:8px;"><div style="font-weight:700;font-size:12px;">${escHtml(t(titleKey))}${defsLink(linkKey)}</div>${body}</div>`;
+}
+window.onboardingReportCardHtml = function(report) {
+  const refresh = `<button type="button" class="btn-secondary onboarding-report-refresh" style="font-size:11px;padding:3px 10px;margin-left:8px;" ` +
+    `onclick="window._listLoaders.${ONBOARDING_REPORT_LOADER}.load()">${escHtml(t('onboarding_report_refresh'))}</button>`;
+  const head = `<div class="cap-title">${escHtml(t('onboarding_report_card_title'))}${defsLink('onboarding_report_card_title')}${refresh}</div>`;
+  const wrap = body => `<div class="prd-capacity-card onboarding-report-card" style="min-width:0;">${head}${body}</div>`;
+  if (!report || typeof report !== 'object') return wrap(`<div style="color:var(--text2);">${escHtml(t('onboarding_report_placeholder'))}</div>`);
+  if (report.enabled === false) return wrap(`<div class="onboarding-report-disabled" style="color:var(--text2);">${escHtml(t('onboarding_report_disabled'))}</div>`);
+  const checks = Array.isArray(report.checks) ? report.checks : [];
+  const steps = Array.isArray(report.next_steps) ? report.next_steps : [];
+  const hasOpen = checks.some(c => c && c.status !== 'ok');
+  const nextBody = steps.length ? steps.map(_onboardingReportStepHtml).join('')
+    : `<div style="color:var(--text2);">${escHtml(t(hasOpen ? 'onboarding_report_next_off' : 'onboarding_report_next_none'))}</div>`;
+  return wrap(
+    _onboardingReportSection('onboarding_report_configured_heading', 'onboarding_report_card_title', _onboardingReportConfiguredHtml(report.configured)) +
+    _onboardingReportSection('onboarding_report_missing_heading', 'onboarding_report_checks', _onboardingReportMissingHtml(checks)) +
+    _onboardingReportSection('onboarding_report_next_heading', 'onboarding_report_next_steps', nextBody));
+};
+
+// _automationOnboardingReportLoader reads the onboarding report beside the
+// infrastructure retry card. It does not poll: the refresh button reads it
+// again. Its failed state is the list loader's banner.
+function _automationOnboardingReportLoader() {
+  return window._listLoaders[ONBOARDING_REPORT_LOADER] || listLoader({
+    key: ONBOARDING_REPORT_LOADER, el: 'automationOnboardingReportCard', url: '/api/automation/onboarding-report', pollMs: 0,
+    failedText: msg => t('onboarding_report_failed', [msg]),
+    active: () => !!document.getElementById('automationOnboardingReportCard'),
+    render: report => window.onboardingReportCardHtml(report),
   });
 }
 
