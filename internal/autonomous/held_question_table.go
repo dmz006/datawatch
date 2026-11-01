@@ -237,7 +237,7 @@ var heldRecommendationFallback = heldRecommendationRow{
 // and a nil item or unknown state falls back to hold as well. The returned
 // option id is always among HeldOptions(item).
 func HeldRecommendation(item *HeldItem) *QuestionRecommendation {
-	var row heldRecommendationRow = heldRecommendationFallback
+	row := heldRecommendationFallback
 	if item != nil {
 		if byCategory, ok := heldRecommendationTable[item.State]; ok {
 			if r, ok := byCategory[item.FailureCategory]; ok {
@@ -298,7 +298,7 @@ func HeldQuestionText(item *HeldItem) string {
 		b.WriteString(".")
 	}
 	if item.TaskID != "" {
-		task := item.TaskID
+		var task string
 		if item.TaskTitle != "" {
 			task = fmt.Sprintf("task %q (%s)", item.TaskTitle, item.TaskID)
 		} else {
