@@ -4862,7 +4862,11 @@ H "81. Mobile-fit view runner (release smoke)"
 # are missing, or no browser could be launched.
 MOBILE_FIT_SCRIPT="$(dirname "$0")/release-smoke-mobile-fit.sh"
 if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
-  if MF_OUT=$(DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
+  # The runner gets its own daemon-lifecycle state dir (-u TD_STATE_DIR -u
+  # TD_OWNER): its EXIT trap ends every process recorded in the state dir it
+  # sees, and the inherited one holds this script's isolated daemon, which
+  # would be ended the moment the runner exits (even on a clean skip).
+  if MF_OUT=$(env -u TD_STATE_DIR -u TD_OWNER DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
       [[ "$line" == OK:* ]] && continue
