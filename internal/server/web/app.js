@@ -16614,6 +16614,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
     { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
     { key: 'autonomous.lane_fill.count_verifier_wait', label: 'Lane fill count verifier wait (on by default)', labelKey: 'settings_lane_fill_count_verifier_wait', type: 'toggle' },
+    { key: 'autonomous.lane_fill.stale_after_hours', label: 'Lane fill stale after (hours an Automaton may sit queued before it is refused as stale, 0 = never, default 72)', labelKey: 'settings_lane_fill_stale_after_hours', type: 'number', placeholder: '72', min: 0, step: 1, default: '72' },
+    { key: 'autonomous.lane_fill.require_confirmed_proposal', label: 'Lane fill require confirmed proposal (an implementation Automaton needs a confirmed proposal, on by default)', labelKey: 'settings_lane_fill_require_confirmed_proposal', type: 'toggle', default: true },
+    { key: 'autonomous.lane_fill.check_main_carries', label: 'Lane fill check main carries the work (refuse an Automaton whose work the main branch already has, on by default)', labelKey: 'settings_lane_fill_check_main_carries', type: 'toggle', default: true },
+    { key: 'autonomous.lane_fill.require_worktree', label: 'Lane fill require a valid worktree (refuse an Automaton whose recorded worktree is missing or invalid, on by default)', labelKey: 'settings_lane_fill_require_worktree', type: 'toggle', default: true },
+    { key: 'autonomous.lane_fill.lane_counts_from_caps', label: 'Lane fill lane counts from caps (follow the LLM concurrency caps instead of the configured lane counts, on by default)', labelKey: 'settings_lane_fill_lane_counts_from_caps', type: 'toggle', default: true },
+    { key: 'autonomous.lane_fill.gpu_mode', label: 'Lane fill GPU mode (empty = inherit the lane fill mode, or off, shadow or on)', labelKey: 'settings_lane_fill_gpu_mode', type: 'select', options: ['', 'off', 'shadow', 'on'], default: '' },
+    { key: 'autonomous.lane_fill.claude_mode', label: 'Lane fill Claude mode (empty = inherit the lane fill mode, or off, shadow or on)', labelKey: 'settings_lane_fill_claude_mode', type: 'select', options: ['', 'off', 'shadow', 'on'], default: '' },
     // Infrastructure retry — retry a task when the machinery around it failed. The lists
     // are comma separated; the daemon validates the delays and the failure classes.
     { key: 'autonomous.infra_retry.enabled', label: 'Infrastructure retry (on by default)', labelKey: 'settings_infra_retry_enabled', hintKey: 'settings_infra_retry_enabled_hint', docsKey: 'autonomous.infra_retry.enabled', type: 'toggle' },
@@ -25471,6 +25478,14 @@ const LANE_FILL_ALERT_ROWS = 5;
 const LANE_FILL_MODE_KEYS = { off: 'lane_fill_mode_off', shadow: 'lane_fill_mode_shadow', on: 'lane_fill_mode_on' };
 const LANE_FILL_TYPE_KEYS = { gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
 const LANE_FILL_PREF_KEYS = { any: 'lane_fill_pref_any', gpu: 'lane_fill_type_gpu', claude: 'lane_fill_type_claude' };
+const LANE_FILL_ELIGIBILITY_KEYS = {
+  stale: 'lane_fill_eligibility_stale', held: 'lane_fill_eligibility_held',
+  sequenced_after_unshipped: 'lane_fill_eligibility_sequenced_after_unshipped',
+  proposal_not_confirmed: 'lane_fill_eligibility_proposal_not_confirmed',
+  proposal_missing: 'lane_fill_eligibility_proposal_missing',
+  main_carries_work: 'lane_fill_eligibility_main_carries_work',
+  worktree_invalid: 'lane_fill_eligibility_worktree_invalid',
+};
 const LANE_FILL_ACTION_KEYS = {
   start_prd: 'lane_fill_action_start', decompose: 'lane_fill_action_decompose',
   decompose_ahead: 'lane_fill_action_decompose_ahead', report_merge: 'lane_fill_action_report_merge',
@@ -25496,6 +25511,33 @@ function _laneFillModeHtml(mode) {
   const badge = `<span class="lane-fill-mode lane-fill-mode-${key ? escHtml(mode) : 'unknown'}" style="display:inline-block;padding:1px 8px;border:1px solid var(--text2);border-radius:10px;font-size:12px;font-weight:600;">${escHtml(t('lane_fill_mode_label'))}: ${escHtml(label)}</span>`;
   const note = mode === 'shadow' ? `<div class="lane-fill-shadow-note" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_shadow_text'))}</div>` : '';
   return `<div style="margin-top:4px;">${badge}</div>${note}`;
+}
+// _laneFillCountsHtml is the lane counts line: for each lane type the count the
+// poll used, the configured count and where the used count came from. Absent
+// counts (an older daemon) render nothing.
+const LANE_FILL_SOURCE_KEYS = { llm_caps: 'lane_fill_lane_counts_source_caps', config: 'lane_fill_lane_counts_source_config' };
+function _laneFillCountsHtml(counts) {
+  if (!counts || typeof counts !== 'object') return '';
+  const part = (typeKey, c) => {
+    if (!c || typeof c !== 'object') return '';
+    const srcKey = _laneFillKey(LANE_FILL_SOURCE_KEYS, c.source);
+    const source = srcKey ? t(srcKey) : String(c.source || '');
+    return t('lane_fill_lane_counts_part', [t(typeKey), Number(c.effective) || 0, Number(c.configured) || 0, source]);
+  };
+  const parts = [part('lane_fill_type_gpu', counts.gpu), part('lane_fill_type_claude', counts.claude)].filter(Boolean);
+  if (!parts.length) return '';
+  return `<div class="lane-fill-lane-counts" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_lane_counts', [parts.join('; ')]))}</div>`;
+}
+// _laneFillKindModesHtml is the per-kind modes line; it shows only when a
+// kind's mode differs from the base mode.
+function _laneFillKindModesHtml(base, modes) {
+  if (!modes || typeof modes !== 'object') return '';
+  const label = m => { const k = _laneFillKey(LANE_FILL_MODE_KEYS, m); return k ? t(k) : String(m || ''); };
+  const differs = ['gpu', 'claude'].filter(k => modes[k] && modes[k] !== base);
+  if (!differs.length) return '';
+  const parts = [['lane_fill_type_gpu', modes.gpu], ['lane_fill_type_claude', modes.claude]]
+    .filter(p => p[1]).map(p => t('lane_fill_kind_modes_part', [t(p[0]), label(p[1])]));
+  return `<div class="lane-fill-kind-modes" style="margin-top:4px;font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('lane_fill_kind_modes', [parts.join('; ')]))}</div>`;
 }
 function _laneFillLaneHtml(l) {
   const occupied = l.state === 'occupied';
@@ -25527,11 +25569,16 @@ function _laneFillDecisionHtml(d) {
   // Only a start is worded as a start; other actions show their own name.
   const wording = d.action === 'start_prd' ? (d.executed ? t('lane_fill_started') : t('lane_fill_would_start')) : '';
   const reason = d.blocker || d.reason || '';
+  // A refusal carries a stable code; it shows as a small labelled chip in front
+  // of the refusal text. A decision with no code (or an unknown one) shows none.
+  const eligKey = _laneFillKey(LANE_FILL_ELIGIBILITY_KEYS, d.eligibility_reason);
+  const chip = eligKey
+    ? `<span class="lane-fill-eligibility lane-fill-eligibility-${escHtml(d.eligibility_reason)}" style="display:inline-block;padding:0 6px;margin-right:4px;border:1px solid var(--text2);border-radius:8px;font-size:11px;font-weight:600;">${escHtml(t(eligKey))}</span>` : '';
   const err = d.error ? `<div style="color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(d.error)}</div>` : '';
   return `<div class="lane-fill-decision" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
     `<span style="color:var(--text2);">${escHtml(clock)}</span> ${escHtml(d.lane_id)} · ${escHtml(action)} · ${escHtml(d.title)}` +
     (wording ? ` <span style="font-weight:600;">— ${escHtml(wording)}</span>` : '') +
-    (reason ? `<div style="color:var(--text2);">${escHtml(reason)}</div>` : '') + err + `</div>`;
+    ((chip || reason) ? `<div style="color:var(--text2);">${chip}${escHtml(reason)}</div>` : '') + err + `</div>`;
 }
 function _laneFillAlertHtml(a) {
   const message = a.message ? ` — ${a.message}` : '';
@@ -25557,7 +25604,7 @@ window.laneFillCardHtml = function(status) {
   const decisionsHtml = decisions.length ? decisions.map(_laneFillDecisionHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_decisions'))}</div>`;
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
   const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
-  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}` +
+  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}` +
     _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
     _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;

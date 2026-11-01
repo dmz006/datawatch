@@ -132,6 +132,11 @@ var pendingTranslationKeys = map[string]bool{
 	"uncommitted_work_banner":                     true,
 	"settings_automation_uncommitted_work_policy": true,
 	"settings_automation_uncommitted_work_scope":  true,
+	// Lane fill eligibility settings labels: English until the app translation lands.
+	"settings_lane_fill_stale_after_hours":          true,
+	"settings_lane_fill_require_confirmed_proposal": true,
+	"settings_lane_fill_check_main_carries":         true,
+	"settings_lane_fill_require_worktree":           true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

@@ -330,6 +330,80 @@ test('saving an unchanged lane preference sends no set_lane_preference call', as
   assert.equal(calls.filter(c => c.url.endsWith('/set_lane_preference')).length, 0, 'unchanged preference must not post');
 });
 
+// ── eligibility chips, lane counts and per-kind modes ────────────────────
+
+const ELIGIBILITY_CODES = {
+  stale: 'Stale',
+  held: 'Held',
+  sequenced_after_unshipped: 'Sequenced after unshipped work',
+  proposal_not_confirmed: 'Proposal not confirmed',
+  proposal_missing: 'Proposal missing',
+  main_carries_work: 'Main already carries the work',
+  worktree_invalid: 'Worktree invalid',
+};
+
+for (const [code, label] of Object.entries(ELIGIBILITY_CODES)) {
+  test('a decision refused with ' + code + ' shows the "' + label + '" chip beside the refusal text', () => {
+    const html = render(status({ decisions: [decision({
+      action: 'blocked', eligibility_reason: code, reason: 'refusal text for ' + code, blocker: 'refusal text for ' + code,
+    })] }));
+    assert.ok(html.includes('lane-fill-eligibility-' + code), 'chip element missing: ' + html);
+    assert.ok(html.includes('>' + label + '</span>'), 'chip label missing: ' + html);
+    assert.ok(html.includes('refusal text for ' + code), 'refusal text missing: ' + html);
+    assert.equal(countOccurrences(html, 'class="lane-fill-eligibility '), 1, 'exactly one chip expected');
+  });
+}
+
+test('a decision with no eligibility reason shows no chip', () => {
+  const html = render(status({ decisions: [decision({ reason: 'would start' })] }));
+  assert.equal(countOccurrences(html, 'lane-fill-eligibility'), 0, 'no chip expected: ' + html);
+  assert.ok(html.includes('would start'));
+});
+
+test('a decision with an unknown eligibility code shows no chip', () => {
+  const html = render(status({ decisions: [decision({ eligibility_reason: 'constructor', reason: 'x' })] }));
+  assert.equal(countOccurrences(html, 'lane-fill-eligibility'), 0, 'unknown code must not render a chip: ' + html);
+});
+
+test('a hostile refusal text and a hostile eligibility code are escaped', () => {
+  const html = render(status({ decisions: [decision({
+    action: 'blocked', eligibility_reason: 'stale', reason: HOSTILE, blocker: HOSTILE,
+  }), decision({ eligibility_reason: HOSTILE, reason: 'r' })] }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
+  assert.ok(html.includes('&lt;img'), 'escaped markup missing');
+});
+
+test('the lane counts line shows the effective count, the configured count and the source for both lane types', () => {
+  const html = render(status({ lane_counts: {
+    gpu: { configured: 2, effective: 4, source: 'llm_caps' },
+    claude: { configured: 3, effective: 3, source: 'config' },
+  } }));
+  assert.ok(html.includes('lane-fill-lane-counts'), 'counts line missing: ' + html);
+  assert.ok(html.includes('GPU lane 4 (configured 2, source: LLM caps)'), 'gpu counts missing: ' + html);
+  assert.ok(html.includes('Claude lane 3 (configured 3, source: configuration)'), 'claude counts missing: ' + html);
+});
+
+test('no lane counts line shows when the status carries none', () => {
+  assert.equal(countOccurrences(render(status()), 'lane-fill-lane-counts'), 0);
+});
+
+test('a hostile lane count source is escaped', () => {
+  const html = render(status({ lane_counts: { gpu: { configured: 1, effective: 1, source: HOSTILE } } }));
+  assert.ok(!html.includes('<img'), 'raw markup leaked: ' + html);
+});
+
+test('the per-kind modes line shows when a kind differs from the base mode', () => {
+  const html = render(status({ mode: 'shadow', modes: { gpu: 'on', claude: 'shadow' } }));
+  assert.ok(html.includes('lane-fill-kind-modes'), 'modes line missing: ' + html);
+  assert.ok(html.includes('GPU lane on'), 'gpu mode missing: ' + html);
+  assert.ok(html.includes('Claude lane shadow'), 'claude mode missing: ' + html);
+});
+
+test('the per-kind modes line is hidden when both kinds match the base mode', () => {
+  const html = render(status({ mode: 'shadow', modes: { gpu: 'shadow', claude: 'shadow' } }));
+  assert.equal(countOccurrences(html, 'lane-fill-kind-modes'), 0, 'modes line must be hidden: ' + html);
+});
+
 // ── settings fields ───────────────────────────────────────────────────────
 
 const LANE_FIELDS = {
@@ -365,6 +439,38 @@ test('the autonomous settings card declares every lane fill field with its type,
   assert.equal(mode.default, 'shadow', 'mode must default to shadow');
 });
 
+const NEW_LANE_FIELDS = {
+  'autonomous.lane_fill.stale_after_hours': { type: 'number', min: 0, default: '72', labelKey: 'settings_lane_fill_stale_after_hours' },
+  'autonomous.lane_fill.require_confirmed_proposal': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_require_confirmed_proposal' },
+  'autonomous.lane_fill.check_main_carries': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_check_main_carries' },
+  'autonomous.lane_fill.require_worktree': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_require_worktree' },
+  'autonomous.lane_fill.lane_counts_from_caps': { type: 'toggle', default: true, labelKey: 'settings_lane_fill_lane_counts_from_caps' },
+  'autonomous.lane_fill.gpu_mode': { type: 'select', options: ['', 'off', 'shadow', 'on'], default: '', labelKey: 'settings_lane_fill_gpu_mode' },
+  'autonomous.lane_fill.claude_mode': { type: 'select', options: ['', 'off', 'shadow', 'on'], default: '', labelKey: 'settings_lane_fill_claude_mode' },
+};
+
+test('the autonomous settings card declares the eligibility, lane count and per-kind mode fields with their defaults', () => {
+  const sandbox = loadApp();
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields)", sandbox));
+  const keys = fields.map(f => f.key);
+  const wait = keys.indexOf('autonomous.lane_fill.count_verifier_wait');
+  assert.ok(wait >= 0, 'count_verifier_wait anchor missing');
+  const en = bundle('en');
+  for (const [key, want] of Object.entries(NEW_LANE_FIELDS)) {
+    const f = fields.find(x => x.key === key);
+    assert.ok(f, key + ' missing from the autonomous card');
+    assert.equal(f.type, want.type, key + ' type');
+    assert.equal(f.labelKey, want.labelKey, key + ' labelKey');
+    assert.equal(f.default, want.default, key + ' default');
+    if (want.options) assert.deepEqual(f.options, want.options, key + ' options');
+    if (want.min !== undefined) assert.equal(f.min, want.min, key + ' min');
+    assert.ok(keys.indexOf(key) > wait, key + ' must sit with the other lane fill rows');
+    assert.ok(en[want.labelKey], key + ' label missing in en.json');
+    assert.ok(!/\bPRD\b/.test(en[want.labelKey]), key + ' label must say Automaton, not PRD');
+  }
+});
+
 // ── locale completeness ───────────────────────────────────────────────────
 
 const LANE_PREFIXES = ['lane_fill_', 'settings_lane_fill_'];
@@ -389,6 +495,26 @@ const PENDING_TRANSLATION = new Set([
   'lane_fill_state_waiting_verifier',
   'lane_fill_waiting_verifier_reason',
   'settings_lane_fill_count_verifier_wait',
+  'lane_fill_eligibility_stale',
+  'lane_fill_eligibility_held',
+  'lane_fill_eligibility_sequenced_after_unshipped',
+  'lane_fill_eligibility_proposal_not_confirmed',
+  'lane_fill_eligibility_proposal_missing',
+  'lane_fill_eligibility_main_carries_work',
+  'lane_fill_eligibility_worktree_invalid',
+  'lane_fill_lane_counts',
+  'lane_fill_lane_counts_part',
+  'lane_fill_lane_counts_source_caps',
+  'lane_fill_lane_counts_source_config',
+  'lane_fill_kind_modes',
+  'lane_fill_kind_modes_part',
+  'settings_lane_fill_stale_after_hours',
+  'settings_lane_fill_require_confirmed_proposal',
+  'settings_lane_fill_check_main_carries',
+  'settings_lane_fill_require_worktree',
+  'settings_lane_fill_lane_counts_from_caps',
+  'settings_lane_fill_gpu_mode',
+  'settings_lane_fill_claude_mode',
 ]);
 
 test('every lane key is a real translation in de, es, fr and ja, not an English copy', () => {
