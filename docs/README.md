@@ -45,6 +45,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automata-tab-loading.md](howto/automata-tab-loading.md) | Automata tab loading: paged summary, Load more, loading / cached / stale / failed states, reconnect |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation view (first sub-tab of Automata): list, pipeline strip, create and edit form, member controls |
 | [howto/infrastructure-retry.md](howto/infrastructure-retry.md) | Infrastructure retry: the four transient failure classes, back-off, the held task and its question, dependents that recover, every key and surface |
+| [howto/model-request-progress.md](howto/model-request-progress.md) | Model request progress: telling a hung model request from a slow one, the four states, the alert and non-blocking question at the threshold, every key and surface, the limits |
 | [howto/failure-escalation.md](howto/failure-escalation.md) | Failure escalation: worker ladder, failure count, the review-needed hold, the five operator actions and the override order |
 | [howto/codeql-local-scan.md](howto/codeql-local-scan.md) | CodeQL local scan: run the default suite offline for all four languages, compare with GitHub alerts and dismissals, check bundle pin drift, optional pre-push and pre-ship steps |
 | [howto/multi-servers.md](howto/multi-servers.md) | Multi-server PWA — register remote instances, per-tab picker, all-servers aggregation (v7.2.0) |

@@ -1606,6 +1606,75 @@ autonomous:
   #   retry_dependents: true
   #   raise_question: true
 
+  # Model request progress (the request watch): the daemon observes the
+  # in-flight model request of a worker or verifier session whose model runs on
+  # a registered compute node, so a hung request can be told from a slow one.
+  # Observation only: it makes no model call and never ends a worker, retries
+  # on another backend or unloads a model. Every key is settable at runtime,
+  # with no restart, on:
+  #   PUT /api/config {"autonomous.request_watch.no_progress_minutes": 45}
+  #   (GET /api/config shows the block under autonomous.request_watch with
+  #   defaults filled in), MCP autonomous_config_set (request_watch_<key>
+  #   arguments) or config_set, CLI `datawatch config set
+  #   autonomous.request_watch.no_progress_minutes 45`, comm `configure
+  #   autonomous.request_watch.no_progress_minutes=45`, and Settings -> General
+  #   -> Automata settings -> Model request watch in the web app.
+  # Read the observations with GET /api/autonomous/request-watch (optional
+  # session and automaton query parameters), MCP autonomous_request_watch, CLI
+  # `datawatch autonomous request-watch [--session ID] [--automaton ID]
+  # [--json]` and comm `autonomous request-watch`.
+  # A bad value on those write surfaces is rejected (400 on PUT /api/config) and
+  # nothing is written; a bad value typed by hand into config.yaml is rejected
+  # when the file loads. An unset key reads its default. The list keeps "unset"
+  # (reads all four options) apart from an explicit empty list (keep_waiting
+  # only).
+  #
+  # enabled: true | false. Default true. false takes no sample, keeps no
+  #   observation and raises no alert or question; the read surfaces return an
+  #   empty list.
+  # poll_seconds: whole number, 1 or more. Default 30. How often each watched
+  #   request is sampled.
+  # no_progress_minutes: whole number, 1 or more. Default 30. Minutes without a
+  #   sign of progress before a request is over the threshold. Raise it for
+  #   slow hardware or a big model that takes long to give a first response.
+  # observe_workers: true | false. Default true. Watch worker sessions.
+  # observe_verifiers: true | false. Default true. Watch verifier sessions.
+  # use_gpu_signal: true | false. Default true. Read the GPU activity of a node
+  #   that has an attached observer as a sign of progress.
+  # gpu_busy_percent: whole number, 1 to 100. Default 10. The GPU load at or
+  #   above which the node counts as generating.
+  # unreachable_counts: true | false. Default true. Time with the node
+  #   unreachable counts as no progress; false never takes a request over the
+  #   threshold while the node is unreachable.
+  # raise_alert: true | false. Default true. One alert when a request passes the
+  #   threshold.
+  # raise_question: true | false. Default true. One non-blocking operator
+  #   question when a request passes the threshold; needs
+  #   autonomous.questions.enabled. Answering it only records the choice and
+  #   performs nothing.
+  # remediation_options: list of the choices the question offers. Allowed
+  #   values: keep_waiting, end_worker, retry_other_backend,
+  #   unload_reload_model (a JSON array or a comma list on the other surfaces).
+  #   Default unset, which reads as all four. keep_waiting is always offered,
+  #   first, and is always the default answer. An explicit [] offers
+  #   keep_waiting only.
+  # request_watch:
+  #   enabled: true
+  #   poll_seconds: 30
+  #   no_progress_minutes: 30
+  #   observe_workers: true
+  #   observe_verifiers: true
+  #   use_gpu_signal: true
+  #   gpu_busy_percent: 10
+  #   unreachable_counts: true
+  #   raise_alert: true
+  #   raise_question: true
+  #   remediation_options:
+  #     - keep_waiting
+  #     - end_worker
+  #     - retry_other_backend
+  #     - unload_reload_model
+
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on
   # every configuration channel (shown for lanes; the others use the same form):

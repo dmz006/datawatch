@@ -1756,6 +1756,38 @@ Response:
   - comm `autonomous infra-retries` (`internal/router/infra_retry_comm.go`);
   - PWA Infrastructure retries card, task badges and settings fields (`internal/server/web/app.js`), with the `infra_retry_*` and `settings_infra_retry_*` strings in the five locale bundles (en, de, es, fr, ja).
 
+## Model request progress (autonomous.request_watch)
+
+The daemon observes the in-flight model request of a worker or verifier session whose model runs on a registered compute node, so a hung request can be told from a slow one. It is observation only: it makes no model call and performs no remediation (it never ends a worker, retries on another backend or unloads a model).
+
+- **Config block:** `autonomous.request_watch` (`config.RequestWatchConfig` in `internal/config/request_watch.go`, held as `RequestWatch` on `config.AutonomousConfig` in `internal/config/config.go`). Booleans are `*bool` and the list keeps unset (nil, reads as all four options) apart from an explicit empty list (keep_waiting only), as `InfraRetryConfig` does. Every key has an `Effective*` accessor, so an unset key reads its default; `Validate` runs when the file loads.
+- **Config field table:**
+
+| Key | Type | Default | Accepted values | Accessor |
+|---|---|---|---|---|
+| `enabled` | `*bool` | `true` | `true`, `false` | `EffectiveEnabled` |
+| `poll_seconds` | int | `30` | whole number, 1 or more | `EffectivePollSeconds` |
+| `no_progress_minutes` | int | `30` | whole number, 1 or more | `EffectiveNoProgressMinutes` |
+| `observe_workers` | `*bool` | `true` | `true`, `false` | `EffectiveObserveWorkers` |
+| `observe_verifiers` | `*bool` | `true` | `true`, `false` | `EffectiveObserveVerifiers` |
+| `use_gpu_signal` | `*bool` | `true` | `true`, `false` | `EffectiveUseGPUSignal` |
+| `gpu_busy_percent` | int | `10` | whole number, 1 to 100 | `EffectiveGPUBusyPercent` |
+| `unreachable_counts` | `*bool` | `true` | `true`, `false` | `EffectiveUnreachableCounts` |
+| `raise_alert` | `*bool` | `true` | `true`, `false` | `EffectiveRaiseAlert` |
+| `raise_question` | `*bool` | `true` | `true`, `false` | `EffectiveRaiseQuestion` |
+| `remediation_options` | `[]string` | unset (all four) | `keep_waiting`, `end_worker`, `retry_other_backend`, `unload_reload_model` | `EffectiveRemediationOptions` (keep_waiting first and always present) |
+
+- **Package:** `internal/requestwatch`. A `Source` reads one signal from a node; `OllamaSource` (`source_ollama.go`) is the only one today and sends one GET of the running-models listing per node and model, never a generate, chat or completion route. A `Tracker` (`tracker.go`) folds the samples of one session into an `Observation` (states `generating`, `idle`, `unreachable`, `unknown`) and reports when the no-progress time first reaches the threshold and when progress resumes. The `Watcher` (`watcher.go`) lists the targets, takes one node read per node and model, and fires the callbacks. `Summary` and `Explain` (`text.go`) render the plain-text wording. `BuildStatus` (`status.go`) assembles the read.
+- **Targets:** `requestWatchLister` in `cmd/datawatch/request_watch_wiring.go` lists a session only when it is running or waiting for input, carries a compute node reference that resolves in the node registry, and is the worker of an in-progress task or a verifier session named for its task. The live block is read on every tick, so a change applies with no restart.
+- **Alert and question:** `RaiseRequestWatchNoProgress` in `internal/autonomous/request_watch_question.go` sends one warning alert and, when `raise_question` is on, the question channel is on and at least two options are offered, raises one non-blocking question with `keep_waiting` as the default. An episode is handled once. An answer is recorded as a `request_watch_answer` decision and changes no task. An open question is withdrawn when the request recovers or the session ends.
+- **Surfaces:**
+  - REST `GET /api/autonomous/request-watch` with optional `session` and `automaton` (`internal/server/request_watch.go`); the block on `GET /api/config`, `PUT /api/config` and the Automata settings route (`internal/server/request_watch_config.go`; `PUT` checks every key before anything is applied);
+  - MCP `autonomous_request_watch` and the `request_watch_*` arguments of `autonomous_config_set` (`internal/mcp/request_watch_tools.go`);
+  - CLI `datawatch autonomous request-watch` (`cmd/datawatch/cli_request_watch.go`);
+  - comm `autonomous request-watch` (`internal/router/request_watch_comm.go`);
+  - web app status card on the Automation Overview sub-tab, session and task chips, and the Model request watch settings group (`internal/server/web/app.js`), with the `request_watch_*` and `settings_request_watch_*` strings in the five locale bundles (en, de, es, fr, ja).
+- **How-to:** [howto/model-request-progress.md](howto/model-request-progress.md).
+
 ## Automation triage (autonomous.automation.triage_alert_minutes)
 
 - **Config key:** `autonomous.automation.triage_alert_minutes` (`config.AutonomousAutomationConfig.TriageAlertMinutes` in `internal/config/config.go`). Whole minutes >= 0; unset reads `DefaultAutomationTriageAlertMinutes` (30) via `EffectiveTriageAlertMinutes`, an explicit 0 turns the triage alert off. A negative value is refused with a 400 on the write paths (`validateTriageAlertMinutes` in `internal/server/api.go`) and with an error on config load (`validateLoaded`); a non-numeric value fails to parse, and a fractional YAML number is not refused on load (the YAML decoder narrows 1.5 to 1).
