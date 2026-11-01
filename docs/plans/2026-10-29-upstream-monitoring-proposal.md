@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** registry row 198
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: yes — operator answered 2026-11-01: option C, maintainer-only (Dependabot plus a small scheduled job)
 
 ## Problem
 

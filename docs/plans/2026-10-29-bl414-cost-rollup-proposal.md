@@ -6,7 +6,7 @@
 
 **Tracker:** BL414 (registry row 38)
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: yes — operator answered 2026-11-01: option A, one cost report on existing data; per-call costs later
 
 ## Problem
 

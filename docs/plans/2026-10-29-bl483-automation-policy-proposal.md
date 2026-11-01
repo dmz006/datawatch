@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** BL483
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: yes — operator answered 2026-11-01: option C, a project policy for the settings the coordinator reads first
 
 ## Problem
 

@@ -6,7 +6,7 @@
 
 **Tracker:** BL556 (registry row 137)
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: yes — operator answered 2026-11-01: option B, each task in its own worktree merged back in order, plus read-only tasks in parallel
 
 ## Problem
 

@@ -4,7 +4,7 @@
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Tracker:** registry row 182 (with row 14, BL422 tiering eval, and BL437 recurring eval design)
 
-Confirmed: no — no option is chosen. This file records the problem and the options; nothing is decided and no implementation PRD is filed until a `Confirmed: yes` line replaces this one.
+Confirmed: no — operator answered 2026-11-01: option A, parked until after 10.0
 
 ## Problem
 
