@@ -111,6 +111,7 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
+  shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
   tag-list [--counts]             List the tag tree (--counts adds the Automata and session totals per tag)
@@ -209,6 +210,7 @@ Subcommands:
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
+		newAutonomousShippedCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
 		newAutonomousTagRenameCmd(),

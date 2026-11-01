@@ -936,6 +936,12 @@ type AutonomousAPI interface {
 	GetAutomation(id string) (any, bool)
 	ActivateAutomation(id, actor string, expectedVersion int64) (any, error)
 
+	// Record shipped state: the release the work was merged into, the merge
+	// time (zero = cleared), the merge commit, and the source of the record
+	// (merge_step or backfill). Recording never changes the item's Status.
+	RecordPRDShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
+	RecordAutomationShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
+
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
 	// session's telemetry verdicts by the HTTP handler.

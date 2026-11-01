@@ -650,6 +650,47 @@ func (s *Server) handleAutonomousPRDSetKind(_ context.Context, req mcpsdk.CallTo
 	return llmSetterResult(out, err)
 }
 
+// toolAutonomousShippedRecord + handler serve the operator/LLM "record shipped
+// state" action for one Automaton (PRD) or one Automation. It posts to the
+// server's POST /.../shipped endpoint, which writes the four shipped fields
+// (merged_in_release, merged_at, merge_commit, shipped_source) and never
+// touches status. Idempotent per merge commit.
+func (s *Server) toolAutonomousShippedRecord() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_shipped_record",
+		mcpsdk.WithDescription("Record the shipped state of an Automaton (PRD) or an Automation: the release it was merged into, the merge time, the merge commit and how the record was written (merge_step or backfill). Recording never changes the entity's status and is idempotent per merge commit. Set automation=true to record an Automation; by default a PRD is addressed."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton (PRD) ID, or Automation ID when automation=true")),
+		mcpsdk.WithString("merge_commit", mcpsdk.Required(), mcpsdk.Description("The merge commit")),
+		mcpsdk.WithString("merged_in_release", mcpsdk.Description("Release the work was merged into, e.g. v1.2.0")),
+		mcpsdk.WithString("merged_at", mcpsdk.Description("Merge time, RFC 3339 (default now)")),
+		mcpsdk.WithString("source", mcpsdk.Enum("merge_step", "backfill"), mcpsdk.Description("How the record was written (default backfill)")),
+		mcpsdk.WithBoolean("automation", mcpsdk.Description("Record an Automation instead of a PRD")),
+	)
+}
+func (s *Server) handleAutonomousShippedRecord(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	commit := strings.TrimSpace(req.GetString("merge_commit", ""))
+	if commit == "" {
+		return mcpsdk.NewToolResultError("merge_commit is required"), nil
+	}
+	body := map[string]any{"merge_commit": commit}
+	if v := req.GetString("merged_in_release", ""); v != "" {
+		body["merged_in_release"] = v
+	}
+	if v := req.GetString("merged_at", ""); v != "" {
+		body["merged_at"] = v
+	}
+	if src := req.GetString("source", ""); src != "" { 
+		body["source"] = src
+	}
+	path := "/api/autonomous/prds/" + url.PathEscape(id) + "/shipped"
+	if req.GetBool("automation", false) {
+		path = "/api/automations/" + url.PathEscape(id) + "/shipped"
+	}
+	b, _ := json.Marshal(body)
+	out, err := s.proxyJSON(http.MethodPost, path, b)
+	return llmSetterResult(out, err)
+}
+
 // llmSetterResult turns a proxied LLM setter response into a tool result.
 // A refusal from the REST handler (non-2xx, such as a model/backend
 // pairing the backend cannot serve) becomes a tool error carrying the REST

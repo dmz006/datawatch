@@ -25,6 +25,10 @@ func validShippedSource(s string) bool {
 	return false
 }
 
+// ValidShippedSource reports whether s is one of the two shipped-source
+// values (ShippedSourceMergeStep or ShippedSourceBackfill).
+func ValidShippedSource(s string) bool { return validShippedSource(s) }
+
 // IsShipped reports whether the PRD carries shipped state, i.e. a
 // non-empty merge commit (see PRD.MergeCommit). A PRD that is shipped
 // may still hold any lifecycle Status — shipped state is orthogonal to
@@ -135,7 +139,7 @@ func (m *Manager) RecordAutomationShipped(id, release string, mergedAt time.Time
 	}
 	a, ok := m.automations.Get(id)
 	if !ok {
-		return nil, fmt.Errorf("automation %q not found", id)
+		return nil, fmt.Errorf("404: automation %q not found", id)
 	}
 	if a.MergeCommit == c {
 		return a, nil // idempotent: already recorded with this commit

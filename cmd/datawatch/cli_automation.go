@@ -42,6 +42,7 @@ Subcommands:
   delete <id>         Delete an Automation
   status              Show the Automation rows of the loop status (current member, idle time, spend)
   activate <id>       Start a draft Automation
+  shipped <id>        Record the shipped state (--release R --commit C; --at TIME, --source merge_step|backfill optional)
   pause <id>          Pause a running Automation
   resume <id>         Resume a paused Automation
   cancel <id>         Cancel an Automation (--cancel-in-flight true|false is required)
@@ -71,6 +72,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationDeleteCmd())
 	cmd.AddCommand(newAutomationStatusCmd())
 	cmd.AddCommand(newAutomationActivateCmd())
+	cmd.AddCommand(newAutomationShippedCmd())
 	cmd.AddCommand(newAutomationPauseCmd())
 	cmd.AddCommand(newAutomationResumeCmd())
 	cmd.AddCommand(newAutomationCancelCmd())
@@ -371,6 +373,28 @@ func newAutomationActivateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&actor, "actor", "", "Who is activating (default operator)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason, recorded in the audit trail")
+	return cmd
+}
+
+// newAutomationShippedCmd is the `automation shipped <id>` parity sibling of
+// `autonomous shipped record <id> --automation`: it records the shipped state
+// of one Automation (release, merge commit, merge time, source) through
+// POST /api/automations/{id}/shipped. Status is never touched.
+func newAutomationShippedCmd() *cobra.Command {
+	rec := &shippedRecordArgs{automation: true}
+	cmd := &cobra.Command{
+		Use:   "shipped <id>",
+		Short: "Record the Automation's shipped state (release, merge commit, time, source)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			rec.id = args[0]
+			return rec.run()
+		},
+	}
+	cmd.Flags().StringVar(&rec.release, "release", "", "Release the work was merged into, e.g. v1.2.0")
+	cmd.Flags().StringVar(&rec.commit, "commit", "", "Merge commit (required)")
+	cmd.Flags().StringVar(&rec.at, "at", "", "Merge time, RFC 3339 (default now)")
+	cmd.Flags().StringVar(&rec.source, "source", "", "merge_step or backfill (default backfill)")
 	return cmd
 }
 

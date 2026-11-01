@@ -1851,6 +1851,29 @@ func (a *API) ActivateAutomation(id, actor string, expectedVersion int64) (any, 
 	return a.M.ActivateAutomation(id, actor, expectedVersion)
 }
 
+// RecordPRDShipped records the Automaton's shipped state — release, merged
+// time, merge commit, source — via the manager (the single write path),
+// then emits an SSE update so existing subscribers see the fields without
+// a re-fetch. It never changes the Automaton's Status.
+func (a *API) RecordPRDShipped(id, release string, mergedAt time.Time, commit, source string) (any, error) {
+	p, err := a.M.RecordPRDShipped(id, release, mergedAt, commit, source)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	return p, nil
+}
+
+// RecordAutomationShipped records the Automation's shipped state; the
+// Automation lifecycle has no SSE fan-out, so no update is emitted.
+func (a *API) RecordAutomationShipped(id, release string, mergedAt time.Time, commit, source string) (any, error) {
+	auto, err := a.M.RecordAutomationShipped(id, release, mergedAt, commit, source)
+	if err != nil {
+		return nil, err
+	}
+	return auto, nil
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

@@ -746,6 +746,8 @@ func AutomationToolNames() []string {
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
 		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
+		// autonomous_shipped_record records the shipped state of a PRD (or an Automation).
+		s.toolAutonomousShippedRecord(),
 		// The automations[] array on the status response.
 		s.toolAutonomousStatus(),
 	}

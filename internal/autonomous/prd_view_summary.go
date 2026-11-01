@@ -29,6 +29,15 @@ type SummaryView struct {
 	// Empty when no push outcome was recorded yet.
 	PushState   string `json:"push_state,omitempty"`
 	PushWarning string `json:"push_warning,omitempty"`
+	// The shipped state is copied straight from the PRD: the release these
+	// changes were merged into, the merge time, the merge commit, and the
+	// origin of the record (ShippedSourceMergeStep or ShippedSourceBackfill).
+	// Empty when the Automaton has never been recorded as shipped; see PRD
+	// .IsShipped. Shipped state is orthogonal to Status and never changes it.
+	MergedInRelease string     `json:"merged_in_release,omitempty"`
+	MergedAt        *time.Time `json:"merged_at,omitempty"`
+	MergeCommit     string     `json:"merge_commit,omitempty"`
+	ShippedSource   string     `json:"shipped_source,omitempty"`
 
 	// The fields below feed a collapsed Automata row. All are scalars, short
 	// lists or small count maps, so none grows with the amount of text the
@@ -91,6 +100,10 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		CIWatch:       prd.CIWatch,
 		PushState:     prd.Git.PushState,
 		PushWarning:   prd.Git.PushWarning,
+		MergedInRelease: prd.MergedInRelease,
+		MergedAt:        prd.MergedAt,
+		MergeCommit:     prd.MergeCommit,
+		ShippedSource:   prd.ShippedSource,
 
 		Type:             prd.Type,
 		Backend:          prd.Backend,

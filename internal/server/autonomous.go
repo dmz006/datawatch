@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
@@ -2347,6 +2348,42 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_kind", "automaton", id, map[string]any{"kind": req.Kind})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Record the Automaton's shipped state: release, merged time, merge commit
+	// and source. Status is never touched; the record is idempotent per commit.
+	case "shipped":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			MergedInRelease string   `json:"merged_in_release"`
+			MergedAt        time.Time `json:"merged_at"`
+			MergeCommit     string   `json:"merge_commit"`
+			Source          string   `json:"source"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.RecordPRDShipped(id, req.MergedInRelease, req.MergedAt, req.MergeCommit, req.Source)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "record_shipped", "automaton", id, map[string]any{
+			"merged_in_release": req.MergedInRelease,
+			"merge_commit":      req.MergeCommit,
+			"source":            req.Source,
+		})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
 	case "set_lane_preference":
 		if r.Method != http.MethodPost {
@@ -3607,6 +3644,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if shipID, ok := strings.CutSuffix(rest, "/shipped"); ok && shipID != "" && !strings.Contains(shipID, "/") {
+		s.handleAutomationShipped(w, r, shipID)
+		return
+	}
+
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -3717,6 +3759,37 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	}
 	s.audit(r.Context(), "automation_activate", "automation", id,
 		map[string]any{"actor": req.Actor, "reason": req.Reason})
+	writeJSONOK(w, a)
+}
+
+// handleAutomationShipped serves POST /api/automations/{id}/shipped.
+// Body {merged_in_release, merged_at, merge_commit, source}. It records the
+// Automation's shipped state via the single manager write path and never
+// touches the Automation's status. The record is idempotent per merge commit.
+func (s *Server) handleAutomationShipped(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		MergedInRelease string    `json:"merged_in_release"`
+		MergedAt        time.Time `json:"merged_at"`
+		MergeCommit     string    `json:"merge_commit"`
+		Source          string    `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	a, err := s.autonomousMgr.RecordAutomationShipped(id, req.MergedInRelease, req.MergedAt, req.MergeCommit, req.Source)
+	if err != nil {
+		code, msg := automationErrStatus(err)
+		http.Error(w, msg, code)
+		return
+	}
+	shippedID, _ := automationIdentity(a)
+	s.audit(r.Context(), "automation_shipped_record", "automation", shippedID,
+		map[string]any{"merged_in_release": req.MergedInRelease, "merge_commit": req.MergeCommit, "source": req.Source})
 	writeJSONOK(w, a)
 }
 

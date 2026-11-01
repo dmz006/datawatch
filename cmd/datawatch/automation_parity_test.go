@@ -20,6 +20,7 @@ var parityMap = map[string]parityNames{
 	"update":                 {"automation_update", "update", "update"},
 	"delete":                 {"automation_delete", "delete", "delete"},
 	"activate":               {"automation_activate", "activate", "activate"},
+	"shipped":                {"autonomous_shipped_record", "shipped", "shipped"},
 	"pause":                  {"automation_pause", "pause", "pause"},
 	"resume":                 {"automation_resume", "resume", "resume"},
 	"cancel":                 {"automation_cancel", "cancel", "cancel"},
