@@ -59,20 +59,23 @@ Documentation: `docs/howto/model-request-progress.md`, `docs/datawatch-definitio
 
 ## Phases
 
-The work is four stories. All four are done on this branch.
+The work is four stories. All four are Done. The version is assigned at merge time, not on this branch.
 
 | Story | What it delivers | Status |
 |---|---|---|
-| Observe the in-flight model request | The configuration block, the node signal source, the progress tracker, the poller wired into the daemon, and the alert and question at the threshold | Done on this branch |
-| Show the observation on REST, MCP, CLI and the comm channel | The route, the config keys on the REST config, the session and task views, the MCP tool and its config arguments, the CLI command and the chat verb | Done on this branch |
-| Show the observation in the web app | The settings fields with help links, the Automation card, and the chips on session rows, the session header and task rows, in all five locale bundles | Done on this branch |
-| Document, hand off and prove the feature | The glossary, how-to, config reference and operations text, this tracker, changelog and plan, the mobile parity issue, the sandbox live check and the final gate | Done on this branch |
+| Observe the in-flight model request | The configuration block, the node signal source, the progress tracker, the poller wired into the daemon, and the alert and question at the threshold | Done |
+| Show the observation on REST, MCP, CLI and the comm channel | The route, the config keys on the REST config, the session and task views, the MCP tool and its config arguments, the CLI command and the chat verb | Done |
+| Show the observation in the web app | The settings fields with help links, the Automation card, and the chips on session rows, the session header and task rows, in all five locale bundles | Done |
+| Document, hand off and prove the feature | The glossary, how-to, config reference and operations text, this tracker, changelog and plan, the mobile parity issue, the sandbox live check and the final gate | Done |
 
 ## Status
 
-Implemented and covered by unit and integration tests on this branch (`docs/testing-tracker.md`,
-section "Model request progress"). Tested: yes. Validated: pending the sandbox live check; the live
-check task updates the tracker when it has run. The version is assigned at merge time.
+Done. Every phase above is Done and covered by unit and integration tests on this branch
+(`docs/testing-tracker.md`, section "Model request progress"). Tested: yes. Validated: yes, by the
+sandbox live check (`docs/plans/2026-10-31-model-request-progress-live-check.md`). The final gate
+ran and passed (`docs/plans/2026-10-31-model-request-progress-final-gate-report.md`). The version is
+assigned at merge time: this branch changes neither `var Version` line, and the merge helper takes
+the next patch above `main` and bumps a minor version.
 
 ## Decision notes
 

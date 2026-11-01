@@ -97,7 +97,7 @@ func TestRequestWatchViewList(t *testing.T) {
 			t.Errorf("entry %d missing model_request", i)
 			continue
 		}
-		if got := decodeObservation(t, raw); got.State != want[i] || got.SessionID != v.Session.ID {
+		if got := decodeObservation(t, raw); got.State != want[i] || got.SessionID != v.ID {
 			t.Errorf("entry %d = %+v, want state %s", i, got, want[i])
 		}
 	}
