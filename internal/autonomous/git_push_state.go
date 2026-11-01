@@ -51,10 +51,10 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 			Note: reason,
 		}))
 		m.mu.Lock()
-		alertFn := m.alertFn
+		alertSink := m.alertSink
 		m.mu.Unlock()
-		if alertFn != nil {
-			alertFn("warn", fmt.Sprintf("Automaton %s not pushed", prd.ID), reason)
+		if alertSink != nil {
+			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", prd.ID), reason)
 		}
 		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", prd.ID, policy, reason)
 	}

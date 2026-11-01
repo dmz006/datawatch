@@ -162,7 +162,7 @@ func TestRecordGitPushOutcomeSuccessFailureSuccess(t *testing.T) {
 	m := newGitPushTestManager(t)
 	prd, _ := m.CreatePRD("spec", "", "", "", "")
 	var alerts [][]string
-	m.SetAlertFn(func(level, title, body string) { alerts = append(alerts, []string{level, title, body}) })
+	m.SetAlertSink(func(level, title, body string) string { alerts = append(alerts, []string{level, title, body}); return "" })
 
 	// 1. Success: pushed state recorded, no alert, decision appended.
 	before := len(prd.Decisions)

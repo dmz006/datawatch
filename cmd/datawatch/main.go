@@ -6502,19 +6502,6 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetGitPushSettings(func() (string, string) {
 				return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
 			})
-			// Operator alert sink for autonomous warnings (today: a
-			// push-on-complete failure) → the same alert store every
-			// other system alert goes to.
-			amgr.SetAlertFn(func(level, title, body string) {
-				lv := alertspkg.LevelInfo
-				switch level {
-				case "warn":
-					lv = alertspkg.LevelWarn
-				case "error":
-					lv = alertspkg.LevelError
-				}
-				alertStore.AddSystem(lv, title, body)
-			})
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.

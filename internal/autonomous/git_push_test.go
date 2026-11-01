@@ -15,7 +15,7 @@ import (
 // --- helpers ---------------------------------------------------------
 
 // gitIn runs `git <args...>` in dir and fails the test on error.
-func gitIn(t *testing.T, dir string, args ...string) string {
+func gitPushIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	out, err := runGitIn(dir, args...)
 	if err != nil {
@@ -30,9 +30,9 @@ func commitFile(t *testing.T, dir, name, content string) string {
 	if err := os.WriteFile(dir+"/"+name, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", name, err)
 	}
-	gitIn(t, dir, "add", "-A")
-	gitIn(t, dir, "commit", "-m", name)
-	return gitIn(t, dir, "rev-parse", "HEAD")
+	gitPushIn(t, dir, "add", "-A")
+	gitPushIn(t, dir, "commit", "-m", name)
+	return gitPushIn(t, dir, "rev-parse", "HEAD")
 }
 
 // bareRefs returns every ref of the bare repo as "sha ref" lines
@@ -91,27 +91,27 @@ func newPushHarness(t *testing.T, policy string) *pushHarness {
 		t.Fatalf("NewManager: %v", err)
 	}
 	alerts := &pushAlertRecorder{}
-	m.SetAlertFn(alerts.record)
+	m.SetAlertSink(func(level, title, body string) string { alerts.record(level, title, body); return "" })
 	m.SetGitPushSettings(func() (string, string) { return policy, "origin" })
 
 	bare := t.TempDir()
-	gitIn(t, bare, "init", "--bare")
-	gitIn(t, bare, "symbolic-ref", "HEAD", "refs/heads/main")
+	gitPushIn(t, bare, "init", "--bare")
+	gitPushIn(t, bare, "symbolic-ref", "HEAD", "refs/heads/main")
 	// Seed the bare's default branch with one commit (via a throwaway
 	// clone) so the remote advertises a default branch from the start —
 	// a completely empty bare advertises no refs, so the default branch
 	// would be unresolvable.
 	seed := t.TempDir()
-	gitIn(t, seed, "clone", bare, seed)
-	gitIn(t, seed, "config", "user.email", "seed@example.com")
-	gitIn(t, seed, "config", "user.name", "Seed")
+	gitPushIn(t, seed, "clone", bare, seed)
+	gitPushIn(t, seed, "config", "user.email", "seed@example.com")
+	gitPushIn(t, seed, "config", "user.name", "Seed")
 	commitFile(t, seed, "seeded.txt", "remote baseline\n")
-	gitIn(t, seed, "push", "origin", "HEAD:refs/heads/main")
+	gitPushIn(t, seed, "push", "origin", "HEAD:refs/heads/main")
 
 	work := t.TempDir()
-	gitIn(t, work, "clone", bare, work) // clone of the bare => remote "origin"
-	gitIn(t, work, "config", "user.email", "test@example.com")
-	gitIn(t, work, "config", "user.name", "Test")
+	gitPushIn(t, work, "clone", bare, work) // clone of the bare => remote "origin"
+	gitPushIn(t, work, "config", "user.email", "test@example.com")
+	gitPushIn(t, work, "config", "user.name", "Test")
 
 	prd, err := m.CreatePRD("push engine test spec", work, "", "", "")
 	if err != nil {
@@ -135,7 +135,7 @@ func (h *pushHarness) savedPRD(t *testing.T) *PRD {
 func TestPushValidatedWorkBranchPolicyPushesWorkBranch(t *testing.T) {
 	h := newPushHarness(t, "branch")
 
-	gitIn(t, h.work, "checkout", "-b", "feature")
+	gitPushIn(t, h.work, "checkout", "-b", "feature")
 	sha := commitFile(t, h.work, "work.txt", "validated task work\n")
 	h.pr.Git.Branch = "feature"
 	if err := h.m.store.SavePRD(h.pr); err != nil {
@@ -144,10 +144,10 @@ func TestPushValidatedWorkBranchPolicyPushesWorkBranch(t *testing.T) {
 
 	h.m.pushValidatedWork(h.pr, false)
 
-	if got := gitIn(t, h.bare, "rev-parse", "refs/heads/feature"); got != sha {
+	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/feature"); got != sha {
 		t.Errorf("bare refs/heads/feature=%s, want %s", got, sha)
 	}
-	if got := gitIn(t, h.work, "rev-parse", "--abbrev-ref", "feature@{upstream}"); got != "origin/feature" {
+	if got := gitPushIn(t, h.work, "rev-parse", "--abbrev-ref", "feature@{upstream}"); got != "origin/feature" {
 		t.Errorf("upstream of feature=%s, want origin/feature", got)
 	}
 	saved := h.savedPRD(t)
@@ -185,7 +185,7 @@ func TestPushValidatedWorkDefaultBranchPolicyGatesOnFinalGates(t *testing.T) {
 
 	// final gates passed: fast-forward HEAD onto the bare default branch.
 	h.m.pushValidatedWork(h.pr, true)
-	if got := gitIn(t, h.bare, "rev-parse", "refs/heads/main"); got != sha {
+	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main"); got != sha {
 		t.Errorf("bare refs/heads/main=%s, want %s", got, sha)
 	}
 	saved = h.savedPRD(t)
@@ -203,7 +203,7 @@ func TestPushValidatedWorkDefaultBranchPolicyGatesOnFinalGates(t *testing.T) {
 func TestPushValidatedWorkPushFailureRecordsNotPushedAndAlerts(t *testing.T) {
 	h := newPushHarness(t, "branch")
 	sha := commitFile(t, h.work, "work.txt", "committed locally\n")
-	gitIn(t, h.work, "remote", "remove", "origin") // remote gone => push cannot reach it
+	gitPushIn(t, h.work, "remote", "remove", "origin") // remote gone => push cannot reach it
 
 	h.m.pushValidatedWork(h.pr, true)
 
@@ -231,7 +231,7 @@ func TestPushValidatedWorkPushFailureRecordsNotPushedAndAlerts(t *testing.T) {
 		t.Errorf("alert %q should carry the not-pushed reason naming the remote", alert)
 	}
 	// The local commit must survive untouched.
-	head := gitIn(t, h.work, "rev-parse", "HEAD")
+	head := gitPushIn(t, h.work, "rev-parse", "HEAD")
 	if head != sha {
 		t.Errorf("local HEAD moved to %s, want %s", head, sha)
 	}
@@ -245,13 +245,13 @@ func TestPushValidatedWorkNeverForcePushesDivergedRemote(t *testing.T) {
 	// not have (made from a second clone), while the work clone also has
 	// a commit the bare does not have.
 	other := t.TempDir()
-	gitIn(t, other, "clone", h.bare, other)
-	gitIn(t, other, "symbolic-ref", "HEAD", "refs/heads/main")
-	gitIn(t, other, "config", "user.email", "other@example.com")
-	gitIn(t, other, "config", "user.name", "Other")
+	gitPushIn(t, other, "clone", h.bare, other)
+	gitPushIn(t, other, "symbolic-ref", "HEAD", "refs/heads/main")
+	gitPushIn(t, other, "config", "user.email", "other@example.com")
+	gitPushIn(t, other, "config", "user.name", "Other")
 	remoteSHA := commitFile(t, other, "remote-only.txt", "remote advance\n")
-	gitIn(t, other, "push", "origin", "main")
-	bareBefore := gitIn(t, h.bare, "rev-parse", "refs/heads/main")
+	gitPushIn(t, other, "push", "origin", "main")
+	bareBefore := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main")
 	if bareBefore != remoteSHA {
 		t.Fatalf("setup: bare main=%s, want %s", bareBefore, remoteSHA)
 	}
@@ -259,7 +259,7 @@ func TestPushValidatedWorkNeverForcePushesDivergedRemote(t *testing.T) {
 
 	h.m.pushValidatedWork(h.pr, true) // would only "succeed" by overwriting history
 
-	if got := gitIn(t, h.bare, "rev-parse", "refs/heads/main"); got != bareBefore {
+	if got := gitPushIn(t, h.bare, "rev-parse", "refs/heads/main"); got != bareBefore {
 		t.Fatalf("bare refs/heads/main moved from %s to %s — a force push happened", bareBefore, got)
 	}
 	saved := h.savedPRD(t)

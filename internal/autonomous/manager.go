@@ -1392,11 +1392,6 @@ type Manager struct {
 	// Guarded by mu. Nil = daemon values unavailable (defaults apply).
 	gitPushConfigFn func() (policy, remote string)
 
-	// alertFn — when set, called for operator warnings (today: a push on
-	// completion failed, see recordPushOutcome). Signature:
-	// (level, title, body). Guarded by mu. Nil = alert silently skipped.
-	alertFn func(level, title, body string)
-
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
@@ -1752,15 +1747,6 @@ func (m *Manager) SetGitPushSettings(fn func() (policy, remote string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.gitPushConfigFn = fn
-}
-
-// SetAlertFn wires the operator alert sink used for autonomous warnings
-// (e.g. "not pushed" after a failed push-on-complete). Nil disables
-// (no-op; no error).
-func (m *Manager) SetAlertFn(fn func(level, title, body string)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.alertFn = fn
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.
