@@ -98,6 +98,11 @@ func TestMergeMCP_ReadOnlyNoWriteTool(t *testing.T) {
 	for _, n := range MergeToolNames() {
 		known[n] = true
 	}
+	// The pipeline tools read, check and keep the daemon's own pipeline
+	// record; none of them merges, deletes or pushes a branch.
+	for _, n := range MergePipelineToolNames() {
+		known[n] = true
+	}
 	for _, n := range mergeTestToolNames(t) {
 		if known[n] {
 			continue

@@ -362,6 +362,14 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
   ```
 
+- **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
+
+  ```
+  autonomous_merge_pipeline_get(project="demo")
+  autonomous_merge_pipeline_validate(file="true")
+  autonomous_merge_pipeline_set_record(project="demo", yaml="steps:\n  - name: tests\n    kind: test\n    command: make test\n")
+  ```
+
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer. The policy keys are set with `config_set` under `autonomous.infra_retry.*` (for example `config_set(key="autonomous.infra_retry.max_tries", value="5")`) or with the `infra_retry_*` arguments of `autonomous_config_set`, and read with `autonomous_config_get`, which returns the `infra_retry` block with the rest of the config. `autonomous_config_set` builds its request from a fixed list of arguments, so the block is reachable there only through these arguments:
 
   | Argument | Sets | Type |

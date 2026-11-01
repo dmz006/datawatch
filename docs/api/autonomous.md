@@ -1643,6 +1643,8 @@ Runs a merge of `branches` (in order) in the configured worktree base repo throu
 
 Settings: `autonomous.merge_pipeline.{file_name,source_order,fallback_on_bad_file,conflict_policy,conflict_model,version_files}` and the same six per project as `autonomous.merge_pipeline.projects.<project>.<key>` on `PUT /api/config`; a bad value or unknown key rejects the whole PUT, `null` clears a key.
 
+The same reads and writes are available from the other surfaces: MCP `autonomous_merge_pipeline_get`, `autonomous_merge_pipeline_set_record` (`clear=true` removes) and `autonomous_merge_pipeline_validate`, with the settings as `merge_pipeline_*` arguments of `autonomous_config_set`; the command line `datawatch autonomous merge-pipeline show|set-record|clear-record|validate` (`--project`, `--from-file`, `--repo-file`, `--json`); and the chat verb `autonomous merge-pipeline [show|set-record|clear-record|validate]` with the settings through `configure autonomous.merge_pipeline.<key>=<value>`. All print the same text.
+
 ### `GET /api/autonomous/merge`
 
 ```

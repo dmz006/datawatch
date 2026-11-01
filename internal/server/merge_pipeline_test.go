@@ -354,7 +354,7 @@ func TestMergePipelineFederationGuard(t *testing.T) {
 		}
 	}
 	// The MCP tool map classifies the read.
-	if got, ok := federation.RequiredCapForMCPTool("autonomous_merge_pipeline"); !ok || got != federation.CapAutonomousRead {
+	if got, ok := federation.RequiredCapForMCPTool("autonomous_merge_pipeline_get"); !ok || got != federation.CapAutonomousRead {
 		t.Errorf("MCP tool cap: %q %v", got, ok)
 	}
 }
