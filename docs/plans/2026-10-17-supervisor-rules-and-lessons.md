@@ -633,3 +633,14 @@ Operator, 2026-10-30, quoted: "What else are you doing by hand that datawatch sh
 13. Reading CI failures, finding the cause and shipping the fix: the repo CI watch (shipped 9.38.0) reports and reruns a hung run once; diagnosing is not automated and should stay a supervisor job.
 14. Budget: reading the percentage, computing the pace and choosing lanes: the usage calculator advises; moving the lane count automatically within the operator's setting is not built. To file.
 15. Starting the next feature step when one merges (filing it, decomposing it, starting it in an Automation): the Automation chain does the start; filing the next step is by hand.
+
+### Friday-night Claude burn (2026-11-01)
+
+Operator, 2026-11-01, quoted: "see what happened Friday night, we were on track for Sunday 8am then [ran out] a full day in advance, something used a lot of claude". Measured from the session transcripts (cost-equivalent, about 21 dollars per usage point): from the 70 percent reading on Friday 13:28 the account reached its limit about Saturday 05:30, 26 hours early. 599 dollars (28.5 points) in 16 hours, 35 dollars an hour; the allowed pace is 14.3 points a day, about 12.5 dollars an hour. Workers on Sonnet at high effort 72 percent, supervisor 16 percent, Haiku verifiers 11 percent.
+
+Rules from this:
+1. **The per-tick pace check is mandatory and is computed, not asked.** Each hourly tick runs the transcript tally (a small script over the session transcripts since the last reading) and leads the report with points used since the reading, points per hour, and the projected percent at the reset. Over the pace line means: cap to 1 lane and move new work to pi-prompt in that same tick. Waiting for the operator to type a reading is not a check.
+2. **Mechanical tasks never go to Claude at high effort.** Docs, parity filing, live checks, final gates and report tasks run on pi-prompt or at most medium effort. Sonnet high is for the debugging and design-heavy tasks.
+3. **Retries on Claude are bounded.** After three failed attempts of one task stop and bring it to the operator (this rule already existed); six Sonnet high attempts on one documentation task were spent on 2026-10-31.
+4. **A lane approval ends at its stated time.** The two-lane approval ended at the Sunday 08:00 reset; the cap returns to 1 then without being asked.
+5. The daemon-side fix is PRD `202a0002` (burn guard).
