@@ -159,7 +159,7 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	if strings.Contains(capturedPrompt, seeded) {
 		t.Fatalf("prompt must NOT inline the 50KB file content — that's the exact B122 bug")
 	}
-	if len(capturedPrompt) > 5000 {
+	if len(capturedPrompt) > 6000 { // far below the 50KB file; room for the planner rules
 		t.Errorf("prompt should stay small even with a large AGENT.md present, got %d bytes", len(capturedPrompt))
 	}
 }

@@ -3306,6 +3306,64 @@ paths:
         "200": {description: Updated task}
         "400": {description: Missing task_id, unknown mode, empty or unknown backend entry, or the Automaton is locked}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/edit_task:
+    post:
+      summary: Edit a task's spec and/or read-only mark
+      description: |
+        Rewrites a task's spec and/or sets its `read_only` mark. At least one of
+        `new_spec` and `read_only` is required; an omitted field is left unchanged.
+        A read-only task is one that changes no files, so it may skip the tree lock
+        when `autonomous.parallel.read_only_tasks` is on. The same status gates as a
+        spec edit apply to both fields: needs_review, revisions_asked and cancelled
+        Automata, and a blocked Automaton's failed or blocked task. A completed task
+        is immutable.
+      operationId: autonomousPRDEditTask
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id: {type: string, description: Task to edit}
+                new_spec: {type: string, description: "New spec text; omit to keep the current spec"}
+                read_only: {type: boolean, description: "Mark (true) or clear (false) the read-only flag; omit to leave it unchanged"}
+                actor: {type: string, description: "Defaults to operator"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "Missing task_id, neither new_spec nor read_only given, truncated spec, locked Automaton or task, or unknown task"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/add_task:
+    post:
+      summary: Add a task to a story
+      description: |
+        Appends a task to an existing story without re-running decompose. Allowed
+        while the Automaton is needs_review, revisions_asked or cancelled. Set
+        `read_only` true for a task that changes no files.
+      operationId: autonomousPRDAddTask
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id, title]
+              properties:
+                story_id: {type: string}
+                title: {type: string}
+                spec: {type: string}
+                depends_on: {type: array, items: {type: string}, description: Task IDs in the same Automaton that must complete first}
+                read_only: {type: boolean, default: false, description: "The task changes no files and may skip the tree lock"}
+                actor: {type: string, description: "Defaults to operator"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Missing story_id or title, unknown dependency, or locked Automaton}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/set_failure_escalation:
     post:
       summary: Set or clear the failure escalation override on an Automaton or one task
@@ -7438,6 +7496,7 @@ components:
         title: {type: string}
         spec: {type: string}
         depends_on: {type: array, items: {type: string}}
+        read_only: {type: boolean, description: "The task changes no files, so it may skip the tree lock when autonomous.parallel.read_only_tasks is on. Absent = false. Set through add_task and edit_task, or by decompose"}
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}

@@ -14172,7 +14172,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -14204,6 +14204,10 @@ function renderTask(prd, story, task, editable) {
   // BL447 — per-task project dir override badge.
   const projDirBadge = task.project_dir
     ? `<span class="prd-task-llm-badge prd-task-projdir-badge" title="${escHtml(t('prd_task_projdir_badge_title')||'Per-task project dir override')}">dir: ${escHtml(task.project_dir)}</span>`
+    : '';
+  // Read-only label: the task changes no files and may skip the tree lock.
+  const readOnlyBadge = task.read_only
+    ? `<span class="prd-task-llm-badge prd-task-readonly-badge" title="${escHtml(t('prd_task_read_only_badge_tip')||'Read-only task: changes no files')}">${escHtml(t('prd_task_read_only_badge')||'read-only')}</span>`
     : '';
   // 2026-10-17 — smoke/final-gate kind chip. The decomposer tags these
   // tasks as smoke-verification targets; when the pair is configured
@@ -14365,7 +14369,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
+      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -15504,7 +15508,17 @@ function _prdTaskProjectDirFieldHTML(currentProjectDir) {
       </div>`;
 }
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir) {
+// Read-only toggle shared by the edit-task and add-task modals. A read-only
+// task changes no files, so it may skip the tree lock.
+function _prdTaskReadOnlyFieldHTML(inputID, checked) {
+  return `<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}">
+        <input type="checkbox" id="${inputID}" ${checked ? 'checked' : ''} />
+        <span>${escHtml(t('prd_task_read_only_label')||'Read-only')}</span>
+      </label>
+      <div style="font-size:10px;color:var(--text2);">${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}</div>`;
+}
+
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly) {
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   ensureLLMModelLists().then(() => {
@@ -15523,6 +15537,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
       ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
+      ${_prdTaskReadOnlyFieldHTML('prdEditReadOnly', !!currentReadOnly)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -15536,10 +15551,15 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     const modelEl = document.getElementById('prdEditModelInner')?.querySelector('input,select');
     const model = modelEl ? modelEl.value.trim() : '';
     const calls = [];
-    if (newSpec !== currentSpec) {
+    const roEl = document.getElementById('prdEditReadOnly');
+    const readOnlyChanged = !!roEl && roEl.checked !== !!currentReadOnly;
+    if (newSpec !== currentSpec || readOnlyChanged) {
+      const editBody = { task_id: taskID, actor: 'operator' };
+      if (newSpec !== currentSpec) editBody.new_spec = newSpec;
+      if (readOnlyChanged) editBody.read_only = roEl.checked;
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskID, new_spec: newSpec, actor: 'operator' }),
+        body: JSON.stringify(editBody),
       }));
     }
     if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
@@ -15665,6 +15685,7 @@ function openPRDAddTaskModal(prdID, storyID) {
       <input id="prdAddTaskTitle" type="text" class="form-input" placeholder="${t('prd_add_task_title_ph')||'Short task title'}" />
       <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_spec_label')||'Spec'} ${micButtonHTML('prdAddTaskSpec')}</label>
       <textarea id="prdAddTaskSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;" placeholder="${t('prd_add_task_spec_ph')||'Concrete instructions for the worker session — include file paths and context'}"></textarea>
+      ${_prdTaskReadOnlyFieldHTML('prdAddTaskReadOnly', false)}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_add')||'Add'}</button>
@@ -15673,10 +15694,11 @@ function openPRDAddTaskModal(prdID, storyID) {
   `, () => {
     const title = document.getElementById('prdAddTaskTitle').value.trim();
     const spec = document.getElementById('prdAddTaskSpec').value;
+    const addReadOnly = !!(document.getElementById('prdAddTaskReadOnly') || {}).checked;
     if (!title) { showToast('Title required', 'error', 2000); return; }
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/add_task', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ story_id: storyID, title, spec, actor: 'operator' }),
+      body: JSON.stringify(Object.assign({ story_id: storyID, title, spec, actor: 'operator' }, addReadOnly ? { read_only: true } : {})),
     })
       .then(() => { showToast('Task added', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Add failed: ' + String(err), 'error', 3000));

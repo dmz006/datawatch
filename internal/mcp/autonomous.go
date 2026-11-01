@@ -927,16 +927,21 @@ func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving (needs_review / revisions_asked) or after cancelling. BL421: also works on a blocked PRD for the failed/blocked task that halted it — edit, then autonomous_prd_reset_task to retry without re-decomposing. Completed tasks are immutable in every status."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
-		mcpsdk.WithString("new_spec", mcpsdk.Required(), mcpsdk.Description("New spec text")),
+		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only)")),
+		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]string{
+	editBody := map[string]any{
 		"task_id":  req.GetString("task_id", ""),
 		"new_spec": req.GetString("new_spec", ""),
 		"actor":    "operator",
-	})
+	}
+	if _, present := req.GetArguments()["read_only"]; present {
+		editBody["read_only"] = req.GetBool("read_only", false)
+	}
+	body, _ := json.Marshal(editBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
 	if err != nil {
 		return nil, err
@@ -1020,6 +1025,7 @@ func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
 		mcpsdk.WithString("spec", mcpsdk.Description("Task spec — concrete instructions for the worker session")),
 		mcpsdk.WithArray("depends_on", mcpsdk.Description("Task IDs (within the same PRD) that must complete before this one becomes eligible. Each must already exist."), mcpsdk.WithStringItems()),
+		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only: it changes no files, so it may skip the tree lock. Default false.")),
 	)
 }
 func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1030,6 +1036,7 @@ func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallTo
 		"spec":       req.GetString("spec", ""),
 		"actor":      "operator",
 		"depends_on": req.GetStringSlice("depends_on", nil),
+		"read_only":  req.GetBool("read_only", false),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_task", body)
 	if err != nil {

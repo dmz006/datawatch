@@ -43,6 +43,18 @@ const planWriteFilesRuleBullet = `- Every task whose title starts with a write v
   installs and investigations are read-only and take that line.
 `
 
+// planReadOnlyFlagRuleBullet is the Rules bullet, shared by both planning
+// prompts, that tells the planner when to set the task-level read_only
+// flag. It is the structured counterpart of the READ-ONLY: spec line in
+// planWriteFilesRuleBullet and no percent sign: PlanningPrompt goes
+// through fmt.Sprintf.
+const planReadOnlyFlagRuleBullet = `- "read_only" (optional boolean): set it to true only for a task that
+  changes no files (a gate, smoke test, suite run, eval, install or
+  investigation), and give such a task an empty "files" list. A task that
+  writes, edits, creates, moves or removes any file must omit "read_only"
+  or set it false. When unsure, omit it.
+`
+
 // PlanningPrompt is the system+user prompt prefix the LLM sees.
 // Operators can override via autonomous.planning_prompt config.
 const PlanningPrompt = `You are planning a feature request into a structured Product Requirements Document with stories and tasks.
@@ -62,6 +74,7 @@ Return ONLY a JSON object with this shape:
           "spec": "<concrete instructions for one worker session>",
           "files": ["<repo-relative path>", "..."],
           "depends_on": [],
+          "read_only": false, // optional boolean, see the read_only rule below
           "kind": "<smoke|final_gate>" // optional, see the kind rule below
         }
       ]
@@ -80,7 +93,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -150,6 +163,7 @@ The JSON must follow this schema exactly:
           "depends_on": [],
           "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
           "files_generated": ["<repo-relative path>", "..."],
+          "read_only": false, // optional boolean — true only for a task that changes no files, see the read_only rule below
           "kind": "<smoke|final_gate>" // optional — "smoke" for a live smoke-test task, "final_gate" for the end-to-end verification task
         }
       ]
@@ -170,7 +184,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -225,6 +239,24 @@ func validateParsedPlan(stories []Story) error {
 		}
 	}
 	return fmt.Errorf("decompose output contained %d stories but none had any tasks", len(stories))
+}
+
+// normalizeReadOnlyTasks keeps the read_only flag a decomposed task carries
+// only when it is consistent: a task that also lists files it will change
+// is not read-only, so the flag is cleared and the task takes the tree
+// lock as before. It reports how many flags it cleared.
+func normalizeReadOnlyTasks(stories []Story) int {
+	cleared := 0
+	for si := range stories {
+		for ti := range stories[si].Tasks {
+			t := &stories[si].Tasks[ti]
+			if t.ReadOnly && len(t.FilesPlanned) > 0 {
+				t.ReadOnly = false
+				cleared++
+			}
+		}
+	}
+	return cleared
 }
 
 // ParsePlanning cleans common LLM JSON pathologies (fences,

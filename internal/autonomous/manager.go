@@ -2346,6 +2346,9 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 		m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
 		return decomposeAttemptTerminal, zerr
 	}
+	// A read_only task that also declares files to change is contradictory:
+	// clear the flag so the task keeps the tree lock.
+	normalizeReadOnlyTasks(s)
 	// B124 — kick back a tooled plan that skipped verification scripts
 	// entirely despite planning real file changes. Content, not scope:
 	// the plan is fixable by adding scripts, so it retries from the
@@ -3201,8 +3204,20 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // be corrected and retried without widening PRD dirs or recreating the PRD.
 // Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
-	if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
-		return nil, err
+	return m.EditTask(prdID, taskID, newSpec, nil, actor)
+}
+
+// EditTask is EditTaskSpec plus the read_only flag: newSpec == "" leaves the
+// spec unchanged and readOnly == nil leaves the flag unchanged. The same PRD
+// and task status gates apply to both fields.
+func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (*PRD, error) {
+	if newSpec == "" && readOnly == nil {
+		return nil, fmt.Errorf("nothing to edit: pass a new spec and/or read_only")
+	}
+	if newSpec != "" {
+		if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
+			return nil, err
+		}
 	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -3228,7 +3243,12 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 				if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
 					return nil, fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
 				}
-				prd.Story[si].Tasks[ti].Spec = newSpec
+				if newSpec != "" {
+					prd.Story[si].Tasks[ti].Spec = newSpec
+				}
+				if readOnly != nil {
+					prd.Story[si].Tasks[ti].ReadOnly = *readOnly
+				}
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 				found = true
 				break
@@ -3244,7 +3264,7 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "edit_task", Actor: actor,
-		Note: fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec)),
+		Note: editTaskNote(taskID, newSpec, readOnly),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -3770,8 +3790,22 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 	return updated, nil
 }
 
+// editTaskNote renders the decision note for a task edit.
+func editTaskNote(taskID, newSpec string, readOnly *bool) string {
+	note := fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec))
+	if readOnly != nil {
+		note += fmt.Sprintf(" read_only=%t", *readOnly)
+	}
+	return note
+}
+
 // AddTask appends a new task to an existing story.
 func (m *Manager) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (*PRD, error) {
+	return m.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, false)
+}
+
+// AddTaskReadOnly is AddTask with the read_only flag set on the new task.
+func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3787,9 +3821,21 @@ func (m *Manager) AddTask(prdID, storyID, title, spec, actor string, dependsOn [
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
+	if readOnly {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == task.ID {
+					prd.Story[si].Tasks[ti].ReadOnly = true
+				}
+			}
+		}
+	}
 	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
 	if len(dependsOn) > 0 {
 		note += fmt.Sprintf(" depends_on=%v", dependsOn)
+	}
+	if readOnly {
+		note += " read_only=true"
 	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "add_task", Actor: actor,

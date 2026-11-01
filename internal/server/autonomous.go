@@ -1163,16 +1163,17 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			TaskID  string `json:"task_id"`
-			NewSpec string `json:"new_spec"`
-			Actor   string `json:"actor"`
+			TaskID   string `json:"task_id"`
+			NewSpec  string `json:"new_spec"`
+			ReadOnly *bool  `json:"read_only,omitempty"`
+			Actor    string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TaskID == "" || req.NewSpec == "" {
-			http.Error(w, "task_id and new_spec required", http.StatusBadRequest)
+		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil) {
+			http.Error(w, "task_id and at least one of new_spec / read_only required", http.StatusBadRequest)
 			return
 		}
 		if autonomous.HasTruncationMarker(req.NewSpec) {
@@ -1182,7 +1183,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.EditTaskSpec(id, req.TaskID, req.NewSpec, req.Actor)
+		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1307,6 +1308,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			Spec      string   `json:"spec"`
 			Actor     string   `json:"actor"`
 			DependsOn []string `json:"depends_on,omitempty"`
+			ReadOnly  bool     `json:"read_only,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -1319,7 +1321,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.AddTask(id, req.StoryID, req.Title, req.Spec, req.Actor, req.DependsOn)
+		updated, err := s.autonomousMgr.AddTaskReadOnly(id, req.StoryID, req.Title, req.Spec, req.Actor, req.DependsOn, req.ReadOnly)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
