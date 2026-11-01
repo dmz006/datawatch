@@ -73,6 +73,7 @@ func automatonStatusServer(t *testing.T, api AutonomousAPI, sess *session.Sessio
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)

@@ -24,6 +24,7 @@ func selfScopeServer(t *testing.T) *Server {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	t.Cleanup(mgr.WaitBackground)
 	mgr.WithFakeTmux()
 	return &Server{hostname: "h1", manager: mgr}

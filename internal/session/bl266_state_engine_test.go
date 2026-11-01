@@ -296,6 +296,7 @@ func newTestManager(t *testing.T) *Manager {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	return &Manager{store: store, hostname: "testhost"}
 }
 

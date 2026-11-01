@@ -143,6 +143,7 @@ func TestSessionTailEmitsStatusLineForPiOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		trackSessionStore(t, st)
 		return st
 	}
 
@@ -223,6 +224,7 @@ func TestSessionTailFollowRejectsNonPi(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	trackSessionStore(t, st)
 	tmpDir := t.TempDir()
 	savedLog := filepath.Join(tmpDir, "output.log")
 	if err := os.WriteFile(savedLog, []byte("line one\n"), 0o600); err != nil {

@@ -21,6 +21,7 @@ func newSessionTestManager(t *testing.T) *session.Manager {
 		t.Fatal(err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	return mgr
 }
 

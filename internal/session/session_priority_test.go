@@ -31,6 +31,7 @@ func TestSessionPriorityPersistsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	now := time.Now()
 	if err := store.Save(&Session{ID: "p001", FullID: "h-p001", State: StateRunning, Priority: 7, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
@@ -39,6 +40,7 @@ func TestSessionPriorityPersistsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = reloaded.Close() })
 	got, ok := reloaded.Get("h-p001")
 	if !ok {
 		t.Fatal("session not reloaded")

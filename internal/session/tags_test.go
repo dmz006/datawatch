@@ -65,6 +65,7 @@ func TestSessionTagsPersistAcrossStoreReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if err := st.Save(&Session{ID: "ab12", FullID: "host-ab12", State: StateRunning,
 		Tags: []string{"tag-a", "tag-b"}, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -77,6 +78,7 @@ func TestSessionTagsPersistAcrossStoreReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reopen NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = reopened.Close() })
 	defer func() { _ = reopened.Close() }()
 	got, ok := reopened.Get("host-ab12")
 	if !ok {
@@ -93,6 +95,7 @@ func TestSessionTagsInheritedTagsNeverStored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if err := st.Save(&Session{ID: "cd34", FullID: "host-cd34", State: StateRunning,
 		PRDID: "prd-1", CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
 		t.Fatalf("Save: %v", err)

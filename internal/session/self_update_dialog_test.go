@@ -248,6 +248,7 @@ func TestTaskDelivery_ClaimedOnceAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.WithFakeTmux()
 	sess := newSelfUpdateSession(t, mgr, StateWaitingInput)
@@ -272,6 +273,7 @@ func TestTaskDelivery_ClaimedOnceAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr2.Close() })
 	allowTestTemp(mgr2)
 	if _, err := os.Stat(filepath.Join(dir, recordsDirName, recordsLayoutFile)); err != nil {
 		t.Fatalf("store not persisted: %v", err)

@@ -21,8 +21,9 @@ import (
 const signalChildRole = "signal-parent"
 
 // runSignalParentRole is the child role: send SIGTERM to the exact PID
-// given by the parent — nothing else, ever — then stay alive a moment so
-// the parent's Capture can still find us in the process table.
+// given by the parent — nothing else, ever — then stay alive until the
+// parent closes our stdin (EOF) or the 120 second safety cap runs out,
+// so the parent's Capture can still find us in the process table.
 func runSignalParentRole() int {
 	raw := os.Getenv("DW_SHUTDOWNCAUSE_PARENT_PID")
 	pid, err := strconv.Atoi(raw)
@@ -34,8 +35,24 @@ func runSignalParentRole() int {
 		fmt.Fprintf(os.Stderr, "signal-parent role: kill %d: %v\n", pid, err)
 		return 3
 	}
-	time.Sleep(3 * time.Second)
+	// Stay alive only as long as the parent holds our stdin pipe open:
+	// io.Copy returns on EOF, which happens when the parent closes the
+	// pipe in its cleanup — or when it dies, so we can never outlive a
+	// hung run as an orphan. The 120 second safety cap bounds us even if
+	// the parent neither closes the pipe nor dies in time.
+	time.AfterFunc(120*time.Second, func() { os.Exit(0) }) // safety cap
+	_, _ = io.Copy(io.Discard, os.Stdin)                   // blocks until EOF from the parent
 	return 0
+}
+
+// formatCandidates renders the procscan candidates for failure messages in
+// a stable, readable 'pid=N cmdline="..."' form.
+func formatCandidates(cands []Candidate) string {
+	parts := make([]string, 0, len(cands))
+	for _, c := range cands {
+		parts = append(parts, fmt.Sprintf("pid=%d cmdline=%q", c.PID, c.Cmdline))
+	}
+	return strings.Join(parts, " ")
 }
 
 // TestSignalChildProcScan is a regression test for the signal-capture
@@ -59,6 +76,9 @@ func TestSignalChildProcScan(t *testing.T) {
 	}
 	myPID := os.Getpid()
 
+	// The child's /proc cmdline after start: binary, then "kill <our pid>".
+	childCmdline := bin + " kill " + strconv.Itoa(myPID)
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	t.Cleanup(func() { signal.Reset(syscall.SIGTERM) })
@@ -75,10 +95,19 @@ func TestSignalChildProcScan(t *testing.T) {
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
+	// Hold a stdin pipe to the child open for as long as we need it: the
+	// child blocks on it (with its own safety cap), so it cannot exit
+	// between sending SIGTERM and our procscan attribution check. The
+	// cleanup below closes it first, which gives the child EOF.
+	childStdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatalf("stdin pipe for child: %v", err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("re-execute test binary: %v", err)
 	}
 	defer func() {
+		_ = childStdin.Close() // EOF: releases the child promptly
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 	}()
@@ -86,8 +115,8 @@ func TestSignalChildProcScan(t *testing.T) {
 	var sig os.Signal
 	select {
 	case sig = <-sigCh:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for SIGTERM from the child")
+	case <-time.After(30 * time.Second):
+		t.Fatalf("waited 30s for SIGTERM from child pid %d, cmdline %q", cmd.Process.Pid, childCmdline)
 	}
 
 	c := Capture(sig)
@@ -120,17 +149,21 @@ func TestSignalChildProcScan(t *testing.T) {
 			}
 		}
 		if childc == nil {
-			t.Fatalf("child pid %d not among procscan candidates: %+v", cmd.Process.Pid, cands)
+			t.Fatalf("child pid %d not among procscan candidates: %s (cause: %s source=%q sender_pid=%d cmdline=%q)",
+				cmd.Process.Pid, formatCandidates(cands), c.String(), c.Source, c.SenderPID, c.Cmdline)
 		}
 		if !strings.Contains(childc.Cmdline, base) {
-			t.Fatalf("candidate cmdline %q does not contain test binary %s", childc.Cmdline, base)
+			t.Fatalf("candidate cmdline %q does not contain test binary %s (cause: %s source=%q sender_pid=%d; candidates: %s)",
+				childc.Cmdline, base, c.String(), c.Source, c.SenderPID, formatCandidates(cands))
 		}
 		// The captured cause must not point at some other process.
 		if c.SenderPID != 0 && c.SenderPID != cmd.Process.Pid {
-			t.Fatalf("SenderPID = %d, want child pid %d (procscan path); candidates: %+v", c.SenderPID, cmd.Process.Pid, cands)
+			t.Fatalf("SenderPID = %d, want child pid %d (procscan path); cause: %s source=%q sender_pid=%d cmdline=%q; candidates: %s",
+				c.SenderPID, cmd.Process.Pid, c.String(), c.Source, c.SenderPID, c.Cmdline, formatCandidates(cands))
 		}
 		if c.Cmdline != "" && !strings.Contains(c.Cmdline, base) {
-			t.Fatalf("Captured Cmdline %q does not contain test binary %s", c.Cmdline, base)
+			t.Fatalf("Captured Cmdline %q does not contain test binary %s (cause: %s source=%q sender_pid=%d; candidates: %s)",
+				c.Cmdline, base, c.String(), c.Source, c.SenderPID, formatCandidates(cands))
 		}
 	}
 }

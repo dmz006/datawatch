@@ -21,8 +21,10 @@ func archStore(t *testing.T, key []byte) (*Store, string) {
 	var s *Store
 	var err error
 	if key != nil {
+		_ = s.Close()
 		s, err = NewStoreEncrypted(path, key, WithFlushInterval(0))
 	} else {
+		_ = s.Close()
 		s, err = NewStore(path, WithFlushInterval(0))
 	}
 	if err != nil {
@@ -84,6 +86,7 @@ func TestStoreArchiveMovesOldTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	defer func() { _ = s2.Close() }()
 	if len(s2.List()) != 1 {
 		t.Fatalf("reopened active set has %d sessions, want 1", len(s2.List()))
@@ -178,6 +181,7 @@ func TestStoreRestoreFromArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	defer func() { _ = s2.Close() }()
 	if _, ok := s2.Get("h-cc01"); !ok {
 		t.Fatal("restored session lost on reopen")
@@ -218,6 +222,7 @@ func TestStoreArchiveEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s3.Close() })
 	defer func() { _ = s3.Close() }()
 	_ = os.Rename(filepath.Join(dir, archiveFileName), filepath.Join(dir, "x", archiveFileName))
 	if _, ok := s3.GetArchived("h-dd01"); ok {
@@ -236,6 +241,7 @@ func TestStoreArchiveTornLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	defer func() { _ = s2.Close() }()
 	_ = s2.Save(archSess("ee02", StateFailed, 30*day))
 	if n, err := s2.ArchiveOnce(time.Now()); err != nil || n != 1 {
@@ -292,6 +298,7 @@ func TestStoreFieldCapTruncatesWithMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s2.Close() })
 	defer func() { _ = s2.Close() }()
 	s2.SetFieldCap(1024)
 	got, _ := s2.Get("h-ff01")

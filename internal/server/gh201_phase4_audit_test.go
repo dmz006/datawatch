@@ -32,6 +32,7 @@ func gh201Phase4Server(t *testing.T) (*Server, *audit.Log) {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	// In-memory tmux fake: handleStartSession then never touches a real
 	// multiplexer server, so no tmux panes can leak on this host.
 	sm.WithFakeTmux()

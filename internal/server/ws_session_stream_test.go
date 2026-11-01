@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,16 +36,41 @@ func newSessionStreamServer(t *testing.T, listDefault string) (*Server, *httptes
 	go s.hub.Run()
 	srv := httptest.NewServer(http.HandlerFunc(s.handleWS))
 	t.Cleanup(srv.Close)
+	// Remember the hub so dialSessionStream can wait for the client to
+	// actually be registered (Hub.register is unbuffered, so ClientCount
+	// can still be 0 right after a dial). Delete on cleanup so a later
+	// test with the same *httptest.Server value never sees a stale hub.
+	wsTestHubRegistry.Store(srv, s.hub)
+	t.Cleanup(func() { wsTestHubRegistry.Delete(srv) })
 	return s, srv
 }
 
+// wsTestHubRegistry maps a test httptest server to its hub so
+// dialSessionStream can wait for hub registration after the dial.
+var wsTestHubRegistry sync.Map
+
 func dialSessionStream(t *testing.T, srv *httptest.Server) *websocket.Conn {
 	t.Helper()
+	var hub *Hub
+	if v, ok := wsTestHubRegistry.Load(srv); ok {
+		hub = v.(*Hub)
+	}
+	var before int
+	if hub != nil {
+		before = hub.ClientCount()
+	}
 	conn, _, err := websocket.DefaultDialer.Dial("ws://"+mustHost(t, srv.URL)+"/ws", nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
+	if hub != nil {
+		// The server writes the connect frame as soon as the client is
+		// registered, but registration happens server-side after the
+		// handshake; the broadcast helpers early-return while
+		// ClientCount()==0, so wait until the hub actually holds it.
+		waitForHubClients(t, hub, before+1)
+	}
 	return conn
 }
 
@@ -53,7 +79,7 @@ func readWSFrame(t *testing.T, conn *websocket.Conn) WSMessage {
 	_ = conn.SetReadDeadline(time.Now().Add(wsTestFrameTimeout))
 	_, b, err := conn.ReadMessage()
 	if err != nil {
-		t.Fatalf("read: %v", err)
+		t.Fatalf("read frame (waited up to %s): %v", wsTestFrameTimeout, err)
 	}
 	var m WSMessage
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -392,7 +418,10 @@ func TestWSSessionStream_ConfigDefaultReadLive(t *testing.T) {
 	s.wireHubSessionStream()
 	go s.hub.Run()
 	ch := make(chan []byte, 16)
-	s.hub.register <- &client{hub: s.hub, send: ch, subscribed: map[string]bool{}}
+	// BroadcastSessions reads h.hasClient(...) on the caller's
+	// goroutine (broadcastSessionList / sendSessionState), so the client
+	// must actually be held by the hub before the first broadcast.
+	registerTestClient(t, s.hub, &client{hub: s.hub, send: ch, subscribed: map[string]bool{}})
 
 	next := func() MessageType {
 		select {
@@ -423,8 +452,8 @@ func TestWSSessionStream_SlowClientDropped(t *testing.T) {
 	// A full-mode client with the same tiny buffer is never offered the
 	// delta frames, so it must not be dropped by them.
 	slowFull := &client{hub: h, send: make(chan []byte, 1), subscribed: map[string]bool{}}
-	h.register <- slowDelta
-	h.register <- slowFull
+	registerTestClient(t, h, slowDelta)
+	registerTestClient(t, h, slowFull)
 
 	h.BroadcastSessions(nil) // seeds nothing, no frames for delta
 	<-slowFull.send          // the (empty) sessions frame

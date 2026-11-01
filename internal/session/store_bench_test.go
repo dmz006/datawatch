@@ -161,6 +161,7 @@ func storeBenchSessionCount() int {
 
 func TestStoreBenchSeed(t *testing.T) {
 	st, big := seedBenchStore(t, t.TempDir(), 50)
+	t.Cleanup(func() { _ = st.Close() })
 	if got := len(st.List()); got != 50 {
 		t.Fatalf("sessions = %d, want 50", got)
 	}
@@ -181,6 +182,7 @@ func TestStoreBenchSeed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got := len(re.List()); got != 50 {
 		t.Fatalf("reloaded sessions = %d, want 50", got)
 	}
@@ -208,6 +210,7 @@ func TestStoreWriteBudget(t *testing.T) {
 		n = storeBenchSmallSessions
 	}
 	st, _ := seedBenchStore(t, t.TempDir(), n)
+	t.Cleanup(func() { _ = st.Close() })
 	one, err := json.Marshal(st.sessions["bench-0001"])
 	if err != nil {
 		t.Fatal(err)

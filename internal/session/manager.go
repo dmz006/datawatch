@@ -5702,6 +5702,16 @@ func (m *Manager) Close() error {
 	return m.store.Close()
 }
 
+// Store returns the manager's underlying session store. Tests use it with
+// the leak guard (Path, WriterRunning, IsClosed); the manager remains the
+// ownership boundary for everything non-read-only.
+func (m *Manager) Store() *Store {
+	if m == nil {
+		return nil
+	}
+	return m.store
+}
+
 // KillAll ends every live session on this host with the stop-all reason.
 func (m *Manager) KillAll() error {
 	return m.EndAllSessions(EndReason{Caller: callerAt(0), Reason: "stop all sessions requested"})

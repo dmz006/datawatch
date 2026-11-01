@@ -65,6 +65,7 @@ func TestSessionScheduleNameAttachedToSpawnedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = mgr.Close() })
 	allowTestTemp(mgr)
 	mgr.SetConfig(config.DefaultConfig())
 

@@ -23,6 +23,7 @@ func bl91Server(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	mgr.WithFakeTmux()
 	// Registered after t.TempDir, so it runs first: stop every background
 	// writer of the manager before the data dir is removed, or the removal

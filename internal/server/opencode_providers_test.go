@@ -74,6 +74,7 @@ func newProviderTestServer(t *testing.T, st secretsStore) *Server {
 		t.Fatalf("NewManager: %v", err)
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	// In-memory tmux fake: these tests never need a live multiplexer.
 	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)

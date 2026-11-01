@@ -56,6 +56,7 @@ func newRepairErrorServer(t *testing.T, repairErr error) *Server {
 	sm.WithFakeTmux()
 	}
 	allowTestTemp(sm)
+	trackSessionManager(t, sm)
 	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))
 	srv.SetAutonomousAPI(&fakeRepairError{repairErr: repairErr})

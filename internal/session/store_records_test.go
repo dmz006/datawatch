@@ -62,6 +62,7 @@ func TestStoreIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if !st.records {
 		t.Fatal("new store is not in the record layout")
 	}
@@ -134,6 +135,7 @@ func TestStoreIncremental(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got, ok := re.Get("rec-0007"); !ok || got.InputCount != 42 {
 		t.Fatalf("reloaded session = %+v ok=%v", got, ok)
 	}
@@ -146,7 +148,9 @@ func TestStoreIncremental(t *testing.T) {
 	if err := st.Flush(); err != nil {
 		t.Fatal(err)
 	}
+	_ = re.Close()
 	re, _ = NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if got, _ := re.Get("rec-0010"); got == nil || got.InputCount != 9 {
 		t.Fatal("Mutate-only change lost")
 	}
@@ -159,6 +163,7 @@ func TestStoreDirtySetCoalesces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	defer func() { _ = st.Close() }()
 	a, b := recSession(1, "a"), recSession(2, "b")
 	_ = st.Save(a)
@@ -187,6 +192,7 @@ func TestStoreMigrateOldFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if !st.records {
 		t.Fatal("old store was not migrated")
 	}
@@ -211,6 +217,7 @@ func TestStoreMigrateOldFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got := len(re.List()); got != n {
 		t.Fatalf("reopened sessions = %d, want %d", got, n)
 	}
@@ -226,6 +233,7 @@ func TestStoreMigrateOldFormat(t *testing.T) {
 	_ = re.Save(s0)
 	_ = re.Close()
 	again, _ := NewStore(path)
+	t.Cleanup(func() { _ = again.Close() })
 	if got, _ := again.Get("rec-0000"); got == nil || got.Name != "renamed" {
 		t.Fatal("post-migration change lost")
 	}
@@ -243,6 +251,7 @@ func TestStoreMigrateKeepsExistingBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if !st.records || len(st.List()) != 3 {
 		t.Fatalf("records=%v sessions=%d", st.records, len(st.List()))
 	}
@@ -269,10 +278,12 @@ func TestStoreMigrateRecoversCorruptFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	if !st.records || len(st.List()) != 3 {
 		t.Fatalf("records=%v sessions=%d, want 3 (2 recovered + 1 merged)", st.records, len(st.List()))
 	}
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	for _, id := range []string{"host-aaaa", "host-bbbb", "host-cccc"} {
 		if _, ok := re.Get(id); !ok {
 			t.Fatalf("%s lost across migration", id)
@@ -321,6 +332,7 @@ func TestStoreEncryptedRecords(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() { _ = bad.Close() })
 		if got := len(bad.List()); got != 0 {
 			t.Fatalf("store with wrong key read %d sessions", got)
 		}
@@ -330,6 +342,7 @@ func TestStoreEncryptedRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = good.Close() })
 	if got := len(good.List()); got != 41 {
 		t.Fatalf("sessions with key = %d, want 41", got)
 	}
@@ -341,6 +354,7 @@ func TestStoreEncryptedRecords(t *testing.T) {
 func TestStoreOddSessionIDs(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = st.Close() })
 	// Safe single path elements, including ones recordFileName hashes.
 	ids := []string{"host-1", "ho st", ".", strings.Repeat("z", 300)}
 	for _, id := range ids {
@@ -352,6 +366,7 @@ func TestStoreOddSessionIDs(t *testing.T) {
 		t.Fatal("record escaped its directory")
 	}
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	for _, id := range ids {
 		if _, ok := re.Get(id); !ok {
 			t.Fatalf("session %q lost", id)
@@ -364,6 +379,7 @@ func TestCheckedRecordPathRefusesUnsafeIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	for _, id := range []string{"", "a/b", "/abs", "../x", "..", "a..b", "../../etc/passwd", `a\b`, "a\x00b"} {
 		if p, err := st.checkedRecordPath(id); !errors.Is(err, errBadRecordID) {
 			t.Errorf("checkedRecordPath(%q) = %q, %v; want errBadRecordID", id, p, err)
@@ -391,6 +407,7 @@ func TestStoreRefusesUnsafeIDsWithoutTouchingOutside(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	victim := filepath.Join(dir, "victim")
 	if err := os.WriteFile(victim, []byte("keep"), 0644); err != nil {
 		t.Fatal(err)
@@ -417,6 +434,7 @@ func TestStoreRefusesUnsafeIDsWithoutTouchingOutside(t *testing.T) {
 		t.Fatalf("file outside the store was touched: %q, %v", b, err)
 	}
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if _, ok := re.Get("host-ok"); !ok {
 		t.Fatal("safe session lost")
 	}
@@ -428,6 +446,7 @@ func TestStoreRecordsCorruptRecord(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = st.Close() })
 	for i := 0; i < 5; i++ {
 		_ = st.Save(recSession(i, "t"))
 	}
@@ -438,6 +457,7 @@ func TestStoreRecordsCorruptRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got := len(re.List()); got != 4 {
 		t.Fatalf("sessions = %d, want 4", got)
 	}
@@ -445,10 +465,12 @@ func TestStoreRecordsCorruptRecord(t *testing.T) {
 	_ = os.MkdirAll(sub, 0755)
 	_ = os.WriteFile(filepath.Join(sub, "session.json"), []byte(`{"id":"0002","full_id":"rec-0002","state":"running"}`), 0644)
 	re2, _ := NewStore(path)
+	t.Cleanup(func() { _ = re2.Close() })
 	if _, ok := re2.Get("rec-0002"); !ok {
 		t.Fatal("corrupt record not restored from the session directory")
 	}
 	re3, _ := NewStore(path)
+	t.Cleanup(func() { _ = re3.Close() })
 	if got, ok := re3.Get("rec-0002"); !ok || got.State != StateRunning {
 		t.Fatal("restored record was not persisted")
 	}
@@ -468,6 +490,7 @@ func TestStoreRecordsCrashHelper(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	for gen := 1; ; gen++ {
 		st.Mutate(func() {
 			for _, s := range crashState(gen) {
@@ -493,6 +516,7 @@ func TestStoreRecordsCrashSafety(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "sessions.json")
 	seed, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = seed.Close() })
 	seed.Mutate(func() {
 		for _, s := range crashState(0) {
 			seed.sessions[s.FullID] = s
@@ -539,6 +563,7 @@ func TestStoreRecordsCrashSafety(t *testing.T) {
 		if err != nil {
 			t.Fatalf("round %d: reload: %v", round, err)
 		}
+		t.Cleanup(func() { _ = re.Close() })
 		if got := len(re.List()); got != crashSessions {
 			t.Fatalf("round %d: reloaded %d sessions, want %d", round, got, crashSessions)
 		}
@@ -561,6 +586,7 @@ func TestStoreRecordsRace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = st.Close() })
 	const workers = 8
 	const iters = 200
 	var wg sync.WaitGroup
@@ -597,6 +623,7 @@ func TestStoreRecordsRace(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = re.Close() })
 	if got, want := len(re.List()), len(st.List()); got != want {
 		t.Fatalf("reloaded %d sessions, in memory %d", got, want)
 	}
@@ -613,12 +640,15 @@ func TestStoreRecordsRace(t *testing.T) {
 func TestStoreRecordsTwoStoresShareDir(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	a, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = a.Close() })
 	b, _ := NewStore(path, WithFlushInterval(0))
+	t.Cleanup(func() { _ = b.Close() })
 	for i := 0; i < 10; i++ {
 		_ = a.Save(recSession(i, "a"))
 		_ = b.Save(recSession(100+i, "b"))
 	}
 	re, _ := NewStore(path)
+	t.Cleanup(func() { _ = re.Close() })
 	if got := len(re.List()); got != 20 {
 		t.Fatalf("sessions = %d, want 20", got)
 	}

@@ -184,6 +184,7 @@ func progressParityMCP(t *testing.T, srv *httptest.Server) *mcp.Server {
 		t.Fatal(err)
 	}
 	allowTestTemp(mgr)
+	trackSessionManager(t, mgr)
 	mgr.WithFakeTmux()
 	s := mcp.New("testhost", mgr, &config.MCPConfig{Enabled: true}, dir, mcp.Options{Version: "test"})
 	s.SetWebPort(port)

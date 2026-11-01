@@ -254,6 +254,19 @@ func scanCandidates(ownPID int) []candidateProc {
 	return out
 }
 
+// hasPIDToken reports whether any field names the pid as a whole token:
+// exact equality, or the "name=<pid>" form (as in `--pid=123`). Plain
+// substring matching is deliberately avoided so that arguments containing
+// merely the same digits inside a larger number do not match.
+func hasPIDToken(fields []string, pid string) bool {
+	for _, f := range fields {
+		if f == pid || strings.HasSuffix(f, "="+pid) {
+			return true
+		}
+	}
+	return false
+}
+
 func looksLikeStopCommand(cmdline, ownPID string) bool {
 	fields := strings.Fields(cmdline)
 	var verb string
@@ -268,12 +281,12 @@ func looksLikeStopCommand(cmdline, ownPID string) bool {
 	}
 	// Signal senders only count when they name our own pid.
 	if verb == "kill" || verb == "pkill" || verb == "killall" {
-		return strings.Contains(cmdline, ownPID)
+		return hasPIDToken(fields, ownPID)
 	}
 	// systemctl / service / datawatch control verbs must carry a stop
 	// intent, so that "datawatch serve", "systemctl show datawatch" and
 	// the like do not match.
-	if strings.Contains(cmdline, ownPID) {
+	if hasPIDToken(fields, ownPID) {
 		return true
 	}
 	if !strings.Contains(strings.ToLower(cmdline), daemonUnit) {
