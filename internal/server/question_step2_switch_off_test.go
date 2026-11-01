@@ -184,6 +184,26 @@ func TestQuestionStep2SwitchOff_FireNothing(t *testing.T) {
 	}
 }
 
+// waitForCount polls get until it reads want and then moves on (the
+// raise fan-out runs in its own goroutine, so an immediate read after the
+// 201 can miss a leg that has not landed yet — the poll returns the
+// moment the count holds). On timeout it fails the test, naming what it
+// waited for, the wanted value and the last value seen, instead of
+// falling through to the next assertion like waitTrue does.
+func waitForCount(t *testing.T, what string, timeout time.Duration, get func() int, want int) int {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	last := get()
+	for last != want {
+		if time.Now().After(deadline) {
+			t.Fatalf("waited %s for %s = %d; last saw %d", timeout, what, want, last)
+		}
+		time.Sleep(5 * time.Millisecond)
+		last = get()
+	}
+	return last
+}
+
 // TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits: the operator
 // flips the switch on with the daemon's own path (PUT /api/config) — no
 // restart, same Server, same store, same hub — and from that moment
@@ -206,6 +226,10 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	if got := f.notifier.CallCount(); got != 1 {
 		t.Fatalf("router sends after raise = %d, want 1", got)
 	}
+	// The alert leg lands in the same fan-out goroutine right after the
+	// router leg; wait for it before draining frames so the alert's WS
+	// frame has been broadcast too.
+	waitForCount(t, "the alert leg of the first raise", 10*time.Second, func() int { return len(f.ast.List()) }, 1)
 	frames := drainHubFrames(t, f.hub, 500*time.Millisecond)
 	if got := countFrames(frames, MsgQuestionRaised); got != 1 {
 		t.Fatalf("%q WS frames = %d, want 1", MsgQuestionRaised, got)
@@ -258,9 +282,14 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	if got := markerLineCount(t, f.path); got != 2 {
 		t.Fatalf("marker lines = %d, want 2 (one per terminal op)", got)
 	}
+	// The second raise's fan-out (router send, then alert) may still run
+	// in its own goroutine: wait for it before reading, then assert as
+	// before.
+	waitForCount(t, "router sends", 10*time.Second, f.notifier.CallCount, 2)
 	if got := f.notifier.CallCount(); got != 2 {
 		t.Fatalf("router sends = %d, want 2 (one per raise)", got)
 	}
+	waitForCount(t, "alerts", 10*time.Second, func() int { return len(f.ast.List()) }, 2)
 	if got := len(f.ast.List()); got != 2 {
 		t.Fatalf("alerts = %d, want 2 (one per high-priority raise)", got)
 	}
