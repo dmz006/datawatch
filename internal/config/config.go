@@ -2665,6 +2665,12 @@ type AutonomousConfig struct {
 	// many tries, the backoff between them, and what happens when they run
 	// out. An unset key reads its default. See InfraRetryConfig.
 	InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
+	// MergePipeline — where a project's merge pipeline comes from (its own
+	// file, the daemon's record, or the built-in default), what happens when
+	// the file is bad, and how a merge conflict is handled; each key can be
+	// overridden per project. An unset key reads its default. See
+	// MergePipelineConfig.
+	MergePipeline MergePipelineConfig `yaml:"merge_pipeline,omitempty" json:"merge_pipeline,omitempty"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a
