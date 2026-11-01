@@ -37,6 +37,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.54.0 — Finished work reaches the remote before a session ends
+
+### Added
+- **When work finishes, datawatch now pushes it to the remote according to a new setting.** `git.push_on_complete` selects the policy — `never` (no push, with a visible "not pushed" warning), `branch` (the default: push the finished work branch), or `default_branch` (push onto the remote's default branch, only after the final gates have passed at completion) — and `git.push_remote` picks the remote name (default `origin`). The value is read live on every push, so changing it applies to the next push without a restart.
+- **Pushes never force.** Every push datawatch performs is a plain fast-forward-only push, so finished work can never rewrite or destroy history on the remote. If the local work has diverged, that push simply fails and is treated like any failed push.
+- **A failed push keeps the work instead of losing it.** The commit stays in the local checkout, a visible "not pushed" warning is shown with the reason, and an alert is raised so it is not silently dropped.
+- **Each automaton can override the daemon default for itself.** A per-PRD push policy set in the web UI, REST API, MCP or CLI always wins over the daemon's `git.push_on_complete`; the remote name always comes from `git.push_remote`.
+- **Work is no longer lost in teardowns.** One-shot sessions push their validated commits before ending, and when a session or worker container is about to be torn down with committed-but-unpushed work, that work branch is pushed first. Under the `default_branch` policy a teardown that sits on the default branch deliberately does not push — that push waits for the final gates anyway.
+- **Pushed / not-pushed is now visible everywhere.** The per-PRD state shows in the web UI, in `prd-get`, in the REST API, and in the settings screens; a failed push also leaves its warning and reason there.
+- **The new settings and labels are available in all five web UI languages** (English, German, Spanish, French, Japanese).
+
 ## v9.53.1 — Question dialog shows its first line
 
 - **The answer dialog for a question no longer cuts off the top of its first line on a phone.** The question id line under the title was the first child of the dialog's scrolling body and carried a negative top margin, which pushed the first line of text above the scroll point where it could not be reached. The body now has a small top padding and starts scrolled to the top when the dialog opens; the text scrolls and the buttons stay in view as before. This covers every dialog opened through the shared modal, not just the question dialog. Mobile parity: the Android client's question dialog needs the same top-of-text fix, and the datawatch-app parity issue is filed at the merge.
