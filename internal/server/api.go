@@ -6319,9 +6319,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"quality_tracker_id_pattern": s.cfg.Autonomous.Questions.EffectiveQualityTrackerIDPattern(),
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
-			"parallel": map[string]interface{}{
-				"read_only_tasks": autonomous.EffectiveReadOnlyTasks(s.cfg.Autonomous.Parallel),
-			},
+			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -6796,6 +6794,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
+	// Parallel (autonomous.parallel.*): read_only_tasks must be a boolean.
+	if verr := validateParallelPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
 	// Lane fill: every autonomous.lane_fill.* value is checked before
 	// anything is applied, so one bad value rejects the whole PUT.
 	for k, v := range patch {
@@ -6942,7 +6945,6 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		"autonomous.questions.return_path",
 		"autonomous.questions.decision_gate",
 		"autonomous.questions.worker_marker",
-		"autonomous.parallel.read_only_tasks",
 	} {
 		if v, ok := patch[k]; ok {
 			if _, isBool := v.(bool); !isBool {
@@ -8629,12 +8631,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.DecisionGate = &b
 			}
-		case "autonomous.parallel.read_only_tasks":
-			// Validated in handlePutConfig to a strict boolean. Stored as *bool
-			// so an explicit false is distinguishable from an absent key.
-			if b, ok := v.(bool); ok {
-				cfg.Autonomous.Parallel.ReadOnlyTasks = &b
-			}
+		case parallelKeyPrefix + "read_only_tasks":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyParallelValue(&cfg.Autonomous.Parallel,
+				strings.TrimPrefix(k, parallelKeyPrefix), v)
 		case "autonomous.questions.worker_marker":
 			// Validated in handlePutConfig to a strict boolean. Stored as *bool
 			// so an explicit value is distinguishable from an absent key
@@ -12746,5 +12747,43 @@ func (s *Server) handleDiscussionSubs(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
+}
+
+// parallelKeyPrefix is the REST key prefix for the parallel execution
+// knobs (autonomous.parallel.*).
+const parallelKeyPrefix = "autonomous.parallel."
+
+// parallelSurface renders the parallel block on the GET /api/config
+// surface as effective values, read from the Effective* accessor, never a
+// literal.
+func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"read_only_tasks": autonomous.EffectiveReadOnlyTasks(c),
+	}
+}
+
+// validateParallelPatch checks every autonomous.parallel.* value present
+// in the patch before anything is applied, so one bad value rejects the
+// whole PUT rather than being silently skipped.
+func validateParallelPatch(patch map[string]interface{}) error {
+	if v, ok := patch[parallelKeyPrefix+"read_only_tasks"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sread_only_tasks: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	return nil
+}
+
+// applyParallelValue stores one parallel value (validated above in
+// handlePutConfig; a value that fails the check here is left unchanged).
+// read_only_tasks is a pointer so an explicit false is distinguishable
+// from an absent key.
+func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v interface{}) {
+	switch field {
+	case "read_only_tasks":
+		if b, ok := v.(bool); ok {
+			pc.ReadOnlyTasks = &b
+		}
 	}
 }
