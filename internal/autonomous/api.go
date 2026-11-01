@@ -151,6 +151,12 @@ func (a *API) resumeRunningPRDs() {
 		<-ch
 	}
 
+	// The capacity ledger holds every new request until the work that survived
+	// the restart has been adopted. This pass adopts it (the executors' prep
+	// re-takes each live task's lease before runLocked returns), so the hold ends
+	// when the pass does, on every exit path.
+	defer a.M.markCapacityAdoptionComplete()
+
 	// Verifier sessions left from before the restart are reconciled once,
 	// before any task resumes verification, so a resumed flow waits for the
 	// surviving verifier instead of spawning a second one.

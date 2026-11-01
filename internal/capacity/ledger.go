@@ -14,6 +14,10 @@ import (
 	"time"
 )
 
+// defaultAdoptionTimeout is how long BeginAdoption holds new requests back when
+// Options.AdoptionTimeout is not set.
+const defaultAdoptionTimeout = 3 * time.Minute
+
 // ErrWaitTimeout is returned by Acquire when the wait exceeds its timeout.
 var ErrWaitTimeout = errors.New("capacity wait timed out")
 
@@ -199,6 +203,14 @@ type Lease struct {
 	// still counts against every host and llm pool. It clears when a later
 	// Adopt supplies the node.
 	NodeUnknown bool `json:"node_unknown,omitempty"`
+	// NodeOverflow marks an adopted lease whose session runs on Node although that
+	// node was already at its limit when the lease was recorded. The session is
+	// real, so the lease keeps Node and still counts against every host and llm
+	// pool, but it is held outside the node:<name> pool so the pool never reads
+	// over its limit. Admission still counts it as an occupant of the node (see
+	// usedLocked), so new work sees the node as full. It clears, and the lease
+	// joins the node pool, once the pool has room.
+	NodeOverflow bool `json:"node_overflow,omitempty"`
 }
 
 // Waiter is a queued request as reported by Snapshot.
@@ -220,10 +232,14 @@ type Waiter struct {
 
 // PoolStatus is one pool in a snapshot.
 type PoolStatus struct {
-	Name     string   `json:"name"`
-	Limit    int      `json:"limit"` // 0 = unlimited
-	External int      `json:"external"`
-	Held     int      `json:"held"`
+	Name     string `json:"name"`
+	Limit    int    `json:"limit"` // 0 = unlimited
+	External int    `json:"external"`
+	Held     int    `json:"held"`
+	// Overflow counts adopted leases running on this node beyond its limit (see
+	// Lease.NodeOverflow). They are not in Held, so Held+External never exceeds
+	// Limit, but they occupy the node: admission counts Held+External+Overflow.
+	Overflow int      `json:"overflow,omitempty"`
 	Holders  []string `json:"holders"`
 	// HoldNames is the operator-readable form of Holders, in the same order
 	// (nil = unresolved; the renderer then shows the raw ids as before).
@@ -296,6 +312,27 @@ type Options struct {
 	// excluded node is, and the waiting reason names it as unhealthy. Nil means
 	// every node is healthy. Called under the lock: an in-memory read only.
 	NodeHealthy func(name string) bool
+	// StrictNodeLimit, CountPoolByNode and AdoptBeforeAdmit gate the three
+	// node over-admission rules. Each is read at call time, under the ledger
+	// lock, so it must be a fast in-memory read (see the LOCK RULE). Nil means
+	// the rule is on, which is the operator-answer default.
+	//
+	// StrictNodeLimit: Adopt never lets a node pool read over its limit. A
+	// session adopted onto a full node is recorded outside the pool (see
+	// Lease.NodeOverflow) yet still counts as an occupant for new admissions.
+	// Off, Adopt adds the node pool whatever its use.
+	StrictNodeLimit func() bool
+	// CountPoolByNode: an llm:<name> pool counts the sessions on each node at
+	// most up to that node's own limit, so sessions piled on a busy node (a
+	// restart can leave them there) do not use up slots a free node could take.
+	// The pool's operator-set limit is unchanged. Off, every lease counts once.
+	CountPoolByNode func() bool
+	// AdoptBeforeAdmit: after BeginAdoption, requests wait until
+	// MarkAdoptionComplete is called or AdoptionTimeout passes, so work resumed
+	// after a daemon restart is adopted before any new request is placed.
+	AdoptBeforeAdmit func() bool
+	// AdoptionTimeout bounds the wait of AdoptBeforeAdmit. Default 3 minutes.
+	AdoptionTimeout time.Duration
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
 	// PollInterval is how often waiters re-check cancellation and
@@ -327,6 +364,9 @@ type Ledger struct {
 	opt       Options
 	changed   chan struct{} // closed and replaced on every capacity change; see Changed
 
+	adopting   bool      // set by BeginAdoption; requests wait while it is set
+	adoptSince time.Time // when BeginAdoption was called
+
 	wedgeReported atomic.Bool // set while a lock wedge has been reported; see SnapshotWatched
 }
 
@@ -337,6 +377,9 @@ func New(opt Options) *Ledger {
 	}
 	if opt.PollInterval <= 0 {
 		opt.PollInterval = 5 * time.Second
+	}
+	if opt.AdoptionTimeout <= 0 {
+		opt.AdoptionTimeout = defaultAdoptionTimeout
 	}
 	if opt.Clock == nil {
 		opt.Clock = realClock{}
@@ -433,12 +476,132 @@ func (l *Ledger) heldLocked(pool string) int {
 	return n
 }
 
+// optOn reads an Options switch: nil means on.
+func optOn(f func() bool) bool { return f == nil || f() }
+
+// overflowLocked returns the adopted leases that run on node beyond its limit:
+// they name node but are held outside its pool (Lease.NodeOverflow).
+func (l *Ledger) overflowLocked(node string) []string {
+	var hs []string
+	for h, ls := range l.leases {
+		if ls.NodeOverflow && ls.Node == node {
+			hs = append(hs, h)
+		}
+	}
+	sort.Strings(hs)
+	return hs
+}
+
+// heldByNodeLocked counts the leases naming pool the way an llm pool's limit
+// does: the sessions on one node count at most up to that node's limit, so a
+// busy node cannot use up slots a free node could take. A lease on a node with
+// no limit, or on no node, counts once.
+func (l *Ledger) heldByNodeLocked(pool string) int {
+	perNode := map[string]int{}
+	n := 0
+	for _, ls := range l.leases {
+		if !sharesPool(ls.Pools, []string{pool}) {
+			continue
+		}
+		if ls.Node == "" || l.limits["node:"+ls.Node] <= 0 {
+			n++
+			continue
+		}
+		perNode[ls.Node]++
+	}
+	for node, c := range perNode {
+		n += min(c, l.limits["node:"+node])
+	}
+	return n
+}
+
 func (l *Ledger) usedLocked(pool string) int {
-	used := l.heldLocked(pool)
+	var used int
+	switch {
+	case strings.HasPrefix(pool, "node:"):
+		used = l.heldLocked(pool) + len(l.overflowLocked(strings.TrimPrefix(pool, "node:")))
+	case strings.HasPrefix(pool, "llm:") && optOn(l.opt.CountPoolByNode):
+		used = l.heldByNodeLocked(pool)
+	default:
+		used = l.heldLocked(pool)
+	}
 	if l.opt.External != nil {
 		used += l.opt.External(pool)
 	}
 	return used
+}
+
+// promoteOverflowLocked moves an adopted lease that was held outside a full node
+// pool into the pool once the pool has room, so the lease reads as held. It runs
+// before every dispatch.
+func (l *Ledger) promoteOverflowLocked() {
+	var over []*Lease
+	for _, ls := range l.leases {
+		if ls.NodeOverflow {
+			over = append(over, ls)
+		}
+	}
+	if len(over) == 0 {
+		return
+	}
+	sort.Slice(over, func(i, j int) bool { return over[i].Acquired.Before(over[j].Acquired) })
+	for _, ls := range over {
+		pool := "node:" + ls.Node
+		used := l.heldLocked(pool)
+		if l.opt.External != nil {
+			used += l.opt.External(pool)
+		}
+		if lim := l.limits[pool]; lim > 0 && used >= lim {
+			continue // the pool is still full without the overflow leases
+		}
+		ls.Pools = append(ls.Pools, pool)
+		ls.NodeOverflow = false
+	}
+}
+
+// BeginAdoption holds every request back until MarkAdoptionComplete is called
+// or Options.AdoptionTimeout passes. The daemon calls it as the ledger starts,
+// before the work that survived a restart has been adopted, so a new request
+// cannot take the slot a resumed session already occupies. Adopt itself is never
+// held back. It does nothing when Options.AdoptBeforeAdmit is off.
+func (l *Ledger) BeginAdoption() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !optOn(l.opt.AdoptBeforeAdmit) {
+		return
+	}
+	l.adopting, l.adoptSince = true, l.opt.Clock.Now()
+}
+
+// MarkAdoptionComplete ends the hold of BeginAdoption and re-dispatches the
+// requests it held back. Safe to call when no hold is set.
+func (l *Ledger) MarkAdoptionComplete() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if !l.adopting {
+		return
+	}
+	l.adopting = false
+	l.signalChangedLocked()
+	l.dispatchLocked()
+}
+
+// adoptionPendingLocked returns the reason requests are held back for adoption,
+// or "" when none is. A hold that outlived its timeout, or whose option was
+// turned off, is cleared here.
+func (l *Ledger) adoptionPendingLocked() string {
+	if !l.adopting {
+		return ""
+	}
+	if !optOn(l.opt.AdoptBeforeAdmit) {
+		l.adopting = false
+		return ""
+	}
+	if waited := l.opt.Clock.Now().Sub(l.adoptSince); waited >= l.opt.AdoptionTimeout {
+		l.adopting = false
+		return ""
+	}
+	return "waiting for work resumed after the restart to be adopted"
 }
 
 // blockReasonLocked returns "" when every pool has room and is not
@@ -515,6 +678,9 @@ func (l *Ledger) rankedLocked(req Request) []NodeChoice {
 // blocks it. The order and the block check read the same usage figures under
 // one lock hold, so the node chosen is one the check passed.
 func (l *Ledger) resolveLocked(req Request) (Request, string) {
+	if why := l.adoptionPendingLocked(); why != "" {
+		return req, why
+	}
 	if !req.multiNode() {
 		return req, l.blockReasonLocked(req)
 	}
@@ -555,6 +721,9 @@ func (l *Ledger) holdersLocked(pool string) string {
 				break
 			}
 		}
+	}
+	if node, ok := strings.CutPrefix(pool, "node:"); ok {
+		hs = append(hs, l.overflowLocked(node)...)
 	}
 	sort.Strings(hs)
 	if len(hs) == 0 {
@@ -652,6 +821,7 @@ func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
 // Request.Refresh first takes the placement it returns, so the node it queues
 // on and the reason it shows follow the current compute_nodes list.
 func (l *Ledger) dispatchLocked() {
+	l.promoteOverflowLocked()
 	if len(l.waiters) == 0 {
 		return
 	}
@@ -812,8 +982,12 @@ func (l *Ledger) remove(w *waiter) {
 
 // Adopt records a lease for work that is already running and must not wait:
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
-// never queues and ignores pool limits, because the session already occupies
-// its slots. Idempotent: an existing lease for the holder is kept and only
+// never queues, because the session already occupies its slots; the host and
+// llm pools take it whatever their use. A node already at its limit does not
+// take it into the node pool (see Lease.NodeOverflow): the lease still names
+// that node and counts as one of its occupants for new admissions, so Adopt is
+// never the reason a node pool reads over its limit. A session already
+// recorded under another holder key is not recorded twice. Idempotent: an existing lease for the holder is kept and only
 // its session binding is refreshed, and a lease holding no node gains req.Node.
 // Adopt never picks a node: a request with NodeChoices is recorded on req.Node
 // (its node:<name> pool added) or, when Node is empty, on no node. With
@@ -829,18 +1003,7 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if ls, ok := l.leases[req.Holder]; ok {
-		if sessionID != "" {
-			ls.SessionID = sessionID
-		}
-		if ls.Node == "" && req.Node != "" {
-			ls.Node = req.Node
-			ls.NodeUnknown = false
-			if pool := "node:" + req.Node; !sharesPool(ls.Pools, []string{pool}) {
-				ls.Pools = append(ls.Pools, pool)
-			}
-		} else if ls.Node == "" && req.NodeUnknown {
-			ls.NodeUnknown = true
-		}
+		l.refreshAdoptedLocked(ls, req, sessionID)
 		return
 	}
 	for _, s := range successors {
@@ -848,26 +1011,72 @@ func (l *Ledger) Adopt(req Request, sessionID string, successors ...string) {
 			return
 		}
 	}
+	// One session is one slot. A session already recorded under another holder
+	// key (a task key and its relaunch key, or a lease handed to a verifier)
+	// keeps that lease; counting it again would put one session in every pool
+	// twice.
+	if sessionID != "" {
+		for _, ls := range l.leases {
+			if ls.SessionID == sessionID {
+				l.refreshAdoptedLocked(ls, req, sessionID)
+				return
+			}
+		}
+	}
 	if req.multiNode() || req.Node != "" {
-		if req.Node != "" {
-			// The session occupies this node whether or not it is still among
-			// the current choices, so the lease is recorded on it regardless.
-			req = req.withNode(req.Node)
-		} else {
+		if req.Node == "" {
 			req.NodeChoices, req.ExcludeNodes = nil, nil
 		}
 	}
 	now := time.Now()
-	l.leases[req.Holder] = &Lease{
+	ls := &Lease{
 		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
-		Node: req.Node, Model: req.Model, Acquired: now, SessionID: sessionID,
+		Model: req.Model, Acquired: now, SessionID: sessionID,
 		NodeUnknown: req.NodeUnknown && req.Node == "",
 	}
+	if req.Node != "" {
+		// The session occupies this node whether or not it is still among the
+		// current choices, so the lease is recorded on it regardless.
+		l.placeAdoptedLocked(ls, req.Node)
+	}
+	l.leases[req.Holder] = ls
 	l.lastGrant[req.PRDID] = now
-	l.recordRequestsLocked(req.Pools, l.opt.Clock.Now())
+	l.recordRequestsLocked(ls.Pools, l.opt.Clock.Now())
 	if req.Node != "" && req.Model != "" {
 		l.lastModel[req.Node] = req.Model
 	}
+}
+
+// refreshAdoptedLocked applies a repeated Adopt to the lease already recorded:
+// the session binding is refreshed, and a lease holding no node gains req.Node.
+func (l *Ledger) refreshAdoptedLocked(ls *Lease, req Request, sessionID string) {
+	if sessionID != "" {
+		ls.SessionID = sessionID
+	}
+	if ls.Node == "" && req.Node != "" {
+		ls.NodeUnknown = false
+		l.placeAdoptedLocked(ls, req.Node)
+	} else if ls.Node == "" && req.NodeUnknown {
+		ls.NodeUnknown = true
+	}
+}
+
+// placeAdoptedLocked records that the adopted lease ls runs on node. It joins
+// the node's pool when the pool has room, or when StrictNodeLimit is off. A
+// node already at its limit keeps the lease out of the pool and flags it
+// NodeOverflow (see Lease.NodeOverflow): the session is on the node, but Adopt
+// is not the reason the pool reads over its limit.
+func (l *Ledger) placeAdoptedLocked(ls *Lease, node string) {
+	ls.Node = node
+	pool := "node:" + node
+	if sharesPool(ls.Pools, []string{pool}) {
+		return
+	}
+	if lim := l.limits[pool]; lim > 0 && optOn(l.opt.StrictNodeLimit) && l.usedLocked(pool) >= lim {
+		ls.NodeOverflow = true
+		return
+	}
+	ls.Pools = append(ls.Pools, pool)
 }
 
 // Bind records the session backing a lease.
@@ -999,6 +1208,9 @@ func (l *Ledger) Snapshot() Status {
 	}
 	for p := range names {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
+		if node, ok := strings.CutPrefix(p, "node:"); ok {
+			ps.Overflow = len(l.overflowLocked(node))
+		}
 		if l.opt.External != nil {
 			ps.External = l.opt.External(p)
 		}
@@ -1041,6 +1253,9 @@ func FormatPools(pools []PoolStatus) string {
 		fmt.Fprintf(&b, "%s: %d/%s", p.Name, p.Held+p.External, lim)
 		if p.External > 0 {
 			fmt.Fprintf(&b, " (%d external)", p.External)
+		}
+		if p.Overflow > 0 {
+			fmt.Fprintf(&b, " (+%d adopted over the limit)", p.Overflow)
 		}
 		if len(p.Holders) > 0 {
 			holders := p.Holders

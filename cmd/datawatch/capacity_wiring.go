@@ -852,7 +852,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
 	// Load the budget file now so Blocked never reads it under the ledger lock.
 	autonomousBudget.Preload()
-	nodeHealth := newNodeHealthView()
+	// The daemon's view starts strict: before the first sync reads the compute
+	// registry no node is healthy, so nothing is placed on a node not yet loaded.
+	nodeHealth := newStrictNodeHealthView()
 	led := capacity.New(capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
@@ -863,6 +865,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		),
 		HeldBackpressure: sharedNodeBackpressure(),
 	})
+
+	// Restart ordering: hold every request until the work that survived the
+	// restart has been adopted (autonomous.API.resumeRunningPRDs ends the hold),
+	// so a new request cannot take a slot a resumed session already occupies.
+	// A hold nobody ends clears itself after Options.AdoptionTimeout.
+	led.BeginAdoption()
 
 	// Usage deltas feed both the dollar budget and the token rate ceilings.
 	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led))
@@ -952,7 +960,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// judgeAdmitters). Its one-shot session name binds to the lease the
 	// same way the verifier's does.
 	judges := newVerifierRegistry()
-	_, _, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration())
+	_, _, judgeStartedFn := judgeAdmitters(led, judges, keys, amgr.CapacityWaitDuration(), choices)
 	wireJudgeAdmission(amgr, judges)
 	judgeSessionStarted = judgeStartedFn
 	// Adopt, never double-spawn: on a daemon restart a guardrail-judge
@@ -1076,6 +1084,10 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if engines < 1 {
 			engines = 1
 		}
+		if httpServer.ComputeRegistry() == nil {
+			// No registry means no node: end the strict view's wait for a first read.
+			nodeHealth.refresh(nil)
+		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			nodes := reg.List()
 			nodeHealth.refresh(nodes)
@@ -1085,9 +1097,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					hosting[node] = true
 				}
 			}
+			// A node's held count includes the adopted sessions running on it beyond
+			// its limit (Overflow): they occupy the node, so the recomputed limit
+			// counts them and new work sees the node as full.
 			held := map[string]int{}
 			for _, p := range led.Snapshot().Pools {
-				held[p.Name] = p.Held
+				held[p.Name] = p.Held + p.Overflow
 			}
 			needsObserver := func(n *compute.Node) bool {
 				return cfg.Autonomous.CapacityGPUUtilPct > 0 || (hosting[n.Name] && n.SessionSlots == 0)

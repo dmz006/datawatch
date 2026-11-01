@@ -609,6 +609,17 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	}, t.SessionID, VerifyHolder(t.ID))
 }
 
+// markCapacityAdoptionComplete ends the ledger's hold on new requests (see
+// capacity.Ledger.BeginAdoption). Safe when no ledger is wired or no hold is set.
+func (m *Manager) markCapacityAdoptionComplete() {
+	m.mu.Lock()
+	led := m.capacity
+	m.mu.Unlock()
+	if led != nil {
+		led.MarkAdoptionComplete()
+	}
+}
+
 // nodeExpected reports whether an adopted worker should sit on a compute node:
 // it is a local-engine session of an LLM entry that lists two or more nodes.
 // Without an entry count it falls back to the live candidate list. A backend

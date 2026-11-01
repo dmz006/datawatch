@@ -52,16 +52,36 @@ func judgeAdmitRequest(unitID, prdID string, pools []string, node, model string,
 // judgeAdmitRefreshed is judgeAdmitRequest with Refresh set: each ledger
 // dispatch pass re-resolves the pools and node through keysFn, so a node learned
 // while the judge waits joins its placement.
-func judgeAdmitRefreshed(keysFn func(backend, model string) ([]string, string), backend, unitID, prdID string, pools []string, node, model string) capacity.Request {
+//
+// choicesFn gives the candidate compute nodes of an entry that pools two or more.
+// The request carries them, so the ledger places the judge on the least loaded
+// node that has room or makes it wait; without them a judge of such an entry
+// would carry no node pool and be admitted whatever its nodes hold. Nil means no
+// candidates.
+func judgeAdmitRefreshed(keysFn func(backend, model string) ([]string, string), choicesFn func(backend, model string) []capacity.NodeChoice, backend, unitID, prdID string, pools []string, node, model string) capacity.Request {
 	req := judgeAdmitRequest(unitID, prdID, pools, node, model, 0)
+	req.NodeChoices = judgeChoices(choicesFn, backend, model)
 	req.Refresh = func() capacity.Request {
 		cur := req
 		if p, n := keysFn(backend, model); len(p) > 0 {
 			cur.Pools, cur.Node = p, n
 		}
+		cur.NodeChoices = judgeChoices(choicesFn, backend, model)
 		return cur
 	}
 	return req
+}
+
+// judgeChoices returns the candidate nodes of backend and model when there are
+// two or more, else nil, which is how a request carries them.
+func judgeChoices(choicesFn func(backend, model string) []capacity.NodeChoice, backend, model string) []capacity.NodeChoice {
+	if choicesFn == nil {
+		return nil
+	}
+	if c := choicesFn(backend, model); len(c) >= 2 {
+		return c
+	}
+	return nil
 }
 
 // judgeAdmitFailureVerdict turns an admission failure (wait expired or
@@ -190,11 +210,19 @@ func judgeUnitFromSessionName(name string) (string, bool) {
 // tests drive them directly. The release function is idempotent: it clears
 // the registry entry and calls led.Release, which is itself safe on
 // absence.
-func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(backend, model string) ([]string, string), waitDur time.Duration) (
+//
+// The optional choices function gives an entry's candidate compute nodes; with
+// it a judge of an entry that pools two or more nodes is placed through the
+// ledger's node choice instead of being admitted with no node pool.
+func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(backend, model string) ([]string, string), waitDur time.Duration, choices ...func(backend, model string) []capacity.NodeChoice) (
 	admit func(ctx context.Context, backend, model, unitID, prdID string) (release func(), err error),
 	try func(ctx context.Context, backend, model, unitID, prdID string) (release func(), ok bool),
 	started func(sessionName, sessionID string),
 ) {
+	var choicesFn func(backend, model string) []capacity.NodeChoice
+	if len(choices) > 0 {
+		choicesFn = choices[0]
+	}
 	admit = func(ctx context.Context, backend, model, unitID, prdID string) (func(), error) {
 		holder := autonomouspkg.JudgeHolder(unitID)
 		pools, node := keysFn(backend, model)
@@ -204,7 +232,7 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 		}
 		// The ledger grants all-or-nothing across the pool list, so the
 		// backend pool and the node pool are held atomically.
-		if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, backend, unitID, prdID, pools, node, model), waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, choicesFn, backend, unitID, prdID, pools, node, model), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		end := reg.begin(holder)
@@ -216,7 +244,7 @@ func judgeAdmitters(led *capacity.Ledger, reg *verifierRegistry, keysFn func(bac
 			// A short, real Acquire (not a snapshot check): the fast path
 			// grants immediately when there is room, and a busy candidate
 			// is given only the probe window before the caller moves on.
-			if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, backend, unitID, prdID, pools, node, model), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+			if err := led.Acquire(ctx, judgeAdmitRefreshed(keysFn, choicesFn, backend, unitID, prdID, pools, node, model), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 				return func() {}, false
 			}
 			end := reg.begin(holder)

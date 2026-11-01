@@ -17,6 +17,48 @@ func TestNodeHealthViewHealthyBeforeFirstRefresh(t *testing.T) {
 	}
 }
 
+// A strict view, the one the daemon runs, reports every node unhealthy until the
+// registry has been read, so a restart cannot admit work on a node not yet
+// loaded. The first refresh, even of an empty registry, ends that.
+func TestStrictNodeHealthViewUnhealthyUntilFirstRefresh(t *testing.T) {
+	v := newStrictNodeHealthView()
+	if v.healthy("a") {
+		t.Fatal("a strict view must not call a node healthy before the registry has been read")
+	}
+	v.refresh([]*compute.Node{{Name: "a"}})
+	if !v.healthy("a") {
+		t.Error("healthy(a) = false after the registry listed it")
+	}
+	if v.healthy("b") {
+		t.Error("healthy(b) = true for a node the registry does not hold")
+	}
+	empty := newStrictNodeHealthView()
+	empty.refresh(nil)
+	if empty.healthy("a") {
+		t.Error("an empty registry holds no healthy node")
+	}
+}
+
+// Before the first refresh a strict view keeps a multi-node request waiting, and
+// it is placed as soon as the node list is loaded.
+func TestStrictNodeHealthViewHoldsPlacementUntilLoaded(t *testing.T) {
+	v := newStrictNodeHealthView()
+	led := capacity.New(capacity.Options{NodeHealthy: v.healthy})
+	led.SetLimit("node:a", 1)
+	led.SetLimit("node:b", 1)
+	req := capacity.Request{
+		Holder: "t1", PRDID: "p", Pools: []string{"host"},
+		NodeChoices: []capacity.NodeChoice{{Name: "a", Priority: 1}, {Name: "b", Priority: 2}},
+	}
+	if d := led.Check(req); d.Kind == capacity.DecisionAdmit {
+		t.Fatalf("Check admitted before the node list was loaded: %+v", d)
+	}
+	v.refresh([]*compute.Node{{Name: "a"}, {Name: "b"}})
+	if d := led.Check(req); d.Kind != capacity.DecisionAdmit || d.Node != "b" {
+		t.Fatalf("Check = %+v, want admit on b once the nodes are loaded", d)
+	}
+}
+
 func TestNodeHealthViewRegistryAndMaintenance(t *testing.T) {
 	now := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
 	v := newNodeHealthView()
