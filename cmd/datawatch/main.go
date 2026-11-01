@@ -7012,6 +7012,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
 			autoCoord.SetLaneFillEvidenceSource(newLaneFillEvidenceSource(amgr, httpServer, computeReg, cfg.Ollama.Host))
 			autoCoord.SetLaneFillProposalReader(newLaneFillProposalReader(amgr))
+			autoCoord.SetLaneFillMainProbe(newLaneFillMainProbe(amgr))
+			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

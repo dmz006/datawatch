@@ -138,6 +138,11 @@ type laneFillState struct {
 	evidence PoolEvidenceSource
 	probe    MergeProbe
 	proposal LaneFillProposalReader
+	// mainProbe, mainCache and worktreeFS belong to the main-carries and
+	// worktree rules (lane_fill_main_worktree.go).
+	mainProbe  LaneFillMainProbe
+	mainCache  map[string]laneFillMainCached
+	worktreeFS SupervisorWatchWorktreeFS
 	// proposalWarned remembers which unreadable proposal paths were logged.
 	proposalWarned map[string]bool
 	status         LaneFillStatus
@@ -373,6 +378,9 @@ type laneFillRaw struct {
 	tasks, tasksDone   int
 	template           bool
 	typ                string
+	// branch and worktreeDir are the recorded Automaton branch and, for an
+	// Automaton that runs in its own worktree, that worktree directory.
+	branch, worktreeDir string
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -405,7 +413,10 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				id: p.ID, title: p.Title, spec: p.Spec, status: p.Status,
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
 				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
-				template: p.IsTemplate, typ: p.Type,
+				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
+			}
+			if p.Git.Branch != "" && p.ProjectDir != "" && p.ProjectProfile == "" && p.ClusterProfile == "" {
+				r.worktreeDir = p.ProjectDir
 			}
 			picked := false
 			for si := range p.Story {
@@ -492,6 +503,8 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 
 	var running []LaneOccupant
 	var cands []LaneFillCandidate
+	branches := map[string]string{}
+	worktrees := map[string]string{}
 	inFlight := map[string]LaneType{}
 	for _, r := range raws {
 		if r.template {
@@ -534,8 +547,16 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		if cfg.EffectiveRequireConfirmedProposal() && laneFillQueuedStatus(cand.Status) {
 			cand.ProposalState, cand.ProposalPath = CheckLaneFillProposal(r.typ, r.template, r.spec, proposalRd, c.laneFillProposalWarnOnce)
 		}
+		branches[r.id] = r.branch
+		if r.worktreeDir != "" {
+			worktrees[r.id] = r.worktreeDir
+		}
 		cands = append(cands, cand)
 	}
+	// The git and filesystem facts of the last two rules, gathered here with
+	// no store lock held.
+	c.laneFillProbeMain(ctx, cfg, cands, branches, now)
+	c.laneFillCheckWorktrees(cfg, cands, worktrees, c.m.Config().WorktreeBaseRepo)
 	// Apply the refusal rules once, here, with no store lock held: every later
 	// reader (the planner, the queued count, the alerts) honours the result.
 	for i := range cands {

@@ -29,6 +29,14 @@ const (
 	// LaneFillReasonProposalMissing: an implementation Automaton whose spec
 	// names no proposal file, or none of the named files can be read.
 	LaneFillReasonProposalMissing = "proposal_missing"
+	// LaneFillReasonMainCarriesWork: the base branch already carries what the
+	// Automaton asks for (a merge or task commit for it, or its branch is
+	// entirely on the base branch).
+	LaneFillReasonMainCarriesWork = "main_carries_work"
+	// LaneFillReasonWorktreeInvalid: the Automaton has a recorded worktree
+	// that is gone, has no .git entry, or is not in the registered worktree
+	// list of its repository.
+	LaneFillReasonWorktreeInvalid = "worktree_invalid"
 )
 
 // LaneFillRefusal is why lane fill will not take a queued Automaton: a stable
@@ -227,7 +235,11 @@ func laneFillExcludedText(id string, r LaneFillRefusal) string {
 //     update is older than the stale limit;
 //  3. proposal_not_confirmed / proposal_missing: an implementation Automaton
 //     whose proposal file does not carry a Confirmed: yes line, or which has
-//     no readable proposal file (only when require_confirmed_proposal is on).
+//     no readable proposal file (only when require_confirmed_proposal is on);
+//  4. main_carries_work: the base branch already carries the work (only when
+//     check_main_carries is on);
+//  5. worktree_invalid: a recorded worktree that is missing, has no .git
+//     entry or is not registered (only when require_worktree is on).
 //
 // Work that is not queued (running, finished, cancelled) is never refused.
 func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now time.Time) (code, text string) {
@@ -246,6 +258,16 @@ func EvaluateLaneFillEligibility(cfg LaneFillConfig, c LaneFillCandidate, now ti
 	}
 	if cfg.EffectiveRequireConfirmedProposal() {
 		if code, text := laneFillProposalRefusal(c); code != "" {
+			return code, text
+		}
+	}
+	if cfg.EffectiveCheckMainCarries() {
+		if code, text := laneFillMainRefusal(c); code != "" {
+			return code, text
+		}
+	}
+	if cfg.EffectiveRequireWorktree() {
+		if code, text := laneFillWorktreeRefusal(c); code != "" {
 			return code, text
 		}
 	}

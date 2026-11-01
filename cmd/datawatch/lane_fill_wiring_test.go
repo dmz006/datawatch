@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -172,5 +175,243 @@ func TestLaneFillProposalReaderUnreadableForOtherReasonsIsNotNotFound(t *testing
 	}
 	if got, err := rd.ReadHead("docs/plans/d.md"); err == nil || len(got) != 0 {
 		t.Fatalf("got %q err %v", got, err)
+	}
+}
+
+// laneFillGit runs git in dir with a fixed identity and the multiplexer
+// variables removed, and fails the test on error.
+func laneFillGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-c", "user.name=Lane Fill", "-c", "user.email=lane-fill@example.invalid", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Dir = dir
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_TMPDIR=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func laneFillCommitFile(t *testing.T, dir, name, subject string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(name+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	laneFillGit(t, dir, "add", name)
+	laneFillGit(t, dir, "commit", "-q", "-m", subject)
+}
+
+// newLaneFillProbeRepo builds a throwaway repository on branch main with one
+// commit and returns it with the real probe over it.
+func newLaneFillProbeRepo(t *testing.T) (string, *repoMainProbe) {
+	t.Helper()
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	laneFillGit(t, repo, "init", "-q", "-b", "main")
+	laneFillCommitFile(t, repo, "base.txt", "base commit")
+	return repo, newLaneFillMainProbe(nil).withRoot(func() string { return repo })
+}
+
+func (p *repoMainProbe) withRoot(root func() string) *repoMainProbe {
+	p.root = root
+	return p
+}
+
+func TestLaneFillRealProbeMergeCommitForTheIDOnMainCarries(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillGit(t, repo, "commit", "-q", "--allow-empty", "-m", "Merge branch 'automaton/aaaa0001-thing'")
+
+	carries, evidence, err := p.Carries(context.Background(), "aaaa0001", "")
+	if err != nil || !carries {
+		t.Fatalf("carries = %v err = %v, want true", carries, err)
+	}
+	if !strings.Contains(evidence, "automaton/aaaa0001") || !strings.Contains(evidence, "main") {
+		t.Errorf("evidence %q does not name the commit and the branch", evidence)
+	}
+	// Another id is not carried.
+	if carries, _, err := p.Carries(context.Background(), "aaaa0002", ""); err != nil || carries {
+		t.Errorf("another id: carries = %v err = %v, want false", carries, err)
+	}
+}
+
+func TestLaneFillRealProbeTaskCommitForTheIDOnMainCarries(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillCommitFile(t, repo, "t.txt", "task(bbbb0001): Add the thing")
+
+	carries, evidence, err := p.Carries(context.Background(), "bbbb0001", "")
+	if err != nil || !carries || !strings.Contains(evidence, "task(bbbb0001)") {
+		t.Fatalf("carries = %v evidence %q err = %v", carries, evidence, err)
+	}
+}
+
+func TestLaneFillRealProbeIDOnlyInACommitBodyDoesNotCarry(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillGit(t, repo, "commit", "-q", "--allow-empty", "-m", "Unrelated change", "-m", "mentions automaton/cccc0001 in the body only")
+
+	if carries, _, err := p.Carries(context.Background(), "cccc0001", ""); err != nil || carries {
+		t.Fatalf("carries = %v err = %v, want false: the rule reads subjects", carries, err)
+	}
+}
+
+// laneFillBranchWithCommits creates branch from main with one commit per
+// subject and returns to main.
+func laneFillBranchWithCommits(t *testing.T, repo, branch string, subjects ...string) {
+	t.Helper()
+	laneFillGit(t, repo, "checkout", "-q", "-b", branch, "main")
+	for i, s := range subjects {
+		laneFillCommitFile(t, repo, fmt.Sprintf("%s-%d.txt", strings.ReplaceAll(branch, "/", "_"), i), s)
+	}
+	laneFillGit(t, repo, "checkout", "-q", "main")
+}
+
+func TestLaneFillRealProbeBranchFullyOnMainByPatchIDCarries(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillBranchWithCommits(t, repo, "automaton/dddd0001-work", "add the first piece", "add the second piece")
+	laneFillCommitFile(t, repo, "main-only.txt", "something else on main")
+	// Land both commits on main by cherry-pick: new hashes, same patches.
+	laneFillGit(t, repo, "cherry-pick", "automaton/dddd0001-work~1", "automaton/dddd0001-work")
+
+	// Named branch.
+	carries, evidence, err := p.Carries(context.Background(), "dddd0001", "automaton/dddd0001-work")
+	if err != nil || !carries {
+		t.Fatalf("carries = %v err = %v, want true", carries, err)
+	}
+	if !strings.Contains(evidence, "automaton/dddd0001-work") || !strings.Contains(evidence, "2 commit") {
+		t.Errorf("evidence %q does not name the branch and the comparison", evidence)
+	}
+	// No recorded branch: found by its automaton/<id> prefix.
+	if carries, _, err := p.Carries(context.Background(), "dddd0001", ""); err != nil || !carries {
+		t.Errorf("branch found by prefix: carries = %v err = %v", carries, err)
+	}
+}
+
+func TestLaneFillRealProbeBranchPartlyOnMainDoesNotCarry(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillBranchWithCommits(t, repo, "automaton/eeee0001-work", "add the first piece", "add the second piece")
+	laneFillCommitFile(t, repo, "main-only.txt", "something else on main")
+	laneFillGit(t, repo, "cherry-pick", "automaton/eeee0001-work~1") // only the first
+
+	carries, evidence, err := p.Carries(context.Background(), "eeee0001", "automaton/eeee0001-work")
+	if err != nil || carries {
+		t.Fatalf("carries = %v evidence %q err = %v, want false", carries, evidence, err)
+	}
+}
+
+func TestLaneFillRealProbeBranchAheadOfMainDoesNotCarry(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillBranchWithCommits(t, repo, "automaton/ffff0001-work", "brand new work")
+
+	if carries, _, err := p.Carries(context.Background(), "ffff0001", ""); err != nil || carries {
+		t.Fatalf("carries = %v err = %v, want false", carries, err)
+	}
+}
+
+func TestLaneFillRealProbeNoBranchAndNoCommitsDoesNotCarry(t *testing.T) {
+	_, p := newLaneFillProbeRepo(t)
+	if carries, evidence, err := p.Carries(context.Background(), "abcd0001", ""); err != nil || carries || evidence != "" {
+		t.Fatalf("carries = %v evidence %q err = %v, want a clean no", carries, evidence, err)
+	}
+	// A recorded branch that is not in the repository is not an error.
+	if carries, _, err := p.Carries(context.Background(), "abcd0001", "automaton/abcd0001-gone"); err != nil || carries {
+		t.Fatalf("missing branch: carries = %v err = %v", carries, err)
+	}
+}
+
+func TestLaneFillRealProbeErrorsAreUnknownNotAnAnswer(t *testing.T) {
+	// No base repository.
+	p := newLaneFillMainProbe(nil)
+	if _, _, err := p.Carries(context.Background(), "abcd0001", ""); err == nil {
+		t.Error("no base repository: want an error")
+	}
+	// A directory that is not a repository.
+	plain := t.TempDir()
+	p = p.withRoot(func() string { return plain })
+	if carries, _, err := p.Carries(context.Background(), "abcd0001", ""); err == nil || carries {
+		t.Errorf("not a repository: carries = %v err = %v, want an error", carries, err)
+	}
+	// An id that is not an Automaton id never reaches git.
+	repo, p2 := newLaneFillProbeRepo(t)
+	_ = repo
+	if _, _, err := p2.Carries(context.Background(), "--all", ""); err == nil {
+		t.Error("a malformed id: want an error")
+	}
+	// A cancelled context ends the call with an error.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if carries, _, err := p2.Carries(ctx, "abcd0001", ""); err == nil || carries {
+		t.Errorf("cancelled context: carries = %v err = %v, want an error", carries, err)
+	}
+}
+
+func TestLaneFillRealProbeMainHeadMovesWithTheBaseBranch(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	h1, err := p.MainHead(context.Background())
+	if err != nil || len(h1) < 7 {
+		t.Fatalf("head = %q err = %v", h1, err)
+	}
+	if again, _ := p.MainHead(context.Background()); again != h1 {
+		t.Errorf("head changed with no commit: %q then %q", h1, again)
+	}
+	laneFillCommitFile(t, repo, "next.txt", "next")
+	h2, err := p.MainHead(context.Background())
+	if err != nil || h2 == h1 {
+		t.Errorf("head = %q err = %v, want a new head after a commit (was %q)", h2, err, h1)
+	}
+}
+
+func TestLaneFillRealProbeReadsOnlyAndLeavesTheRepositoryAlone(t *testing.T) {
+	repo, p := newLaneFillProbeRepo(t)
+	laneFillBranchWithCommits(t, repo, "automaton/9999aaaa-work", "some work")
+	before := laneFillGit(t, repo, "for-each-ref", "--format=%(refname) %(objectname)") + "\n" + laneFillGit(t, repo, "status", "--porcelain")
+	for i := 0; i < 2; i++ {
+		if _, _, err := p.Carries(context.Background(), "9999aaaa", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after := laneFillGit(t, repo, "for-each-ref", "--format=%(refname) %(objectname)") + "\n" + laneFillGit(t, repo, "status", "--porcelain")
+	if before != after {
+		t.Errorf("the probe changed the repository:\nbefore %s\nafter  %s", before, after)
+	}
+}
+
+// The real probe and the real worktree view, over one repository, through the
+// pure checks lane fill applies.
+func TestLaneFillRealWorktreeViewRegisteredAndUnregisteredDirectories(t *testing.T) {
+	repo, _ := newLaneFillProbeRepo(t)
+	wt := filepath.Join(t.TempDir(), "wt")
+	laneFillGit(t, repo, "worktree", "add", "-q", "-b", "automaton/1111aaaa-work", wt, "main")
+	fsys := autonomous.NewShellSupervisorWatchWorktreeFS()
+	list := func() ([]string, error) { return fsys.RegisteredWorktrees(repo) }
+
+	if state, problem := autonomous.CheckLaneFillWorktree(wt, list); state != autonomous.LaneFillWorktreeValid {
+		t.Errorf("a registered worktree: state %q problem %q", state, problem)
+	}
+	// A standalone repository has a .git entry but is not in the list.
+	other := filepath.Join(t.TempDir(), "standalone")
+	if err := os.MkdirAll(other, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	laneFillGit(t, other, "init", "-q", "-b", "main")
+	if state, _ := autonomous.CheckLaneFillWorktree(other, list); state != autonomous.LaneFillWorktreeInvalid {
+		t.Errorf("an unregistered repository: state %q, want invalid", state)
+	}
+	// A pruned (removed) worktree directory.
+	laneFillGit(t, repo, "worktree", "remove", "--force", wt)
+	if state, _ := autonomous.CheckLaneFillWorktree(wt, list); state != autonomous.LaneFillWorktreeInvalid {
+		t.Errorf("a removed worktree: state %q, want invalid", state)
+	}
+	// A list that cannot be read is unknown.
+	bad := func() ([]string, error) { return fsys.RegisteredWorktrees(t.TempDir()) }
+	if state, _ := autonomous.CheckLaneFillWorktree(other, bad); state != autonomous.LaneFillWorktreeUnknown {
+		t.Errorf("an unreadable list: state %q, want unknown", state)
 	}
 }

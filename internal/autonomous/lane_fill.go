@@ -108,7 +108,15 @@ type LaneFillCandidate struct {
 	// not checked, which never refuses.
 	ProposalState string
 	ProposalPath  string
-	AllTasksDone  bool
+	// MainState and MainEvidence are the outcome of the main-carries check
+	// (see lane_fill_main_worktree.go); empty means not checked, which never
+	// refuses. WorktreeState and WorktreeProblem are the outcome of the
+	// registered-worktree check, the same way.
+	MainState       string
+	MainEvidence    string
+	WorktreeState   string
+	WorktreeProblem string
+	AllTasksDone    bool
 	// NeedsMergeFlag: the finished work still needs a merge.
 	NeedsMergeFlag bool
 	// InAutomation: a member of an Automation, which starts it.
