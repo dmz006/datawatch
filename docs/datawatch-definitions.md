@@ -61,6 +61,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
   - [Infrastructure retry](#infrastructure-retry)
+  - [Onboarding report](#onboarding-report)
+  - [Onboarding report checks](#onboarding-report-checks)
+  - [Onboarding report next steps](#onboarding-report-next-steps)
 - [Automation](#automation)
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
@@ -1696,6 +1699,22 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 **Dependents that recover** (`autonomous.infra_retry.retry_dependents`, on by default) — when a task fails for an infrastructure reason and the tasks that depend on it fail behind it, each of those dependents is marked as failed because of the dependency, with the original task named as the root. Once the root is no longer failed, cancelled, blocked or held, the dependents return to pending on their own, in dependency order, so a chain recovers in one pass, and an Automaton that ended failed or blocked only because of them returns to running. A dependent that failed for any other reason, or that still waits on another unmet dependency, is left alone. A dependency that was cancelled or that failed on its own merits marks nothing. The recovery is logged as an `infra_dependents_recovered` decision. With the setting off, dependents fail as before and stay failed until reset by hand.
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
+
+### Onboarding report
+
+The onboarding report tells you what is configured, what is missing and what to try next, so a new install can be set up without hunting through settings. It has three parts. **Configured** lists the checks that pass. **Missing** lists the checks that fail, each with the reason it failed. **Try next** lists ordered suggestions, each with a how-to link, the command, the MCP tool and the place in the PWA that does it. It is read with `GET /api/automation/onboarding-report` (add `?format=text` for plain text), the `onboarding_report` MCP tool, the `datawatch` CLI and the comm channel verb, and it is shown as the Onboarding report card in the Automation area with a refresh control. Each help link on the card and in its settings rows opens this section.
+
+**Onboarding report** (`onboarding_report.enabled`, on by default) — turns the report on. When it is off the route, the tool, the CLI, the comm verb and the card all say the report is disabled and run no check. It is for the operator who does not want a setup checklist shown.
+
+### Onboarding report checks
+
+The report runs one check per setup step, in this order: `backends` (an LLM backend is available), `models` (a model is available to run), `projects` (a project directory is registered), `channels` (a comm channel is enabled), `memory` (memory is enabled) and `merge_pipeline` (projects use their own merge pipeline). A check that fails appears under Missing with its reason.
+
+**Disabled checks** (`onboarding_report.disabled_checks`, empty by default) — a list of check ids left out of the report. An id that names no check is ignored. It is for the operator who has chosen not to use a step, such as memory, and does not want it reported as missing.
+
+### Onboarding report next steps
+
+**Include next steps** (`onboarding_report.include_next_steps`, on by default) — adds the Try next part: one ordered suggestion for each missing check, with a how-to link, the CLI command, the MCP tool and the PWA place that fixes it. Turn it off to see only what is configured and what is missing.
 
 ### Model request progress
 
