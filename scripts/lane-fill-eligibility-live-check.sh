@@ -154,7 +154,11 @@ else
   BINARY="$(command -v datawatch 2>/dev/null || true)"
 fi
 [[ -n "$BINARY" ]] || { say "SKIP: no datawatch binary (TEST_BINARY, a build, bin/datawatch, PATH)"; exit 0; }
-VERSION="$("$BINARY" version 2>/dev/null | head -1 || true)"
+# The report records the binary's own version output with the release number
+# left out (the release number is set at merge time and must not be written into
+# tracked files); the source revision identifies the build instead.
+VERSION="$("$BINARY" version 2>/dev/null | head -1 | sed -E 's/v?[0-9]+\.[0-9]+\.[0-9]+[^ ]*/<release number omitted>/g' || true)"
+BUILD_REV="$(cd "$ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 HOST_NAME="$(hostname 2>/dev/null || echo unknown)"
 RUN_DATE="$(date '+%Y-%m-%d')"
 
@@ -686,9 +690,9 @@ pools = {x["name"]: x for x in cap.get("pools", [])}
 cl, pi = pools.get("llm:claude-code", {}), pools.get("llm:pi-prompt", {})
 lines = []
 if cl.get("limit") and cl.get("held", 0) == 0 and queued_runnable:
-    lines.append("IDLE Claude lane while %d PRD(s) are needs_review, approved or draft" % queued_runnable)
+    lines.append("IDLE Claude lane while %d Automata are needs_review, approved or draft" % queued_runnable)
 if pi.get("limit") and pi.get("held", 0) < pi.get("limit", 0) and queued_runnable:
-    lines.append("IDLE pi lane (%s/%s held) with 0 waiting and %d queued PRDs" % (pi.get("held"), pi.get("limit"), queued_runnable))
+    lines.append("IDLE pi lane (%s/%s held) with 0 waiting and %d queued Automata" % (pi.get("held"), pi.get("limit"), queued_runnable))
 import time
 rec = [{"kind": m[0], "subject": m[1], "text": l} for l in lines for m in [sv.map_finding(l)] if m]
 json.dump({"at": int(time.time()), "findings": rec}, open(record_out, "w"))
@@ -903,7 +907,7 @@ REPORT_TMP="$(mktemp "$ORIG_TMPDIR/dw-lanefill-report.XXXXXX")"
   printf '# Lane fill eligibility — live check on a sandbox daemon\n\n'
   printf '**Date:** %s (run started %s, local time)\n' "$RUN_DATE" "$DAEMON_UP_AT"
   printf '**Host:** %s\n' "$HOST_NAME"
-  printf '**Binary version output:** `%s` (built from this worktree)\n' "${VERSION:-unknown}"
+  printf '**Binary version output:** `%s` (built from this worktree at source revision `%s`)\n' "${VERSION:-unknown}" "$BUILD_REV"
   printf '**Script:** `scripts/lane-fill-eligibility-live-check.sh` (run as `env -u TMUX -u TMUX_TMPDIR bash scripts/lane-fill-eligibility-live-check.sh`)\n'
   printf '**Scope:** the lane fill eligibility rules (stale, held, sequenced after, proposal, base branch, worktree), their read surfaces, the lane counts, the per-lane-kind mode and the pool evidence, against a throwaway project repository whose default branch is `%s`; the default mode stays shadow throughout except where check 5 sets it on for one lane kind.\n\n' "$PROJECT_DEFAULT_BRANCH"
   printf '## Result\n\n**Overall:** %s\n\n' "$OVERALL"
