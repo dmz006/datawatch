@@ -221,15 +221,18 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 
 	// Raise (high priority, so the alert leg is in play) → 201 with all
 	// three notify legs and no lifecycle event (raise is not one).
+	// notifyQuestionRaised runs its legs sequentially in one goroutine —
+	// hub, then router, then alert — so the alert leg is the last
+	// side effect of a raise: waiting for it bars the whole fan-out, and
+	// every read below happens after that barrier.
 	id := qstep2RaiseID(t, requireRaise(t, f))
-	waitTrue(t, 2*time.Second, func() bool { return f.notifier.CallCount() == 1 })
+	waitForCount(t, "router sends after the first raise", 10*time.Second, f.notifier.CallCount, 1)
 	if got := f.notifier.CallCount(); got != 1 {
 		t.Fatalf("router sends after raise = %d, want 1", got)
 	}
-	// The alert leg lands in the same fan-out goroutine right after the
-	// router leg; wait for it before draining frames so the alert's WS
-	// frame has been broadcast too.
-	waitForCount(t, "the alert leg of the first raise", 10*time.Second, func() int { return len(f.ast.List()) }, 1)
+	// Wait for the last leg to land before draining frames, so the
+	// alert's WS frame has been broadcast too.
+	waitForCount(t, "the alert leg of the first raise (last fan-out leg)", 10*time.Second, func() int { return len(f.ast.List()) }, 1)
 	frames := drainHubFrames(t, f.hub, 500*time.Millisecond)
 	if got := countFrames(frames, MsgQuestionRaised); got != 1 {
 		t.Fatalf("%q WS frames = %d, want 1", MsgQuestionRaised, got)
@@ -240,9 +243,14 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	if got := len(f.ast.List()); got != 1 {
 		t.Fatalf("alerts after raise = %d, want 1", got)
 	}
+	// A raise fires no lifecycle event and writes no marker line, so once
+	// the fan-out barrier above holds these are settled at zero; observe
+	// them through the same helper as every other count read in this test.
+	waitForCount(t, "queued events after the first raise", 10*time.Second, func() int { return len(f.queue.all()) }, 0)
 	if got := len(f.queue.all()); got != 0 {
 		t.Fatalf("queued events after raise = %d, want 0", got)
 	}
+	waitForCount(t, "marker lines after the first raise", 10*time.Second, func() int { return markerLineCount(t, f.path) }, 0)
 	if got := markerLineCount(t, f.path); got != 0 {
 		t.Fatalf("marker lines after raise = %d, want 0", got)
 	}
@@ -255,7 +263,7 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	if evs := f.queue.waitFor(t, 1, "question.answered"); len(evs) != 1 || evs[len(evs)-1].Kind != autonomous.KindQuestionAnswered {
 		t.Fatalf("events after answer = %v, want exactly one %q", evs, autonomous.KindQuestionAnswered)
 	}
-	waitTrue(t, 2*time.Second, func() bool { return markerLineCount(t, f.path) == 1 })
+	waitForCount(t, "marker lines after the answer", 10*time.Second, func() int { return markerLineCount(t, f.path) }, 1)
 	if got := markerLineCount(t, f.path); got != 1 {
 		t.Fatalf("marker lines after answer = %d, want 1", got)
 	}
@@ -265,11 +273,17 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 
 	// Withdraw a second question → exactly one question.withdrawn, two
 	// marker lines total, one event of each kind.
+	// Every async side effect is read behind a wait: the second raise's
+	// fan-out runs in its own goroutine, subscriber delivery of the
+	// lifecycle events is on the subscriber's goroutine, and the store
+	// appends its marker line after it fires the event — so an immediate
+	// read right after the 200 can still be one behind.
 	id2 := qstep2RaiseID(t, requireRaise(t, f))
 	rr = doQ(t, f.s, http.MethodPost, "/api/questions/"+id2+"/withdraw", qstep2Withdraw())
 	if rr.Code != http.StatusOK {
 		t.Fatalf("withdraw (on) → %d (%s), want 200", rr.Code, rr.Body.String())
 	}
+	waitForCount(t, "queued events after the withdraw", 10*time.Second, func() int { return len(f.queue.all()) }, 2)
 	if got := f.queue.waitFor(t, 2, "question.withdrawn"); len(got) != 2 {
 		t.Fatalf("events after withdraw = %v, want one answered + one withdrawn", got)
 	}
@@ -279,6 +293,7 @@ func TestQuestionStep2SwitchOn_LiveFlip_FansOutAndEmits(t *testing.T) {
 	if got := qstep2CountOf(t, f, autonomous.KindQuestionWithdrawn); got != 1 {
 		t.Fatalf("%q events = %d, want 1", autonomous.KindQuestionWithdrawn, got)
 	}
+	waitForCount(t, "marker lines after the withdraw", 10*time.Second, func() int { return markerLineCount(t, f.path) }, 2)
 	if got := markerLineCount(t, f.path); got != 2 {
 		t.Fatalf("marker lines = %d, want 2 (one per terminal op)", got)
 	}
