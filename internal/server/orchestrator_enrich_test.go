@@ -50,7 +50,7 @@ func (f *fakeOrchAutonomous) ResetTaskWithOptions(string, string, string, bool, 
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) RejudgeCompletionGuardrail(string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)            { return nil, nil }
+func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)    { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) {
 	return nil, nil
 }
@@ -227,8 +227,13 @@ func (f *fakeOrchAutonomous) SetPRDNotifyEvents(string, []string) (any, error) {
 	return nil, nil
 }
 
-// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch stub.
+// Per-PRD Git.AutoPR/BaseBranch override stub.
 func (f *fakeOrchAutonomous) SetPRDGit(string, bool, string) (any, error) {
+	return nil, nil
+}
+
+// Per-PRD push-on-complete override stub.
+func (f *fakeOrchAutonomous) SetPRDGitPush(string, string) (any, error) {
 	return nil, nil
 }
 

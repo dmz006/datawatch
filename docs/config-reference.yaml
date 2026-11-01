@@ -207,6 +207,34 @@ session:
     # prohibits file names, identifiers, error codes, and markdown formatting.
     prompt: ""
 
+# ── Git push-on-complete ──
+# What datawatch pushes to the git remote when finished work is committed.
+# Covers autonomous PRD work, one-shot sessions, and the last-resort
+# pre-teardown save push. Pushes are plain fast-forward-only and are
+# NEVER force-pushed; a failed push never loses the local commit.
+git:
+  # What to push when work completes. Read live on every push attempt, so a
+  # runtime change (REST/comm/CLI) applies without a restart.
+  #   never          — push nothing; the finished commit stays in the local
+  #                    checkout only.
+  #   branch         — (default) push the finished work branch to
+  #                    <remote>/<branch> with upstream tracking. For PRD
+  #                    work this runs after each validated task, then again
+  #                    at completion (a second push of an up-to-date branch
+  #                    is a no-op).
+  #   default_branch — push onto the remote's default branch, and only
+  #                    after the automaton's final gates have passed
+  #                    (i.e. at PRD completion). A mid-run task never pushes
+  #                    the default branch, because the final validation is
+  #                    not done yet.
+  # Empty or an unrecognised value behaves as branch. When a push cannot
+  # happen (no remote, auth, non-fast-forward), the commit is kept
+  # locally, a visible "not pushed" warning is recorded on the PRD
+  # (push_state / push_warning) and one operator alert is raised.
+  push_on_complete: branch
+  # Remote name the finished branch is pushed to (default: origin).
+  push_remote: origin
+
 # ── Web Server ──
 # HTTP/WebSocket server for the PWA, REST API, and browser access.
 server:

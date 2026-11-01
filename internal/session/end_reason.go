@@ -98,6 +98,12 @@ func (m *Manager) EndSession(fullID string, why EndReason) error {
 		}
 	}
 
+	// Save any unpushed commits BEFORE the pane dies and the record
+	// mutates: the push is bounded, never fails the kill, and leaves
+	// the local commits intact on failure (a push failure still
+	// proceeds with the kill exactly as before).
+	m.pushUnpushedBeforeTeardown(sess)
+
 	// Kill the tmux session — but ONLY if there is one. Virtual
 	// sessions (council-virtual, etc.) have no tmux pane; calling
 	// `tmux kill-session -t ""` without a target munches arbitrary

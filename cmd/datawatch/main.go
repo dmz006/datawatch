@@ -2104,6 +2104,28 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// BL226 — register global so any package can call alerts.EmitSystem
 	alertspkg.SetGlobal(alertStore)
 
+	// One-shot push-on-complete (session manager): ad-hoc one-shots (no
+	// PRD owner) push their finished work after their own validation is
+	// the completion commit. The settings closure is stored, not its
+	// result — read on every push attempt, so a runtime configure change
+	// applies without a restart (same live-config pattern as the
+	// autonomous manager's wiring).
+	mgr.SetGitPushSettings(func() (policy, remote string) {
+		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+	})
+	// Operator alert sink for one-shot push failures → the same alert
+	// store every other system alert goes to.
+	mgr.SetPushAlertFn(func(level, title, body string) {
+		lv := alertspkg.LevelInfo
+		switch level {
+		case "warn":
+			lv = alertspkg.LevelWarn
+		case "error":
+			lv = alertspkg.LevelError
+		}
+		alertStore.AddSystem(lv, title, body)
+	})
+
 	// Create filter store
 	filterStore, err := newFilterStore(filepath.Join(expandHome(cfg.DataDir), "filters.json"))
 	if err != nil {
@@ -2314,6 +2336,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	k8sDriver.WorkerBootstrapDeadlineSeconds = cfg.Agents.WorkerBootstrapDeadlineSeconds
 	k8sDriver.ParentCertFingerprint = parentFingerprint
 	agentMgr.RegisterDriver(k8sDriver)
+
+	// Teardown push (push-first on Terminate): honour the operator's
+	// git.push_on_complete policy ("never" skips the step entirely)
+	// and surface a push that did not land as a warn-level system
+	// alert. The hook runs inline inside Terminate and must be fast;
+	// alertStore.AddSystem is a local mutex-guarded append, which it
+	// is.
+	agentMgr.PushPolicy = func() string { return cfg.Git.EffectivePushOnComplete() }
+	agentMgr.OnTeardownPushFailure = func(a *agentspkg.Agent, rep agentspkg.TeardownPushReport) {
+		reason := rep.Reason
+		if reason == "" {
+			reason = "unknown reason"
+		}
+		body := fmt.Sprintf(
+			"agent %s (project %s): teardown push did not land (attempted=%t, branch=%q, unpushed=%d) — %s",
+			a.ID, a.ProjectProfile, rep.Attempted, rep.Branch, rep.Count, reason)
+		alertStore.AddSystem(alertspkg.LevelWarn, "Agent teardown push failed", body)
+		fmt.Fprintf(os.Stderr, "[agents] teardown push for agent %s: %v\n", a.ID, rep)
+	}
 
 	// v7.0.0 S5 — outer-scope handle so the daemon can wire the
 	// memory backend into httpServer for the /api/memory/scopes/*
@@ -6453,6 +6494,27 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				amgr.SetAuditFn(lifecycleAuditFn)
 			}
+			// Push-on-complete settings (git.push_on_complete /
+			// git.push_remote): the closure is stored, not its result —
+			// it is read on every push attempt, so a runtime configure
+			// change applies without a restart (same live-config pattern
+			// as the CommSink closures above).
+			amgr.SetGitPushSettings(func() (string, string) {
+				return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+			})
+			// Operator alert sink for autonomous warnings (today: a
+			// push-on-complete failure) → the same alert store every
+			// other system alert goes to.
+			amgr.SetAlertFn(func(level, title, body string) {
+				lv := alertspkg.LevelInfo
+				switch level {
+				case "warn":
+					lv = alertspkg.LevelWarn
+				case "error":
+					lv = alertspkg.LevelError
+				}
+				alertStore.AddSystem(lv, title, body)
+			})
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.

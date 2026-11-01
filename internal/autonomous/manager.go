@@ -1386,6 +1386,17 @@ type Manager struct {
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
 
+	// gitPushConfigFn — when set, returns the daemon's live push-on-complete
+	// settings (git.push_on_complete, git.push_remote). Read on every use of
+	// effectivePushPolicy so a runtime config change applies without restart.
+	// Guarded by mu. Nil = daemon values unavailable (defaults apply).
+	gitPushConfigFn func() (policy, remote string)
+
+	// alertFn — when set, called for operator warnings (today: a push on
+	// completion failed, see recordPushOutcome). Signature:
+	// (level, title, body). Guarded by mu. Nil = alert silently skipped.
+	alertFn func(level, title, body string)
+
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
@@ -1730,6 +1741,26 @@ func (m *Manager) AlertSink() func(level, title, body string) (id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.alertSink
+}
+
+// SetGitPushSettings wires the daemon's live push-on-complete settings
+// (git.push_on_complete + git.push_remote). The function, not its
+// return value, is stored — it is read on every effectivePushPolicy call,
+// so a runtime `configure git.push_on_complete=...` applies without a
+// daemon restart. Nil (or zero values) = defaults apply.
+func (m *Manager) SetGitPushSettings(fn func() (policy, remote string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gitPushConfigFn = fn
+}
+
+// SetAlertFn wires the operator alert sink used for autonomous warnings
+// (e.g. "not pushed" after a failed push-on-complete). Nil disables
+// (no-op; no error).
+func (m *Manager) SetAlertFn(fn func(level, title, body string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.alertFn = fn
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.
@@ -5991,6 +6022,60 @@ func (m *Manager) SetPRDGit(prdID string, autoPR bool, baseBranch string) (*PRD,
 	}
 	prd.Git.AutoPR = autoPR
 	prd.Git.BaseBranch = baseBranch
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
+}
+
+// effectivePushPolicy resolves the push-on-complete policy + remote that
+// a PRD's push should use, with this precedence:
+//
+//  1. the PRD's own Git.PushOnComplete override (a non-empty value);
+//  2. the daemon's live git.push_on_complete setting (SetGitPushSettings);
+//  3. the default branch policy (git.PushBranch).
+//
+// The remote always comes from the daemon's git.push_remote (default
+// "origin"). Any value that does not parse as a recognised policy
+// (including the empty string when no daemon value is wired) falls back
+// to git.PushBranch rather than guessing.
+func (m *Manager) effectivePushPolicy(prd *PRD) (git.PushPolicy, string) {
+	m.mu.Lock()
+	fn := m.gitPushConfigFn
+	m.mu.Unlock()
+	var daemonPolicy, daemonRemote string
+	if fn != nil {
+		daemonPolicy, daemonRemote = fn()
+	}
+	policy := prd.Git.PushOnComplete
+	if strings.TrimSpace(policy) == "" {
+		policy = daemonPolicy
+	}
+	p, ok := git.ParsePolicy(policy)
+	if !ok {
+		p = git.PushBranch
+	}
+	remote := strings.TrimSpace(daemonRemote)
+	if remote == "" {
+		remote = "origin"
+	}
+	return p, remote
+}
+
+// SetPRDGitPush sets (or clears with "") the per-PRD push-on-complete
+// override. The value must parse as a recognised policy (never, branch,
+// default_branch); "" clears the override so the daemon setting applies.
+// Persists the PRD and returns it.
+func (m *Manager) SetPRDGitPush(prdID, policy string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	want := strings.TrimSpace(policy)
+	if want != "" {
+		if _, ok := git.ParsePolicy(want); !ok {
+			return nil, fmt.Errorf("invalid push-on-complete policy %q (allowed: never, branch, default_branch)", policy)
+		}
+	}
+	prd.Git.PushOnComplete = want
 	prd.UpdatedAt = time.Now()
 	return prd, m.store.SavePRD(prd)
 }

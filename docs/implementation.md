@@ -1037,6 +1037,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `imap_mcp.token` | string | `""` | Bearer token imap-mcp ≥ 0.5.3 requires on every request except `GET /api/health`. Accepts a `${secret:name}` reference. Needs `read` + `send` scopes. |
 | `plugins.managed` | []string | `[]` | Names of `kind: service` plugins the operator allows datawatch to start/stop as supervised child processes. Absent = never managed. Only honoured when the plugin's manifest `lifecycle.supported_modes` declares `managed` and the plugin is enabled. |
 | `cross_session.enabled` | bool | `true` | Inject the Cross-Session Communication Rule into spawned claude-code sessions' `CLAUDE.md` — steers the LLM toward datawatch's own audited memory/discussion/reply tools instead of Claude Code's native cross-session messaging. |
+| `git.push_on_complete` | string | `branch` | What to push to the remote when work completes: `never` (no push at all), `branch` (push the finished work branch after each validated task and again at completion; the default), or `default_branch` (plain fast-forward push of HEAD onto the remote's default branch, only after the automaton's final gates passed at completion). Empty/unknown values behave as `branch`. Read from the live config on every push attempt (no restart needed). Pushes are never force. A PRD's own `Git.PushOnComplete` override wins over this when set. See `docs/operations.md` → “Pushing finished work to the remote”. |
+| `git.push_remote` | string | `origin` | Remote name the finished branch is pushed to. Read live on every push attempt. |
 
 ### Session list views
 

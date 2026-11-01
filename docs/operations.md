@@ -3771,6 +3771,94 @@ operator's push-primary/poll-fallback direction for it.
 
 ---
 
+## Pushing finished work to the remote
+
+Datawatch commits finished work to a git branch; what happens to those
+local commits afterwards is controlled by one policy: `git.push_on_complete`
+(plus `git.push_remote`, the remote name, default `origin`). It is read
+from the live config on every push attempt, so changing it at runtime
+applies to the next push without a restart.
+
+### Setting it (daemon-wide)
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `git:` block — `push_on_complete: never \| branch \| default_branch`, `push_remote: origin` |
+| **CLI** | `datawatch config set git.push_on_complete branch` |
+| **Web UI** | Settings → General → *Push finished work to the remote* (select) and *Push remote name* (text) |
+| **REST API** | `PUT /api/config` with `{"git.push_on_complete": "branch"}`; read back via `GET /api/config` (the `git` block also reports the effective values) |
+| **Comm channel** | `configure git.push_on_complete=branch`, `configure git.push_remote=origin` |
+| **MCP** | `config_set` with key `git.push_on_complete` (or `git.push_remote`) |
+
+### Overriding it for one automaton
+
+A PRD can override the daemon-wide policy (`prd.Git.PushOnComplete`). An
+empty/absent override means *inherit the daemon setting*. An override that
+is present always wins over the daemon's `git.push_on_complete`; the
+remote name always comes from `git.push_remote`.
+
+| Method | How |
+|--------|-----|
+| **CLI** | `datawatch autonomous prd-set-git <id> on\|off --push-on-complete never\|branch\|default_branch\|inherit` (`inherit` clears the override; omit the flag to leave it unchanged) |
+| **Web UI** | PRD Settings → Git → *Push on complete* (Inherit daemon setting / never / branch / default_branch), with a live *Push state* line below it |
+| **REST API** | `POST /api/autonomous/prds/{id}/set_git` with `{"push_on_complete": "branch"}` (`""` clears it) |
+| **MCP** | `autonomous_prd_set_git` with `push_on_complete` (omit the argument to leave the override unchanged) |
+
+### The three policies
+
+| Value | Behaviour |
+|-------|-----------|
+| `never` | No push at all. The finished commit stays in the local checkout; nothing is pushed and no push state or alert is recorded. |
+| `branch` (default) | The finished work branch is pushed to `<remote>/<branch>` with upstream tracking. For PRD work this happens after each *validated* task, and again once at completion; a repeat push of an already-up-to-date branch is a no-op. |
+| `default_branch` | `HEAD` is pushed onto the remote's default branch — but only after the automaton's **final gates passed** at completion. A validated mid-run task never pushes the default branch, because the run's final validation has not happened yet. |
+
+Empty or an unrecognised value behaves as `branch`.
+
+### When a push happens
+
+- **PRD work, `branch`** — after each task that passes validation, and once more when the PRD completes. Per-PRD serialised; repeated calls are safe.
+- **PRD work, `default_branch`** — once, at PRD completion, strictly after the final gates passed.
+- **One-shot (non-PRD) sessions** — right after the session's own validated commit, per the same policy, subject to the session having ended with a commit.
+- **Before teardown (last-resort save)** — when a session or worker container is about to be torn down with committed-but-unpushed work, that work branch is pushed first so the commits survive the teardown. This step only ever pushes a *work branch*: at teardown time the final gates' outcome is unknown, so if the current branch *is* the remote's default branch it is deliberately not pushed — the commits stay local with a `not pushed` note explaining the default-branch push waits for the final gates. It never runs under `never`, and it is strictly best-effort: a failure does not block the teardown.
+
+### The never-force rule
+
+Every push datawatch performs — completion, teardown, worker — is a plain
+fast-forward-only push. The push helpers have no force option at all, so
+`git.push_on_complete` can never rewrite or destroy history on the remote.
+If the local branch has diverged (non-fast-forward), that push simply
+fails and is treated as a failed push (below).
+
+### What a push failure looks like
+
+A push failure (no remote, authentication, non-fast-forward, timeout)
+**never fails the work**: the local commit is kept exactly as it was, the
+session/PRD keeps its own completion state, and the push record is:
+
+- **PRD** — `git.push_state: "not_pushed"` plus a human-readable
+  `git.push_warning: "not pushed: <reason>"`, visible in
+  `datawatch autonomous prd-get <id>`, in `GET
+  /api/autonomous/prds/{id}` (and the list/summary responses, which also
+  carry `push_state`/`push_warning` at the top level), and in the MCP
+  automaton read tools.
+- **Web UI** — a warning-styled **⚠ Not pushed** chip on the PRD, with the
+  reason as the tooltip; on success the chip shows **Pushed** with the
+  pushed ref and short SHA, also repeated in PRD Settings → Git.
+- **Alert** — one operator alert (warn level) naming the PRD/session and
+  the reason.
+
+### Where to see pushed / not-pushed
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | PRD list row and PRD detail: **Pushed** (ref + SHA) or **⚠ Not pushed** (reason) chip; PRD Settings → Git repeats the state |
+| **CLI** | `datawatch autonomous prd-get <id>` → `git.push_state`, `git.pushed_sha`/`pushed_ref` (success) or `git.push_warning` (failure) |
+| **REST API** | `GET /api/autonomous/prds` and `GET /api/autonomous/prds/{id}` → `git.push_state`, `git.push_warning` |
+| **MCP** | The automaton list/detail tools carry `push_state` (and `push_warning` for a refused push) |
+| **Alerts** | One warn-level alert per failed push with the reason |
+
+---
+
 ## Session git opt-in (`git` true/false at start, `session.git_default`)
 
 Every session start can opt the session in or out of git activity in

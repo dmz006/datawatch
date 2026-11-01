@@ -772,11 +772,60 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if detail != "" {
 				path += "?" + url.Values{"detail": {detail}}.Encode()
 			}
-			return daemonGet(path)
+			body, err := daemonJSONBody(http.MethodGet, path, nil)
+			if err != nil {
+				return err
+			}
+			if len(body) > 0 {
+				prettyPrint(body)
+			}
+			if line := prdPushLine(body); line != "" {
+				fmt.Println(line)
+			}
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary, tasks or full (default: the daemon's full view)")
 	return cmd
+}
+
+// prdPushLine renders the one-line git push status for prd-get from the
+// daemon's reply JSON: "push: pushed <ref>@<sha>" after a successful push,
+// "push: NOT PUSHED — <reason>" after a refused one, and "" when no push
+// outcome was recorded (nothing to report). It reads the push state from
+// the PRD's git object (full detail) or from the top-level push_state /
+// push_warning of the trimmed summary view.
+func prdPushLine(prdJSON []byte) string {
+	var v struct {
+		PushState   string `json:"push_state"`
+		PushedRef   string `json:"pushed_ref"`
+		PushedSHA   string `json:"pushed_sha"`
+		PushWarning string `json:"push_warning"`
+		Git         struct {
+			PushState   string `json:"push_state"`
+			PushedRef   string `json:"pushed_ref"`
+			PushedSHA   string `json:"pushed_sha"`
+			PushWarning string `json:"push_warning"`
+		} `json:"git"`
+	}
+	if err := json.Unmarshal(prdJSON, &v); err != nil {
+		return ""
+	}
+	state, ref, sha, warning := v.Git.PushState, v.Git.PushedRef, v.Git.PushedSHA, v.Git.PushWarning
+	if state == "" {
+		state, ref, sha, warning = v.PushState, v.PushedRef, v.PushedSHA, v.PushWarning
+	}
+	switch state {
+	case "pushed":
+		if len(sha) > 7 {
+			sha = sha[:7]
+		}
+		return fmt.Sprintf("push: pushed %s@%s", ref, sha)
+	case "not_pushed":
+		return "push: NOT PUSHED — " + warning
+	default:
+		return ""
+	}
 }
 
 func newAutonomousPRDPlanCmd() *cobra.Command {
@@ -1612,18 +1661,27 @@ Default set (used when the Automaton and its guardrail profile both inherit):
 }
 
 func newAutonomousPRDSetGitCmd() *cobra.Command {
-	var baseBranch string
+	var baseBranch, pushOnComplete string
 	cmd := &cobra.Command{
 		Use:   "prd-set-git <id> <on|off>",
-		Short: "Set AutoPR (push+open a PR on completion) and base-branch override for a PRD (BL407)",
+		Short: "Set AutoPR (push+open a PR on completion), base-branch and push-on-complete policy for a PRD",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
 			autoPR := args[1] == "on" || args[1] == "true" || args[1] == "1"
-			body, _ := json.Marshal(map[string]any{"auto_pr": autoPR, "base_branch": baseBranch})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", body)
+			body := map[string]any{"auto_pr": autoPR, "base_branch": baseBranch}
+			if c.Flags().Changed("push-on-complete") {
+				p := pushOnComplete
+				if p == "inherit" {
+					p = "" // clear the per-PRD override; inherit the daemon setting
+				}
+				body["push_on_complete"] = p
+			}
+			b, _ := json.Marshal(body)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", b)
 		},
 	}
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
+	cmd.Flags().StringVar(&pushOnComplete, "push-on-complete", "", "per-PRD push-on-complete override: never | branch | default_branch | inherit (inherit = clear the override, use the daemon's git.push_on_complete); omit to leave unchanged")
 	return cmd
 }
 

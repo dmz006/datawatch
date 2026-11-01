@@ -265,11 +265,11 @@ type podTemplateData struct {
 	// volumeMounts.
 	SharedVolumes []profile.SharedVolume
 	// BL243 — tailscale sidecar; empty TailscaleEnabled omits the block.
-	TailscaleEnabled    bool
-	TailscaleImage      string
-	TailscaleAuthKey    string
+	TailscaleEnabled     bool
+	TailscaleImage       string
+	TailscaleAuthKey     string
 	TailscaleLoginServer string
-	TailscaleTags       string
+	TailscaleTags        string
 }
 
 var podTmpl = template.Must(template.New("pod").Parse(podManifest))
@@ -297,12 +297,12 @@ func (d *K8sDriver) Spawn(ctx context.Context, a *Agent) error {
 		BootstrapDeadlineSeconds: d.WorkerBootstrapDeadlineSeconds,
 		ParentCertFingerprint:    d.ParentCertFingerprint,
 		ProjectEnv: func() map[string]string {
-				if a.EnvOverride != nil {
-					return a.EnvOverride // BL242 Phase 4 resolved refs
-				}
-				return a.project.Env
-			}(),
-		Resources:                a.cluster.DefaultResources,
+			if a.EnvOverride != nil {
+				return a.EnvOverride // BL242 Phase 4 resolved refs
+			}
+			return a.project.Env
+		}(),
+		Resources: a.cluster.DefaultResources,
 	}
 	if a.PQCKeys != nil {
 		data.PQCKEMPriv = a.PQCKeys.KEMPrivateB64
@@ -416,6 +416,19 @@ func (d *K8sDriver) Terminate(ctx context.Context, a *Agent) error {
 		return fmt.Errorf("kubectl delete pod: %w\n%s", err, out)
 	}
 	return nil
+}
+
+// PushUnpushed implements TeardownPusher. The k8s driver has no
+// `kubectl exec` path wired into the worker pod, so it cannot run git
+// inside the worker. The Manager's teardown-push hook still fires
+// (Attempted=false is reported as a non-pushed result) so operators
+// see the gap; the Pod is then destroyed as usual and the branch may
+// be left unpushed.
+func (d *K8sDriver) PushUnpushed(_ context.Context, _ *Agent) (TeardownPushReport, error) {
+	return TeardownPushReport{
+		Attempted: false,
+		Reason:    "driver cannot run commands in the worker",
+	}, nil
 }
 
 // ── helpers ────────────────────────────────────────────────────────────

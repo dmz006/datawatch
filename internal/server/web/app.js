@@ -13448,6 +13448,35 @@ function statusPill(status) {
   return `<span class="${klass}" data-state="${escHtml(s)}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(s)}</span>`;
 }
 
+// Push-on-complete outcome chip, rendered next to the status pill on a
+// PRD. Values come from the daemon's recorded push outcome
+// (git.push_state: pushed / not_pushed): on a recorded push the chip is
+// success-styled "Pushed" with the pushed ref + short SHA in the
+// tooltip, and on a refused push it is warning-styled "Not pushed" with
+// the reason (push_warning, free text from the push tooling) as the
+// tooltip. When nothing was recorded yet (policy was never, or no push
+// was attempted) it renders nothing at all. Every interpolated value
+// passes through escHtml.
+function renderPrdPushState(prd) {
+  const git = (prd && prd.git) || {};
+  const state = git.push_state || (prd && prd.push_state) || '';
+  if (state === 'pushed') {
+    const ref = git.pushed_ref || '';
+    const sha = git.pushed_sha || '';
+    const shortSha = sha.length > 7 ? sha.slice(0, 7) : sha;
+    const tipParts = [];
+    if (ref) tipParts.push(`${(t('prd_push_ref_label') || 'Pushed')} ${ref}`);
+    if (shortSha) tipParts.push(shortSha);
+    const tip = tipParts.join(' ');
+    return `<span class="prd-push-chip prd-push-chip-pushed" style="font-size:10px;padding:1px 6px;border-radius:6px;margin-left:4px;border:1px solid var(--success,#10b981);color:var(--success,#10b981);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(tip)}">&#10003; ${escHtml(t('prd_push_pushed') || 'Pushed')}</span>`;
+  }
+  if (state === 'not_pushed') {
+    const warn = git.push_warning || (prd && prd.push_warning) || '';
+    return `<span class="prd-push-chip prd-push-chip-notpushed" style="font-size:10px;padding:1px 6px;border-radius:6px;margin-left:4px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);background:rgba(245,158,11,0.12);font-weight:600;" title="${escHtml(warn)}">&#9888; ${escHtml(t('prd_push_not_pushed') || 'Not pushed')}</span>`;
+  }
+  return '';
+}
+
 // Persistent read-only line for the last failed decompose. The server clears
 // last_decompose_failure on a successful retry, so the line disappears with it.
 // The detail is free text from the LLM/validator, so it goes through escHtml.
@@ -13599,7 +13628,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -15819,8 +15848,15 @@ function openPRDSettingsModal(prdID) {
         // read-only below once set.
         git_auto_pr:          !!(prd.git && prd.git.auto_pr),
         git_base_branch:      (prd.git && prd.git.base_branch) || '',
+        git_push_on_complete: (prd.git && prd.git.push_on_complete) || '',
         git_branch:           (prd.git && prd.git.branch) || '',
         git_pr_url:           (prd.git && prd.git.pr_url) || '',
+        // Push-on-complete outcome (read-only; owned by the daemon's
+        // post-completion push). Empty = nothing recorded yet.
+        git_push_state:       (prd.git && prd.git.push_state) || '',
+        git_push_warning:     (prd.git && prd.git.push_warning) || '',
+        git_pushed_ref:       (prd.git && prd.git.pushed_ref) || '',
+        git_pushed_sha:       (prd.git && prd.git.pushed_sha) || '',
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
         priority:             prd.priority || 0,
         read_dirs:            (prd.read_dirs || []).join(', '),
@@ -15944,8 +15980,31 @@ function openPRDSettingsModal(prdID) {
               <div style="font-size:10px;color:var(--text2);margin:2px 0 6px;">${escHtml(t('prd_settings_git_auto_pr_hint')||'Review before enabling on an automaton whose task specs you don’t fully trust — this calls out to GitHub on your own gh credentials with no per-call confirmation.')}</div>
               <label class="wizard-label">${escHtml(t('prd_settings_git_base_branch_label')||'Base branch override (empty = repo’s own default branch)')}</label>
               <input type="text" id="prdSettingsGitBaseBranch" class="form-input" value="${escHtml(cur.git_base_branch)}" placeholder="main" />
+              <label class="wizard-label" style="margin-top:6px;">${escHtml(t('prd_settings_git_push_label')||'Push on completion')}</label>
+              <select id="prdSettingsGitPush" class="form-select">
+                <option value="" ${cur.git_push_on_complete===''?'selected':''}>${escHtml(t('prd_settings_git_push_inherit')||'Inherit daemon setting')}</option>
+                <option value="never" ${cur.git_push_on_complete==='never'?'selected':''}>never</option>
+                <option value="branch" ${cur.git_push_on_complete==='branch'?'selected':''}>branch</option>
+                <option value="default_branch" ${cur.git_push_on_complete==='default_branch'?'selected':''}>default_branch</option>
+              </select>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('prd_settings_git_push_hint')||'Overrides the daemon’s git.push_on_complete for this one PRD only; leave as inherit to follow the daemon setting.')}</div>
               ${cur.git_branch ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;">${escHtml(t('prd_settings_git_branch_label')||'Branch')}: <code>${escHtml(cur.git_branch)}</code></div>` : ''}
               ${cur.git_pr_url ? `<div style="font-size:10px;margin-top:2px;">${escHtml(t('prd_settings_git_pr_label')||'PR')}: <a href="${escHtml(cur.git_pr_url)}" target="_blank" rel="noopener">${escHtml(cur.git_pr_url)}</a></div>` : ''}
+              ${(() => {
+                // Push-on-complete outcome (read-only): success-styled "Pushed"
+                // with ref + short sha, or warning-styled "Not pushed" with
+                // the recorded reason. Empty state renders nothing.
+                if (cur.git_push_state === 'pushed') {
+                  const shaShort = (cur.git_pushed_sha && cur.git_pushed_sha.length > 7) ? cur.git_pushed_sha.slice(0, 7) : (cur.git_pushed_sha || '');
+                  const detail = [(cur.git_pushed_ref ? `${(t('prd_push_ref_label') || 'Pushed')} ${cur.git_pushed_ref}` : ''), shaShort].filter(Boolean).join(' ');
+                  return `<div style="font-size:10px;margin-top:2px;"><span style="color:var(--text2);">${escHtml(t('prd_push_settings_label')||'Push state')}</span> <span class="prd-push-chip prd-push-chip-pushed" style="border:1px solid var(--success,#10b981);color:var(--success,#10b981);background:rgba(34,197,94,0.12);padding:1px 6px;border-radius:6px;font-weight:600;" title="${escHtml(detail)}">&#10003; ${escHtml(t('prd_push_pushed')||'Pushed')}</span>${detail ? `<span style="color:var(--text2);margin-left:4px;">${escHtml(detail)}</span>` : ''}</div>`;
+                }
+                if (cur.git_push_state === 'not_pushed') {
+                  const warn = cur.git_push_warning || '';
+                  return `<div style="font-size:10px;margin-top:2px;"><span style="color:var(--text2);">${escHtml(t('prd_push_settings_label')||'Push state')}</span> <span class="prd-push-chip prd-push-chip-notpushed" style="border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);background:rgba(245,158,11,0.12);padding:1px 6px;border-radius:6px;font-weight:600;" title="${escHtml(warn)}">&#9888; ${escHtml(t('prd_push_not_pushed')||'Not pushed')}</span>${warn ? `<span style="color:var(--text2);margin-left:4px;">${escHtml(warn)}</span>` : ''}</div>`;
+                }
+                return '';
+              })()}
             </div>
             <!-- Per-Automaton notification events: closed kind set in
                  NOTIFY_EVENT_KINDS; an empty stored list means inherit
@@ -16023,10 +16082,17 @@ function openPRDSettingsModal(prdID) {
           // whenever either one changed.
           const newGitAutoPR = !!document.getElementById('prdSettingsGitAutoPR').checked;
           const newGitBaseBranch = (document.getElementById('prdSettingsGitBaseBranch').value || '').trim();
-          if (newGitAutoPR !== cur.git_auto_pr || newGitBaseBranch !== cur.git_base_branch) {
+          const newGitPushOnComplete = document.getElementById('prdSettingsGitPush').value || '';
+          const gitPushChanged = newGitPushOnComplete !== cur.git_push_on_complete;
+          if (newGitAutoPR !== cur.git_auto_pr || newGitBaseBranch !== cur.git_base_branch || gitPushChanged) {
+            // The backend treats an omitted push_on_complete as unchanged,
+            // so send it only when it actually changed; auto_pr/base_branch
+            // ride along as before.
+            const gitBody = { auto_pr: newGitAutoPR, base_branch: newGitBaseBranch };
+            if (gitPushChanged) gitBody.push_on_complete = newGitPushOnComplete;
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_git', {
               method: 'POST', headers: {'Content-Type':'application/json'},
-              body: JSON.stringify({ auto_pr: newGitAutoPR, base_branch: newGitBaseBranch }),
+              body: JSON.stringify(gitBody),
             }));
           }
           if (newConcurrency !== cur.max_concurrent_tasks) {
@@ -16336,6 +16402,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.api_gzip_min_bytes', label: 'API compression threshold (bytes)', labelKey: 'settings_api_gzip_min_bytes', type: 'number', placeholder: '1024' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
+    // Git push-on-complete (git.push_*): what to push when finished work is
+    // committed. The renderer resolves the select value from
+    // cfg.git.push_on_complete (key split + reduce), so the stored value is
+    // preselected after a reload. The field renderer has no option-label
+    // mechanism (options render as their raw values, like
+    // ws_session_list_default), so the raw values stay as the visible labels.
+    { key: 'git.push_on_complete', label: 'Push finished work to the remote', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
+    { key: 'git.push_remote', label: 'Push remote name', labelKey: 'settings_git_push_remote', type: 'text', placeholder: 'origin' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
@@ -22505,7 +22579,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     rootId: 'prd-' + id,
     onOpen: `renderPRDDetailView(${escId})`,
     statusClass,
-    statusHtml: statusPill(status),
+    statusHtml: statusPill(status) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
     badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${parentLink}${pinMark}${watchMark}`,
@@ -27425,7 +27499,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div class="prd-detail-row1" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         ${typeBadge}${tplBadge}
         <span style="flex:1;min-width:0;"></span>
-        <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
+        <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>${renderPrdPushState(prd)}
       </div>
       <div class="prd-detail-row2" style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);font-family:var(--mono,monospace);margin-bottom:6px;">
         <code>${escHtml(id)}</code>

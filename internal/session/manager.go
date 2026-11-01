@@ -508,6 +508,17 @@ type Manager struct {
 	// (AI process died but session still appears active — zombie).
 	onClaudeAliveChange func(sess *Session)
 
+	// gitPushSettings returns the live push-on-complete (policy, remote)
+	// for one-shot completion pushes (see git_push.go). The closure is
+	// read on every push attempt, so a runtime config change applies
+	// without a restart. Nil = one-shot pushes disabled.
+	gitPushSettings func() (policy, remote string)
+
+	// pushAlertFn delivers operator alerts for one-shot push failures.
+	// Called as fn("warn", title, body). Nil = no alert (state still
+	// recorded on the session).
+	pushAlertFn func(level, title, body string)
+
 	// probeClaudeAliveFunc (BL355) — test injection point; overrides probeClaudeAlive.
 	probeClaudeAliveFunc func(sess *Session) bool
 
@@ -4556,6 +4567,12 @@ func (m *Manager) Delete(fullID string, deleteData bool) error {
 		}
 	}
 
+	// Save unpushed commits before the record (and, for daemon-owned
+	// checkouts, the ProjectDir clone itself) disappears. Bounded and
+	// never fails the delete; a push failure still proceeds below and
+	// the local commits are kept.
+	m.pushUnpushedBeforeTeardown(sess)
+
 	// Delete from store
 	if err := m.store.Delete(fullID); err != nil {
 		return fmt.Errorf("delete from store: %w", err)
@@ -4795,6 +4812,14 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	} else {
 		current.CommitSHA = sha
 		current.CompletionSummary = summary
+		// One-shots started outside a PRD push their own finished work
+		// here (PRD task sessions are pushed by the autonomous executor
+		// instead). The push never affects the commit or the session's
+		// completion state — failures are recorded + alerted on the
+		// session (see pushAfterCommit).
+		if sha != "" && current.PRDID == "" {
+			m.pushAfterCommit(current, sha)
+		}
 	}
 
 	if stat, _ := projGit.DiffStat(); !stat.IsZero() {

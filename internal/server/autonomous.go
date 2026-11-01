@@ -2511,19 +2511,32 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			AutoPR     bool   `json:"auto_pr"`
-			BaseBranch string `json:"base_branch"`
+			AutoPR         bool    `json:"auto_pr"`
+			BaseBranch     string  `json:"base_branch"`
+			PushOnComplete *string `json:"push_on_complete"` // nil = leave unchanged
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
+		}
+		// Validate + apply the per-PRD push-on-complete override first so an
+		// invalid policy is rejected before any git field is written.
+		if req.PushOnComplete != nil {
+			if _, err := s.autonomousMgr.SetPRDGitPush(id, *req.PushOnComplete); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		updated, err := s.autonomousMgr.SetPRDGit(id, req.AutoPR, req.BaseBranch)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "set_git", "automaton", id, map[string]any{"auto_pr": req.AutoPR, "base_branch": req.BaseBranch}) // GH#201 Phase 4
+		auditDetails := map[string]any{"auto_pr": req.AutoPR, "base_branch": req.BaseBranch} // GH#201 Phase 4
+		if req.PushOnComplete != nil {
+			auditDetails["push_on_complete"] = *req.PushOnComplete
+		}
+		s.audit(r.Context(), "set_git", "automaton", id, auditDetails)
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL386 Phase 1 — per-PRD warm-start memory seed config.

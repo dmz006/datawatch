@@ -907,6 +907,9 @@ type AutonomousAPI interface {
 	// field (inherit from the next tier: profile, then global default set).
 	SetPRDNotifyEvents(prdID string, kinds []string) (any, error)
 	SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error)
+	// Per-PRD push-on-complete override (never|branch|default_branch; "" clears
+	// the override so the daemon's git.push_on_complete applies).
+	SetPRDGitPush(prdID, policy string) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
@@ -5940,6 +5943,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"usage": map[string]interface{}{
 			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
 		},
+		"git": map[string]interface{}{
+			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
+			"push_remote":      s.cfg.Git.EffectivePushRemote(),
+		},
 		"mcp": map[string]interface{}{
 			"enabled":           s.cfg.MCP.Enabled,
 			"sse_enabled":       s.cfg.MCP.SSEEnabled,
@@ -7455,6 +7462,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Session.AutoGitInit = toBool(v)
 		case "session.git_default":
 			cfg.Session.GitDefault = toBool(v)
+		case "git.push_on_complete":
+			// Accept only the three known policies (case-insensitive,
+			// trimmed). Invalid values are ignored — the stored value is
+			// left untouched — the same way unknown keys are no-ops here.
+			if s := strings.ToLower(strings.TrimSpace(toString(v))); s == config.GitPushNever || s == config.GitPushBranch || s == config.GitPushDefaultBranch {
+				cfg.Git.PushOnComplete = s
+			} else {
+				fmt.Fprintf(os.Stderr, "[config] git.push_on_complete: invalid value %q (allowed: never, branch, default_branch); ignored\n", toString(v))
+			}
+		case "git.push_remote":
+			// Trimmed; empty resets to the built-in default (origin),
+			// resolved via GitConfig.EffectivePushRemote.
+			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
 		case "session.kill_sessions_on_exit":
 			cfg.Session.KillSessionsOnExit = toBool(v)
 		case "session.one_shot_sessions":
