@@ -1089,6 +1089,12 @@ type Manager struct {
 	// Production never sets it.
 	savePRDHook func(*PRD) error
 
+	// mergeResolveFn / mergeVerifyFn are the model and the verification the
+	// task merge uses for a conflict the mechanical pass cannot settle
+	// (task_merge.go). Guarded by mu. Nil means no model resolution.
+	mergeResolveFn MergeResolveFn
+	mergeVerifyFn  MergeVerifyFn
+
 	// loopFired (loop_rescue.go) — loop-rescue fires-once dedup: keys are
 	// sessionID + \x00 + LoopFinding.Key(); a (session, finding) pair
 	// already rescued must not re-fire on later polls (no re-record,

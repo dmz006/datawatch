@@ -2019,6 +2019,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
+			// Fold the task branch into the PRD branch (no-op without one).
+			if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
+				log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
+			}
 			// v9.2.1 — passing-script retry: verification passed via the
 			// unmodified-retry escape hatch (the retry itself produced no diff;
 			// already-committed work passed the verification script). Append the

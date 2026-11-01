@@ -7497,6 +7497,8 @@ components:
         spec: {type: string}
         depends_on: {type: array, items: {type: string}}
         read_only: {type: boolean, description: "The task changes no files, so it may skip the tree lock when autonomous.parallel.read_only_tasks is on. Absent = false. Set through add_task and edit_task, or by decompose"}
+        merge_state: {type: string, enum: [pending, merged, conflict, held], description: "State of the merge of the task branch into the PRD branch (worktree-per-task mode). Absent for a task that works in the PRD worktree"}
+        merge_commit: {type: string, description: "The PRD branch commit that carries the task work once merge_state is merged"}
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
         verification_script: {type: string}
         status: {type: string}

@@ -1247,6 +1247,13 @@ type Task struct {
 	WorktreePath   string `json:"worktree_path,omitempty"`
 	WorktreeBranch string `json:"worktree_branch,omitempty"`
 
+	// MergeState / MergeCommit track the merge of the task branch into the
+	// PRD branch (see task_merge.go): pending | merged | conflict | held.
+	// MergeCommit is the PRD branch commit that carries the task's work once
+	// merged. Both empty for a task that works in the PRD worktree.
+	MergeState  string `json:"merge_state,omitempty"`
+	MergeCommit string `json:"merge_commit,omitempty"`
+
 	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
 	// to an executable verification script (planned location
 	// `.datawatch/verify/<task-id>.sh`) that a future decompose pass
