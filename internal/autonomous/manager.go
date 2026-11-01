@@ -501,6 +501,10 @@ type Config struct {
 	// PRD.RefuseDirtyTreeStart.
 	RefuseDirtyTreeStart bool `json:"refuse_dirty_tree_start"`
 
+	// Parallel carries autonomous.parallel.*; read it through
+	// EffectiveReadOnlyTasks, never directly.
+	Parallel config.AutonomousParallelConfig `json:"parallel"`
+
 	// ContinueOnStoryFailure controls whether the executor keeps running
 	// later, independent stories after one story fails. Default false
 	// (zero value) HALTS the PRD (status -> PRDBlocked) the moment a

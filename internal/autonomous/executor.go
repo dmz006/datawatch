@@ -1261,9 +1261,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		m.detachTreeRelease(t.ID)
 	}()
+	// A read-only task (flagged, with the setting on) never takes the write
+	// lock, so it runs in the pool beside other tasks. Writers always lock.
+	readOnly := m.readOnlyTaskSkipsLock(t)
 	holdTree := func() error {
 		if treeRelease != nil {
 			return nil // already held for this executeOne (idempotent)
+		}
+		if readOnly {
+			return nil
 		}
 		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
 		if terr != nil {
@@ -1296,6 +1302,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
 		inheritedSession := inherited
 		inherited = false
+		// Tree state before a read-only task starts; compared after it ends.
+		roBaseline, roBaselineOK := "", false
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -1580,6 +1588,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return terr
 			}
+			if readOnly {
+				roBaseline, roBaselineOK = m.readOnlyTreeStatus(ctx, prd, t)
+			}
 			// BL447: lint against the task's own resolved dir/write scope.
 			// scope_lint decides what a hit does: enforce blocks the task,
 			// warn records it and spawns anyway, off skips the lint.
@@ -1612,18 +1623,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        m.escalationRetryHint(prd, t, hint),
-				ProjectProfile:   prd.ProjectProfile,  // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,  // v5.26.19
-				Branch:           prd.Git.Branch,      // BL407 Phase 4
-				Git:              prdAutoCommits(prd), // git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,      // BL244
+				ProjectProfile:   prd.ProjectProfile,               // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
+				Branch:           prd.Git.Branch,                   // BL407 Phase 4
+				Git:              prdAutoCommits(prd) && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,                   // BL244
 				LSPLanguage:      lspLang,
-				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
-				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
-				AttemptRefs:      t.AttemptRefs,                  // preserved attempt work to restore
-				CleanRestart:     t.CleanRestart,                 // operator clean restart: skip the restore once
-				ComputeNode:      heldNode,                       // capacity lease's node: where the worker runs
+				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
+				SkipDirtyCapture: prd.Git.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				WriteScope:       readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
+				AttemptRefs:      t.AttemptRefs,                                                // preserved attempt work to restore
+				CleanRestart:     t.CleanRestart,                                               // operator clean restart: skip the restore once
+				ComputeNode:      heldNode,                                                     // capacity lease's node: where the worker runs
 			})
 			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
 				return nil
@@ -1715,6 +1726,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return nil
 			}
 			return terr
+		}
+
+		// A read-only task must leave the tree as it found it.
+		if readOnly && roBaselineOK {
+			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = verr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return verr
+			}
 		}
 
 		var vr VerificationResult

@@ -4454,6 +4454,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
 			ScopeLint:               acfgIn.ScopeLintMode(),
 			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
+			Parallel:                acfgIn.Parallel,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
