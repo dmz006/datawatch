@@ -167,7 +167,7 @@ func TestDefaultPipelineMatchesMergeHelperScript(t *testing.T) {
 	runRepo := newMergeRepo(t)
 	ship := &fakeShip{}
 	rec := &memRecorder{}
-	r := &Runner{Dir: runRepo, Project: "p", Ship: ship, Recorder: rec}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: runRepo, Project: "p", Ship: ship, Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "Add the feature", Branches: []string{"feature"}})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -225,7 +225,7 @@ func getFile(t *testing.T, dir, rel string) string {
 func TestDefaultPipelineRefusesWhatTheScriptRefuses(t *testing.T) {
 	dir := newMergeRepo(t)
 	runGit(t, dir, "checkout", "-q", "feature")
-	r := &Runner{Dir: dir, Project: "p", Ship: &fakeShip{}}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: &fakeShip{}}
 	if _, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}}); err == nil {
 		t.Fatal("run on a non-main branch must fail")
 	}
@@ -249,7 +249,7 @@ func TestConflictStopsTheRunAndIsRecorded(t *testing.T) {
 	addConflictingBranch(t, dir)
 	ship := &fakeShip{}
 	rec := &memRecorder{}
-	r := &Runner{Dir: dir, Project: "p", Ship: ship, Recorder: rec}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship, Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"clash"}})
 	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
 		t.Fatalf("want a failed run, got %q err %v", res.Run.Result, err)
@@ -275,7 +275,7 @@ func TestConflictPolicyIsApplied(t *testing.T) {
 	runGit(t, dir, "commit", "-q", "-am", "main adds")
 
 	def := Definition{Steps: []Step{{Name: "merge", Kind: KindShip, Action: ActionMergeBranches}}}
-	r := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def),
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def),
 		ConflictSettings: func() ConflictSettings { return ConflictSettings{Policy: PolicyMechanical} }}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"adds"}})
 	if err != nil || res.Run.Result != autonomous.MergeRunOK {
@@ -298,7 +298,7 @@ func TestFailingStepStopsUnlessContinue(t *testing.T) {
 		{Name: "never", Kind: KindCustom, Command: "echo no"},
 	}}
 	rec := &memRecorder{}
-	r := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Recorder: rec}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Recorder: rec}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || res.Run.Result != autonomous.MergeRunFailed {
 		t.Fatalf("want failed run, got %q err %v", res.Run.Result, err)
@@ -324,7 +324,7 @@ func TestFailingStepStopsUnlessContinue(t *testing.T) {
 		{Name: "soft", Kind: KindCustom, Command: "exit 2", OnFailure: OnFailureContinue},
 		{Name: "next", Kind: KindCustom, Command: "true"},
 	}}
-	r2 := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def2)}
+	r2 := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def2)}
 	res2, err := r2.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err != nil || res2.Run.Result != autonomous.MergeRunCompletedWithFailures {
 		t.Fatalf("want completed_with_failures, got %q err %v", res2.Run.Result, err)
@@ -336,7 +336,7 @@ func TestShipKindsOnlyRunWhenListedAndOnlyThroughTheRunner(t *testing.T) {
 	// no tag, deploy or hook step listed: the fake sees nothing
 	ship := &fakeShip{}
 	def := Definition{Steps: []Step{{Name: "merge", Kind: KindShip, Action: ActionMergeBranches}}}
-	r := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Ship: ship}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Ship: ship}
 	if _, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestShipKindsOnlyRunWhenListedAndOnlyThroughTheRunner(t *testing.T) {
 		{Name: "notify", Kind: KindPostShipHook, Command: "touch " + marker},
 	}}
 	ship2 := &fakeShip{}
-	r2 := &Runner{Dir: dir2, Project: "p", Resolver: resolverWithRecord(t, def2), Ship: ship2}
+	r2 := &Runner{VersionFiles: testVersionFiles, Dir: dir2, Project: "p", Resolver: resolverWithRecord(t, def2), Ship: ship2}
 	if _, err := r2.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +365,7 @@ func TestShipKindsOnlyRunWhenListedAndOnlyThroughTheRunner(t *testing.T) {
 	}
 
 	// with no runner wired such a step fails instead of running
-	r3 := &Runner{Dir: newMergeRepo(t), Project: "p", Resolver: resolverWithRecord(t, def2)}
+	r3 := &Runner{VersionFiles: testVersionFiles, Dir: newMergeRepo(t), Project: "p", Resolver: resolverWithRecord(t, def2)}
 	res3, err := r3.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || res3.Run.Steps[0].Result != autonomous.MergeStepFailed {
 		t.Fatalf("want failure without a ship runner, got %v", err)
@@ -378,7 +378,7 @@ func TestShipKindsOnlyRunWhenListedAndOnlyThroughTheRunner(t *testing.T) {
 func TestShipFailureOnPushStopsBeforeDeploy(t *testing.T) {
 	dir := newMergeRepo(t)
 	ship := &fakeShip{fail: "push main v1.2.4"}
-	r := &Runner{Dir: dir, Project: "p", Ship: ship}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship}
 	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err == nil || stepResults(res.Run)["push-release"] != autonomous.MergeStepFailed {
 		t.Fatalf("want push failure, got %v %v", err, stepResults(res.Run))
@@ -396,7 +396,7 @@ func TestFileSourceIsInEffectAndRecorded(t *testing.T) {
 	rs, _ := NewRecordStore(t.TempDir())
 	_, _ = rs.Set("p", Definition{Steps: []Step{{Name: "rec", Kind: KindCustom, Command: "true"}}})
 	res := &Resolver{Records: rs, ProjectDir: func(string) (string, bool) { return dir, true }}
-	r := &Runner{Dir: dir, Project: "p", Resolver: res}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: res}
 	out, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	if err != nil {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestNoPipelineCouldBeChosenIsRecordedAsFailed(t *testing.T) {
 	set.FallbackOnBadFile = FallbackNone
 	res := &Resolver{ProjectDir: func(string) (string, bool) { return dir, true }, Settings: func(string) Settings { return set }}
 	rec := &memRecorder{}
-	r := &Runner{Dir: dir, Project: "p", Resolver: res, Recorder: rec}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: res, Recorder: rec}
 	if _, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}}); err == nil {
 		t.Fatal("expected an error")
 	}
@@ -429,7 +429,7 @@ func TestSecretsAreRemovedFromRecords(t *testing.T) {
 	def := Definition{Steps: []Step{{Name: "leaky", Kind: KindCustom,
 		Command: "echo 'token=abc123supersecret'; echo 'https://user:hunter2@example.invalid/x'; echo ghp_abcdefghijklmnopqrstuvwxyz0123456789; exit 1"}}}
 	rec := &memRecorder{}
-	r := &Runner{Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Recorder: rec}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: resolverWithRecord(t, def), Recorder: rec}
 	res, _ := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
 	d := res.Run.Steps[0].Detail
 	for _, bad := range []string{"abc123supersecret", "hunter2", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"} {
@@ -465,5 +465,20 @@ func TestRunRecordsPersistAndReload(t *testing.T) {
 	again := autonomous.NewMergeRunRecords(dir).List(0)
 	if len(again) != 2 || again[0].ID != "b" || again[1].Result != autonomous.MergeRunOK || again[1].Steps[0].Result != autonomous.MergeStepOK {
 		t.Fatalf("reloaded %+v", again)
+	}
+}
+
+// testVersionFiles are the version files of the temporary repository the
+// tests build; production reads them from the operator's setting.
+var testVersionFiles = []string{"cmd/datawatch/main.go", "internal/server/api.go"}
+
+// With no version files named, the release-version step fails and says why
+// rather than touching a guessed path.
+func TestRunWithoutVersionFilesFailsTheBumpStep(t *testing.T) {
+	dir := newMergeRepo(t)
+	r := &Runner{Dir: dir, Project: "p", Ship: &fakeShip{}}
+	_, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err == nil || !strings.Contains(err.Error(), "version_files") {
+		t.Fatalf("want a version_files error, got %v", err)
 	}
 }

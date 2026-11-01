@@ -185,3 +185,18 @@ func (m *Manager) RecordMergeRun(run MergePipelineRun) { m.mergeRuns().RecordMer
 
 // MergeRuns returns up to limit recorded pipeline runs, newest first.
 func (m *Manager) MergeRuns(limit int) []MergePipelineRun { return m.mergeRuns().List(limit) }
+
+// MergeQuestionStore returns the operator question store when the operator
+// question channel is on, so a merge conflict nobody could settle reaches the
+// operator. It returns nil when the channel is off or not wired.
+func (m *Manager) MergeQuestionStore() *QuestionStore {
+	store, on := m.operatorQuestionChannel()
+	if !on {
+		return nil
+	}
+	return store
+}
+
+// MergeBaseRepo is the project directory a merge runs in: the configured
+// worktree base repo, empty when none is set.
+func (m *Manager) MergeBaseRepo() string { return m.Config().WorktreeBaseRepo }

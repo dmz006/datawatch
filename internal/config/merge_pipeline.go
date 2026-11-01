@@ -64,6 +64,7 @@ type MergePipelineOverride struct {
 	FallbackOnBadFile string   `yaml:"fallback_on_bad_file,omitempty" json:"fallback_on_bad_file,omitempty"`
 	ConflictPolicy    string   `yaml:"conflict_policy,omitempty" json:"conflict_policy,omitempty"`
 	ConflictModel     *string  `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
+	VersionFiles      []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
 }
 
 // MergePipelineConfig is the autonomous.merge_pipeline block.
@@ -83,6 +84,11 @@ type MergePipelineConfig struct {
 	// Unset reads MergePipelineDefaultConflictModel; an explicit empty string
 	// means no model.
 	ConflictModel *string `yaml:"conflict_model,omitempty" json:"conflict_model,omitempty"`
+	// VersionFiles lists the project files, relative to the project, that
+	// carry the `var Version = "X.Y.Z"` line the release-version step sets.
+	// Unset means none: a pipeline that bumps the version fails that step
+	// until the operator names the files.
+	VersionFiles []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
 	// Projects holds per-project overrides keyed by project name.
 	Projects map[string]MergePipelineOverride `yaml:"projects,omitempty" json:"projects,omitempty"`
 }
@@ -90,18 +96,20 @@ type MergePipelineConfig struct {
 // IsZero reports whether no key is set, so yaml.v3 can drop an unset block.
 func (c MergePipelineConfig) IsZero() bool {
 	return c.FileName == "" && c.SourceOrder == nil && c.FallbackOnBadFile == "" &&
-		c.ConflictPolicy == "" && c.ConflictModel == nil && len(c.Projects) == 0
+		c.ConflictPolicy == "" && c.ConflictModel == nil && c.VersionFiles == nil && len(c.Projects) == 0
 }
 
 // Clone returns a deep copy.
 func (c MergePipelineConfig) Clone() MergePipelineConfig {
 	out := c
 	out.SourceOrder = cloneStrings(c.SourceOrder)
+	out.VersionFiles = cloneStrings(c.VersionFiles)
 	out.ConflictModel = cloneStringPtr(c.ConflictModel)
 	if c.Projects != nil {
 		out.Projects = make(map[string]MergePipelineOverride, len(c.Projects))
 		for k, v := range c.Projects {
 			v.SourceOrder = cloneStrings(v.SourceOrder)
+			v.VersionFiles = cloneStrings(v.VersionFiles)
 			v.ConflictModel = cloneStringPtr(v.ConflictModel)
 			out.Projects[k] = v
 		}
@@ -148,6 +156,15 @@ func (c MergePipelineConfig) EffectiveSourceOrder(project string) []string {
 		return cloneStrings(c.SourceOrder)
 	}
 	return MergePipelineDefaultSourceOrder()
+}
+
+// EffectiveVersionFiles returns the version files for project (a copy); empty
+// when the operator named none.
+func (c MergePipelineConfig) EffectiveVersionFiles(project string) []string {
+	if v := c.override(project).VersionFiles; len(v) > 0 {
+		return cloneStrings(v)
+	}
+	return cloneStrings(c.VersionFiles)
 }
 
 // EffectiveFallbackOnBadFile returns what to do with a bad file for project.
@@ -285,6 +302,14 @@ func (c MergePipelineConfig) Validate() error {
 	if err := validSourceOrder(p+"source_order", c.SourceOrder); err != nil {
 		return err
 	}
+	for _, f := range c.VersionFiles {
+		if f == "" {
+			return fmt.Errorf("%sversion_files: a file name is empty", p)
+		}
+		if err := validFileName(p+"version_files", f); err != nil {
+			return err
+		}
+	}
 	if err := validFallback(p+"fallback_on_bad_file", c.FallbackOnBadFile); err != nil {
 		return err
 	}
@@ -310,6 +335,14 @@ func (c MergePipelineConfig) Validate() error {
 		}
 		if err := validSourceOrder(k+"source_order", o.SourceOrder); err != nil {
 			return err
+		}
+		for _, f := range o.VersionFiles {
+			if f == "" {
+				return fmt.Errorf("%sversion_files: a file name is empty", k)
+			}
+			if err := validFileName(k+"version_files", f); err != nil {
+				return err
+			}
 		}
 		if err := validFallback(k+"fallback_on_bad_file", o.FallbackOnBadFile); err != nil {
 			return err

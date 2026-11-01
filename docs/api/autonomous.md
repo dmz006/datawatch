@@ -76,6 +76,7 @@ GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress
 GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
 GET    /api/autonomous/request-watch[?session=&automaton=]  model request progress: the watch settings in effect and one observation per watched worker or verifier session (state, time without progress, summary); read-only, makes no model call
+POST   /api/autonomous/merge/run           run a merge through the resolved merge pipeline: body {project?, title, branches}; answers {run, error?}; each step is recorded in pipeline_runs of the merge state
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions; read-only, never runs git
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 
@@ -1626,7 +1627,11 @@ Both routes share one gate:
 | Federated peer without the autonomous read capability | `403` |
 | Otherwise | `200` with the JSON body below |
 
-Neither route takes a query parameter, and neither has a write sibling: nothing here merges, deletes or pushes.
+Neither of these two reads takes a query parameter or merges, deletes or pushes. Running a merge is the separate `POST /api/autonomous/merge/run` route below.
+
+### `POST /api/autonomous/merge/run`
+
+Runs a merge of `branches` (in order) in the configured worktree base repo through the pipeline in effect: the project's own file, else the daemon record, else the built-in pipeline, as `autonomous.merge_pipeline` sets. The built-in pipeline reproduces the merge helper script. A conflict is settled by `autonomous.merge_pipeline.conflict_policy`; the version files the release-version step edits come from `autonomous.merge_pipeline.version_files` (none by default). Tag, push, deploy and hook steps run only when the pipeline lists them. The run is synchronous and answers `200` with `{"run": {...}, "error": "..."}` — a failing step is in `run.steps`, not an HTTP error. Other answers: `405` (not POST, `Allow: POST`), `503` (Automata disabled, or no worktree base repo), `403` (federated peer without the autonomous write capability), `409` (a merge is already running). Every step (step, start, end, result) and the source in effect is listed under `pipeline_runs` of `GET /api/autonomous/merge`, newest run first; secrets are removed from the recorded text.
 
 ### `GET /api/autonomous/merge`
 

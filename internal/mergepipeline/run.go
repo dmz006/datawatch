@@ -28,11 +28,6 @@ const (
 	checkVersionScript = "check-merge-version.sh"
 )
 
-// DefaultVersionFiles are the files that carry `var Version = "X.Y.Z"`.
-func DefaultVersionFiles() []string {
-	return []string{"cmd/datawatch/main.go", "internal/server/api.go"}
-}
-
 // ShipRunner does the steps that leave the machine or change what runs on it:
 // tag, push, deploy and the post-ship hook. They only ever run through this
 // interface, and only when the pipeline lists them; tests use a fake so no
@@ -81,10 +76,13 @@ type Runner struct {
 	// Recorder receives the run after every step; nil records nothing.
 	Recorder autonomous.MergeRunRecorder
 
-	MainBranch    string   // default main
-	VersionFiles  []string // default DefaultVersionFiles
-	ChangelogFile string   // default CHANGELOG.md
-	ScriptDir     string   // relative to Dir; default scripts
+	MainBranch string // default main
+	// VersionFiles carry `var Version = "X.Y.Z"`; they come from the
+	// operator's autonomous.merge_pipeline.version_files setting. None means
+	// the release-version step fails rather than guess at a path.
+	VersionFiles  []string
+	ChangelogFile string // default CHANGELOG.md
+	ScriptDir     string // relative to Dir; default scripts
 	Now           func() time.Time
 }
 
@@ -102,12 +100,9 @@ func (r *Runner) mainBranch() string {
 	return DefaultMainBranch
 }
 
-func (r *Runner) versionFiles() []string {
-	if len(r.VersionFiles) > 0 {
-		return r.VersionFiles
-	}
-	return DefaultVersionFiles()
-}
+func (r *Runner) versionFiles() []string { return r.VersionFiles }
+
+var errNoVersionFiles = errors.New("no version files are configured (autonomous.merge_pipeline.version_files)")
 
 func (r *Runner) changelog() string {
 	if r.ChangelogFile != "" {
@@ -490,6 +485,9 @@ func (r *Runner) readInside(rel string) (string, []byte, error) {
 
 // currentVersion reads the version from the first version file.
 func (r *Runner) currentVersion() (string, error) {
+	if len(r.versionFiles()) == 0 {
+		return "", errNoVersionFiles
+	}
 	_, data, err := r.readInside(r.versionFiles()[0])
 	if err != nil {
 		return "", err
@@ -519,6 +517,9 @@ func (r *Runner) writeVersion(v string) error {
 		data []byte
 	}
 	var out []pending
+	if len(r.versionFiles()) == 0 {
+		return errNoVersionFiles
+	}
 	for _, f := range r.versionFiles() {
 		p, data, err := r.readInside(f)
 		if err != nil {
