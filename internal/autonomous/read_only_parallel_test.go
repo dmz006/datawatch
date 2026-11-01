@@ -219,13 +219,21 @@ func TestReadOnlyTaskThatDirtiesTreeFails(t *testing.T) {
 	var sawCommitStep bool
 	spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
 		sawCommitStep = req.Git || len(req.WriteScope) > 0
+		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+	}
+	// spawn only starts the session; the worker runs until verify returns. The
+	// stray file is written there, after spawn, to model a worker that dirties
+	// the tree while it runs.
+	verify := func(ctx context.Context, p *PRD, tk *Task) (VerificationResult, error) {
 		if err := os.WriteFile(filepath.Join(repo, "stray.txt"), []byte("x"), 0o644); err != nil {
 			t.Errorf("write: %v", err)
 		}
-		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+		return tlVerify(ctx, p, tk)
 	}
-	ran, cancel := runAsync(mgr, prd.ID, spawn)
+	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	ran := make(chan error, 1)
+	go func() { ran <- mgr.Run(runCtx, prd.ID, spawn, verify) }()
 	finishRun(t, ran)
 
 	if sawCommitStep {

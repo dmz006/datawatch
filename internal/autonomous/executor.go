@@ -1728,21 +1728,6 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return terr
 		}
 
-		// A read-only task must leave the tree as it found it.
-		if readOnly && roBaselineOK {
-			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
-				oldStatus := t.Status
-				m.store.WithLock(func() {
-					t.Status = TaskFailed
-					t.Error = verr.Error()
-				})
-				if m.store.SaveTask(t) == nil {
-					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
-				}
-				return verr
-			}
-		}
-
 		var vr VerificationResult
 		if verify != nil {
 			vr, err = verify(ctx, prd, t)
@@ -1802,6 +1787,27 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		} else {
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
+		// A read-only task must leave the tree as it found it. Checked here, after
+		// verify has waited for the worker to finish: spawn only starts the session,
+		// so an earlier check would miss changes the worker makes while it runs.
+		// The baseline is the tree status taken before spawn; a writer running
+		// beside this task on the same tree (no lock is held) can also make the
+		// status differ, which fails the task. Operators who flag a task read-only
+		// should not run writers on the same tree at the same time.
+		if readOnly && roBaselineOK {
+			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = verr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return verr
+			}
+		}
+
 		// The attempt got past delivery and produced a verification result, so an
 		// earlier infrastructure incident is over. A failed result the verifier
 		// itself marks as an infrastructure failure, and whose summary reports a
