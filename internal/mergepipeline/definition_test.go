@@ -42,6 +42,10 @@ func TestValidate(t *testing.T) {
 		{"tmpdir only still unscoped", []Step{{Name: "a", Kind: KindCustom, Command: "TMUX_TMPDIR=/x tmux kill-server"}}, "unscoped tmux kill"},
 		{"socket scoped kill ok", []Step{{Name: "a", Kind: KindCustom, Command: `tmux -S "$(mktemp -d)/s" kill-server`}}, ""},
 		{"env scrubbed kill ok", []Step{{Name: "a", Kind: KindCustom, Command: "env -u TMUX -u TMUX_TMPDIR tmux kill-server"}}, ""},
+		{"env scrub on other command", []Step{{Name: "a", Kind: KindCustom, Command: "env -u TMUX -u TMUX_TMPDIR go test ./...; tmux kill-server"}}, "unscoped tmux kill"},
+		{"socket on other command", []Step{{Name: "a", Kind: KindCustom, Command: "tmux -L scratch list-sessions; tmux kill-server"}}, "unscoped tmux kill"},
+		{"colon in dir ok", []Step{{Name: "a", Kind: KindTest, Command: "x", Dir: "a:b"}}, ""},
+		{"bad make target", []Step{{Name: "a", Kind: KindTest, Command: "x", RequiresMakeTarget: "a b"}}, "requires_make_target"},
 		{"kill-session by name ok", []Step{{Name: "a", Kind: KindCustom, Command: "tmux kill-session -t mine"}}, ""},
 	}
 	for _, c := range cases {

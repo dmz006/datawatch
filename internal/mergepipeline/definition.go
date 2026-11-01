@@ -64,13 +64,16 @@ func BuiltinActions() []string {
 // Step is one stage of a merge pipeline. Exactly one of Command and Action is
 // set: Command is a shell command line, Action names a built-in.
 type Step struct {
-	Name      string        `yaml:"name" json:"name"`
-	Kind      Kind          `yaml:"kind" json:"kind"`
-	Command   string        `yaml:"command,omitempty" json:"command,omitempty"`
-	Action    string        `yaml:"action,omitempty" json:"action,omitempty"`
-	Dir       string        `yaml:"dir,omitempty" json:"dir,omitempty"` // relative to the project; empty means its root
-	OnFailure OnFailure     `yaml:"on_failure,omitempty" json:"on_failure,omitempty"`
-	Timeout   time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"` // zero means the runner's default
+	Name      string    `yaml:"name" json:"name"`
+	Kind      Kind      `yaml:"kind" json:"kind"`
+	Command   string    `yaml:"command,omitempty" json:"command,omitempty"`
+	Action    string    `yaml:"action,omitempty" json:"action,omitempty"`
+	Dir       string    `yaml:"dir,omitempty" json:"dir,omitempty"` // relative to the project; empty means its root
+	OnFailure OnFailure `yaml:"on_failure,omitempty" json:"on_failure,omitempty"`
+	// RequiresMakeTarget, when set, runs the step only if the project's
+	// Makefile defines that target; otherwise the runner skips it.
+	RequiresMakeTarget string        `yaml:"requires_make_target,omitempty" json:"requires_make_target,omitempty"`
+	Timeout            time.Duration `yaml:"timeout,omitempty" json:"timeout,omitempty"` // zero means the runner's default
 }
 
 // Definition is an ordered list of steps.
@@ -91,15 +94,30 @@ func (e *ValidationError) Error() string {
 // would reach the operator's live tmux server unless scoped.
 var unscopedTmuxKill = regexp.MustCompile(`tmux([ \t]+[^|;&]*)?[ \t]+(kill-server|kill-session([ \t]+[^|;&]*)?[ \t]-[A-Za-z]*a)`)
 
-// tmuxKillScoped matches the two accepted scopings: an explicit socket, or a
-// scrubbed environment.
-var tmuxKillScoped = regexp.MustCompile(`tmux[ \t]+(-[A-Za-z]*S[ \t]|-L[ \t])|env[ \t]+-u[ \t]+TMUX[ \t]+-u[ \t]+TMUX_TMPDIR`)
+// tmuxKillScoped matches the accepted scopings within one simple command: an
+// explicit socket on the tmux call, or a scrubbed environment prefixing it.
+var tmuxKillScoped = regexp.MustCompile(`tmux[ \t]+(-[A-Za-z]*S[ \t]|-L[ \t])|env[ \t]+(-u[ \t]+TMUX[ \t]+-u[ \t]+TMUX_TMPDIR|-u[ \t]+TMUX_TMPDIR[ \t]+-u[ \t]+TMUX)[ \t][^|;&\n]*tmux`)
 
-// CallsUnscopedTmuxKill reports whether command kills tmux without an explicit
-// throwaway socket or a scrubbed environment.
+// commandSeparators splits a command line into simple commands.
+var commandSeparators = regexp.MustCompile(`[;&|\n]+`)
+
+// CallsUnscopedTmuxKill reports whether any simple command in command kills
+// tmux without an explicit throwaway socket or a scrubbed environment on that
+// same command. A scoping marker on another command does not count.
 func CallsUnscopedTmuxKill(command string) bool {
-	return unscopedTmuxKill.MatchString(command) && !tmuxKillScoped.MatchString(command)
+	for _, seg := range commandSeparators.Split(command, -1) {
+		if unscopedTmuxKill.MatchString(seg) && !tmuxKillScoped.MatchString(seg) {
+			return true
+		}
+	}
+	return false
 }
+
+var makeTarget = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
+
+// DefaultFileName is the conventional pipeline file in a project's repository.
+// Callers pass it (or their own setting) to LoadFile.
+const DefaultFileName = ".datawatch/merge-pipeline.yaml"
 
 // Validate checks the definition and returns a *ValidationError listing every
 // problem, or nil.
@@ -144,6 +162,9 @@ func (d Definition) Validate() error {
 		if hasCmd && CallsUnscopedTmuxKill(s.Command) {
 			problems = append(problems, label+": command calls an unscoped tmux kill")
 		}
+		if t := s.RequiresMakeTarget; t != "" && !makeTarget.MatchString(t) {
+			problems = append(problems, fmt.Sprintf("%s: invalid requires_make_target %q", label, t))
+		}
 		if err := checkDir(s.Dir); err != nil {
 			problems = append(problems, label+": "+err.Error())
 		}
@@ -162,11 +183,14 @@ func (d Definition) Validate() error {
 	return nil
 }
 
+// windowsDrive matches a drive-letter prefix such as C:\\ or C:/.
+var windowsDrive = regexp.MustCompile(`^[A-Za-z]:([/\\]|$)`)
+
 func checkDir(dir string) error {
 	if dir == "" {
 		return nil
 	}
-	if path.IsAbs(dir) || strings.HasPrefix(dir, "/") || strings.HasPrefix(dir, `\`) || (len(dir) > 1 && dir[1] == ':') {
+	if path.IsAbs(dir) || strings.HasPrefix(dir, "/") || strings.HasPrefix(dir, `\`) || windowsDrive.MatchString(dir) {
 		return errors.New("dir must be relative to the project")
 	}
 	for _, part := range strings.FieldsFunc(dir, func(r rune) bool { return r == '/' || r == '\\' }) {

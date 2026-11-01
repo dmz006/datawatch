@@ -46,3 +46,9 @@ func TestDefaultsAreIndependentCopies(t *testing.T) {
 		t.Fatal("default shared state")
 	}
 }
+
+func TestDefaultFileName(t *testing.T) {
+	if DefaultFileName != ".datawatch/merge-pipeline.yaml" {
+		t.Fatalf("DefaultFileName = %q", DefaultFileName)
+	}
+}

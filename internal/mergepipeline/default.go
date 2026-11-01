@@ -10,7 +10,8 @@ import "time"
 //     carries the expected next one). Any failure stops the pipeline with
 //     nothing merged.
 //  2. check-internal-refs: lint the checked-out main tree for internal
-//     reference leaks, only where the project defines that make target. A
+//     reference leaks, only where the project defines that make target
+//     (the step's RequiresMakeTarget; the runner skips it otherwise). A
 //     failure stops the pipeline before any merge.
 //  3. merge-branches: merge each branch in order with --no-ff; a conflicting
 //     merge is aborted and stops the pipeline.
@@ -29,7 +30,7 @@ import "time"
 func DefaultDefinition() Definition {
 	return Definition{Steps: []Step{
 		{Name: "check-branch-versions", Kind: KindCustom, Action: ActionCheckBranchVersions, OnFailure: OnFailureStop, Timeout: 2 * time.Minute},
-		{Name: "check-internal-refs", Kind: KindLint, Command: "make check-internal-refs", OnFailure: OnFailureStop, Timeout: 10 * time.Minute},
+		{Name: "check-internal-refs", Kind: KindLint, Command: "make check-internal-refs", RequiresMakeTarget: "check-internal-refs", OnFailure: OnFailureStop, Timeout: 10 * time.Minute},
 		{Name: "merge-branches", Kind: KindShip, Action: ActionMergeBranches, OnFailure: OnFailureStop, Timeout: 5 * time.Minute},
 		{Name: "set-release-version", Kind: KindVersionBump, Action: ActionSetReleaseVersion, OnFailure: OnFailureStop, Timeout: time.Minute},
 		{Name: "insert-changelog-heading", Kind: KindChangelog, Action: ActionInsertChangelog, OnFailure: OnFailureStop, Timeout: time.Minute},
