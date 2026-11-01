@@ -59,7 +59,7 @@ func startFakeOneShot(t *testing.T, mgr *Manager, fake *FakeTmux, dir, task stri
 		_ = fake.PipeOutput(tmuxSession, "/dev/null")
 		return nil
 	})
-	sess, err := mgr.Start(context.Background(), task, "", dir, &StartOptions{OneShot: true, ValidateCommands: validate})
+	sess, err := mgr.Start(context.Background(), task, "", dir, &StartOptions{OneShot: true, Git: true, ValidateCommands: validate})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
