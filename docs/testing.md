@@ -177,7 +177,9 @@ two checkers plus a set of regression tests.
   `snapshot <file>` writes the PIDs of every live test daemon into the file;
   `check <file>` then lists, for every live test daemon not in that file, its PID,
   age, config path and listening TCP ports, and fails (exit 1) if there is at least
-  one. It is a read-only walk of `/proc`; it reports and never signals, and it can
+  one. Run with no arguments it checks this checkout only: it fails when a
+  daemon is running on a `--config` path inside the repository root, and it
+  never lists the daemons of other jobs on a shared host. It is a read-only walk of `/proc`; it reports and never signals, and it can
   only ever name a process that still carries a throwaway config in its live
   command line. `make check-leftover-daemons` runs the check against the snapshot
   named by `LEFTOVER_BASELINE`; its default baseline is empty, i.e. it reports
