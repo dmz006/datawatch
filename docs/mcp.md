@@ -430,6 +430,20 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
   question_stats()
   ```
+- **`autonomous_held_questions`** — read the held-question report. The report carries `mode` (in effect: `off`, `shadow` or `on`), the held `states` it covers, `open` (the questions held right now in `on` mode, each with `question_id`, the held `state`, the owning Automaton `prd_id`, the task `task_id`, the worker `automation_id` and its `title`, the `reason` it is held, the `recommended_option` and the forced `default`) and `shadow` (the would-be holds the daemon logged instead of raising in `shadow` mode, each with the owning `prd_id`, the held `state`, the `recommended_option` and the time `at`). While the mode is `off` both lists are empty. Read-only: it never raises, answers, withdraws or unholds. Returns the same object as `GET /api/autonomous/held-questions`; acting on a hold is a worker question answer, not this tool.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `prd_id` | no | only that Automaton's held questions and shadow entries |
+  | `state` | no | one of the five held state ids: `blocked`, `review_held`, `revision_requested`, `awaiting_decision` or `pending_insert` (anything else is refused) |
+
+  ```
+  autonomous_held_questions()
+  autonomous_held_questions(prd_id="d0442737d38c")
+  autonomous_held_questions(state="awaiting_decision")
+  ```
+
+  A wrong `state` comes back as a tool error with the daemon's message (it names the accepted held state ids). Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_merge`** — read the Automaton merge state: `mode` (the `merge_pending_mode` in effect: `off`, `shadow` or `on`), `alert_minutes` (the merge-pending alert threshold in whole minutes; `0` = alert off), `automata` (one entry per finished Automaton that has a work branch, sorted by `automaton_id`, each with `automaton_id`, `name`, `branch`, `state` — `merged`, `pending`, `needs_look`, `empty` or `unknown` — `commits_ahead`, `pending_since`, `alerted_at` and, in `shadow` mode only, `would_alert`) and `shadow_decisions` (what the check would have acted on, newest first; empty outside `shadow` mode). While the mode is `off` both lists are empty. The state comes from the daemon's last comparison, so a read never runs git, and an Automaton not compared yet reads `unknown` (treat it as "no information"). Read-only: nothing is merged, deleted or pushed. Returns the same object as `GET /api/autonomous/merge`.
 
   | Parameter | Required | Description |
@@ -1141,6 +1155,7 @@ called by a federated peer.
 | `question_get` | Return one stored operator question by id, plus its current answer — the default return path for the asker | `GET /api/questions/{id}` |
 | `question_answer` | Record an answer to a stored operator question; the answer is immutable, a changed mind supersedes | `POST /api/questions/{id}/answer` |
 | `question_withdraw` | Withdraw an open operator question (marked withdrawn, can no longer be answered) | `POST /api/questions/{id}/withdraw` |
+| `autonomous_held_questions` | Read the held-question report: the mode in effect (off, shadow, on), the held states, the held questions now (on mode) and the shadow entries (shadow mode); read-only, acting on a hold is a `question_answer` | `GET /api/autonomous/held-questions` |
 | `question_quality` | Read the question quality policy the daemon checks every raised question against (read-only) | `GET /api/questions/quality` |
 
 **Common behaviour.** While the `autonomous.questions.enabled`

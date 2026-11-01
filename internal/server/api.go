@@ -6286,6 +6286,13 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Decision gate: effective values (on, and shadow, when absent).
 				"decision_gate":      s.cfg.Autonomous.Questions.EffectiveDecisionGate(),
 				"decision_gate_mode": s.cfg.Autonomous.Questions.EffectiveDecisionGateMode(),
+				// Held question: effective values — held_mode reads shadow
+				// when the key is absent; held_states reads the five held
+				// state ids when the list is absent, and stays an explicit
+				// empty list (none) when one was set (no omitempty on the
+				// field, so the clear survives the round trip).
+				"held_mode":   s.cfg.Autonomous.Questions.EffectiveHeldMode(),
+				"held_states": s.cfg.Autonomous.Questions.EffectiveHeldStates(),
 				// Worker question marker: effective value (off when absent).
 				"worker_marker": s.cfg.Autonomous.Questions.EffectiveWorkerMarker(),
 				// Question quality check and queue row preview: effective values
@@ -6922,6 +6929,38 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if verr := config.ValidateDecisionGateMode(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The held question mode is off, shadow or on (empty reads as shadow).
+	// Same whole-PUT rejection, by the same rule the config file load uses.
+	if v, ok := patch["autonomous.questions.held_mode"]; ok {
+		mode, isStr := v.(string)
+		if !isStr {
+			http.Error(w, "autonomous.questions.held_mode: must be \"off\", \"shadow\" or \"on\"", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateHeldMode(mode); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// The held state ids cover tasks parked in one of the five known states.
+	// An absent key means all five, an explicit empty list means none; an
+	// unknown id names the valid ones and rejects the whole PUT before
+	// anything is applied.
+	if v, ok := patch["autonomous.questions.held_states"]; ok {
+		var candidate []string
+		if arr, ok := toStringArray(v); ok {
+			candidate = arr
+		} else if str, ok := v.(string); ok {
+			candidate = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.questions.held_states: must be a list of state ids or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateHeldStates(candidate); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -8553,6 +8592,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig to shadow or on.
 			if mode, ok := v.(string); ok {
 				cfg.Autonomous.Questions.DecisionGateMode = mode
+			}
+		case "autonomous.questions.held_mode":
+			// Validated in handlePutConfig to off, shadow or on. The gate
+			// reads the live config on every pass, so no restart is needed.
+			if mode, ok := v.(string); ok {
+				cfg.Autonomous.Questions.HeldMode = mode
+			}
+		case "autonomous.questions.held_states":
+			// Validated in handlePutConfig to the five known state ids.
+			// Accept an array or a comma-separated string, same as
+			// default_events above; an explicit empty list really means
+			// none (no omitempty on the field, so the clear survives
+			// round-trip and an absent key keeps reading all five).
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.Questions.HeldStates = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.Questions.HeldStates = splitCSV(s)
 			}
 		case "autonomous.questions.quality_mode":
 			// Validated in handlePutConfig to off, warn or refuse. Stored as

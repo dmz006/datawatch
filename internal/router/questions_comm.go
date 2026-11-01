@@ -34,7 +34,7 @@ import (
 const questionsListPath = "/api/questions"
 
 // questionUsage is the text sent when a subverb is missing or malformed.
-const questionUsage = "usage: question list | question show <id> | question answer <id> <option number or id> [quote...] | question quality"
+const questionUsage = "usage: question list | question held [prd <id> | state <held state id>] | question show <id> | question answer <id> <option number or id> [quote...] | question quality"
 
 // questionQualityPath is the effective question-quality policy read for
 // `question quality`.
@@ -109,10 +109,14 @@ type questionGetBody struct {
 
 // questionVerb is the parsed `question` subverb.
 type questionVerb struct {
-	action string // list | show | answer | quality
+	action string // list | held | show | answer | quality
 	id     string
 	option string // raw option token (a number or an option id)
 	quote  string // remainder after the option token, as typed
+
+	// held (action "held"): the two optional report filters.
+	heldPRD   string
+	heldState string
 }
 
 // parseQuestionVerb splits the text after "question" into subverb +
@@ -131,6 +135,11 @@ func parseQuestionVerb(text string) (questionVerb, error) {
 			return questionVerb{}, fmt.Errorf("question list takes no arguments (%s)", questionUsage)
 		}
 		return questionVerb{action: "list"}, nil
+	case "held":
+		if len(parts) > 1 {
+			return parseHeldVerb(parts[1:])
+		}
+		return questionVerb{action: "held"}, nil
 	case "show":
 		if len(parts) != 2 {
 			return questionVerb{}, fmt.Errorf("question show takes one id (%s)", questionUsage)
@@ -186,6 +195,8 @@ func (r *Router) handleQuestion(cmd Command) {
 	switch v.action {
 	case "list":
 		r.handleQuestionList()
+	case "held":
+		r.handleQuestionHeld(v.heldPRD, v.heldState)
 	case "show":
 		r.handleQuestionShow(v.id)
 	case "answer":

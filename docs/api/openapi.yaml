@@ -1374,6 +1374,46 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: "Autonomous is disabled, or the question store is not available"}
 
+  /api/autonomous/held-questions:
+    get:
+      summary: Held questions
+      description: |
+        Held-question mode and its data, read-only. `mode` is the effective
+        held-question mode (`off`, `shadow` or `on`) and `states` lists the
+        held-state ids the configuration covers (all five when the held-states
+        setting is unset). `open` lists the open held questions (the `on` mode
+        data): each entry names the question id, the held state it stands for,
+        the Automaton (`prd_id`) and its owning Automation (`automation_id`),
+        the Automaton's title, the reason it is held, its recommended option
+        from the fixed (state, failure category) table, its default (always
+        `hold`) and when it was raised. `shadow` lists what shadow mode
+        recorded on the Automata's triage records instead of raising: the
+        `prd_id`, the held `state`, the `recommended_option` it settled on and
+        the time the note was written. `prd_id` narrows both lists to one
+        Automaton. `state` takes exactly one of the five held-state ids and
+        narrows both lists to that held state. A filter that matches nothing
+        is an empty array, not an error. This surface writes nothing; answering
+        a held question goes through the operator questions surface.
+        Needs the autonomous read capability when called by a federated peer.
+      operationId: autonomousHeldQuestions
+      tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Only the held questions and shadow notes of this Automaton, schema: {type: string}}
+        - {name: state, in: query, required: false, description: "Only that held state", schema: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert]}}
+      responses:
+        "200":
+          description: The held-question report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeldQuestionsReport"
+        "400": {description: state is not one of the five held-state ids}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: "Method not allowed: this endpoint is GET only"}
+        "503": {description: "Autonomous is disabled, the operator question switch is off, or the question store is not wired in"}
+
   /api/autonomous/triage:
     get:
       summary: Triage records
@@ -6473,6 +6513,54 @@ components:
         actor: {type: string}
         surface: {type: string, description: The surface the answer came from}
         answered_at: {type: string, format: date-time, nullable: true}
+    HeldQuestionsReport:
+      type: object
+      description: The held-question report, as GET /api/autonomous/held-questions returns it.
+      required: [mode, states, open, shadow]
+      properties:
+        mode: {type: string, enum: [off, shadow, on], description: "The effective held-question mode; shadow records on the triage notes and raises nothing, off covers nothing"}
+        states:
+          type: array
+          description: The held-state ids the configuration covers; all five when the held-states setting is unset; always an array
+          items: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert]}
+        open:
+          type: array
+          description: The open held questions, newest first; empty when there are none; always an array
+          items: {$ref: "#/components/schemas/HeldQuestionsOpenEntry"}
+        shadow:
+          type: array
+          description: The notes shadow mode recorded on the Automata's triage records, newest first; empty when there are none; always an array
+          items: {$ref: "#/components/schemas/HeldQuestionsShadowEntry"}
+    HeldQuestionsOpenEntry:
+      type: object
+      description: One open held question.
+      required: [question_id]
+      properties:
+        question_id: {type: string, description: "The question id (q- followed by lowercase hex)"}
+        state:
+          type: string
+          enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert]
+          description: The held state the question stands for; empty when it could not be recovered from the dedupe line
+        prd_id: {type: string, description: "The Automaton the question belongs to; empty when it is not linked to one"}
+        task_id: {type: string, description: "The task the hold stands on, when the hold names one"}
+        automation_id: {type: string, description: "The owning Automation when the Automaton is one of its members"}
+        title: {type: string, description: "The Automaton's title; empty when it has none"}
+        reason: {type: string, description: "Why it is held, verbatim from the question text; empty when the text does not say"}
+        recommended_option:
+          type: string
+          enum: [hold, retry, retry_stronger, change_spec, cancel, approve_insert, reject_insert, resume]
+          description: The fixed-table recommendation for the (held state, failure category); `hold` when unclassified
+        default: {type: string, description: "The question's default option; always `hold` on a held question"}
+        created_at: {type: string, format: date-time, nullable: true}
+    HeldQuestionsShadowEntry:
+      type: object
+      description: One shadow-mode triage note the daemon logged instead of raising.
+      required: [prd_id, state, at]
+      properties:
+        prd_id: {type: string, description: The Automaton the note was written to}
+        state: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert], description: The held state the note records}
+        recommended_option: {type: string, enum: [hold, retry, retry_stronger, change_spec, cancel, approve_insert, reject_insert, resume], description: "The option the note settled on; empty when the note carries none"}
+        at: {type: string, format: date-time, description: When the note was written}
     AutomatonDecisionLogEntry:
       type: object
       description: |

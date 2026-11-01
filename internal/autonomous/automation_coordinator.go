@@ -92,6 +92,13 @@ type Coordinator struct {
 	// ready to use.
 	mp mergePendingState
 
+	// heldIndex is the held-question pass's in-memory index (see
+	// held_question_pass.go): dedupe key -> the held question the pass
+	// knows about, so the pass withdraws a question when its held state
+	// clears and stays idempotent across restarts. Rebuilt from the store
+	// on the first pass after a restart; nil until then.
+	heldIndex map[string]heldQuestionRef
+
 	// preApply is a test seam: when set, advance calls it after the step is
 	// computed and before the compare-and-set write, so a test can move the
 	// Automation underneath the step. Nil in production.

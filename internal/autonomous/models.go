@@ -78,6 +78,18 @@ type Decision struct {
 	// MergedMember carries the structured proof of a merged_member entry
 	// written by the Automation coordinator; nil on every other kind.
 	MergedMember *MergedMemberDecision `json:"merged_member,omitempty"`
+
+	// Quote, Surface, Option and Result are the operator-answer fields,
+	// set when Kind is "operator_answer" (an answer to a raised held question
+	// was routed): the operator's quoted words, the surface the answer came
+	// from, the chosen option id ("" when the answer was free text), and
+	// the applied / recorded / refused / stale outcome (Result). DecisionState
+	// above is "withdrawn" for a stale refusal — the question was closed
+	// with the refusal reason.
+	Quote   string `json:"quote,omitempty"`
+	Surface string `json:"surface,omitempty"`
+	Option  string `json:"option,omitempty"`
+	Result  string `json:"result,omitempty"`
 }
 
 // GateDisagreement is the record of a verifier/quality-gate disagreement

@@ -16643,6 +16643,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.quality_min_text_chars', label: 'Automata question minimum text length (characters, 0 = no length check, default 60)', labelKey: 'settings_automata_questions_quality_min_text_chars', docsKey: 'settings_automata_questions_quality_min_text_chars', type: 'number', min: 0, step: 1, placeholder: '60', default: '60' },
     { key: 'autonomous.questions.quality_tracker_id_pattern', label: 'Automata question tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_automata_questions_quality_tracker_id_pattern', docsKey: 'settings_automata_questions_quality_tracker_id_pattern', type: 'text', placeholder: '' },
     { key: 'autonomous.questions.queue_preview_lines', label: 'Automata question queue preview lines (default 3)', labelKey: 'settings_automata_questions_queue_preview_lines', docsKey: 'settings_automata_questions_queue_preview_lines', type: 'number', min: 1, step: 1, placeholder: '3', default: '3' },
+    // Held-question gate — sits next to the decision-gate fields above: the mode that holds a task naming an unanswered
+    // question (off, shadow or on; shadow is the default — records the
+    // would-be question without holding) and which held-states the rule
+    // watches (empty list = all five held states).
+    { key: 'autonomous.questions.held_mode', label: 'Held questions mode (off, shadow or on; default shadow)', labelKey: 'held_question_settings_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
+    { key: 'autonomous.questions.held_states', label: 'Held question states (comma-separated held task state ids; empty = all five)', labelKey: 'held_question_settings_states', type: 'text', placeholder: 'review_held, decompose_blocked, decompose_stalled, decompose_failed, decompose_rejected', csv: true },
     { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
@@ -28722,17 +28728,25 @@ const _AUTOMATION_SUBTABS = [
         </div>
         <div id="automationQuestionsBody"></div>
       </div>
+      <!-- v1 held-questions: the held section + mode badge + the would-be
+           (shadow) list, one card directly under the queue card. -->
+      <div id="automationHeldQuestionsCard" class="prd-capacity-card held-questions-card" style="margin:6px 8px 0;min-width:0;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="cap-title">${escHtml(t('held_question_title'))}</div>
+        </div>
+        <div id="automationHeldQuestionsBody"></div>
+      </div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>`;
     },
     mount() {
       _automationQuestionsLoadQuality();
-      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader()]);
+      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()]);
       supervisorWatchStartPolling();
     },
     stop() {
-      _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions']);
+      _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_held_questions']);
       supervisorWatchStopPolling();
     },
   },
@@ -28777,7 +28791,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_held_questions'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -29527,6 +29541,145 @@ window.openQuestion = function(id) {
     showToast(_questionAnswerErrorMessage(err), 'error');
   });
 };
+
+// ════════════════════════════════════════════════════════════════════════════
+// v1 held-questions — the held section on the Automation queue card
+//
+// The held section, GET /api/autonomous/held-questions (mode, held_states,
+// open[], shadow[]), is its own listLoader on the Chains sub-tab — one
+// card directly beneath the open-questions card — and it paints:
+//
+//   • a mode badge — off / shadow / on, exactly the effective mode the
+//     report carries (the route defaults to shadow when unset),
+//   • the held entries: the Automaton's title and id, the held task and
+//     its held-state id, the one-line reason, the recommended option
+//     when the record carries one, the forced default-of-hold line,
+//     the detail link and the answer button — the existing answer
+//     control (window.openQuestion(id)), rendered through the guarded
+//     inline call the queue rows use,
+//   • in shadow only, beneath the held list: the would-be questions —
+//     the questions that would hold a task if the mode were on.
+//
+// Every dynamic value (title, ids, reason, option) is escaped with
+// escHtml; the inline-handler values use escJsAttr, because escHtml
+// alone is not safe for single-quoted JS string literals inside
+// inline event-handler attributes. All new strings use
+// held_question_* keys present in all five locale files, and they say
+// "Automaton"/"Automata" — never PRD.
+const HELD_QUESTION_MODE_KEYS = { off: 'held_question_mode_off', shadow: 'held_question_mode_shadow', on: 'held_question_mode_on' };
+
+// heldQuestionModeBadgeHtml is the mode badge the card paints. An
+// unknown or missing mode renders nothing — the badge never invents a
+// state, because the report's mode is the server's effective mode;
+// the badge just names it.
+window.heldQuestionModeBadgeHtml = function(mode) {
+  const m = String(mode == null ? '' : mode);
+  const key = HELD_QUESTION_MODE_KEYS[m];
+  if (!key) return '';
+  const color = m === 'on' ? 'var(--error,#c0392b)' : (m === 'shadow' ? 'var(--warning,#b7791f)' : 'var(--text2)');
+  return `<span class="held-question-mode-badge held-question-mode-${escHtml(m)}" data-mode="${escHtml(m)}" style="font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:${color};border:1px solid ${color};border-radius:4px;padding:1px 6px;white-space:nowrap;">${escHtml(t(key))}</span>`;
+};
+
+// heldQuestionDetailLinkHtml is a held entry's link to its Automaton
+// (and, when the entry carries one, its held task). It follows the
+// convention of the decision answer link (window.decisionAnswerLinkHtml):
+// a controlled javascript:void(0) that names the Automaton id and the
+// task id as data attributes and opens the Automaton detail view,
+// renderPRDDetailView, where the task's row lives. The guard keeps the
+// link inert rather than broken while that function is absent; with no
+// Automaton id at all it renders nothing, and the row already carries
+// the Automaton id chip for a manual look-up.
+window.heldQuestionDetailLinkHtml = function(entry) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  // The report (internal/server/held_questions.go) names the Automaton
+  // via automaton_id — that is the id renderPRDDetailView takes.
+  const prdId = String(e.automaton_id == null ? '' : e.automaton_id);
+  if (!prdId) return '';
+  const task = String(e.task_id == null ? '' : e.task_id);
+  const label = task ? t('held_question_open_task') : t('held_question_open_automaton');
+  return `<a href="javascript:void(0)" class="held-question-detail-link" data-automaton="${escHtml(prdId)}" data-task="${escHtml(task)}" onclick="if (typeof renderPRDDetailView === 'function') renderPRDDetailView('${escJsAttr(prdId)}')" style="color:var(--accent,#2f6feb);text-decoration:none;font-size:12px;white-space:nowrap;">${escHtml(label)}</a>`;
+};
+
+// heldQuestionRowHtml is one held (or would-be) entry: the Automaton's
+// title, its id chip, the held task chip, the held-state chip, the
+// one-line reason, the recommended option and the forced
+// default-of-hold when the record carries them, and finally the
+// controls line — the detail link and the answer button (the guarded
+// hand-off to window.openQuestion, the existing answer control).
+window.heldQuestionRowHtml = function(entry) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const question = String(e.question_id == null ? '' : e.question_id);
+  const title = String(e.automaton_title == null ? '' : e.automaton_title);
+  const automaton = String(e.automaton_id == null ? '' : e.automaton_id);
+  const task = String(e.task_id == null ? '' : e.task_id);
+  const state = String(e.state == null ? '' : e.state);
+  const reason = String(e.reason == null ? '' : e.reason);
+  const rec = String(e.recommended_option == null ? '' : e.recommended_option);
+  const chip = (cls, text) => `<span class="held-question-chip ${cls}" style="font-size:10px;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:0 5px;white-space:nowrap;">${escHtml(text)}</span>`;
+  const chips = [
+    question ? chip('held-question-id', question) : '',
+    automaton ? chip('held-question-automaton', automaton) : '',
+    task ? chip('held-question-task', task) : '',
+    state ? chip('held-question-state', state) : '',
+  ].filter(Boolean).join('');
+  const line1 = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px;">
+    <span class="held-question-title" style="font-weight:600;overflow-wrap:anywhere;">${escHtml(title)}</span>${chips}</div>`;
+  const reasonLine = reason
+    ? `<div class="held-question-reason" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(reason)}</div>`
+    : '';
+  const recLine = rec
+    ? `<div class="held-question-recommended" style="font-size:12px;color:var(--text);">${escHtml(t('held_question_recommended', [rec]))}</div>`
+    : '';
+  const defLine = `<div class="held-question-default" style="font-size:12px;color:var(--text2);">${escHtml(t('held_question_default_hold'))}</div>`;
+  const answerBtn = question
+    ? `<button type="button" class="held-question-answer btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="if (typeof window.openQuestion === 'function') window.openQuestion('${escJsAttr(question)}')">${escHtml(t('held_question_answer'))}</button>`
+    : '';
+  const controls = [window.heldQuestionDetailLinkHtml(e), answerBtn].filter(Boolean).join('<span style="color:var(--border);">·</span>');
+  return `<div class="held-question-row" style="padding:6px 0;border-top:1px solid var(--border);" data-question-id="${escHtml(question)}" data-automaton-id="${escHtml(automaton)}" data-task-id="${escHtml(task)}">`
+    + line1 + reasonLine + recLine + defLine
+    + `<div style="margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${controls}</div></div>`;
+};
+
+// heldQuestionsCardHtml is the card body the listLoader polls into
+// #automationHeldQuestionsBody: the mode badge, the held entries (or
+// the translated empty line), and, in shadow, the would-be list.
+// A malformed body paints the failed line instead of throwing.
+window.heldQuestionsCardHtml = function(body) {
+  if (!body || typeof body !== 'object') {
+    return `<div class="held-question-failed" style="color:var(--text2);">${escHtml(t('held_question_failed', [String(body == null ? '' : body)]))}</div>`;
+  }
+  const raw = String(body.mode == null ? '' : body.mode);
+  const mode = HELD_QUESTION_MODE_KEYS[raw] ? raw : '';
+  const open = Array.isArray(body.open) ? body.open.filter(e => e && typeof e === 'object') : [];
+  const shadow = Array.isArray(body.shadow) ? body.shadow.filter(e => e && typeof e === 'object') : [];
+  let html = `<div class="held-question-mode-line" style="display:flex;align-items:center;gap:8px;">${window.heldQuestionModeBadgeHtml(mode)}</div>`;
+  if (open.length) {
+    html += `<div class="held-question-list">${open.map(e => window.heldQuestionRowHtml(e)).join('')}</div>`;
+  } else {
+    html += `<div class="held-question-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('held_question_empty'))}</div>`;
+  }
+  if (mode === 'shadow' && shadow.length) {
+    html += `<div class="held-question-shadow-section" style="margin-top:8px;border-top:1px solid var(--border);padding-top:6px;">
+      <div class="held-question-shadow-title" style="font-weight:600;font-size:12px;">${escHtml(t('held_question_shadow_title'))}</div>
+      <div class="held-question-shadow-list">${shadow.map(e => window.heldQuestionRowHtml(e)).join('')}</div></div>`;
+  }
+  return `<div class="held-question-body" style="display:flex;flex-direction:column;gap:4px;">${html}</div>`;
+};
+
+// _automationHeldQuestionsLoader is the held section on GET
+// /api/autonomous/held-questions, polled at the same cadence as the
+// cards beside it. The report always carries the server's effective
+// mode (shadow when unset); when the operator-question subsystem is
+// disabled the route answers 503 and the failed line paints — the card
+// needs no disabled sentinel of its own.
+function _automationHeldQuestionsLoader() {
+  return window._listLoaders.automation_held_questions || listLoader({
+    key: 'automation_held_questions', el: 'automationHeldQuestionsBody', url: '/api/autonomous/held-questions', pollMs: 5000,
+    failedText: msg => t('held_question_failed', [msg]),
+    active: () => !!document.getElementById('automationHeldQuestionsBody'),
+    render: body => window.heldQuestionsCardHtml(body),
+  });
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // v1 question history — the History control on the question card

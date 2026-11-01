@@ -3992,6 +3992,17 @@ type AutonomousQuestionsConfig struct {
 	// DecisionGateMode is "shadow" (the default when empty: the gate
 	// reports what it would hold but holds nothing) or "on".
 	DecisionGateMode string `yaml:"decision_gate_mode" json:"decision_gate_mode"`
+	// HeldMode is "off", "shadow" (the default when empty: reports what it
+	// would hold but holds nothing) or "on".
+	HeldMode string `yaml:"held_mode" json:"held_mode"`
+	// HeldStates is the list of Automaton task state ids a held question
+	// covers. Absent (nil) means all five HeldState* ids are covered; an
+	// explicit empty list means none. No omitempty on either tag, same
+	// reasoning as the AutonomousNotifyConfig fields above: an operator's
+	// explicit empty list must survive a YAML/JSON round trip and a
+	// PUT /api/config write instead of being elided on marshal and leaving
+	// the previous value untouched on unmarshal.
+	HeldStates []string `yaml:"held_states" json:"held_states"`
 
 	// WorkerMarker is off when the key is absent (nil). When it is on, and
 	// Enabled is on too, the daemon acts on a question a worker raises in
@@ -4161,6 +4172,33 @@ const (
 	DecisionGateModeOn     = "on"
 )
 
+// Held question modes (autonomous.questions.held_mode).
+const (
+	HeldModeOff    = "off"
+	HeldModeShadow = "shadow"
+	HeldModeOn     = "on"
+)
+
+// The five Automaton task state ids a held question may cover
+// (autonomous.questions.held_states).
+const (
+	HeldStateBlocked           = "blocked"
+	HeldStateReviewHeld        = "review_held"
+	HeldStateRevisionRequested = "revision_requested"
+	HeldStateAwaitingDecision  = "awaiting_decision"
+	HeldStatePendingInsert     = "pending_insert"
+)
+
+// AllHeldStates is the five held state ids in order: an absent (nil)
+// held_states list reads this, an explicit empty list means none.
+var AllHeldStates = []string{
+	HeldStateBlocked,
+	HeldStateReviewHeld,
+	HeldStateRevisionRequested,
+	HeldStateAwaitingDecision,
+	HeldStatePendingInsert,
+}
+
 // EffectiveDecisionGate reports whether the decision gate is enabled.
 // Absent (nil) is on.
 func (q AutonomousQuestionsConfig) EffectiveDecisionGate() bool {
@@ -4183,11 +4221,13 @@ func ValidateDecisionGateMode(mode string) error {
 	return AutonomousQuestionsConfig{DecisionGateMode: mode}.validate()
 }
 
-// validate refuses a decision_gate_mode other than shadow or on, and any
-// question quality or queue preview value outside its valid range.
+// validate refuses a decision_gate_mode other than shadow or on, a held_mode
+// other than off, shadow or on, any unknown held state id, and any question
+// quality or queue preview value outside its valid range.
 func (q AutonomousQuestionsConfig) validate() error {
 	switch q.DecisionGateMode {
 	case "", DecisionGateModeShadow, DecisionGateModeOn:
+		// ok
 	default:
 		return fmt.Errorf("autonomous.questions.decision_gate_mode: invalid value %q (valid values: %q, %q, or empty for %q)",
 			q.DecisionGateMode, DecisionGateModeShadow, DecisionGateModeOn, DecisionGateModeShadow)
@@ -4210,6 +4250,76 @@ func (q AutonomousQuestionsConfig) validate() error {
 	if q.QueuePreviewLines != nil {
 		if err := ValidateQuestionQueuePreviewLines(*q.QueuePreviewLines); err != nil {
 			return err
+		}
+	}
+	if err := ValidateHeldMode(q.HeldMode); err != nil {
+		return err
+	}
+	return ValidateHeldStates(q.HeldStates)
+}
+
+// EffectiveHeldMode returns the held question mode in effect: shadow when
+// the value is empty.
+func (q AutonomousQuestionsConfig) EffectiveHeldMode() string {
+	if q.HeldMode == "" {
+		return HeldModeShadow
+	}
+	return q.HeldMode
+}
+
+// EffectiveHeldStates returns the held state ids in effect: all five
+// HeldState* ids when the list is absent (nil), the list itself
+// (including an explicit empty list, which means none) otherwise.
+func (q AutonomousQuestionsConfig) EffectiveHeldStates() []string {
+	if q.HeldStates == nil {
+		return AllHeldStates
+	}
+	return q.HeldStates
+}
+
+// HeldStateCovered reports whether a task in the given state is covered by
+// the held state ids in effect: an absent list covers all five ids, an
+// explicit empty list covers none.
+func (q AutonomousQuestionsConfig) HeldStateCovered(state string) bool {
+	for _, s := range q.EffectiveHeldStates() {
+		if s == state {
+			return true
+		}
+	}
+	return false
+}
+
+// ValidateHeldMode refuses a held_mode other than off, shadow, on or empty
+// (empty reads as shadow). It is the one rule the config file load,
+// PUT /api/config and every surface that rides it share.
+func ValidateHeldMode(mode string) error {
+	switch mode {
+	case "", HeldModeOff, HeldModeShadow, HeldModeOn:
+		return nil
+	}
+	return fmt.Errorf("autonomous.questions.held_mode: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		mode, HeldModeOff, HeldModeShadow, HeldModeOn, HeldModeShadow)
+}
+
+// ValidHeldState reports whether id is one of the five HeldState* ids.
+func ValidHeldState(id string) bool {
+	switch id {
+	case HeldStateBlocked, HeldStateReviewHeld, HeldStateRevisionRequested,
+		HeldStateAwaitingDecision, HeldStatePendingInsert:
+		return true
+	}
+	return false
+}
+
+// ValidateHeldStates refuses a held state id that is not one of the five
+// HeldState* ids, naming the valid ids. An absent (nil) list and an
+// explicit empty list are both valid: they read "all five" and "none"
+// respectively.
+func ValidateHeldStates(states []string) error {
+	for _, s := range states {
+		if !ValidHeldState(s) {
+			return fmt.Errorf("autonomous.questions.held_states: invalid state id %q (valid ids: %s)",
+				s, strings.Join(AllHeldStates, ", "))
 		}
 	}
 	return nil

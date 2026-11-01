@@ -90,3 +90,8 @@ __pycache__/
 # Build and generated artifacts that tasks have committed by mistake
 /datawatch-channel
 /internal/server/web/assets/docs-bm25-index.json
+.aider*
+
+# sandbox live-check working dirs (daemon state, personas, session data) — never commit
+tmp-held-verify/
+tmp-sandbox/

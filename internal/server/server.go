@@ -515,6 +515,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)        // infrastructure retry policy and the tasks retried or held, newest first
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                     // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)               // decisions: operator questions with their tasks and answers, newest first
+	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)      // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                   // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                       // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)       // safe-to-delete report of finished Automaton branches and worktrees
