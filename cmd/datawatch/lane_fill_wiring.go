@@ -63,20 +63,20 @@ type computePoolHosts struct {
 func (h computePoolHosts) PoolHosts(ctx context.Context) []autonomous.PoolHost {
 	var out []autonomous.PoolHost
 	seen := map[string]bool{}
-	add := func(name, endpoint string) {
+	add := func(name, node, endpoint string) {
 		endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
 		if endpoint == "" || seen[endpoint] {
 			return
 		}
 		seen[endpoint] = true
-		out = append(out, autonomous.PoolHost{Name: name, Endpoint: endpoint})
+		out = append(out, autonomous.PoolHost{Name: name, Endpoint: endpoint, Node: node})
 	}
 	if h.reg != nil {
 		for _, n := range h.reg.List() {
 			if n.Disabled || n.Kind != compute.KindOllama {
 				continue
 			}
-			add(n.Name, n.Address)
+			add(n.Name, n.Name, n.Address)
 		}
 	}
 	if h.localHost != nil {
@@ -85,10 +85,26 @@ func (h computePoolHosts) PoolHosts(ctx context.Context) []autonomous.PoolHost {
 			if u, err := url.Parse(host); err == nil && u.Hostname() != "" {
 				name = u.Hostname()
 			}
-			add(name, host)
+			add(name, "", host)
 		}
 	}
 	return out
+}
+
+// registryNodeLookup resolves a registered compute node by name, read live so
+// an edit to the node's TLS settings applies to the next read. A nil registry
+// resolves nothing.
+func registryNodeLookup(reg *compute.Registry) autonomous.NodeLookup {
+	if reg == nil {
+		return nil
+	}
+	return func(name string) (*compute.Node, bool) {
+		n, err := reg.Get(name)
+		if err != nil || n == nil {
+			return nil, false
+		}
+		return n, true
+	}
 }
 
 // newLaneFillEvidenceSource builds the pool evidence source lane fill plans
@@ -97,7 +113,7 @@ func newLaneFillEvidenceSource(mgr *autonomous.Manager, httpServer *server.HTTPS
 	return autonomous.NewPoolEvidenceSource(
 		federationSessionLister{sessions: httpServer.FederationSessions},
 		computePoolHosts{reg: reg, localHost: func() string { return ollamaHost }},
-		autonomous.NewHTTPModelFetcher(nil),
+		autonomous.NewHTTPModelFetcherForNodes(nil, registryNodeLookup(reg)),
 		autonomous.PoolEvidenceGPUBackend(func() string { return mgr.Config().LaneFill.EffectiveGPUBackend() }),
 	)
 }

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/compute"
 )
 
 const (
@@ -56,6 +58,10 @@ type SessionLister interface {
 type PoolHost struct {
 	Name     string
 	Endpoint string
+	// Node is the name of the registered compute node this host is, so the
+	// fetcher can read the node's own TLS settings. It is empty for the host's
+	// local Ollama, which is read with the default client.
+	Node string
 }
 
 // HostLister returns the Ollama endpoints of this host and of the compute
@@ -64,9 +70,11 @@ type HostLister interface {
 	PoolHosts(ctx context.Context) []PoolHost
 }
 
-// ModelFetcher returns the names of the models loaded on one endpoint.
+// ModelFetcher returns the names of the models loaded on one pool host. It is
+// given the whole host, not just the endpoint, so it can read a registered
+// node with that node's own TLS settings.
 type ModelFetcher interface {
-	LoadedModels(ctx context.Context, endpoint string) ([]string, error)
+	LoadedModels(ctx context.Context, host PoolHost) ([]string, error)
 }
 
 // PoolEvidenceOption adjusts a pool evidence source.
@@ -187,7 +195,7 @@ func (s *poolEvidenceSource) read(ctx context.Context, gpuBackend string, now ti
 		wg.Add(1)
 		go func(i int, h PoolHost) {
 			defer wg.Done()
-			results[i].models, results[i].err = s.fetch.LoadedModels(ctx, h.Endpoint)
+			results[i].models, results[i].err = s.fetch.LoadedModels(ctx, h)
 		}(i, h)
 	}
 	wg.Wait()
@@ -217,28 +225,103 @@ func hostFault(host, what string, err error) error {
 	return fmt.Errorf("pool host %s unreadable (%s): %w", host, what, err)
 }
 
+// NodeLookup resolves the live record of a registered compute node.
+type NodeLookup func(name string) (*compute.Node, bool)
+
 // httpModelFetcher reads the loaded models of an Ollama endpoint with a GET of
 // /api/ps.
 type httpModelFetcher struct {
 	client   *http.Client
 	timeout  time.Duration
 	maxBytes int64
+	lookup   NodeLookup
+
+	mu         sync.Mutex
+	nodeClient map[string]*poolNodeClient
+}
+
+// poolNodeClient is the cached client of one https node, valid for as long as
+// the node's TLS settings keep the same key.
+type poolNodeClient struct {
+	key    string
+	client *http.Client
 }
 
 // NewHTTPModelFetcher returns the ModelFetcher that asks an Ollama endpoint's
 // /api/ps with a short timeout and a bounded response. Its errors never carry
 // the endpoint URL, so credentials in it stay out of logs.
 func NewHTTPModelFetcher(client *http.Client) ModelFetcher {
+	return NewHTTPModelFetcherForNodes(client, nil)
+}
+
+// NewHTTPModelFetcherForNodes is NewHTTPModelFetcher for a pool that includes
+// registered compute nodes. A host that names a node with an https endpoint is
+// read with a client built from that node's own TLS settings (tls_ca_file,
+// tls_cert_fingerprint or tls_insecure_skip_verify), cached per node and
+// rebuilt when those settings change. Plain http nodes and hosts that name no
+// node use client (the default client when nil).
+func NewHTTPModelFetcherForNodes(client *http.Client, lookup NodeLookup) ModelFetcher {
 	if client == nil {
 		client = &http.Client{}
 	}
-	return &httpModelFetcher{client: client, timeout: poolPSTimeout, maxBytes: poolPSMaxBytes}
+	return &httpModelFetcher{client: client, timeout: poolPSTimeout, maxBytes: poolPSMaxBytes, lookup: lookup}
 }
 
-func (f *httpModelFetcher) LoadedModels(ctx context.Context, endpoint string) ([]string, error) {
-	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+// clientFor picks the client for one read of host.
+func (f *httpModelFetcher) clientFor(host PoolHost, endpoint string) (*http.Client, error) {
+	name := strings.TrimSpace(host.Node)
+	if name == "" || f.lookup == nil {
+		return f.client, nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rec, ok := f.lookup(name)
+	if !ok || rec == nil || !strings.HasPrefix(strings.ToLower(endpoint), "https://") {
+		f.dropLocked(name)
+		return f.client, nil
+	}
+	key := rec.TLSSettingsKey()
+	if c := f.nodeClient[name]; c != nil && c.key == key {
+		return c.client, nil
+	}
+	f.dropLocked(name)
+	cfg, _, err := compute.NodeTLSConfig(rec)
+	if err != nil {
+		return nil, fmt.Errorf("node %s TLS settings unusable: %w", name, err)
+	}
+	var tr *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		tr = dt.Clone()
+	} else {
+		tr = &http.Transport{}
+	}
+	tr.TLSClientConfig = cfg
+	c := &http.Client{Transport: tr}
+	if f.nodeClient == nil {
+		f.nodeClient = map[string]*poolNodeClient{}
+	}
+	f.nodeClient[name] = &poolNodeClient{key: key, client: c}
+	return c, nil
+}
+
+// dropLocked forgets node's cached client. The caller holds f.mu.
+func (f *httpModelFetcher) dropLocked(name string) {
+	if c := f.nodeClient[name]; c != nil {
+		if tr, ok := c.client.Transport.(*http.Transport); ok {
+			tr.CloseIdleConnections()
+		}
+		delete(f.nodeClient, name)
+	}
+}
+
+func (f *httpModelFetcher) LoadedModels(ctx context.Context, host PoolHost) ([]string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(host.Endpoint), "/")
 	if endpoint == "" {
 		return nil, errors.New("no endpoint")
+	}
+	client, err := f.clientFor(host, endpoint)
+	if err != nil {
+		return nil, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, f.timeout)
 	defer cancel()
@@ -246,11 +329,17 @@ func (f *httpModelFetcher) LoadedModels(ctx context.Context, endpoint string) ([
 	if err != nil {
 		return nil, errors.New("ollama /api/ps: invalid endpoint")
 	}
-	resp, err := f.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		var uerr *url.Error
 		if errors.As(err, &uerr) {
 			err = uerr.Err // drops the URL
+		}
+		if supervisorWatchCertError(err) {
+			if node := strings.TrimSpace(host.Node); node != "" {
+				return nil, fmt.Errorf("ollama /api/ps: node %s certificate not trusted: %v: "+
+					"set tls_ca_file or tls_cert_fingerprint on the node, or tls_insecure_skip_verify to turn verification off for it", node, err)
+			}
 		}
 		return nil, fmt.Errorf("ollama /api/ps: %w", err)
 	}

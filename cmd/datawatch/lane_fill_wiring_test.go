@@ -2,9 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,12 +70,12 @@ func TestLaneFillPoolHostsListsOllamaNodesAndLocalOnce(t *testing.T) {
 	}
 	h := computePoolHosts{reg: reg, localHost: func() string { return "http://10.0.0.5:11434" }}
 	got := h.PoolHosts(context.Background())
-	if len(got) != 1 || got[0].Name != "gpu-box" || got[0].Endpoint != "http://10.0.0.5:11434" {
+	if len(got) != 1 || got[0].Name != "gpu-box" || got[0].Node != "gpu-box" || got[0].Endpoint != "http://10.0.0.5:11434" {
 		t.Fatalf("hosts = %+v, want gpu-box once", got)
 	}
 
 	h.localHost = func() string { return "http://localhost:11434" }
-	if got := h.PoolHosts(context.Background()); len(got) != 2 || got[1].Name != "localhost" {
+	if got := h.PoolHosts(context.Background()); len(got) != 2 || got[1].Name != "localhost" || got[1].Node != "" {
 		t.Fatalf("hosts = %+v, want gpu-box and the local host", got)
 	}
 }
@@ -474,5 +478,49 @@ func TestLaneFillCapSourceNilRegistryIsEmpty(t *testing.T) {
 	src := newLaneFillCapSource(func() *inference.Registry { return nil }, nil)
 	if got := src.LaneCapEntries(); len(got) != 0 {
 		t.Errorf("entries = %v", got)
+	}
+}
+
+// TestLaneFillPoolEvidenceTLSRegistryNodeSettingsApply checks the real wiring:
+// the pool hosts come from the compute registry, the model fetcher reads each
+// node with that node's own TLS settings, and an edit to the node record
+// applies to the next read.
+func TestLaneFillPoolEvidenceTLSRegistryNodeSettingsApply(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"models":[{"name":"qwen3.8:27b"}]}`))
+	}))
+	defer srv.Close()
+	sum := sha256.Sum256(srv.Certificate().Raw)
+	reg, err := compute.NewRegistry(t.TempDir() + "/nodes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := &compute.Node{Name: "gpu-box", Kind: compute.KindOllama, Address: srv.URL}
+	if err := reg.Add(node); err != nil {
+		t.Fatal(err)
+	}
+	fetch := autonomous.NewHTTPModelFetcherForNodes(nil, registryNodeLookup(reg))
+	hosts := computePoolHosts{reg: reg}.PoolHosts(context.Background())
+	if len(hosts) != 1 {
+		t.Fatalf("hosts = %+v", hosts)
+	}
+
+	_, err = fetch.LoadedModels(context.Background(), hosts[0])
+	if err == nil || !strings.Contains(err.Error(), "gpu-box") || !strings.Contains(err.Error(), "tls_cert_fingerprint") ||
+		strings.Contains(err.Error(), srv.URL) {
+		t.Fatalf("err = %v, want the node and the fix, without the endpoint", err)
+	}
+
+	node.TLSCertFingerprint = hex.EncodeToString(sum[:])
+	if err := reg.Update(node); err != nil {
+		t.Fatal(err)
+	}
+	got, err := fetch.LoadedModels(context.Background(), hosts[0])
+	if err != nil || len(got) != 1 {
+		t.Fatalf("after pinning the certificate: models = %v, err = %v", got, err)
+	}
+
+	if registryNodeLookup(nil) != nil {
+		t.Error("a nil registry resolved nodes")
 	}
 }
