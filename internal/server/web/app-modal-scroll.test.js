@@ -503,3 +503,120 @@ test('other confirm-modal dialogs: .confirm-modal and the overlay gained no heig
   assert.equal(cm['min-width'], '220px');
   assert.equal(declMap('.confirm-modal-overlay').overflow, 'hidden');
 });
+
+// ── 7. Scroll origin: sticky header, scrollTop reset, short question body ───
+
+// bodyPaddingTop reads the body's top padding from .generic-modal-body, the
+// explicit padding-top or the first (top) value of the padding shorthand.
+function bodyPaddingTopPx() {
+  const body = declMap('.generic-modal-body', 'any');
+  if (body['padding-top']) return px(body['padding-top']);
+  if (body['padding']) return px(body['padding'].split(/\s+/)[0]);
+  return 0;
+}
+
+test('body top padding is at least as large as any sticky header, and the title is not sticky inside the scrolling body', () => {
+  // Model the possible sticky header height as the sum of the heights of all
+  // in-dialog elements whose CSS rule sets position:sticky (font size plus
+  // vertical margins — the same model bodyViewport uses for the title). With
+  // no sticky element today that sum is 0, and it must stay within the pad.
+  const elements = ['.generic-modal-title', '.generic-modal-actions', '.generic-modal-body'];
+  let stickyH = 0;
+  for (const sel of elements) {
+    const m = declMap(sel, 'any');
+    assert.notEqual(m.position, 'sticky', `${sel} is not position:sticky inside the scrolling dialog`);
+    assert.notEqual(m.position, 'fixed', `${sel} is not position:fixed`);
+    if (m.position === 'sticky') {
+      stickyH += (m['font-size'] ? px(m['font-size']) : 0)
+        + (m['margin-top'] ? px(m['margin-top']) : 0)
+        + (m['margin-bottom'] ? px(m['margin-bottom']) : 0);
+    }
+  }
+
+  const padTop = bodyPaddingTopPx();
+  assert.ok(padTop > 0, `body padding-top is positive (got ${padTop}px)`);
+  assert.ok(padTop >= stickyH, `body padding-top ${padTop}px >= sticky header height ${stickyH}px`,
+    'a sticky header can never hide the first scrollable line behind it');
+
+  const body = declMap('.generic-modal-body', 'any');
+  assert.equal(body['overflow-anchor'], 'none', 'overflow-anchor:none stops the browser from anchoring the scroll origin below the first line');
+});
+
+test('scrollTop is zero on open, and stays zero after the visualViewport fit handler runs', () => {
+  // Local variant of makeEnv: the created overlay element exposes a
+  // querySelector that returns a body stub starting at a non-zero scroll
+  // position, so the reset that showModal performs shows up in the stub.
+  function makeEnvWithScrollBody(bodyStub, { visualViewport } = {}) {
+    const env = makeEnv({ visualViewport });
+    const sandbox = env.sandbox;
+    sandbox.document.createElement = () => {
+      const el = makeStubElement();
+      const style = {};
+      style.setProperty = (k, v) => { style[k] = v; };
+      el.style = style;
+      el.handlers = {};
+      el.addEventListener = (type, fn) => { el.handlers[type] = fn; };
+      el.remove = () => {
+        if (env.current === el) env.current = null;
+        env.removed += 1;
+      };
+      el.querySelector = (selector) => {
+        assert.equal(selector, '.generic-modal-body', 'showModal looks up the scrolling body');
+        return bodyStub;
+      };
+      env.created.push(el);
+      return el;
+    };
+    return env;
+  }
+
+  // No visualViewport: the reset happens when the dialog is created.
+  const body1 = { scrollTop: 120 };
+  const env1 = makeEnvWithScrollBody(body1);
+  env1.show({ title: 'T', body: LONG_BODY });
+  assert.ok(env1.current, 'dialog opened');
+  assert.equal(body1.scrollTop, 0, 'the 300-line body starts at scrollTop 0, not 120');
+
+  // With visualViewport: the immediate fit and a later resize keep it at 0,
+  // and the fit still does its original pinning work.
+  const vv = makeVisualViewport(640, 0);
+  const body2 = { scrollTop: 120 };
+  const env2 = makeEnvWithScrollBody(body2, { visualViewport: vv });
+  env2.show({ title: 'T', body: LONG_BODY });
+  assert.equal(body2.scrollTop, 0, 'the immediate fit runs and leaves scrollTop 0');
+  assert.equal(env2.current.style['--generic-modal-vvh'], '640px', 'fit still pins the overlay');
+  assert.equal(env2.current.style.height, '640px');
+
+  vv.height = 400;
+  vv.offsetTop = 30;
+  vv.handlers.resize();
+  assert.equal(body2.scrollTop, 0, 'the resize handler does not move the body scroll position');
+  assert.equal(env2.current.style.height, '400px', 'the resize fit still runs its pinning');
+  assert.equal(env2.current.style.top, '30px');
+});
+
+test('question-answer body at 360x640: the body viewport stays positive and the body padding-top is counted', () => {
+  const QUESTION_TEXT = 'Five open code scanning alerts, all in test code';
+  const env = makeEnv();
+  env.show({
+    title: 'Answer question',
+    body: `<div class="question-answer-id-line" style="margin:0 0 8px;">q42</div>`
+      + `<div class="question-answer-text" style="font-size:13px;">${QUESTION_TEXT}</div>`,
+  });
+  const html = env.current.innerHTML;
+  assert.ok(html.includes(QUESTION_TEXT), 'the question text renders in the body');
+  assert.equal((html.match(/class="generic-modal-body"/g) || []).length, 1, 'exactly one .generic-modal-body');
+  assert.ok(html.indexOf('class="question-answer-text"') > html.indexOf('class="generic-modal-body"'), 'the text sits inside the body');
+
+  // The 360x640 model with the real CSS numbers: the scroll viewport for the
+  // body content (its viewport minus its own top padding) stays positive,
+  // so the one-line question body fits without scrolling and its first line
+  // is reachable at scrollTop 0.
+  const g = bodyViewport({ visible: 640, usesVar: false });
+  assert.ok(g.bodyViewportPx > 0, `body viewport ${g.bodyViewportPx}px is positive at 360x640`);
+  const padTop = bodyPaddingTopPx();
+  assert.ok(padTop > 0, 'the body top padding exists and is counted');
+  const contentViewport = g.bodyViewportPx - padTop;
+  assert.ok(contentViewport > 0, `content viewport ${contentViewport}px stays positive after the body padding-top`);
+  assert.ok(13 + 8 <= contentViewport, 'the id line 8px bottom margin plus a 13px text line fit without scrolling');
+});
