@@ -1009,8 +1009,18 @@ paths:
         >= 0, default 60; values below 5 are raised to 5), `autonomous.lane_fill.gpu_backend`
         (default pi-prompt), `autonomous.lane_fill.gpu_model` (string; empty = the
         backend's own model), `autonomous.lane_fill.claude_backend` (default
-        claude-code). A bad lane fill value rejects the whole PUT with 400 and nothing
-        is written. GET returns the values in effect and the running planner picks up
+        claude-code), `autonomous.lane_fill.count_verifier_wait` (true|false, default
+        true), `autonomous.lane_fill.stale_after_hours` (whole number >= 0; an unset
+        key reads as 72 and an explicit `0` turns the stale rule off),
+        `autonomous.lane_fill.require_confirmed_proposal` (true|false, default true),
+        `autonomous.lane_fill.check_main_carries` (true|false, default true),
+        `autonomous.lane_fill.require_worktree` (true|false, default true),
+        `autonomous.lane_fill.lane_counts_from_caps` (true|false, default true; when
+        false only `gpu_lanes` and `claude_lanes` set the lane counts) and
+        `autonomous.lane_fill.gpu_mode` and `autonomous.lane_fill.claude_mode`
+        (off | shadow | on, or empty to follow `autonomous.lane_fill.mode`; they set
+        the mode for one lane kind). A bad lane fill value rejects the whole PUT with
+        400 and nothing is written. GET returns the values in effect and the running planner picks up
         changes without a restart.
         `autonomous.failure_escalation.enabled` (true|false, default true),
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
@@ -1415,8 +1425,10 @@ paths:
         The lane fill status: the mode (off, shadow or on), each GPU and Claude lane
         with what it runs or why it is idle, the queued Automata that could start on
         each lane type, the evidence from the last poll (active GPU sessions and loaded
-        models), the newest planner decisions and the idle alerts. `limit` caps the
-        decision history, newest first. Needs the autonomous read capability when
+        models), the newest planner decisions and the idle alerts. `modes` gives the
+        mode in effect for each lane kind and `lane_counts` the lane counts the last
+        poll used. A decision that refused an Automaton carries `eligibility_reason`,
+        the stable code for the refusal. `limit` caps the decision history, newest first. Needs the autonomous read capability when
         called by a federated peer.
       operationId: autonomousLaneFillStatus
       tags: [Autonomous]
@@ -6918,6 +6930,14 @@ components:
       description: The lane fill status, as GET /api/autonomous/lane-fill returns it.
       properties:
         mode: {type: string, enum: [off, shadow, on], description: "shadow records decisions and starts nothing"}
+        modes:
+          type: object
+          description: The mode in effect for each lane kind; a kind with no mode of its own takes the base `mode`
+          properties:
+            gpu: {type: string, enum: [off, shadow, on]}
+            claude: {type: string, enum: [off, shadow, on]}
+        lane_counts:
+          $ref: "#/components/schemas/LaneFillLaneCounts"
         last_poll_at: {type: string, format: date-time}
         lanes:
           type: array
@@ -6948,6 +6968,23 @@ components:
         alerts:
           type: array
           items: {$ref: "#/components/schemas/LaneFillAlert"}
+    LaneFillLaneCounts:
+      type: object
+      description: The lane counts of the last poll, per lane kind
+      properties:
+        gpu: {$ref: "#/components/schemas/LaneFillLaneCount"}
+        claude: {$ref: "#/components/schemas/LaneFillLaneCount"}
+    LaneFillLaneCount:
+      type: object
+      description: The lane count of one lane kind
+      properties:
+        configured: {type: integer, description: "The count set by autonomous.lane_fill.gpu_lanes or claude_lanes"}
+        effective: {type: integer, description: "The count the last poll used"}
+        source:
+          type: string
+          enum: [config, llm_caps]
+          description: "Where the effective count came from: config (the configured count) or llm_caps (the sum of the in-flight caps of the enabled LLM entries for the lane kind's backend)"
+        reason: {type: string, description: "Why the configured count was used, present when source is config and the caps could not apply"}
     LaneFillLane:
       type: object
       properties:
@@ -6982,6 +7019,10 @@ components:
         title: {type: string}
         reason: {type: string}
         blocker: {type: string}
+        eligibility_reason:
+          type: string
+          enum: [stale, held, sequenced_after_unshipped, proposal_not_confirmed, proposal_missing, main_carries_work, worktree_invalid]
+          description: "absent when the decision is not a refusal. The stable code for why the Automaton was refused: stale (queued longer than the stale limit), held (a HOLD line, the words do not run or sequenced last, or a judge that timed out while review is needed), sequenced_after_unshipped (it is sequenced after an Automaton that has not completed, or one that cannot be found), proposal_not_confirmed (its proposal file carries no Confirmed: yes line), proposal_missing (it names no proposal file, or none can be read), main_carries_work (the base branch already carries its work) or worktree_invalid (its recorded worktree is gone, has no .git entry or is not a registered worktree of its repository)"
         wait_reason: {type: string, description: "The waiting occupant's reason, present when the decision rests on a lane the verifier-wait rule counted available"}
         executed: {type: boolean, description: "False in shadow mode, where the decision is recorded and nothing starts"}
         error: {type: string}

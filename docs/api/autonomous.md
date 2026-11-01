@@ -1477,6 +1477,9 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
 - `evidence.error` is set when a pool host could not be read. A GPU lane is then never reported as idle.
 - `decisions[].action` is `start_prd`, `decompose`, `decompose_ahead`, `report_merge`, `blocked` or `idle`. `executed: false` is a would-start in shadow mode and must not be shown as a start.
 - `decisions[].mode` is `off`, `shadow` or `on`, the mode in effect when the decision was made.
+- `decisions[].eligibility_reason` is the stable code for why an Automaton was refused: `stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`. It is absent when the decision is not a refusal.
+- `modes` is the mode in effect for each lane kind (`gpu` and `claude`); a kind with no mode of its own takes the base `mode`.
+- `lane_counts` gives, for `gpu` and `claude`, the `configured` count, the `effective` count the last poll used and the `source` of the effective count: `config`, or `llm_caps` when it is the sum of the LLM in-flight caps.
 
 **Lane preference.** `POST /api/autonomous/prds/{id}/set_lane_preference` with `{"lane_preference": "gpu" | "claude" | "any"}`. An empty value means `any`. The stored value is returned on the Automaton as `lane_preference`, and an absent value means `any`. A value outside the three is refused with 400 and nothing is stored.
 

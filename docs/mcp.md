@@ -337,7 +337,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
-- **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
+- **`autonomous_lane_fill_status`** — read the lane fill status: each GPU and Claude lane with what it is running or waiting on, whether it is idle, the newest planner decisions (newest first) and any idle-lane alerts. A decision that refused an Automaton carries `eligibility_reason` (`stale`, `held`, `sequenced_after_unshipped`, `proposal_not_confirmed`, `proposal_missing`, `main_carries_work` or `worktree_invalid`); the key is absent when the decision is not a refusal. `lane_counts` gives, for `gpu` and `claude`, the configured count, the effective count the last poll used and its source (`config` or `llm_caps`), and `modes` gives the mode in effect for each lane kind. Read-only; returns the same object as `GET /api/autonomous/lane-fill`.
 
   | Parameter | Required | Description |
   |---|---|---|

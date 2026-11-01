@@ -20,7 +20,7 @@ func ParseLaneFillStatus(body []byte) (LaneFillStatus, error) {
 }
 
 // RenderLaneFillText formats the status: the mode, one line per lane, the
-// queued eligible counts, any pool evidence error, then the newest decisions.
+// lane counts, the queued eligible counts, any pool evidence error, then the newest decisions.
 // maxDecisions caps how many decisions are shown; 0 or less shows all of them.
 func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 	var b strings.Builder
@@ -30,6 +30,9 @@ func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 	}
 	for _, l := range st.Lanes {
 		fmt.Fprintf(&b, "%s: %s\n", l.ID, laneFillLaneText(l))
+	}
+	if line := laneFillCountsText(st.LaneCounts); line != "" {
+		b.WriteString(line + "\n")
 	}
 	fmt.Fprintf(&b, "Queued eligible: gpu %d, claude %d\n", st.QueuedEligible.GPU, st.QueuedEligible.Claude)
 	if st.Evidence.Error != "" {
@@ -48,6 +51,29 @@ func RenderLaneFillText(st LaneFillStatus, maxDecisions int) string {
 		fmt.Fprintf(&b, "  %s\n", laneFillDecisionText(d))
 	}
 	return b.String()
+}
+
+// laneFillCountsText is the one lane counts line: for each lane kind the
+// effective count, the configured count and where the effective one came from,
+// as "Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)". A status
+// with no source for either kind (an older daemon) gives no line.
+func laneFillCountsText(c LaneFillLaneCounts) string {
+	if c.GPU.Source == "" && c.Claude.Source == "" {
+		return ""
+	}
+	return fmt.Sprintf("Lane counts: gpu %s, claude %s", laneFillCountText(c.GPU), laneFillCountText(c.Claude))
+}
+
+// laneFillCountText is "effective of configured (source)".
+func laneFillCountText(c LaneFillLaneCount) string {
+	src := c.Source
+	switch src {
+	case LaneCountSourceCaps:
+		src = "LLM caps"
+	case "":
+		src = "unknown"
+	}
+	return fmt.Sprintf("%d of %d (%s)", c.Effective, c.Configured, src)
 }
 
 // laneFillLaneText says what a lane is running, or why it is idle.
@@ -83,10 +109,13 @@ func laneFillDecisionText(d LaneFillDecision) string {
 	if d.PRDID != "" {
 		s += " " + d.PRDID
 	}
-	if d.EligibilityReason != "" {
-		s += " [" + d.EligibilityReason + "]"
-	}
-	if d.Reason != "" {
+	// A refusal shows its reason code in brackets in front of the reason text.
+	switch {
+	case d.EligibilityReason != "" && d.Reason != "":
+		s += ": [" + d.EligibilityReason + "] " + d.Reason
+	case d.EligibilityReason != "":
+		s += ": [" + d.EligibilityReason + "]"
+	case d.Reason != "":
 		s += ": " + d.Reason
 	}
 	if d.Blocker != "" && d.Blocker != d.Reason {
