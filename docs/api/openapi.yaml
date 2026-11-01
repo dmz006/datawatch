@@ -943,6 +943,21 @@ paths:
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
         `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.merge_pipeline.file_name` (a file name inside the project, default
+        `.datawatch/merge-pipeline.yaml`), `autonomous.merge_pipeline.source_order` (a JSON
+        array or comma list of `file` and `record`, default `file,record`),
+        `autonomous.merge_pipeline.fallback_on_bad_file` (`record`, `default` or `none`,
+        default `record`), `autonomous.merge_pipeline.conflict_policy` (`stop_and_ask`,
+        `mechanical` or `mechanical_and_model`, default `mechanical_and_model`),
+        `autonomous.merge_pipeline.conflict_model` (an LLM registry entry name; an empty
+        string means no model) and `autonomous.merge_pipeline.version_files` (a JSON
+        array or comma list of file names inside the project). Each of the six can be
+        set for one project as `autonomous.merge_pipeline.projects.<project>.<key>`;
+        null clears a key back to its default, and null on
+        `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
+        A bad merge pipeline value or an unknown key rejects the whole PUT with 400 and
+        nothing is written. GET returns the values in effect under
+        `autonomous.merge_pipeline`, with the per-project overrides under `projects`.
         `autonomous.request_watch.enabled` (true|false, default true),
         `autonomous.request_watch.poll_seconds` (whole number of seconds from 1 to 86400,
         default 30), `autonomous.request_watch.no_progress_minutes` (whole number of
@@ -1511,6 +1526,149 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
+
+  /api/autonomous/merge-pipeline:
+    get:
+      summary: Merge pipeline in effect for a project
+      description: |
+        The steps a merge would run for the project, where they came from and why.
+        `source` is `file` (the pipeline file in the project's own repository),
+        `record` (the pipeline the daemon keeps for the project) or `default` (the
+        built-in pipeline); `reason` says in plain words why that source was chosen,
+        and `file_error` names any problem found with the project's file even when
+        another source stands in for it. `definition` is null when the file is
+        unusable and the `fallback_on_bad_file` setting allows no substitute.
+        `settings` holds the file name, source order, bad-file fallback and version
+        files in effect for the project. `conflict_policy` and `conflict_model` are
+        what is configured for merge conflicts; `conflict_policy_in_effect` and
+        `conflict_model_in_effect` are what would be acted on, which fall back to
+        `stop_and_ask` with no model when the policy needs a model that is not set
+        or not available (`conflict_degraded_reason` says why). `overrides` holds
+        the per-project values set for this project, or null. `record_updated_at` is
+        when the daemon's record was last set, when it is the source. The project
+        directory is the directory registered for the project, or the merge base
+        repository when the name is its base name. Read-only; a federated peer needs
+        the autonomous read capability.
+      operationId: autonomousMergePipeline
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: false, description: "The project name; when left out, the base name of the merge base repository", schema: {type: string, maxLength: 200}}
+      responses:
+        "200":
+          description: The pipeline in effect
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePipelineView"
+        "400": {description: The project is missing, too long or has control characters}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "500": {description: The daemon's pipeline records could not be read}
+        "503": {description: The daemon configuration is not available}
+
+  /api/autonomous/merge-pipeline/record:
+    put:
+      summary: Set a project's merge pipeline record
+      description: |
+        Sets the pipeline the daemon keeps for a project, replacing any earlier one.
+        The record is used when the project's repository has no pipeline file (or
+        when `source_order` puts it first). Give the pipeline as `definition` (the
+        steps as JSON) or as `yaml` (the text of a pipeline file), not both. The
+        pipeline is checked first and a pipeline with any problem is refused with a
+        400 that lists every problem; nothing is stored then. The project comes from
+        the `project` query value, or from `project` in the body. Needs the
+        autonomous write capability when called by a federated peer.
+      operationId: autonomousMergePipelineRecordSet
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: false, description: "The project name; may instead be given in the body", schema: {type: string, maxLength: 200}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePipelineRecordRequest"
+      responses:
+        "200":
+          description: The stored record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePipelineRecord"
+        "400": {description: The body is not valid JSON, the project is missing, or the pipeline is missing, given twice or invalid}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "500": {description: The record could not be saved}
+        "503": {description: The daemon configuration is not available}
+    delete:
+      summary: Remove a project's merge pipeline record
+      description: |
+        Removes the pipeline the daemon keeps for the project. The project's own
+        pipeline file, if any, is untouched, and a project with neither falls back to
+        the built-in pipeline. Needs the autonomous write capability when called by a
+        federated peer.
+      operationId: autonomousMergePipelineRecordDelete
+      tags: [Autonomous]
+      parameters:
+        - {name: project, in: query, required: true, description: The project name, schema: {type: string, maxLength: 200}}
+      responses:
+        "200":
+          description: The record was removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, enum: [deleted]}
+                  project: {type: string}
+        "400": {description: The project is missing, too long or has control characters}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: The daemon holds no record for the project}
+        "405": {description: Method not allowed}
+        "500": {description: The record could not be removed}
+        "503": {description: The daemon configuration is not available}
+
+  /api/autonomous/merge-pipeline/validate:
+    post:
+      summary: Check a merge pipeline without saving it
+      description: |
+        Checks a pipeline and saves nothing. Give a pipeline in the body (`definition`
+        or `yaml`), or set `file` to check a file in a project's repository: `true`
+        checks the file name in effect for the project, a text value names another
+        file inside the project. `project` names the project for a file check. A
+        pipeline that does not pass is a normal answer: `valid` is false and `errors`
+        lists every problem found. A request that cannot be read, such as one that
+        gives both a body pipeline and a file, is a 400. A file that does not exist
+        is reported in `errors`. Read-only in effect; a federated peer needs the
+        autonomous read capability.
+      operationId: autonomousMergePipelineValidate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MergePipelineValidateRequest"
+      responses:
+        "200":
+          description: The result of the check
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MergePipelineValidation"
+        "400": {description: "The body is not valid JSON, has no pipeline and no file, gives both, or names a file outside the project"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: The project has no directory on this daemon}
+        "405": {description: Method not allowed}
+        "503": {description: The daemon configuration is not available}
 
   /api/autonomous/repo-ci-watch:
     get:
@@ -6828,6 +6986,121 @@ components:
         at: {type: string, format: date-time}
         lane_id: {type: string}
         work: {type: string, description: Title of the work waiting for the lane}
+    MergePipelineStep:
+      type: object
+      description: One step of a merge pipeline. Exactly one of `command` and `action` is set.
+      required: [name, kind]
+      properties:
+        name: {type: string, description: "A name that is unique within the pipeline"}
+        kind: {type: string, enum: [test, lint, version_bump, changelog, ship, tag, deploy, post_ship_hook, custom], description: "What the step is for"}
+        command: {type: string, description: "A shell command line to run in the project"}
+        action: {type: string, enum: [check_branch_versions, merge_branches, set_release_version, insert_changelog_heading, commit_release_bump, tag_release, push_release, deploy_latest], description: "A built-in action to run instead of a command"}
+        dir: {type: string, description: "A directory inside the project to run in; empty means the project root"}
+        on_failure: {type: string, enum: [stop, continue], description: "What the pipeline does when the step fails; stop by default"}
+        requires_make_target: {type: string, description: "Run the step only when the project's Makefile defines this target"}
+        timeout: {type: integer, description: "The step's time limit in nanoseconds; 0 uses the runner's default"}
+    MergePipelineDefinition:
+      type: object
+      description: An ordered list of merge pipeline steps.
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          items: {$ref: "#/components/schemas/MergePipelineStep"}
+    MergePipelineOverride:
+      type: object
+      description: The merge pipeline values set for one project. A key that is left out inherits the global value.
+      properties:
+        file_name: {type: string, description: "The pipeline file, relative to the project"}
+        source_order:
+          type: array
+          items: {type: string, enum: [file, record]}
+          description: "The sources tried first to last"
+        fallback_on_bad_file: {type: string, enum: [record, default, none], description: "What to use when the project's file exists but cannot be used"}
+        conflict_policy: {type: string, enum: [stop_and_ask, mechanical, mechanical_and_model], description: "How a merge conflict is handled"}
+        conflict_model: {type: string, description: "The LLM registry entry that proposes a conflict resolution; an empty string means no model"}
+        version_files:
+          type: array
+          items: {type: string}
+          description: "The project files, relative to the project, that carry the version line the release version step sets"
+    MergePipelineSettings:
+      type: object
+      description: The pipeline resolution settings in effect for a project.
+      properties:
+        file_name: {type: string}
+        source_order:
+          type: array
+          items: {type: string, enum: [file, record]}
+        fallback_on_bad_file: {type: string, enum: [record, default, none]}
+        version_files:
+          type: array
+          items: {type: string}
+    MergePipelineView:
+      type: object
+      description: The merge pipeline in effect for a project, as GET /api/autonomous/merge-pipeline returns it.
+      properties:
+        project: {type: string}
+        definition:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MergePipelineDefinition"
+          description: "The steps in effect; null when none could be chosen"
+        source: {type: string, enum: [file, record, default], description: "Where the pipeline came from"}
+        reason: {type: string, description: "Why that source was chosen, in plain words"}
+        file_error: {type: string, description: "The problem found with the project's file, if any"}
+        settings: {$ref: "#/components/schemas/MergePipelineSettings"}
+        conflict_policy: {type: string, enum: [stop_and_ask, mechanical, mechanical_and_model], description: "The conflict policy configured"}
+        conflict_policy_in_effect: {type: string, enum: [stop_and_ask, mechanical, mechanical_and_model], description: "The conflict policy that is acted on"}
+        conflict_model: {type: string, description: "The conflict model configured"}
+        conflict_model_in_effect: {type: string, description: "The conflict model that would be used; empty when none"}
+        conflict_degraded_reason: {type: string, description: "Why the policy in effect differs from the one configured"}
+        overrides:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/MergePipelineOverride"
+          description: "The per-project values set for this project; null when there are none"
+        record_updated_at: {type: string, format: date-time, description: "When the daemon's record was last set; present when the record is the source"}
+    MergePipelineRecordRequest:
+      type: object
+      description: A pipeline to keep for a project. Give `definition` or `yaml`, not both.
+      properties:
+        project: {type: string, description: "The project name, when not given as a query value"}
+        definition: {$ref: "#/components/schemas/MergePipelineDefinition"}
+        yaml: {type: string, description: "The text of a pipeline file"}
+    MergePipelineRecord:
+      type: object
+      description: The pipeline the daemon keeps for a project.
+      properties:
+        project: {type: string}
+        definition: {$ref: "#/components/schemas/MergePipelineDefinition"}
+        updated_at: {type: string, format: date-time}
+    MergePipelineValidateRequest:
+      type: object
+      description: A pipeline to check, or a project file to check. Give a pipeline or `file`, not both.
+      properties:
+        project: {type: string, description: "The project name, for a file check"}
+        definition: {$ref: "#/components/schemas/MergePipelineDefinition"}
+        yaml: {type: string, description: "The text of a pipeline file"}
+        file:
+          description: "true checks the file name in effect for the project; a text value names another file inside the project"
+          oneOf:
+            - {type: boolean}
+            - {type: string}
+    MergePipelineValidation:
+      type: object
+      description: The result of a pipeline check.
+      properties:
+        valid: {type: boolean}
+        errors:
+          type: array
+          items: {type: string}
+          description: "Every problem found; empty when valid"
+        definition:
+          allOf:
+            - $ref: "#/components/schemas/MergePipelineDefinition"
+          description: "The pipeline that was read; present when valid"
+        source: {type: string, enum: [body, file], description: "What was checked"}
+        file: {type: string, description: "The file that was checked, for a file check"}
     MergeStatus:
       type: object
       description: |-
