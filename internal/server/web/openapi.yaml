@@ -976,6 +976,10 @@ paths:
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.plan_coverage_suppress_created_files` (true|false, default true; hide findings for files the plan itself creates),
+        `autonomous.plan_coverage_scoped_requirements` (true|false, default true; only count requirement wording inside the configured spec sections),
+        `autonomous.plan_coverage_requirement_sections` (comma-separated string of spec section names, default "scope,constraints"; empty restores the default),
+        `autonomous.plan_coverage_min_requirement_chars` (whole number >= 0, 0 reads the 30-character default; the shortest requirement sentence that counts),
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
         stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
@@ -2777,6 +2781,12 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        The finding filters are also exposed: `plan_coverage_suppress_created_files`
+        (boolean, default true) and `plan_coverage_scoped_requirements` (boolean,
+        default true), `plan_coverage_requirement_sections` (comma-separated string,
+        default "scope,constraints") and `plan_coverage_min_requirement_chars`
+        (whole number >= 0, 0 reads the 30-character default). A wrong type on any of
+        them is rejected with 400, same as the two gate fields above.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
         It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
@@ -2864,7 +2874,12 @@ paths:
       description: |
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
-        default 1.0). Values outside the allowed range are rejected with 400.
+        default 1.0), plus the finding filters `plan_coverage_suppress_created_files`
+        (boolean, default true), `plan_coverage_scoped_requirements` (boolean,
+        default true), `plan_coverage_requirement_sections` (comma-separated string,
+        empty = the "scope,constraints" default) and `plan_coverage_min_requirement_chars`
+        (whole number >= 0, 0 = the 30-character default). Values outside the allowed
+        range are rejected with 400.
         `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
         lint mode; any other value is rejected with 400. `PUT /api/config` accepts
         it as `autonomous.scope_lint`.
@@ -3146,6 +3161,44 @@ paths:
       responses:
         "200": {description: Acknowledged PRD}
         "400": {description: No report to ack, already acked, or missing `note`}
+  /api/autonomous/prds/{id}/plan_coverage:
+    get:
+      summary: Read an Automaton's stored plan coverage record
+      description: |
+        Read-only view of an Automaton's plan-coverage state: `plan_coverage`
+        is the stored record (null when no report has been computed yet); it
+        pins its own `filters` as they were in effect when the report was
+        computed and carries the operator acknowledgement. The top-level
+        `filters` is the filterset in effect NOW (`autonomous.
+        plan_coverage_suppress_created_files`, `autonomous.
+        plan_coverage_scoped_requirements`, `autonomous.
+        plan_coverage_requirement_sections`, `autonomous.
+        plan_coverage_min_requirement_chars`), so the two can differ after a
+        config change. The top-level `suppressed` repeats the record's own
+        per-category withheld-finding counts plus their `total`, and is all
+        zeroes when the record is absent. Read-only: only GET is served, and a
+        federated peer needs the autonomous read capability.
+      operationId: autonomousPRDPlanCoverage
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: The stored plan coverage record and the filters in effect now
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string, description: "Automaton id"}
+                  status: {type: string, description: "Automaton status"}
+                  plan_coverage:
+                    nullable: true
+                    description: "The stored record; null when no report has been computed yet"
+                    allOf: [{$ref: "#/components/schemas/PlanCoverageRecord"}]
+                  filters: {$ref: "#/components/schemas/PlanCoverageFilters"}
+                  suppressed: {$ref: "#/components/schemas/PlanCoverageSuppressed"}
+        "404": {description: Not found}
+        "405": {description: Method not allowed}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
@@ -7552,6 +7605,58 @@ components:
           items: {type: string}
           description: "Ordered list of eligible verifier backends (LLM registry names). Empty list = clear (inherit). An empty entry or an unknown LLM name is rejected with 400."
         actor: {type: string, description: "Who made the change (default `operator`)"}
+    PlanCoverageRecord:
+      type: object
+      description: |
+        A stored plan-coverage record (the Automaton's `plan_coverage`). It
+        pins the check settings and the finding filters from the moment the
+        report was computed (so a later config change does not silently
+        re-interpret the stored report) and carries the operator
+        acknowledgement state.
+      properties:
+        mode: {type: string, enum: [off, warn, block], description: "Plan-coverage check mode in effect when the report was computed"}
+        min_ratio: {type: number, description: "Minimum covered-requirement ratio (0,1] in effect when the report was computed; 1.0 = full coverage"}
+        report: {description: "The coverage report from CheckPlanCoverage for the latest decomposition attempt"}
+        ack:
+          nullable: true
+          type: object
+          description: "The operator acknowledgement of a failing report, if one exists; absent (null) when unacknowledged"
+          properties:
+            by: {type: string, description: "Operator identity that acknowledged"}
+            at: {type: string, format: date-time, description: "Acknowledgement time (UTC)"}
+            note: {type: string, description: "Operator free-text justification"}
+            fingerprint: {type: string, description: "Fingerprint of the failing report this acknowledgement covers"}
+        findings: {type: array, description: "Structural findings from the same deterministic coverage check; absent when the stored plan had none"}
+        suppressed:
+          description: "Findings the finding filters removed from this report; zeroes when the filters were off or suppressed nothing"
+          allOf: [{$ref: "#/components/schemas/PlanCoverageSuppressed"}]
+        filters: {$ref: "#/components/schemas/PlanCoverageFilters", description: "The finding filters in effect when this record was computed, pinned like mode and min_ratio"}
+    PlanCoverageSuppressed:
+      type: object
+      description: |
+        Per-category count of findings the plan-coverage finding filters
+        removed: rule-3 structural findings withheld for files the plan
+        itself creates, and spec wording scoped requirement-extraction
+        stopped counting as standalone requirements. In the read envelope
+        (`suppressed` atop the GET /api/autonomous/prds/{id}/plan_coverage
+        response) `total` is the sum of the two; inside a stored record the
+        two fields carry the same counts without a total.
+      properties:
+        created_files: {type: integer, description: "Findings withheld for files the plan itself creates (rule 3)"}
+        requirements: {type: integer, description: "Spec tokens scoped requirement extraction stopped counting as requirements"}
+        total: {type: integer, description: "Sum of created_files and requirements; zero when there is no stored record. Present in the read envelope; a stored record carries the two fields without a total"}
+    PlanCoverageFilters:
+      type: object
+      description: |
+        The resolved plan-coverage finding filterset (effective config:
+        both filters default on, sections default to scope,constraints,
+        minimum requirement length defaults to 30).
+      required: [suppress_created_files, scoped_requirements, requirement_sections, min_requirement_chars]
+      properties:
+        suppress_created_files: {type: boolean, description: "Hide findings for files the plan itself creates (default true)"}
+        scoped_requirements: {type: boolean, description: "Only count requirement wording inside the configured spec sections (default true)"}
+        requirement_sections: {type: array, items: {type: string}, description: "Spec section names to scope requirements to (default scope,constraints)"}
+        min_requirement_chars: {type: integer, description: "Shortest requirement sentence, in characters, that counts (default 30)"}
     PlanReviewVerdict:
       type: object
       description: |

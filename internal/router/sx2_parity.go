@@ -437,7 +437,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|triage [automation-id]|decisions [automaton-id]|repo-ci-watch|supervisor-watch|merge|safe-to-delete|cleanup|uncommitted-work [automaton-id]|merged-members [automation-id]|overlap <text>|security-failure [run-id]|tags [counts]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|triage [automation-id]|decisions [automaton-id]|repo-ci-watch|supervisor-watch|merge|safe-to-delete|cleanup|uncommitted-work [automaton-id]|merged-members [automation-id]|overlap <text>|security-failure [run-id]|tags [counts]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -606,6 +606,65 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous plan-review", prettyJSON(out))
+	// Plan-coverage read: the stored coverage record for one Automaton
+	// (mode, min ratio, covered/missing/weakened, findings count, the
+	// suppressed created-file and requirement counts, and the
+	// acknowledgement) as a compact text summary — the raw JSON stays
+	// on the REST/MCP surfaces.
+	case "plan-coverage", "plan_coverage", "coverage":
+		if len(args) < 2 {
+			r.reply("autonomous plan-coverage failed", "usage: autonomous plan-coverage <automaton-id>")
+			return
+		}
+		out, err := r.commJSON(http.MethodGet, "/api/autonomous/prds/"+args[1]+"/plan_coverage", "")
+		if err != nil {
+			r.reply("autonomous plan-coverage failed", err.Error())
+			return
+		}
+		var envelope struct {
+			PlanCoverage *struct {
+				Mode     string  `json:"mode"`
+				MinRatio float64 `json:"min_ratio"`
+				Report   struct {
+					Covered  int `json:"covered"`
+					Missing  int `json:"missing"`
+					Weakened int `json:"weakened"`
+				} `json:"report"`
+				Findings   []any `json:"findings"`
+				Suppressed struct {
+					CreatedFiles int `json:"created_files"`
+					Requirements int `json:"requirements"`
+				} `json:"suppressed"`
+				Ack *struct {
+					By string `json:"by"`
+				} `json:"ack"`
+			} `json:"plan_coverage"`
+		}
+		if err := json.Unmarshal([]byte(out), &envelope); err != nil {
+			r.reply("autonomous plan-coverage failed", "parsing the coverage record: "+err.Error())
+			return
+		}
+		if envelope.PlanCoverage == nil {
+			r.reply("autonomous plan-coverage", "no plan coverage record is stored yet for this Automaton")
+			return
+		}
+		rec := envelope.PlanCoverage
+		lines := []string{
+			fmt.Sprintf("mode %s (minimum ratio %g)", rec.Mode, rec.MinRatio),
+			fmt.Sprintf("covered %d, missing %d, weakened %d", rec.Report.Covered, rec.Report.Missing, rec.Report.Weakened),
+			fmt.Sprintf("findings %d", len(rec.Findings)),
+			fmt.Sprintf("suppressed: created files %d, requirements %d", rec.Suppressed.CreatedFiles, rec.Suppressed.Requirements),
+		}
+		if rec.Ack != nil {
+			who := strings.TrimSpace(rec.Ack.By)
+			if who == "" {
+				who = "the operator"
+			}
+			lines = append(lines, "acknowledged by "+who)
+		} else {
+			lines = append(lines, "no acknowledgement yet")
+		}
+		r.reply("autonomous plan-coverage", strings.Join(lines, "; "))
 	case "reject":
 		if len(args) < 2 {
 			r.reply("autonomous reject failed", "usage: autonomous reject <prd-id> [reason]")

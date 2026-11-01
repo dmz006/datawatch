@@ -180,6 +180,17 @@ nothing, so it can be checked against what the operator did. It never merges
 and never touches the queue — see
 [automation-repo-ci-watch.md](docs/howto/automation-repo-ci-watch.md).
 
+The plan requirement coverage gate that sits between a planned Automaton and
+its approval has two findings filters, both on by default: a file the plan
+itself creates is not reported as a missing file (while its folder exists or
+is created by the plan), and only the spec's scope and constraint sentences
+count as requirements instead of every stray word. Every stored record
+carries how many findings each filter withheld and the filters it was
+computed under, so the count is visible on the PWA panel, over REST, MCP and
+the CLI, and the chat channel — a genuine finding still needs the
+operator's acknowledgement with a note — see
+[plan-coverage-filters.md](docs/howto/plan-coverage-filters.md).
+
 Supervisor watch is the daemon's own version of the supervisor script. On every
 poll, with no model call, it runs fourteen checks over the Automata and the
 machines that run them (a restarted terminal-session service, a node whose

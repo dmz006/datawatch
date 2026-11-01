@@ -275,7 +275,10 @@ changes. A task whose title starts with a write verb (`Write`, `Add`, `Update`,
 `files` list. A task with no files gets the `write_task_without_files` finding,
 which blocks approval in the default `block` mode. See the
 [coverage gate](../operations.md#plan-requirement-coverage-gate-autonomousplan_coverage_check)
-for the modes and the acknowledge path.
+for the modes and the acknowledge path. Most common noise on a failing
+report is the two kinds the findings filters remove by default: files the
+plan itself creates, and single words counted as requirements — how to read
+and tune each is in [the plan-coverage findings filters guide](plan-coverage-filters.md).
 
 When a task changes nothing, make the **first line of its spec** `READ-ONLY:`
 followed by a reason. Only the first non-empty line counts, and the case does

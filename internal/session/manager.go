@@ -6864,9 +6864,14 @@ func parseClaudeClockTime(line, low, marker string) time.Time {
 		return time.Time{}
 	}
 	now := time.Now()
-	candidate := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, now.Location())
+	day := now
+	candidate := time.Date(day.Year(), day.Month(), day.Day(), hour, min, 0, 0, now.Location())
 	if !candidate.After(now) {
-		candidate = candidate.Add(24 * time.Hour)
+		// Next calendar day in local time. A flat +24h would shift the
+		// wall-clock time across a DST transition (a "2pm" reset the day
+		// before fall-back would come back as 1pm the next morning).
+		day = day.AddDate(0, 0, 1)
+		candidate = time.Date(day.Year(), day.Month(), day.Day(), hour, min, 0, 0, now.Location())
 	}
 	return candidate
 }

@@ -57,18 +57,19 @@ const (
 )
 
 // gateSpec / gateFailingPlan mirror the internal/autonomous gate
-// fixtures: three extractable numbered requirements and a plan that
+// fixtures: three extractable numbered requirements (each long enough
+// to survive the scoped min-requirement-chars default) and a plan that
 // silently drops requirement 2. Defined here (not imported — this test
 // lives outside the autonomous package) for ONE failing surface to
 // prove the report+ack wiring through the real handlers.
-const pcGateSpec = `1. implement login form
-2. enforce rate limiting
-3. emit audit trail entries
+const pcGateSpec = `1. implement the login form for the operator console
+2. enforce rate limiting on the login endpoints
+3. emit audit trail entries for every login attempt
 `
 
 const pcGateFailingPlan = `{"title":"feature","stories":[
-	{"title":"login form work","tasks":[{"title":"implement login form","spec":"build the login form","verification_script":"go test ./..."}]},
-	{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries","verification_script":"go test ./..."}]}
+	{"title":"login form work","tasks":[{"title":"implement login form","spec":"implement the login form for the operator console","verification_script":"go test ./..."}]},
+	{"title":"audit trail work","tasks":[{"title":"emit audit trail entries","spec":"emit audit trail entries for every login attempt","verification_script":"go test ./..."}]}
 ]}`
 
 // newPlanCoverageServer — the same wiring main.go uses: a real

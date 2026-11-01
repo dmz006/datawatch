@@ -2301,6 +2301,33 @@ type AutonomousConfig struct {
 	// values above 1 clamp to 1.0 — see NormalizePlanCoverageRatio.
 	// No omitempty for the same round-trip reason as PlanCoverageCheck.
 	PlanCoverageMinRatio float64 `yaml:"plan_coverage_min_ratio" json:"plan_coverage_min_ratio"`
+	// PlanCoverageSuppressCreatedFiles controls whether the plan-coverage
+	// check stops reporting a requirement as uncovered when a file the plan
+	// itself creates already exists. On by default when the key is absent
+	// (nil means on); set it explicitly to off to restore the old
+	// behaviour. Pointer so an explicit off survives a YAML or JSON
+	// round-trip (same pattern as DecisionGate). No omitempty, same
+	// round-trip reason as PlanCoverageMinRatio.
+	PlanCoverageSuppressCreatedFiles *bool `yaml:"plan_coverage_suppress_created_files" json:"plan_coverage_suppress_created_files"`
+	// PlanCoverageScopedRequirements restricts requirement extraction to
+	// the sections named by PlanCoverageRequirementSections instead of the
+	// whole spec. On by default when the key is absent (nil means on);
+	// set it explicitly to off to extract requirements from the entire
+	// spec. Pointer so an explicit off survives a YAML or JSON round-trip.
+	// No omitempty, same round-trip reason as PlanCoverageMinRatio.
+	PlanCoverageScopedRequirements *bool `yaml:"plan_coverage_scoped_requirements" json:"plan_coverage_scoped_requirements"`
+	// PlanCoverageRequirementSections is the comma-separated list of
+	// section-heading words whose sentences count as requirements when
+	// PlanCoverageScopedRequirements is on. Empty (unset) means
+	// "scope,constraints" (see DefaultPlanCoverageRequirementSections).
+	// No omitempty, same round-trip reason as PlanCoverageMinRatio.
+	PlanCoverageRequirementSections string `yaml:"plan_coverage_requirement_sections" json:"plan_coverage_requirement_sections"`
+	// PlanCoverageMinRequirementChars is the shortest sentence length, in
+	// characters, that counts as a requirement. Zero or negative (unset)
+	// means the default 30 (see
+	// DefaultPlanCoverageMinRequirementChars). No omitempty, same
+	// round-trip reason as PlanCoverageMinRatio.
+	PlanCoverageMinRequirementChars int `yaml:"plan_coverage_min_requirement_chars" json:"plan_coverage_min_requirement_chars"`
 	// VerificationTimeoutSeconds bounds one verifier or guardrail one-shot
 	// judgment session. Default 1800 seconds (30 minutes); zero or negative
 	// values fall back to the default. Raise for slow local (Ollama /

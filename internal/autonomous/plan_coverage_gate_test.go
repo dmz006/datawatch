@@ -58,6 +58,16 @@ func newGateManager(t *testing.T, mode string, minRatio float64, planJSON string
 	cfg := DefaultConfig()
 	cfg.PlanCoverageCheck = mode
 	cfg.PlanCoverageMinRatio = minRatio
+	// The gate tests' fixtures are tiny numbered-list specs (gateSpec
+	// requirements are all under 30 chars) written before the finding
+	// filters existed, so every requirement they exercise would be
+	// suppressed by the default-on scoped extraction. Pin both filter
+	// keys to off here so these tests verify the pre-filter gate
+	// behavior exactly; the filter-on wiring is covered by
+	// plan_coverage_filters_gate_test.go.
+	off := false
+	cfg.PlanCoverageSuppressCreatedFiles = &off
+	cfg.PlanCoverageScopedRequirements = &off
 	m, err := NewManager(dir, cfg, fakeLLM)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

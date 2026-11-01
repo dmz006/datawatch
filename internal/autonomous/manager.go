@@ -127,6 +127,33 @@ type Config struct {
 	// >1 clamps to 1.0 (see config.NormalizePlanCoverageRatio). No
 	// omitempty for the same round-trip reason as PlanCoverageCheck.
 	PlanCoverageMinRatio float64 `json:"plan_coverage_min_ratio"`
+	// PlanCoverageSuppressCreatedFiles controls whether the plan-coverage
+	// check suppresses "file named in the plan but missing from the
+	// tree" findings for files an earlier task or this one itself plans
+	// to create. A nil pointer resolves to on (true). No omitempty,
+	// same round-trip reason as PlanCoverageCheck: an operator's explicit
+	// false must survive the manager Config → config.AutonomousConfig
+	// json round-trip in handleAutonomousConfig (internal/server/
+	// autonomous.go).
+	PlanCoverageSuppressCreatedFiles *bool `json:"plan_coverage_suppress_created_files"`
+	// PlanCoverageScopedRequirements controls whether requirement
+	// extraction is limited to the sections named by
+	// PlanCoverageRequirementSections instead of scanning the whole spec.
+	// A nil pointer resolves to on (true); no omitempty for the same
+	// round-trip reason as PlanCoverageCheck.
+	PlanCoverageScopedRequirements *bool `json:"plan_coverage_scoped_requirements"`
+	// PlanCoverageRequirementSections is the comma-separated list of spec
+	// section headings whose sentences count as requirements when
+	// PlanCoverageScopedRequirements is on. Empty (unset) resolves to
+	// "scope,constraints" (config.DefaultPlanCoverageRequirementSections);
+	// entries are trimmed, lowercased and deduplicated in
+	// config.EffectivePlanCoverageFilters.
+	PlanCoverageRequirementSections string `json:"plan_coverage_requirement_sections"`
+	// PlanCoverageMinRequirementChars is the shortest sentence length, in
+	// characters, counted as a requirement. Zero or negative (unset) reads
+	// as the default of 30 (config.DefaultPlanCoverageMinRequirementChars)
+	// via config.EffectivePlanCoverageFilters.
+	PlanCoverageMinRequirementChars int `json:"plan_coverage_min_requirement_chars"`
 	// UsageBackoff and BackoffMaxWaitMinutes mirror the per-backend usage
 	// back-off knobs (autonomous.usage_backoff, autonomous.backoff_max_wait_minutes)
 	// so both autonomous config surfaces agree and handleAutonomousConfig's
@@ -2226,6 +2253,21 @@ func (m *Manager) Config() Config {
 func (m *Manager) EffectivePlanCoverage() (config.PlanCoverageSettings, error) {
 	cfg := m.Config()
 	return config.EffectivePlanCoverage(cfg.PlanCoverageCheck, cfg.PlanCoverageMinRatio)
+}
+
+// EffectivePlanCoverageFilters resolves the plan-coverage finding filters
+// in effect from the manager's current config (Config.
+// PlanCoverageSuppressCreatedFiles / .PlanCoverageScopedRequirements /
+// .PlanCoverageRequirementSections / .PlanCoverageMinRequirementChars)
+// via the canonical config resolver: a nil pointer means the filter is
+// on, an empty sections string means [scope constraints], and a
+// non-positive minimum means the default of 30 characters. A zero-value
+// Manager therefore resolves to both filters on, the default sections,
+// and a minimum of 30 — the safe defaults.
+func (m *Manager) EffectivePlanCoverageFilters() config.PlanCoverageFilters {
+	cfg := m.Config()
+	return config.EffectivePlanCoverageFilters(cfg.PlanCoverageSuppressCreatedFiles, cfg.PlanCoverageScopedRequirements,
+		cfg.PlanCoverageRequirementSections, cfg.PlanCoverageMinRequirementChars)
 }
 
 // decomposeAttemptOutcome is the shared outcome validateAndStorePlan

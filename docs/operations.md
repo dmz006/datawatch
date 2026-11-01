@@ -2785,6 +2785,97 @@ re-evaluate an already-`needs_review` PRD's stored report, and does not undo an
 ack — the ack is bound to the stored report's fingerprint, not to the live
 settings.
 
+### Plan coverage filters
+
+**Why the filters exist.** Before the filters, every plan's coverage report
+carried 20 to 50 findings for files the plan itself creates — new source
+files, tests, docs — plus scattered words from the spec that the extractor
+counted as missing requirements. Every plan therefore needed a manual
+acknowledgement for noise instead of for real gaps. Two filters remove the
+two kinds of noise. Both are **on by default**, both only shape what the
+gate *reports*, and neither hides a finding that is genuine.
+
+**Filter 1 — a file the plan creates is not a missing file**
+(`autonomous.plan_coverage_suppress_created_files`, on by default). A file
+that a task's title or spec says it creates, adds, writes or generates, or
+that is new in the plan's own file list, is not reported as a missing file:
+it is the plan's own output, not a reference to something that should
+already exist. The allowance has one limit — the file's parent folder has
+to exist or be created by the plan. A path whose parent folder does not
+exist and no task creates still produces the missing-file finding, so a
+reference into a folder that nothing builds is never silently skipped.
+
+**Filter 2 — only scoped sentences count as requirements**
+(`autonomous.plan_coverage_scoped_requirements`, on by default). The gate
+extracts requirements from the sections named by
+`autonomous.plan_coverage_requirement_sections` (default: the **scope** and
+**constraint** sections), and within those sections a path or config key
+counts only through the numbered item, obligation sentence or test sentence
+that holds it. Loose file names, backend names and quoted phrases no longer
+count as requirements by themselves, and a sentence shorter than
+`autonomous.plan_coverage_min_requirement_chars` characters (default 30) is
+dropped before the ratio is computed. A spec that carries none of the named
+sections falls back to the whole spec, so the filter never shrinks a spec
+that did not label its sections.
+
+**The four settings.**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.plan_coverage_suppress_created_files` | on | A file a task says it creates, adds, writes or generates, or that is new in the plan's own file list, is not a missing-file finding while its parent folder exists or is created by the plan; a path in a folder nothing creates is still a finding. |
+| `autonomous.plan_coverage_scoped_requirements` | on | Requirements are extracted only from the sections named by `autonomous.plan_coverage_requirement_sections`; a path or key counts only through the sentence that holds it; a spec with none of the named sections falls back to the whole spec. |
+| `autonomous.plan_coverage_requirement_sections` | `scope,constraints` | The comma-separated section names whose sentences count as requirements. Names are trimmed and lowercased, duplicates and blanks are dropped, and an empty list restores the default. |
+| `autonomous.plan_coverage_min_requirement_chars` | `30` (0 or negative reads 30) | The shortest sentence, in characters, that counts as a requirement; shorter sentences are dropped from the report. |
+
+**The five access methods** (same surfaces as the gate mode and the minimum
+ratio):
+
+| Method | How (one key shown; the same shape works for all four) |
+|---|---|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `plan_coverage_suppress_created_files: false` (or `plan_coverage_scoped_requirements`, `plan_coverage_requirement_sections`, `plan_coverage_min_requirement_chars`) |
+| **CLI** | `datawatch config set autonomous.plan_coverage_suppress_created_files=false` |
+| **Web UI** | Settings → General → Autonomous → the four *Plan coverage: …* rows (two toggles, the section-name text row, the shortest-requirement number row) |
+| **REST API** | `PUT /api/config` with the `autonomous.<key>` dot-path, e.g. `plan_coverage_min_requirement_chars: 60`; `GET /api/autonomous/config` shows the current values |
+| **Comm channel** | `configure autonomous.plan_coverage_suppress_created_files=false` |
+
+**Where to see it.**
+
+| Where | What |
+|---|---|
+| Web UI, plan coverage panel | The status line, the covered/missing requirement list, the findings, and the *suppressed* counts — the created-file findings and the requirements each filter withheld — with the filters the report was computed under. |
+| Web UI, Settings | The four *Plan coverage: …* rows and their help links. |
+| REST | `GET /api/autonomous/prds/{id}/plan_coverage` — the stored record with the `suppressed` counts and the pinned `filters`. |
+| MCP | `autonomous_prd_plan_coverage_get` — the same stored record. |
+| CLI | `datawatch autonomous prd-coverage <id>` — the mode/ratio it was pinned to, the report, the findings, the suppressed counts and the ack (if any). |
+| Chat | `autonomous plan-coverage <id>` — the same read on the comm channel. |
+
+**Facts that keep the report honest.**
+
+- The suppressed count is shown on the plan — panel, CLI, REST and MCP — so
+  you always see how much the filters withheld. It is **not** part of the
+  acknowledgement fingerprint: an acknowledgement of a genuine failing
+  surface stays valid when only the suppressed count or the filter
+  settings change.
+- The record pins the filters at compute time, exactly like the gate mode
+  and the minimum ratio: the stored report carries the four setting values
+  it was computed under, so a config change after the fact cannot
+  re-interpret an already-stored report.
+- A genuine finding uses the same acknowledgement path as before: a finding
+  the filters did not suppress still blocks Approve in `block` mode and is
+  cleared only with the actor and a non-empty note, bound to the report's
+  fingerprint.
+
+**Turning a filter off.** Both booleans are on when the key is absent: set
+`autonomous.plan_coverage_suppress_created_files` to `false` to report
+missing files again with no allowance, and
+`autonomous.plan_coverage_scoped_requirements` to `false` to extract
+requirements from the whole spec again (with the standalone-token pass
+restored). Tighten or widen what counts as a requirement with
+`autonomous.plan_coverage_requirement_sections` (an empty list restores
+`scope,constraints`) and `autonomous.plan_coverage_min_requirement_chars`
+(0 or negative restores 30). All four apply on the **next decompose**:
+an already-stored report keeps the values it was computed with.
+
 ### Session idle timeout (autonomous.session_idle_timeout_seconds)
 
 This bounds how long one autonomous worker or verifier session may sit

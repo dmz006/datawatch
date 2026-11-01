@@ -47,7 +47,11 @@ func (pc *PlanCoverage) IsFailing() bool {
 
 // Fingerprint is a stable hash of this record's reported failing surface:
 // the set of unmatched requirements (each with its verdict) plus the
-// structural findings — both order-insensitive. Two reports with the
+// structural findings — both order-insensitive — and nothing else: the
+// Suppressed counts and the pinned Filters are deliberately outside it,
+// so an acknowledgement of a genuine failing surface stays valid when
+// only the suppressed count or the filter settings change. Two reports
+// with the
 // same failing surface share the same fingerprint no matter when they
 // were computed or in what order entries were produced, and ANY
 // difference in the set of unmatched requirements OR in the structural
@@ -104,11 +108,15 @@ func (pc *PlanCoverage) Fingerprint() string {
 
 // recordPlanCoverage computes the deterministic (zero-LLM) coverage
 // report for the just-validated plan — requirements coverage plus
-// structural findings — and attaches it to prd, pinned to the effective
-// plan-coverage settings AT COMPUTE TIME so a later config flip cannot
-// silently re-interpret this stored report. The report is computed and
-// stored in ALL modes: "off" stores but gates nothing, "warn" stores +
-// emits a warn-level event, "block" (default) stores and gates Approve.
+// structural findings, both with the finding filters in effect — and
+// attaches it to prd, pinned to the effective plan-coverage settings
+// AT COMPUTE TIME so a later config flip cannot silently re-interpret
+// this stored report. The record also stores the Suppressed counts
+// (created files, requirements) and the Filters in effect, so an
+// operator reading it sees exactly how many findings the filters hid
+// under which settings. The report is computed and stored in ALL
+// modes: "off" stores but gates nothing, "warn" stores + emits a
+// warn-level event, "block" (default) stores and gates Approve.
 //
 // operator acknowledgement from a previous report is carried over (an
 // ack's fingerprint no longer matching the new surface is rejected by
@@ -119,27 +127,41 @@ func (m *Manager) recordPlanCoverage(prd *PRD, s []Story, settings config.PlanCo
 	if prev := prd.PlanCoverage; prev != nil {
 		carryAck = prev.Ack
 	}
-	rep := CheckPlanCoverage(prd.Spec, s)
-	structured := CheckPlanStructure(prd, s)
+	filters := m.EffectivePlanCoverageFilters()
+	rep := CheckPlanCoverageWithOptions(prd.Spec, s, PlanCoverageOptions{
+		Scoped:   filters.ScopedRequirements,
+		Sections: filters.RequirementSections,
+		MinChars: filters.MinRequirementChars,
+	})
+	structured := CheckPlanStructureWithOptions(prd, s, PlanStructureOptions{
+		SuppressCreatedFiles: filters.SuppressCreatedFiles,
+	})
 	pc := &PlanCoverage{
 		Mode:     settings.Mode,
 		MinRatio: settings.MinRatio,
 		Report:   *rep,
 		Findings: structured.Findings,
-		Ack:      carryAck,
+		Suppressed: PlanCoverageSuppressed{
+			CreatedFiles: structured.Suppressed,
+			Requirements: rep.Suppressed,
+		},
+		Filters: filters,
+		Ack:     carryAck,
 	}
 	prd.PlanCoverage = pc
 
 	if pc.IsFailing() && settings.Mode == config.PlanCoverageWarn {
 		unmatched := len(pc.Report.Unmatched)
 		findings := len(pc.Findings)
-		log.Printf("[autonomous] prd=%s plan-coverage WARN: %d unmatched requirement(s), %d structural finding(s) — mode=warn so this is reported but not gating",
-			prd.ID, unmatched, findings)
+		suppressed := pc.Suppressed.Total()
+		log.Printf("[autonomous] prd=%s plan-coverage WARN: %d unmatched requirement(s), %d structural finding(s), %d finding(s) suppressed by the finding filters — mode=warn so this is reported but not gating",
+			prd.ID, unmatched, findings, suppressed)
 		if m.auditFn != nil {
 			m.auditFn("plan_coverage_warn", map[string]any{
 				"prd":         prd.ID,
 				"unmatched":   unmatched,
 				"findings":    findings,
+				"suppressed":  suppressed,
 				"fingerprint": pc.Fingerprint(),
 			})
 		}

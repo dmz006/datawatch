@@ -9,6 +9,7 @@ package autonomous
 import (
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
@@ -565,6 +566,41 @@ type PlanCoverage struct {
 	// PlanCoverage.Fingerprint). Nil/empty means the stored plan had
 	// no structural findings.
 	Findings []StructuralFinding `json:"findings,omitempty"`
+	// Suppressed counts the findings the finding filters removed from
+	// this report: CreatedFiles are unresolved-file findings withheld
+	// for files the plan itself creates (CheckPlanStructureWithOptions'
+	// created-file allowance) and Requirements are spec tokens that
+	// scoped requirement-extraction stopped counting as requirements
+	// (CheckPlanCoverageWithOptions' Suppressed field). Zero when the
+	// filters were off at compute time or suppressed nothing. Always
+	// present in the JSON, deliberately: an operator reading the record
+	// sees exactly how many findings the filters hid.
+	Suppressed PlanCoverageSuppressed `json:"suppressed"`
+	// Filters is the finding-filter set in effect when this record was
+	// computed, pinned like Mode and MinRatio so a later config change
+	// cannot silently re-interpret — or be confused with — this stored
+	// report. It never participates in the Fingerprint: an
+	// acknowledgement of the genuine failing surface stays valid when
+	// only the suppressed count or the filters change.
+	Filters config.PlanCoverageFilters `json:"filters"`
+}
+
+// PlanCoverageSuppressed is the per-category count of findings a stored
+// plan-coverage record removed via the finding filters (see
+// PlanCoverage.Suppressed).
+type PlanCoverageSuppressed struct {
+	// CreatedFiles — rule-3 structural findings for files the plan
+	// itself creates, withheld by the created-file allowance.
+	CreatedFiles int `json:"created_files"`
+	// Requirements — spec tokens that scoped requirement extraction
+	// stopped counting as standalone requirements.
+	Requirements int `json:"requirements"`
+}
+
+// Total is the combined count of suppressed findings across both
+// categories.
+func (s PlanCoverageSuppressed) Total() int {
+	return s.CreatedFiles + s.Requirements
 }
 
 // PlanCoverageAck is the operator acknowledgement of one specific

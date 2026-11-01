@@ -2365,6 +2365,48 @@ autonomous:
   # autonomous.plan_coverage_min_ratio=0.9`, and the PWA Settings field
   # (settings_plan_coverage_min_ratio).
   plan_coverage_min_ratio: 1.0
+  # Plan-coverage filters — what the gate reports; both on by default.
+  # They shape the findings and the requirement set of a NEWly computed
+  # report; a stored report keeps the values it was computed with (pinned at
+  # compute time, like the gate mode and the ratio), and a config change
+  # applies on the next decompose. See
+  # docs/operations.md#plan-coverage-filters.
+  #
+  # Filter 1: a file a task says it creates, adds, writes or generates, or
+  # that is new in the plan's own file list, is not a missing-file finding —
+  # while its parent folder exists or is created by the plan; a path in a
+  # folder nothing creates is still a finding. false = no allowance. The
+  # withheld created-file count and the filters the report was computed
+  # under are shown on the PWA plan coverage panel, GET
+  # /api/autonomous/prds/<id>/plan_coverage, the
+  # autonomous_prd_plan_coverage_get MCP tool, the CLI `datawatch
+  # autonomous prd-coverage <id>` and the comm verb `autonomous
+  # plan-coverage <id>`; the withheld count is NOT part of the
+  # acknowledgement fingerprint. PWA Settings row:
+  # settings_plan_coverage_suppress_created_files. Unset reads true (on).
+  # plan_coverage_suppress_created_files: true
+  # Filter 2: requirements are extracted only from the sections named by
+  # plan_coverage_requirement_sections, with a minimum sentence length from
+  # plan_coverage_min_requirement_chars; a path or config key counts only
+  # through the numbered item, obligation sentence or test sentence that
+  # holds it (standalone path/key tokens, loose file names, backend names
+  # and quoted phrases do not count). A spec with none of the named sections
+  # falls back to the whole spec. false = whole-spec extraction with the
+  # standalone-token pass, as before. Same read surfaces as filter 1 (the
+  # withheld-requirements count); withheld count also outside the
+  # acknowledgement fingerprint. PWA Settings row:
+  # settings_plan_coverage_scoped_requirements. Unset reads true (on).
+  # plan_coverage_scoped_requirements: true
+  # The section names (filter 2) whose sentences count as requirements:
+  # comma separated, names trimmed and lowercased, duplicates and blanks
+  # dropped; an empty list restores the default scope,constraints. PWA
+  # Settings row: settings_plan_coverage_requirement_sections.
+  # plan_coverage_requirement_sections: scope,constraints
+  # The shortest sentence, in characters, that counts as a requirement
+  # (filter 2): 0 or negative reads the default 30. Same read surfaces as
+  # the two booleans; PWA Settings row:
+  # settings_plan_coverage_min_requirement_chars.
+  # plan_coverage_min_requirement_chars: 30
   # BL418 — PRD-completion rules review opt-in. Empty (default) means
   # runPRDCompletionRulesReview never fires, even when a rules/context
   # file exists. Add "rules-review" here (or to a PRD's own
