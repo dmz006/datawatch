@@ -3757,6 +3757,7 @@ function sessionCard(sess, idx, total) {
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
             ${prioBadge}
+            ${window.requestWatchChipHtml(sess.model_request)}
             ${_sessionTagChipsHTML(sess)}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
@@ -4209,6 +4210,7 @@ function renderSessionDetail(sessionId) {
           ${computeRefText ? `<span class="backend-badge" style="font-size:11px;border:1px solid var(--accent,#a855f7);padding:2px 8px;border-radius:8px;background:rgba(168,85,247,0.15);color:var(--accent,#a855f7);font-weight:600;" title="${escHtml(t('session_compute_ref_title')||'v7 Compute Node')}">⚙ ${escHtml(computeRefText)}</span>` : ''}
           <!-- datawatch-app parity (D66a, 2026-10-06 gap list rows 7-8):
                Agent/Chrome badges previously only on the list card. -->
+          ${window.requestWatchChipHtml(sess && sess.model_request)}
           ${sess?.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
           ${sess?.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
           ${/* v5.23.0 — operator-reported: drop the channel/acp mode
@@ -14259,7 +14261,7 @@ function renderTask(prd, story, task, editable) {
     : '';
   const statusGlyphSpan = statusGlyph
     ? `<span class="prd-task-status-glyph status-${escHtml(task.status||'')}"${_waitTitle ? ` title="${escHtml(_waitTitle)}"` : ''}>${statusGlyph}</span>`
-      + (_waitLabel ? `<span class="prd-task-wait-badge" title="${escHtml(_waitTitle)}">${escHtml(_waitLabel)}</span>` : '')
+      + (_waitLabel && !(task.model_request && typeof task.model_request === 'object') ? `<span class="prd-task-wait-badge" title="${escHtml(_waitTitle)}">${escHtml(_waitLabel)}</span>` : '')
     : '';
 
   // Expanded body: always rendered in DOM (hidden when collapsed) so
@@ -14330,7 +14332,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}
+      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -26320,6 +26322,85 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
 };
 
+// ── Automata model request progress ──────────────────────────────────────────
+// The daemon observes the in-flight model request of a worker or verifier
+// session whose model runs on a registered compute node, so a hung request can
+// be told from a slow one. Observation only: nothing here changes a session or
+// a task. requestWatchCardHtml(status) draws the body of
+// GET /api/autonomous/request-watch: { enabled, poll_seconds,
+// no_progress_minutes, observations: [{session_id, automaton_id, task_id, role,
+// node, model, state, last_change, no_progress_seconds, last_poll,
+// over_threshold, error, summary}] }. requestWatchChipHtml(observation) is the
+// chip a task row, a session row and the session detail header show from the
+// model_request object their JSON carries. The card polls through its list
+// loader, whose timers live on the loader object (replaced by key on every
+// mount, so a re-render never stacks a second one), never on a DOM element.
+// Every value is escaped; the loader owns the loading and failed states.
+const REQUEST_WATCH_HELP_HREF = '/diagrams.html#docs/datawatch-definitions.md#model-request-progress';
+const REQUEST_WATCH_ROWS = 50;
+const REQUEST_WATCH_ROLE_KEYS = { worker: 'request_watch_role_worker', verifier: 'request_watch_role_verifier' };
+
+// _requestWatchHelpLink is the small help link beside a card title. It follows
+// the Settings "show inline doc links" preference like the other links.
+function _requestWatchHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('request_watch_help_link');
+  return ` <a href="${REQUEST_WATCH_HELP_HREF}" target="_blank" rel="noopener noreferrer" class="docs-link request-watch-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+
+// requestWatchText words one observation: the generating line, the no-progress
+// line (whole minutes, singular, or under a minute) or the unreachable line.
+// A state this version does not know reads as the plain waiting line.
+window.requestWatchText = function(obs) {
+  const o = (obs && typeof obs === 'object') ? obs : {};
+  if (o.state === 'unreachable') return t('request_watch_unreachable');
+  if (o.state === 'generating') return t('request_watch_generating');
+  if (o.state === 'idle') {
+    const secs = Number(o.no_progress_seconds);
+    const mins = Number.isFinite(secs) && secs > 0 ? Math.floor(secs / 60) : 0;
+    if (mins < 1) return t('request_watch_no_progress_under_minute');
+    if (mins === 1) return t('request_watch_no_progress_one');
+    return t('request_watch_no_progress', [mins]);
+  }
+  return t('request_watch_waiting');
+};
+
+// requestWatchChipHtml is the chip for the model_request object of a task or a
+// session; empty when there is none. A request past the threshold uses the
+// warning style. The node and model are its tooltip.
+window.requestWatchChipHtml = function(obs) {
+  if (!obs || typeof obs !== 'object' || Array.isArray(obs)) return '';
+  const where = [obs.node, obs.model].filter(x => typeof x === 'string' && x !== '').join(' · ');
+  const tip = where ? t('request_watch_chip_tip', [where]) : t('request_watch_chip_tip_plain');
+  const warn = obs.over_threshold === true;
+  return `<span class="prd-verdict-badge${warn ? ' prd-verdict-warn' : ''} request-watch-chip" data-state="${escHtml(String(obs.state || ''))}" title="${escHtml(tip)}">${warn ? '&#9888; ' : '&#9203; '}${escHtml(window.requestWatchText(obs))}</span>`;
+};
+
+function _requestWatchRowHtml(o) {
+  const obs = (o && typeof o === 'object') ? o : {};
+  const roleKey = REQUEST_WATCH_ROLE_KEYS[obs.role];
+  const role = roleKey ? t(roleKey) : String(obs.role || '');
+  const parts = [t('request_watch_row_session', [String(obs.session_id || '')]), role];
+  if (obs.task_id) parts.push(t('request_watch_row_task', [String(obs.task_id)]));
+  if (obs.node) parts.push(t('request_watch_row_node', [String(obs.node)]));
+  const err = obs.error ? `<div class="request-watch-error" style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('request_watch_row_error', [String(obs.error)]))}</div>` : '';
+  return `<div class="request-watch-row" data-state="${escHtml(String(obs.state || ''))}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:2px 8px;align-items:baseline;min-width:0;overflow-wrap:anywhere;">${parts.filter(Boolean).map(p => `<span>${escHtml(p)}</span>`).join('')}</div>` +
+    `<div style="margin-top:2px;">${window.requestWatchChipHtml(obs)}</div>${err}</div>`;
+}
+
+window.requestWatchCardHtml = function(status) {
+  const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
+  const list = (Array.isArray(s.observations) ? s.observations : []).filter(o => o && typeof o === 'object');
+  const head = `<div class="cap-title">${escHtml(t('request_watch_card_title'))}${_requestWatchHelpLink()}</div>`;
+  const note = `<div style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('request_watch_read_only'))}</div>`;
+  const body = list.length
+    ? list.slice(0, REQUEST_WATCH_ROWS).map(_requestWatchRowHtml).join('') +
+      (list.length > REQUEST_WATCH_ROWS ? `<div style="color:var(--text2);padding-top:4px;">${escHtml(t('request_watch_more', [list.length - REQUEST_WATCH_ROWS]))}</div>` : '')
+    : `<div class="request-watch-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('request_watch_empty'))}</div>`;
+  return `<div class="prd-capacity-card request-watch-card" style="min-width:0;">${head}${note}${body}</div>`;
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -28690,16 +28771,17 @@ const _AUTOMATION_SUBTABS = [
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
+    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -28782,7 +28864,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -28926,6 +29008,19 @@ function _automationUncommittedWorkLoader() {
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
     render: status => window.uncommittedWorkCardHtml(status),
+  });
+}
+
+// _automationRequestWatchLoader reads the observed model requests on the
+// Overview sub-tab, beside the uncommitted-work card. The read is built from
+// the daemon's in-memory observations; its failed state is the list loader's
+// banner. The card is read-only.
+function _automationRequestWatchLoader() {
+  return window._listLoaders.automation_request_watch || listLoader({
+    key: 'automation_request_watch', el: 'automationRequestWatchCard', url: '/api/autonomous/request-watch', pollMs: 10000,
+    failedText: msg => t('request_watch_failed', [msg]),
+    active: () => !!document.getElementById('automationRequestWatchCard'),
+    render: status => window.requestWatchCardHtml(status),
   });
 }
 

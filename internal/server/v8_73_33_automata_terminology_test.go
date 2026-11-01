@@ -132,6 +132,11 @@ var pendingTranslationKeys = map[string]bool{
 	"uncommitted_work_banner":                     true,
 	"settings_automation_uncommitted_work_policy": true,
 	"settings_automation_uncommitted_work_scope":  true,
+	// Model request progress card: English until the app translation lands.
+	"request_watch_card_title": true,
+	"request_watch_read_only":  true,
+	"request_watch_empty":      true,
+	"request_watch_failed":     true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
