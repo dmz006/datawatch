@@ -264,7 +264,18 @@ def main(argv=None):
                 if key not in seen and p["id"] not in ("4f9da380", "67915a24", "6d3c36ca"):
                     findings.append("NEW %s task %s of %s (%s)" % (k["status"], k["id"], p["id"], (p.get("title") or "")[:40]))
         if tasks and done == len(tasks):
-            findings.append("MERGE READY %s all %d tasks done: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            # A finished Automaton is merge ready only when its completion rules review has
+            # passed or warned. A block verdict means the daemon is fixing it (or it is held);
+            # merging then ships work the judge refused (2026-11-01, a5db0001). No verdict
+            # yet means the review has not run: wait for it.
+            verdicts = p.get("verdicts") or []
+            last = (verdicts[-1].get("outcome") if verdicts else None)
+            if last == "block":
+                findings.append("JUDGE BLOCKED %s all %d tasks done but the rules review blocked it, do not merge: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            elif last is None:
+                findings.append("MERGE WAIT %s all %d tasks done, rules review not finished: %s" % (p["id"], len(tasks), (p.get("title") or "")[:40]))
+            else:
+                findings.append("MERGE READY %s all %d tasks done (review %s): %s" % (p["id"], len(tasks), last, (p.get("title") or "")[:40]))
         if st == "running":
             running.append(p["id"])
             d = os.path.join(WT, p["id"])
