@@ -24,6 +24,7 @@ func teardownManager(t *testing.T, dir string) (*Manager, *Session, *[]string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = store.Close() })
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
