@@ -132,6 +132,11 @@ var pendingTranslationKeys = map[string]bool{
 	"uncommitted_work_banner":                     true,
 	"settings_automation_uncommitted_work_policy": true,
 	"settings_automation_uncommitted_work_scope":  true,
+	// Model request progress card: English until the app translation lands.
+	"request_watch_card_title": true,
+	"request_watch_read_only":  true,
+	"request_watch_empty":      true,
+	"request_watch_failed":     true,
 	// v1 held-questions: the held section card ships its strings as the
 	// English placeholders until the app sends back DE/ES/FR/JA
 	// translations (the values name Automaton/Automata and must not be

@@ -5144,6 +5144,62 @@ The audit details carry the Automaton id, the task id when there is one, the fil
 
 ---
 
+## Model request progress (a hung request told from a slow one)
+
+A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).
+
+**What it reads.** On every poll (`autonomous.request_watch.poll_seconds`, default 30) the daemon asks the node for its running-models listing and, when the node has an attached observer and `use_gpu_signal` is on, for its GPU activity. A change in the listing, or a GPU at or above `gpu_busy_percent`, is progress. Only Ollama nodes have a signal source today. A session is watched only when it is running or waiting for input, its model runs on a registered compute node, and it is the worker of an in-progress task or the verifier of a task.
+
+**The states and the summary.** `generating` (`waiting on a model request: generating`), `idle` (`waiting on a model request: no progress for N minutes`), `unreachable` (`waiting on a model request: node unreachable, no progress for N minutes`) and `unknown` before the first sample. A request is over the threshold when the time without progress reaches `no_progress_minutes`; an unreachable node counts only while `unreachable_counts` is on.
+
+**At the threshold.** One warning alert ("Automaton model request is not progressing", `raise_alert`) and one operator question (`raise_question`, needs `autonomous.questions.enabled`) that offers the choices in `remediation_options`: `keep_waiting` (always offered and always the default), `end_worker`, `retry_other_backend` and `unload_reload_model`. The question is not blocking and does not park or change the task; answering it only records the choice as a `request_watch_answer` decision, and the operator acts by hand. Both are raised once per episode, and an open question is withdrawn when the request recovers or the session ends.
+
+**Keys.** All under `autonomous.request_watch`, read live with no restart:
+
+| Key | Default | Accepted values |
+|---|---|---|
+| `enabled` | `true` | `true`, `false` |
+| `poll_seconds` | `30` | whole number, 1 or more |
+| `no_progress_minutes` | `30` | whole number, 1 or more |
+| `observe_workers` | `true` | `true`, `false` |
+| `observe_verifiers` | `true` | `true`, `false` |
+| `use_gpu_signal` | `true` | `true`, `false` |
+| `gpu_busy_percent` | `10` | whole number, 1 to 100 |
+| `unreachable_counts` | `true` | `true`, `false` |
+| `raise_alert` | `true` | `true`, `false` |
+| `raise_question` | `true` | `true`, `false` |
+| `remediation_options` | unset (all four) | any of `keep_waiting`, `end_worker`, `retry_other_backend`, `unload_reload_model`; an explicit empty list offers `keep_waiting` only |
+
+A bad value is refused on every write surface, naming the key and the valid values, and nothing is written.
+
+**Changing them.**
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous.request_watch` with any of the eleven keys (see `docs/config-reference.yaml`) |
+| **CLI** | `datawatch config set autonomous.request_watch.no_progress_minutes 45` |
+| **Web UI** | Settings → General → Automata settings → **Model request watch** |
+| **REST API** | `PUT /api/config` with `{"autonomous.request_watch.no_progress_minutes": 45}`; `GET /api/config` shows the block under `autonomous.request_watch` with defaults filled in |
+| **Comm channel** | `configure autonomous.request_watch.no_progress_minutes=45` |
+
+The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` takes `request_watch_enabled`, `request_watch_poll_seconds`, `request_watch_no_progress_minutes`, `request_watch_observe_workers`, `request_watch_observe_verifiers`, `request_watch_use_gpu_signal`, `request_watch_gpu_busy_percent`, `request_watch_unreachable_counts`, `request_watch_raise_alert`, `request_watch_raise_question` and `request_watch_remediation_options`.
+
+**Where to see it.**
+
+| Surface | How |
+|---|---|
+| REST | `GET /api/autonomous/request-watch` (optional `session` and `automaton` query parameters) |
+| MCP | `autonomous_request_watch` (read-only; optional `session` and `automaton` arguments) |
+| CLI | `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` |
+| Comm channel | `autonomous request-watch [session <id> \| automaton <id>]` |
+| Web UI | **Automata model request progress** card on the Automation Overview sub-tab, refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
+
+The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
+
+**Limits.** A large model can take many minutes to give a first response, and until then it reads as `idle`; raise `no_progress_minutes` for slow hardware and attach an observer to the node so GPU activity can show the work. The time without progress starts at the first poll that sees the session.
+
+---
+
 ## Merged-member policy (a member Automaton cancelled after its work shipped)
 
 When a member Automaton of an Automation ends cancelled, the Automation has no `on_complete` edge to follow and becomes `blocked`. That is right when the member's work never landed and wrong when it did: the member's branch (`automaton/<id>`) is already merged into the project's default branch and only the Automaton was cancelled afterwards. The merged-member policy decides what the Automation does in that case. When a member ends cancelled or completed, the coordinator asks read-only git whether the member's branch is merged on the default branch, and if it is, `autonomous.automation.merged_member_policy` chooses the outcome. A branch that is not merged, has no commits ahead of the default branch, or whose state git cannot read always keeps the blocked outcome, whatever the policy. The check never merges, deletes, pushes or checks out a branch.

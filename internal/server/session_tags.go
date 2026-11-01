@@ -8,6 +8,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -59,15 +60,23 @@ func (s *Server) wireSessionTags() {
 
 // sessionTagView is a session's JSON with the read-time inherited_tags
 // added. The embedded tags field is the session's own tags. inherited_tags
-// comes from the owning Automaton and is never persisted.
+// comes from the owning Automaton and is never persisted. model_request is
+// the request watch's observation of the session's in-flight model request,
+// read at response time and never persisted; it is omitted when the session
+// has none.
 type sessionTagView struct {
 	*session.Session
-	InheritedTags []string `json:"inherited_tags"`
+	InheritedTags []string                  `json:"inherited_tags"`
+	ModelRequest  *requestwatch.Observation `json:"model_request,omitempty"`
 }
 
 // sessionView wraps one session for a list or detail response.
 func (s *Server) sessionView(sess *session.Session) sessionTagView {
-	return sessionTagView{Session: sess, InheritedTags: s.manager.InheritedTags(sess)}
+	return sessionTagView{
+		Session:       sess,
+		InheritedTags: s.manager.InheritedTags(sess),
+		ModelRequest:  s.sessionObservation(sess),
+	}
 }
 
 // sessionViews wraps every session of a list in sessionView.

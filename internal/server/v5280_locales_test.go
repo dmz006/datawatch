@@ -100,6 +100,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"tag_inherited_label",
 		"tag_inherited_tip",
 		"tag_inherited_note",
+		"request_watch_card_title",
 		"tags_menu_button",
 		"tag_session_edit_title",
 		"tag_session_batch_title",

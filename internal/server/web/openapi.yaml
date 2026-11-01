@@ -1034,6 +1034,25 @@ paths:
         infrastructure retry value rejects the whole PUT with 400 and nothing is
         written. GET returns all seven values in effect under `autonomous.infra_retry`
         and the running Automaton manager picks up changes without a restart.
+        `autonomous.request_watch.enabled` (true|false, default true),
+        `autonomous.request_watch.poll_seconds` (whole number of seconds from 1 to 86400,
+        default 30), `autonomous.request_watch.no_progress_minutes` (whole number of
+        minutes from 1 to 10080, default 30), `autonomous.request_watch.observe_workers`
+        (true|false, default true), `autonomous.request_watch.observe_verifiers`
+        (true|false, default true), `autonomous.request_watch.use_gpu_signal`
+        (true|false, default true), `autonomous.request_watch.gpu_busy_percent` (whole
+        number from 1 to 100, default 10), `autonomous.request_watch.unreachable_counts`
+        (true|false, default true), `autonomous.request_watch.raise_alert` (true|false,
+        default true), `autonomous.request_watch.raise_question` (true|false, default
+        true) and `autonomous.request_watch.remediation_options` (a JSON array of option
+        ids, or a comma list: `keep_waiting`, `end_worker`, `retry_other_backend`,
+        `unload_reload_model`; keep_waiting is always offered; an empty list offers
+        keep_waiting only; null clears the key back to unset, which offers all four).
+        A bad request watch value rejects the whole PUT with 400 and a message that
+        names the key and the allowed values, and nothing is written. GET returns all
+        eleven values in effect under `autonomous.request_watch` (an unset key shows its
+        default and `remediation_options` is the list in effect, keep_waiting first) and
+        the watcher picks up changes on its next poll without a restart.
         `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
         claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
         list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
@@ -1749,6 +1768,56 @@ paths:
             Allow:
               schema: {type: string, example: GET}
         "503": {description: Autonomous is disabled}
+
+  /api/autonomous/request-watch:
+    get:
+      summary: Request watch status
+      description: |
+        The in-flight model request of the worker and verifier sessions of
+        running Automata whose model runs on a registered compute node, so a
+        hung request can be told from a slow one. `enabled`, `poll_seconds` and
+        `no_progress_minutes` are the settings in effect
+        (`autonomous.request_watch`). `observations` holds one entry per watched
+        session: `state` is `generating`, `idle`, `unreachable` or `unknown`
+        (before the first sample), `last_change` when the node last showed a
+        sign of progress, `no_progress_seconds` how long it has not, `last_poll`
+        when the node was last read, `over_threshold` whether the no-progress
+        time has reached `no_progress_minutes`, `error` why a node could not be
+        read (absent when it could) and `summary` a plain-text line. The watch
+        is observation only: it makes no model call and never ends a worker,
+        retries it on another backend or unloads a model. `observations` is an
+        empty list, never null, when nothing is watched, the feature is
+        disabled, or a filter matches nothing. Read-only; only GET is served,
+        and a federated peer needs the autonomous read capability.
+      operationId: autonomousRequestWatch
+      tags: [Autonomous]
+      parameters:
+        - name: session
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the list to this session id. An id that matches nothing reads an empty list.
+        - name: automaton
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the list to the sessions of this Automaton id. An id that matches nothing reads an empty list.
+      responses:
+        "200":
+          description: Request watch status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RequestWatchStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: The request watch is not running}
 
   /api/autonomous/supervisor-watch:
     get:
@@ -2814,6 +2883,11 @@ paths:
         `uncommitted_work_policy` (hold|warn|off, default hold) and
         `uncommitted_work_scope` (task_files|worktree, default task_files);
         a key that was never set is omitted and reads its default.
+        The `request_watch` object carries the request watch settings with every
+        default filled in: `enabled`, `poll_seconds`, `no_progress_minutes`,
+        `observe_workers`, `observe_verifiers`, `use_gpu_signal`, `gpu_busy_percent`,
+        `unreachable_counts`, `raise_alert`, `raise_question` and `remediation_options`
+        (the list in effect, keep_waiting first).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses:
@@ -2922,6 +2996,16 @@ paths:
         `autonomous.automation.uncommitted_work_policy` and
         `autonomous.automation.uncommitted_work_scope`. A change takes effect
         without a restart.
+        `request_watch` is an object of the request watch keys (`enabled`,
+        `poll_seconds`, `no_progress_minutes`, `observe_workers`, `observe_verifiers`,
+        `use_gpu_signal`, `gpu_busy_percent`, `unreachable_counts`, `raise_alert`,
+        `raise_question`, `remediation_options`) merged onto the current block key by
+        key. `poll_seconds` and `no_progress_minutes` are whole numbers of 1 or more,
+        `gpu_busy_percent` is a whole number from 1 to 100, `remediation_options` is an
+        array of known option ids (an empty array offers keep_waiting only), and the
+        flags are true or false. A bad value or an unknown key rejects the whole PUT
+        with 400 and a message naming the key and the allowed values, and changes
+        nothing. `PUT /api/config` accepts the same keys as `autonomous.request_watch.<key>`.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -2965,6 +3049,24 @@ paths:
                       type: string
                       enum: [task_files, worktree]
                       description: "The uncommitted-work scope (autonomous.automation.uncommitted_work_scope). Any other value rejects the PUT with 400 naming task_files and worktree."
+                request_watch:
+                  type: object
+                  description: "Request watch settings (autonomous.request_watch). A bad value, or an unknown key, rejects the PUT with 400 naming the key and the allowed values."
+                  properties:
+                    enabled: {type: boolean, description: "Whether the watch is on (default true)"}
+                    poll_seconds: {type: integer, minimum: 1, maximum: 86400, description: "Seconds between polls (default 30)"}
+                    no_progress_minutes: {type: integer, minimum: 1, maximum: 10080, description: "Minutes without progress before a request counts as over the threshold (default 30)"}
+                    observe_workers: {type: boolean, description: "Watch worker sessions (default true)"}
+                    observe_verifiers: {type: boolean, description: "Watch verifier sessions (default true)"}
+                    use_gpu_signal: {type: boolean, description: "Read the node GPU load to tell generating from idle (default true)"}
+                    gpu_busy_percent: {type: integer, minimum: 1, maximum: 100, description: "GPU utilisation at or above which the node counts as generating (default 10)"}
+                    unreachable_counts: {type: boolean, description: "Count time with an unreachable node as no progress (default true)"}
+                    raise_alert: {type: boolean, description: "Raise an alert at the threshold (default true)"}
+                    raise_question: {type: boolean, description: "Raise a non-blocking operator question at the threshold (default true)"}
+                    remediation_options:
+                      type: array
+                      items: {type: string, enum: [keep_waiting, end_worker, retry_other_backend, unload_reload_model]}
+                      description: "Options the question offers; keep_waiting is always offered. Unset offers all four; an empty array offers keep_waiting only."
                 scope_lint:
                   type: string
                   enum: [off, warn, enforce]
@@ -3101,6 +3203,13 @@ paths:
         re-issue the same tool call on consecutive polls. `progress` is
         stripped the instant a task leaves the active statuses, so its
         absence means the task's worker is not running right now.
+        A task row (the `tasks` detail level, and each task of the `full` detail)
+        carries `model_request` when the request watch observes that task's
+        worker or verifier waiting on a model request: the same observation
+        the request-watch route lists (RequestWatchObservation), whose
+        `summary` says in plain words whether the request is generating or has
+        made no progress for N minutes. It is omitted when there is none, and
+        the task's `status` is unchanged.
         A task's `status` can be `waiting_decision`: its spec names an operator
         decision that has no answer yet and the decision gate is holding it. The
         task has not started; it is not a failure and not a retry. Its
@@ -7302,6 +7411,37 @@ components:
         reason: {type: string, description: Why the hold was raised}
         question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
         held_at: {type: string, format: date-time, description: When the hold was raised}
+    RequestWatchStatus:
+      type: object
+      description: |-
+        The request watch status, as GET /api/autonomous/request-watch returns
+        it. `observations` is an empty list, never null.
+      required: [enabled, poll_seconds, no_progress_minutes, observations]
+      properties:
+        enabled: {type: boolean, description: "Whether the watch is on (autonomous.request_watch.enabled; default true)"}
+        poll_seconds: {type: integer, minimum: 1, description: "Seconds between node reads (autonomous.request_watch.poll_seconds; default 30)"}
+        no_progress_minutes: {type: integer, minimum: 1, description: "Minutes without progress before an observation is over the threshold (autonomous.request_watch.no_progress_minutes; default 30)"}
+        observations:
+          type: array
+          items: {$ref: "#/components/schemas/RequestWatchObservation"}
+    RequestWatchObservation:
+      type: object
+      description: The watch's report for one worker or verifier session waiting on a model request.
+      required: [session_id, automaton_id, task_id, role, node, model, state, no_progress_seconds, over_threshold, summary]
+      properties:
+        session_id: {type: string, description: The watched session}
+        automaton_id: {type: string, description: The Automaton the session belongs to}
+        task_id: {type: string, description: The task the session works on}
+        role: {type: string, enum: [worker, verifier], description: Whether the session is a worker or a verifier}
+        node: {type: string, description: The registered compute node the model runs on}
+        model: {type: string, description: The model the request is waiting on}
+        state: {type: string, enum: [generating, idle, unreachable, unknown], description: "generating when the node showed a sign of progress at the last poll; idle when it was readable and showed none; unreachable when it could not be read; unknown before the first sample"}
+        last_change: {type: string, format: date-time, description: "When the node last showed a sign of progress (RFC 3339); absent before the first sample"}
+        no_progress_seconds: {type: integer, format: int64, description: Seconds since the last sign of progress}
+        last_poll: {type: string, format: date-time, description: "When the node was last read (RFC 3339); absent before the first sample"}
+        over_threshold: {type: boolean, description: True once no_progress_seconds has reached no_progress_minutes}
+        error: {type: string, description: Why the node could not be read; absent when it could}
+        summary: {type: string, description: "Plain-text line such as: waiting on a model request: no progress for 40 minutes"}
     CleanupPassStatus:
       type: object
       description: One cleanup pass; owner_* covers this daemon's own finished Automata, net_* the same pass's sweep of everything else
@@ -7963,6 +8103,9 @@ components:
           items:
             type: string
           description: Tag IDs inherited from the owning Automaton; computed on read, read-only, empty outside an Automaton
+        model_request:
+          $ref: "#/components/schemas/RequestWatchObservation"
+          description: The request watch's observation of the session's in-flight model request, with state, node, model, no-progress time and a plain-text summary; computed on read, read-only, omitted when the session has none
         id:
           type: string
           description: Short 4-character hex ID

@@ -95,6 +95,7 @@ import (
 	pluginspkg "github.com/dmz006/datawatch/internal/plugins"
 	profilepkg "github.com/dmz006/datawatch/internal/profile"
 	proxyPkg "github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/router"
 	rtkPkg "github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -4390,6 +4391,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			GateDisagreement:                 acfgIn.GateDisagreement,
 			FailureEscalation:                failureEscalationFromConfig(acfgIn.FailureEscalation),
 			InfraRetry:                       acfgIn.InfraRetry.Clone(),
+			RequestWatch:                     acfgIn.RequestWatch.Clone(),
 			PlanningBackend:                  acfgIn.PlanningBackend,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
@@ -6873,6 +6875,26 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					httpServer.SetAutonomousEvents(pq)
 				}
 			}
+			// Request watch: the poller observes the in-flight model request of
+			// each worker and verifier session whose model runs on a registered
+			// compute node, and GET /api/autonomous/request-watch reads it. The
+			// live autonomous.request_watch block is read on every tick and on
+			// every request, so a config change applies with no restart. The
+			// observer peer registry is wired later in startup, so it is looked
+			// up at poll time.
+			requestWatchCfg := func() config.RequestWatchConfig {
+				return cfg.Autonomous.RequestWatch
+			}
+			requestWatcher = startRequestWatch(ctx, requestWatchCfg,
+				newRequestWatchLister(mgr, amgr, computeReg), cfg.Hostname,
+				func(peer string) *observerpkg.StatsResponse {
+					if reg := httpServer.PeerRegistry(); reg != nil {
+						return reg.LastPayload(peer)
+					}
+					return nil
+				}, amgr)
+			var requestWatchReader requestwatch.Reader = requestWatcher
+			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
@@ -7719,6 +7741,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			obsCollector.Start(context.Background())
 			httpServer.SetObserverAPI(observerpkg.NewAPI(obsCollector))
 			obsCollectorRef = obsCollector // S14b: wire into alert-rules evaluator
+			// The request watch reads the local daemon's own node GPU load from here.
+			requestWatchLocalStats = obsCollector.Latest
 			fmt.Printf("[observer] plugin started (tick=%dms, topN=%d)\n",
 				obsCfg.TickIntervalMs, obsCfg.ProcessTree.TopNBroadcast)
 			// BL172 (S11) — Shape B / C peer registry. Disabled when

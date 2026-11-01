@@ -51,7 +51,9 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 		if !s.fedCap(w, r, federation.CapAutonomousRead) {
 			return
 		}
-		writeJSONOK(w, s.autonomousMgr.Config())
+		// The request_watch member shows the values in effect, with every
+		// default filled in.
+		writeJSONOK(w, withRequestWatchSurface(s.autonomousMgr.Config()))
 	case http.MethodPut, http.MethodPost:
 		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 			return
@@ -241,6 +243,14 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}
+				}
+			}
+			// request_watch: every field is checked, so one bad value (or an
+			// unknown key) rejects the PUT with a message naming the key.
+			if rawWatch, ok := top["request_watch"]; ok && string(rawWatch) != "null" {
+				if verr := validateRequestWatchObject(rawWatch); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
 				}
 			}
 			// lane_fill: every field is checked, so one bad value rejects the PUT.
@@ -731,7 +741,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
 				return
 			}
-			writePRDDetail(w, prd, detail, s.prdDetailCap(r))
+			s.writePRDDetail(w, prd, detail, s.prdDetailCap(r))
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return

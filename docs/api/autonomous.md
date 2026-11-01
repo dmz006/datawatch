@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_request_watch`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -75,6 +75,7 @@ GET    /api/autonomous/learnings           extracted post-task learnings
 GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress metrics object (counts by kind, throughput, utilization, remaining work, completion range); since/until are YYYY-MM-DD, until is inclusive; 400 on a bad date
 GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
+GET    /api/autonomous/request-watch[?session=&automaton=]  model request progress: the watch settings in effect and one observation per watched worker or verifier session (state, time without progress, summary); read-only, makes no model call
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions; read-only, never runs git
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 
@@ -1552,6 +1553,62 @@ A record (newest first in `records`):
 The fields are copied from the live Automaton at the last pass, not derived: `prd_title` names the Automaton (absent when it has no title); `automation_name` and `member_id` place the record in its Automation; `task_id` and `task_title` name the task that failed (or was blocked), `error` is that task's error and `session_end_reason` why its live sessions were ended, each already truncated to 2000 chars by the pass; `blocked_reason` is the Automaton's own block reason, kept separate from the task error; `first_seen_at` is when the Automaton first ended in this failed or blocked state (its own status timestamp), `updated_at` when the pass last refreshed it, and `alerted_at` when the triage alert for this episode fired (absent until it does). `retry_budget` is the engine's existing retry budget, reused as-is and shown for all four categories — `limit` is the maximum, `used` what has been consumed, `left` what remains — plus `ceiling_total` and `ceiling_left`, the overall retry ceiling when one is set; it is **informational**: the pass neither spends nor resets any of it. `notes` is an append-only list (at, source, text) the pass grows over the life of the record. `alert_minutes` is not on the record: it rides the list body beside `records`.
 
 The route is read-only and a sibling of the lane-fill read under the same access rules: bearer-authenticated locally, and it needs the autonomous read **capability** when called by a federated peer. Its surfaces are the REST route above, the MCP tool `autonomous_triage` (the same three filters, proxying the route), the CLI (`datawatch autonomous triage [--automation <id>] [--prd <id>] [--status failed|blocked] [--json]`), the comm verb (`autonomous triage [automation-id]`, one optional positional argument: the Automation id), the PWA triage card in the Automaton detail view, and the same contract documented for the mobile and wear surfaces in [mobile-surface.md](mobile-surface.md). The record card on each client displays, in order: the Automaton name (title, or id), the status chip (failed/blocked), the owning Automation name with its member id when one exists, the failed task title, the task error, the blocked reason, the session end reason, the first-seen time, whether the alert has fired and when, one row per retry-budget category (used of limit, left), and the overall retry ceiling when one is set; values the record does not carry are simply not shown. Triage has exactly one configuration key, `autonomous.automation.triage_alert_minutes`. The record shape is in `internal/server/web/openapi.yaml` (`TriageList`, `TriageRecord`).
+
+## Model request progress (`GET /api/autonomous/request-watch`)
+
+The daemon observes the in-flight model request of a worker or verifier session whose model runs on a registered compute node, so a hung request can be told from a slow one. The route reads what the watch already holds. It makes no model call and changes nothing: it never ends a worker, retries on another backend or unloads a model. The how-to is [howto/model-request-progress.md](../howto/model-request-progress.md).
+
+**Query parameters.** `session` keeps only the observation of that session id; `automaton` keeps only the observations of that Automaton id. Both are optional. An id that matches nothing gives an empty list, not an error.
+
+**Response.**
+
+```json
+{
+  "enabled": true,
+  "poll_seconds": 30,
+  "no_progress_minutes": 30,
+  "observations": [
+    {
+      "session_id": "ab12-3",
+      "automaton_id": "8f040001",
+      "task_id": "t-7",
+      "role": "worker",
+      "node": "gpu-node-1",
+      "model": "example-model:latest",
+      "state": "idle",
+      "last_change": "2026-11-01T14:02:10Z",
+      "no_progress_seconds": 1500,
+      "last_poll": "2026-11-01T14:27:10Z",
+      "over_threshold": false,
+      "summary": "waiting on a model request: no progress for 25 minutes"
+    }
+  ]
+}
+```
+
+`state` is `generating`, `idle`, `unreachable` or `unknown` (before the first sample). `role` is `worker` or `verifier`. `last_change` and `last_poll` are RFC 3339 times. `error` is present only when the node could not be read. `summary` is plain text: `waiting on a model request: generating`, `waiting on a model request: no progress for N minutes`, or, for an unreachable node, `waiting on a model request: node unreachable, no progress for N minutes`. With `autonomous.request_watch.enabled` off the list is empty.
+
+**Status codes.** `200` with the body above; `405` for any method but GET (with an `Allow: GET` header); `503` until the watch is wired; `403` for a federated peer without the autonomous read capability.
+
+**Configuration.** The eleven keys are under `autonomous.request_watch` and are read live; `GET /api/config` shows them with defaults filled in and `PUT /api/config` sets them (a bad value is a `400` that names the key and the valid values):
+
+```yaml
+autonomous:
+  request_watch:
+    enabled: true              # default true
+    poll_seconds: 30           # whole number, 1 or more; default 30
+    no_progress_minutes: 30    # whole number, 1 or more; default 30
+    observe_workers: true      # default true
+    observe_verifiers: true    # default true
+    use_gpu_signal: true       # default true
+    gpu_busy_percent: 10       # 1 to 100; default 10
+    unreachable_counts: true   # default true
+    raise_alert: true          # default true
+    raise_question: true       # default true
+    remediation_options: [keep_waiting, end_worker, retry_other_backend, unload_reload_model]   # unset reads as all four
+```
+
+**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automation Overview sub-tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
 
 ## Merge state and safe-to-delete report (`GET /api/autonomous/merge`, `GET /api/autonomous/safe-to-delete`)
 

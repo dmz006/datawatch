@@ -484,6 +484,11 @@ type Config struct {
 	// Effective* accessors; the live config round-trip carries the block so
 	// a config write takes effect without a restart.
 	InfraRetry config.InfraRetryConfig `json:"infra_retry"`
+	// RequestWatch mirrors autonomous.request_watch: the policy of the
+	// request watch. Unset keys read their defaults through the Effective*
+	// accessors; the live config round-trip carries the block so a config
+	// write takes effect without a restart.
+	RequestWatch config.RequestWatchConfig `json:"request_watch"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -1380,6 +1385,14 @@ type Manager struct {
 	// decisions on file; a nil config function leaves the gate off.
 	decisionStore   *QuestionStore
 	decisionGateCfg func() config.AutonomousQuestionsConfig
+
+	// requestWatchCfg reads the live autonomous.request_watch block and
+	// requestWatchEpisodes holds, per watched session, the key of the
+	// no-progress episode already alerted and asked about
+	// (request_watch_question.go). Guarded by mu. A nil function reads the
+	// defaults.
+	requestWatchCfg      func() config.RequestWatchConfig
+	requestWatchEpisodes map[string]string
 
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a

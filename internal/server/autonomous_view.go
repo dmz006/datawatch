@@ -84,8 +84,10 @@ func (s *Server) prdDetailCap(r *http.Request) int {
 // writePRDDetail writes prd at the given detail level. full writes prd with
 // its long text fields cut to textCap bytes each (textCap 0 writes it as it
 // is), summary writes its summary view, and tasks writes its task listing.
-// The stored record is never changed: the cap works on a copy.
-func writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) {
+// The stored record is never changed: the cap works on a copy. The tasks
+// listing and the full record carry model_request on every task that has a
+// request-watch observation.
+func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) {
 	switch detail {
 	case "summary", "tasks":
 		p, err := toPRD(prd)
@@ -97,10 +99,12 @@ func writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) 
 			writeJSONOK(w, autonomous.BuildSummaryView(p))
 			return
 		}
-		writeJSONOK(w, autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap)))
+		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
+		s.attachTaskObservations(&view)
+		writeJSONOK(w, view)
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, prd)
+			writeJSONOK(w, s.prdWithObservations(prd, prdIDOf(prd)))
 			return
 		}
 		p, err := toPRD(prd)
@@ -108,8 +112,21 @@ func writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) 
 			http.Error(w, "detail view: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSONOK(w, autonomous.CapPRDText(p, textCap))
+		capped := autonomous.CapPRDText(p, textCap)
+		writeJSONOK(w, s.prdWithObservations(capped, capped.ID))
 	}
+}
+
+// prdIDOf returns the id of an Automaton record, or "" when it has none.
+func prdIDOf(prd any) string {
+	if p, ok := prd.(*autonomous.PRD); ok && p != nil {
+		return p.ID
+	}
+	p, err := toPRD(prd)
+	if err != nil || p == nil {
+		return ""
+	}
+	return p.ID
 }
 
 // planCoverageAckner is the optional autonomous-manager surface for

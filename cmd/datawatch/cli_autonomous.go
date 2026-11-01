@@ -63,6 +63,10 @@ Subcommands:
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
                                    committed or discarded)
+  request-watch [--session ID] [--automaton ID] [--json]
+                                   The in-flight model request of each worker or verifier session whose model
+                                   runs on a compute node: generating, idle or unreachable, and for how long
+                                   (read only, nothing is ended, retried or unloaded)
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
@@ -251,6 +255,7 @@ Subcommands:
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
 		newAutonomousUncommittedWorkCmd(),
+		newAutonomousRequestWatchCmd(),
 		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),

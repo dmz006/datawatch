@@ -28,7 +28,17 @@
 #                     "unknown" without ss); exit 0 with a one-line OK when
 #                     nothing new is left
 #
-# With no mode it prints usage and exits 2.
+#   (no arguments)   check this checkout only: list the live daemons whose
+#                     `--config <path>` lies under the repository root (CHECK_ROOT)
+#                     and fail (exit 1) when there is any; exit 0 with a one-line
+#                     OK otherwise. No baseline is needed because a daemon that a
+#                     job of this checkout started carries a config inside the
+#                     checkout, while the daemons of other jobs on a shared host
+#                     (config in a temp folder or another checkout) and the
+#                     operator's own daemon (config in the operator's data
+#                     directory) are never listed.
+#
+# Any other number of arguments, or an unknown mode, prints usage and exits 2.
 #
 # The test runner takes a snapshot at the start of a run and runs `check`
 # at the end (a later task wires that in); the script can be run by hand too:
@@ -49,18 +59,32 @@ report() {
 usage() {
     echo "Usage: $0 snapshot <file>   remember the live test daemons now"
     echo "       $0 check <file>      fail when a live test daemon is not in <file>"
+    echo "       $0                   fail when a daemon runs on a config inside this checkout"
     exit 2
 }
-if [[ $# -ne 2 ]]; then
-    usage
-fi
-mode="$1"
-file="$2"
-if [[ "$mode" != "snapshot" && "$mode" != "check" ]]; then
+if [[ $# -eq 0 ]]; then
+    mode="own"
+    file=""
+elif [[ $# -eq 2 ]]; then
+    mode="$1"
+    file="$2"
+    if [[ "$mode" != "snapshot" && "$mode" != "check" ]]; then
+        usage
+    fi
+else
     usage
 fi
 
 BASELINE_PIDS=()
+
+is_own_path() {
+    # Return 0 when <path> lies under the repository root.
+    local p="$1"
+    case "$p" in
+        "$ROOT"|"$ROOT"/*) return 0 ;;
+    esac
+    return 1
+}
 
 is_temp_path() {
     # Return 0 when <path> is under /tmp, under $TMPDIR (when set), or inside
@@ -115,7 +139,11 @@ collect_test_daemons() {
             *) continue ;;
         esac
         [[ -n "$cfg" ]] || continue
-        is_temp_path "$cfg" || continue
+        if [[ "$mode" == "own" ]]; then
+            is_own_path "$cfg" || continue
+        else
+            is_temp_path "$cfg" || continue
+        fi
         printf '%s\t%s\n' "$pid" "$cfg"
     done
     return 0
@@ -222,7 +250,7 @@ do_check() {
         echo "  hint: every job that starts a datawatch daemon must end that"
         echo "  daemon, and every session the daemon started, on every exit"
         echo "  path - normal exit, failure and interrupt."
-        if [[ ! -s "$file" ]]; then
+        if [[ "$mode" != "own" && ! -s "$file" ]]; then
             echo "  note: the baseline $file is empty, so every live test daemon"
             echo "  right now is reported - on a shared host that includes the"
             echo "  daemons of other concurrent sessions, not only this run."
@@ -230,7 +258,11 @@ do_check() {
             echo "  (snapshot <file>) to tell the new ones from the existing"
             echo "  ones, and end only the daemons a job actually owns."
         fi
-        echo "FAIL: $ERRORS leftover test daemon(s) not in the baseline $file (live test daemons now: $n_live)"
+        if [[ "$mode" == "own" ]]; then
+            echo "FAIL: $ERRORS daemon(s) still running on a config inside this checkout"
+        else
+            echo "FAIL: $ERRORS leftover test daemon(s) not in the baseline $file (live test daemons now: $n_live)"
+        fi
         exit 1
     fi
     echo "OK: no leftover test daemons"
@@ -238,5 +270,5 @@ do_check() {
 
 case "$mode" in
     snapshot) do_snapshot ;;
-    check) do_check ;;
+    check | own) do_check ;;
 esac
