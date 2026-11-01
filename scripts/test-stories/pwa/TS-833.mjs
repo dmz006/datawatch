@@ -14,13 +14,14 @@
 // is off. The story creates nothing; the three original values are restored
 // in a finally block. Runs against the sandbox daemon only
 // (TEST_HTTP / TEST_TOKEN).
-import { runStory, connectToPWA, navigateTo, screenshot, saveLog, env } from './lib.mjs';
+import { runStory, connectToPWA, navigateTo, screenshot, saveLog, env, sandboxTlsAgent } from './lib.mjs';
 
 // The sandbox HTTP port redirects to TLS (307) and a redirect drops the
-// Authorization header, so REST calls go straight to the self-signed TLS port.
-// The relaxed certificate check lives on this dedicated Agent, not on the whole process.
+// Authorization header, so REST calls go straight to the daemon's TLS port.
+// Verification stays enabled; this dedicated Agent trusts the daemon's own
+// certificate file (named by TEST_TLS_CA) instead of skipping the check.
 import https from 'node:https';
-const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
+const sandboxAgent = sandboxTlsAgent();
 const API = env.tls;
 
 // api issues one REST call to the sandbox TLS port and answers { ok, status, json() } like fetch.

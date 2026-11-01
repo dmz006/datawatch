@@ -24,7 +24,7 @@
 // tags: surface:pwa feature:automation group:automation
 //
 import https from 'node:https';
-import { screenshot, saveLog, env } from './lib.mjs';
+import { screenshot, saveLog, env, sandboxTlsAgent } from './lib.mjs';
 import { runPerfStory, openPWA, check, saveJson, skipStory, noHorizontalOverflow } from './perf-lib.mjs';
 
 const STORY = 'TS-835';
@@ -43,10 +43,11 @@ const evidence = {
 
 // --- API (sandbox: token auth; 503 = autonomous subsystem off) ----
 // The sandbox serves a self-signed certificate. Go to the TLS origin over a
-// dedicated agent that skips verification only (the same pattern as the other
-// automation stories); the plaintext origin 307-redirects loopback API calls
-// to that self-signed https port, which Node's fetch refuses outright.
-const sandboxAgent = new https.Agent({ rejectUnauthorized: false });
+// dedicated agent that trusts the daemon's own certificate file (named by
+// TEST_TLS_CA) instead of skipping verification; the plaintext origin
+// 307-redirects loopback API calls to that https port, which Node's fetch
+// refuses without a matching CA.
+const sandboxAgent = sandboxTlsAgent();
 
 function sandboxRequest(method, path, body) {
   return new Promise((resolve, reject) => {
