@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -365,5 +366,79 @@ func TestMergeRefusesDirtyPRDWorktree(t *testing.T) {
 	}
 	if f.readPRDFile("shared.txt") != "uncommitted edit\n" {
 		t.Fatal("uncommitted work was touched")
+	}
+}
+
+func TestMergeHeldTaskAppearsInHeldListAndTaskPayload(t *testing.T) {
+	f := newMergeFixture(t, "", map[string]string{"shared.txt": mergeBase})
+	nonAdditive(f)
+	ctx := context.Background()
+	if _, err := f.m.MergeTaskBranch(ctx, f.prd, f.task("t1")); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := f.m.MergeTaskBranch(ctx, f.prd, f.task("t2")); err != nil || out != MergeOutcomeHeld {
+		t.Fatalf("t2: %s %v", out, err)
+	}
+	// The held list the held-question pass reads carries the task.
+	var held []HeldTaskStatus
+	f.m.store.WithLock(func() { held = heldTasksAcrossPRDs(f.m.store.prds) })
+	found := false
+	for _, h := range held {
+		if h.AutomatonID == f.prd.ID && h.TaskID == "t2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("held merge task not in the held list: %+v", held)
+	}
+	// The REST task payload carries merge_state and merge_commit.
+	raw, err := json.Marshal(BuildTasksView(f.prd))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var view struct {
+		Tasks []map[string]any `json:"tasks"`
+	}
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[string]any{}
+	for _, e := range view.Tasks {
+		got[e["id"].(string)] = e
+	}
+	if got["t2"]["merge_state"] != "held" {
+		t.Fatalf("t2 payload merge_state = %v", got["t2"]["merge_state"])
+	}
+	if got["t1"]["merge_state"] != "merged" || got["t1"]["merge_commit"] == nil || got["t1"]["merge_commit"] == "" {
+		t.Fatalf("t1 payload = %v", got["t1"])
+	}
+}
+
+func TestMergeDefaultResolverWiredWhenPlanningModelPresent(t *testing.T) {
+	f := newMergeFixture(t, "", nil)
+	if f.m.mergeResolveFn != nil {
+		t.Skip("fixture manager already has a resolver")
+	}
+	f.m.decompose = func(DecomposeRequest) (string, error) { return `{"x.txt":"ok\n"}`, nil }
+	f.m.installDefaultMergeResolver()
+	if f.m.mergeResolveFn == nil || f.m.mergeVerifyFn == nil {
+		t.Fatal("resolver not installed")
+	}
+	got, err := f.m.mergeResolveFn(context.Background(), MergeResolveRequest{PRD: f.prd})
+	if err != nil || got["x.txt"] != "ok\n" {
+		t.Fatalf("resolve = %v %v", got, err)
+	}
+	if err := f.m.mergeVerifyFn(context.Background(), f.prd, &Task{}, f.prd.ProjectDir); err == nil {
+		t.Fatal("verification with no script must refuse the resolution")
+	}
+}
+
+func TestParseMergeAnswerRejectsProse(t *testing.T) {
+	if _, err := parseMergeAnswer("no json here"); err == nil {
+		t.Fatal("expected error")
+	}
+	m, err := parseMergeAnswer("sure:\n```json\n{\"a\":\"b\"}\n```")
+	if err != nil || m["a"] != "b" {
+		t.Fatalf("%v %v", m, err)
 	}
 }

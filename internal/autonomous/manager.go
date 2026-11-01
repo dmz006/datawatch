@@ -2251,6 +2251,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
+	m.installDefaultMergeResolver()
 	return m, nil
 }
 

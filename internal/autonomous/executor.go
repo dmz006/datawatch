@@ -2022,6 +2022,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// Fold the task branch into the PRD branch (no-op without one).
 			if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
 				log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
+				// Leave the task visibly waiting, not without a merge state.
+				if t.WorktreeBranch != "" && t.MergeState == "" {
+					m.setMergeState(t, MergeStatePending, "")
+				}
+			}
+			// A task deferred behind an earlier sibling or dependency may be
+			// mergeable now: run the ordered pass over the whole PRD.
+			if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+				log.Printf("[autonomous] %s task merge pass: %v", prd.ID, merr)
 			}
 			// v9.2.1 — passing-script retry: verification passed via the
 			// unmodified-retry escape hatch (the retry itself produced no diff;
