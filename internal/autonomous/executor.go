@@ -1114,6 +1114,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if !ok {
 		return nil
 	}
+	applyParallelMetrics(prd)
 	m.recordProgressMilestone(prd.ID)
 	// BL387 Phase 3 — fire auto-report asynchronously on completion.
 	m.mu.Lock()

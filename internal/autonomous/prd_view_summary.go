@@ -29,6 +29,10 @@ type SummaryView struct {
 	// Empty when no push outcome was recorded yet.
 	PushState   string `json:"push_state,omitempty"`
 	PushWarning string `json:"push_warning,omitempty"`
+	// Parallel-execution metrics copied from the PRD record.
+	TotalTasks    int     `json:"total_tasks,omitempty"`
+	ReadOnlyTasks int     `json:"read_only_tasks,omitempty"`
+	Speedup       float64 `json:"speedup,omitempty"`
 
 	// The fields below feed a collapsed Automata row. All are scalars, short
 	// lists or small count maps, so none grows with the amount of text the
@@ -91,6 +95,9 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		CIWatch:       prd.CIWatch,
 		PushState:     prd.Git.PushState,
 		PushWarning:   prd.Git.PushWarning,
+		TotalTasks:    prd.TotalTasks,
+		ReadOnlyTasks: prd.ReadOnlyTasks,
+		Speedup:       prd.Speedup,
 
 		Type:             prd.Type,
 		Backend:          prd.Backend,

@@ -526,6 +526,16 @@ type PRD struct {
 	MemoryReport   string     `json:"memory_report,omitempty"`
 	MemoryReportAt *time.Time `json:"memory_report_at,omitempty"`
 
+	// Parallel-execution metrics, computed from the task timings and stored
+	// when the Automaton completes (see ComputeParallelMetrics). Speedup is
+	// SerialSeconds / WallClockSeconds.
+	TotalTasks       int     `json:"total_tasks,omitempty"`
+	ReadOnlyTasks    int     `json:"read_only_tasks,omitempty"`
+	ConcurrentTasks  int     `json:"concurrent_tasks,omitempty"`
+	WallClockSeconds float64 `json:"wall_clock_seconds,omitempty"`
+	SerialSeconds    float64 `json:"serial_seconds,omitempty"`
+	Speedup          float64 `json:"speedup,omitempty"`
+
 	// Scope boundary. WriteDirs (default: ProjectDir) are the directories
 	// workers may modify; ReadDirs are extra read-only directories.
 	// ScopeWarnings lists plan entries that reference paths outside them.

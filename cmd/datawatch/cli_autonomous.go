@@ -787,6 +787,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdPushLine(body); line != "" {
 				fmt.Println(line)
 			}
+			if line := prdParallelLine(body); line != "" {
+				fmt.Println(line)
+			}
 			for _, line := range prdTaskMergeLines(body) {
 				fmt.Println(line)
 			}

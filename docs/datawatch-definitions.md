@@ -1979,6 +1979,10 @@ Memory + ops:
 
 For per-feature attribution to upstream projects, see [`plan-attribution.md`](plan-attribution.md).
 
+### Parallel execution metrics
+
+When an Automaton completes it records how well its tasks ran in parallel. `total_tasks` is the number of tasks, `read_only_tasks` is how many of them were read only, `concurrent_tasks` is how many ran at the same time as another task, `wall_clock_seconds` is the time from the first task start to the last task end, and `serial_seconds` is the sum of the task durations, the time a one-at-a-time run would have taken. `speedup` is `serial_seconds / wall_clock_seconds`; 1 means the tasks ran one after another, and it is 0 when no timing was recorded. The values are fields of the Automaton read (`GET /api/autonomous/prds/{id}`), of `autonomous_prd_get`, and appear as a `parallel:` line in `datawatch autonomous prd-get` and the chat `autonomous get` reply, and as the Parallel execution card on the Automaton view.
+
 ### Parallel task worktrees
 
 **Worktree per task** (`autonomous.parallel.worktree_per_task`, on by default) — each task of an Automaton that runs alongside other tasks gets its own worktree and branch off the Automaton branch, so two tasks never write into the same files at once. When the task is verified, its branch is merged back into the Automaton branch, in dependency order, one merge at a time.

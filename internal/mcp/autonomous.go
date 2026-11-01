@@ -694,6 +694,7 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
 			"tasks: everything in summary, plus each task's status, error and verification summary. "+
 			"full: everything, including specs and logs. "+
+			"Parallel execution metrics are reported at every detail level once the automaton has completed: total_tasks, read_only_tasks and speedup (the sum of the task durations divided by the wall-clock time); full also carries concurrent_tasks, wall_clock_seconds and serial_seconds. "+
 			"The automaton's git push state is reported at every detail level: summary and tasks carry push_state (pushed / not_pushed) and, for a refused push, the push reason (push_warning) at the top level; full carries the full git object with push_state plus the pushed ref, sha and time (pushed) or the push reason (not_pushed). "+
 			"full also exposes plan_coverage — the plan-requirement coverage gate report stored at decompose time: the settings the PRD was pinned to (mode + min_ratio), the report (covered/missing/weak requirement counts, each unmatched requirement with its verdict), any findings (structural findings), and the operator acknowledgment ack {by, at, note, fingerprint} when one exists. Absent when no report was recorded yet. "+
 			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at} at every detail level. "+

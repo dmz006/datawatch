@@ -3133,5 +3133,11 @@
   "task_merge_state_conflict": "merge conflict",
   "task_merge_state_held": "merge held",
   "task_merge_badge_tip": "Task branch merge into the Automaton branch: %1$s",
-  "task_merge_badge_tip_commit": "Task branch merge into the Automaton branch: %1$s (commit %2$s)"
+  "task_merge_badge_tip_commit": "Task branch merge into the Automaton branch: %1$s (commit %2$s)",
+  "parallel_metrics_card_title": "Exécution parallèle",
+  "parallel_metrics_help_link": "À propos des métriques d'exécution parallèle",
+  "parallel_metrics_total_tasks": "Tâches : %1$s",
+  "parallel_metrics_read_only_tasks": "Tâches en lecture seule : %1$s",
+  "parallel_metrics_speedup": "Accélération : %1$s",
+  "parallel_metrics_speedup_none": "non mesurée"
 }

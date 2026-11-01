@@ -9008,6 +9008,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
   'autonomous.request_watch.poll_seconds': DOCS_DEFINITIONS + '#autonomous-request-watch-poll-seconds',
@@ -24282,6 +24283,7 @@ function _renderDetailContent(prd) {
     ${window.uncommittedWorkBannerHtml(prd)}
     ${triageSlot}
     ${mergeSlot}
+    ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
@@ -26227,6 +26229,30 @@ function taskMergeBadgeHtml(task) {
   return `<span class="prd-task-llm-badge prd-task-merge-badge prd-task-merge-${state}" title="${escHtml(tip)}" style="border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
 }
 window.taskMergeBadgeHtml = taskMergeBadgeHtml;
+
+// ── Parallel execution metrics card ─────────────────────────────────────────
+// An Automaton records, when it completes, how many tasks it had (total_tasks),
+// how many of them were read only (read_only_tasks) and the speedup of the run
+// (speedup = the sum of the task durations / the wall-clock time). The card is
+// read-only and draws nothing for an Automaton that has recorded no tasks yet.
+function parallelMetricsHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('parallel_metrics_help_link');
+  return ` <a href="/diagrams.html#docs/datawatch-definitions.md#parallel-execution-metrics" target="_blank" rel="noopener noreferrer" class="docs-link parallel-metrics-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+window.parallelMetricsCardHtml = function(prd) {
+  if (!prd || typeof prd !== 'object') return '';
+  const total = Number(prd.total_tasks);
+  if (!Number.isFinite(total) || total <= 0) return '';
+  const readOnly = Number.isFinite(Number(prd.read_only_tasks)) ? Number(prd.read_only_tasks) : 0;
+  const speedup = Number(prd.speedup);
+  const speedupText = Number.isFinite(speedup) && speedup > 0 ? speedup.toFixed(2) + 'x' : t('parallel_metrics_speedup_none');
+  const row = (text) => `<div style="font-size:12px;color:var(--text2);margin-top:4px;min-width:0;overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+  const head = `<div class="cap-title">${escHtml(t('parallel_metrics_card_title'))}${parallelMetricsHelpLink()}</div>`;
+  return `<div id="prdParallelMetrics" class="prd-capacity-card parallel-metrics-card" style="margin-top:10px;min-width:0;">${head}` +
+    row(t('parallel_metrics_total_tasks', [total])) + row(t('parallel_metrics_read_only_tasks', [readOnly])) +
+    row(t('parallel_metrics_speedup', [speedupText])) + `</div>`;
+};
 
 // ── Merge-pending badge and safe-to-delete report ───────────────────────────
 // GET /api/autonomous/merge lists every completed Automaton with a work branch

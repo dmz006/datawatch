@@ -544,6 +544,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		reply := prettyJSON(out)
+		if line := parallelMetricsStatusLine(out); line != "" {
+			reply += "\n" + line
+		}
 		if lines := taskMergeStatusLines(out); len(lines) > 0 {
 			reply += "\n" + strings.Join(lines, "\n")
 		}
