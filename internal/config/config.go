@@ -2761,6 +2761,211 @@ type AutonomousConfig struct {
 	// statuses, match mode, direct counts, shared registry keeper and sync
 	// interval). See TagsConfig and ValidateTagSetting.
 	Tags TagsConfig `yaml:"tags" json:"tags"`
+
+	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
+	// master switch, chip display, default browser filter, separate shipped
+	// counting and release backfill at startup. See ShippedConfig and
+	// ValidateShippedSetting.
+	Shipped ShippedConfig `yaml:"shipped" json:"shipped"`
+}
+
+// ShippedSettingPrefix is the dotted key prefix shared by every
+// autonomous.shipped.* setting.
+const ShippedSettingPrefix = "autonomous.shipped."
+
+// Legal values of autonomous.shipped.filter_default.
+const (
+	// ShippedFilterAll — the shipped-state filter shows everything
+	// (shipped and unshipped).
+	ShippedFilterAll = "all"
+	// ShippedFilterShipped — the shipped-state filter shows only shipped
+	// items.
+	ShippedFilterShipped = "shipped"
+	// ShippedFilterUnshipped — the shipped-state filter shows only items
+	// that have not shipped yet.
+	ShippedFilterUnshipped = "unshipped"
+)
+
+// Defaults of the autonomous.shipped block, used where a field is unset
+// (a nil boolean pointer, an empty filter_default):
+//
+//	enabled           true  — shipped-state recording and display is on
+//	show_chip         true  — the shipped chip renders on shipped items
+//	filter_default    all   — the browser filter starts at "all"
+//	count_separately  true  — shipped items count in their own group
+//	backfill_on_start false — no release backfill runs at startup opt-out
+//
+// ShippedConfig is the autonomous.shipped block. Boolean fields are
+// *bool with omitempty (the same convention as PreserveAttemptWork):
+// nil = unset, which reads the default above — true and false both
+// survive a save and a load.
+type ShippedConfig struct {
+	// Enabled is the master switch for shipped-state recording and
+	// display. Unset (nil) reads true.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// ShowChip renders the shipped chip on shipped items. Unset (nil)
+	// reads true.
+	ShowChip *bool `yaml:"show_chip,omitempty" json:"show_chip,omitempty"`
+	// FilterDefault is the browser filter the shipped-state views open on:
+	// ShippedFilterAll, ShippedFilterShipped or ShippedFilterUnshipped.
+	// Empty reads ShippedFilterAll.
+	FilterDefault string `yaml:"filter_default,omitempty" json:"filter_default,omitempty"`
+	// CountSeparately puts shipped items in their own count group instead
+	// of the active group. Unset (nil) reads true.
+	CountSeparately *bool `yaml:"count_separately,omitempty" json:"count_separately,omitempty"`
+	// BackfillOnStart runs the release-notes backfill (which records
+	// shipped state with ShippedSourceBackfill) at daemon startup. Unset
+	// (nil) reads false.
+	BackfillOnStart *bool `yaml:"backfill_on_start,omitempty" json:"backfill_on_start,omitempty"`
+}
+
+// Effective reads of the shipped block: an unset field (nil pointer or
+// empty string) returns its default; the stored value is not changed.
+func (s ShippedConfig) EffectiveEnabled() bool {
+	return s.Enabled == nil || *s.Enabled
+}
+
+// EffectiveShowChip reports the in-force show-chip setting.
+func (s ShippedConfig) EffectiveShowChip() bool {
+	return s.ShowChip == nil || *s.ShowChip
+}
+
+// EffectiveFilterDefault reports the in-force default filter, canonical
+// (lower-case, trimmed); empty reads ShippedFilterAll.
+func (s ShippedConfig) EffectiveFilterDefault() string {
+	f := strings.ToLower(strings.TrimSpace(s.FilterDefault))
+	if f == "" {
+		return ShippedFilterAll
+	}
+	return f
+}
+
+// EffectiveCountSeparately reports the in-force separate-count setting.
+func (s ShippedConfig) EffectiveCountSeparately() bool {
+	return s.CountSeparately == nil || *s.CountSeparately
+}
+
+// EffectiveBackfillOnStart reports the in-force startup backfill setting.
+func (s ShippedConfig) EffectiveBackfillOnStart() bool {
+	return s.BackfillOnStart != nil && *s.BackfillOnStart
+}
+
+// ValidateShippedSetting checks one autonomous.shipped.* setting. key is
+// the full dotted key (for example autonomous.shipped.filter_default); a
+// key outside the shipped block is not its concern and returns nil. value
+// is what a config write carries (a bool, or the strings true, false,
+// all, shipped, unshipped). The returned error text is the message every
+// surface shows. A blank filter_default is legal and takes the default.
+func ValidateShippedSetting(key string, value interface{}) error {
+	name, ok := strings.CutPrefix(key, ShippedSettingPrefix)
+	if !ok {
+		return nil
+	}
+	_, err := parseShippedSetting(name, value)
+	return err
+}
+
+// Set validates one setting and stores it on the block. name is the key
+// without the autonomous.shipped. prefix. On error the block is unchanged.
+func (s *ShippedConfig) Set(name string, value interface{}) error {
+	v, err := parseShippedSetting(name, value)
+	if err != nil {
+		return err
+	}
+	switch name {
+	case "enabled":
+		s.Enabled = v.(*bool)
+	case "show_chip":
+		s.ShowChip = v.(*bool)
+	case "filter_default":
+		s.FilterDefault = v.(string)
+	case "count_separately":
+		s.CountSeparately = v.(*bool)
+	case "backfill_on_start":
+		s.BackfillOnStart = v.(*bool)
+	}
+	return nil
+}
+
+// shippedSettingErr builds the canonical error for one shipped setting.
+func shippedSettingErr(name, reason string) error {
+	return fmt.Errorf("%s%s: %s", ShippedSettingPrefix, name, reason)
+}
+
+// parseShippedSetting returns the stored form of one setting: a *bool or
+// a canonical string. Unknown names are refused.
+func parseShippedSetting(name string, value interface{}) (interface{}, error) {
+	switch name {
+	case "enabled", "show_chip", "count_separately", "backfill_on_start":
+		b, err := parseShippedBool(name, value)
+		if err != nil {
+			return nil, err
+		}
+		return &b, nil
+	case "filter_default":
+		return parseShippedFilter(name, value)
+	}
+	return nil, shippedSettingErr(name, "unknown shipped setting")
+}
+
+// parseShippedBool accepts a JSON bool, or the strings true / false
+// (case-insensitive).
+func parseShippedBool(name string, value interface{}) (bool, error) {
+	switch v := value.(type) {
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return false, shippedSettingErr(name, "must be true or false")
+}
+
+// parseShippedFilter accepts a legal filter name (case-insensitive,
+// trimmed); a blank value takes ShippedFilterAll.
+func parseShippedFilter(name string, value interface{}) (string, error) {
+	s, ok := value.(string)
+	if !ok {
+		return "", shippedSettingErr(name, fmt.Sprintf("must be %q, %q or %q", ShippedFilterAll, ShippedFilterShipped, ShippedFilterUnshipped))
+	}
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return ShippedFilterAll, nil
+	}
+	switch s {
+	case ShippedFilterAll, ShippedFilterShipped, ShippedFilterUnshipped:
+		return s, nil
+	}
+	return "", shippedSettingErr(name, fmt.Sprintf("must be %q, %q or %q, got %q", ShippedFilterAll, ShippedFilterShipped, ShippedFilterUnshipped, value))
+}
+
+// loadShipped validates the shipped block at load time the way loadTags
+// does for its block: a bad value in config.yaml refuses startup the same
+// way every other config error does.
+func loadShipped(cfg *Config) error {
+	c := cfg.Autonomous.Shipped
+	booleans := []struct {
+		name string
+		val  *bool
+	}{
+		{"enabled", c.Enabled},
+		{"show_chip", c.ShowChip},
+		{"count_separately", c.CountSeparately},
+		{"backfill_on_start", c.BackfillOnStart},
+	}
+	for _, f := range booleans {
+		if f.val == nil {
+			continue // unset reads the default
+		}
+		if err := ValidateShippedSetting(ShippedSettingPrefix+f.name, *f.val); err != nil {
+			return err
+		}
+	}
+	return ValidateShippedSetting(ShippedSettingPrefix+"filter_default", c.FilterDefault)
 }
 
 // PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
@@ -5838,6 +6043,9 @@ func Load(path string) (*Config, error) {
 	if err := validateFailureEscalationYAML(data); err != nil {
 		return nil, err
 	}
+	if err := loadShipped(cfg); err != nil {
+		return nil, err
+	}
 	if err := loadTags(cfg); err != nil {
 		return nil, err
 	}
@@ -5882,6 +6090,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := validateFailureEscalationYAML(data); err != nil {
+		return nil, err
+	}
+	if err := loadShipped(cfg); err != nil {
 		return nil, err
 	}
 	if err := loadTags(cfg); err != nil {
