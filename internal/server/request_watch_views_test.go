@@ -22,6 +22,7 @@ func newRequestWatchViewServer(t *testing.T, obs []requestwatch.Observation) *Se
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	trackSessionManager(t, sm)
 	s := &Server{manager: sm}
 	if obs != nil {
 		s.SetRequestWatch(&fakeRequestWatchReader{obs: obs}, func() config.RequestWatchConfig { return config.RequestWatchConfig{} })
