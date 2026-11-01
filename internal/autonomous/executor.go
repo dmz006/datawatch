@@ -1271,6 +1271,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if readOnly {
 			return nil
 		}
+		if werr := m.ensureTaskWorktreeFor(prd, t); werr != nil {
+			return werr
+		}
 		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
 		if terr != nil {
 			return terr

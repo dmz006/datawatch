@@ -27,6 +27,7 @@ func TestDecompose_CreatesWorktreeWhenConfigured(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
@@ -72,6 +73,7 @@ func TestDecomposeStreaming_CreatesWorktreeWhenConfigured(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
@@ -103,6 +105,7 @@ func TestDecompose_RunStillReusesTheSameWorktree(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
@@ -152,6 +155,7 @@ func TestReject_CleansUpOrphanedWorktree(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
@@ -188,6 +192,7 @@ func TestReject_LeavesWorktreeWithUncommittedChangesForInspection(t *testing.T) 
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
@@ -224,6 +229,7 @@ func TestArchive_CleansUpOrphanedWorktree(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = baseRepo
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = worktreeDir
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {

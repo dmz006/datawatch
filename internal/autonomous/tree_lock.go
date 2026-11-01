@@ -144,7 +144,9 @@ func ResolveTreeKey(prd *PRD, task *Task) (string, string, error) {
 
 	// BL407 worktree-mode PRDs own their worktree — each worktree is
 	// an independent tree, so no base canonicalization here.
-	if prd != nil && prd.Git.Branch != "" {
+	// A task with its own worktree is keyed on that path alone, so
+	// sibling writers in separate worktrees do not contend.
+	if prd != nil && (prd.Git.Branch != "" || (task != nil && task.WorktreePath != "")) {
 		return treeKeyPrefix + treeRoot, treeRoot, nil
 	}
 

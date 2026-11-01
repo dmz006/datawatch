@@ -1241,6 +1241,12 @@ type Task struct {
 	// the tree lock (see EffectiveReadOnlyTasks).
 	ReadOnly bool `json:"read_only,omitempty"`
 
+	// WorktreePath / WorktreeBranch name the task's own git worktree and
+	// branch while worktree_per_task is on (see EnsureTaskWorktree). Empty
+	// when the task works in the PRD worktree.
+	WorktreePath   string `json:"worktree_path,omitempty"`
+	WorktreeBranch string `json:"worktree_branch,omitempty"`
+
 	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
 	// to an executable verification script (planned location
 	// `.datawatch/verify/<task-id>.sh`) that a future decompose pass

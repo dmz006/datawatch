@@ -732,6 +732,9 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
 	defer cancel()
+	// Task worktrees go first: the PRD branch cannot be released while
+	// they still hold it. A worktree with a live session stays.
+	m.CleanupTaskWorktrees(ctx, prd)
 	git := NewMergeGitRunner()
 	probe := &managerWorktreeProbe{m: m, repo: repo, git: git, ctx: ctx}
 

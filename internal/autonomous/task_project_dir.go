@@ -21,6 +21,9 @@ func ResolveTaskProjectDir(prd *PRD, task *Task) string {
 	if task != nil && task.ProjectDir != "" {
 		return filepath.Clean(task.ProjectDir)
 	}
+	if task != nil && task.WorktreePath != "" {
+		return filepath.Clean(task.WorktreePath)
+	}
 	if prd == nil {
 		return ""
 	}
