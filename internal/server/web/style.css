@@ -3740,7 +3740,13 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .generic-modal-actions {
   flex: 0 0 auto;
 }
+/* The body is a scroll container: its top padding must stay at least as
+   large as any sticky header it may hold, and first children must not use
+   negative top margins (a negative margin would push the first line above
+   the scroll origin where it cannot be reached). */
 .generic-modal-body {
+  padding-top: 4px;
+  overflow-anchor: none;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;

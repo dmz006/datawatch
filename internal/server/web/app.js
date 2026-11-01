@@ -22825,6 +22825,11 @@ function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
   </div>`;
   modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
+  // The modal body is a scroll container (.generic-modal-body); reset its
+  // scroll position so a fresh dialog never starts part-way down. Guard: in
+  // the test stub modal.querySelector may be missing.
+  const modalBodyEl = modal.querySelector ? modal.querySelector('.generic-modal-body') : null;
+  if (modalBodyEl) modalBodyEl.scrollTop = 0;
   document.getElementById('genericModalConfirmBtn').onclick = () => {
     if (onConfirm && onConfirm() !== false) modal.remove();
     else if (!onConfirm) modal.remove();
@@ -22834,12 +22839,14 @@ function showModal({ title, body, confirmLabel, cancelLabel, onConfirm }) {
   // places, so the handler unhooks itself once it is no longer the open one.
   const vv = window.visualViewport;
   if (vv) {
+    let fitRan = false;
     const fit = () => {
       if (document.getElementById('genericModal') !== modal) {
         vv.removeEventListener('resize', fit);
         vv.removeEventListener('scroll', fit);
         return;
       }
+      if (!fitRan) { fitRan = true; if (modalBodyEl) modalBodyEl.scrollTop = 0; }
       modal.style.setProperty('--generic-modal-vvh', vv.height + 'px');
       modal.style.top = vv.offsetTop + 'px';
       modal.style.height = vv.height + 'px';
@@ -29401,7 +29408,7 @@ function _questionAnswerBodyHTML(q, answer) {
   // The title carries the label (or the id when the label is empty); the id
   // stays visible as a small secondary line under it.
   if (qid) {
-    html += `<div class="question-answer-id-line" style="margin:-8px 0 8px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_id_line', [qid]))}</div>`;
+    html += `<div class="question-answer-id-line" style="margin:0 0 8px;font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('automation_questions_answer_id_line', [qid]))}</div>`;
   }
   html += `<div class="question-answer-text" style="font-size:13px;color:var(--text);overflow-wrap:anywhere;white-space:pre-wrap;">${escHtml(q.text || '')}</div>`;
   html += _questionContextHTML(q.context_ref);
