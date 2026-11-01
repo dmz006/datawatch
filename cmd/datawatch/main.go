@@ -10695,7 +10695,7 @@ func runStatus(cfg *config.Config) error {
 	if len(sessions) == 0 {
 		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
 		if err == nil {
-		defer store.Close()
+		defer func() { _ = store.Close() }()
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
 					FullID:        s.FullID,
@@ -12110,7 +12110,7 @@ func runSessionList(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sessions := store.List()
 	if len(sessions) == 0 {
 		fmt.Println("No sessions.")
@@ -12270,7 +12270,7 @@ func runSessionStatus(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12333,7 +12333,7 @@ func runSessionSend(cfg *config.Config, id, text string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12374,7 +12374,7 @@ func runSessionKill(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12413,7 +12413,7 @@ func runSessionTail(cfg *config.Config, id string, n int, follow bool, statusInt
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12462,7 +12462,7 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12479,7 +12479,7 @@ func runSessionLog(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12496,7 +12496,7 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12558,7 +12558,7 @@ func runSessionRename(cfg *config.Config, id, name string) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.GetByShortID(id)
 	if !ok {
 		sess, ok = store.Get(id)
@@ -12816,7 +12816,7 @@ func runSessionStopAll(cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sessions := store.List()
 	killed := 0
 	for _, sess := range sessions {
@@ -17724,7 +17724,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("open session store: %w", err)
 	}
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 	sess, ok := store.Get(target)
 	if !ok {
 		sess, ok = store.GetByShortID(target)

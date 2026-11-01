@@ -46,15 +46,3 @@ func trackSessionManager(t testing.TB, m *session.Manager) {
 	})
 }
 
-// trackSessionStore does the same for a raw *session.Store (no Manager):
-// register it after NewStore succeeds; Close stops the background flush
-// before the owning TempDir goes away. Store.Close is idempotent.
-func trackSessionStore(t testing.TB, st *session.Store) {
-	t.Helper()
-	if st == nil {
-		return
-	}
-	t.Cleanup(func() {
-		_ = st.Close()
-	})
-}
