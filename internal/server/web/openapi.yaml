@@ -7807,6 +7807,8 @@ components:
         cluster_profile: {type: string}
         rev: {type: integer}
         git: {$ref: '#/components/schemas/AutonomousPrdGit'}
+        push_state: {type: string, enum: [pushed, not_pushed], description: 'push outcome at the top level of a list or summary item'}
+        push_warning: {type: string, description: 'reason no push was made (push_state=not_pushed only)'}
         stories: {type: array, items: {type: object}, description: story+task tree (full view)}
         ci_watch: {type: object, description: ci-watch completion guardrail result, when it ran}
         created_at: {type: string, format: date-time}

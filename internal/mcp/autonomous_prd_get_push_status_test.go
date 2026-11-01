@@ -48,10 +48,10 @@ func TestMCPPrdGetPushStatus(t *testing.T) {
 		t.Fatalf("marshal prd: %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/autonomous/prds/abcd1234":
+		switch r.URL.Path {
+		case "/api/autonomous/prds/abcd1234":
 			w.Write(fullJSON) //nolint:errcheck
-		case r.URL.Path == "/api/autonomous/prds/efgh5678":
+		case "/api/autonomous/prds/efgh5678":
 			w.Write(summaryJSON) //nolint:errcheck
 		default:
 			http.NotFound(w, r)

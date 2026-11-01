@@ -129,15 +129,13 @@ func TestPRDListPushStatus(t *testing.T) {
 	if found == nil {
 		t.Fatalf("prd %s not in list payload: %s", id, rec.Body.String())
 	}
-	git, _ := found["git"].(map[string]any)
-	if git == nil {
-		t.Fatalf("list item has no git object: %v", found)
+	// The list returns the trimmed summary view, which carries the push
+	// outcome at the top level of each item (the full read nests it under git).
+	if found["push_state"] != "not_pushed" {
+		t.Errorf("list push_state = %v, want not_pushed", found["push_state"])
 	}
-	if git["push_state"] != "not_pushed" {
-		t.Errorf("list git.push_state = %v, want not_pushed", git["push_state"])
-	}
-	if git["push_warning"] != "no origin remote" {
-		t.Errorf("list git.push_warning = %v", git["push_warning"])
+	if found["push_warning"] != "no origin remote" {
+		t.Errorf("list push_warning = %v", found["push_warning"])
 	}
 }
 

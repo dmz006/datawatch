@@ -46,6 +46,9 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	prd.Status = PRDApproved
 	_ = m.Store().SavePRD(prd)
 	f := &guardFixture{m: m, prd: prd, path: filepath.Join(cfg.WorktreeDir, prd.ID)}
+	// This fixture has no remote; a push-on-complete failure would alert and
+	// is not what these tests assert about.
+	m.SetGitPushSettings(func() (string, string) { return "never", "origin" })
 	m.SetAlertSink(func(level, title, body string) (id string) {
 		f.alertsMu.Lock()
 		defer f.alertsMu.Unlock()
