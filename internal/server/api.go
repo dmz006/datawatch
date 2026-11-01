@@ -8635,7 +8635,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.DecisionGate = &b
 			}
-		case parallelKeyPrefix + "read_only_tasks":
+		case parallelKeyPrefix + "read_only_tasks",
+			parallelKeyPrefix + "worktree_per_task",
+			parallelKeyPrefix + "merge_conflict_policy",
+			parallelKeyPrefix + "merge_conflict_model":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
 			applyParallelValue(&cfg.Autonomous.Parallel,
@@ -12763,7 +12766,10 @@ const parallelKeyPrefix = "autonomous.parallel."
 // literal.
 func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
 	return map[string]interface{}{
-		"read_only_tasks": autonomous.EffectiveReadOnlyTasks(c),
+		"read_only_tasks":       autonomous.EffectiveReadOnlyTasks(c),
+		"worktree_per_task":     autonomous.EffectiveWorktreePerTask(c),
+		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
+		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
 	}
 }
 
@@ -12774,6 +12780,25 @@ func validateParallelPatch(patch map[string]interface{}) error {
 	if v, ok := patch[parallelKeyPrefix+"read_only_tasks"]; ok {
 		if _, isBool := v.(bool); !isBool {
 			return fmt.Errorf("%sread_only_tasks: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"worktree_per_task"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sworktree_per_task: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_policy"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%smerge_conflict_policy: must be a string", parallelKeyPrefix)
+		}
+		if err := config.ValidateMergeConflictPolicy(str); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_model"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return fmt.Errorf("%smerge_conflict_model: must be a string", parallelKeyPrefix)
 		}
 	}
 	return nil
@@ -12788,6 +12813,18 @@ func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v int
 	case "read_only_tasks":
 		if b, ok := v.(bool); ok {
 			pc.ReadOnlyTasks = &b
+		}
+	case "worktree_per_task":
+		if b, ok := v.(bool); ok {
+			pc.WorktreePerTask = &b
+		}
+	case "merge_conflict_policy":
+		if str, ok := v.(string); ok && config.ValidateMergeConflictPolicy(str) == nil {
+			pc.MergeConflictPolicy = str
+		}
+	case "merge_conflict_model":
+		if str, ok := v.(string); ok {
+			pc.MergeConflictModel = str
 		}
 	}
 }
