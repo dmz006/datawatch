@@ -65,9 +65,10 @@ type requestWatchTaskRef struct {
 
 // Targets lists the sessions to observe. A session is a target only when it is
 // running or waiting for input, carries a compute node reference that resolves
-// in the compute registry and belongs to an Automaton task: it is the session
-// of a task that is in progress (a worker), or a verifier session named for
-// its task. Every other session is left alone.
+// in the compute registry and belongs to an Automaton task: it is the worker
+// session of a task that is in progress or verifying (the executor marks a task
+// verifying while its worker runs), or a verifier session named for its task.
+// Every other session is left alone.
 func (l *requestWatchLister) Targets(ctx context.Context) []requestwatch.Target {
 	if l == nil || l.sessions == nil || l.prds == nil || l.node == nil {
 		return nil
@@ -84,7 +85,12 @@ func (l *requestWatchLister) Targets(ctx context.Context) []requestwatch.Target 
 				t := &prd.Story[si].Tasks[ti]
 				ref := requestWatchTaskRef{automatonID: prd.ID, taskID: t.ID}
 				verifiable[t.ID] = ref
-				if t.Status == autonomouspkg.TaskInProgress && t.SessionID != "" {
+				// The executor moves a task to verifying as soon as its worker
+				// is started and keeps it there while the worker runs, so a
+				// worker in flight belongs to a task that is in progress or
+				// verifying. A finished worker is no longer running and is not
+				// a target.
+				if (t.Status == autonomouspkg.TaskInProgress || t.Status == autonomouspkg.TaskVerifying) && t.SessionID != "" {
 					workers[t.SessionID] = ref
 				}
 			}

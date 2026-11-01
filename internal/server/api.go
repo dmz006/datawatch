@@ -1932,6 +1932,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		*session.Session
 		ScheduledCount int      `json:"scheduled_count"`
 		InheritedTags  []string `json:"inherited_tags"`
+		// ModelRequest is the request watch's observation of the session, the
+		// same one sessionView adds; omitted when the session has none.
+		ModelRequest *requestwatch.Observation `json:"model_request,omitempty"`
 	}
 	enriched := make([]sessionWithCounts, 0, len(sessions))
 	for _, sess := range sessions {
@@ -1939,6 +1942,7 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			Session:        sess,
 			ScheduledCount: s.schedStore.CountForSession(sess.FullID),
 			InheritedTags:  s.manager.InheritedTags(sess),
+			ModelRequest:   s.sessionObservation(sess),
 		})
 	}
 	_ = json.NewEncoder(w).Encode(enriched)

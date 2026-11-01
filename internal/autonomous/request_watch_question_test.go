@@ -445,3 +445,13 @@ func TestRequestWatchNoAlertSinkStillAsks(t *testing.T) {
 		t.Errorf("open questions = %d, want 1 without an alert sink", n)
 	}
 }
+
+// A threshold of one minute reads "1 minute", never "1 minutes".
+func TestRequestWatchMinutesTextSingular(t *testing.T) {
+	cases := map[int]string{0: "0 minutes", 1: "1 minute", 2: "2 minutes", 31: "31 minutes"}
+	for n, want := range cases {
+		if got := requestWatchMinutesText(n); got != want {
+			t.Errorf("requestWatchMinutesText(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

@@ -155,6 +155,15 @@ func requestWatchMinutes(o requestwatch.Observation) int {
 	return int(o.NoProgressSeconds / 60)
 }
 
+// requestWatchMinutesText renders a number of minutes with the right noun: "1
+// minute", "30 minutes".
+func requestWatchMinutesText(n int) string {
+	if n == 1 {
+		return "1 minute"
+	}
+	return fmt.Sprintf("%d minutes", n)
+}
+
 // RaiseRequestWatchNoProgress acts on a model request that passed the
 // no-progress threshold. With autonomous.request_watch.raise_alert on it sends
 // one alert; with raise_question on and the operator question channel enabled
@@ -190,8 +199,8 @@ func (m *Manager) raiseRequestWatchAlert(o requestwatch.Observation, cfg config.
 	var b strings.Builder
 	fmt.Fprintf(&b, "Automaton: %s (%s)\nTask: %s (%s)\nRole: %s\nNode: %s\nModel: %s\n",
 		automaton, o.AutomatonID, task, o.TaskID, o.Role, o.Node, o.Model)
-	fmt.Fprintf(&b, "No progress for: %d minutes (limit %d minutes)\n",
-		requestWatchMinutes(o), cfg.EffectiveNoProgressMinutes())
+	fmt.Fprintf(&b, "No progress for: %s (limit %s)\n",
+		requestWatchMinutesText(requestWatchMinutes(o)), requestWatchMinutesText(cfg.EffectiveNoProgressMinutes()))
 	b.WriteString("Ways to act: keep waiting, since a slow request may still finish")
 	if asked {
 		b.WriteString(", or answer the operator question for the task. " +
@@ -221,8 +230,8 @@ func (m *Manager) raiseRequestWatchQuestion(store *QuestionStore, o requestwatch
 		Context:   QuestionContextTask,
 		PRDID:     o.AutomatonID,
 		TaskID:    o.TaskID,
-		Text: fmt.Sprintf("The model request of the %s of task %s in Automaton %s on node %s has shown no progress for %d minutes (limit %d). How do you want to proceed?",
-			o.Role, task, automaton, o.Node, requestWatchMinutes(o), cfg.EffectiveNoProgressMinutes()),
+		Text: fmt.Sprintf("The model request of the %s of task %s in Automaton %s on node %s has shown no progress for %s (limit %d). How do you want to proceed?",
+			o.Role, task, automaton, o.Node, requestWatchMinutesText(requestWatchMinutes(o)), cfg.EffectiveNoProgressMinutes()),
 		Options:          options,
 		Default:          "keep_waiting",
 		Blocking:         false,

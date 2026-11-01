@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,6 +100,80 @@ func TestRequestWatchViewList(t *testing.T) {
 		if got := decodeObservation(t, raw); got.State != want[i] || got.SessionID != v.Session.ID {
 			t.Errorf("entry %d = %+v, want state %s", i, got, want[i])
 		}
+	}
+}
+
+// The daemon always has a schedule store, and the session list then takes a
+// different path from sessionViews; the observation must be on that path too.
+func TestRequestWatchViewListWithScheduleStore(t *testing.T) {
+	s := sessionViewServer(t, 1, 20,
+		&session.Session{ID: "s1", FullID: "s1", State: session.StateRunning},
+		&session.Session{ID: "none", FullID: "none", State: session.StateRunning},
+	)
+	st, err := session.NewScheduleStore(filepath.Join(t.TempDir(), "sched.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetScheduleStore(st)
+	s.SetRequestWatch(&fakeRequestWatchReader{obs: requestWatchFixture()}, func() config.RequestWatchConfig { return config.RequestWatchConfig{} })
+
+	rr := httptest.NewRecorder()
+	s.handleSessions(rr, httptest.NewRequest(http.MethodGet, "/api/sessions", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rr.Code, rr.Body.String())
+	}
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(rr.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("decode: %v: %s", err, rr.Body.String())
+	}
+	seen := map[string]bool{}
+	for _, row := range rows {
+		var id string
+		_ = json.Unmarshal(row["full_id"], &id)
+		raw, has := row["model_request"]
+		seen[id] = has
+		if id == "s1" {
+			if !has {
+				t.Errorf("session s1 has an observation but its list row carries no model_request")
+				continue
+			}
+			if o := decodeObservation(t, raw); o.State != requestwatch.StateGenerating {
+				t.Errorf("observation = %+v", o)
+			}
+		}
+		if id == "none" && has {
+			t.Errorf("model_request on a session without an observation: %s", raw)
+		}
+		if _, ok := row["scheduled_count"]; !ok {
+			t.Errorf("scheduled_count dropped from the row of %s", id)
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("rows = %v", seen)
+	}
+}
+
+// With the watch switched off the views carry nothing at once, even though the
+// poller still holds its last observations until its next tick.
+func TestRequestWatchViewSwitchedOffCarriesNothing(t *testing.T) {
+	s := newRequestWatchViewServer(t, requestWatchFixture())
+	off := false
+	s.SetRequestWatch(&fakeRequestWatchReader{obs: requestWatchFixture()}, func() config.RequestWatchConfig {
+		return config.RequestWatchConfig{Enabled: &off}
+	})
+	m := marshalMap(t, s.sessionView(&session.Session{ID: "s1", FullID: "s1"}))
+	if raw, ok := m["model_request"]; ok {
+		t.Errorf("model_request present with the watch switched off: %s", raw)
+	}
+	if got := s.automatonObservations("a1"); len(got) != 0 {
+		t.Errorf("task observations with the watch switched off: %+v", got)
+	}
+	on := true
+	s.SetRequestWatch(&fakeRequestWatchReader{obs: requestWatchFixture()}, func() config.RequestWatchConfig {
+		return config.RequestWatchConfig{Enabled: &on}
+	})
+	if _, ok := marshalMap(t, s.sessionView(&session.Session{ID: "s1", FullID: "s1"}))["model_request"]; !ok {
+		t.Errorf("model_request missing with the watch switched on")
 	}
 }
 

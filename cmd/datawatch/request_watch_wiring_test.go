@@ -73,6 +73,26 @@ func TestRequestWatchWorkerTarget(t *testing.T) {
 	}
 }
 
+// The executor marks a task verifying right after its worker starts and keeps
+// that status while the worker runs, so the running worker of a verifying task
+// is a target; once the worker has ended it is not.
+func TestRequestWatchWorkerOfVerifyingTaskIsTarget(t *testing.T) {
+	f := newRequestWatchFixture()
+	f.prds[0].Story[0].Tasks[1].SessionID = "host-w002"
+	f.sessions = []*session.Session{rwSession("host-w002", "autonomous:worker", "node-a", session.StateRunning)}
+	got := rwTargets(t, f)
+	if len(got) != 1 {
+		t.Fatalf("targets = %+v, want the running worker of the verifying task", got)
+	}
+	if got[0].SessionID != "host-w002" || got[0].Role != requestwatch.RoleWorker || got[0].TaskID != "task-ver" || got[0].AutomatonID != "prd1" {
+		t.Fatalf("target = %+v", got[0])
+	}
+	f.sessions[0].State = session.StateComplete
+	if got := rwTargets(t, f); len(got) != 0 {
+		t.Fatalf("a worker that has ended must not be a target: %+v", got)
+	}
+}
+
 func TestRequestWatchWorkerWaitingInputIsTarget(t *testing.T) {
 	f := newRequestWatchFixture()
 	f.sessions = []*session.Session{rwSession("host-w001", "worker", "node-a", session.StateWaitingInput)}

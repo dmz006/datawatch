@@ -15,8 +15,17 @@ import (
 )
 
 // requestWatchReader returns the wired request-watch reader, or nil when none
-// is wired.
+// is wired or the watch is switched off. The status route reads the switch on
+// every request, so the views read it too: with autonomous.request_watch.enabled
+// false they carry no observation at once, instead of the last one the poller
+// held until its next tick clears it.
 func (s *Server) requestWatchReader() requestwatch.Reader {
+	if s.requestWatch == nil {
+		return nil
+	}
+	if s.requestWatchCfg != nil && !s.requestWatchCfg().EffectiveEnabled() {
+		return nil
+	}
 	return s.requestWatch
 }
 
