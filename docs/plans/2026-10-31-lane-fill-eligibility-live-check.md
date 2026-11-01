@@ -1,8 +1,8 @@
 # Lane fill eligibility — live check on a sandbox daemon
 
-**Date:** 2026-11-01 (run started 15:17:50, local time)
+**Date:** 2026-11-01 (run started 15:33:11, local time)
 **Host:** johnnyjohnny
-**Binary version output:** `datawatch <release number omitted>` (built from this worktree at source revision `31d878350`)
+**Binary version output:** `datawatch <release number omitted>` (built from this worktree at source revision `459322a52`)
 **Script:** `scripts/lane-fill-eligibility-live-check.sh` (run as `env -u TMUX -u TMUX_TMPDIR bash scripts/lane-fill-eligibility-live-check.sh`)
 **Scope:** the lane fill eligibility rules (stale, held, sequenced after, proposal, base branch, worktree), their read surfaces, the lane counts, the per-lane-kind mode and the pool evidence, against a throwaway project repository whose default branch is `trunk`; the default mode stays shadow throughout except where check 5 sets it on for one lane kind.
 
@@ -40,7 +40,7 @@ Check 8: PASS Cleanup
 ## Setup
 
 - **Sandbox daemon only.** Started with `td_start` from `scripts/test-daemon-lib.sh` from a config generated from `testdata/datawatch.yaml` by the substitutions the test runner uses (data folder, ports, loopback host, test token). Added: `autonomous.worktree_base_repo` and `autonomous.worktree_dir` (the throwaway project and its worktree root), `autonomous.lane_fill.poll_seconds` (5), `autonomous.questions.enabled`, `autonomous.verification_backend: shell`, `server.allowed_project_roots` and `shell_backend.script_path` (the stand-in worker). Every Ollama address in the config points at a loopback stub of the script and the test config's compute nodes are removed, so nothing leaves the machine. The production daemon, its service and its data were not touched, and nothing was ended by name.
-- **Ports.** HTTP 49439, TLS 37881, MCP 42553, DNS 59189, webhook 47981, notify 42529, Ollama stub 45671, https stub 53125, each probed free just before use.
+- **Ports.** HTTP 35653, TLS 54531, MCP 44641, DNS 39117, webhook 55489, notify 54031, Ollama stub 60125, https stub 59181, each probed free just before use.
 - **Session sockets.** The daemon ran with its multiplexer socket directory under the throwaway folder, so no session of the operator was reachable. The script itself issues no multiplexer command.
 - **Throwaway project.** A bare repository whose default branch is `trunk`, cloned to the worktree base repository; `refs/remotes/origin/HEAD` records it and `main` does not exist. It holds a proposal file with a `Confirmed: yes` line and others without, and a task commit for one Automaton on the base branch.
 - **Worker.** The daemon's shell backend runs a generated script as the worker, so a started Automaton runs headlessly with no model; the daemon's verification (a one-shot session on the same backend) is answered by the same script with a fixed pass.
@@ -119,7 +119,7 @@ refs/remotes/origin/trunk; main exists: no
 | `1f1100c1` | (c) sequenced after an unfinished Automaton | blocked | `sequenced_after_unshipped` | sequenced after 1f1100a1, which is draft and not completed |
 | `1f1100d1` | (d) proposal without the line | blocked | `proposal_not_confirmed` | Automaton 1f1100d1: proposal docs/plans/unconfirmed-proposal.md does not carry a Confirmed: yes line |
 | `1f1100e1` | (e) no proposal named | blocked | `proposal_missing` | Automaton 1f1100e1: the spec names no readable proposal file |
-| `1f1100f1` | (f) task commit on the base branch | blocked | `main_carries_work` | the base branch already carries this work: commit dc00e08 on trunk: task(1f1100f1): Write the sample file |
+| `1f1100f1` | (f) task commit on the base branch | blocked | `main_carries_work` | the base branch already carries this work: commit 0b3fd2c on trunk: task(1f1100f1): Write the sample file |
 | `1f1100a7` | (g) worktree not registered | blocked | `worktree_invalid` | its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository |
 | `1f1100d2` | (i) Claude-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line |
 | `1f1100a8` | (j) GPU-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100a8: proposal docs/plans/pending-gpu.md does not carry a Confirmed: yes line |
@@ -141,7 +141,7 @@ refs/remotes/origin/trunk; main exists: no
   - `1f1100e1`: {"action":"blocked","eligibility_reason":"proposal_missing","mode":"shadow","executed":false}, reason "Automaton 1f1100e1: the spec names no readable proposal file"
 
 - **PASS** — (f) task commit on the base branch: a blocked decision with eligibility_reason `main_carries_work`
-  - `1f1100f1`: {"action":"blocked","eligibility_reason":"main_carries_work","mode":"shadow","executed":false}, reason "the base branch already carries this work: commit dc00e08 on trunk: task(1f1100f1): Write the sample file"
+  - `1f1100f1`: {"action":"blocked","eligibility_reason":"main_carries_work","mode":"shadow","executed":false}, reason "the base branch already carries this work: commit 0b3fd2c on trunk: task(1f1100f1): Write the sample file"
 
 - **PASS** — (g) worktree not registered: a blocked decision with eligibility_reason `worktree_invalid`
   - `1f1100a7`: {"action":"blocked","eligibility_reason":"worktree_invalid","mode":"shadow","executed":false}, reason "its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository"
@@ -228,15 +228,15 @@ CLI text (`datawatch autonomous lane-fill`), refusal lines:
 Lane fill: mode shadow
 Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)
 Queued eligible: gpu 1, claude 0
-  15:17:53  blocked 1f1100a1: [stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit [not executed]
-  15:17:53  blocked 1f1100f1: [main_carries_work] the base branch already carries this work: commit dc00e08 on trunk: task(1f1100f1): Write the sample file [not executed]
-  15:17:53  blocked 1f1100e1: [proposal_missing] Automaton 1f1100e1: the spec names no readable proposal file [not executed]
-  15:17:53  blocked 1f1100d2: [proposal_not_confirmed] Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line [not executed]
-  15:17:53  blocked 1f1100d1: [proposal_not_confirmed] Automaton 1f1100d1: proposal docs/plans/unconfirmed-proposal.md does not carry a Confirmed: yes line [not executed]
-  15:17:53  blocked 1f1100c1: [sequenced_after_unshipped] sequenced after 1f1100a1, which is draft and not completed [not executed]
-  15:17:53  blocked 1f1100b1: [held] a line starts with HOLD [not executed]
-  15:17:53  blocked 1f1100a8: [proposal_not_confirmed] Automaton 1f1100a8: proposal docs/plans/pending-gpu.md does not carry a Confirmed: yes line [not executed]
-  15:17:53  blocked 1f1100a7: [worktree_invalid] its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository [not executed]
+  15:33:14  blocked 1f1100a1: [stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit [not executed]
+  15:33:14  blocked 1f1100f1: [main_carries_work] the base branch already carries this work: commit 0b3fd2c on trunk: task(1f1100f1): Write the sample file [not executed]
+  15:33:14  blocked 1f1100e1: [proposal_missing] Automaton 1f1100e1: the spec names no readable proposal file [not executed]
+  15:33:14  blocked 1f1100d2: [proposal_not_confirmed] Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line [not executed]
+  15:33:14  blocked 1f1100d1: [proposal_not_confirmed] Automaton 1f1100d1: proposal docs/plans/unconfirmed-proposal.md does not carry a Confirmed: yes line [not executed]
+  15:33:14  blocked 1f1100c1: [sequenced_after_unshipped] sequenced after 1f1100a1, which is draft and not completed [not executed]
+  15:33:14  blocked 1f1100b1: [held] a line starts with HOLD [not executed]
+  15:33:14  blocked 1f1100a8: [proposal_not_confirmed] Automaton 1f1100a8: proposal docs/plans/pending-gpu.md does not carry a Confirmed: yes line [not executed]
+  15:33:14  blocked 1f1100a7: [worktree_invalid] its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository [not executed]
 ```
 
 Chat reply (`POST /api/test/message`, text `autonomous lane-fill 300`; the chat verb shows the newest five decisions by design):
@@ -249,11 +249,11 @@ claude-1: idle
 Lane counts: gpu 2 of 2 (config), claude 1 of 3 (LLM caps)
 Queued eligible: gpu 1, claude 0
 Newest decisions:
-  15:17:53  blocked 1f1100a1: [stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit [not executed]
-  15:17:53  blocked 1f1100f1: [main_carries_work] the base branch already carries this work: commit dc00e08 on trunk: task(1f1100f1): Write the sample file [not executed]
-  15:17:53  blocked 1f1100e1: [proposal_missing] Automaton 1f1100e1: the spec names no readable proposal file [not executed]
-  15:17:53  blocked 1f1100d2: [proposal_not_confirmed] Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line [not executed]
-  15:17:53  blocked 1f1100d1: [proposal_not_confirmed] Automaton 1f1100d1: proposal docs/plans/unconfirmed-proposal.md does not carry a Confirmed: yes line [not executed]
+  15:33:14  blocked 1f1100a1: [stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit [not executed]
+  15:33:14  blocked 1f1100f1: [main_carries_work] the base branch already carries this work: commit 0b3fd2c on trunk: task(1f1100f1): Write the sample file [not executed]
+  15:33:14  blocked 1f1100e1: [proposal_missing] Automaton 1f1100e1: the spec names no readable proposal file [not executed]
+  15:33:14  blocked 1f1100d2: [proposal_not_confirmed] Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line [not executed]
+  15:33:14  blocked 1f1100d1: [proposal_not_confirmed] Automaton 1f1100d1: proposal docs/plans/unconfirmed-proposal.md does not carry a Confirmed: yes line [not executed]
 ```
 
 MCP result (`autonomous_lane_fill_status`), refusals only:
@@ -291,7 +291,7 @@ Claude backend `claude-code`, claude_lanes `3`; LLM entry updated with max_infli
 Status after gpu_mode on (modes, control decision):
 ```
 {"mode":"shadow","modes":{"gpu":"on","claude":"shadow"}}
-{"at":"2026-11-01T15:19:58.743327126-05:00","mode":"on","lane_id":"gpu-1","lane_type":"gpu","action":"start_prd","prd_id":"1f1100c0","title":"control","reason":"first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0)","blocker":"","executed":true,"error":"","repeat_count":1,"last_seen_at":"2026-11-01T15:19:58.743327126-05:00"}
+{"at":"2026-11-01T15:35:14.461307282-05:00","mode":"on","lane_id":"gpu-1","lane_type":"gpu","action":"start_prd","prd_id":"1f1100c0","title":"control","reason":"first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0)","blocker":"","executed":true,"error":"","repeat_count":1,"last_seen_at":"2026-11-01T15:35:14.461307282-05:00"}
 ```
 
 - **PASS** — the status shows gpu on, claude shadow, base mode shadow
@@ -325,14 +325,14 @@ pool host tls-stub-node unreadable (loaded models): ollama /api/ps: node tls-stu
   - node named: yes
 
 - **PASS** — the evidence error does not show the URL (no address, port or scheme)
-  - checked for 127.0.0.1, :53125 and a scheme
+  - checked for 127.0.0.1, :59181 and a scheme
 
 - **PASS** — the CLI shows the same error line
   - `Pool evidence error: pool host tls-stub-node unreadable (loaded models): ollama /api/ps: node tls-stub-node certificate not trusted: tls: failed to verify certificate: x509: certificate signed by unkn`
 
 Evidence after the node's tls_cert_fingerprint was set (`PUT` 200 {"name":"tls-stub-node","ok":true} ):
 ```
-{"checked_at":"2026-11-01T15:20:48.798491689-05:00","gpu_active_sessions":0,"loaded_models":[{"host":"tls-stub-node","model":"tls-stub-model:1b"}],"error":""}
+{"checked_at":"2026-11-01T15:36:04.518426303-05:00","gpu_active_sessions":0,"loaded_models":[{"host":"tls-stub-node","model":"tls-stub-model:1b"}],"error":""}
 ```
 
 - **PASS** — after the node's tls_cert_fingerprint is set the evidence reads (no error, the node's resident model is listed)
@@ -359,13 +359,13 @@ The dogfood step: what lane fill refused and why, next to what the daemon-side s
 
 **Counts.** Lane fill: eligible work for GPU lanes 1, for Claude lanes 0. The script's own rule: 9 Automata counted as queued and runnable. Script output for the state (its findings): `["IDLE Claude lane while 9 Automata are needs_review, approved or draft"]`; Claude pool it read: `{"name":"llm:claude-code","limit":1,"external":0,"held":0,"holders":null,"effective_max_inflight":1,"inflight_source":"explicit"}`.
 
-**Daemon-side supervisor watch**, findings of kind idle_lane_eligible_work before the control was made stale: `[{"subject":"gpu-2","resolved":false},{"subject":"gpu-1","resolved":false}]`; after: `[{"subject":"gpu-1","resolved":true},{"subject":"gpu-2","resolved":true}]`.
+**Daemon-side supervisor watch**, findings of kind idle_lane_eligible_work before the control was made stale: `[{"subject":"gpu-2","resolved":false},{"subject":"gpu-1","resolved":false}]`; after: `[{"subject":"gpu-2","resolved":true},{"subject":"gpu-1","resolved":true}]`.
 
 The watch's own comparison against the script record file (`GET /api/autonomous/supervisor-watch`, comparison):
 ```
 {
   "last": {
-    "at": "2026-11-01T15:18:48.631279562-05:00",
+    "at": "2026-11-01T15:34:09.353329471-05:00",
     "watch_kinds": [
       "idle_lane_eligible_work/gpu-1",
       "idle_lane_eligible_work/gpu-2"
@@ -416,7 +416,7 @@ The watch's own comparison against the script record file (`GET /api/autonomous/
 ## 8. Cleanup
 
 - **PASS** — the sandbox daemon and both stubs are gone and the daemon's port is closed
-  - daemon gone: yes; stubs gone: yes; port 37881 closed: yes
+  - daemon gone: yes; stubs gone: yes; port 54531 closed: yes
 
 - **PASS** — no test daemon is left behind (scripts/check-no-leftover-test-daemons.sh)
   - exit 0
@@ -429,16 +429,16 @@ The watch's own comparison against the script record file (`GET /api/autonomous/
 ## Daemon log, the lane fill lines
 
 ```
-{"ts":"2026-11-01T15:20:43.394896298-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:45.405108032-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:45.413891077-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:45.432864688-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"Go-ht
-{"ts":"2026-11-01T15:20:45.44972483-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/8
-{"ts":"2026-11-01T15:20:47.46076763-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/8
-{"ts":"2026-11-01T15:20:49.472258751-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:49.481198341-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:49.489911482-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
-{"ts":"2026-11-01T15:20:49.49872971-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/8
+{"ts":"2026-11-01T15:36:00.013674517-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:00.022711489-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:00.041416239-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"Go-ht
+{"ts":"2026-11-01T15:36:00.058095033-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:02.068668119-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:04.079495136-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:06.090391827-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:06.099024614-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:06.107324211-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
+{"ts":"2026-11-01T15:36:06.117296615-05:00","actor":"admin","action":"http_access","details":{"method":"GET","path":"/api/autonomous/lane-fill","remote_ip":"127.0.0.1","status":200,"user_agent":"curl/
 ```
 
 Branches in the throwaway project at the end: `automaton/1f1100c0-control trunk `
