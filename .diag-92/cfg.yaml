@@ -1,0 +1,8 @@
+data_dir: /home/dmz/.datawatch/prd-worktrees/e8890001/.diag-92/data
+hostname: dw-diag
+server:
+  enabled: true
+  host: 127.0.0.1
+  port: 45682
+  tls_enabled: false
+token: ""
