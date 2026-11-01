@@ -25,6 +25,12 @@
 #   6. Run set-release-version.sh with NEXT and the title.
 #   7. Stage only cmd/datawatch/main.go, internal/server/api.go and
 #      CHANGELOG.md, and commit once if anything is staged.
+#   8. Record the shipped state: for every merged branch named
+#      automaton/<automaton id>, record that automaton (and, when all of
+#      its Automation's members are now shipped, that Automation too) as
+#      shipped in the new release, with the merge commit and merge time.
+#      Best effort — a missing daemon or a failed record is a warning,
+#      never a merge failure (scripts/merge-shipped-record.sh).
 #
 # Exit codes:
 #   0  all branches merged (or already merged) and the bump committed
@@ -112,6 +118,7 @@ echo "==> Version on $MAIN_BRANCH is $MAIN_V; the merge bump will be $NEXT"
 
 # --- 5. merge each branch in order ------------------------------------------
 MERGED=()
+declare -A MERGED_SHA=()
 for branch in "${BRANCHES[@]}"; do
     echo "==> Merging $branch into $MAIN_BRANCH"
     if ! git merge --no-ff --no-edit "$branch"; then
@@ -124,6 +131,7 @@ for branch in "${BRANCHES[@]}"; do
         exit 1
     fi
     MERGED+=("$branch")
+    MERGED_SHA["$branch"]=$(git rev-parse HEAD)
 done
 echo "==> Merged: ${MERGED[*]}"
 
@@ -138,4 +146,12 @@ else
     git commit -m "chore(release): v${NEXT} bump for merged branches"
     echo "==> Committed chore(release): v${NEXT} bump for merged branches"
 fi
+# --- 8. record the shipped state (best effort; never fails the merge) ------
+source "$SCRIPT_DIR/merge-shipped-record.sh"
+for branch in "${MERGED[@]}"; do
+    record_shipped_for_branch "$branch" "v${NEXT}" "${MERGED_SHA[$branch]}" \
+        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ||
+        echo "warning: shipped record step for '$branch' did not complete; the merge itself succeeded" >&2
+done
+
 echo "ok: merged ${MERGED[*]} and set version $NEXT"

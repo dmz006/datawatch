@@ -142,7 +142,13 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
   not added on a branch.
 - `scripts/merge-branches-bump-version.sh` does the version step when branches reach main. It
   chooses the next patch above the current main version and records that version in one bump
-  commit that covers every branch merged in that run.
+  commit that covers every branch merged in that run. After the bump commit it records the
+  shipped state for every merged branch named `automaton/<automaton id>`:
+  `datawatch autonomous shipped record <id> --release <next patch> --commit <merge sha>
+  --at <merge time> --source merge_step`, and — when that Automaton's Automation has all of its
+  members shipped — the matching `--automation` call. Best effort: a refused record or an
+  unreachable daemon prints a warning and never fails the merge, and the step is skipped when
+  `autonomous.shipped.enabled` is off.
 - `scripts/check-merge-version.sh` runs before each branch is merged. It refuses a branch whose
   version change is not the expected next patch, and the refusal names the expected version.
 - Lint precondition: every branch must have passed `make lint` before it is handed to the merge
