@@ -358,8 +358,6 @@ def parse_dockerfile_args(text):
             continue
         if "$" in value or value.lower() == "latest":
             continue
-        if "\"" in value.lower() == "latest" or False:
-            pass
         if re.fullmatch(r"[0-9a-f]{40}", value, re.I):
             continue
         pins.append((name, value))
@@ -507,14 +505,15 @@ def osv_advisories(ecosystem, name, version, not_checked):
 
 
 # ── Report building (pure) ─────────────────────────────────────────────
-_BUMP_RANK = {"major": 0, "minor": 1, "patch": 2}
+# Severity rank within the stale-pin section: patch (0), minor (1), major last (2).
+_BUMP_RANK = {"patch": 0, "minor": 1, "major": 2}
 
 
 def build_report(findings, standing, unmapped, not_checked, checked_pins,
                  last_checked):
     """Assemble (markdown, json) from flat lists. `findings` items carry a
     'kind' of 'advisory' or 'stale_pin'; ordering: advisories first, then
-    stale pins ordered major last (i.e. major first)."""
+    stale pins ordered major last (patch first, major at the end)."""
     ordered = sorted(findings, key=lambda f: (
         0 if f["kind"] == "advisory" else 1,
         _BUMP_RANK.get(f.get("bump"), 3) if f["kind"] == "stale_pin" else 0,
@@ -556,7 +555,7 @@ def build_report(findings, standing, unmapped, not_checked, checked_pins,
         lines.append("### Stale pins (newer upstream version available)")
         lines.append("")
         for f in stale:
-            human = " — **human-only**" if f.get("bump") in ("major", "toolchain") else ""
+            human = " — **human-only**" if f.get("human_only") else ""
             lines.append(
                 f"- **{f['bump']}**: {f['package']} {f['pinned']} -> "
                 f"{f['latest']}{human} — edit `{f['arg']}` in "
@@ -661,6 +660,9 @@ def check_pins(repo_root, not_checked):
                     "pinned": value,
                     "latest": latest,
                     "bump": bump,
+                    # Major bumps and toolchain (Go) moves are human-only.
+                    "human_only": bump == "major"
+                    or name in ("GO_VERSION", "GH_GO_VERSION"),
                     "feed": feed,
                     "coupled": (spec or {}).get("coupled", []),
                 })
@@ -696,6 +698,7 @@ def check_trivy(repo_root, not_checked):
                 "pinned": value,
                 "latest": latest,
                 "bump": classify_bump(value, latest),
+                "human_only": True,  # scanner toolchain — human-only
                 "feed": feed,
                 "coupled": [],
             })
