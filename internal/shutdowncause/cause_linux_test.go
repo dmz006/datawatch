@@ -68,7 +68,7 @@ func TestLooksLikeStopCommand(t *testing.T) {
 		{name: "kill with pid containing own digits as prefix", cmdline: "kill 12345", pid: "1234", want: false},
 		{name: "kill with own digits inside a larger pid", cmdline: "kill 4123", pid: "1234", want: false},
 		{name: "pkill naming parent pid", cmdline: "pkill -P 1234", pid: "1234", want: true},
-		{name: "systemctl stop via unit rule", cmdline: "systemctl --user stop datawatch", pid: "123456", want: true},
+		{name: "systemctl stop via unit rule", cmdline: "systemctl --user stop datawatch", pid: "123456", want: true}, // service-scope-ok: fixture data, never executed
 		{name: "datawatch serve with port containing digits", cmdline: "datawatch serve --port 18443", pid: "184", want: false},
 		{name: "datawatch with pid flag form", cmdline: "datawatch --pid=184", pid: "184", want: true},
 		{name: "test binary re-exec kill form", cmdline: "./binary.test kill 1234", pid: "1234", want: true},
