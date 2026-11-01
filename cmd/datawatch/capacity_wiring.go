@@ -459,6 +459,17 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 	}
 }
 
+// applyNodeLimitOptions wires the three node over-admission rules to the
+// autonomous.capacity_* switches. Each switch is read at call time, so a config
+// change takes effect on the next admission without a restart; the restart
+// adoption wait is read once, as the ledger starts.
+func applyNodeLimitOptions(opt *capacity.Options, cfg *config.Config) {
+	opt.StrictNodeLimit = func() bool { return cfg.Autonomous.CapacityStrictNodeLimitOn() }
+	opt.CountPoolByNode = func() bool { return cfg.Autonomous.CapacityCountPoolByNodeOn() }
+	opt.AdoptBeforeAdmit = func() bool { return cfg.Autonomous.CapacityAdoptBeforeAdmitOn() }
+	opt.AdoptionTimeout = cfg.Autonomous.CapacityAdoptionWait()
+}
+
 // rateWindowDefault is the rolling window used when a rate ceiling is set
 // but autonomous.capacity_rate_window_seconds is 0.
 const rateWindowDefault = time.Hour
@@ -855,7 +866,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// The daemon's view starts strict: before the first sync reads the compute
 	// registry no node is healthy, so nothing is placed on a node not yet loaded.
 	nodeHealth := newStrictNodeHealthView()
-	led := capacity.New(capacity.Options{
+	opts := capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
 		NodeHealthy:  nodeHealth.healthy,
@@ -864,7 +875,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			budgetBackpressure(autonomousBudget),
 		),
 		HeldBackpressure: sharedNodeBackpressure(),
-	})
+	}
+	applyNodeLimitOptions(&opts, cfg)
+	led := capacity.New(opts)
 
 	// Restart ordering: hold every request until the work that survived the
 	// restart has been adopted (autonomous.API.resumeRunningPRDs ends the hold),

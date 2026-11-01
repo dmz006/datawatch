@@ -515,6 +515,12 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// Node over-admission switches (nil = on) and the restart adoption wait
+	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
+	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
+	CapacityCountPoolByNode     *bool `json:"capacity_count_pool_by_node,omitempty"`
+	CapacityAdoptBeforeAdmit    *bool `json:"capacity_adopt_before_admit,omitempty"`
+	CapacityAdoptionWaitSeconds int   `json:"capacity_adoption_wait_seconds,omitempty"`
 	// CapacityRate* mirror config.AutonomousConfig: a per-llm: pool rolling
 	// ceiling on lease grants and recorded tokens (0 = none; window 0 = 3600).
 	CapacityRateRequests      int `json:"capacity_rate_requests,omitempty"`

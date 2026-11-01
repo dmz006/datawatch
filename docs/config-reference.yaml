@@ -2152,6 +2152,18 @@ autonomous:
   capacity_enabled: true
   # Longest a task may wait for capacity before failing (seconds). Default 14400.
   capacity_wait_timeout_seconds: 14400
+  # Node over-admission rules (all default true; false restores the earlier
+  # behaviour). capacity_strict_node_limit: a session adopted onto a full node
+  # (a resumed worker, or a verifier) is held outside the node's pool yet still
+  # counts against it, so the pool never reads over its limit.
+  # capacity_count_pool_by_node: an llm: pool counts the sessions on each node
+  # up to that node's own limit. capacity_adopt_before_admit: after a restart,
+  # new requests wait until resumed workers are adopted, at most
+  # capacity_adoption_wait_seconds (default 30; 0 = 30).
+  capacity_strict_node_limit: true
+  capacity_count_pool_by_node: true
+  capacity_adopt_before_admit: true
+  capacity_adoption_wait_seconds: 30
   # How often the daemon re-checks LLM role tags for contention (seconds):
   # two enabled entries claiming one role, or two roles that have converged on
   # one entry since the last check. Warnings only; nothing is blocked. Unset or
