@@ -6319,6 +6319,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"quality_tracker_id_pattern": s.cfg.Autonomous.Questions.EffectiveQualityTrackerIDPattern(),
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
+			"parallel": map[string]interface{}{
+				"read_only_tasks": autonomous.EffectiveReadOnlyTasks(s.cfg.Autonomous.Parallel),
+			},
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -6939,6 +6942,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		"autonomous.questions.return_path",
 		"autonomous.questions.decision_gate",
 		"autonomous.questions.worker_marker",
+		"autonomous.parallel.read_only_tasks",
 	} {
 		if v, ok := patch[k]; ok {
 			if _, isBool := v.(bool); !isBool {
@@ -8624,6 +8628,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// so no restart is needed.
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.DecisionGate = &b
+			}
+		case "autonomous.parallel.read_only_tasks":
+			// Validated in handlePutConfig to a strict boolean. Stored as *bool
+			// so an explicit false is distinguishable from an absent key.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.Parallel.ReadOnlyTasks = &b
 			}
 		case "autonomous.questions.worker_marker":
 			// Validated in handlePutConfig to a strict boolean. Stored as *bool

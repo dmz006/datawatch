@@ -2737,6 +2737,10 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// Parallel — knobs for parallel task execution
+	// (autonomous.parallel.*). See AutonomousParallelConfig.
+	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
+
 	// Progress — parameters of the progress metrics engine (lane count,
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
@@ -6184,3 +6188,13 @@ func (c SessionConfig) EffectiveReservedInteractive() int {
 
 // RoleScanIntervalDefaultSeconds is the default autonomous.role_scan_interval_seconds.
 const RoleScanIntervalDefaultSeconds = 300
+
+// AutonomousParallelConfig is autonomous.parallel, the knobs for running
+// tasks in parallel. ReadOnlyTasks is a pointer: nil means the key is
+// absent. The default is applied only by
+// autonomous.EffectiveReadOnlyTasks. No omitempty, so an explicit false
+// survives a YAML/JSON round trip and a PUT /api/config write.
+type AutonomousParallelConfig struct {
+	// ReadOnlyTasks: tasks flagged read_only skip the tree lock.
+	ReadOnlyTasks *bool `yaml:"read_only_tasks" json:"read_only_tasks"`
+}

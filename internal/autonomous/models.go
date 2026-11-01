@@ -845,6 +845,11 @@ type Story struct {
 	FilesPlanned   []string `json:"files,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
 
+	// ReadOnly marks a task that only reads the tree. When the
+	// autonomous.parallel.read_only_tasks key is on, such a task skips
+	// the tree lock (see EffectiveReadOnlyTasks).
+	ReadOnly bool `json:"read_only,omitempty"`
+
 	// BL416 Phase 1 (Decision 4) — story-level verification script:
 	// relative path under PRD.ProjectDir to an executable script
 	// (planned location `.datawatch/verify/<story-id>.sh`) that a
