@@ -399,6 +399,7 @@ func TestUIPromptBlocked_TerminalStateNeverRestored(t *testing.T) {
 
 	stop := startCapture(t, mgr, sess)
 	parkSession(t, mgr, sess, cb)
+	waitParked(t, mgr, sess, cb, fake)
 	stop()
 
 	// While still parked the session completes (the daemon's completion
@@ -490,6 +491,7 @@ func TestUIPromptBlocked_TimelineOneLinePerChange(t *testing.T) {
 	cb.wire(mgr)
 	stop := startCapture(t, mgr, sess)
 	parkSession(t, mgr, sess, cb)
+	waitParked(t, mgr, sess, cb, fake)
 	base := paneCaptures(fake, sess.TmuxSession)
 	pollUntil(t, 10*time.Second, func() bool { return paneCaptures(fake, sess.TmuxSession) >= base+4 },
 		"parked session stopped ticking")
