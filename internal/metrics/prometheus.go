@@ -145,6 +145,40 @@ var (
 		Help: "Quality gate evaluations that detected a test regression",
 	})
 
+	// Burn guard (usage.burn_guard).
+	BurnGuardLevel = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_level",
+		Help: "Burn guard ladder rungs in force (0 = none)",
+	})
+	BurnGuardProjectedPercent = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_projected_percent",
+		Help: "Weekly usage percentage projected at the reset at the current burn",
+	})
+	BurnGuardOverByPoints = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_over_by_points",
+		Help: "Projected percentage minus the target (negative when under)",
+	})
+	BurnGuardPointsPerHour = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_burn_guard_points_per_hour",
+		Help: "Weekly points burned per hour over the trailing window",
+	})
+	BurnGuardTicksTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_ticks_total",
+		Help: "Burn guard evaluations run",
+	})
+	BurnGuardStepsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_steps_total",
+		Help: "Burn guard ladder steps by direction (climb, step_back)",
+	}, []string{"direction"})
+	BurnGuardRefitsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_refits_total",
+		Help: "Burn guard cost model refits attempted on a new usage reading",
+	})
+	BurnGuardErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_burn_guard_errors_total",
+		Help: "Burn guard errors (readings, transcripts, admission, state save)",
+	})
+
 	// Supervisor watch gauges.
 	SupervisorWatchFindings = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_supervisor_watch_findings",
@@ -230,6 +264,8 @@ func Register() {
 			WorkerQuestionsTotal,
 			UIPromptDismissalsTotal,
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
+			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
+			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
 		)
 	})
 }

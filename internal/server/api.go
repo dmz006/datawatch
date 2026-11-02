@@ -349,6 +349,8 @@ type Server struct {
 	// usageCalc is the usage-calculator advice service (nil = not wired);
 	// see usage_calculator_advice.go.
 	usageCalc *usagecalc.Service
+	// burnGuard is the burn guard runner (burn_guard.go); nil until AttachBurnGuard.
+	burnGuard *BurnGuard
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
