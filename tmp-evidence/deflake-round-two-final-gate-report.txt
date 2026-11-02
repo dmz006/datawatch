@@ -1,0 +1,32 @@
+deflake-round-two final gate — report
+date: 2026-11-02 00:59 UTC
+branch: automaton/bb060001 @ 1884ddee2
+
+=== gate run 2 (final, clean log placement) — FULL OUTPUT ===
+[19:55:06] gate: build test binaries
+[19:55:08] gate: server test under load
+[19:55:16] gate: session test under load
+[19:55:31] gate: neither test is skipped
+[19:55:31] gate: version rule
+[19:55:31] gate: package suites
+ok  	github.com/dmz006/datawatch/internal/server	67.113s
+ok  	github.com/dmz006/datawatch/internal/session	178.271s
+==> Unscoped tmux kill audit (kill-server / kill-session -a)
+OK: no unscoped tmux kills
+[19:58:30] PASS
+
+=== gate run 1 (19:49-19:53) — ended FAIL due to harness artifact ===
+(see notes below for full tail of run 1 failure)
+  ok        github.com/dmz006/datawatch/internal/server    67.238s
+  ok        github.com/dmz006/datawatch/internal/session   178.633s
+  ==> Unscoped tmux kill audit (kill-server / kill-session -a)
+    .datawatch/verify/logs/gate.out:9: unscoped tmux kill: ==> Unscoped tmux kill audit (kill-server / kill-session -a)
+  FAIL: 1 unscoped tmux kill(s)
+
+=== evidence gathered separately (read-only) ===
+merge-base vs main: 3aa19ca34
+internal/server/question_step2_switch_off_test.go
+internal/session/resume_monitors_adopt_test.go
+var Version (main.go):    9.56.0
+var Version (api.go):     9.56.0 (match: yes)
+main HEAD versions:       9.56.3 / 9.56.3 (main is 22 commits ahead of merge-base; branch is test-only, no bump — rule as implemented by gate holds)

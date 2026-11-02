@@ -90,6 +90,49 @@ func adoptWithClock(t *testing.T, b *Manager) *adoptClock {
 // settle gives the monitors several scan ticks to act on the current clock.
 func settle() { time.Sleep(10 * adoptScanInterval) }
 
+// adoptWaitBound is the wall-clock bound for condition polling in the adopt
+// tests. Generous on purpose: it only guards against a genuine bug (a state
+// that is supposed to change never changing it), never against a busy CI box
+// scheduling the scan goroutine late.
+const adoptWaitBound = 30 * time.Second
+
+// waitForAdoptState polls GetSession until the session reports the wanted state
+// and returns that snapshot. Unlike the old fixed settle()+deadline mix, it
+// observes the condition it is waiting for, so it is immune to the scan
+// goroutine being scheduled only slowly under load.
+func waitForAdoptState(t *testing.T, b *Manager, fullID string, want State, bound time.Duration) *Session {
+	t.Helper()
+	deadline := time.Now().Add(bound)
+	for {
+		if cur, ok := b.GetSession(fullID); ok && cur.State == want {
+			return cur
+		}
+		if time.Now().After(deadline) {
+			if cur, ok := b.GetSession(fullID); !ok {
+				t.Fatalf("session %s vanished while waiting for state %q", fullID, want)
+			} else {
+				t.Fatalf("session %s never reached state %q within %v: state=%q, lastPrompt=%q", fullID, want, bound, cur.State, cur.LastPrompt)
+			}
+		}
+		time.Sleep(adoptScanInterval)
+	}
+}
+
+// waitForCaptureTicks waits until the fake tmux has recorded at least
+// atLeast capture-pane calls. One capture-ansi call is made per monitor scan
+// tick on non-chat backends, so this proves a scan actually ran instead of
+// assuming it did inside a fixed sleep.
+func waitForCaptureTicks(t *testing.T, fake *FakeTmux, atLeast int, bound time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(bound)
+	for fake.Count("capture-ansi") < atLeast {
+		if time.Now().After(deadline) {
+			t.Fatalf("no scan tick within %v: capture-ansi calls=%d, want >= %d", bound, fake.Count("capture-ansi"), atLeast)
+		}
+		time.Sleep(adoptScanInterval)
+	}
+}
+
 // adoptRunsPastWindows advances the fake clock well past the 30s grace, the
 // task-echo window and the 3s prompt debounce, a step at a time with scans in
 // between, and returns the session as soon as it leaves running.
@@ -150,28 +193,27 @@ func TestResumeMonitorsAdopts_LiveSessionStaysRunning(t *testing.T) {
 func TestResumeMonitorsAdopts_RealNeedsInputAfterTaskFlips(t *testing.T) {
 	const question = "which branch should I use?"
 	pane := tdEchoed + "\n● DATAWATCH_NEEDS_INPUT: " + question + "\n"
-	b, _, sess, _ := restartEchoSetup(t, pane)
+	b, fake, sess, _ := restartEchoSetup(t, pane)
 	t.Cleanup(func() { time.Sleep(300 * time.Millisecond) })
 	fc := adoptWithClock(t, b)
 
-	settle()
+	// Inside the post-restart grace the marker is untrusted — assert that
+	// only after a scan demonstrably ran, not inside a fixed sleep that a
+	// starved scheduler could make vacuous.
+	base := fake.Count("capture-ansi")
+	waitForCaptureTicks(t, fake, base+1, adoptWaitBound)
 	if cur, _ := b.GetSession(sess.FullID); cur.State != StateRunning {
 		t.Fatalf("marker inside the post-restart grace flipped the session: state=%q", cur.State)
 	}
 
+	// Once the grace has passed, the same marker moves the session to
+	// waiting_input; poll for the state instead of betting on a wall-clock
+	// deadline that a loaded CI box may not honor.
 	fc.Advance(b.restartGraceWindow() + time.Second)
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if cur, _ := b.GetSession(sess.FullID); cur.State == StateWaitingInput {
-			if cur.LastPrompt != question {
-				t.Errorf("LastPrompt=%q, want the marker's question %q", cur.LastPrompt, question)
-			}
-			return
-		}
-		time.Sleep(adoptScanInterval)
+	cur := waitForAdoptState(t, b, sess.FullID, StateWaitingInput, adoptWaitBound)
+	if cur.LastPrompt != question {
+		t.Errorf("LastPrompt=%q, want the marker's question %q", cur.LastPrompt, question)
 	}
-	cur, _ := b.GetSession(sess.FullID)
-	t.Fatalf("real standalone marker after the task never flipped the session: state=%q", cur.State)
 }
 
 func TestClassifyNeedsInput(t *testing.T) {
