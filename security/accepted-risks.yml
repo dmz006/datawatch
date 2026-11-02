@@ -3849,3 +3849,24 @@ entries:
     expires: "2026-11-29"
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-2026-114820 (checked 2026-10-30) lists bookworm security 17.0.21+9-1~deb12u1 as vulnerable; fixed only in sid (17.0.21.0.3+1-1). Found live by the v9.39.0 Release workflow blocking parent-full scan. Short expiry: re-check every few days and consume the Debian update as soon as it ships (security patches are consumed when available)."
+
+  - id: cve/CVE-2026-119373
+    kind: container
+    package: "libsqlite3-0"
+    version: "3.40.1-2+deb12u2"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: false
+      reachable: "no"
+      method: "No new scan was run for this entry. The reachability of the library is the one recorded for CVE-2025-7458 (same package and version): a networkless container scan of which binaries link libsqlite3-0 and a source grep of how datawatch uses SQLite. This entry relies on that recorded trace and on the CVE description in the Trivy report of the failed image build for the 9.58.0 release."
+      analysis: "The finding is a denial of service through a heap based buffer problem in SQLite, which needs attacker supplied SQL text or a crafted database file handed to the library. The recorded trace of this library shows that in agent-base the only binary linking libsqlite3-0 is gpg (its trust database), nothing in datawatch invokes gpg at runtime, git, apt, curl, tmux and openssh do not link it, datawatch itself uses the pure Go modernc.org/sqlite driver built without cgo so it never loads the system library, agent-aider adds python3 whose sqlite3 module runs fixed SQL only, and agent-gemini and parent-full add no other consumer. No path gives an attacker control of SQL text or a database file for the system library. This is reasoning from the earlier trace, not a new trace, so it expires in 30 days."
+    first_added: "2026-11-01"
+    added: "2026-11-01"
+    expires: "2026-12-01"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.58.0 Release run lists CVE-2026-119373 (HIGH) on libsqlite3-0 3.40.1-2+deb12u2 as affected with no fixed version; re-check security-tracker.debian.org for a bookworm fix each release and re-trace if gpg or python start handling untrusted databases."

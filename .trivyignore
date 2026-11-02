@@ -718,3 +718,22 @@ CVE-2026-111497
 # not a container linker scan); CVE description read on NVD and the Debian
 # security tracker, 2026-10-30
 CVE-2026-114820
+
+# libsqlite3-0 -- CVE-2026-119373
+# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
+# The finding is a denial of service through a heap based buffer problem in
+# SQLite, which needs attacker supplied SQL text or a crafted database file
+# handed to the library. The recorded trace of this library shows that in
+# agent-base the only binary linking libsqlite3-0 is gpg (its trust database),
+# nothing in datawatch invokes gpg at runtime, git, apt, curl, tmux and openssh
+# do not link it, datawatch itself uses the pure Go modernc.org/sqlite driver
+# built without cgo so it never loads the system library, agent-aider adds
+# python3 whose sqlite3 module runs fixed SQL only, and agent-gemini and
+# parent-full add no other consumer. No path gives an attacker control of SQL
+# text or a database file for the system library. This is reasoning from the
+# earlier trace, not a new trace, so it expires in 30 days.
+# The Trivy scan of agent-base in the 9.58.0 Release run lists CVE-2026-119373
+# (HIGH) on libsqlite3-0 3.40.1-2+deb12u2 as affected with no fixed version;
+# re-check security-tracker.debian.org for a bookworm fix each release and
+# re-trace if gpg or python start handling untrusted databases.
+CVE-2026-119373
