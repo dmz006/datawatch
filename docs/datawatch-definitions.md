@@ -71,6 +71,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
 - [Automation](#automation)
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
+  - [Shipped](#shipped)
 - [Dashboard](#dashboard)
   - [Session constellation](#session-constellation)
   - [EKG waveform](#ekg-waveform)
@@ -675,7 +676,18 @@ One card per Automation, ordered by status and then name. Each card shows the st
 
 Opening a card draws the chain as a pipeline strip: a status dot on every member, an active ring on members in flight, "if blocked" and "if failed" outcomes as sub-rows, fork branches as side-by-side lanes joined by a join with its rule, nested Automations that expand one level at a time, an **inserted** marker on members added later, and dashed connectors for edges a finished member did not take. Above the strip are Pause, Resume and Cancel (cancel always asks whether the running member should be cancelled too); each member card carries Skip, Insert before / after, Remove and Edit edges, and held inserts wait under Pending inserts for approval. If another operator changed the Automation first, the page asks you to reload instead of overwriting their change.
 
+### Shipped
+
+An Automaton or Automation can carry **shipped state**: the record of the work having landed — the release version it landed in, when it merged, and the main-branch merge commit that proves it. Shipped state is separate from the lifecycle status: recording it never changes the status, so a PRD you cancelled *after* its work merged is both cancelled (you stopped it) and shipped (the work landed); a PRD cancelled before any merge is only cancelled. That is the shipped-vs-cancelled separation: two different questions, and both answers can be true at once.
+
+A record with shipped state **displays as shipped** in views that report an effective status, and — while the shipped surface separates the counts — takes its own **shipped** bucket in the status counts, instead of the stored status it keeps in the store. A shipped-but-cancelled PRD shows under shipped, not cancelled; a cancelled PRD whose work never landed is still under cancelled.
+
+Recording the state names where it came from: the **merge step** (the work landed as part of the merge), or a **backfill** (a deliberately run pass over the base repository's main branch finds the `automaton/<id>` merge commits, works out the release each one landed in, and fills in the missing records — safe to re-run, it fills only what is missing and skips what is already there). Run it with `?dry_run` first to see what would be recorded without writing anything.
+
+The five settings under **Settings → Automate → Shipped** (config block `autonomous.shipped`) — the shipped-state master switch, the chip display, the default list view, the separate-counted shipped bucket, and the backfill-at-start switch — decide what the read surfaces report. Every read surface — the web lists and the Shipped dashboard card (server-served), the REST API, the MCP tools, the CLI and the comm channel — reports the same state from the same stored fields; the PWA client does not yet render a shipped chip, offering no shipped selection (the companion-app parity item).
+
 **See also:**
+[howto/automata-shipped-status.md](howto/automata-shipped-status.md) ·
 [howto/automation-tab.md](howto/automation-tab.md) ·
 [howto/automation-queue-advance.md](howto/automation-queue-advance.md)
 

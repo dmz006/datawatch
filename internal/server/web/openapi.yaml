@@ -3404,6 +3404,11 @@ paths:
       parameters:
         - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
         - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+        - name: shipped
+          in: query
+          required: false
+          schema: {type: string, enum: [all, shipped, unshipped], default: all}
+          description: "Shipped-state selection: all (default), only records that carry a shipped record, or only records that do not. Any other value is a 400."
       responses:
         "200":
           description: PRD list (newest first); each item carries the PRD's git state including its push outcome
@@ -3453,6 +3458,136 @@ paths:
                         shared_terms: {type: array, items: {type: string}, description: "At most five shared terms"}
                         reason: {type: string, description: "One sentence of operator copy"}
                         read_hint: {type: string, description: "How to read the underlying item"}
+  /api/autonomous/prds/{id}/shipped:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    post:
+      summary: Record an Automaton's shipped state
+      description: |
+        The record that its work landed in a release: the release name, the
+        merge time, the merge commit on the default branch, and where they
+        came from. Recording never changes the Automaton's status — a
+        cancelled one can be shipped; cancelled is the state it was put in,
+        shipped is the state its work reached. The commit is what makes the
+        record shipped (it must be non-empty), and `source` must be
+        `merge_step` (recorded as the work landed) or `backfill` (recovered
+        afterwards); the release name and the time are optional (the time may
+        be left unset).
+
+        The call is idempotent per commit: a repeat with the same commit is a
+        no-op that leaves the stored fields, the revision and the updated
+        time alone, while a different commit overwrites all four fields.
+        Audited as `record_shipped`.
+      operationId: autonomousPRDShippedRecord
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShippedRecordRequest'
+      responses:
+        "200":
+          description: "OK — the Automaton as stored"
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: "Empty commit, unknown source, unparseable time, or a store save failure"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "404": {description: "Unknown Automaton id"}
+        "503": {description: "autonomous disabled"}
+        "405": {description: "Only POST is provided here"}
+  /api/automations/{id}/shipped:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Record the Automation's shipped state
+      description: |
+        The same four fields and the same rules as on an Automaton: the commit
+        is what makes the record shipped, the status is never touched, and the
+        call is idempotent per commit. Specific to the Automation, the record
+        goes through the Automation store's write path, so its version and
+        ownership rules keep applying (recording never blocks on them). Audited
+        as `automation_shipped_record`.
+      operationId: automationShippedRecord
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShippedRecordRequest"
+      responses:
+        "200":
+          description: "OK — the Automation as stored"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Empty commit, unknown source, unparseable time, or a store write failure"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {description: "Unknown Automation id"}
+        "503": {description: "autonomous disabled"}
+  /api/autonomous/shipped/counts:
+    get:
+      summary: Per-status counts under the shipped-state surface
+      description: |
+        One count per displayed status across the whole stored Automaton store
+        and the whole stored Automation store, under the in-force
+        `autonomous.shipped` settings: while the state is on and counted
+        separately, a record whose work landed counts as **shipped** regardless
+        of the status it carries, so the shipped list is that bucket and a
+        cancelled-and-shipped record is both. The four in-force settings
+        (`enabled`, `show_chip`, `filter_default`, `count_separately`) ride
+        along. Read-only; the response carries an `ETag`. The Shipped
+        dashboard card loads this live.
+      operationId: autonomousShippedCounts
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: "Per-status counts of both stores plus the in-force settings"
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippedCountsResponse"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "405": {description: "Method not allowed"}
+        "503": {description: "autonomous disabled"}
+  /api/autonomous/shipped/backfill:
+    post:
+      summary: Run one shipped-state backfill pass
+      description: |
+        One pass over the base repository's default branch (the `MAIN_BRANCH`
+        env var, or `main` when unset): every merge commit naming an
+        `automaton/<id>` branch records shipped state (`source` `backfill`) on
+        the matching Automaton — where one exists — and on each Automation that
+        has a non-skipped member whose non-skipped members are all shipped. It
+        never touches any status: cancelled Automata stay cancelled and
+        unmarked, and a record that already carries shipped state is left
+        alone (counted, not re-recorded). `?dry_run=true` scans and computes
+        the report without writing any record; absent, the default is to
+        write. One bad record lands in the report's `errors` and the pass
+        carries on. Audited as `shipped_backfill`.
+      operationId: autonomousShippedBackfill
+      tags: [Autonomous]
+      parameters:
+        - {name: dry_run, in: query, required: false, schema: {type: boolean, default: false}, description: "Scan and compute the report without writing any record. A value that cannot be parsed is a 400."}
+      responses:
+        "200":
+          description: "The pass's report"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShippedBackfillReport"
+        "400": {description: "Unparseable `dry_run` value, or the pass could not run (for instance the repository is not present)"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "Only POST is provided"}
+        "503": {description: "autonomous disabled"}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
@@ -4297,6 +4432,14 @@ paths:
           required: false
           schema:
             type: string
+        - name: shipped
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, shipped, unshipped]
+            default: all
+          description: "Shipped-state selection: all (default), only records that carry a shipped record, or only records that do not. Any other value is a 400."
       responses:
         "304":
           description: "`If-None-Match` matched the current ETag."
@@ -8527,6 +8670,10 @@ components:
         ci_watch: {type: object, description: ci-watch completion guardrail result, when it ran}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+        merged_in_release: {type: string, description: 'shipped state: the release the work landed in. Present when the work shipped'}
+        merged_at: {type: string, format: date-time, description: 'shipped state: when it merged (RFC 3339)'}
+        merge_commit: {type: string, description: 'shipped state: the default-branch merge commit — its being non-empty is what makes the record shipped; recording it never changes the status'}
+        shipped_source: {type: string, enum: [merge_step, backfill], description: 'shipped state: where the record came from'}
 
     AutonomousPrdList:
       type: object
@@ -9337,6 +9484,10 @@ components:
         effort: {type: string, description: "Execution effort default for member runs"}
         verification_backend: {type: string, description: "Verifier backend default for member runs"}
         verification_model: {type: string, description: "Verifier model default for member runs"}
+        merged_in_release: {type: string, description: "Shipped state: the release its work landed in"}
+        merged_at: {type: string, format: date-time, description: "Shipped state: when it merged (RFC 3339)"}
+        merge_commit: {type: string, description: "Shipped state: the default-branch merge commit — its being non-empty is what makes the record shipped; recording it never touches the status"}
+        shipped_source: {type: string, enum: [merge_step, backfill], description: "Shipped state: where the record came from"}
         verification_effort: {type: string, description: "Verifier effort default for member runs"}
         project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
         created_at: {type: string, format: date-time}
@@ -9791,3 +9942,97 @@ components:
           type: array
           items: {type: string}
           description: "The two safe routes: store the secret in the datawatch secrets store and refer to it as ${secret:name}; or save it on the filesystem and point the session at the file."
+
+    ShippedState:
+      description: |
+        The four fields that make up the shipped record, present on both the
+        Automaton and the Automation. `merge_commit` — the merge commit on
+        the default branch — is the only required part: it is its being
+        non-empty that makes the record **shipped**, and shipped is
+        orthogonal to status, because recording a shipped record never changes
+        the status, and a cancelled Automaton can be shipped. While the
+        shipped state is on and separately counted, the record goes into the
+        **shipped** bucket of the counts regardless of the status it carries;
+        the status itself keeps its stored value.
+      type: object
+      properties:
+        merged_in_release:
+          type: string
+          description: "The release the work landed in (for example `v9.3.0`). Absent when unset"
+        merged_at:
+          type: string
+          format: date-time
+          description: "When it merged (RFC 3339). Absent when unset"
+        merge_commit:
+          type: string
+          description: "The default-branch merge commit — non-empty makes the record shipped"
+        shipped_source:
+          type: string
+          enum: [merge_step, backfill]
+          description: "Where the record came from: the merge step or a backfill pass"
+
+    ShippedRecordRequest:
+      description: |
+        Body of POST /api/autonomous/prds/{id}/shipped and of POST
+        /api/automations/{id}/shipped. `merge_commit` is required and is
+        trimmed — an empty or whitespace-only value is a 400 — and `source`
+        must be one of the two known names; `merged_at` is RFC 3339 or absent
+        (the zero time), and `merged_in_release` is optional.
+      type: object
+      required: [merge_commit, source]
+      properties:
+        merged_in_release: {type: string, description: "The release the work landed in"}
+        merged_at: {type: string, format: date-time, description: "When it merged (RFC 3339). absent means unset"}
+        merge_commit: {type: string, description: "The default-branch merge commit — required, non-empty after trimming"}
+        source:
+          type: string
+          enum: [merge_step, backfill]
+          description: "`merge_step` (recorded as the work landed) or `backfill` (recovered afterwards)"
+
+    ShippedCountsResponse:
+      description: |
+        GET /api/autonomous/shipped/counts: one count per displayed status of
+        both stores, under the in-force shipped-state surface (see
+        `ShippedState`), plus the four in-force settings.
+      type: object
+      required: [prds, automations, settings]
+      properties:
+        prds:
+          type: object
+          additionalProperties: {type: integer}
+          description: "One entry per displayed status in the stored Automaton store (shipped included when it is on and counted separately)"
+        automations:
+          type: object
+          additionalProperties: {type: integer}
+          description: "One entry per displayed status in the stored Automation store (shipped included when it is on and counted separately)"
+        settings:
+          type: object
+          required: [enabled, show_chip, filter_default, count_separately]
+          description: "The in-force `autonomous.shipped` surface"
+          properties:
+            enabled: {type: boolean}
+            show_chip: {type: boolean}
+            filter_default: {type: string, enum: [all, shipped, unshipped]}
+            count_separately: {type: boolean}
+
+    ShippedBackfillReport:
+      description: |
+        The accounting of one shipped-state backfill pass: the body of POST
+        /api/autonomous/shipped/backfill and of `datawatch autonomous shipped
+        backfill` (with `--json`).
+      type: object
+      required: [prds_scanned, prds_marked, prds_already_marked, automations_marked, left_cancelled]
+      properties:
+        prds_scanned: {type: integer, description: "The Automata in the store the pass looked at"}
+        prds_marked: {type: integer, description: "Automata that carried no shipped state and now do"}
+        prds_already_marked: {type: integer, description: "Automata that already carried shipped state and were left alone"}
+        automations_marked: {type: integer, description: "Automations the pass marked shipped"}
+        left_cancelled: {type: integer, description: "Cancelled Automata in the store — none of them is ever marked; they stay cancelled and unmarked"}
+        unmatched_ids:
+          type: array
+          items: {type: string}
+          description: "8-hex ids the history names but the store does not hold, deduplicated and sorted. Absent when none"
+        errors:
+          type: array
+          items: {type: string}
+          description: "Per-record failures skipped without stopping the pass. Absent when none"

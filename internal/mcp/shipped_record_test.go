@@ -100,6 +100,24 @@ func TestShippedRecordMCP_RefusalIsAToolError(t *testing.T) {
 	}
 }
 
+func TestShippedRecordMCP_SourceDefaultsBackfill(t *testing.T) {
+	var body map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		_, _ = w.Write([]byte(`{"id":"p1","merge_commit":"c0"}`))
+	})
+	res, err := s.handleAutonomousShippedRecord(context.Background(), callReq(map[string]any{
+		"id": "p1", "merge_commit": "c0", "merged_in_release": "v1.0.0",
+	}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if body["source"] != "backfill" {
+		t.Errorf("body source = %v; want backfill (the daemon refuses an empty source)", body["source"])
+	}
+}
+
 func TestShippedRecordMCP_ToolShape(t *testing.T) {
 	s := &Server{}
 	tool := s.toolAutonomousShippedRecord()
