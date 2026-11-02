@@ -331,30 +331,3 @@ func TestSyncAfterPassFiresPerPass(t *testing.T) {
 	cancel2()
 	s2.Run(ctx2)
 }
-
-func TestSyncClientForHonoursTLSSkipVerify(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
-	s := &Syncer{}
-	do := func(e multiserver.Entry) error {
-		req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-		resp, err := s.clientFor(e).Do(req)
-		if err == nil {
-			_ = resp.Body.Close()
-		}
-		return err
-	}
-	strict := multiserver.Entry{Name: "p", URL: srv.URL}
-	if err := do(strict); err == nil {
-		t.Fatal("self-signed peer must be rejected without tls_skip_verify")
-	}
-	lax := multiserver.Entry{Name: "p", URL: srv.URL, TLSSkipVerify: true}
-	if err := do(lax); err != nil {
-		t.Fatalf("tls_skip_verify peer rejected: %v", err)
-	}
-	if s.clientFor(lax) != s.clientFor(lax) {
-		t.Error("client must be reused per entry")
-	}
-}

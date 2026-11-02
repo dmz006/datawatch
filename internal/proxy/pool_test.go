@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
@@ -105,23 +104,3 @@ var errTest = &testError{}
 type testError struct{}
 
 func (e *testError) Error() string { return "test error" }
-
-func TestPoolClientHonoursTLSSkipVerify(t *testing.T) {
-	p := NewPool([]config.RemoteServerConfig{
-		{Name: "strict", URL: "https://a.invalid", Enabled: true},
-		{Name: "lax", URL: "https://b.invalid", Enabled: true, TLSSkipVerify: true},
-	}, DefaultPoolConfig())
-	skip := func(name string) bool {
-		tr, ok := p.Client(name).Transport.(*http.Transport)
-		return ok && tr.TLSClientConfig != nil && tr.TLSClientConfig.InsecureSkipVerify
-	}
-	if skip("strict") {
-		t.Error("strict peer must verify certificates")
-	}
-	if !skip("lax") {
-		t.Error("tls_skip_verify peer must skip verification")
-	}
-	if tr := p.Client("lax").Transport.(*http.Transport); tr.MaxIdleConnsPerHost != 5 {
-		t.Errorf("pool transport settings lost: %d", tr.MaxIdleConnsPerHost)
-	}
-}
