@@ -127,6 +127,7 @@ Selected core tools:
 | `kill_session` | Terminate a session |
 | `session_children` | List child sessions spawned by a parent session (v8.10.0) |
 | `reply_to_parent` | Send a message back to the spawning parent session (v8.10.0) |
+| `cost_report` | Cost report over the daemon's recorded session spend (the `internal/costreport` engine, same call as `GET /api/cost/report`): grouped by automaton, automation, backend or week; token totals always, USD estimates when rates are configured; optional `group_by`, `since`, `until` — the grouping and window defaults come from the `cost_report` config section; read-only |
 | `autonomous_prd_create` / `autonomous_prd_decompose` / `autonomous_prd_run` | Autonomous PRD lifecycle |
 | `question_raise` | raise an operator question to this daemon's operator (the operator-question channel) |
 | `question_list` | list the daemon's stored operator questions, optionally filtered (the poll read) |
