@@ -1,7 +1,8 @@
 # Final gate report — PWA test TLS-trust fix (alerts fix)
 
 - Date: 2026-11-02
-- Branch: `automaton/b6be0001` at `11419e2c7` (merge base with `main`: `d897c68c1`)
+- Re-verified: 2026-11-02 19:04 (third verification run, all prior evidence re-confirmed identically); latest commit `79c768343`
+- Branch: `automaton/b6be0001` (merge base with `main`: `d897c68c1`)
 - Gate command: `bash .datawatch/verify/alerts-fix-final-gate.sh`
 - Branch result: **exit 1** — one false-positive check (6) below; every substantive check passes. Full unredacted output in `alerts-fix-final-gate-output.txt`.
 - Read-only gate: no file was fixed in this task.
@@ -15,7 +16,7 @@
 | 3 | Two rewritten unit tests (`test-string-patterns.sh`) | **PASS** | The chained `&lt;`/`&gt;`/`&amp;` decode in `app-questions-history.test.js` is gone; the paren-only escape in `app-identity-backups.test.js` is gone; `node --test` on both files 23/23, `OK` |
 | 4 | `node --test internal/server/web/*.test.js` | **PASS** | 1851 tests, **1851 pass, 0 fail**, 0 skipped/skipped-todo drift, ~2.0 s |
 | 5 | CHANGELOG.md has an Unreleased section | **PASS** | `## [Unreleased]` at line 6; `### Fixed` includes the entry "The PWA test scripts no longer turn certificate checking off" covering TS-833/834/835 and the two rewritten string patterns |
-| 6 | `cmd/datawatch/main.go` and `internal/server/api.go` unchanged | **FAIL by script — false positive** | The script compares against the **tip** of `main` (`git diff main --name-only`), but `main` has moved far past this branch's fork point (merge base `d897c68c1`, branch version `9.53.0`) and its own later commits modify exactly these two files among many others. Verified against the correct baseline: `git diff d897c68c1 HEAD --name-only` lists only the 11 expected files (CHANGELOG.md, the two rewritten test files, and the 8 story/e2e TLS files) — **`cmd/datawatch/main.go` and `internal/server/api.go` are not among them** (0 diff lines vs the merge base). No version file was touched on this branch; the check as written fails for any branch forked before `main`'s subsequent version work until rebase. |
+| 6 | `cmd/datawatch/main.go` and `internal/server/api.go` unchanged | **FAIL by script — false positive** | The script compares against the **tip** of `main` (`git diff main --name-only`), but `main` has moved far past this branch's fork point (merge base `d897c68c1`, branch version `9.53.0`) and its own later commits modify exactly these two files among many others — fresh re-check at 19:04 shows the branch-vs-merge-base diff (`git diff d897c68c1..HEAD --name-only`) contains **neither** `cmd/datawatch/main.go` nor `internal/server/api.go` — it lists only the 11 expected files (CHANGELOG.md, the two rewritten test files, the 8 story/e2e TLS files) plus this gate's own report artifacts — **`cmd/datawatch/main.go` and `internal/server/api.go` are not among them**. No version file was touched on this branch; the check as written fails for any branch forked before `main`'s subsequent version work until rebase. |
 | 7 | Local CodeQL scan (only when installed) | **NOT REACHED — irrelevant** | Gate aborted at step 6. `codeql` is not on `PATH` and no local `.datawatch/codeql/codeql/codeql` binary exists in this worktree, so step 7 would have printed `codeql not installed; skipping local scan` had it been reached. |
 
 ## Findings for the operator
