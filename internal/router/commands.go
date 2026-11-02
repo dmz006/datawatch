@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -105,6 +106,11 @@ const (
 	// Account usage calculator, same data as REST / MCP / CLI.
 	CmdUsage CommandType = "usage"
 	CmdAudit CommandType = "audit"
+	// Operator console one-glance over chat — the same five sections and the
+	// same data as GET /api/dashboard/console. The dashboard.* config keys
+	// (console.enabled, console.show_*) flow through the existing configure
+	// command and path.
+	CmdDashboardConsole CommandType = "dashboard console"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -1320,6 +1326,9 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(text[len("audit"):])
 		return Command{Type: CmdAudit, Text: rest}
 
+	case lower == "dashboard console" || lower == "dashboard-console":
+		return Command{Type: CmdDashboardConsole}
+
 	case lower == "peers" || strings.HasPrefix(lower, "peers "):
 		// BL172 (S11) — federated observer peers over chat. Forms:
 		//   "peers"                       → list
@@ -1900,6 +1909,7 @@ usage extra <points>             set the bought extra credit
 usage work <points|clear>        set or clear the typed remaining work
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
+dashboard console                operator console one-glance — questions, held/blocked, lanes, usage, CI/release
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
 
 — BL220 surface parity —
@@ -2133,4 +2143,51 @@ func parseUsageBackoff(rest string) Command {
 	}
 	cmd.UsageBackoffVerb = "invalid"
 	return cmd
+}
+
+// handleDashboardConsole is the operator console one-glance over chat: the
+// same five sections and the identical data as GET /api/dashboard/console
+// (open questions, held/blocked sessions, lanes, usage, CI/release), sent
+// back as one summary line. Sections the operator switched off in
+// dashboard.console.* show as off with the endpoint's reason.
+func (r *Router) handleDashboardConsole() {
+	body, err := r.commGet("/api/dashboard/console", nil)
+	if err != nil {
+		// 503 when dashboard.console.enabled=false — the daemon's body says
+		// exactly which key to flip.
+		r.reply("dashboard console failed", err.Error())
+		return
+	}
+	line, err := dashboardConsoleOneLiner(body)
+	if err != nil {
+		r.reply("dashboard console failed", err.Error())
+		return
+	}
+	r.reply("dashboard console:", line)
+}
+
+// dashboardConsoleSectionIDs is the endpoint's canonical section order.
+var dashboardConsoleSectionIDs = []string{"questions_waiting", "held_blocked", "lanes", "usage", "ci_release"}
+
+func dashboardConsoleOneLiner(body string) (string, error) {
+	var c struct {
+		Sections map[string]struct {
+			Available bool   `json:"available"`
+			Count     int    `json:"count"`
+			Summary   string `json:"summary"`
+		} `json:"sections"`
+	}
+	if err := json.Unmarshal([]byte(body), &c); err != nil {
+		return "", err
+	}
+	parts := make([]string, 0, len(dashboardConsoleSectionIDs))
+	for _, id := range dashboardConsoleSectionIDs {
+		s := c.Sections[id]
+		if !s.Available {
+			parts = append(parts, id+" off ("+s.Summary+")")
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s %d — %s", id, s.Count, s.Summary))
+	}
+	return strings.Join(parts, " | "), nil
 }

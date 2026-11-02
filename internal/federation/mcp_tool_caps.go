@@ -244,6 +244,7 @@ var MCPToolCap = map[string]string{
 	"dashboard_card_update":        CapDashboardWrite,
 	"dashboard_cards_list":         CapDashboardRead,
 	"dashboard_config_get":         CapDashboardRead,
+	"dashboard_console_get":        CapDashboardRead,
 	"delete_session":               CapSessionsKill,
 	"detection_config_get":         CapConfigRead,
 	"detection_config_set":         CapConfigWrite,
