@@ -1,0 +1,17 @@
+# scripts/leak-check.allowed-emails
+#
+# Addresses the tree legitimately needs. One glob per line, matched
+# against the whole lower-cased address; comments and blank lines are
+# ignored. Only non-personal, generic addresses belong here — never an
+# operator's personal address.
+
+# IANA reserved example domains (AGENT.md "No local-environment leaks")
+*@example.com
+*@example.org
+*@example.net
+
+# SSH clone and noreply forms the tooling and docs legitimately ship with
+git@github.com
+git@gitlab.com
+noreply@*
+no-reply@*
