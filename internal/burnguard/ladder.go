@@ -70,7 +70,15 @@ type LadderSettings struct {
 	StepBack bool
 	// MarginPoints is the band around the target inside which the ladder holds.
 	MarginPoints float64
+	// AskOnChange gates the per-step question: true raises a question for each
+	// climb or step back that changed a setting, false alerts only (the alerts
+	// then carry how to turn the questions on).
+	AskOnChange bool
 }
+
+// askOnOffHint is the tail of an alert when AskOnChange is off, naming the
+// setting whose value would raise a question per change.
+const askOnOffHint = "Set usage.burn_guard.ask_on_change to true to get a question per change."
 
 // DefaultLadder is the ladder used when none is configured.
 func DefaultLadder() []string {
@@ -125,11 +133,34 @@ type Decision struct {
 
 	// Changed is true when the tick applied or released a rung.
 	Changed bool `json:"changed"`
-	// AlertText and QuestionText state what was done; both are empty on a hold that changed
-	// nothing, and Reason says why the ladder held.
+	// Withdraw is true on every changed step, even one that raised no question:
+	// the caller must withdraw the open guard question before raising a new one.
+	Withdraw bool `json:"withdraw,omitempty"`
+	// AlertText states what the guard did and where the projection stands against the
+	// target; with AskOnChange off it carries how to turn on the per-change question.
+	// QuestionText is set only when AskOnChange is on and the changed step actually
+	// changed a setting; both are empty on a hold that changed nothing, and a disabled
+	// release raises no question at all. Reason says why the ladder held.
 	AlertText    string `json:"alert_text,omitempty"`
 	QuestionText string `json:"question_text,omitempty"`
 	Reason       string `json:"reason,omitempty"`
+}
+
+// changesSetting reports whether a step's actions changed an admission setting, as
+// opposed to a no-op that left it where it was: a lower_inflight climb that cannot
+// lower the cap (it is already at one), or its release restoring a cap that was
+// never lowered. Other rungs always change the setting.
+func changesSetting(acts []Action, applyCap int) bool {
+	for _, a := range acts {
+		if a.Kind == ActionSetInflight {
+			if (a.Release && a.Value > 1) || (!a.Release && applyCap > 1) {
+				return true
+			}
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // Ladder is the state machine. It is not safe for concurrent use; the daemon calls Tick from
@@ -164,7 +195,9 @@ func (l *Ladder) State() LadderState {
 // more than MarginPoints below steps back one rung when StepBack is on, anything between
 // holds. A projection with no usable readings holds. A disabled ladder releases whatever is
 // in force at once (so admission is never left restricted by a guard that is off) and then
-// does nothing. The returned error is a failure to save; the decision is still valid and the
+// does nothing. A question is raised only when AskOnChange is on and the changed step
+// actually changed a setting; when it is off the alerts carry how to turn questions on.
+// The returned error is a failure to save; the decision is still valid and the
 // in-memory state has moved.
 func (l *Ladder) Tick(in TickInput) (Decision, error) {
 	prev := len(l.state.Applied)
@@ -176,6 +209,7 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 	finish := func() (Decision, error) {
 		d.Level = len(l.state.Applied)
 		d.Applied = append([]string(nil), l.state.Applied...)
+		d.Withdraw = d.Changed
 		if !d.Changed {
 			return d, nil
 		}
@@ -200,8 +234,14 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		}
 		d.Changed, d.Rung = true, released[len(released)-1]
 		d.Reason = "ladder disabled"
-		d.AlertText = fmt.Sprintf("Burn guard turned off: released %s.", strings.Join(reverse(released), ", "))
-		d.QuestionText = d.AlertText + " New work is admitted as before."
+		alert := "Burn guard turned off: released " + strings.Join(reverse(released), ", ") + "."
+		if p.Needs == "" {
+			alert += " " + numbers(p)
+		}
+		if !in.Settings.AskOnChange {
+			alert += " " + askOnOffHint
+		}
+		d.AlertText = alert
 		return finish()
 	}
 	if p.Needs != "" {
@@ -229,15 +269,25 @@ func (l *Ladder) Tick(in TickInput) (Decision, error) {
 		what := describe(acts, l.state.OriginalInflight)
 		d.AlertText = fmt.Sprintf("Burn guard stepped up to rung %d of %d (%s): %s %s",
 			len(l.state.Applied), len(ladder), rung, what, numbers(p))
-		d.QuestionText = fmt.Sprintf("The weekly burn projects to %.1f%% at the reset against a target of %.1f%%. I did this: %s Release it, or leave it?",
-			p.Projected, p.Target, what)
+		if in.Settings.AskOnChange && changesSetting(acts, in.InflightCap) {
+			d.QuestionText = fmt.Sprintf("The weekly burn projects to %.1f%% at the reset against a target of %.1f%%. I did this: %s Release it, or leave it?",
+				p.Projected, p.Target, what)
+		}
+		if !in.Settings.AskOnChange {
+			d.AlertText += " " + askOnOffHint
+		}
 	case p.OverBy < -margin && in.Settings.StepBack && prev > 0:
 		rung := l.state.Applied[prev-1]
 		acts := l.release()
 		d.Direction, d.Rung, d.Actions, d.Changed = DirectionStepBack, rung, acts, true
 		what := describe(acts, 0)
 		d.AlertText = fmt.Sprintf("Burn guard stepped back from %s: %s %s", rung, what, numbers(p))
-		d.QuestionText = fmt.Sprintf("The weekly burn now projects to %.1f%% against a target of %.1f%%. I did this: %s", p.Projected, p.Target, what)
+		if in.Settings.AskOnChange && changesSetting(acts, 0) {
+			d.QuestionText = fmt.Sprintf("The weekly burn now projects to %.1f%% against a target of %.1f%%. I did this: %s", p.Projected, p.Target, what)
+		}
+		if !in.Settings.AskOnChange {
+			d.AlertText += " " + askOnOffHint
+		}
 	case p.OverBy < -margin && prev > 0:
 		d.Reason = "under the line, step back is off"
 	case p.OverBy > margin:

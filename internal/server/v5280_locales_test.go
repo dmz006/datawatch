@@ -80,6 +80,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"burn_guard_title",
 		"burn_guard_run_now",
 		"burn_guard_settings_title",
+		"settings_usage_burn_guard_ask_on_change",
 		"burn_guard_state_line",
 		"burn_guard_decision_line",
 		"stats_burn_guard",

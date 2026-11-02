@@ -230,6 +230,7 @@ saved value falls back to its default with a logged warning, as `normalizeUsageC
 - `enabled` — guard on or off (default `true`).
 - `interval_minutes` — minutes between evaluations, 1 to 1440 (default `60`).
 - `margin_points` — how far the projection may run over the pace line before the guard acts, 0 to 50 (default `2.0`).
+- `ask_on_change` — whether a rung change also raises an operator question (default `false`: one alert per change, no question; `true`: at most one open guard question, and none for a step that changes nothing).
 - `ladder` — ordered rungs applied while over the line: `lower_inflight`, `route_pi_prompt`, `hold_claude` (default all three in that order; unknown or repeated rungs are dropped).
 - `step_back` — undo rungs in reverse once back under the line (default `true`).
 - `cache_write_points_per_million` — weekly points per million cache-write tokens, above 0 (default `0.373`).

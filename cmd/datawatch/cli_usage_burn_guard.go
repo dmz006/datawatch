@@ -71,7 +71,7 @@ func parseBurnGuardSettings(args []string) (map[string]any, error) {
 			return nil, fmt.Errorf("a setting is key=value: %q", a)
 		}
 		switch k {
-		case "enabled", "step_back", "refit_on_reading":
+		case "enabled", "step_back", "refit_on_reading", "ask_on_change":
 			b, err := strconv.ParseBool(v)
 			if err != nil {
 				return nil, fmt.Errorf("%s must be true or false: %q", k, v)

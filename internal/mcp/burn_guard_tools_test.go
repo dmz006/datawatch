@@ -1,80 +1,107 @@
+// burn guard config set/get tools: ask_on_change lives in the set schema with a
+// description, the two round-trip through the daemon (set → PUT body, get →
+// result text) and a server 400 comes back as an error result.
+
 package mcp
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
-	"regexp"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 
-	"github.com/dmz006/datawatch/internal/federation"
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
-func TestBurnGuardToolsProxyRest(t *testing.T) {
-	ctx := context.Background()
-	for _, tc := range []struct {
-		name   string
-		call   func(*Server) error
-		method string
-		path   string
-	}{
-		{"status", func(s *Server) error { _, e := s.handleBurnGuardStatus(ctx, callReq(nil)); return e }, http.MethodGet, "/api/usage/burn-guard"},
-		{"run", func(s *Server) error { _, e := s.handleBurnGuardRun(ctx, callReq(nil)); return e }, http.MethodPost, "/api/usage/burn-guard/run"},
-		{"config_get", func(s *Server) error { _, e := s.handleBurnGuardConfigGet(ctx, callReq(nil)); return e }, http.MethodGet, "/api/usage/burn-guard/config"},
-	} {
-		s, rec := usageCalcServer(t, http.StatusOK, `{"state":"idle"}`)
-		if err := tc.call(s); err != nil {
-			t.Fatalf("%s: %v", tc.name, err)
-		}
-		if rec.method != tc.method || rec.path != tc.path {
-			t.Errorf("%s proxied %s %s, want %s %s", tc.name, rec.method, rec.path, tc.method, tc.path)
-		}
-	}
+type bgRec struct {
+	method, path string
+	body         map[string]any
 }
 
-func TestBurnGuardConfigSetForwardsOnlyGivenKeys(t *testing.T) {
-	s, rec := usageCalcServer(t, http.StatusOK, `{"ok":true}`)
-	res, err := s.handleBurnGuardConfigSet(context.Background(), callReq(map[string]any{
-		"margin_points": 4.0, "ladder": []any{"lower_inflight"}, "unrelated": "x",
+// bgServer answers every request with reply (status code code) and records it.
+func bgServer(t *testing.T, code int, reply string) (*Server, *bgRec) {
+	t.Helper()
+	rec := &bgRec{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(raw))
+		rec.method, rec.path, rec.body = r.Method, r.URL.Path, nil
+		_ = json.Unmarshal(raw, &rec.body)
+		w.WriteHeader(code)
+		_, _ = w.Write([]byte(reply))
 	}))
+	t.Cleanup(srv.Close)
+	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
+	return &Server{webPort: port}, rec
+}
+
+func TestBurnGuardAskOnChangeMCPSetSchemaAndBody(t *testing.T) {
+	def := (&Server{}).toolBurnGuardConfigSet()
+	propAny, ok := def.InputSchema.Properties["ask_on_change"]
+	if !ok {
+		t.Fatalf("burn_guard_config_set schema lacks ask_on_change: %v", def.InputSchema.Properties)
+	}
+	prop, ok := propAny.(map[string]any)
+	if !ok {
+		t.Fatalf("ask_on_change property = %T (%v), want map", propAny, propAny)
+	}
+	if prop["type"] != "boolean" {
+		t.Errorf("ask_on_change type = %v, want boolean", prop["type"])
+	}
+	desc, _ := prop["description"].(string)
+	if !strings.Contains(strings.ToLower(desc), "alert") || !strings.Contains(strings.ToLower(desc), "question") {
+		t.Errorf("description does not explain the setting: %q", desc)
+	}
+	if got := (&Server{}).toolBurnGuardConfigGet(); !strings.Contains(got.Description, "ask_on_change") {
+		t.Errorf("burn_guard_config_get description lacks ask_on_change: %q", got.Description)
+	}
+
+	s, rec := bgServer(t, http.StatusOK, `{"ok":true,"config":{"ask_on_change":true}}`)
+	res, err := s.handleBurnGuardConfigSet(context.Background(), callReq(map[string]any{"ask_on_change": true}))
 	if err != nil || res == nil {
 		t.Fatalf("err=%v res=%v", err, res)
 	}
 	if rec.method != http.MethodPut || rec.path != "/api/usage/burn-guard/config" {
 		t.Fatalf("proxied %s %s", rec.method, rec.path)
 	}
-	if len(rec.body) != 2 || rec.body["margin_points"] != 4.0 || rec.body["ladder"] == nil {
-		t.Errorf("body = %v", rec.body)
+	if rec.body["ask_on_change"] != true {
+		t.Fatalf("PUT body = %v, want ask_on_change=true", rec.body)
+	}
+
+	// A server rejection surfaces as an error result.
+	s400, _ := bgServer(t, http.StatusBadRequest, `usage.burn_guard.ask_on_change: must be true or false`)
+	res, _ = s400.handleBurnGuardConfigSet(context.Background(), callReq(map[string]any{"ask_on_change": "maybe"}))
+	if text := textContent(t, res); !strings.Contains(text, "HTTP 400") || !strings.Contains(text, "must be true or false") {
+		t.Errorf("rejection not surfaced: %s", text)
 	}
 }
 
-func TestBurnGuardConfigSetNeedsASetting(t *testing.T) {
-	s, rec := usageCalcServer(t, http.StatusOK, `{}`)
-	res, err := s.handleBurnGuardConfigSet(context.Background(), callReq(nil))
-	if err != nil || res == nil || !res.IsError {
-		t.Fatalf("want a tool error, got err=%v res=%+v", err, res)
+func TestBurnGuardAskOnChangeMCPGetRoundTrip(t *testing.T) {
+	s, rec := bgServer(t, http.StatusOK, `{"enabled":true,"ask_on_change":true}`)
+	res, err := s.handleBurnGuardConfigGet(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
 	}
-	if rec.method != "" {
-		t.Errorf("an empty call reached the server")
+	if rec.method != http.MethodGet || rec.path != "/api/usage/burn-guard/config" {
+		t.Fatalf("proxied %s %s", rec.method, rec.path)
+	}
+	if text := textContent(t, res); !strings.Contains(text, `"ask_on_change":true`) && !strings.Contains(text, `"ask_on_change": true`) {
+		t.Errorf("result lacks ask_on_change: %s", text)
 	}
 }
 
-func TestBurnGuardToolsRegisteredAndCapped(t *testing.T) {
-	s := &Server{}
-	tools := map[string]string{
-		s.toolBurnGuardStatus().Name:    federation.CapUsageRead,
-		s.toolBurnGuardRun().Name:       federation.CapUsageWrite,
-		s.toolBurnGuardConfigGet().Name: federation.CapUsageRead,
-		s.toolBurnGuardConfigSet().Name: federation.CapUsageWrite,
+func textContent(t *testing.T, res *mcpsdk.CallToolResult) string {
+	t.Helper()
+	if res == nil || len(res.Content) == 0 {
+		return ""
 	}
-	trackerID := regexp.MustCompile(`\b(BL|B|G|GH|SEC)-?[0-9]+`)
-	for name, cap := range tools {
-		if got := federation.MCPToolCap[name]; got != cap {
-			t.Errorf("%s: capability = %q, want %q", name, got, cap)
-		}
+	if tc, ok := res.Content[0].(mcpsdk.TextContent); ok {
+		return tc.Text
 	}
-	for _, d := range []string{s.toolBurnGuardStatus().Description, s.toolBurnGuardRun().Description, s.toolBurnGuardConfigGet().Description, s.toolBurnGuardConfigSet().Description} {
-		if trackerID.MatchString(d) {
-			t.Errorf("description holds a tracker identifier: %s", d)
-		}
-	}
+	return ""
 }

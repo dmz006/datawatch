@@ -26,6 +26,7 @@ var burnGuardKeys = []string{
 	"enabled", "interval_minutes", "margin_points", "ladder", "step_back",
 	"cache_write_points_per_million", "cache_read_points_per_million",
 	"refit_on_reading", "retry_limit_claude",
+	"ask_on_change",
 }
 
 func burnGuardPatchBool(key string, v interface{}) (bool, error) {
@@ -94,7 +95,7 @@ func burnGuardPatchLadder(v interface{}) ([]string, error) {
 // validateBurnGuardValue checks one key's patch value.
 func validateBurnGuardValue(key string, v interface{}) error {
 	switch key {
-	case "enabled", "step_back", "refit_on_reading":
+	case "enabled", "step_back", "refit_on_reading", "ask_on_change":
 		_, err := burnGuardPatchBool(key, v)
 		return err
 	case "ladder":
@@ -167,6 +168,8 @@ func applyBurnGuardPatchKey(c *config.BurnGuardConfig, fullKey string, v interfa
 		c.StepBack, _ = burnGuardPatchBool(key, v)
 	case "refit_on_reading":
 		c.RefitOnReading, _ = burnGuardPatchBool(key, v)
+	case "ask_on_change":
+		c.AskOnChange, _ = burnGuardPatchBool(key, v)
 	case "ladder":
 		c.Ladder, _ = burnGuardPatchLadder(v)
 	case "interval_minutes":
