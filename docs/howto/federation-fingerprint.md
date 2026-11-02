@@ -292,3 +292,7 @@ federation call for this endpoint), `401` (no bearer token on
 English placeholder values in all five locale bundles (en, de, es, fr,
 ja). Treat the non-English strings as first-pass placeholders and
 report/replace them when a native pass lands.*
+
+## Peer TLS behaviour
+
+The federation sessions view now honours each peer's `tls_skip_verify` setting when it contacts that peer. A peer registered with `tls_skip_verify: true` (for example one using a self-signed certificate) is reachable from the sessions view; a peer without it is verified against the system trust store. No endpoint or response shape changed.

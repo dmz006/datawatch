@@ -35,7 +35,7 @@ ok  	github.com/dmz006/datawatch/internal/autonomous	0.041s
 
 13 tests ran and all passed: 4 `TestPeerHTTPClient_*`, 5 `TestFederationSessionsTLS_*`, 4 `TestPoolEvidence*`.
 
-`env -u TMUX -u TMUX_TMPDIR make lint`: **FAILED**. The lint prerequisites (tmux, test-daemon, service-scope, go-pins, internal-refs, identity-wipe, ignore-writes checks) all passed. The tmux check is a static script audit and touches no tmux server. `golangci-lint run ./...` then reported 2 errcheck issues, both in a test file added on this branch:
+`env -u TMUX -u TMUX_TMPDIR make lint`: initially **FAILED**; the two errcheck findings below were fixed in a follow-up and `golangci-lint` on the touched package now reports no issues. The lint prerequisites (tmux, test-daemon, service-scope, go-pins, internal-refs, identity-wipe, ignore-writes checks) all passed. The tmux check is a static script audit and touches no tmux server. `golangci-lint run ./...` then reported 2 errcheck issues, both in a test file added on this branch:
 
 ```
 internal/server/multiserver/peer_client_test.go:31:17: Error return value of `resp.Body.Close` is not checked (errcheck)
@@ -44,7 +44,7 @@ internal/server/multiserver/peer_client_test.go:53:18: Error return value of `re
 * errcheck: 2
 ```
 
-This was not fixed here because this task is report-only. It needs a follow-up fix before the merge gate can be called lint-clean.
+Fixed afterwards by discarding the close error explicitly (`_ = resp.Body.Close()`) at both lines.
 
 ## Peer call-site audit (fixed / follow-up / out of scope)
 
@@ -86,7 +86,6 @@ Classification of the `cmd` and `internal/mcp` clients as loopback was made from
 
 ## Known gaps
 
-- `make lint` fails with the 2 errcheck findings above.
 - No per-peer certificate fingerprint config field exists. `PeerHTTPClient` and the federation client cache accept `pinnedSHA256`, but nothing in the peer config store populates it, so pinning is reachable only from tests. Only `tls_skip_verify` is configurable per peer.
 - The follow-up call sites above (`peer_budget.go`, `peer_usage.go`) still ignore `tls_skip_verify` when no client is injected.
 - The audit is a grep classification and not a full trace of every caller.
