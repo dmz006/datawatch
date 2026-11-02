@@ -190,7 +190,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
-	}, append(append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...)...)...)
+	}, append(append(append(append(verifierPolicyConfigTools(), infraRetryConfigOptions()...), requestWatchConfigOptions()...), mergePipelineConfigOptions()...), parallelConfigOptions()...)...)...)
 }
 func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{}
@@ -409,6 +409,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	// Infrastructure retry (autonomous.infra_retry.*) lives in the daemon
 	// config as well, so it rides in the same config PUT.
 	if entries := infraRetryConfigArgs(req); len(entries) > 0 {
+		if allocation == nil {
+			allocation = map[string]any{}
+		}
+		for k, v := range entries {
+			allocation[k] = v
+		}
+	}
+	// Parallel execution (autonomous.parallel.*) lives in the daemon config
+	// too, so it rides in the same config PUT.
+	if entries := parallelConfigArgs(req); len(entries) > 0 {
 		if allocation == nil {
 			allocation = map[string]any{}
 		}
@@ -712,6 +722,7 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
 			"tasks: everything in summary, plus each task's status, error and verification summary. "+
 			"full: everything, including specs and logs. "+
+			"Parallel execution metrics are reported at every detail level once the automaton has completed: total_tasks, read_only_tasks and speedup (the sum of the task durations divided by the wall-clock time); full also carries concurrent_tasks, wall_clock_seconds and serial_seconds. "+
 			"The automaton's git push state is reported at every detail level: summary and tasks carry push_state (pushed / not_pushed) and, for a refused push, the push reason (push_warning) at the top level; full carries the full git object with push_state plus the pushed ref, sha and time (pushed) or the push reason (not_pushed). "+
 			"full also exposes plan_coverage — the plan-requirement coverage gate report stored at decompose time: the settings the PRD was pinned to (mode + min_ratio), the report (covered/missing/weak requirement counts, each unmatched requirement with its verdict), any findings (structural findings), and the operator acknowledgment ack {by, at, note, fingerprint} when one exists. Absent when no report was recorded yet. "+
 			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at} at every detail level. "+
@@ -955,16 +966,21 @@ func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving (needs_review / revisions_asked) or after cancelling. BL421: also works on a blocked PRD for the failed/blocked task that halted it — edit, then autonomous_prd_reset_task to retry without re-decomposing. Completed tasks are immutable in every status."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
-		mcpsdk.WithString("new_spec", mcpsdk.Required(), mcpsdk.Description("New spec text")),
+		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only)")),
+		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]string{
+	editBody := map[string]any{
 		"task_id":  req.GetString("task_id", ""),
 		"new_spec": req.GetString("new_spec", ""),
 		"actor":    "operator",
-	})
+	}
+	if _, present := req.GetArguments()["read_only"]; present {
+		editBody["read_only"] = req.GetBool("read_only", false)
+	}
+	body, _ := json.Marshal(editBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
 	if err != nil {
 		return nil, err
@@ -1048,6 +1064,7 @@ func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
 		mcpsdk.WithString("spec", mcpsdk.Description("Task spec — concrete instructions for the worker session")),
 		mcpsdk.WithArray("depends_on", mcpsdk.Description("Task IDs (within the same PRD) that must complete before this one becomes eligible. Each must already exist."), mcpsdk.WithStringItems()),
+		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only: it changes no files, so it may skip the tree lock. Default false.")),
 	)
 }
 func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1058,6 +1075,7 @@ func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallTo
 		"spec":       req.GetString("spec", ""),
 		"actor":      "operator",
 		"depends_on": req.GetStringSlice("depends_on", nil),
+		"read_only":  req.GetBool("read_only", false),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_task", body)
 	if err != nil {

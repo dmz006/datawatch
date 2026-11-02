@@ -8,6 +8,8 @@
 
 Confirmed: yes — operator answered 2026-11-01: option B, each task in its own worktree merged back in order, plus read-only tasks in parallel
 
+Shipped: 2026-11-01 — read-only tasks, a worktree per task, merge back in order with a conflict policy, and the speedup metrics are built; see docs/howto/automaton-parallel-tasks.md.
+
 ## Problem
 
 Task graphs inside one Automaton (PRD) allow parallel work, but tasks run one at a time. The registry row measured 46 PRDs since 2026-10-19: on average 5.5 tasks with a critical path of 3.2, so a perfect scheduler would finish up to 1.7x faster (5.5 / 3.2). The row also names the blocker: the project-tree write lock serializes writers on one worktree. This proposal separates what is already built from what is missing, and offers ways to close the gap.

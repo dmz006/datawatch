@@ -45,12 +45,18 @@ func (f *fakeOrchAutonomous) RequestRevision(string, string, string) (any, error
 func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) EditTask(string, string, string, *bool, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) AddTaskReadOnly(string, string, string, string, string, []string, bool) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) ResetTask(string, string, string, bool) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) ResetTaskWithOptions(string, string, string, bool, bool) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) RejudgeCompletionGuardrail(string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)    { return nil, nil }
+func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)            { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) {
 	return nil, nil
 }

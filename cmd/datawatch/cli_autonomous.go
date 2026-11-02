@@ -797,6 +797,12 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if line := prdPushLine(body); line != "" {
 				fmt.Println(line)
 			}
+			if line := prdParallelLine(body); line != "" {
+				fmt.Println(line)
+			}
+			for _, line := range prdTaskMergeLines(body) {
+				fmt.Println(line)
+			}
 			return nil
 		},
 	}
@@ -1097,20 +1103,42 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 
 func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	var taskID, newSpec string
+	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-edit-task <prd-id> --task <task-id> --spec <new-spec>",
-		Short: "Rewrite a task's spec before approving",
+		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]]",
+		Short: "Rewrite a task's spec and/or read-only mark before approving",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"task_id": taskID, "new_spec": newSpec, "actor": "operator"})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly)
+			if err != nil {
+				return err
+			}
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_task", body)
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to rewrite (required)")
-	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (required)")
+	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec)")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
 	_ = cmd.MarkFlagRequired("task")
-	_ = cmd.MarkFlagRequired("spec")
 	return cmd
+}
+
+// prdEditTaskCLIBody builds the edit_task request body. The read_only key is
+// sent only when the --read-only flag was given, so an unset flag leaves the
+// task's mark unchanged.
+func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool) ([]byte, error) {
+	roSet := cmd.Flags().Changed("read-only")
+	if newSpec == "" && !roSet {
+		return nil, fmt.Errorf("nothing to edit: pass --spec and/or --read-only")
+	}
+	body := map[string]any{"task_id": taskID, "actor": "operator"}
+	if newSpec != "" {
+		body["new_spec"] = newSpec
+	}
+	if roSet {
+		body["read_only"] = readOnly
+	}
+	return json.Marshal(body)
 }
 
 func newAutonomousPRDEditStoryCmd() *cobra.Command {
@@ -1169,14 +1197,18 @@ func newAutonomousPRDRemoveStoryCmd() *cobra.Command {
 
 func newAutonomousPRDAddTaskCmd() *cobra.Command {
 	var storyID, title, spec, dependsOnCSV string
+	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>]",
+		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>] [--read-only]",
 		Short: "Add a new task to an existing story without re-running decompose",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body := map[string]any{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"}
 			if dependsOnCSV != "" {
 				body["depends_on"] = splitCSV(dependsOnCSV)
+			}
+			if readOnly {
+				body["read_only"] = true
 			}
 			bodyJSON, _ := json.Marshal(body)
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", bodyJSON)
@@ -1186,6 +1218,7 @@ func newAutonomousPRDAddTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&title, "title", "", "task title (required)")
 	cmd.Flags().StringVar(&spec, "spec", "", "task spec — concrete instructions for the worker session")
 	cmd.Flags().StringVar(&dependsOnCSV, "depends-on", "", "comma-separated task IDs (within the same PRD) that must complete before this one becomes eligible")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only: it changes no files, so it may skip the tree lock")
 	_ = cmd.MarkFlagRequired("story")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd

@@ -4454,6 +4454,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
 			ScopeLint:               acfgIn.ScopeLintMode(),
 			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
+			Parallel:                acfgIn.Parallel,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
@@ -11278,7 +11279,10 @@ func newConfigSetCmd() *cobra.Command {
 		Use:   "set <key> <value>",
 		Short: "Set a config value via the running daemon's REST API",
 		Long: "Sends PUT /api/config to the running daemon. Refuses when the daemon isn't reachable — " +
-			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.",
+			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
+			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
+			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
+			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()

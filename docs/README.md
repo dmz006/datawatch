@@ -48,6 +48,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/infrastructure-retry.md](howto/infrastructure-retry.md) | Infrastructure retry: the four transient failure classes, back-off, the held task and its question, dependents that recover, every key and surface |
 | [howto/merge-pipeline.md](howto/merge-pipeline.md) | Merge pipeline: a file in the repository or a daemon record, which wins, conflict policy and model, how a model proposal is tested before use |
 | [howto/onboarding-report.md](howto/onboarding-report.md) | Onboarding report: what is configured, what is missing, what to try next, on every surface; the checks and how to switch them off |
+| [howto/automaton-parallel-tasks.md](howto/automaton-parallel-tasks.md) | Parallel tasks in one Automaton: read-only tasks, a worktree per task, merging back in order, the merge conflict policy, the speedup numbers |
 | [howto/model-request-progress.md](howto/model-request-progress.md) | Model request progress: telling a hung model request from a slow one, the four states, the alert and non-blocking question at the threshold, every key and surface, the limits |
 | [howto/failure-escalation.md](howto/failure-escalation.md) | Failure escalation: worker ladder, failure count, the review-needed hold, the five operator actions and the override order |
 | [howto/codeql-local-scan.md](howto/codeql-local-scan.md) | CodeQL local scan: run the default suite offline for all four languages, compare with GitHub alerts and dismissals, check bundle pin drift, optional pre-push and pre-ship steps |

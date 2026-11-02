@@ -9009,6 +9009,13 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  settings_parallel_task_group: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
+  'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
   settings_request_watch: DOCS_DEFINITIONS + '#model-request-progress',
   'autonomous.request_watch.enabled': DOCS_DEFINITIONS + '#autonomous-request-watch-enabled',
   'autonomous.request_watch.poll_seconds': DOCS_DEFINITIONS + '#autonomous-request-watch-poll-seconds',
@@ -14209,7 +14216,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -14242,6 +14249,11 @@ function renderTask(prd, story, task, editable) {
   const projDirBadge = task.project_dir
     ? `<span class="prd-task-llm-badge prd-task-projdir-badge" title="${escHtml(t('prd_task_projdir_badge_title')||'Per-task project dir override')}">dir: ${escHtml(task.project_dir)}</span>`
     : '';
+  // Read-only label: the task changes no files and may skip the tree lock.
+  const readOnlyBadge = task.read_only
+    ? `<span class="prd-task-llm-badge prd-task-readonly-badge" title="${escHtml(t('prd_task_read_only_badge_tip')||'Read-only task: changes no files')}">${escHtml(t('prd_task_read_only_badge')||'read-only')}</span>`
+    : '';
+  const mergeStateBadge = taskMergeBadgeHtml(task);
   // 2026-10-17 — smoke/final-gate kind chip. The decomposer tags these
   // tasks as smoke-verification targets; when the pair is configured
   // they get a dedicated verifier LLM (smoke_verification_backend/model),
@@ -14402,7 +14414,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
+      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -15541,7 +15553,17 @@ function _prdTaskProjectDirFieldHTML(currentProjectDir) {
       </div>`;
 }
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir) {
+// Read-only toggle shared by the edit-task and add-task modals. A read-only
+// task changes no files, so it may skip the tree lock.
+function _prdTaskReadOnlyFieldHTML(inputID, checked) {
+  return `<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}">
+        <input type="checkbox" id="${inputID}" ${checked ? 'checked' : ''} />
+        <span>${escHtml(t('prd_task_read_only_label')||'Read-only')}</span>
+      </label>
+      <div style="font-size:10px;color:var(--text2);">${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}</div>`;
+}
+
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly) {
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   ensureLLMModelLists().then(() => {
@@ -15560,6 +15582,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
       ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
+      ${_prdTaskReadOnlyFieldHTML('prdEditReadOnly', !!currentReadOnly)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -15573,10 +15596,15 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     const modelEl = document.getElementById('prdEditModelInner')?.querySelector('input,select');
     const model = modelEl ? modelEl.value.trim() : '';
     const calls = [];
-    if (newSpec !== currentSpec) {
+    const roEl = document.getElementById('prdEditReadOnly');
+    const readOnlyChanged = !!roEl && roEl.checked !== !!currentReadOnly;
+    if (newSpec !== currentSpec || readOnlyChanged) {
+      const editBody = { task_id: taskID, actor: 'operator' };
+      if (newSpec !== currentSpec) editBody.new_spec = newSpec;
+      if (readOnlyChanged) editBody.read_only = roEl.checked;
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/edit_task', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_id: taskID, new_spec: newSpec, actor: 'operator' }),
+        body: JSON.stringify(editBody),
       }));
     }
     if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
@@ -15702,6 +15730,7 @@ function openPRDAddTaskModal(prdID, storyID) {
       <input id="prdAddTaskTitle" type="text" class="form-input" placeholder="${t('prd_add_task_title_ph')||'Short task title'}" />
       <label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px;">${t('prd_spec_label')||'Spec'} ${micButtonHTML('prdAddTaskSpec')}</label>
       <textarea id="prdAddTaskSpec" class="form-input" rows="6" style="resize:vertical;font-family:inherit;" placeholder="${t('prd_add_task_spec_ph')||'Concrete instructions for the worker session — include file paths and context'}"></textarea>
+      ${_prdTaskReadOnlyFieldHTML('prdAddTaskReadOnly', false)}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_add')||'Add'}</button>
@@ -15710,10 +15739,11 @@ function openPRDAddTaskModal(prdID, storyID) {
   `, () => {
     const title = document.getElementById('prdAddTaskTitle').value.trim();
     const spec = document.getElementById('prdAddTaskSpec').value;
+    const addReadOnly = !!(document.getElementById('prdAddTaskReadOnly') || {}).checked;
     if (!title) { showToast('Title required', 'error', 2000); return; }
     apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/add_task', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ story_id: storyID, title, spec, actor: 'operator' }),
+      body: JSON.stringify(Object.assign({ story_id: storyID, title, spec, actor: 'operator' }, addReadOnly ? { read_only: true } : {})),
     })
       .then(() => { showToast('Task added', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Add failed: ' + String(err), 'error', 3000));
@@ -16749,6 +16779,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.main_checkout', label: 'Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)', labelKey: 'settings_supervisor_watch_main_checkout', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.working_model', label: 'Supervisor watch working model (model every compute node should keep resident, empty = not checked)', labelKey: 'settings_supervisor_watch_working_model', type: 'text', placeholder: '' },
+    // Parallel task worktrees (autonomous.parallel.*) — each parallel task of an Automaton can run in its
+    // own worktree and branch; the branches are merged back in dependency order, and the merge conflict
+    // policy says what happens when one does not merge cleanly.
+    { label: 'Parallel task worktrees', labelKey: 'settings_parallel_task_group', docsKey: 'settings_parallel_task_group', type: 'group' },
+    { key: 'autonomous.parallel.worktree_per_task', label: 'Worktree per task (each parallel task of an Automaton runs in its own worktree and branch, merged back in order; on by default)', labelKey: 'settings_parallel_worktree_per_task', docsKey: 'autonomous.parallel.worktree_per_task', type: 'toggle' },
+    { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
+      optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
+    { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -24330,6 +24369,7 @@ function _renderDetailContent(prd) {
     ${window.uncommittedWorkBannerHtml(prd)}
     ${triageSlot}
     ${mergeSlot}
+    ${window.parallelMetricsCardHtml(prd)}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
@@ -26401,6 +26441,56 @@ window.openDecisionAnswerPanel = function(btn) {
   panel.hidden = false;
   btn.setAttribute('aria-expanded', 'true');
   return window.loadDecisionAnswerPanel(btn.getAttribute('data-question'), btn.getAttribute('data-answer'), panel);
+};
+
+// ── Task merge-state badge ──────────────────────────────────────────────────
+// A task that ran in its own worktree carries merge_state (pending, merged,
+// conflict or held) and, once merged, merge_commit, the Automaton branch commit
+// that holds its work. taskMergeBadgeHtml(task) draws the badge; a task without
+// a known merge state draws nothing. Every value is escaped, and the key map
+// holds literal locale keys so the key-coverage guard can see them.
+const TASK_MERGE_STATE_KEYS = {
+  pending: 'task_merge_state_pending', merged: 'task_merge_state_merged',
+  conflict: 'task_merge_state_conflict', held: 'task_merge_state_held',
+};
+const TASK_MERGE_STATE_COLORS = {
+  pending: 'var(--warning,#a06b00)', merged: 'var(--success,#2a7d46)',
+  conflict: 'var(--error,#c00)', held: 'var(--error,#c00)',
+};
+function taskMergeBadgeHtml(task) {
+  if (!task || typeof task !== 'object') return '';
+  const state = String(task.merge_state || '');
+  if (!Object.prototype.hasOwnProperty.call(TASK_MERGE_STATE_KEYS, state)) return '';
+  const label = t(TASK_MERGE_STATE_KEYS[state]);
+  const commit = typeof task.merge_commit === 'string' ? task.merge_commit.slice(0, 7) : '';
+  const tip = commit ? t('task_merge_badge_tip_commit', [label, commit]) : t('task_merge_badge_tip', [label]);
+  const color = TASK_MERGE_STATE_COLORS[state];
+  return `<span class="prd-task-llm-badge prd-task-merge-badge prd-task-merge-${state}" title="${escHtml(tip)}" style="border:1px solid ${color};color:${color};">${escHtml(label)}</span>`;
+}
+window.taskMergeBadgeHtml = taskMergeBadgeHtml;
+
+// ── Parallel execution metrics card ─────────────────────────────────────────
+// An Automaton records, when it completes, how many tasks it had (total_tasks),
+// how many of them were read only (read_only_tasks) and the speedup of the run
+// (speedup = the sum of the task durations / the wall-clock time). The card is
+// read-only and draws nothing for an Automaton that has recorded no tasks yet.
+function parallelMetricsHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('parallel_metrics_help_link');
+  return ` <a href="/diagrams.html#docs/datawatch-definitions.md#parallel-execution-metrics" target="_blank" rel="noopener noreferrer" class="docs-link parallel-metrics-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+window.parallelMetricsCardHtml = function(prd) {
+  if (!prd || typeof prd !== 'object') return '';
+  const total = Number(prd.total_tasks);
+  if (!Number.isFinite(total) || total <= 0) return '';
+  const readOnly = Number.isFinite(Number(prd.read_only_tasks)) ? Number(prd.read_only_tasks) : 0;
+  const speedup = Number(prd.speedup);
+  const speedupText = Number.isFinite(speedup) && speedup > 0 ? speedup.toFixed(2) + 'x' : t('parallel_metrics_speedup_none');
+  const row = (text) => `<div style="font-size:12px;color:var(--text2);margin-top:4px;min-width:0;overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+  const head = `<div class="cap-title">${escHtml(t('parallel_metrics_card_title'))}${parallelMetricsHelpLink()}</div>`;
+  return `<div id="prdParallelMetrics" class="prd-capacity-card parallel-metrics-card" style="margin-top:10px;min-width:0;">${head}` +
+    row(t('parallel_metrics_total_tasks', [total])) + row(t('parallel_metrics_read_only_tasks', [readOnly])) +
+    row(t('parallel_metrics_speedup', [speedupText])) + `</div>`;
 };
 
 // ── Merge-pending badge and safe-to-delete report ───────────────────────────

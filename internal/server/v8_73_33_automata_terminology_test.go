@@ -137,6 +137,10 @@ var pendingTranslationKeys = map[string]bool{
 	"settings_lane_fill_require_confirmed_proposal": true,
 	"settings_lane_fill_check_main_carries":         true,
 	"settings_lane_fill_require_worktree":           true,
+	// Parallel task worktree settings and task merge badge: English until the app translation lands.
+	"settings_parallel_worktree_per_task": true,
+	"task_merge_badge_tip":                true,
+	"task_merge_badge_tip_commit":         true,
 	// Model request progress card: English until the app translation lands.
 	"request_watch_card_title": true,
 	"request_watch_read_only":  true,

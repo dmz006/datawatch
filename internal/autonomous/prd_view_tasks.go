@@ -38,6 +38,10 @@ type TaskEntry struct {
 	InfraRetryCount int               `json:"infra_retry_count,omitempty"`
 	Progress        *TaskProgress     `json:"progress,omitempty"`
 	LoopingWarning  string            `json:"looping_warning,omitempty"`
+	// MergeState / MergeCommit: the state of the task branch merge into the
+	// PRD branch and the commit that carries it once merged.
+	MergeState  string `json:"merge_state,omitempty"`
+	MergeCommit string `json:"merge_commit,omitempty"`
 	// UncommittedWork is the hold on a task whose worktree still has
 	// uncommitted files; omitted when the task carries none.
 	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
@@ -84,6 +88,8 @@ func buildTaskEntry(task *Task) TaskEntry {
 		Progress:        task.Progress,
 		LoopingWarning:  task.LoopingWarning,
 		UncommittedWork: task.UncommittedWork,
+		MergeState:      task.MergeState,
+		MergeCommit:     task.MergeCommit,
 	}
 	if v := task.Verification; v != nil {
 		entry.Verification = &TaskVerification{

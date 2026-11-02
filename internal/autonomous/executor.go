@@ -1114,6 +1114,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if !ok {
 		return nil
 	}
+	applyParallelMetrics(prd)
 	m.recordProgressMilestone(prd.ID)
 	// BL387 Phase 3 — fire auto-report asynchronously on completion.
 	m.mu.Lock()
@@ -1261,9 +1262,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		m.detachTreeRelease(t.ID)
 	}()
+	// A read-only task (flagged, with the setting on) never takes the write
+	// lock, so it runs in the pool beside other tasks. Writers always lock.
+	readOnly := m.readOnlyTaskSkipsLock(t)
 	holdTree := func() error {
 		if treeRelease != nil {
 			return nil // already held for this executeOne (idempotent)
+		}
+		if readOnly {
+			return nil
+		}
+		if werr := m.ensureTaskWorktreeFor(prd, t); werr != nil {
+			return werr
 		}
 		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
 		if terr != nil {
@@ -1296,6 +1306,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
 		inheritedSession := inherited
 		inherited = false
+		// Tree state before a read-only task starts; compared after it ends.
+		roBaseline, roBaselineOK := "", false
 
 		// On daemon restart the task may already be in TaskVerifying with a
 		// session that survived the restart. Skip the spawn so we don't create
@@ -1580,6 +1592,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return terr
 			}
+			if readOnly {
+				roBaseline, roBaselineOK = m.readOnlyTreeStatus(ctx, prd, t)
+			}
 			// BL447: lint against the task's own resolved dir/write scope.
 			// scope_lint decides what a hit does: enforce blocks the task,
 			// warn records it and spawns anyway, off skips the lint.
@@ -1612,18 +1627,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        m.escalationRetryHint(prd, t, hint),
-				ProjectProfile:   prd.ProjectProfile,  // v5.26.19
-				ClusterProfile:   prd.ClusterProfile,  // v5.26.19
-				Branch:           prd.Git.Branch,      // BL407 Phase 4
-				Git:              prdAutoCommits(prd), // git activity/auto-commit only in worktree mode or with declared write dirs
-				ContextPrepend:   contextPrepend,      // BL244
+				ProjectProfile:   prd.ProjectProfile,               // v5.26.19
+				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
+				Branch:           prd.Git.Branch,                   // BL407 Phase 4
+				Git:              prdAutoCommits(prd) && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				ContextPrepend:   contextPrepend,                   // BL244
 				LSPLanguage:      lspLang,
-				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
-				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
-				AttemptRefs:      t.AttemptRefs,                  // preserved attempt work to restore
-				CleanRestart:     t.CleanRestart,                 // operator clean restart: skip the restore once
-				ComputeNode:      heldNode,                       // capacity lease's node: where the worker runs
+				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
+				SkipDirtyCapture: prd.Git.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				WriteScope:       readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
+				AttemptRefs:      t.AttemptRefs,                                                // preserved attempt work to restore
+				CleanRestart:     t.CleanRestart,                                               // operator clean restart: skip the restore once
+				ComputeNode:      heldNode,                                                     // capacity lease's node: where the worker runs
 			})
 			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
 				return nil
@@ -1776,6 +1791,27 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		} else {
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
+		// A read-only task must leave the tree as it found it. Checked here, after
+		// verify has waited for the worker to finish: spawn only starts the session,
+		// so an earlier check would miss changes the worker makes while it runs.
+		// The baseline is the tree status taken before spawn; a writer running
+		// beside this task on the same tree (no lock is held) can also make the
+		// status differ, which fails the task. Operators who flag a task read-only
+		// should not run writers on the same tree at the same time.
+		if readOnly && roBaselineOK {
+			if verr := m.readOnlyViolation(ctx, prd, t, roBaseline); verr != nil {
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = verr.Error()
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return verr
+			}
+		}
+
 		// The attempt got past delivery and produced a verification result, so an
 		// earlier infrastructure incident is over. A failed result the verifier
 		// itself marks as an infrastructure failure, and whose summary reports a
@@ -1983,6 +2019,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			if err := m.store.SaveTask(t); err != nil {
 				return err
+			}
+			// Fold the task branch into the PRD branch (no-op without one).
+			if _, merr := m.MergeTaskBranch(ctx, prd, t); merr != nil {
+				log.Printf("[autonomous] %s/%s task merge: %v", prd.ID, t.ID, merr)
+				// Leave the task visibly waiting, not without a merge state.
+				if t.WorktreeBranch != "" && t.MergeState == "" {
+					m.setMergeState(t, MergeStatePending, "")
+				}
+			}
+			// A task deferred behind an earlier sibling or dependency may be
+			// mergeable now: run the ordered pass over the whole PRD.
+			if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+				log.Printf("[autonomous] %s task merge pass: %v", prd.ID, merr)
 			}
 			// v9.2.1 — passing-script retry: verification passed via the
 			// unmodified-retry escape hatch (the retry itself produced no diff;

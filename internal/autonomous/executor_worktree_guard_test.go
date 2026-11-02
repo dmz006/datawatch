@@ -32,6 +32,7 @@ func newGuardFixture(t *testing.T) *guardFixture {
 	t.Helper()
 	cfg := DefaultConfig()
 	cfg.WorktreeBaseRepo = scratchGitRepo(t)
+	cfg.Parallel.WorktreePerTask = boolPtr(false)
 	cfg.WorktreeDir = t.TempDir()
 	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {

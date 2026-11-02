@@ -767,6 +767,9 @@ type AutonomousAPI interface {
 	Reject(id, actor, reason string) (any, error)
 	RequestRevision(id, actor, note string) (any, error)
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
+	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
+	// empty newSpec = spec unchanged).
+	EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (any, error)
 	// v8.23.0 — reset a failed/blocked task to pending for retry.
 	// BL382 — force=true also requeues completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
@@ -793,6 +796,7 @@ type AutonomousAPI interface {
 	AddStory(prdID, title, description, actor string) (any, error)
 	RemoveStory(prdID, storyID, actor string) (any, error)
 	AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error)
+	AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (any, error)
 	RemoveTask(prdID, storyID, taskID, actor string) (any, error)
 
 	// Phase 3 (v5.26.60) — per-story execution profile + approval.
@@ -6327,6 +6331,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"quality_tracker_id_pattern": s.cfg.Autonomous.Questions.EffectiveQualityTrackerIDPattern(),
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
+			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -6800,6 +6805,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// must be strings. Any other value rejects the whole PUT rather than
 	// being skipped.
 	if verr := validateSupervisorWatchPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Parallel (autonomous.parallel.*): read_only_tasks must be a boolean.
+	if verr := validateParallelPatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8649,6 +8659,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.Questions.DecisionGate = &b
 			}
+		case parallelKeyPrefix + "read_only_tasks",
+			parallelKeyPrefix + "worktree_per_task",
+			parallelKeyPrefix + "merge_conflict_policy",
+			parallelKeyPrefix + "merge_conflict_model":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			applyParallelValue(&cfg.Autonomous.Parallel,
+				strings.TrimPrefix(k, parallelKeyPrefix), v)
 		case "autonomous.questions.worker_marker":
 			// Validated in handlePutConfig to a strict boolean. Stored as *bool
 			// so an explicit value is distinguishable from an absent key
@@ -12849,5 +12867,77 @@ func (s *Server) handleDiscussionSubs(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+	}
+}
+
+// parallelKeyPrefix is the REST key prefix for the parallel execution
+// knobs (autonomous.parallel.*).
+const parallelKeyPrefix = "autonomous.parallel."
+
+// parallelSurface renders the parallel block on the GET /api/config
+// surface as effective values, read from the Effective* accessor, never a
+// literal.
+func parallelSurface(c config.AutonomousParallelConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"read_only_tasks":       autonomous.EffectiveReadOnlyTasks(c),
+		"worktree_per_task":     autonomous.EffectiveWorktreePerTask(c),
+		"merge_conflict_policy": autonomous.EffectiveMergeConflictPolicy(c),
+		"merge_conflict_model":  autonomous.EffectiveMergeConflictModel(c),
+	}
+}
+
+// validateParallelPatch checks every autonomous.parallel.* value present
+// in the patch before anything is applied, so one bad value rejects the
+// whole PUT rather than being silently skipped.
+func validateParallelPatch(patch map[string]interface{}) error {
+	if v, ok := patch[parallelKeyPrefix+"read_only_tasks"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sread_only_tasks: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"worktree_per_task"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("%sworktree_per_task: must be a boolean", parallelKeyPrefix)
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_policy"]; ok {
+		str, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%smerge_conflict_policy: must be a string", parallelKeyPrefix)
+		}
+		if err := config.ValidateMergeConflictPolicy(str); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch[parallelKeyPrefix+"merge_conflict_model"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return fmt.Errorf("%smerge_conflict_model: must be a string", parallelKeyPrefix)
+		}
+	}
+	return nil
+}
+
+// applyParallelValue stores one parallel value (validated above in
+// handlePutConfig; a value that fails the check here is left unchanged).
+// read_only_tasks is a pointer so an explicit false is distinguishable
+// from an absent key.
+func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v interface{}) {
+	switch field {
+	case "read_only_tasks":
+		if b, ok := v.(bool); ok {
+			pc.ReadOnlyTasks = &b
+		}
+	case "worktree_per_task":
+		if b, ok := v.(bool); ok {
+			pc.WorktreePerTask = &b
+		}
+	case "merge_conflict_policy":
+		if str, ok := v.(string); ok && config.ValidateMergeConflictPolicy(str) == nil {
+			pc.MergeConflictPolicy = str
+		}
+	case "merge_conflict_model":
+		if str, ok := v.(string); ok {
+			pc.MergeConflictModel = str
+		}
 	}
 }

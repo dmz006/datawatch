@@ -2895,6 +2895,10 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// Parallel — knobs for parallel task execution
+	// (autonomous.parallel.*). See AutonomousParallelConfig.
+	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
+
 	// Progress — parameters of the progress metrics engine (lane count,
 	// inactive-window gap, backlog file, start date, snapshot retention).
 	// See AutonomousProgressConfig.
@@ -5938,6 +5942,9 @@ func validateLoaded(cfg *Config) error {
 			cfg.Autonomous.ProjectWriteSerialization,
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
+	if err := ValidateMergeConflictPolicy(cfg.Autonomous.Parallel.MergeConflictPolicy); err != nil {
+		return err
+	}
 	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
 		return err
 	}
@@ -6348,3 +6355,41 @@ func (c SessionConfig) EffectiveReservedInteractive() int {
 
 // RoleScanIntervalDefaultSeconds is the default autonomous.role_scan_interval_seconds.
 const RoleScanIntervalDefaultSeconds = 300
+
+// AutonomousParallelConfig is autonomous.parallel, the knobs for running
+// tasks in parallel. ReadOnlyTasks is a pointer: nil means the key is
+// absent. The default is applied only by
+// autonomous.EffectiveReadOnlyTasks. No omitempty, so an explicit false
+// survives a YAML/JSON round trip and a PUT /api/config write.
+type AutonomousParallelConfig struct {
+	// ReadOnlyTasks: tasks flagged read_only skip the tree lock.
+	ReadOnlyTasks *bool `yaml:"read_only_tasks" json:"read_only_tasks"`
+	// WorktreePerTask: each parallel task runs in its own worktree.
+	// Pointer so an explicit false survives; default applied by
+	// autonomous.EffectiveWorktreePerTask.
+	WorktreePerTask *bool `yaml:"worktree_per_task" json:"worktree_per_task"`
+	// MergeConflictPolicy: additive_then_model | block | triage. Empty
+	// means the default (see autonomous.EffectiveMergeConflictPolicy).
+	MergeConflictPolicy string `yaml:"merge_conflict_policy" json:"merge_conflict_policy"`
+	// MergeConflictModel: model that resolves a merge conflict. Empty
+	// means the strongest configured planning model.
+	MergeConflictModel string `yaml:"merge_conflict_model" json:"merge_conflict_model"`
+}
+
+// Valid values of autonomous.parallel.merge_conflict_policy.
+const (
+	MergeConflictPolicyAdditiveThenModel = "additive_then_model"
+	MergeConflictPolicyBlock             = "block"
+	MergeConflictPolicyTriage            = "triage"
+)
+
+// ValidateMergeConflictPolicy refuses an unknown policy. Empty is valid
+// (the key is absent and the default applies).
+func ValidateMergeConflictPolicy(v string) error {
+	switch v {
+	case "", MergeConflictPolicyAdditiveThenModel, MergeConflictPolicyBlock, MergeConflictPolicyTriage:
+		return nil
+	}
+	return fmt.Errorf("autonomous.parallel.merge_conflict_policy: invalid value %q (valid values: %q, %q, %q)",
+		v, MergeConflictPolicyAdditiveThenModel, MergeConflictPolicyBlock, MergeConflictPolicyTriage)
+}

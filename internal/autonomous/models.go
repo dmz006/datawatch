@@ -526,6 +526,16 @@ type PRD struct {
 	MemoryReport   string     `json:"memory_report,omitempty"`
 	MemoryReportAt *time.Time `json:"memory_report_at,omitempty"`
 
+	// Parallel-execution metrics, computed from the task timings and stored
+	// when the Automaton completes (see ComputeParallelMetrics). Speedup is
+	// SerialSeconds / WallClockSeconds.
+	TotalTasks       int     `json:"total_tasks,omitempty"`
+	ReadOnlyTasks    int     `json:"read_only_tasks,omitempty"`
+	ConcurrentTasks  int     `json:"concurrent_tasks,omitempty"`
+	WallClockSeconds float64 `json:"wall_clock_seconds,omitempty"`
+	SerialSeconds    float64 `json:"serial_seconds,omitempty"`
+	Speedup          float64 `json:"speedup,omitempty"`
+
 	// Scope boundary. WriteDirs (default: ProjectDir) are the directories
 	// workers may modify; ReadDirs are extra read-only directories.
 	// ScopeWarnings lists plan entries that reference paths outside them.
@@ -1235,6 +1245,24 @@ type Task struct {
 	FilesPlanned   []string `json:"files,omitempty"`
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
+
+	// ReadOnly marks a task that only reads the tree. When the
+	// autonomous.parallel.read_only_tasks key is on, such a task skips
+	// the tree lock (see EffectiveReadOnlyTasks).
+	ReadOnly bool `json:"read_only,omitempty"`
+
+	// WorktreePath / WorktreeBranch name the task's own git worktree and
+	// branch while worktree_per_task is on (see EnsureTaskWorktree). Empty
+	// when the task works in the PRD worktree.
+	WorktreePath   string `json:"worktree_path,omitempty"`
+	WorktreeBranch string `json:"worktree_branch,omitempty"`
+
+	// MergeState / MergeCommit track the merge of the task branch into the
+	// PRD branch (see task_merge.go): pending | merged | conflict | held.
+	// MergeCommit is the PRD branch commit that carries the task's work once
+	// merged. Both empty for a task that works in the PRD worktree.
+	MergeState  string `json:"merge_state,omitempty"`
+	MergeCommit string `json:"merge_commit,omitempty"`
 
 	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
 	// to an executable verification script (planned location

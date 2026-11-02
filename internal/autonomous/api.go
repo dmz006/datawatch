@@ -920,6 +920,13 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	}
 	return out, err
 }
+func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (any, error) {
+	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) ResetTask(prdID, taskID, actor string, force bool) (any, error) {
 	return a.ResetTaskWithOptions(prdID, taskID, actor, force, false)
 }
@@ -1025,6 +1032,13 @@ func (a *API) RemoveStory(prdID, storyID, actor string) (any, error) {
 }
 func (a *API) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error) {
 	out, err := a.M.AddTask(prdID, storyID, title, spec, actor, dependsOn)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (any, error) {
+	out, err := a.M.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, readOnly)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}
