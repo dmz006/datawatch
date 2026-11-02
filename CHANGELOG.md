@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.59.0 — Maintainer upstream monitoring
+
+Maintainer-only upstream monitoring (not part of the product).
+
+- A Dependabot configuration covers Go modules, Docker tags and workflow actions: security updates arrive one pull request each, routine updates arrive daily as one grouped pull request, and nothing merges by itself.
+- A scheduled `upstream-watch` job covers what Dependabot cannot see: tool versions pinned through `ARG` lines in the Dockerfiles, the scanner pin, and the scanner installer fetched from a moving branch. It opens or updates one issue when something is stale and never edits files or opens a pull request.
+- The version-bump check now passes a range authored entirely by `dependabot[bot]` without a bump, as the versioning rule already allowed.
+- A maintainer guide is added under the plans folder.
+
 ### Fixed
 
 - **A compute node is no longer given more sessions than its limit, and a restart no longer gives a resumed worker's slot to new work.** Three faults in the capacity ledger are fixed. First, a verifier or judge whose model runs on two or more nodes carried no node choice, so it was admitted whatever its nodes were holding and could land on a full node; it is now placed on the least loaded node that has room, or it waits. A session adopted onto a node already at its limit (a worker resumed after a restart) is still counted as one of that node's occupants, so new work sees the node as full, yet the node's pool never reads over its limit (`GET /api/capacity` shows such sessions as the node's `overflow`). Second, a model's pool counted every session once, so sessions piled on one busy node used up slots a free node could have taken; the pool now counts the sessions on each node only up to that node's own limit. Third, after a restart new requests could be placed before the surviving work was adopted, and on a node the daemon had not yet read; the daemon now holds new requests until the resumed workers are adopted and treats no node as healthy until the first read of the compute node list. The three behaviours are separate settings under `autonomous`, all on by default, each applied to the next admission with no restart: `capacity_strict_node_limit`, `capacity_count_pool_by_node` and `capacity_adopt_before_admit` (set one to `false` to restore the earlier behaviour), plus `capacity_adoption_wait_seconds` (whole seconds, default 30, `0` reads as 30) for the longest the restart hold lasts. They are reachable from the PWA Settings capacity section, YAML, `PUT /api/config`, `datawatch config set`, the MCP `config_set` and `autonomous_config_set` tools and the chat `configure` verb. Mobile parity: the PWA shows these settings, so a datawatch-app parity issue is required and is filed at the merge. See the operations guide section "Node placement and restart ordering".
