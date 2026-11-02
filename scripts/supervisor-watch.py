@@ -32,6 +32,31 @@ STATE = "/tmp/sv/watch-state.json"
 MODEL = "qwen3.8-64k"
 TMUX_RESTARTS, TMUX_SINCE = "3", "Tue 2026-10-20 18:46:38 EDT"
 SILENT_MIN = 60
+
+
+def _placement_skip_nodes():
+    """Node pools the PLACEMENT finding ignores (helper nodes that are never
+    meant to carry work). Names come from the environment variable
+    SUPERVISOR_WATCH_SKIP_NODES (comma separated) and from the gitignored file
+    .supervisor-watch-skip at the repository root (one pool name per line,
+    '#' starts a comment); nothing machine specific is kept in this script."""
+    names = set()
+    for part in os.environ.get("SUPERVISOR_WATCH_SKIP_NODES", "").split(","):
+        if part.strip():
+            names.add(part.strip())
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".supervisor-watch-skip")
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.split("#", 1)[0].strip()
+                if line:
+                    names.add(line)
+    except OSError:
+        pass
+    return names
+
+
+PLACEMENT_SKIP_NODES = _placement_skip_nodes()
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
 ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
 # The operator chose (2026-10-30): GitHub default CodeQL setup stays and the CodeQL workflow now only gates on open alerts,
@@ -378,7 +403,7 @@ def main(argv=None):
         if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
             why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
             findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
-    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:datawatch-openai", "node:verdict")]
+    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in PLACEMENT_SKIP_NODES]
     node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
     if idle_nodes and node_waiters:
         findings.append("PLACEMENT idle %s while %d request(s) wait for a busy node" % (",".join(idle_nodes), len(node_waiters)))

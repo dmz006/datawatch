@@ -373,7 +373,7 @@ Real evidence, read live 2026-10-14 from this host's own registries:
   operator's own tag says they are the same physical GPU. Two tasks each
   admitted "within limit" on their own node can still collide on hardware
   that cannot run both.
-- `federation_peer_list` returns one peer (`ralfthewise`, `capabilities:
+- `federation_peer_list` returns one peer (`peer-b`, `capabilities:
   ["full-control"]`). Peer config has no field for "this peer's compute node
   X is the same hardware as my compute node Y." Each daemon's `ComputeNode`
   registry is local and opaque to every peer.
@@ -415,7 +415,7 @@ confirms a *discovered* pairing instead of composing one from scratch.
 Confirmed pairs are recorded as a structured field (replacing today's
 free-text tag), e.g. `ComputeNode.SharesHardwareWith []string`, entries being
 bare node names for an intra-daemon pairing (`"local-node"`) or
-`peer:<node>` for a cross-federation one (`"ralfthewise:gpu-box-1"`). Once
+`peer:<node>` for a cross-federation one (`"peer-b:gpu-box-1"`). Once
 confirmed, the ledger computes `node:<name>` admission over the merged set,
 not each name independently.
 
@@ -635,7 +635,7 @@ open question 3.
 The subscription-allocation meter in 4a is **account-scoped, not
 daemon-scoped**: a Claude Pro/Max plan or an API key belongs to a person or
 org, not to one `datawatch` process. Two federated daemons (this host and
-`ralfthewise`, per `federation_peer_list`) can be configured with the
+`peer-b`, per `federation_peer_list`) can be configured with the
 **same** `claude-code` credentials — logged into the same account, or
 holding the same API key — in which case each daemon's own `backoff:claude-code`
 flag (4d) and `llm:claude-code` pool (3b) each track only their own half of
@@ -1612,7 +1612,7 @@ thing example (iii) could not see.
 10. **Federation fingerprint-sync scope (3c/4e).** Should resource-fingerprint
     exchange be on by default for every federated peer, or opt-in per peer
     (this doc recommends opt-in — a peer with only `full-control` capability
-    today, like `ralfthewise`, is not automatically the right trust level for
+    today, like `peer-b`, is not automatically the right trust level for
     resource fingerprinting, which is a separate decision from control
     capability)?
     **Decided 2026-10-22, as recommended and as built:** opt-in per peer,

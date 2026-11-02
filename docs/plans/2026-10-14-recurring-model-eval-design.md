@@ -323,7 +323,7 @@ Rules for the shape:
 
 - **§3b** (`concurrency-and-budget-design.md:321-360`): `llm:<name>` `max_inflight` is the per-backend ceiling, currently `0` = unlimited for `claude-code`. Live `capacity_status` confirms `llm:claude-code limit 0`. §3b also says local `node:<name>` limits are the hardware ceiling.
 - **§4d** (`:514-632`): `plan_tier` sets `max_inflight` when unset, and the conservative default is `1`. The tier→number table is operator policy, not published by Anthropic.
-- **§4e** (`:633-689`): a shared `billing_group` makes two daemons share one `backoff:` flag. If `ralfthewise` (the federation peer) shares this Claude account, its usage counts against this sweep's window.
+- **§4e** (`:633-689`): a shared `billing_group` makes two daemons share one `backoff:` flag. If `peer-b` (the federation peer) shares this Claude account, its usage counts against this sweep's window.
 
 ### What this sweep does
 
@@ -405,7 +405,7 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 9. **Verdict node exclusion.** Confirm that `verdict` should be permanently excluded, or whether a read-only observation of its load is acceptable.
 10. **`ollama_stats` is unavailable on this server (404).** Is it expected to be served, or should the probe in S2 use another route?
 11. **Effort for local models.** The effort axis is Claude-only. Should local models get a comparable second axis (quantization, context length) in v1, or stay fixed?
-12. **Federation peer.** Does `ralfthewise` share the Claude account? If yes, §4e's `billing_group` must be set before the first sweep.
+12. **Federation peer.** Does `peer-b` share the Claude account? If yes, §4e's `billing_group` must be set before the first sweep.
 13. **Autonomous template parameter schemas.** `autonomous_template_create` / `_instantiate` exist as MCP tools, but their argument schemas were not checked in this pass. Verify before S6.
 14. **Verification tier.** BL422 excludes the verifier from fixtures because there is no per-task override. Should the sweep test the verifier via a guarded global flip, as BL422 does, or leave verification out of the recurring sweep?
 

@@ -100,3 +100,6 @@ tmp-sandbox/
 # scripts/leak-patterns.local.template); the checked-in class definitions
 # live in scripts/leak-check.patterns.
 .leak-patterns.local
+
+# Local list of pool names the supervisor watch skips (never committed).
+.supervisor-watch-skip
