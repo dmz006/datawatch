@@ -12,10 +12,13 @@ import (
 const defaultIdleTick = time.Minute
 
 // idleLoop checks for idle Automations every tick until stop is closed.
-func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
+// A pass run here must never call Coordinator.Stop: Stop waits for this
+// loop to exit, so calling it from a pass would deadlock.
+func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration, done chan<- struct{}) {
 	if tick <= 0 {
 		tick = defaultIdleTick
 	}
+	defer close(done)
 	t := time.NewTicker(tick)
 	defer t.Stop()
 	// A resume the question pass starts is bounded by the same stop signal.
@@ -33,15 +36,29 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 		case <-stop:
 			return
 		case <-t.C:
-			c.checkIdle()
-			c.checkBudget()
-			c.triagePass()
-			c.heldQuestionPass() // held questions: one generic held decision per held Automaton (held_question_pass.go)
-			c.questionPass(ctx)
-			c.repoCIWatchPass()     // repo CI watch (repo_ci_watch_poll.go)
-			c.securityFailurePass() // security failure pass over the watch's records (security_failure_pass.go)
-			c.supervisorWatchPass() // supervisor watch: host / work / worktree checks (supervisor_watch_pass.go)
 		}
+		// Stop may have closed while ticks queued in the ticker's channel;
+		// prefer it over the pending tick so no further passes start after Stop.
+		// (A select picks ready channels at random; the buffer would hold
+		// many ticks here.)
+		select {
+		case <-stop:
+			return
+		default:
+		}
+		// Test seam: run first so a test can hold the loop inside a tick
+		// (nil in production).
+		if c.idleTickHook != nil {
+			c.idleTickHook()
+		}
+		c.checkIdle()
+		c.checkBudget()
+		c.triagePass()
+		c.heldQuestionPass() // held questions: one generic held decision per held Automaton (held_question_pass.go)
+		c.questionPass(ctx)
+		c.repoCIWatchPass()     // repo CI watch (repo_ci_watch_poll.go)
+		c.securityFailurePass() // security failure pass over the watch's records (security_failure_pass.go)
+		c.supervisorWatchPass() // supervisor watch: host / work / worktree checks (supervisor_watch_pass.go)
 	}
 }
 
