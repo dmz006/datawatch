@@ -27,7 +27,7 @@ func (m *memStore) Save(s LadderState) error {
 }
 
 func settings() LadderSettings {
-	return LadderSettings{Enabled: true, StepBack: true, MarginPoints: 2}
+	return LadderSettings{Enabled: true, StepBack: true, MarginPoints: 2, AskOnChange: true}
 }
 
 func proj(overBy float64) Projection {
@@ -42,6 +42,130 @@ func tick(t *testing.T, l *Ladder, p Projection, s LadderSettings, at time.Time)
 		t.Fatal(err)
 	}
 	return d
+}
+
+func TestBurnGuardAskOnChangeFalseRaisesNoQuestion(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	s := settings()
+	s.AskOnChange = false
+	at := time.Now()
+	for i := 0; i < 3; i++ {
+		d := tick(t, l, proj(20), s, at)
+		if d.Direction != DirectionClimb || d.QuestionText != "" || d.AlertText == "" {
+			t.Fatalf("climb %d: %+v", i, d)
+		}
+	}
+	want := []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight}
+	for i, r := range want {
+		d := tick(t, l, proj(-10), s, at)
+		if d.Direction != DirectionStepBack || d.Rung != r || d.QuestionText != "" || d.AlertText == "" {
+			t.Fatalf("step back %d: %+v", i, d)
+		}
+	}
+}
+
+func TestBurnGuardAskOnChangeTrueQuestionsEachClimbAndStepBack(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	at := time.Now()
+	for i := 0; i < 3; i++ {
+		d := tick(t, l, proj(20), settings(), at)
+		if d.Direction != DirectionClimb || d.QuestionText == "" || !strings.Contains(d.QuestionText, "I did this") {
+			t.Fatalf("climb %d: %+v", i, d)
+		}
+	}
+	d := tick(t, l, proj(-10), settings(), at)
+	if d.Direction != DirectionStepBack || d.QuestionText == "" || d.QuestionText == d.AlertText {
+		t.Fatalf("step back: %+v", d)
+	}
+	// a disabled release raises no question even with ask_on_change on
+	s := settings()
+	s.Enabled = false
+	d = tick(t, l, proj(50), s, at)
+	if d.Direction != DirectionDisabled || d.QuestionText != "" || d.AlertText == "" {
+		t.Fatalf("disabled: %+v", d)
+	}
+}
+
+func TestBurnGuardAskOnChangeFalseOnNoOpStepAndOnRelease(t *testing.T) {
+	// a climb that cannot lower the cap (already 1, so 1 to 1) changes no setting
+	l, _ := NewLadder(&memStore{})
+	at := time.Now()
+	s := settings()
+	s.Ladder = []string{RungLowerInflight}
+	d, err := l.Tick(TickInput{Projection: proj(20), Settings: s, Now: at, InflightCap: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Direction != DirectionClimb || !d.Changed || d.QuestionText != "" || d.AlertText == "" {
+		t.Fatalf("no-op step: %+v", d)
+	}
+	// its release restores nothing either
+	d, err = l.Tick(TickInput{Projection: proj(-10), Settings: s, Now: at, InflightCap: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Direction != DirectionStepBack || !d.Changed || d.QuestionText != "" || d.AlertText == "" {
+		t.Fatalf("no-op release: %+v", d)
+	}
+	// a disabled release never questions, even with ask_on_change on
+	l, _ = NewLadder(&memStore{})
+	tick(t, l, proj(20), settings(), at)
+	s = settings()
+	s.Enabled = false
+	if d := tick(t, l, proj(50), s, at); d.Direction != DirectionDisabled || d.QuestionText != "" || d.AlertText == "" {
+		t.Fatalf("disabled release: %+v", d)
+	}
+}
+
+func TestBurnGuardAskOnChangeWithdrawOnEveryChangedStep(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	at := time.Now()
+	if d := tick(t, l, proj(20), settings(), at); d.Withdraw != d.Changed || !d.Withdraw {
+		t.Fatalf("climb: %+v", d)
+	}
+	// holds never withdraw
+	if d := tick(t, l, proj(0), settings(), at); d.Withdraw || d.Changed || d.Direction != DirectionHold {
+		t.Fatalf("hold: %+v", d)
+	}
+	t0 := tick(t, l, proj(20), settings(), at)
+	t1 := tick(t, l, proj(20), settings(), at)
+	if t0.Level != 2 || t1.Level != 3 {
+		t.Fatalf("levels: %+v / %+v", t0, t1)
+	}
+	if d := tick(t, l, proj(20), settings(), at); d.Withdraw || d.Changed {
+		t.Fatalf("hold at the last rung: %+v", d)
+	}
+	if d := tick(t, l, proj(-10), settings(), at); d.Withdraw != d.Changed || !d.Withdraw {
+		t.Fatalf("step back: %+v", d)
+	}
+	s := settings()
+	s.Enabled = false
+	if d := tick(t, l, proj(50), s, at); d.Withdraw != d.Changed || !d.Withdraw {
+		t.Fatalf("disabled release: %+v", d)
+	}
+}
+
+func TestBurnGuardAskOnChangeAlertNamesProjectionTargetAndSetting(t *testing.T) {
+	l, _ := NewLadder(&memStore{})
+	s := settings()
+	s.AskOnChange = false
+	d := tick(t, l, proj(20), s, time.Now())
+	for _, want := range []string{"projected 118.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
+		if !strings.Contains(d.AlertText, want) {
+			t.Fatalf("climb alert %q missing %q", d.AlertText, want)
+		}
+	}
+	d = tick(t, l, proj(-10), s, time.Now())
+	for _, want := range []string{"projected 88.0%", "target 98.0%", "usage.burn_guard.ask_on_change"} {
+		if !strings.Contains(d.AlertText, want) {
+			t.Fatalf("step back alert %q missing %q", d.AlertText, want)
+		}
+	}
+	// with ask_on_change on the alert stops carrying the hint
+	l, _ = NewLadder(&memStore{})
+	if d := tick(t, l, proj(20), settings(), time.Now()); strings.Contains(d.AlertText, "ask_on_change") {
+		t.Fatalf("alert should not mention the setting while questions are on: %q", d.AlertText)
+	}
 }
 
 func TestActionKindsAreAdmissionOnly(t *testing.T) {

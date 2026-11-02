@@ -156,6 +156,8 @@ func burnGuardRig(t *testing.T, cfg *config.BurnGuardConfig) (*BurnGuard, *fakeA
 
 func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
 	cfg := config.DefaultBurnGuard()
+	// ask_on_change is off by default (alerts only); turn it on to exercise the question path.
+	cfg.AskOnChange = true
 	g, adm, nt, ses := burnGuardRig(t, &cfg)
 	ctx := context.Background()
 
@@ -230,6 +232,21 @@ func TestBurnGuardRefitWakesOnReading(t *testing.T) {
 	}
 	var nilGuard *BurnGuard
 	nilGuard.OnReading() // an unwired guard is a no-op
+}
+
+func TestBurnGuardAskOnChangeOffAlertsOnly(t *testing.T) {
+	cfg := config.DefaultBurnGuard()
+	if cfg.AskOnChange {
+		t.Fatal("default ask_on_change = true, want false")
+	}
+	g, _, nt, _ := burnGuardRig(t, &cfg)
+	d := g.Tick(context.Background())
+	if d.Direction != burnguard.DirectionClimb || len(nt.alerts) != 1 || len(nt.questions) != 0 {
+		t.Fatalf("decision=%+v alerts=%v questions=%v", d, nt.alerts, nt.questions)
+	}
+	if !strings.Contains(nt.alerts[0], "ask_on_change") {
+		t.Fatalf("alert does not name the setting to turn questions on: %q", nt.alerts[0])
+	}
 }
 
 // The seams the runner holds have no method that could end a session.
