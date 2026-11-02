@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.64.2 — Two libexpat findings accepted for 30 days
+
+### Security
+
+- **Two new libexpat findings (CVE-2026-117610 and CVE-2026-118370, both high, no Debian fix yet) are accepted for 30 days.** The Release scan of the agent-base image listed them, which blocked its container job. A trace of a built image shows that only `git` depends on libexpat and only the WebDAV push helper `git-http-push` links it, which datawatch never runs (it clones and pushes over ssh and smart HTTPS), so no remote XML reaches the parser. Both entries expire on 2026-12-02; Debian is re-checked each release and the entries are removed when a fix ships. The generated ignore file and the security review page are regenerated.
+
 ## v9.64.1 — Backfill marks merged work that was cancelled
 
 ### Fixed
