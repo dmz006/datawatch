@@ -13,6 +13,9 @@ const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('.
 
 const REFUSAL = 'refusing to replace the saved identity with an empty one; to clear it on purpose use POST /api/identity/reset';
 
+// Escape a string for use inside a RegExp so it matches literally.
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // loadApp returns a sandbox with the app loaded and a recording fetch. routes
 // maps "METHOD /path" to {status, body}; an unknown request answers 404. Every
 // request is recorded in __calls with its parsed JSON body; every toast in
@@ -90,7 +93,7 @@ test('Identity card shows Save, Revert, Reset and Restore', async () => {
   const { panel } = await renderCard();
   const html = panel.innerHTML;
   for (const [fn, label] of [['saveIdentity()', 'Save'], ['loadIdentityPanel()', 'Revert'], ['identityReset()', 'Reset'], ['identityRestoreOpen()', 'Restore']]) {
-    assert.match(html, new RegExp('onclick="' + fn.replace(/[()]/g, '\\$&') + '"[^>]*>' + label + '<'), label + ' button');
+    assert.match(html, new RegExp('onclick="' + escapeRegExp(fn) + '"[^>]*>' + label + '<'), label + ' button');
   }
 });
 

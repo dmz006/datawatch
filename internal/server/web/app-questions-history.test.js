@@ -208,7 +208,7 @@ test('the answer log renders quotes verbatim and escaped in <pre>', () => {
   const preMatch = html.match(/<pre class="questions-history-quote"[^>]*>([\s\S]*?)<\/pre>/);
   assert.ok(preMatch, 'a pre-escaped quote found');
   // Verbatim: the line break and the two leading spaces survived.
-  const decoded = preMatch[1].replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'");
+  const decoded = preMatch[1].replace(/&(lt|gt|amp|quot|#39);/g, (_, e) => ({ lt: '<', gt: '>', amp: '&', quot: '"', '#39': "'" })[e]);
   assert.equal(decoded, 'Ship <b>now</b>\n  keep', 'quote is verbatim incl. newline and leading spaces');
   assert.ok(preMatch[1].includes('&lt;b&gt;'), 'markup in the quote is escaped, not live');
   assert.ok(!preMatch[1].includes('<b>'), 'no live <b> inside the pre');
