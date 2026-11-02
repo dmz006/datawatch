@@ -37844,7 +37844,7 @@ window._dashShowAddPanel = function() {
   const existing = (_dash._layout || []).map(c => c.id);
   let html = `<div class="dboard-add-panel" id="dashAddPanel">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <span style="font-weight:700;font-size:13px;color:var(--text);">Add Card 3c/span>
+      <span style="font-weight:700;font-size:13px;color:var(--text);">Add Card</span>
       <button onclick="document.getElementById('dashAddPanel').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;line-height:1;">×</button>
     </div>
     <div class="dboard-add-grid">`;
