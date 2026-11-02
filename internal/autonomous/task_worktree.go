@@ -8,6 +8,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,7 +97,35 @@ func EnsureTaskWorktree(prd *PRD, task *Task, baseRepo, worktreeDir string) (pat
 		}
 	}
 	prepareWorktreeBestEffort(path)
+	restoreTaskVerifyScript(prd, task, path, worktreeDir)
 	return path, branch, nil
+}
+
+// restoreTaskVerifyScript copies the task's verification script into a newly
+// created task worktree, from the Automaton worktree first and then the saved
+// folder. Best effort: a failure is logged, and a script found in neither
+// place is left for the run-time ErrVerificationScriptMissing path.
+func restoreTaskVerifyScript(prd *PRD, task *Task, path, worktreeDir string) {
+	script := strings.TrimSpace(task.VerificationScript)
+	if script == "" {
+		return
+	}
+	base := filepath.Base(script)
+	if strings.TrimSpace(worktreeDir) == "" {
+		worktreeDir = defaultWorktreeDir()
+	}
+	srcDirs := []string{
+		filepath.Join(worktreeDir, prd.ID, ".datawatch", "verify"),
+		savedVerifyScriptsDir(worktreeDir, prd.ID),
+	}
+	n, err := restoreVerifyScripts(srcDirs, path, []string{base})
+	if err != nil {
+		log.Printf("[autonomous] task worktree: restore verification script %s into %s failed (non-fatal): %v", base, path, err)
+		return
+	}
+	if n > 0 {
+		log.Printf("[autonomous] task worktree: restored %d verification script(s) into %s", n, path)
+	}
 }
 
 // taskWorktreeEnabled reports whether t gets its own worktree: the setting is
