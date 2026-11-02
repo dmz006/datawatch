@@ -514,7 +514,7 @@ func TestFetchRemoteSessions_PeerGzip(t *testing.T) {
 		_, _ = io.WriteString(w, peerBody)
 	})))
 	defer peer.Close()
-	sessions, err := fetchRemoteSessions(peer.URL, "tok")
+	sessions, err := fetchRemoteSessions(http.DefaultClient, peer.URL, "tok")
 	if err != nil {
 		t.Fatalf("fetchRemoteSessions: %v", err)
 	}

@@ -241,6 +241,10 @@ type Server struct {
 	// broadcastWG tracks the fire-and-forget sessions broadcasts started by
 	// broadcastSessionsAsync so a test can wait for them.
 	broadcastWG sync.WaitGroup
+	// peerClients caches one TLS-configured HTTP client per federation peer,
+	// keyed by peer name; peerClientsMu guards it.
+	peerClientsMu sync.Mutex
+	peerClients   map[string]peerClientEntry
 	// SEC-016 — tokenMu guards token/oldToken/oldTokenExpiry, which
 	// POST /api/auth/rotate-token mutates live (hot-swap, no restart)
 	// while fedAuthMiddleware reads them on every request. oldToken stays
