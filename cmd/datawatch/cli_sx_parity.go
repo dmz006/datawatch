@@ -482,7 +482,7 @@ func newCostCmd() *cobra.Command {
 		},
 	}
 	summary.Flags().StringVar(&session, "session", "", "full_id for per-session breakdown")
-	cmd.AddCommand(summary, newCostUsageCmd(), newCostRatesCmd())
+	cmd.AddCommand(summary, newCostUsageCmd(), newCostRatesCmd(), newCostReportCmd())
 	return cmd
 }
 
