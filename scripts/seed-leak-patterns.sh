@@ -99,7 +99,11 @@ strip = os.environ.get("STRIP", "0") == "1"
 for e in d:
     if isinstance(e, dict) and isinstance(e.get("name"), str):
         v = e["name"].strip()
-        if strip and ":" in v:
+        if strip:
+            # Only node: pools name a machine; llm: pools name an LLM entry
+            # (claude-code, pi-prompt, ...), which is product vocabulary.
+            if not v.startswith("node:"):
+                continue
             v = v.split(":", 1)[1].strip()
         if v:
             print(v)
@@ -195,7 +199,7 @@ fetch_all_names() {
         '.peers[]? | .name? | select(type == "string") | select(length > 0)' peers 0
     body="$(fetch_json /api/capacity)"
     [ -n "$body" ] && emit_names "$body" \
-        '.pools[]? | .name? | select(type == "string") | select(length > 0) | sub("^[^:]*:"; "")' pools 1
+        '.pools[]? | .name? | select(type == "string") | select(startswith("node:")) | sub("^[^:]*:"; "") | select(length > 0)' pools 1
     return 0
 }
 
