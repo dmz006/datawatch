@@ -268,3 +268,23 @@ func TestEffectiveServers_FallsBackToStaticSnapshotBeforeSetStore(t *testing.T) 
 		t.Error("static snapshot should still be consulted when no store is wired")
 	}
 }
+
+func TestForwardHTTPHonoursTLSSkipVerify(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	strict := NewRemoteDispatcher([]config.RemoteServerConfig{{Name: "p", URL: ts.URL, Enabled: true}})
+	if _, _, err := strict.ForwardHTTP("p", http.MethodGet, "/x", nil); err == nil {
+		t.Fatal("self-signed peer must be rejected without tls_skip_verify")
+	}
+	lax := NewRemoteDispatcher([]config.RemoteServerConfig{{Name: "p", URL: ts.URL, Enabled: true, TLSSkipVerify: true}})
+	body, code, err := lax.ForwardHTTP("p", http.MethodGet, "/x", nil)
+	if err != nil || code != 200 || string(body) != "ok" {
+		t.Fatalf("skip-verify peer: body=%q code=%d err=%v", body, code, err)
+	}
+	if lax.clientFor(&lax.servers[0]) != lax.clientFor(&lax.servers[0]) {
+		t.Error("client must be reused per entry")
+	}
+}

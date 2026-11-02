@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
 // PoolConfig controls connection pool and resilience behaviour.
@@ -37,14 +38,14 @@ func DefaultPoolConfig() PoolConfig {
 
 // ServerHealth tracks a single remote server's health state.
 type ServerHealth struct {
-	Name          string    `json:"name"`
-	URL           string    `json:"url"`
-	Healthy       bool      `json:"healthy"`
-	LastCheck     time.Time `json:"last_check"`
-	LastError     string    `json:"last_error,omitempty"`
-	ConsecFails   int       `json:"consec_fails"`
-	BreakerOpen   bool      `json:"breaker_open"`
-	BreakerUntil  time.Time `json:"breaker_until,omitempty"`
+	Name         string    `json:"name"`
+	URL          string    `json:"url"`
+	Healthy      bool      `json:"healthy"`
+	LastCheck    time.Time `json:"last_check"`
+	LastError    string    `json:"last_error,omitempty"`
+	ConsecFails  int       `json:"consec_fails"`
+	BreakerOpen  bool      `json:"breaker_open"`
+	BreakerUntil time.Time `json:"breaker_until,omitempty"`
 }
 
 // Pool manages HTTP clients and circuit breakers for remote servers.
@@ -56,7 +57,7 @@ type Pool struct {
 	health  map[string]*ServerHealth // name → health
 	clients map[string]*http.Client  // name → persistent client
 
-	stopCh chan struct{}
+	stopCh   chan struct{}
 	stopOnce sync.Once
 }
 
@@ -78,14 +79,16 @@ func NewPool(servers []config.RemoteServerConfig, cfg PoolConfig) *Pool {
 			URL:     sv.URL,
 			Healthy: true, // optimistic start
 		}
-		p.clients[sv.Name] = &http.Client{
-			Timeout: cfg.RequestTimeout,
-			Transport: &http.Transport{
-				MaxIdleConns:        10,
-				MaxIdleConnsPerHost: 5,
-				IdleConnTimeout:     90 * time.Second,
-			},
+		c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, "", cfg.RequestTimeout)
+		tr, ok := c.Transport.(*http.Transport)
+		if !ok {
+			tr = &http.Transport{}
+			c.Transport = tr
 		}
+		tr.MaxIdleConns = 10
+		tr.MaxIdleConnsPerHost = 5
+		tr.IdleConnTimeout = 90 * time.Second
+		p.clients[sv.Name] = c
 	}
 	return p
 }
