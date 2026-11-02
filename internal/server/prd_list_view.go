@@ -142,7 +142,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		row := autonomous.BuildSummaryRow(prd)
 		st := string(row.Status)
 		if len(statuses) > 0 && !statuses[st] &&
-			!(statusShipped && shipEnabled && prd.IsShipped()) {
+			(!statusShipped || !shipEnabled || !prd.IsShipped()) {
 			continue
 		}
 		// status=shipped alone (no other statuses) is its own axis selection
@@ -152,7 +152,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 		}
 		if shipSet {
 			if shipWanted {
-				if !(shipEnabled && prd.IsShipped()) {
+				if !shipEnabled || !prd.IsShipped() {
 					continue
 				}
 			} else if shipEnabled && prd.IsShipped() {

@@ -441,10 +441,6 @@ const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit
 // shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
 const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
 
-// shippedCountsUsage is the comm-channel usage line for the per-status shipped
-// counts read.
-const shippedCountsUsage = "usage: autonomous shipped-counts   (per-status shipped counts: the PRD and Automation buckets, under the in-force autonomous.shipped settings)"
-
 // autonomousListUsage is the comm-channel usage line for the narrowable PRD
 // list.
 const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; shipped may appear in status)"

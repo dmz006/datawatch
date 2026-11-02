@@ -23,7 +23,7 @@ func TestShippedComm_PrdAndAutomation(t *testing.T) {
 			_ = json.NewDecoder(r.Body).Decode(&b)
 		}
 		calls = append(calls, shippedCommCall{method: r.Method, path: r.URL.Path, body: b})
-		w.Write([]byte(`{ "ok": true }`))
+		_, _ = w.Write([]byte(`{ "ok": true }`))
 	}
 	_, port := newFakePeerParent(t, handler)
 	r := setupRetryRouter(t, port)
@@ -74,7 +74,7 @@ func TestShippedComm_UsageWithoutNetwork(t *testing.T) {
 	var calls []shippedCommCall
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		calls = append(calls, shippedCommCall{method: r.Method, path: r.URL.Path})
-		w.Write([]byte(`{ "ok": true }`))
+		_, _ = w.Write([]byte(`{ "ok": true }`))
 	}
 	_, port := newFakePeerParent(t, handler)
 	r := setupRetryRouter(t, port)
@@ -106,7 +106,7 @@ func TestShippedComm_ShippedCounts(t *testing.T) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		w.Write([]byte(`{"prds":{"running":1,"completed":1,"shipped":2},"automations":{"active":1,"shipped":1},"settings":{"enabled":true,"show_chip":true,"filter_default":"all","count_separately":true}}`))
+		_, _ = w.Write([]byte(`{"prds":{"running":1,"completed":1,"shipped":2},"automations":{"active":1,"shipped":1},"settings":{"enabled":true,"show_chip":true,"filter_default":"all","count_separately":true}}`))
 	}
 	_, port := newFakePeerParent(t, handler)
 	r := setupRetryRouter(t, port)
@@ -134,7 +134,7 @@ func TestShippedComm_ListShippedSelection(t *testing.T) {
 			return
 		}
 		uris = append(uris, r.URL.RequestURI())
-		w.Write([]byte(`{"prds":[{"id":"prd-1","status":"running"}],"total":1}`))
+		_, _ = w.Write([]byte(`{"prds":[{"id":"prd-1","status":"running"}],"total":1}`))
 	}
 	_, port := newFakePeerParent(t, handler)
 	r := setupRetryRouter(t, port)

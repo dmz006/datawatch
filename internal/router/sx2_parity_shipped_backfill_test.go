@@ -12,7 +12,6 @@ type shippedBackfillCommCall struct {
 	method string
 	path   string
 	query  string
-	body   string
 }
 
 func TestShippedBackfillComm_DefaultWrites(t *testing.T) {

@@ -147,11 +147,15 @@ else
     echo "==> Committed chore(release): v${NEXT} bump for merged branches"
 fi
 # --- 8. record the shipped state (best effort; never fails the merge) ------
-source "$SCRIPT_DIR/merge-shipped-record.sh"
-for branch in "${MERGED[@]}"; do
-    record_shipped_for_branch "$branch" "v${NEXT}" "${MERGED_SHA[$branch]}" \
-        "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ||
-        echo "warning: shipped record step for '$branch' did not complete; the merge itself succeeded" >&2
-done
+if [[ -f "$SCRIPT_DIR/merge-shipped-record.sh" ]]; then
+    source "$SCRIPT_DIR/merge-shipped-record.sh"
+    for branch in "${MERGED[@]}"; do
+        record_shipped_for_branch "$branch" "v${NEXT}" "${MERGED_SHA[$branch]}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" ||
+            echo "warning: shipped record step for '$branch' did not complete; the merge itself succeeded" >&2
+    done
+else
+    echo "note: merge-shipped-record.sh not found; the shipped state is not recorded for this merge" >&2
+fi
 
 echo "ok: merged ${MERGED[*]} and set version $NEXT"
