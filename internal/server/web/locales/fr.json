@@ -3271,6 +3271,7 @@
   "burn_guard_ladder_empty": "Gardez au moins un échelon dans l'échelle.",
   "burn_guard_step_back": "Redescendre quand la projection est sous la ligne",
   "burn_guard_ask_on_change": "Demander plutôt qu'alerter (désactivé : une alerte par changement, sans question ; activé : au plus une question ouverte par changement)",
+  "burn_guard_ask_on_change_help": "Ouvrir le howto du burn guard — la section Réglages explique ask_on_change : une alerte par changement sans question (par défaut), ou au plus une question ouverte par changement",
   "burn_guard_retry_limit": "Limite de nouvelles tentatives Claude (0 à 20)",
   "burn_guard_invalid_number": "Saisissez un nombre valide dans la plage.",
   "burn_guard_effort_ceiling": "Plafond d'effort par type de tâche :",

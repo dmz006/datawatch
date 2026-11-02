@@ -3271,6 +3271,7 @@
   "burn_guard_ladder_empty": "Mindestens eine Stufe muss bleiben.",
   "burn_guard_step_back": "Zurücknehmen, wenn die Prognose unter der Linie liegt",
   "burn_guard_ask_on_change": "Fragen statt alarmieren (aus: eine Benachrichtigung pro Änderung, keine Frage; an: höchstens eine offene Frage pro Änderung)",
+  "burn_guard_ask_on_change_help": "Das Burn-Guard-Howto öffnen — der Einstellungen-Abschnitt erklärt ask_on_change: eine Benachrichtigung pro Änderung, keine Frage (Standard), oder höchstens eine offene Frage pro Änderung",
   "burn_guard_retry_limit": "Claude-Wiederholungslimit (0 bis 20)",
   "burn_guard_invalid_number": "Gib eine gültige Zahl im Bereich ein.",
   "burn_guard_effort_ceiling": "Aufwandsobergrenze je Aufgabenart:",

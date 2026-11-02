@@ -46,12 +46,35 @@ test('the card shows the state, rung, projection, margin and the last decision',
 
 test('the settings controls are all present', () => {
   const html = card(loadApp(), STATUS, CONFIG);
-  for (const id of ['burnGuardEnabled', 'burnGuardMargin', 'burnGuardLadder', 'burnGuardStepBack', 'burnGuardRetryLimit']) {
+  for (const id of ['burnGuardEnabled', 'burnGuardMargin', 'burnGuardLadder', 'burnGuardStepBack', 'burnGuardAskOnChange', 'burnGuardRetryLimit']) {
     assert.ok(html.includes('id="' + id + '"'), id);
   }
   assert.ok(html.includes('data-ceiling-kind="docs"'));
   assert.ok(html.includes('data-burn-guard="run"'), 'run now button');
   assert.ok(html.includes('/diagrams.html#docs'), 'help link');
+});
+
+test('ask_on_change is unchecked by default, checked when set, and links to the howto Settings section', () => {
+  const off = card(loadApp(), STATUS, CONFIG);
+  assert.ok(off.includes('id="burnGuardAskOnChange"'));
+  assert.ok(!off.includes('id="burnGuardAskOnChange" checked'), 'default is off');
+  const on = card(loadApp(), STATUS, Object.assign({}, CONFIG, { ask_on_change: true }));
+  assert.ok(on.includes('id="burnGuardAskOnChange" checked'));
+  for (const html of [off, on]) {
+    assert.ok(html.includes('/diagrams.html#docs/howto/burn-guard.md#settings'), 'docs link to the howto Settings section');
+    assert.ok(html.includes('Open the burn guard howto'), 'help text is the localized title');
+  }
+});
+
+test('toggling ask_on_change sends a PUT of the checkbox state', async () => {
+  const s = loadApp();
+  const calls = stubApi(s, { enabled: true });
+  s.document.getElementById = id => (id === 'burnGuardAskOnChange' ? { checked: false } : null);
+  await vm.runInContext("window.burnGuardSaveField('ask_on_change')", s);
+  const put = calls.find(c => c[1] && c[1].method === 'PUT');
+  assert.ok(put, 'a PUT was sent');
+  assert.equal(put[0], '/api/usage/burn-guard/config');
+  assert.deepEqual(JSON.parse(put[1].body), { ask_on_change: false });
 });
 
 test('the ladder lists the configured rungs first, in order, with unused rungs unchecked', () => {

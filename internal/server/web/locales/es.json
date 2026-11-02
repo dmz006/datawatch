@@ -3271,6 +3271,7 @@
   "burn_guard_ladder_empty": "Deja al menos un peldaño en la escalera.",
   "burn_guard_step_back": "Retroceder cuando la proyección esté bajo la línea",
   "burn_guard_ask_on_change": "Preguntar en lugar de alertar (desactivado: una alerta por cambio, sin pregunta; activado: como máximo una pregunta abierta por cambio)",
+  "burn_guard_ask_on_change_help": "Abrir el howto del burn guard — la sección Configuración explica ask_on_change: una alerta por cambio y sin pregunta (por defecto), o como máximo una pregunta abierta por cambio",
   "burn_guard_retry_limit": "Límite de reintentos de Claude (0 a 20)",
   "burn_guard_invalid_number": "Introduce un número válido dentro del rango.",
   "burn_guard_effort_ceiling": "Tope de esfuerzo por tipo de tarea:",
