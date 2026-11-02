@@ -1098,12 +1098,64 @@ specific Wi-Fi SSIDs, etc.) must NOT land in tracked files. This applies
 to docs, plan files, config samples, Helm charts, deployment manifests,
 test fixtures, and Go source comments alike.
 
+**The check.** `scripts/check-no-local-leaks.sh` scans the whole
+tree once and fails on any finding. It runs as `make check-leaks`, is
+wired into `make lint`, and is run by `scripts/release-smoke.sh` before a
+release is cut. It covers four classes:
+
+1. **private and tailnet addresses** — private / internal /
+   link-local IPv4, unique-local and tailnet IPv6, and MagicDNS
+   hostnames.
+2. **absolute home paths for any user** — not just yours.
+3. **emails not on the allowed list** — the allow list is itself
+   configuration, `scripts/leak-check.allowed-emails`, kept under
+   `scripts/`.
+4. **every identifier in the gitignored local patterns file**
+   (`.leak-patterns.local`) — machine-specific tokens that are too
+   private to check in.
+
+The generic class patterns live in `scripts/leak-check.patterns`
+(also under `scripts/`, together with the allowed email list) and are
+configuration, not code. Prescribed placeholders when a value is needed:
+
+- **Addresses** — IANA reserved documentation ranges so the example is
+  obviously not someone's real network: `192.0.2.0/24`,
+  `198.51.100.0/24`, `203.0.113.0/24`.
+- **Hosts and email** — `example.com` / `*.example.com` names for hosts,
+  `noreply@example.com` for emails.
+- **Nodes and GPU models** — neutral role names such as *local node*
+  and *remote node*, never a real hostname or a real model.
+- **Home paths** — `/home/<user>`.
+
+**The local patterns file.** `.leak-patterns.local` is created from the
+checked-in template with `make leak-patterns-init`; it lives at the
+repository root, is gitignored and must never be committed. If it is
+absent (or holds only comments and blank lines) the check prints
+`local patterns: skipped` and carries on — the file's absence only
+skips that part of the scan, it is never an error.
+
+**The report is CI-safe.** Each finding is one line of
+`path:line: class` and nothing else — the report never prints the
+matched identifier, so it is safe to let the output into CI logs or a
+commit message. Any manual reproduction must keep that same discipline:
+name the file and the line, never the value.
+
+**What the tree check cannot see.** Commit messages, and issue and
+PR comment text, are not part of the tree and are not scanned by
+`check-leaks` — they must still stay free of identifiers, and the
+last-commit diff grep (A8's old check: hostname, private IP ranges,
+personal email in `git diff HEAD~1`) remains as the complementary
+narrow check for exactly that surface.
+
+**Quoting a real setting.** A document or spec that must quote a real
+setting uses the placeholder in the text and says the real value lives
+in the operator config (`~/.datawatch/config.yaml`, gitignored, or
+another config file the operator names) — never the value itself.
+
 When a value is needed to make a feature work, choose one of:
 
-1. **Documentation example** — use IANA-reserved ranges so the example
-   is obviously not someone's real network: `192.0.2.0/24`,
-   `198.51.100.0/24`, `203.0.113.0/24` for IPs; `example.com` /
-   `*.example.com` for hostnames; `noreply@example.com` for emails.
+1. **Documentation example** — use the reserved documentation ranges
+   and placeholder names above.
 2. **Operator config** — the value lives in `~/.datawatch/config.yaml`
    (gitignored) or a config file the operator names; the repo only
    ships defaults / placeholders.
@@ -1117,9 +1169,7 @@ When a value is needed to make a feature work, choose one of:
    never carries the values.
 
 `.gitignore` must continue to cover `.env`, `.env.build`, `config.yaml`,
-`*.kubeconfig`, and any Secret-bearing file. Before committing, grep
-the diff for personal markers (your hostname, your IP range, your
-email) — finding any means stop, replace, and re-check.
+`.leak-patterns.local`, `*.kubeconfig`, and any Secret-bearing file.
 
 ## Session Management Rules
 
@@ -1367,7 +1417,7 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 | A5 | `README.md` current-release line updated: `**Current release: vX.Y.Z (DATE).**` | `readme: updated` |
 | A6 | `docs/plans/README.md` backlog refactor: close shipped items, clear `## Unclassified` | `backlog: refactored` |
 | A7 | No B/BL/F tracker IDs leaked into user-facing docs — grep: `grep -n "B[0-9]\+\|BL[0-9]\+\|F[0-9]\+" CHANGELOG.md README.md` | `id-check: clean` |
-| A8 | No local-env leaks in diff — grep for hostname, private IP ranges, personal email in `git diff HEAD~1` | `leak-check: clean` |
+| A8 | No local-env leaks — whole-tree check `make check-leaks` (`scripts/check-no-local-leaks.sh`, already run by `make lint` and the release smoke script) clean, plus the complementary last-commit grep for hostname, private IP ranges, personal email in `git diff HEAD~1` | `leak-check: clean` |
 | A9 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
 | A10 | `make build` clean (NOT `go build` — runs `make sync-docs` first so embedded PWA docs match binary) | `make-build: ok` |
 | A11 | CI runner check after push: `gh run list --limit 20` — every failure investigated; security failures escalated to operator rather than deleted | `ci: clean` or `ci: <runID> fixed` |
