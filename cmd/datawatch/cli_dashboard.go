@@ -170,7 +170,7 @@ func newDashboardConsoleCmd() *cobra.Command {
 	console.Flags().BoolVar(&rawJSON, "json", false, "print the raw endpoint JSON")
 	console.AddCommand(&cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a console key via the daemon config API (dashboard.console.enabled=false, console.show_lanes=true, …)",
+		Short: "Set a console key via the daemon config API (dashboard.console.enabled=false, dashboard.console.show_lanes=true, …)",
 		RunE: func(_ *cobra.Command, args []string) error {
 			if len(args) != 2 {
 				return fmt.Errorf("usage: dashboard console set <key> <value>")

@@ -215,6 +215,7 @@ operator accepts a risk through the registry. See
 
 - **Usage calculator** — type a reading of your weekly provider allowance and get advice on whether you are within budget and what each lane count costs; it only advises and never stops a lane. See [usage-calculator.md](docs/howto/usage-calculator.md).
 - **Burn guard** — compares the projected weekly burn of your Claude sessions with the pace line and, when it runs over, steps down a ladder (lower the inflight cap, route new work to `pi-prompt`, hold new Claude work), then steps back. It never ends a running session. Also sets an effort ceiling per task kind and a Claude retry limit. See [burn-guard.md](docs/howto/burn-guard.md).
+- **Operator console** — the dashboard's one-glance “what needs my attention” summary: questions waiting, held & blocked, lanes, usage, and CI & release, each with a count, a one-line summary and the PWA anchor where you act on it. It is read-only — it points at the views that do the work. Seven boolean switches (all default on) gate it; the companion app screens are tracked in datawatch-app (draft in `docs/plans/2026-11-02-dashboard-console-app-parity-issue.md`). See [dashboard-operator-console.md](docs/howto/dashboard-operator-console.md).
 
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:

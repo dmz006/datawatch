@@ -8921,6 +8921,12 @@ const DOCS_LINKS_BY_KEY = {
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
+  // Operator console cards on the dashboard (DASH_CONSOLE_CARDS linkKeys)
+  dash_console_questions_link: 'howto/dashboard-operator-console.md',
+  dash_console_held_link: 'howto/dashboard-operator-console.md',
+  dash_console_lanes_link: 'howto/dashboard-operator-console.md',
+  dash_console_usage_link: 'howto/dashboard-operator-console.md',
+  dash_console_ci_release_link: 'howto/dashboard-operator-console.md',
   view_settings: DOCS_DEFINITIONS + '#settings',
   view_settings_general: DOCS_DEFINITIONS + '#settings-general',
   view_settings_plugins: DOCS_DEFINITIONS + '#settings-plugins',

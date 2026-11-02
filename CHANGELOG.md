@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Operator console how-to and documentation contract.** The operator console — the dashboard's one-glance “what needs my attention” summary (open operator questions, held/blocked Automata, lanes, usage, CI & release), read from the PWA Dashboard cards, the CLI `datawatch dashboard console`, MCP `dashboard_console_get`, REST `GET /api/dashboard/console`, or the chat verb `dashboard console` — is now documented as an operator how-to with its exec_steps, and its seven switches (`dashboard.console.enabled`, `dashboard.console.show_questions`, `dashboard.console.show_held_blocked`, `dashboard.console.show_lanes`, `dashboard.console.show_usage`, `dashboard.console.show_ci_release`, `dashboard.hide_inactive_cards`, each reading its default, true, while absent) are in the config reference with defaults, the definitions glossary (operator console, console card, inactive card), the parity table (PWA shipped; the companion-app screens are tracked in datawatch-app, draft in `docs/plans/2026-11-02-dashboard-console-app-parity-issue.md`), and the testing tracker (66 Go tests and the PWA node suite pass; live validation owed).
+
 ## v9.61.6 — Federation peers honour their certificate settings
 
 ### Fixed

@@ -2919,6 +2919,41 @@ autonomous:
   # .../set_git / PWA PRD Settings' Git section.
   default_auto_pr: false
 
+# ── Dashboard (operator console + card visibility) ──
+# The dashboard.* block switches gate the PWA dashboard board and the
+# operator console one-glance summary (GET /api/dashboard/console, MCP
+# dashboard_console_get, datawatch dashboard console, chat verb
+# `dashboard console`). Every key is a boolean and reads its default,
+# true, while absent; an explicit false sticks through saves and YAML
+# round trips. See docs/howto/dashboard-operator-console.md.
+dashboard:
+  # true (default): dashboard feature cards with no live data stay out of
+  # the grid and out of the Add-Card picker. false: keep them visible so
+  # you can pin your layout.
+  hide_inactive_cards: true
+  # The operator console block. Each subkey is a boolean that reads its
+  # default, true, while absent.
+  console:
+    # true (default): the console is on. false: every section reports
+    # itself unavailable and the PWA drops its console cards from the
+    # board.
+    enabled: true
+    # true (default): the questions_waiting section (open operator
+    # questions, held questions and worker-marker questions).
+    show_questions: true
+    # true (default): the held_blocked section (failed/blocked triage
+    # states and uncommitted-work holds).
+    show_held_blocked: true
+    # true (default): the lanes section (lane fill and the capacity
+    # admission wait queue).
+    show_lanes: true
+    # true (default): the usage section (burn guard state and the usage
+    # calculator projection).
+    show_usage: true
+    # true (default): the ci_release section (repo CI watch records and
+    # the latest-release check).
+    show_ci_release: true
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured
