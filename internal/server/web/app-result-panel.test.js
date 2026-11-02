@@ -146,7 +146,7 @@ test('markdown renders through DOMPurify.sanitize (raw script/onerror stripped)'
   // stub deliberately passes a raw <script> through (marked does, which
   // is exactly why DOMPurify.sanitize is the security layer).
   s.marked = { parse: (text) => '<p>' + text.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p><script>alert(1)</script><img src=x onerror=alert(2)>' };
-  s.DOMPurify = { sanitize: (h) => { let out = h; for (let prev; out !== prev; prev = out) out = out.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<img[^>]*onerror[^>]*>/g, ''); return out; } };
+  s.DOMPurify = { sanitize: (h) => String(h).split('<script>alert(1)</script>').join('').split('<img src=x onerror=alert(2)>').join('') };
   s._markdownLibsPromise = Promise.resolve(true);
 
   const el = makeStubElement();

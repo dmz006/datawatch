@@ -56,7 +56,18 @@ func LoadFile(projectDir, fileName string, maxBytes int64) (Definition, error) {
 		return Definition{}, &ErrMalformed{Path: fileName, Err: err}
 	}
 	full := filepath.Join(projectDir, filepath.FromSlash(fileName))
-	f, err := os.Open(full)
+	// Open the file through a root handle on the project directory: a name that
+	// resolves outside the project (a "..", an absolute path or a symlink that
+	// leaves it) is refused by the operating system, not only by the name check.
+	root, err := os.OpenRoot(projectDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return Definition{}, &ErrNotFound{Path: full}
+		}
+		return Definition{}, &ErrMalformed{Path: full, Err: err}
+	}
+	defer func() { _ = root.Close() }()
+	f, err := root.Open(filepath.FromSlash(fileName))
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return Definition{}, &ErrNotFound{Path: full}
