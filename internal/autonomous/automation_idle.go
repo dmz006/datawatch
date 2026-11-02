@@ -33,6 +33,11 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 		case <-stop:
 			return
 		case <-t.C:
+			// Test seam: run first so a test can hold the loop inside a tick
+			// (nil in production).
+			if c.idleTickHook != nil {
+				c.idleTickHook()
+			}
 			c.checkIdle()
 			c.checkBudget()
 			c.triagePass()

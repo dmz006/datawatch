@@ -69,8 +69,11 @@ type Coordinator struct {
 	// episode already alerted.
 	now      func() time.Time
 	idleTick time.Duration
-	idleStop chan struct{}
-	alerted  map[string]time.Time
+	// idleTickHook is a test seam: the idle loop calls it first in every
+	// ticker tick when it is not nil. Production code never sets it.
+	idleTickHook func()
+	idleStop     chan struct{}
+	alerted      map[string]time.Time
 
 	// repo CI watch (see repo_ci_watch_poll.go). repoCIWatchLastPoll is
 	// the Coordinator's own last-poll instant: the pass only runs when
