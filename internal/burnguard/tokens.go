@@ -138,7 +138,7 @@ func readFile(path string, worker bool, since time.Time, u *Usage, seen map[stri
 	if err != nil {
 		return err
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 	// Lines can be megabytes (tool output), so a Scanner's token limit is not used.
 	r := bufio.NewReaderSize(fh, 1<<20)
 	for {

@@ -55,6 +55,7 @@ Subcommands:
   set-verification-llm <id>  Set the verification LLM (--backend, --model, --effort;
                       an empty value clears)
   set-budget <id>     Set, replace or clear the budget policy of an Automation or one member
+  set-effort-ceiling <id>  Set or clear the per-task-kind effort ceiling of an Automation
   set-decision-assistant <id>  Set or clear the local-model decision assistant (off by default;
                       --backend, --model, --mode shadow|live, --hooks, --threshold hook=value,
                       --member, --clear)
@@ -83,6 +84,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetLLMCmd())
 	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
 	cmd.AddCommand(newAutomationSetBudgetCmd())
+	cmd.AddCommand(newAutomationSetEffortCeilingCmd())
 	cmd.AddCommand(newAutomationSetDecisionAssistantCmd())
 	cmd.AddCommand(newAutomationImportGraphCmd())
 	cmd.AddCommand(newAutomationOnboardingReportCmd())
@@ -417,6 +419,7 @@ var automationControlOps = map[string]string{
 	"set-llm":              "set_llm",
 	"set-verification-llm": "set_verification_llm",
 	"set-budget":           "set_budget",
+	"set-effort-ceiling":   "set_effort_ceiling",
 
 	"set-decision-assistant": "set_decision_assistant",
 }

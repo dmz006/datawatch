@@ -102,10 +102,10 @@ the daemon log; the daemon still starts.
 
 | Surface | How |
 |---|---|
-| Web UI | Usage calculator view, **Burn guard** card: the settings under the status, **Run now** to evaluate once |
+| Web UI | Usage calculator view, **Burn guard** card: the settings under the status, **Run now** to evaluate once; Settings > Usage burn guard for the same keys; the **Burn guard** stat card in the Monitor panel |
 | MCP | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| CLI | `datawatch usage burn-guard status`, `run`, `config [key=value ...]` |
-| REST | `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config` |
+| CLI | `datawatch usage burn-guard status`, `run`, `config [key=value ...]`; `datawatch automation set-effort-ceiling <id> docs=low ...` (or `--clear`) for the effort ceiling |
+| REST | `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`; `GET /api/config` returns the block under `usage.burn_guard`; `POST /api/automations/{id}/set_effort_ceiling` for the effort ceiling |
 | Comm channel | `usage burn-guard` for the status; settings through `configure usage.burn_guard.<key>=<value>` |
 
 ## Reading an alert
@@ -169,7 +169,7 @@ The ceiling has its own tools rather than the generic settings call:
   clears it), for example `{"docs":"low","final_gate":"cheaper_backend"}`.
 - `autonomous_prd_set_task_effort_ceiling` sets one task's ceiling (empty clears
   it).
-- The comm channel verb is `automation set-effort-ceiling <id> docs=low ...` (or `clear=true`), the CLI and REST carry the same call, and the PWA card shows the
+- The comm channel verb is `automation set-effort-ceiling <id> docs=low ...` (or `clear=true`), the CLI (`datawatch automation set-effort-ceiling <id> docs=low`, `--clear` to remove) and REST (`POST /api/automations/{id}/set_effort_ceiling`) carry the same call, and the PWA card shows the
   daemon-wide ceilings read-only.
 
 ## The Claude retry limit

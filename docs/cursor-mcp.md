@@ -163,6 +163,8 @@ Selected core tools:
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |
 | `discussion_subscribe` / `discussion_unsubscribe` / `discussion_subscriptions` | Discussion subscriptions (BL358) |
 | `usage_advice` / `usage_readings` | Account usage calculator: the one advice result (lane choice, headroom, projected cycle end, run-out warnings, finish-early estimate, plain-English advice block) and the shared usage readings series |
+| `burn_guard_status` / `burn_guard_run` / `burn_guard_config_get` / `burn_guard_config_set` | The burn guard: its state, rung and projection against the pace line; evaluate now; read and change the `usage.burn_guard` settings (one invalid value rejects the whole call) |
+| `automation_set_effort_ceiling` / `autonomous_prd_set_task_effort_ceiling` | Cap the effort of an Automation's task kinds (`docs`, `parity`, `live_check`, `final_gate`) or of one task at `low`, `medium`, `high` or `cheaper_backend`; an empty value clears it |
 | `usage_reading_add` / `usage_reading_delete` | Record (percent or spend, when, session percent, lanes) or delete one reading of the shared series |
 | `usage_extra_credit_set` / `usage_remaining_work_set` | Set the bought extra credit (shared setting) and the typed remaining work (daemon-local, run-flat-out policy) |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |

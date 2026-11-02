@@ -641,6 +641,30 @@ readings). Settings apply without a restart.
 
 See [howto/usage-calculator.md](howto/usage-calculator.md).
 
+### Burn guard
+
+The burn guard compares the projected weekly burn with the usage calculator's
+pace line every `interval_minutes` and, while the projection runs over by more
+than `margin_points`, applies a ladder of responses (`lower_inflight`,
+`route_pi_prompt`, `hold_claude`) and steps back when the projection is under
+the line. Keys live under `usage.burn_guard.`: `enabled` (default true),
+`interval_minutes` (60), `margin_points` (2), `ladder`, `step_back` (true),
+`cache_write_points_per_million` (0.373), `cache_read_points_per_million`
+(0.0069), `refit_on_reading` (true), `effort_ceiling` and `retry_limit_claude`
+(2). Settings apply without a restart. The effort ceiling is set per Automation,
+not through the config keys.
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `usage.burn_guard.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch config set usage.burn_guard.<key> <value>`; `datawatch usage burn-guard status|run|config`; `datawatch automation set-effort-ceiling <id> docs=low` |
+| **Web UI** | Settings > Usage burn guard; the burn guard card on the usage calculator and the Monitor tab |
+| **REST API** | `PUT /api/config` with `{"usage.burn_guard.<key>": value}`; `GET /api/usage/burn-guard`, `GET`/`PUT /api/usage/burn-guard/config`, `POST /api/usage/burn-guard/run` |
+| **MCP** | `burn_guard_*` tools; `automation_set_effort_ceiling` |
+| **Comm channel** | `configure usage.burn_guard.<key>=<value>`; `usage burn-guard`; `automation set-effort-ceiling` |
+
+See [howto/burn-guard.md](howto/burn-guard.md).
+
 ### Verifier node limit
 
 Verifier runs take a lease on the same node pool as the worker they check, and a compute node that hosts a local engine gets its pool limit from its slot count (see "Compute-node queue" below), which is the node's `session_slots` when set, otherwise one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node that hosts no local engine keeps its `max_concurrent_sessions` limit. A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.

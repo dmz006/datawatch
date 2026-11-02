@@ -82,6 +82,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"burn_guard_settings_title",
 		"burn_guard_state_line",
 		"burn_guard_decision_line",
+		"stats_burn_guard",
+		"settings_usage_burn_guard_enabled",
 		"status_card_activity",
 		"capacity_card_title",
 		"progress_card_title",

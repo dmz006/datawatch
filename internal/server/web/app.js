@@ -16533,6 +16533,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.calculator.reset_zone', label: "Usage calculator reset time zone (IANA name; empty follows the server's zone)", labelKey: 'settings_usage_calculator_reset_zone', type: 'text', placeholder: 'America/New_York', hintKey: 'settings_usage_calculator_reset_zone_hint' },
     { key: 'usage.calculator.keeper', label: 'Usage calculator keeper (federation peer that keeps the readings, empty = this daemon)', labelKey: 'settings_usage_calculator_keeper', type: 'text', placeholder: '', hintKey: 'settings_usage_calculator_keeper_hint' },
   ]},
+  { id: 'usage_burn_guard', section: 'Usage burn guard', docs: 'howto/burn-guard.md', fields: [
+    { key: 'usage.burn_guard.enabled', label: 'Burn guard enabled', labelKey: 'settings_usage_burn_guard_enabled', type: 'toggle', default: true },
+    { key: 'usage.burn_guard.interval_minutes', label: 'Burn guard check interval (minutes)', labelKey: 'settings_usage_burn_guard_interval_minutes', type: 'number', placeholder: '60', min: 1, max: 1440, step: 1, default: '60' },
+    { key: 'usage.burn_guard.margin_points', label: 'Burn guard margin (points)', labelKey: 'settings_usage_burn_guard_margin_points', type: 'number', placeholder: '2', min: 0, max: 50, step: 0.5, default: '2' },
+    { key: 'usage.burn_guard.step_back', label: 'Burn guard steps back under the line', labelKey: 'settings_usage_burn_guard_step_back', type: 'toggle', default: true },
+    { key: 'usage.burn_guard.cache_write_points_per_million', label: 'Burn guard cache write price', labelKey: 'settings_usage_burn_guard_cache_write_points_per_million', type: 'number', placeholder: '0.373', min: 0.0001, step: 0.001, default: '0.373' },
+    { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
+    { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
+    { key: 'usage.burn_guard.retry_limit_claude', label: 'Burn guard Claude retry limit', labelKey: 'settings_usage_burn_guard_retry_limit_claude', type: 'number', placeholder: '2', min: 0, max: 20, step: 1, default: '2' },
+  ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
@@ -35240,6 +35250,29 @@ function renderStatsData(el, data) {
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+    }
+    // Burn guard card: the state, the ladder level, the projection against the
+    // pace line and the counters. Left out until the daemon reports a state.
+    if (data.burn_guard_state) {
+      const bgNum = v => (typeof v === 'number' && isFinite(v)) ? (Math.round(v * 10) / 10) : '-';
+      const bgRows = [
+        ['stats_burn_guard_state', 'State', data.burn_guard_state],
+        ['stats_burn_guard_level', 'Ladder level', data.burn_guard_level || 0],
+        ['stats_burn_guard_projected', 'Projected (%)', bgNum(data.burn_guard_projected_percent)],
+        ['stats_burn_guard_target', 'Pace line (%)', bgNum(data.burn_guard_target_percent)],
+        ['stats_burn_guard_over_by', 'Over by (points)', bgNum(data.burn_guard_over_by_points)],
+        ['stats_burn_guard_rate', 'Burn (points/hour)', bgNum(data.burn_guard_points_per_hour)],
+        ['stats_burn_guard_tick_age', 'Last check (s ago)', data.burn_guard_last_tick_age_seconds || 0],
+        ['stats_burn_guard_climbs', 'Climbs', data.burn_guard_climbs || 0],
+        ['stats_burn_guard_step_backs', 'Step backs', data.burn_guard_step_backs || 0],
+        ['stats_burn_guard_errors', 'Errors', data.burn_guard_errors || 0],
+      ];
+      const bgLines = bgRows.map(r => {
+        const warn = (r[0] === 'stats_burn_guard_errors' && r[2] > 0) || (r[0] === 'stats_burn_guard_over_by' && r[2] > 0);
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card" data-stat="burn-guard"><div class="stat-label">${t('stats_burn_guard')||'Burn guard'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${bgLines}</div></div>`;
     }
     html += '</div>';
 

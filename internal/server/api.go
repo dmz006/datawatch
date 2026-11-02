@@ -5958,6 +5958,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// shows its defaults.
 		"usage": map[string]interface{}{
 			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
+			"burn_guard": s.cfg.Usage.BurnGuard,
 		},
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),

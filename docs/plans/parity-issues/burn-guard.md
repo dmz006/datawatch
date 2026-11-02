@@ -1,6 +1,6 @@
 # Parity issue draft — burn guard (datawatch-app)
 
-File on **datawatch-app** at merge, titled `[sync] feat(usage): burn guard status, settings and alerts`.
+Filed on **datawatch-app** as dmz006/datawatch-app#332 on 2026-11-02, titled `[sync] feat(usage): burn guard status, settings and alerts`.
 Parent release: the next patch above main at merge time.
 
 ## What changed in datawatch
@@ -48,3 +48,16 @@ Add the card, settings and state strings to the five bundles (`en`, `de`, `es`, 
 - Each setting loads, saves and shows the daemon's rejection message on an invalid value.
 - Alerts and questions from the guard render and open.
 - Nothing in the app ends or restarts a session as a result of the guard.
+
+## Parity surface
+
+| Surface | Included | Reason or where |
+|---|---|---|
+| REST | Yes | `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`, `GET /api/config` under `usage.burn_guard`, `POST /api/automations/{id}/set_effort_ceiling` |
+| MCP | Yes | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set`, `automation_set_effort_ceiling`, `autonomous_prd_set_task_effort_ceiling` |
+| CLI | Yes | `datawatch usage burn-guard status|run|config`, `datawatch automation set-effort-ceiling` |
+| comm channel | Yes | `usage burn-guard`, `configure usage.burn_guard.<key>=<value>`, `automation set-effort-ceiling` |
+| YAML/config | Yes | the `usage.burn_guard` block in `docs/config-reference.yaml` |
+| PWA | Yes | the Burn guard card on the usage calculator view, Settings > Usage burn guard, the Monitor stat card |
+| Android | Yes | this issue: status card, settings and alerts |
+| iPhone | Yes | the same issue text applies once the iOS app exists; there is no iOS app in this repository's release set, so it is tracked on the same issue |

@@ -156,3 +156,26 @@ func TestBurnGuardStatusCarriesRungLineAndMargin(t *testing.T) {
 		t.Errorf("rung = %q, applied = %v", st.Rung, st.Applied)
 	}
 }
+
+// GET /api/config carries the usage.burn_guard block so the Settings page and every
+// other reader of the config see the live values.
+func TestGetConfigCarriesBurnGuard(t *testing.T) {
+	s := burnGuardConfigServer(t)
+	s.cfg.Usage.BurnGuard.MarginPoints = 4.5
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET /api/config = %d", rr.Code)
+	}
+	var got struct {
+		Usage struct {
+			BurnGuard config.BurnGuardConfig `json:"burn_guard"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Usage.BurnGuard.MarginPoints != 4.5 {
+		t.Errorf("usage.burn_guard.margin_points = %v, want 4.5", got.Usage.BurnGuard.MarginPoints)
+	}
+}

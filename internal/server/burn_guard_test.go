@@ -121,7 +121,7 @@ func burnGuardRig(t *testing.T, cfg *config.BurnGuardConfig) (*BurnGuard, *fakeA
 	t.Helper()
 	now := time.Date(2026, 10, 30, 20, 0, 0, 0, time.UTC)
 	dir := t.TempDir()
-	proj := filepath.Join(dir, "-home-dmz-workspace-datawatch")
+	proj := filepath.Join(dir, "-example-project")
 	if err := os.MkdirAll(proj, 0o755); err != nil {
 		t.Fatal(err)
 	}
