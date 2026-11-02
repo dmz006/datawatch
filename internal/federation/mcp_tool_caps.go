@@ -123,6 +123,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_task_verifier_policy":      CapAutonomousWrite,
 	"autonomous_prd_set_type":                      CapAutonomousWrite,
 	"autonomous_shipped_record":                    CapAutonomousWrite, // operator records a PRD or Automation as shipped
+	"autonomous_shipped_backfill":                  CapAutonomousWrite, // operator runs the shipped-state backfill from merge history (dry_run or writing)
 	"autonomous_scan_config_get":                   CapAutonomousRead,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,
 	"autonomous_status":                            CapAutonomousRead,

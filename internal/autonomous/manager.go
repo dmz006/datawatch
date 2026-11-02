@@ -5,6 +5,7 @@ package autonomous
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
@@ -39,6 +40,40 @@ func trimDecisions(ds []Decision) []Decision {
 		return ds
 	}
 	return ds[len(ds)-maxDecisionsPerPRD:]
+}
+
+// ShippedBackfillOnce runs one shipped-state backfill pass synchronously
+// (the REST, MCP, comm and CLI surfaces share this entry point): it walks
+// the base repository's main branch for merge commits naming automaton
+// branches and records shipped state with source backfill. DryRun scans
+// and computes the report without writing any shipped record.
+func (m *Manager) ShippedBackfillOnce(dryRun bool) (any, error) {
+	report, err := m.BackfillShipped(context.Background(), ShippedBackfillOpts{DryRun: dryRun})
+	if err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
+// StartShippedBackfill serves the autonomous.shipped.backfill_on_start
+// config (default off): when enabled it runs one shipped-state backfill
+// pass in a goroutine after the stores have loaded. It never blocks
+// startup and never fails it — the pass is logged (report, or the error
+// when the base repository is missing or unreadable) and the daemon
+// carries on regardless.
+func (m *Manager) StartShippedBackfill(enabled bool) {
+	if !enabled {
+		return
+	}
+	go func() {
+		report, err := m.BackfillShipped(context.Background(), ShippedBackfillOpts{})
+		if err != nil {
+			log.Printf("[autonomous] shipped.backfill_on_start: %v (daemon startup unaffected)", err)
+			return
+		}
+		b, _ := json.Marshal(report)
+		log.Printf("[autonomous] shipped.backfill_on_start: report %s", b)
+	}()
 }
 
 // markGateInvalid records an unusable quality-gate baseline on the PRD:

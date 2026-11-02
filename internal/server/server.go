@@ -437,6 +437,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/tags/registry/write", api.handleTagRegistryWrite)
 	apiMux.HandleFunc("/api/autonomous/tags/registry/notes/", api.handleTagRegistryNotes)
 	apiMux.HandleFunc("/api/autonomous/attention", api.handleAutonomousAttention)
+	// Shipped-state backfill: POST /api/autonomous/shipped/backfill
+	// [?dry_run=true] — one pass over the base repository's main branch.
+	apiMux.HandleFunc("/api/autonomous/shipped/backfill", api.handleAutonomousShippedBackfill)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)

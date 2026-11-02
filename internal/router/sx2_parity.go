@@ -438,6 +438,9 @@ func prettyJSON(body string) string {
 // shippedRecordUsage is the comm-channel usage line for recording shipped state.
 const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>] [automation=true]"
 
+// shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
+const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
+
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
 // (when automation=true) through their own POST /.../shipped endpoints. Status
@@ -485,6 +488,39 @@ func (r *Router) handleAutonomousShippedVerb(args []string) {
 		return
 	}
 	r.reply("autonomous shipped-record", prettyJSON(out))
+}
+
+// handleAutonomousShippedBackfillVerb serves the shipped-backfill comm
+// verb: one shipped-state backfill pass over the base repository's
+// main-branch history via POST /api/autonomous/shipped/backfill, replying
+// with the report. dry_run=true scans and computes the report without
+// writing any shipped record; absent (the default, like every other
+// surface) the pass writes.
+func (r *Router) handleAutonomousShippedBackfillVerb(args []string) {
+	path := "/api/autonomous/shipped/backfill"
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply("autonomous shipped-backfill failed", shippedBackfillUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		if k != "dry_run" {
+			r.reply("autonomous shipped-backfill failed", shippedBackfillUsage)
+			return
+		}
+		if strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on") {
+			path += "?dry_run=true"
+		}
+		// false / 0 / off = the default: the pass writes.
+	}
+	out, err := r.commJSON(http.MethodPost, path, "")
+	if err != nil {
+		r.reply("autonomous shipped-backfill failed", err.Error())
+		return
+	}
+	r.reply("autonomous shipped-backfill", prettyJSON(out))
 }
 
 func (r *Router) handleAutonomous(cmd Command) {
@@ -1212,6 +1248,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous set-kind", prettyJSON(out))
 	case "shipped", "shipped-record", "shipped_record", "record-shipped", "record_shipped":
 		r.handleAutonomousShippedVerb(args)
+	case "shipped-backfill", "shipped_backfill":
+		r.handleAutonomousShippedBackfillVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":
 		r.handleLaneFillVerb(verb, args)
 	case "infra-retries", "infra_retries":

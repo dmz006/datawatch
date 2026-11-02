@@ -1874,6 +1874,21 @@ func (a *API) RecordAutomationShipped(id, release string, mergedAt time.Time, co
 	return auto, nil
 }
 
+// ShippedBackfillOnce runs one shipped-state backfill pass (the REST,
+// MCP, comm and CLI surfaces all funnel through this entry point — and
+// through Manager.BackfillShipped, the single implementation): it walks
+// the base repository's main branch for merge commits naming automaton
+// branches and records shipped state (source backfill) on the matching
+// PRDs and Automations. dryRun scans and computes the report without
+// writing any shipped record.
+func (a *API) ShippedBackfillOnce(dryRun bool) (any, error) {
+	report, err := a.M.BackfillShipped(context.Background(), ShippedBackfillOpts{DryRun: dryRun})
+	if err != nil {
+		return nil, err
+	}
+	return report, nil
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

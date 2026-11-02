@@ -3,6 +3,9 @@
 // the merge time, the merge commit and the recording source. Status is never
 // touched; the record is idempotent per merge commit. A sibling of the
 // autonomous_shipped_record MCP tool and the "shipped" comm verbs.
+//
+// `datawatch autonomous shipped backfill [--dry-run]` — one shipped-state
+// backfill pass over the base repository's main branch, via the daemon.
 
 package main
 
@@ -77,6 +80,21 @@ func (a *shippedRecordArgs) run() error {
 	return daemonJSON(http.MethodPost, a.path(), body)
 }
 
+// shippedBackfillArgs holds the parsed flags of the shipped-backfill
+// command: the daemon does the whole pass, the CLI only sends dry_run.
+type shippedBackfillArgs struct {
+	dryRun bool
+}
+
+func (a *shippedBackfillArgs) path() string { return "/api/autonomous/shipped/backfill" }
+
+func (a *shippedBackfillArgs) run() error {
+	if a.dryRun {
+		return daemonJSON(http.MethodPost, a.path()+"?dry_run=true", nil)
+	}
+	return daemonJSON(http.MethodPost, a.path(), nil)
+}
+
 func newAutonomousShippedCmd() *cobra.Command {
 	rec := &shippedRecordArgs{}
 	cmd := &cobra.Command{
@@ -87,7 +105,13 @@ the release it was merged into, the merge time, the merge commit and
 how the record was written. Recording never changes the entity's status
 and is idempotent per merge commit.
 
-Use a PRD id by default, or --automation to record an Automation.`,
+Use a PRD id by default, or --automation to record an Automation.
+
+The backfill sub-command scans the base repository's main branch for
+merge commits naming automaton branches and records shipped state
+(source backfill) on the matching PRDs and Automations, without ever
+touching a status — use --dry-run to see the report first, then run it
+for real.`,
 	}
 	record := &cobra.Command{
 		Use:   "record <id>",
@@ -104,5 +128,27 @@ Use a PRD id by default, or --automation to record an Automation.`,
 	record.Flags().StringVar(&rec.source, "source", "", "merge_step or backfill (default backfill)")
 	record.Flags().BoolVar(&rec.automation, "automation", false, "Record an Automation instead of a PRD")
 	cmd.AddCommand(record)
+	backfill := &shippedBackfillArgs{}
+	backfillCmd := &cobra.Command{
+		Use:   "backfill",
+		Short: "Backfill shipped state from the base repository's merge history",
+		Long: `Run one shipped-state backfill pass over the base repository's main
+branch: merge commits naming automaton branches (automaton/<8-hex id>)
+record shipped state on the matching PRDs, and on each Automation whose
+non-skipped member PRDs are all shipped. The release attribution is the
+first release at or after each merge. Status is never touched, so a
+cancelled PRD stays cancelled and unmarked.
+
+Use --dry-run to scan and report without writing any shipped record;
+without it the pass writes. The report counts what was scanned, marked
+and left alone, plus the ids the history names that the store does not
+hold.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return backfill.run()
+		},
+	}
+	backfillCmd.Flags().BoolVar(&backfill.dryRun, "dry-run", false, "Scan and compute the report without writing any shipped record")
+	cmd.AddCommand(backfillCmd)
 	return cmd
 }

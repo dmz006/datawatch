@@ -942,6 +942,12 @@ type AutonomousAPI interface {
 	RecordPRDShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
 	RecordAutomationShipped(id, release string, mergedAt time.Time, commit, source string) (any, error)
 
+	// Shipped backfill — one shipped-state backfill pass over the base
+	// repository's main branch, returning the manager's
+	// ShippedBackfillReport. dryRun scans and computes the report without
+	// writing any shipped record.
+	ShippedBackfillOnce(dryRun bool) (any, error)
+
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
 	// session's telemetry verdicts by the HTTP handler.

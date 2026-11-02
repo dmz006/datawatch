@@ -6455,6 +6455,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// autonomous.shipped.backfill_on_start (default off) — now that the
+			// stores have loaded, run the shipped-state backfill pass in a
+			// goroutine: it is logged and never blocks or fails startup.
+			amgr.StartShippedBackfill(cfg.Autonomous.Shipped.EffectiveBackfillOnStart())
 			// Session-end scratch releases by the owner are counted into the
 			// cleanup status (owner bucket) so the safety-net sweep's count
 			// stays separate (cleanup_status.go).

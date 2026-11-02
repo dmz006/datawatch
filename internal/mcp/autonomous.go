@@ -691,6 +691,28 @@ func (s *Server) handleAutonomousShippedRecord(_ context.Context, req mcpsdk.Cal
 	return llmSetterResult(out, err)
 }
 
+// toolAutonomousShippedBackfill + handler serve the operator/LLM "backfill
+// shipped state" action: it proxies the server's
+// POST /api/autonomous/shipped/backfill endpoint, which runs one
+// shipped-state backfill pass over the base repository's main branch
+// (source backfill) and returns the report. dry_run=true scans and
+// computes the report without writing any shipped record; absent (the
+// default, like every other surface) the pass writes.
+func (s *Server) toolAutonomousShippedBackfill() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_shipped_backfill",
+		mcpsdk.WithDescription("Backfill the shipped state from the base repository's merge history: scans the main branch (MAIN_BRANCH when set) for merge commits that name an automaton branch (automaton/<8-hex id>) and records shipped state (source backfill) on the matching PRDs and on every Automation whose non-skipped member PRDs are all shipped. The release attribution is the first release at or after each merge. No status is ever touched: a cancelled PRD stays cancelled and unmarked. Returns the report — prds_scanned, prds_marked, prds_already_marked, automations_marked, left_cancelled, unmatched_ids, errors. Idempotent per merge commit — a repeat run reports the already-recorded ones as prds_already_marked. Set dry_run=true to scan and compute the report without writing any shipped record; absent or false the pass writes (the default)."),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true: scan and compute the report without writing; false or absent: the pass writes (default)")),
+	)
+}
+func (s *Server) handleAutonomousShippedBackfill(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/autonomous/shipped/backfill"
+	if req.GetBool("dry_run", false) {
+		path += "?dry_run=true"
+	}
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	return llmSetterResult(out, err)
+}
+
 // llmSetterResult turns a proxied LLM setter response into a tool result.
 // A refusal from the REST handler (non-2xx, such as a model/backend
 // pairing the backend cannot serve) becomes a tool error carrying the REST

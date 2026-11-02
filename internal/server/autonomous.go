@@ -17,6 +17,8 @@
 //   GET    /api/autonomous/prds/{id}/plan_coverage
 //                                                 read the stored plan coverage record + the filters in effect now
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
+//   POST   /api/autonomous/shipped/backfill [?dry_run=true]
+//                                                 shipped-state backfill pass over the base repo's main branch
 
 package server
 
@@ -3760,6 +3762,41 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	s.audit(r.Context(), "automation_activate", "automation", id,
 		map[string]any{"actor": req.Actor, "reason": req.Reason})
 	writeJSONOK(w, a)
+}
+
+// handleAutonomousShippedBackfill serves POST
+// /api/autonomous/shipped/backfill. One shipped-state backfill pass over the
+// base repository's main branch: merge commits naming automaton branches
+// record shipped state (source backfill) on the matching PRDs, and on each
+// Automation whose non-skipped members are all shipped. dry_run=true scans
+// and computes the report without writing any record; absent defaults to
+// writing. No Status is ever touched, so a cancelled PRD stays cancelled
+// and unmarked. The response is the manager's ShippedBackfillReport.
+func (s *Server) handleAutonomousShippedBackfill(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dryRun := false
+	if v := r.URL.Query().Get("dry_run"); v != "" {
+		d, err := strconv.ParseBool(v)
+		if err != nil {
+			http.Error(w, "dry_run must be a boolean ('true' or 'false')", http.StatusBadRequest)
+			return
+		}
+		dryRun = d
+	}
+	report, err := s.autonomousMgr.ShippedBackfillOnce(dryRun)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "shipped_backfill", "autonomous", "",
+		map[string]any{"dry_run": dryRun, "report": report})
+	writeJSONOK(w, report)
 }
 
 // handleAutomationShipped serves POST /api/automations/{id}/shipped.
