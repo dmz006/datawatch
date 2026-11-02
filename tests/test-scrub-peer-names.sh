@@ -36,6 +36,9 @@
 #   8. placeholder table keeps going past the first five entries
 #      (peer-c .. peer-z, then peer-c1, ...) without broken characters
 #   9. no fixture name in any output of any case (scans every capture)
+#  10. go-area pattern matching more than 500 lines is reported
+#      'ambiguous: skipped K' (count only), never applied even with
+#      --apply, while the surviving pattern keeps its placeholder
 #
 # Usage:
 #   bash tests/test-scrub-peer-names.sh
@@ -402,13 +405,62 @@ else
         "index-to-placeholder mapping or re-run output differs"
 fi
 
+# -------------------------------------------------------------- case 10
+# Ambiguity guard (go area): a pattern matching more than 500 lines of
+# the selected files is treated as a generic word — reported as a
+# count-only line, dropped before placeholder assignment, and never
+# applied; the surviving pattern still maps to the first placeholder.
+T10="$W/t10"
+mkdir -p "$T10/internal/pkg"
+NW="$(printf '%s%s%s' "$FP1" "$FP2" "wide-0")"
+{
+    printf 'uses %s\n' "$N1"
+    k=1
+    while [ "$k" -le 501 ]; do
+        printf 'x %s x\n' "$NW"
+        k=$((k + 1))
+    done
+} >"$T10/internal/pkg/a.go"
+P10F="$W/patterns10"
+printf '%s\n%s\n' "$N1" "$NW" >"$P10F"   # sorted: N1 (index 0) -> remote-node
+new_tree "$T10"
+
+run_scrub "$T10" "$P10F" go
+J_OK=1
+J_EXP1="$(printf '%s\n' \
+    'ambiguous: skipped 1' \
+    'internal/pkg/a.go: 1' \
+    'remaining: 1')"
+[ "$RUN_RC" = "0" ] && [ "$RUN_OUT" = "$J_EXP1" ] || J_OK=0
+
+run_scrub "$T10" "$P10F" go --apply
+J_EXP2="$(printf '%s\n' \
+    'ambiguous: skipped 1' \
+    'internal/pkg/a.go: 1' \
+    'remaining: 0')"
+[ "$RUN_RC" = "0" ] && [ "$RUN_OUT" = "$J_EXP2" ] || J_OK=0
+[ "$(grep -c 'remote-node' "$T10/internal/pkg/a.go")" = "1" ] || J_OK=0
+[ "$(grep -ciF -- "$NW" "$T10/internal/pkg/a.go")" = "501" ] || J_OK=0   # still untouched
+
+run_scrub "$T10" "$P10F" go
+J_EXP3="$(printf '%s\n' \
+    'ambiguous: skipped 1' \
+    'remaining: 0')"
+[ "$RUN_RC" = "0" ] && [ "$RUN_OUT" = "$J_EXP3" ] || J_OK=0
+if [ "$J_OK" = "1" ]; then
+    ok "go-area pattern over 500 matching lines is 'ambiguous: skipped', never applied"
+else
+    fail "go-area pattern over 500 matching lines is 'ambiguous: skipped', never applied" \
+        "one of the dry-run, apply or re-run assertions failed"
+fi
+
 # -------------------------------------------------------------- case 9
 # Every scrub invocation above ran in the main shell, so the capture
 # counter and the capture files are consistent; this case scans them
 # all for fixture names.
 F_OK=1
-[ "$NCAP" = "12" ] || F_OK=0   # one invocation per listed call site
-[ "$(find "$CAPS" -type f -name 'c*.out' | grep -c .)" = "12" ] || F_OK=0
+[ "$NCAP" = "15" ] || F_OK=0   # one invocation per listed call site
+[ "$(find "$CAPS" -type f -name 'c*.out' | grep -c .)" = "15" ] || F_OK=0
 while IFS= read -r cap; do
     [ -s "$cap" ] || continue
     for n in "$N1" "$N1U" "$N2" "$N2U" "$N3"; do

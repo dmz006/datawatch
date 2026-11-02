@@ -18,6 +18,11 @@
 #     once per file), one name per line. Names are trimmed; blank lines and
 #     lines starting with '#' in the source list are skipped; duplicates are
 #     removed case-insensitively against the existing file content.
+#   * A candidate name is NEVER seeded when it is shorter than 5 characters
+#     or when it matches a whole word in the tracked generic-name stoplist
+#     scripts/leak-patterns.skip (case-insensitive). Such names would match
+#     thousands of ordinary code lines; the skipped count is printed as
+#     'skipped N generic names' (count only, never a name).
 #   * Output is counts only: 'seeded N names'. A name is never printed.
 #     When the name source yields no names at all, a one-line notice saying
 #     nothing was seeded is printed instead of a silent empty run.
@@ -198,6 +203,19 @@ fetch_all_names() {
 NAMES_TMP="$(mktemp)" || die2 "mktemp failed (exit 2)"
 trap 'rm -f "$NAMES_TMP"' EXIT
 
+# Generic-name stoplist (tracked): a candidate equal to any of these words
+# (case-insensitive, whole name) is refused. Absent file = empty stoplist.
+STOPFILE="$SCRIPT_DIR/leak-patterns.skip"
+declare -A STOP=()
+if [ -f "$STOPFILE" ]; then
+    while IFS= read -r w; do
+        w="$(printf '%s' "$w" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [ -n "$w" ] || continue
+        case "$w" in '#'*) continue ;; esac
+        STOP["$(tr '[:upper:]' '[:lower:]' <<<"$w")"]=1
+    done < "$STOPFILE"
+fi
+
 if [ -n "${LEAK_SEED_NAMES_CMD:-}" ]; then
     # Test hook: the command's stdout IS the name list.
     raw="$(bash -c "$LEAK_SEED_NAMES_CMD" 2>/dev/null)" || raw=""
@@ -209,7 +227,9 @@ elif [ -z "$JSON_TOOL" ]; then
     raw=""
 else
     resolve_daemon
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 "${DW_BASE_URL}/api/health" 2>/dev/null)" || code=000
+    PROBE=(-s -o /dev/null -w '%{http_code}' --max-time 8)
+    [ "${DW_TLS:-0}" = "1" ] && PROBE+=(-k)
+    code="$(curl "${PROBE[@]}" "${DW_BASE_URL}/api/health" 2>/dev/null)" || code=000
     if ! printf '%s' "$code" | grep -qE '^2'; then
         echo "seed-leak-patterns: daemon not reachable — nothing seeded"
         exit 0
@@ -236,10 +256,15 @@ done < <(grep -vE '^[[:space:]]*(#|$)' "$TARGET" 2>/dev/null)
 
 added=""
 count=0
+skipped=0
 while IFS= read -r name; do
     [ -n "$name" ] || continue
     key="$(tr '[:upper:]' '[:lower:]' <<<"$name")"
     [ -n "${have[$key]:-}" ] && continue
+    if [ "${#name}" -lt 5 ] || [ -n "${STOP[$key]:-}" ]; then
+        skipped=$((skipped + 1))
+        continue
+    fi
     have["$key"]=1
     added+="$name"$'\n'
     count=$((count + 1))
@@ -259,4 +284,7 @@ if [ "$count" -gt 0 ]; then
 fi
 
 echo "seeded $count names"
+if [ "$skipped" -gt 0 ]; then
+    echo "skipped $skipped generic names"
+fi
 exit 0

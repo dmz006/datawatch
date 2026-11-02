@@ -20,6 +20,12 @@
 #     is mapped onto remote-node, peer-a, peer-b, gpu-node, peer-c,
 #     peer-d, peer-e, ... Longer patterns are replaced first so a name
 #     containing another name is handled cleanly.
+#   * Ambiguity guard (go area only): a pattern that matches more than 500
+#     lines across the area's selected files is treated as a generic word,
+#     not a distinct peer/node name. It is dropped from the run, reported
+#     as a single count-only line 'ambiguous: skipped K' (never a name),
+#     and its placeholder slot is released, so the surviving patterns keep
+#     one placeholder per name everywhere.
 #   * Binary files are skipped. The working tree is only changed with
 #     --apply; without it this script is a pure dry run.
 #
@@ -166,8 +172,6 @@ ORDER="$(
     done < "$PATLIST" \
         | LC_ALL=C sort -k1,1nr -k2,2n | cut -f2
 )"
-# shellcheck disable=SC2034
-i=0
 
 # ---------------------------------------------------------- file listing
 is_text() {
@@ -324,6 +328,63 @@ done
 if [ "$LIST" -eq 1 ]; then
     cat "$SEL"
     exit 0
+fi
+
+# --------------------------------------------- ambiguity guard (go area)
+# A pattern matching more than 500 lines of the go area is treated as a
+# generic word, not a peer/node name: applying it would corrupt the
+# source. Such patterns are dropped from this run (the pattern text is
+# never printed; nothing but the count below is), and the placeholder
+# assignment is re-anchored to the surviving patterns so one name still
+# maps to one placeholder in every file.
+AMBN=0
+if [ "$AREA" = "go" ] && [ -s "$SEL" ]; then
+    SELROOT="$W/selroot"
+    : > "$SELROOT"
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        printf '%s\n' "$ROOT/$f" >> "$SELROOT"
+    done < "$SEL"
+    awk -v patfile="$PATLIST" -v ll="$SELROOT" '
+        BEGIN {
+            n = 0
+            while ((getline line < patfile) > 0)
+                if (length(line) > 0) { n++; p[n] = tolower(line) }
+            close(patfile)
+            while ((getline path < ll) > 0) {
+                if (length(path) == 0) continue
+                while ((getline line < path) > 0) {
+                    t = tolower(line)
+                    for (i = 1; i <= n; i++)
+                        if (index(t, p[i])) c[i]++
+                }
+                close(path)
+            }
+            close(ll)
+            for (i = 1; i <= n; i++) print (c[i] ? c[i] : 0)
+        }
+    ' > "$W/patcounts" 2>/dev/null
+    if [ -s "$W/patcounts" ]; then
+        KEPT=()
+        exec 8< "$PATLIST" 9< "$W/patcounts"
+        while IFS= read -r p <&8 && IFS= read -r cnt <&9; do
+            [ -n "$p" ] || continue
+            if [ "${cnt:-0}" -gt 500 ]; then
+                AMBN=$((AMBN + 1))
+            else
+                KEPT+=("$p")
+            fi
+        done
+        exec 8<&- 9<&-
+        if [ "$AMBN" -gt 0 ]; then
+            [ "${#KEPT[@]}" -gt 0 ] || die "every pattern is ambiguous - nothing applied (exit 2)"
+            printf '%s\n' "${KEPT[@]}" > "$W/kept"
+            mv "$W/kept" "$PATLIST"
+            mapfile -t PATS < "$PATLIST"
+            ORDER="$( { i=0; while IFS= read -r p; do printf '%d\t%d\n' "${#p}" "$i"; i=$((i + 1)); done < "$PATLIST"; } | LC_ALL=C sort -k1,1nr -k2,2n | cut -f2 )"
+            echo "ambiguous: skipped $AMBN"
+        fi
+    fi
 fi
 
 # ------------------------------------------------------------- counting
