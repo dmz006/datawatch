@@ -3192,7 +3192,7 @@
   "onboarding_report_next_none": "Nichts weiter zu versuchen.",
   "settings_onboarding_report_group": "Einrichtungsbericht",
   "settings_onboarding_report_enabled": "Einrichtungsbericht (standardmäßig an)",
-  "settings_onboarding_report_enabled_hint": "Zeigt für die Automaten, was eingerichtet ist, was fehlt und was als Nächstes zu tun ist. Er liest nur und ändert nie eine Einstellung.",
+  "settings_onboarding_report_enabled_hint": "Zeigt für die Automatisierung, was eingerichtet ist, was fehlt und was als Nächstes zu tun ist. Er liest nur und ändert nie eine Einstellung.",
   "settings_onboarding_report_include_next_steps": "Einrichtungsbericht schlägt nächste Schritte vor (standardmäßig an)",
   "settings_onboarding_report_include_next_steps_hint": "Fügt für jede nicht eingerichtete Prüfung eine geordnete Liste von Vorschlägen mit Anleitungslink hinzu.",
   "settings_onboarding_report_disabled_checks": "Im Einrichtungsbericht ausgelassene Prüfungen (Prüf-IDs, durch Komma getrennt; standardmäßig keine)",
