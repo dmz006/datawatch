@@ -32,6 +32,8 @@ notes: Run on the fixed code with one busy loop per CPU started by PID and kille
 
 ## Unlocked readers
 
+non-exhaustive survey: a best-effort list, not a complete audit. Survey grep: `grep -lE 'len\((calls|reqs|got|seen|bodies)\)|HandleTestMessage' internal/router/*_test.go` matched 77 files; entries below come from reading those files' fake-daemon handlers and are not guaranteed to cover every one. No code or test was changed and no test was run.
+
 - internal/router/audit_query_filters_test.go:62 TestAuditQuery_CommFilters: handler sets captured query and hits++ with no lock; test reads *got and *hits after HandleTestMessage
 - internal/router/automation_budget_cmd_test.go:60 TestAutomationSetBudgetComm: handler appends to captured calls unlocked; test does len(calls) and calls[0] after HandleTestMessage
 - internal/router/automation_budget_cmd_test.go:134 TestAutomationSetBudgetCommRejectsBadInput: handler does calls++ unlocked; test compares calls to before after HandleTestMessage
@@ -126,3 +128,4 @@ notes: Run on the fixed code with one busy loop per CPU started by PID and kille
 - internal/router/autonomous_tags_test.go:86 TestTagVerbDispatch: handler writes gotMethod, gotPath and gotBody unlocked (line 77); test reads them after HandleTestMessage
 - internal/router/compute_tls_test.go:136 TestComputeNodeTLSAddAndUpdateSendKeys: handler writes d.method, d.path and d.body under d.mu but the test reads them without taking the lock (also line 139)
 - internal/router/compute_tls_test.go:155 TestComputeNodeTLSSkipVerifyIsBoolInBody: handler writes d.body under d.mu but the test reads d.body without the lock
+- internal/router/progress_cmd_test.go:102 TestProgressCommReplyIsTheRenderedText: fake daemon handler writes *query unlocked (line 40); test reads query after captureSends (also line 120 in TestProgressCommRejectsUnknownArgument and line 132 in TestProgressCommTrend)
