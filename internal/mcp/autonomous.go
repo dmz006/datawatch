@@ -175,6 +175,10 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
+		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
+		mcpsdk.WithBoolean("capacity_adopt_before_admit", mcpsdk.Description("After a restart, admit resumed workers before any new work (default true)")),
+		mcpsdk.WithNumber("capacity_adoption_wait_seconds", mcpsdk.Description("Longest wait, in seconds, for resumed workers to be adopted after a restart (default 30; negative values are rejected)")),
 		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_tokens", mcpsdk.Description("Rate ceiling on each LLM: most tokens it may use per rolling window; 0 = no tokens ceiling (default); negative values are rejected")),
 		mcpsdk.WithNumber("capacity_rate_window_seconds", mcpsdk.Description("Rolling window length in seconds for the two rate ceilings (0 = default 3600)")),
@@ -525,6 +529,16 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["capacity_enabled"]; ok {
 			body["capacity_enabled"] = req.GetBool("capacity_enabled", true)
+		}
+	}
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"capacity_strict_node_limit", "capacity_count_pool_by_node", "capacity_adopt_before_admit"} {
+			if _, ok := args[k]; ok {
+				body[k] = req.GetBool(k, true)
+			}
+		}
+		if _, ok := args["capacity_adoption_wait_seconds"]; ok {
+			body["capacity_adoption_wait_seconds"] = int(req.GetFloat("capacity_adoption_wait_seconds", 0))
 		}
 	}
 	// Presence-aware and forwarded as given (negatives included) so the REST

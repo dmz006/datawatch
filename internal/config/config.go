@@ -2464,6 +2464,25 @@ type AutonomousConfig struct {
 	RoleScanIntervalSeconds int `yaml:"role_scan_interval_seconds,omitempty" json:"role_scan_interval_seconds,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds one capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `yaml:"capacity_wait_timeout_seconds,omitempty" json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityStrictNodeLimit: a compute node never runs more sessions than its
+	// limit through admission — verifier and resumed (adopted) workers that land
+	// on a full node are held outside its pool yet still count against it. Unset
+	// = true. Off restores the earlier behaviour, where an adopted session was
+	// added to the node pool whatever its use. Read live by the ledger.
+	CapacityStrictNodeLimit *bool `yaml:"capacity_strict_node_limit,omitempty" json:"capacity_strict_node_limit,omitempty"`
+	// CapacityCountPoolByNode: an llm: pool counts the sessions on each node up
+	// to that node's own limit, so sessions piled on a busy node do not use up
+	// slots a free node could take. Unset = true. Off counts every lease once.
+	// Read live by the ledger.
+	CapacityCountPoolByNode *bool `yaml:"capacity_count_pool_by_node,omitempty" json:"capacity_count_pool_by_node,omitempty"`
+	// CapacityAdoptBeforeAdmit: after a daemon restart, new requests wait until
+	// the work that survived the restart has been adopted (or
+	// CapacityAdoptionWaitSeconds passes). Unset = true. Off lets a new request
+	// take a slot at once. Read live by the ledger.
+	CapacityAdoptBeforeAdmit *bool `yaml:"capacity_adopt_before_admit,omitempty" json:"capacity_adopt_before_admit,omitempty"`
+	// CapacityAdoptionWaitSeconds bounds the restart wait above. 0 or unset =
+	// 30. Read when the daemon starts.
+	CapacityAdoptionWaitSeconds int `yaml:"capacity_adoption_wait_seconds,omitempty" json:"capacity_adoption_wait_seconds,omitempty"`
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
@@ -5760,6 +5779,9 @@ func validateLoaded(cfg *Config) error {
 		if v < 0 {
 			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
 		}
+	}
+	if cfg.Autonomous.CapacityAdoptionWaitSeconds < 0 {
+		return fmt.Errorf("autonomous.capacity_adoption_wait_seconds: %d must be >= 0", cfg.Autonomous.CapacityAdoptionWaitSeconds)
 	}
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)

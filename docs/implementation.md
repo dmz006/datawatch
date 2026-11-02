@@ -163,6 +163,36 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
 
+Node placement rules (`internal/capacity/ledger.go`, wired in `cmd/datawatch/capacity_wiring.go`;
+each switch is read at call time, so a change applies to the next admission with no restart,
+except the adoption wait, which is read once as the ledger starts):
+
+- `autonomous.capacity_strict_node_limit` (bool, unset = true): `Adopt` never lets a
+  `node:<n>` pool read over its limit. A session adopted onto a node already at its limit
+  is recorded with `Lease.NodeOverflow`, held outside the node pool but still counted in
+  the host and `llm:` pools and as an occupant of the node for new admissions
+  (`Snapshot` reports it as the node's `Overflow`, so `Held+External` never exceeds
+  `Limit`). It joins the node pool when the pool has room. A verifier or judge whose
+  entry pools two or more nodes carries those nodes as its choices and is placed on the
+  least loaded node with room, or waits (`judgeChoices` in `cmd/datawatch/judge_capacity.go`).
+  Off: `Adopt` adds the node pool whatever its use.
+- `autonomous.capacity_count_pool_by_node` (bool, unset = true): an `llm:<n>` pool counts
+  the sessions on each node at most up to that node's own limit (`heldByNodeLocked`), so
+  sessions piled on one node do not use slots a free node could take. The pool's own
+  limit is unchanged. Off: every lease counts once.
+- `autonomous.capacity_adopt_before_admit` (bool, unset = true) and
+  `autonomous.capacity_adoption_wait_seconds` (whole seconds >= 0, unset or 0 = 30):
+  the ledger starts holding every request (`BeginAdoption`) until
+  `resumeRunningPRDs` has adopted the work that survived a restart
+  (`MarkAdoptionComplete`), or the wait passes. The daemon's node health view also
+  starts strict: no node is healthy until the first read of the compute registry, so
+  nothing is placed on a node the ledger has not loaded. Off: requests are admitted
+  at once and the strict view does not hold placement.
+
+All four keys are in `GET`/`PUT /api/config`, `datawatch config set`, the MCP
+`config_set` and `autonomous_config_set` tools, the chat `configure` verb and the PWA
+Settings capacity section; defaults are in `internal/config/capacity_node_limit.go`.
+
 Ledger lock watchdog (`internal/capacity/watchdog.go`): `Ledger.SnapshotWatched` wraps
 `Snapshot` for request paths (`/api/capacity`, the comm `capacity` reply). If the snapshot
 has not returned after 5 seconds (`DefaultLockWatchdogThreshold`) `LogLockWedge` logs

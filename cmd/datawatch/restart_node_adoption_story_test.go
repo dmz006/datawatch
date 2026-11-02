@@ -186,7 +186,9 @@ func TestRestartAdoptsSessionsOntoTheirNodeAndPlacesTheRestElsewhere(t *testing.
 	if got := leaseNodes(st); !reflect.DeepEqual(got, want) {
 		t.Fatalf("adopted leases = %v, want both on alpha %v", got, want)
 	}
-	if p, ok := poolNamed(st, "node:alpha"); !ok || p.Held != 2 {
+	// The second adoption lands as overflow: the pool never reads over its limit
+	// (Held stays at 1), yet both engines count as in use.
+	if p, ok := poolNamed(st, "node:alpha"); !ok || p.Held+p.Overflow != 2 {
 		t.Fatalf("pool node:alpha = %+v (found %v), want 2 engines in use", p, ok)
 	}
 	if p, ok := poolNamed(st, "node:beta"); ok && p.Held != 0 {

@@ -613,6 +613,14 @@ the default; negative values are rejected):
   capacity_rate_tokens            most tokens per LLM per window
   capacity_rate_window_seconds    rolling window length (default 3600)
 
+Node over-admission rules, by JSON key (all on by default; false restores the
+earlier behaviour):
+
+  capacity_strict_node_limit      verifier and resumed workers never over-admit a node
+  capacity_count_pool_by_node     an LLM pool counts the sessions on each node up to that node's limit
+  capacity_adopt_before_admit     after a restart, resumed workers are admitted before new work
+  capacity_adoption_wait_seconds  longest wait for that adoption (default 30; negative values are rejected)
+
 Verifier routing, which chooses the backend that runs each verification, by
 flag or by the verifier_policy JSON object. Fields you do not give are left
 unchanged; the change takes effect on the next verification:

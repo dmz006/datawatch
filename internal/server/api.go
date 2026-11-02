@@ -6214,6 +6214,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
+			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
+			"capacity_adopt_before_admit":          s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
+			"capacity_adoption_wait_seconds":       int(s.cfg.Autonomous.CapacityAdoptionWait() / time.Second),
 			"capacity_gpu_util_pct":                s.cfg.Autonomous.CapacityGPUUtilPct,
 			"capacity_rate_requests":               s.cfg.Autonomous.CapacityRateRequests,
 			"capacity_rate_tokens":                 s.cfg.Autonomous.CapacityRateTokens,
@@ -8786,6 +8790,22 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {
 				cfg.Autonomous.CapacityEnabled = &b
+			}
+		case "autonomous.capacity_strict_node_limit":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityStrictNodeLimit = &b
+			}
+		case "autonomous.capacity_count_pool_by_node":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityCountPoolByNode = &b
+			}
+		case "autonomous.capacity_adopt_before_admit":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityAdoptBeforeAdmit = &b
+			}
+		case "autonomous.capacity_adoption_wait_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityAdoptionWaitSeconds = n
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

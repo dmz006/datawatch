@@ -4137,6 +4137,34 @@ The `GET /api/capacity` response lists each `node:<name>` pool with its
 is bounded by `autonomous.capacity_wait_timeout_seconds`, and it needs
 capacity admission on (`autonomous.capacity_enabled`, on by default).
 
+### Node placement and restart ordering
+
+Three rules keep a compute node from running more sessions than its limit and
+keep a restart from handing a resumed worker's slot to new work. All three are on
+by default and apply to the next admission with no restart.
+
+- **A node is never over-admitted.** A verifier or judge whose model is pooled
+  across two or more nodes is placed on the least loaded node that has room, or
+  it waits. A session that survives onto a node already at its limit (a resumed
+  worker) is counted against that node, so new work sees the node as full and
+  waits, yet the node's pool never reads over its limit. Turn off with
+  `autonomous.capacity_strict_node_limit: false`.
+- **A pooled model counts by node.** An LLM's `max_inflight` counts the sessions
+  on each node only up to that node's own limit, so sessions piled on one busy node
+  do not use up slots a free node could take. Turn off with
+  `autonomous.capacity_count_pool_by_node: false`, after which every session counts
+  once.
+- **After a restart, resumed workers come first.** The daemon holds new
+  requests until it has adopted the work that was running before the restart, then
+  places them. The hold ends by itself after `autonomous.capacity_adoption_wait_seconds`
+  (default 30, `0` also reads as 30), and no node is treated as healthy until the first
+  read of the compute node list. Turn off with `autonomous.capacity_adopt_before_admit: false`.
+
+Change any of them from the PWA Settings (capacity section), `PUT /api/config`,
+`datawatch config set autonomous.<key> <value>`, the MCP `config_set` tool or the
+chat `configure` verb. `GET /api/capacity` shows a node's `overflow` count when
+sessions are running on it beyond its limit.
+
 ### Queue priority
 
 When a slot frees, waiting requests are granted in this order:

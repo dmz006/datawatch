@@ -37,8 +37,10 @@ func TestRespawnAdmit_VerifierRespawnReplacesHeldLease(t *testing.T) {
 	r := newRelaunchRig(t, relaunchNodeFirst)
 	r.holdOn("live-x", relaunchNodeFirst)
 	r.holdOn(VerifyHolder(r.task.ID), relaunchNodeFirst)
-	if p, _ := poolOf(r.led.Snapshot(), "node:"+relaunchNodeFirst); p.Held != 2 {
-		t.Fatalf("fixture: node %s holds %d, want the incident shape of 2", relaunchNodeFirst, p.Held)
+	// Two sessions on a one-engine node: the second adoption lands as overflow
+	// (the ledger never reads a node pool over its limit), so count both.
+	if p, _ := poolOf(r.led.Snapshot(), "node:"+relaunchNodeFirst); p.Held+p.Overflow != 2 {
+		t.Fatalf("fixture: node %s holds %d (+%d adopted over the limit), want the incident shape of 2 sessions", relaunchNodeFirst, p.Held, p.Overflow)
 	}
 
 	node := r.admitVerifier(t)

@@ -151,6 +151,12 @@ func (a *API) resumeRunningPRDs() {
 		<-ch
 	}
 
+	// The capacity ledger holds every new request until the work that survived
+	// the restart has been adopted. This pass adopts it (the executors' prep
+	// re-takes each live task's lease before runLocked returns), so the hold ends
+	// when the pass does, on every exit path.
+	defer a.M.markCapacityAdoptionComplete()
+
 	// Verifier sessions left from before the restart are reconciled once,
 	// before any task resumes verification, so a resumed flow waits for the
 	// surviving verifier instead of spawning a second one.
@@ -475,6 +481,9 @@ func (a *API) SetConfig(v any) error {
 	// off, so there is no zero-to-default rule here.
 	if cfg.CapacityRateRequests < 0 || cfg.CapacityRateTokens < 0 || cfg.CapacityRateWindowSeconds < 0 {
 		return fmt.Errorf("config: capacity_rate_requests, capacity_rate_tokens and capacity_rate_window_seconds must be >= 0")
+	}
+	if cfg.CapacityAdoptionWaitSeconds < 0 {
+		return fmt.Errorf("config: capacity_adoption_wait_seconds must be >= 0")
 	}
 	// max_engines_per_node is clamped to 1 the same way config load does
 	// (config.Load normalizes anything below 1), so every write path agrees.
