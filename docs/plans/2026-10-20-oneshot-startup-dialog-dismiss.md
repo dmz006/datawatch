@@ -1,4 +1,4 @@
-# One-shot remote-node startup dialogs are never dismissed by the capture loop
+# One-shot claude-code startup dialogs are never dismissed by the capture loop
 
 - Date: 2026-10-20 (red phase recorded 2026-10-21, worktree b0390001)
 - Status: **TDD red** — tests exist and fail for the right reason; fix designed, not implemented
@@ -8,7 +8,7 @@
 
 ## Symptom
 
-A one-shot remote-node session created by the daemon can sit blocked forever
+A one-shot claude-code session created by the daemon can sit blocked forever
 on its startup dialogs: the workspace-trust dialog
 (`Quick safety check: ... ❯ No, exit / Yes, I trust this folder`) and the
 development-channels consent dialog
@@ -163,7 +163,7 @@ Expected output (recorded in
 - `FAIL TestStartupDialogDismiss_NotResentOnceDialogGone`
   — "trust accept sent 0 time(s), want exactly 1"
 - `PASS TestStartupDialogDismiss_NonOneShotAndOtherBackendsUnaffected`
-  (interactive remote-node + one-shot opencode subtests — no spurious
+  (interactive claude-code + one-shot opencode subtests — no spurious
   keystrokes; must stay green after the fix)
 
 The failure output lists the capture loop's `FakeTmux` calls per run: only
@@ -180,7 +180,7 @@ Full package run for context: `473 passed, 4 failed (all four above),
 ### Goal
 
 Make the screen-capture loop the *reliable floor* for startup-dialog
-dismissal on one-shot remote-node sessions: detect the dialog on the pane,
+dismissal on one-shot claude-code sessions: detect the dialog on the pane,
 send the accept through the `m.tmux` abstraction, retry a failed send on the
 next tick, and stay quiet once the dialog is gone — while leaving interactive
 sessions and other backends untouched (their existing main-loop pollers keep
@@ -193,7 +193,7 @@ working).
 
    ```go
    // dismissVisibleStartupDialogs inspects text (a pane capture or a log
-   // line) for remote-node startup dialogs on a one-shot session and sends
+   // line) for claude-code startup dialogs on a one-shot session and sends
    // the matching accept keystroke through m.tmux. Returns true if it acted.
    func (m *Manager) dismissVisibleStartupDialogs(sess *Session, text string) bool
    ```
@@ -211,7 +211,7 @@ working).
      `m.tmux.SendKeys(sess.TmuxSession, "Enter")`.
 
    Gates (kept inside the helper so both callers get them):
-   `sess.BackendFamily == "remote-node" && sess.OneShot &&
+   `sess.BackendFamily == "claude-code" && sess.OneShot &&
    sess.TmuxSession != ""`.
 
 2. **Retry-safe latch** (replaces the fire-once `startupDialogSent` pattern):
@@ -257,7 +257,7 @@ working).
    `if capture != lastCapture` block, after stateCapture is computed):
 
    ```go
-   // One-shot startup-dialog floor: remote-node trust / channels consent.
+   // One-shot startup-dialog floor: claude-code trust / channels consent.
    m.dismissVisibleStartupDialogs(current, displayCapture)
    ```
 
@@ -295,13 +295,13 @@ working).
   capture loop").
 - Registry / PRD completion paths.
 - Other backends (opencode/goose/aider) — they have no equivalent startup
-  dialog today; the helper is remote-node-gated.
+  dialog today; the helper is claude-code-gated.
 
 ### Acceptance (maps to the red tests)
 
-1. one-shot remote-node + trust dialog on pane → exactly one
+1. one-shot claude-code + trust dialog on pane → exactly one
    `SendTrustPromptAccept` via `m.tmux` (`TestStartupDialogDismiss_OneShotTrustDialogAcceptedByCaptureLoop`)
-2. one-shot remote-node + channels dialog on pane → exactly one `send-keys
+2. one-shot claude-code + channels dialog on pane → exactly one `send-keys
    Enter` via `m.tmux`, and no trust accept
    (`TestStartupDialogDismiss_OneShotChannelsDialogAcceptedByCaptureLoop`)
 3. first accept send fails → next tick retries; total attempts == 2, then
@@ -309,7 +309,7 @@ working).
 4. dialog gone after accept → no re-send (`TestStartupDialogDismiss_NotResentOnceDialogGone`);
    dialog lingering → no double-send (implicit in 1/2 via `want exactly 1`
    across 4–5 ticks)
-5. interactive remote-node / one-shot opencode → zero keystrokes
+5. interactive claude-code / one-shot opencode → zero keystrokes
    (`TestStartupDialogDismiss_NonOneShotAndOtherBackendsUnaffected`)
 
 Green gate: all five green **and** the full `./internal/session/` package
@@ -318,7 +318,7 @@ reds).
 
 ### Rollout notes
 
-- Behavior change: one-shot remote-node sessions with auto-accept *off* will
+- Behavior change: one-shot claude-code sessions with auto-accept *off* will
   now get their dialogs accepted by the capture loop. That is the intent
   (one-shot = no human present). Operators who want to handle it
   interactively should use an interactive session — where this change is
@@ -330,7 +330,7 @@ reds).
 
 ---
 
-## Live Validation (2026-10-21, one-shot, remote-node backend)
+## Live Validation (2026-10-21, one-shot, claude-code backend)
 
 Ran against the worktree build (`./datawatch` at `/home/<user>/.datawatch/prd-worktrees/b0390001`, go build rc=0), not the system binary.
 
@@ -338,7 +338,7 @@ Ran against the worktree build (`./datawatch` at `/home/<user>/.datawatch/prd-wo
 
 - Sandbox daemon in `/tmp/dw-oneshot-livetest` (fresh `data/`, `projects/live-001`), ports 28080 (HTTP) / 28443 (TLS), started with `-v` so `debugf` lines land in the daemon log. The system daemon on 18443/18080 (old binary v9.5.x) was left untouched.
 - Project dir `/tmp/dw-oneshot-livetest/projects/live-001` is **untrusted** — not present in `~/.claude.json`, no prior claude run in it, so the first-launch trust dialog ("Quick safety check … ❯ No, exit / Yes, I trust this folder") **does** appear.
-- One-shot session started via `POST /api/sessions/start` with `one_shot: true`, `backend: remote-node`, task: *"Create a file named hello.txt in the current directory containing exactly the text: hello oneshot. Then print a line that starts with: DATAWATCH_COMPLETE: hello.txt created"*.
+- One-shot session started via `POST /api/sessions/start` with `one_shot: true`, `backend: claude-code`, task: *"Create a file named hello.txt in the current directory containing exactly the text: hello oneshot. Then print a line that starts with: DATAWATCH_COMPLETE: hello.txt created"*.
 - Session id `1e20` / `dw-sbx-oneshot-1e20`, tmux session `cs-dw-sbx-oneshot-1e20` (dedicated socket under `/home/<user>/.datawatch/tmux/tmux-1000/default`).
 - Live pane captures taken with `tmux -S /home/<user>/.datawatch/tmux/tmux-1000/default capture-pane` against the running session.
 
@@ -388,13 +388,13 @@ Full daemon-log + pane evidence: [`2026-10-20-oneshot-startup-dialog-dismiss-liv
 `internal/session/manager.go` (`dismissClaudeStartupDialog`, `trySendDialogAccept`,
 `markDialogConfirmedIfGone`, and the capture-loop + output-line hooks that call it).
 Built locally with `go build -o datawatch ./cmd/datawatch/` (rc=0) and run **live** against
-a real remote-node one-shot session in an untrusted directory.
+a real claude-code one-shot session in an untrusted directory.
 
 - **Unit level:** the `internal/session/` suite (477 tests, including the dedicated
   `startup_dialog_dismiss_test.go` set) passes on the worktree build. `go test ./internal/session/...` rc=0.
 - **Log level (live daemon):** the daemon log shows the dialog detected and the accept sent via
   `m.tmux` (`attempt 1/5 … sent via m.tmux`); a second send also fired later (`attempt 2/5`).
-- **Live one-shot:** a real `remote-node` backend session launched in an untrusted project dir,
+- **Live one-shot:** a real `claude-code` backend session launched in an untrusted project dir,
   hit the trust dialog, received the auto-accept, then completed: `hello.txt` was created and
   the session emitted its `DATAWATCH_COMPLETE:` line on the real daemon (ports 28080/28443,
   session `1e20` / `dw-sbx-oneshot-1e20`).
@@ -459,7 +459,7 @@ unchanged from the Fix #1 design.
 - Claude Code v2.1.306.
 - Fresh, untrusted project dirs (absent from `~/.claude.json`), started
   via `POST /api/sessions/start` (`Authorization: Bearer dw-test-token-12345`)
-  with `one_shot:true`, `backend:remote-node`.
+  with `one_shot:true`, `backend:claude-code`.
 
 ### Runs (both zero operator keypresses)
 
@@ -489,7 +489,7 @@ task delivered to dw-sbx-oneshot-live2-6638 via send_input
 
 ### Result
 
-**PASS** — one-shot remote-node startup dialogs are dismissed fully
+**PASS** — one-shot claude-code startup dialogs are dismissed fully
 automatically with zero operator keypresses, and the session proceeds to
 run the task (session A shows the task's exact reply in the pane; session
 B reached `state=complete` via the standard `DATAWATCH_COMPLETE:` path

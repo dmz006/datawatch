@@ -1,4 +1,4 @@
-# Hung peer-e request — proposal (PRD f3420001, task b1f70001)
+# Hung peer-d request — proposal (PRD f3420001, task b1f70001)
 
 **Date:** 2026-10-29
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
@@ -7,7 +7,7 @@
 ## Context
 
 The open question is what, if anything, the datawatch daemon should do when a
-one-shot peer-e worker sits on a single open inference request for an hour or
+one-shot peer-d worker sits on a single open inference request for an hour or
 more with no output, no child process and about 0% CPU on the node, with nothing
 detecting that state until a human notices. It matters now because it happened
 twice in one evening (sessions ab4c and ef70, 2026-10-28, ~2h43m total on a node
@@ -42,7 +42,7 @@ be allowed to grow into any of those things by accident.
 ## Options
 
 1. **Observe request progress (add an in-flight-request liveness signal for
-   peer-e).**
+   peer-d).**
    (a) Give the daemon a read-only observation that looks at the *request*, not
    just the runner process: the pane's tee'd output growth (the wrapper at
    `internal/llm/backends/pi/backend.go:516-563` writes stdout to a per-session
@@ -134,7 +134,7 @@ be allowed to grow into any of those things by accident.
    risk is real — a stronger backend may produce a different answer for the same
    task, changing what downstream REST/MCP/CLI/PWA consumers see, so the verdict
    record must name the backend used, as the findings' verdict entries already do
-   ("Worker: peer-e/ollama/qwen3.8-64k:27b"); reversible by removing the
+   ("Worker: peer-d/ollama/qwen3.8-64k:27b"); reversible by removing the
    flag; parity: the strongest cross-surface issue, because a "retry" that
    silently changes the model is a capability difference visible differently in
    YAML/config vs PWA vs comm-channel.

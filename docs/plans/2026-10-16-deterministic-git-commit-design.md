@@ -1,7 +1,7 @@
 # BL465 — Move the primary git commit out of the worker's own tool loop
 
 **Status:** shipped (v9.2.0) · **Date:** 2026-10-16 · **Tracker:** BL465
-**Scope:** design, then implemented the same day (PRD `137ed868`, peer-e pilot).
+**Scope:** design, then implemented the same day (PRD `137ed868`, peer-d pilot).
 
 ## Decisions (resolved)
 
@@ -10,7 +10,7 @@ All seven decisions below shipped as designed:
 1. **Commit timing** — the deterministic commit (`commitOnCompletion`) fires the moment the worker signals `DATAWATCH_COMPLETE`, before verification reads any diff.
 2. **Workers no longer commit** — every backend's completion instructions were rewritten to say the opposite of "commit your work": commits happen automatically, do not run `git commit`/`git add` yourself.
 3. **Commit message** — the worker's own one-line summary becomes the commit subject; falls back to the task title when no summary is found.
-4. **Applies to every backend** — not backend-specific; verified on peer-e specifically, the backend whose first real pilot run exposed the original bug.
+4. **Applies to every backend** — not backend-specific; verified on peer-d specifically, the backend whose first real pilot run exposed the original bug.
 5. **One commit per task attempt** — an accepted, deliberate tradeoff, not a regression to fix later.
 6. **Unconditional default** — `session.auto_git_commit` is deprecated and ignored; `PostSessionCommit` (the old parallel mechanism) is deleted.
 7. **Verifier recognizes landed work** — a retry whose real work already landed in an earlier attempt is now recognized as done instead of failing as "produced no output."
@@ -69,7 +69,7 @@ retry-scoped git history that a worker's own commit timing can confuse.
   closes the specific failure mode seen tonight. Still needs the verifier's
   own "no output" check rewritten to use that comparison; moving who commits
   is necessary but not sufficient on its own.
-- **The remote-node completion-detection gap** (`DATAWATCH_COMPLETE:` present
+- **The claude-code completion-detection gap** (`DATAWATCH_COMPLETE:` present
   in output, never detected) — unrelated. That is about reading the
   session's own text/pane output for a marker, not about git.
 
@@ -84,7 +84,7 @@ retry-scoped git history that a worker's own commit timing can confuse.
    history readability. Possibly: have the worker still write a short summary
    as plain text (not a git action), and the deterministic step uses it as
    the commit message.
-3. Does this apply to every backend (remote-node, opencode-acp, goose) or
+3. Does this apply to every backend (claude-code, opencode-acp, goose) or
    only the ones shown fragile tonight?
 4. Multi-commit tasks — some tasks currently make several small commits as
    they go (readable history, incremental checkpoints). A single
@@ -127,7 +127,7 @@ committed automatically; do NOT run `git add`/`git commit`; finish with
      automatically when you finish`
 
 3. `templates/session-CLAUDE.md` — full session-guardrails template (Git
-   Requirements section, rendered for remote-node sessions):
+   Requirements section, rendered for claude-code sessions):
    - Before:
      ```
      - **Commit frequently** — after each logical unit of work (feature, fix, refactor).

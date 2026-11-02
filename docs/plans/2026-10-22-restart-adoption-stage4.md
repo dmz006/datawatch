@@ -1,6 +1,6 @@
 # Staged restart validation, stage 4 (2026-10-22 09:19)
 
-Daemon restarted onto 9.5.86 (includes the BL557, BL558, BL561, BL564 and BL565 fixes) with Automaton `412a0001` mid-run: task 0006 labelled verifying, remote-node worker session `bf53` running, three tasks still queued. Snapshots: `/tmp/sv/restart-test/stage4-pre.json`, `stage4-post.json`.
+Daemon restarted onto 9.5.86 (includes the BL557, BL558, BL561, BL564 and BL565 fixes) with Automaton `412a0001` mid-run: task 0006 labelled verifying, claude-code worker session `bf53` running, three tasks still queued. Snapshots: `/tmp/sv/restart-test/stage4-pre.json`, `stage4-post.json`.
 
 | Case | Before | After | Result |
 |---|---|---|---|

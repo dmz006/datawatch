@@ -5,7 +5,7 @@ non-test Go code was changed.
 
 **Headline finding.** The repeated re-paste of the task does **not**
 depend on the Claude Code self-update screen. `handleChannelReady`
-re-delivers the full task to a OneShot remote-node session every time
+re-delivers the full task to a OneShot claude-code session every time
 the channel bridge's 60 s ready heartbeat lands while the session is in
 (or reaches, within 60 s) `waiting_input`. The update notice was on
 screen at the same time, but it did not cause the re-sends. It is also
@@ -117,7 +117,7 @@ Throwaway test, run and then deleted (not committed). It used
 `FakeTmux`. The pane was seeded with the fixture above, so the update
 footer was on screen during the test:
 
-- Session: OneShot, `BackendFamily: remote-node`,
+- Session: OneShot, `BackendFamily: claude-code`,
   `State: waiting_input`, Task set.
 - POST `/api/channel/ready` three times, the same idempotent body the
   heartbeat sends.
@@ -169,7 +169,7 @@ entries are the equivalent evidence.
    `s.manager.SendInput(sessID, input, "channel-task")` (`api.go:8451`).
    Nothing records that the task was already delivered.
 3. The heartbeat period and the poll window are both 60 s, so in effect
-   **any** `waiting_input` moment of a live remote-node one-shot gets the
+   **any** `waiting_input` moment of a live claude-code one-shot gets the
    task re-pasted. That includes the idle `❯` between turns while
    background work runs, a permission prompt, or any other prompt match.
    Roughly one paste per minute while the session is idle explains 348b's
@@ -191,13 +191,13 @@ Every path that sends a session's task text as input:
 
 | Path | Location | Guard | Fired here? |
 |---|---|---|---|
-| Channel ready → OneShot send_input | `internal/server/api.go:8451` (goroutine at `:8442`, handler `:8333`) | none | **Yes.** `source:channel-task` in 258d's timeline; remote-node session; reproduced |
-| TUI one-shot delivery | `cmd/datawatch/main.go:7125` (`isTUITask` at `:7082`, `tuiTaskDelivered` at `:248`) | `BackendFamily != "remote-node"` plus `tuiTaskDelivered.LoadOrStore` (once per session) | No. It excludes remote-node. It also appends a `DATAWATCH_COMPLETE` suffix and logs `[tui-task]` |
+| Channel ready → OneShot send_input | `internal/server/api.go:8451` (goroutine at `:8442`, handler `:8333`) | none | **Yes.** `source:channel-task` in 258d's timeline; claude-code session; reproduced |
+| TUI one-shot delivery | `cmd/datawatch/main.go:7125` (`isTUITask` at `:7082`, `tuiTaskDelivered` at `:248`) | `BackendFamily != "claude-code"` plus `tuiTaskDelivered.LoadOrStore` (once per session) | No. It excludes claude-code. It also appends a `DATAWATCH_COMPLETE` suffix and logs `[tui-task]` |
 | Autonomous worker-stall retry | `internal/autonomous/executor.go:909` (`ErrWorkerStalled`, `internal/autonomous/capacity.go:25`) | `auto_fix_retries` budget | No. It `continue`s the task loop, which spawns a **new** session, not a paste into the same pane |
 
 Both send-input paths use the same `"channel-task"` source label. That
 does not cause confusion here only because the TUI path excludes
-remote-node. The fix should give the TUI path its own label (for
+claude-code. The fix should give the TUI path its own label (for
 example `tui-task`) so timelines can tell them apart.
 
 ## Fix plan
@@ -366,7 +366,7 @@ receive log:
 
 | Session | Backend | Pane program | Delivery path exercised |
 |---|---|---|---|
-| `2f09` | `remote-node`. The sandbox's `remote-node` LLM `binary` was pointed at a stand-in script: `claude mcp …` is a no-op, and an interactive launch prints the fixture and an idle `❯ ` | fake `claude` | `handleChannelReady` (the incident path) |
+| `2f09` | `claude-code`. The sandbox's `claude-code` LLM `binary` was pointed at a stand-in script: `claude mcp …` is a no-op, and an interactive launch prints the fixture and an idle `❯ ` | fake `claude` | `handleChannelReady` (the incident path) |
 | `8414` | `shell` (`shell_backend.script_path` = fixture script, idle `datawatch:fixture$ `) | fixture script | TUI one-shot path (`[tui-task]`) |
 
 There is no real channel bridge in the sandbox, so the bridge's 60 s
@@ -393,7 +393,7 @@ done
 05:03:41Z POST #4 (after restart): {"session_id":"dw-selfupdate-sandbox-2f09","status":"already_delivered"}
 
 $ cat -A claude-pane-received.log          # every line that reached 2f09's pane
-05:00:58Z^ISELFUPDATE-LIVE-VALIDATION remote-node one-shot task$
+05:00:58Z^ISELFUPDATE-LIVE-VALIDATION claude-code one-shot task$
 
 daemon stdout:
 [channel] ready for session dw-selfupdate-sandbox-2f09 (channel_ready=true, port=40999)
@@ -417,7 +417,7 @@ data_dir/daemon-crash.log (log.Printf target):
   task_delivered_at=2026-10-14T01:00:57.070898716-04:00
 2f09 final pane tail:
   ────────────────────────────────────────
-  ❯ SELFUPDATE-LIVE-VALIDATION remote-node one-shot task
+  ❯ SELFUPDATE-LIVE-VALIDATION claude-code one-shot task
   ❯
 ```
 
@@ -436,14 +436,14 @@ data_dir/daemon-crash.log (log.Printf target):
 
 ### Separate finding (not fixed here)
 
-The **TUI one-shot path** (`cmd/datawatch/main.go`, non-remote-node
+The **TUI one-shot path** (`cmd/datawatch/main.go`, non-claude-code
 backends) re-delivered the shell session `8414`'s task after **every
 sandbox daemon restart**. The pane received the four-line task block
 three times: 04:59:28Z (first delivery), 05:00:33Z (after restart 1)
 and 05:03:29Z (after restart 2). Its once-only guard,
 `tuiTaskDelivered`, is an in-memory `sync.Map`, which is the same gap
 *Fix plan* item 1 called out for the channel path. That path never
-handles remote-node, so it was not the cause of the 348b/258d incident.
+handles claude-code, so it was not the cause of the 348b/258d incident.
 It is reported here for the operator to decide on, and has not been
 fixed. One fix would be for the TUI path to use the same
 `ClaimTaskDelivery` record.

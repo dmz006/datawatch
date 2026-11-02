@@ -116,7 +116,7 @@ the r4/r6/r8 opencode-session-death history above). **Switch this
 matrix's default execution path to pi for every cell**, superseding the
 "Swift/coder cells run via opencode" assumption two sections up — all 16
 cells, baseline and new execution candidates alike, run through
-peer-e by default now. This also sidesteps the still-blocking node-a
+peer-d by default now. This also sidesteps the still-blocking node-a
 opencode-session-death bug for the matrix's primary (pi) scoring, though
 it does not fix that bug.
 

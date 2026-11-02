@@ -75,7 +75,7 @@ The supervisor orchestrates and validates. It does not hand-fix code.
   Claude ceiling was exhausted on 2026-10-17 and reset on Sunday 2026-10-18 08:00. Claude is
   tracked, not capped, and the reset day can differ by provider, so the reset date is read from
   `docs/plans/2026-10-14-concurrency-and-budget-design.md`, not assumed.
-  - **GPU lanes (two):** peer-e with `qwen3.8-64k:27b`, one engine per node.
+  - **GPU lanes (two):** peer-d with `qwen3.8-64k:27b`, one engine per node.
   - **Claude lanes (three, interchangeable):** each runs one PRD and one decompose thread at a
     time. A worker is Claude Haiku (`claude-haiku-5-5`); the verifier is Claude Sonnet for a PRD
     on a Claude lane. Any Claude lane takes a decompose, a worker or a verify as the queue needs.
@@ -115,7 +115,7 @@ The supervisor orchestrates and validates. It does not hand-fix code.
   Pi-family sessions now take the configured model (`c0c26f59`). Treat any unpinned
   model loading on a pinned node as a fault.
 - **Config drift is silent.** Global `planning_backend`, `planning_model`,
-  `verification_backend` and `verification_model` can drift to remote-node or opencode,
+  `verification_backend` and `verification_model` can drift to claude-code or opencode,
   and a PRD's decomposition profile can pin a stale backend that auto-retry keeps
   using. Check both every tick. A non-pi autonomous session means cancel its PRD,
   because killing the session does not stop the retry loop.
@@ -199,10 +199,10 @@ Recovery moves that have been needed in practice:
   (`4c02bc31`, `a27cdfe2`), and a review found it has no retry check yet, so a first
   attempt that did nothing could pass if its script already passes. That is an open
   defect.
-- The stale-worker watchdog does not apply to peer-e. One-shot `pi --print` writes
+- The stale-worker watchdog does not apply to peer-d. One-shot `pi --print` writes
   nothing while it works, so an idle pane is not a stall.
 - Prompt delivery to a TUI is wrong for one-shot backends. The send-keys gate once
-  typed peer-e tasks into bash and killed decompose sessions in seconds.
+  typed peer-d tasks into bash and killed decompose sessions in seconds.
 
 ## 7. Git and working-tree hygiene
 
@@ -367,7 +367,7 @@ requirement (open question 19).
   tick does this before judging a lane.
   Lanes, defined: GPU lane A = this machine (local-node), qwen3.8-64k:27b;
   GPU lane B = remote datawatch (<remote-node-address>), qwen3.8-64k:27b; traffic routing unverified;
-  Claude 1 and Claude 2 = remote-node, two lanes only.
+  Claude 1 and Claude 2 = claude-code, two lanes only.
 - **Registry gap (2026-10-19).** Neither ollama backend (`ollama-datawatch`,
   `ollama-local-node`) lists `qwen3.8-64k:27b` in its model list; each lists only
   `qwen3.8:27b`. The PRD and config settings use `ollama/qwen3.8-64k:27b` anyway. Track this
@@ -429,7 +429,7 @@ surfaces map to which regression suites, and how an urgent bug may jump the queu
 
 - **Claude decompose is one thread per Claude lane (operator decision, 2026-10-20).** Earlier wording said "one decompose at a time, never two", and the supervisor read that as one decompose for all of Claude. That was wrong. Each Claude lane runs one decompose thread at a time, and the two lanes may decompose in parallel. An agent within one decompose is not limited. An idle Claude lane with decompose backlog starts the next draft in the same tick.
 
-- **Three Claude lanes (operator decision, 2026-10-20).** The lane model is now two GPU channels (one pool) and three Claude lanes, each running one PRD, plus one decompose thread per lane. This supersedes "two Claude channels" in the earlier lane model and in the tick prompts. The daemon has no Claude lane count (the capacity pools cover nodes and peer-e only), so the limit is enforced by the supervisor. The operator tracks usage: 16% weekly at 2026-10-20 04:31 (calculator reading), recorded in `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
+- **Three Claude lanes (operator decision, 2026-10-20).** The lane model is now two GPU channels (one pool) and three Claude lanes, each running one PRD, plus one decompose thread per lane. This supersedes "two Claude channels" in the earlier lane model and in the tick prompts. The daemon has no Claude lane count (the capacity pools cover nodes and peer-d only), so the limit is enforced by the supervisor. The operator tracks usage: 16% weekly at 2026-10-20 04:31 (calculator reading), recorded in `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
 
 - **Record before you push (lesson, 2026-10-20).** On 2026-10-20 the BL row edit failed on an assertion, but the shell command continued and pushed `c1922994..69b0db61` before the BL record existed. Order is fixed: write the BL record, check that it succeeded, and only then push. Run the push as its own step and stop the chain if the record step fails.
 
@@ -461,7 +461,7 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    `docs/plans/2026-10-14-concurrency-and-budget-design.md`. Lead the report with an over-pace warning when the
    estimate or the reading is above the line; ask for a fresh reading. The lane count is the operator's decision.
 3. Every non-terminal PRD including blocked and failed ones. Held `review_needed` task: retry with
-   `datawatch autonomous resolve-review <prd> --task T --action retry --backend remote-node --model sonnet
+   `datawatch autonomous resolve-review <prd> --task T --action retry --backend claude-code --model sonnet
    --effort high --note ...` after reading its attempt summary; a completed task's spec cannot be edited, so fold a
    correction into the next held task or add a task. After 3 failures of one task stop and bring it to the operator
    with an attempt summary (a stronger worker first, never the default Haiku). Idle Claude worker over 30 minutes
@@ -470,14 +470,14 @@ budget estimate. Deliberately held PRDs are listed in `IGNORE` in the script wit
    registered worktree, and its `.datawatch/verify/*.sh` scripts are executable (a missing exec bit failed a final
    gate three times on 2026-10-26; a rebuilt worktree must carry the verify folder over).
    Claude lanes: the standing cap is 1. Operator, 2026-10-26: "Stay at 1 but use 2nd for special". Raise the cap to 2
-   (`datawatch llm update remote-node --max-inflight 2`) only for a special item (a defect that blocks other work or
+   (`datawatch llm update claude-code --max-inflight 2`) only for a special item (a defect that blocks other work or
    throughput, a security finding that needs triage, a merge that cannot wait), return it to 1 when that item's Claude
    work is done, and state the use, its reason and open and close times in the next report.
 5. Lane fill (GPU rule: GPU lanes cost no Claude usage, so Claude limits never hold GPU work). For every idle lane:
    a. decomposed PRDs: read the spec first (never run HOLD or sequenced-after-unshipped work), 4a grep main for what
       it asks for (a stale PRD is dropped and reported), validate (section 4, read tasks touching tmux, pkill,
       killall or systemctl line by line, no forbidden literals or release numbers in specs), ack coverage false
-      positives, approve, run. Mechanical work goes to peer-e, design-heavy and debugging-heavy work to Claude.
+      positives, approve, run. Mechanical work goes to peer-d, design-heavy and debugging-heavy work to Claude.
    b. finished PRDs: merge (below). c. drafts: decompose. d. new work only from decided designs, after searching the
    registry, `prd-list` and `scripts/branch-audit.py`. An implementation PRD for an open design point is gated on a
    `Confirmed: yes` line in the proposal file.
@@ -516,11 +516,11 @@ The tick runs these checks in order and reports only state changes and idle lane
    b. PRDs whose tasks are all done but whose status is blocked or failed: rejudge or merge (section 7).
    c. Draft PRDs: set backend and decomposition profile together, decompose, validate, run.
    d. File a new PRD from the roadmap: the lowest-numbered not-started row in `docs/plans/README.md` whose dependencies are done (rows 10, 11, 12, 13 first, then open defects), with the design document's phase section as the spec, and decompose it.
-   GPU lanes take mechanical PRDs on peer-e (tests, docs, ports, small fixes, CRUD); Claude decomposes everything and takes the hard debugging and design-heavy PRDs. Keep decompose-ahead: at all times at least one validated, approved PRD waits per lane type so a freed lane starts without a tick. The report line for an idle lane must name a blocker with an identifier (for example "GPU 2: projected weekly 47% vs 46.7% allowed") or the lane gets work. "Nothing eligible" is never a valid report; a lane left idle without a named blocker is a supervisor defect, fixed in that tick and recorded in the BL514 row.
+   GPU lanes take mechanical PRDs on peer-d (tests, docs, ports, small fixes, CRUD); Claude decomposes everything and takes the hard debugging and design-heavy PRDs. Keep decompose-ahead: at all times at least one validated, approved PRD waits per lane type so a freed lane starts without a tick. The report line for an idle lane must name a blocker with an identifier (for example "GPU 2: projected weekly 47% vs 46.7% allowed") or the lane gets work. "Nothing eligible" is never a valid report; a lane left idle without a named blocker is a supervisor defect, fixed in that tick and recorded in the BL514 row.
    Pace: use the last operator-reported weekly % and project it forward (assume +4 points per 24 hours with no new reading, and +2 points for each Claude PRD started since the reading). Ask the operator for a reading at most once per day and never wait for the answer. If the projection exceeds the allowed pace, move the work to the GPU lanes rather than idling. A one-off Claude decompose is allowed inside the pace; P0 per the P0 rule.
 5. Validate every decompose against section 4, including the tests rule.
 6. Merges per AGENT.md; the supervisor then pushes (fast-forward, Section A green) and tags patch and minor releases itself, watches CI, and reruns a failed Release. Do not ask the operator; if a risk remains, ship what is ready and file a follow-up PRD.
-   **A judge timeout never justifies merging around the judge (operator, 2026-10-27, after asking why a large change could not be judged).** Verified: with `judge_policy` empty the judges follow `verifier_policy.backends` = peer-e then remote-node, one attempt each, 30 minutes per run, and a PRD whose judge times out on every backend is held in needs_review (`judge_timeout_hold`). Hold it and report it. Do not snapshot or commit the worktree and merge, as was done for BL613. Open improvement (design): size-aware routing so a large diff goes straight to Claude instead of spending 30 minutes on the local model first.
+   **A judge timeout never justifies merging around the judge (operator, 2026-10-27, after asking why a large change could not be judged).** Verified: with `judge_policy` empty the judges follow `verifier_policy.backends` = peer-d then claude-code, one attempt each, 30 minutes per run, and a PRD whose judge times out on every backend is held in needs_review (`judge_timeout_hold`). Hold it and report it. Do not snapshot or commit the worktree and merge, as was done for BL613. Open improvement (design): size-aware routing so a large diff goes straight to Claude instead of spending 30 minutes on the local model first.
    **Parity issue at every merge (operator, 2026-10-27: "Parity is required, no design there, it is a core rule").** Before the ship step, check `git diff <merge-base> <branch> -- internal/server/web/app.js internal/server/web/index.html internal/server/web/locales`. If the PWA changed in an operator-visible way (new strings, layout, behaviour, API shape, settings, affordances added or removed), file a datawatch-app issue for the release titled `feat(i18n): add <keys> for <feature> parity (datawatch vX.Y.Z)` (or `[sync] ...` when there are no new strings) with the keys and EN values, the screen, the API contract change and the parent release, as the Mobile-Parity Rule in AGENT.md says, and name it in the release report. It is not a design decision and it needs no operator word. The audit of 2026-10-27 found 58 of 68 PWA-changing releases since v9.0.0 with no datawatch-app issue naming the version; the backfill is tracked as its own item.
 
 **File the next step at the merge of the previous one (added 2026-10-29).** When a merge ships step N of a multi-step plan, in the same pass either file step N+1 as a draft PRD (when the plan already carries its design and the operator's confirmation covers it) or put one plain question in that report asking for the go-ahead (when the confirmation covered only the shipped step, or the plan says the step needs re-confirmation). A step is never parked as "design-gated" when its design is written and only a filing or a go-ahead is missing. BL610 Step 2 sat unfiled for two days after Step 1 shipped for exactly this reason.
@@ -543,7 +543,7 @@ The tick runs these checks in order and reports only state changes and idle lane
 - **Hold lifted (2026-10-20 23:39):** the production tmux guard shipped as 9.5.34 and the daemon runs it. PRD-owned worker, verifier and guardrail sessions start without `TMUX` and `TMUX_TMPDIR` (verified on a new worker's process). Operator-started sessions are unchanged. Keep running tests with `env -u TMUX -u TMUX_TMPDIR`, and keep reading any task that touches tmux, pkill, killall or systemctl before its verification runs.
 - **Restart revives stale smoke PRDs (BL500, 2026-10-20 23:38):** `3b518952` and `69e8421b` came back as running after every daemon restart, even after a cancel (the cancel leaves them `failed`). Cancel them after each restart until BL500 ships, or ask the operator to delete them.
 
-- **Set the Sonnet verifier before approving a Claude-lane PRD (lesson, 2026-10-20 23:57).** `prd-set-verification-llm` and `prd-set-llm` are accepted only while the PRD is `needs_review`, `revisions_asked` or `cancelled`; on an approved or running PRD the call fails (HTTP 400) and my commands hid the error. So the Claude-lane PRDs `148b0001`, `51670001`, `677d0001`, `df790001`, `9db60001`, `4cbc0001` and `60270001` were all verified by qwen on the GPU pool (`verifier_source: global`), not by Sonnet, and each such verify takes a GPU engine, which can push the pool past two engines. Order for a Claude-lane PRD: validate the plan, then `prd-set-llm` (worker) and `prd-set-verification-llm --backend remote-node --model sonnet`, read the result, then approve and run. Never send these calls to /dev/null.
+- **Set the Sonnet verifier before approving a Claude-lane PRD (lesson, 2026-10-20 23:57).** `prd-set-verification-llm` and `prd-set-llm` are accepted only while the PRD is `needs_review`, `revisions_asked` or `cancelled`; on an approved or running PRD the call fails (HTTP 400) and my commands hid the error. So the Claude-lane PRDs `148b0001`, `51670001`, `677d0001`, `df790001`, `9db60001`, `4cbc0001` and `60270001` were all verified by qwen on the GPU pool (`verifier_source: global`), not by Sonnet, and each such verify takes a GPU engine, which can push the pool past two engines. Order for a Claude-lane PRD: validate the plan, then `prd-set-llm` (worker) and `prd-set-verification-llm --backend claude-code --model sonnet`, read the result, then approve and run. Never send these calls to /dev/null.
 
 ## Lesson: merge helpers must refuse leftover conflict markers (2026-10-22)
 
@@ -567,13 +567,13 @@ From about 00:26 on 2026-10-24 until 06:46, with one 50 minute exception, both G
 
 What went wrong, in order of weight:
 
-1. **I rewrote the 30 minute tick prompt and dropped the rule that sends mechanical PRDs to the GPU lanes** ("GPU lanes take mechanical PRDs on peer-e; Claude decomposes everything and takes hard work; keep decompose-ahead; if over pace move work to the GPU lanes"). The idle-lane rule near line 44 of this document says an idle lane is the supervisor's defect, but the shortened prompt no longer carried it.
+1. **I rewrote the 30 minute tick prompt and dropped the rule that sends mechanical PRDs to the GPU lanes** ("GPU lanes take mechanical PRDs on peer-d; Claude decomposes everything and takes hard work; keep decompose-ahead; if over pace move work to the GPU lanes"). The idle-lane rule near line 44 of this document says an idle lane is the supervisor's defect, but the shortened prompt no longer carried it.
 2. **I treated my own review backlog as a blocker.** The reports said "idle, blocker: no approved mechanical PRD, PRD X is decomposed and waits for my review". That names an identifier but the blocker was me, which the rule forbids.
 3. **I held approvals to protect the Claude budget** and applied that to every lane. The GPU lanes cost no Claude usage, so the hold had no reason to cover them. Every PRD had also been set to a Claude worker at filing time, so nothing was queued for the GPU lanes.
 
 Rules from now on, also written into the tick prompt:
 
-- Claude limits never hold work for the GPU lanes. If a GPU lane is idle and any PRD is needs_review, approved, draft or decomposable, review it, move its worker to peer-e with `prd-set-llm`, approve it and run it in the same tick.
+- Claude limits never hold work for the GPU lanes. If a GPU lane is idle and any PRD is needs_review, approved, draft or decomposable, review it, move its worker to peer-d with `prd-set-llm`, approve it and run it in the same tick.
 - Mechanical patterns (config surfaces and parity, tests, docs, ports, small fixes, CRUD) go to the GPU lanes; design-heavy, debugging-heavy and UI-layout work waits for Claude.
 - The supervisor's own review backlog is never a valid blocker. A lane is reported idle only for an external blocker with an identifier, such as an operator decision.
 - Keep at least two mechanical PRDs queued for the GPU lanes at all times (decompose ahead).
@@ -641,8 +641,8 @@ Operator, 2026-11-01, quoted: "see what happened Friday night, we were on track 
 What the tokens say: from the 70 percent reading on Friday 13:28 the account reached its limit about Saturday 05:30, 26 hours early, about 28.5 points in 16 hours, 1.7 points an hour, three times the 0.55 an hour the calculator projected for two lanes. The allowed pace is 14.3 points a day, 0.6 an hour. Workers and verifiers in task worktrees were 91 percent of the points (51.6 million cache-write tokens and 1,047 million cache-read tokens over the week to date) and the supervisor session 9 percent. Cache writes dominate: they are new context created, so the cost is the number of worker turns that add new context, retries that rebuild context, and large worker contexts, not the supervisor.
 
 Rules from this:
-1. **The per-tick pace check is mandatory and is computed, not asked.** Each hourly tick runs `python3 scripts/claude-burn.py --since "<last reading time>"` and leads the report with points used since the reading, points per hour against 0.6, and the projected percent at the reset. Over the pace line means: cap to 1 lane and move new work to peer-e in that same tick. Waiting for the operator to type a reading is not a check.
-2. **Mechanical tasks never go to Claude at high effort.** Docs, parity filing, live checks, final gates and report tasks run on peer-e or at most medium effort. Sonnet high is for debugging and design-heavy tasks.
+1. **The per-tick pace check is mandatory and is computed, not asked.** Each hourly tick runs `python3 scripts/claude-burn.py --since "<last reading time>"` and leads the report with points used since the reading, points per hour against 0.6, and the projected percent at the reset. Over the pace line means: cap to 1 lane and move new work to peer-d in that same tick. Waiting for the operator to type a reading is not a check.
+2. **Mechanical tasks never go to Claude at high effort.** Docs, parity filing, live checks, final gates and report tasks run on peer-d or at most medium effort. Sonnet high is for debugging and design-heavy tasks.
 3. **Retries on Claude are bounded.** After three failed attempts of one task stop and bring it to the operator; six Sonnet high attempts on one documentation task were spent on 2026-10-31, each one rebuilding the context.
 4. **A lane approval ends at its stated time** and the cap returns to 1 then without being asked.
 5. The daemon-side fix is the burn guard PRD (registry row 278).

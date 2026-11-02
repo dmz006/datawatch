@@ -38,7 +38,7 @@ The supervisor files a datawatch-app issue at every merge that changes the PWA (
 | v9.5.65 | 1 | Automation coordinator: the queue advances itself |
 | v9.5.67 | 2 | Boot-resume counts live workers; parked Automata can be resumed |
 | v9.5.68 | 8 | Inference-cap gap closure: plan-tier caps, verifier lease hand-off, decompose admission |
-| v9.5.70 | 2 | Idle remote-node workers are nudged to finish before they are treated as stalled |
+| v9.5.70 | 2 | Idle claude-code workers are nudged to finish before they are treated as stalled |
 | v9.5.71 | 59 | Lifecycle subscriptions: update, test-fire, pending-events queue and PWA tab |
 | v9.5.73 | 0 | The PWA terminal no longer throws when xterm is used after dispose |
 | v9.5.75 | 13 | Result panel for scheduled jobs: MCP, CLI and comm-channel parity |

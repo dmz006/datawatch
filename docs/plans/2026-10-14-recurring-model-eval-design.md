@@ -33,18 +33,18 @@
 | Node | Kind | Address | Declared capacity | Declared hardware | Notes |
 |---|---|---|---|---|---|
 | `datawatch` | ollama | `http://datawatch:11434` | `{}` | `{}` | **No hardware declared at all** — no GPU, no CPU, no RAM. `max_concurrent_sessions:1`, priority 90. |
-| `peer-a` | openai-compat | `http://datawatch:3000` | gpus 1, 128 GB, max 3 models | nvidia `blackwell-b200`, count 1 | Served via OpenWebUI. |
+| `remote-node` | openai-compat | `http://datawatch:3000` | gpus 1, 128 GB, max 3 models | nvidia `blackwell-b200`, count 1 | Served via OpenWebUI. |
 | `local-node` | ollama | `http://local-node:11434` | gpus 1, **32 GB**, max 10 models | nvidia `gpu-32gb`, count 1 | **No CPU fields declared.** |
 | `verdict` | ollama | `http://127.0.0.1:11435` | gpu_mem 32 GB, max 2 models | `{}` | Free-text tag `shared-gpu-with-local-node`; capacity ledger does not read it (BL428 §3c, `2026-10-14-concurrency-and-budget-design.md:361-380`). Serves the imap-mcp verdict workload. |
 
 **`llm_list`** — registered backends and the models each one exposes. Examples:
-- `remote-node` (kind remote-node): models opus, sonnet, haiku on node `claude`. `default_effort:"normal"`.
+- `claude-code` (kind claude-code): models opus, sonnet, haiku on node `claude`. `default_effort:"normal"`.
 - `ollama-local-node` (node local-node): qwen3:1.7b, qwen3.5:35b, qwen3-coder:30b, qwen2.5:14b, Gemma3:12b, qwen3:8b, nomic-embed-text.
 - `ollama-datawatch` (node datawatch): the widest set, including gpt-oss:120b, qwen3-coder-next:q4_K_M, qwen3.8:27b. **These sizes are registered but the node has no declared hardware, so fit cannot be checked from the registry.**
 - `ollama-verdict` (node verdict): gemma4:26b, gpt-oss:20b, granite4.2:30b, granite4.2:8b.
-- `openwebui-datawatch` (node peer-a): qwen3-coder-next, gpt-oss:120b, and the Qwen/Gemma set.
+- `openwebui-datawatch` (node remote-node): qwen3-coder-next, gpt-oss:120b, and the Qwen/Gemma set.
 
-**`capacity_status`** — pools: `host` (limit 9), `llm:remote-node` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:peer-a` / `node:local-node` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:remote-node`. This confirms BL428 §3b's "unlimited by default" finding.
+**`capacity_status`** — pools: `host` (limit 9), `llm:claude-code` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:remote-node` / `node:local-node` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:claude-code`. This confirms BL428 §3b's "unlimited by default" finding.
 
 **`ollama_stats`** — **not available.** The MCP call returned `404 unknown tool: ollama_stats` on this server. The tool appears in the listing but is not served. Live GPU/VRAM figures were therefore taken from the host directly (below).
 
@@ -122,9 +122,9 @@ Option (a) needs a service change on local-node. That is an operator action; thi
 ### Dimensions
 
 - **Model:** the set of models available per backend (above).
-- **Effort:** `low | medium | high` (xhigh/max excluded, as in BL422). **Effort applies only to `remote-node`.** Ollama has no equivalent. For local models the second axis is quantization (`q4_K_M` vs. whatever is registered) and context length, and both are fixed per cell, not swept.
+- **Effort:** `low | medium | high` (xhigh/max excluded, as in BL422). **Effort applies only to `claude-code`.** Ollama has no equivalent. For local models the second axis is quantization (`q4_K_M` vs. whatever is registered) and context length, and both are fixed per cell, not swept.
 - **Backend / driver:**
-  - `remote-node` (Claude models, effort-capable)
+  - `claude-code` (Claude models, effort-capable)
   - `goose` (driver for Ollama/OpenWebUI models)
   - `opencode` (driver for Ollama/OpenWebUI models)
   - `ollama` / `openwebui` (direct backend, the target of goose/opencode)
@@ -135,9 +135,9 @@ Option (a) needs a service change on local-node. That is an operator action; thi
 
 | Class | Definition | Where it exists today | Used for |
 |---|---|---|---|
-| **H0** `hosted` | Anthropic-hosted; no local hardware | `remote-node` | Claude cells. Not a local hardware class; excluded from hardware-conditioned local advice. |
+| **H0** `hosted` | Anthropic-hosted; no local hardware | `claude-code` | Claude cells. Not a local hardware class; excluded from hardware-conditioned local advice. |
 | **H1** `gpu-32g` | Single GPU, 32 GB VRAM | local-node (32 GB GPU, 32,607 MiB) | Main local GPU row. |
-| **H2** `gpu-128g` | Single GPU, 128 GB | peer-a (B200, via OpenWebUI) | Large-model row. Only for models that do not fit H1 (gpt-oss:120b, qwen3-coder-next). |
+| **H2** `gpu-128g` | Single GPU, 128 GB | remote-node (B200, via OpenWebUI) | Large-model row. Only for models that do not fit H1 (gpt-oss:120b, qwen3-coder-next). |
 | **H3** `gpu-undeclared` | GPU present but undeclared | `datawatch` (`hardware:{}`) | Cannot be classified. Probe first (S2); cells are recorded as `class_unknown` until then. |
 | **H4** `cpu-only-24c` | **CPU-only, 24 physical cores / 48 threads, ≥ 64 GB RAM** | local-node's CPU, GPU hidden (`local-node-cpu` node, option (a)) | **First-class CPU row.** Distinct from H1 even on the same host. |
 | **H5** `cpu-only-undeclared` | CPU-only, cores/RAM not declared | `datawatch` (no GPU declared; cores unknown) | Measured by the probe (S2). Recorded as `cpu_class_unknown` until measured. |
@@ -148,9 +148,9 @@ Option (a) needs a service change on local-node. That is an operator action; thi
 
 | Combination | Meaningful? | Reason |
 |---|---|---|
-| Claude × {low, medium, high} × `remote-node` × H0 | **Yes** | Core BL422 data. |
+| Claude × {low, medium, high} × `claude-code` × H0 | **Yes** | Core BL422 data. |
 | Claude × effort × `goose`/`opencode` × any local H | **No** | Effort is not a parameter for these drivers. |
-| Local model × `remote-node` | **No** | `remote-node` only runs Claude models. |
+| Local model × `claude-code` | **No** | `claude-code` only runs Claude models. |
 | Local model × {goose, opencode} × H1 | **Yes** | The main local-driver row. |
 | Local model × {goose, opencode} × H4 (CPU) | **Yes, sentinel subset only** | Slow, so the cell subset is restricted (below). |
 | Local model × `datawatch-default` × H1/H4 | **Yes** | Needed for the "default is wrong vs model is bad" finding (below). |
@@ -321,13 +321,13 @@ Rules for the shape:
 
 ### What BL428 sets (cited)
 
-- **§3b** (`concurrency-and-budget-design.md:321-360`): `llm:<name>` `max_inflight` is the per-backend ceiling, currently `0` = unlimited for `remote-node`. Live `capacity_status` confirms `llm:remote-node limit 0`. §3b also says local `node:<name>` limits are the hardware ceiling.
+- **§3b** (`concurrency-and-budget-design.md:321-360`): `llm:<name>` `max_inflight` is the per-backend ceiling, currently `0` = unlimited for `claude-code`. Live `capacity_status` confirms `llm:claude-code limit 0`. §3b also says local `node:<name>` limits are the hardware ceiling.
 - **§4d** (`:514-632`): `plan_tier` sets `max_inflight` when unset, and the conservative default is `1`. The tier→number table is operator policy, not published by Anthropic.
-- **§4e** (`:633-689`): a shared `billing_group` makes two daemons share one `backoff:` flag. If `peer-f` (the federation peer) shares this Claude account, its usage counts against this sweep's window.
+- **§4e** (`:633-689`): a shared `billing_group` makes two daemons share one `backoff:` flag. If `peer-e` (the federation peer) shares this Claude account, its usage counts against this sweep's window.
 
 ### What this sweep does
 
-- **Respects §3b for Claude:** the sweep's Claude cells run with `llm:remote-node` capped at **1** for the sweep's duration, through a dedicated capacity lease. This is a per-run cap, not a change to the global default, so it is not a BL428 override.
+- **Respects §3b for Claude:** the sweep's Claude cells run with `llm:claude-code` capped at **1** for the sweep's duration, through a dedicated capacity lease. This is a per-run cap, not a change to the global default, so it is not a BL428 override.
 - **Respects §3b for local:** `node:local-node-cpu` and `node:local-node` each get a limit of **1** during the sweep, so no two sweep cells run at once on one node. The sweep does not share a node with a live GPU workload it did not start.
 - **Respects §4e:** before the first Claude cell, the sweep checks `backoff:<billing_group>`. A set flag aborts the Claude portion and records `skipped_backoff`. The local portion still runs.
 - **Deliberately overrides nothing permanent.** The sweep does not change `max_inflight`, `plan_tier`, or any global default. The per-run cap is released when the sweep ends, including on failure (lease released in a `finally`-style path).
@@ -384,7 +384,7 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 
 **S8 — Approval and status.** REST, MCP, CLI, PWA approval flow with `confirm:true`; sweep status and `ConsecutiveFailures` surfaced. Acceptance: a proposal cannot take effect without approval; a failed spawn is visible.
 
-**S9 — Caps and backoff.** Sweep-scoped `llm:remote-node` cap, `node:` limits, §4e backoff check, dollar cap via `cost_usage`. Acceptance: a set `backoff:` flag aborts the Claude portion only.
+**S9 — Caps and backoff.** Sweep-scoped `llm:claude-code` cap, `node:` limits, §4e backoff check, dollar cap via `cost_usage`. Acceptance: a set `backoff:` flag aborts the Claude portion only.
 
 **S10 — Parity and docs.** Parity surfaces per the table; `docs/` updates per AGENT.md's Documentation Rules; mobile issues filed for Android and iOS. Acceptance: parity checklist complete.
 
@@ -405,7 +405,7 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 9. **Verdict node exclusion.** Confirm that `verdict` should be permanently excluded, or whether a read-only observation of its load is acceptable.
 10. **`ollama_stats` is unavailable on this server (404).** Is it expected to be served, or should the probe in S2 use another route?
 11. **Effort for local models.** The effort axis is Claude-only. Should local models get a comparable second axis (quantization, context length) in v1, or stay fixed?
-12. **Federation peer.** Does `peer-f` share the Claude account? If yes, §4e's `billing_group` must be set before the first sweep.
+12. **Federation peer.** Does `peer-e` share the Claude account? If yes, §4e's `billing_group` must be set before the first sweep.
 13. **Autonomous template parameter schemas.** `autonomous_template_create` / `_instantiate` exist as MCP tools, but their argument schemas were not checked in this pass. Verify before S6.
 14. **Verification tier.** BL422 excludes the verifier from fixtures because there is no per-task override. Should the sweep test the verifier via a guarded global flip, as BL422 does, or leave verification out of the recurring sweep?
 

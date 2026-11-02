@@ -4,9 +4,9 @@ Status: needs_review
 
 Date: 2026-10-14. Read-only investigation, run as an Automaton task (PRD
 `5d599cef`, story `09610293`, task `09611fc3`, session `local-node-148a`).
-That session is a remote-node Automaton task session itself, so it was used
+That session is a claude-code Automaton task session itself, so it was used
 as the live "autonomous" specimen. The interactive comparison is
-`local-node-ab22` (remote-node, same project dir).
+`local-node-ab22` (claude-code, same project dir).
 
 ## What the operator saw
 
@@ -98,7 +98,7 @@ It ships a script, but the script does not compute these fields (see Q1).
 
 **Install path.** `hookinstaller.Install` runs from the `SetOnSessionStart`
 callback (`cmd/datawatch/main.go:2222-2246`). Conditions:
-`sess.BackendFamily == "remote-node"` and `session.auto_install_hooks` is not
+`sess.BackendFamily == "claude-code"` and `session.auto_install_hooks` is not
 `false`. A nil value defaults to true (`config.go:1661-1667`).
 
 **Automaton tasks take the same path as interactive sessions:**
@@ -109,7 +109,7 @@ callback (`cmd/datawatch/main.go:2222-2246`). Conditions:
   `one_shot: true`, the task's `project_dir`, `prd_id`, `task_id`, `story_id`.
 - That goes through `Manager.Start`, a tmux one-shot rather than a
   subprocess, which calls `onSessionStart` (`internal/session/manager.go:2167`).
-- So an Automaton remote-node task gets the same install attempt into its
+- So an Automaton claude-code task gets the same install attempt into its
   `project_dir` (the worktree, in worktree-mode PRDs) as an interactive
   session.
 - Exceptions: the subprocess path (`manager.go:1877-1890`) forces
@@ -176,18 +176,18 @@ script is installed, which is misleading.
 
 **The PWA fallback also misses:**
 
-- When there is no session envelope, the PWA looks for `backend:remote-node`
+- When there is no session envelope, the PWA looks for `backend:claude-code`
   (`app.js:4565-4569`), using `sess.backend_family`.
 - The observer's signature name is `claude`, so its envelopes are
   `backend:claude` / `backend:claude-docker` (`types.go` signatures).
-- The names never match, so a remote-node session always falls through to
+- The names never match, so a claude-code session always falls through to
   `session_stats_no_envelope_body`.
 - Separately, live output has `backend:claude-docker` but no host
   `backend:claude`. Host claude processes therefore land in `system`, probably
   because their `comm` / `cmdline[0]` does not match `claude`. That was not
   investigated further.
 
-**Can tmux-less sessions be attributed?** Autonomous remote-node tasks are tmux
+**Can tmux-less sessions be attributed?** Autonomous claude-code tasks are tmux
 one-shots (`TmuxSession != ""`), so once roots are registered they can be
 attributed by pane PID. Subprocess spawns (`TmuxSession == ""`) and
 agent-virtual sessions have no pane. They would need a root PID from
@@ -290,8 +290,8 @@ Follow-on fix tasks, in order:
      session, call `observerpkg.RegisterSessionRoot(sess.FullID, sess.Name, st.PanePID)`.
    - Call `UnregisterSessionRoot` for sessions that are no longer active.
      Registering every tick is idempotent; "last write wins" is documented.
-   - Also fix the PWA backend fallback name mismatch (`backend:remote-node` vs
-     the `claude` signature), either by mapping `remote-node → claude` in
+   - Also fix the PWA backend fallback name mismatch (`backend:claude-code` vs
+     the `claude` signature), either by mapping `claude-code → claude` in
      `app.js:4568` or by matching on the envelope label.
    - Subprocess and agent-virtual sessions are out of scope for the minimal fix.
 3. **Hook script fields: defer.** Making the hook script compute `tests` and
@@ -356,7 +356,7 @@ already resolves `#{pane_pid}` for every running / waiting-input /
 rate-limited session. Ended sessions drop out on the next tick. Sessions
 with no tmux session name (subprocess, agent-virtual) are never rooted,
 because `tmux list-panes -t ""` resolves an unrelated pane. Automaton
-remote-node tasks are tmux one-shots, so they now get a
+claude-code tasks are tmux one-shots, so they now get a
 `session:<full_id>` envelope like interactive sessions. The observer's
 process-tree walk is unchanged. Unit test:
 `TestSyncSessionRoots_ReplacesAndDropsEnded` (`internal/observer/observer_test.go`).
@@ -377,7 +377,7 @@ Still open, recorded rather than guessed at:
 
 **Stats tab fallback and copy: fixed (`98e233a9`).**
 
-- `app.js` maps `backend_family` `remote-node` to the observer's `claude`
+- `app.js` maps `backend_family` `claude-code` to the observer's `claude`
   signature for the backend-envelope fallback.
 - `stats_llm_more_soon` now reads "Token rate / latency / model state are
   not built yet" in all five locales (EN placeholder in de/es/fr/ja). The
@@ -389,7 +389,7 @@ Still open, recorded rather than guessed at:
 
 **Hook payload: deferred, no code change.** Q1 shows `.claude/sprint/state.json`
 is written by nothing, so `sprint` / `tests` / `git` / `current_task` are
-aspirational for every session type. Q2 shows Automaton remote-node tasks
+aspirational for every session type. Q2 shows Automaton claude-code tasks
 already take the same `hookinstaller.Install` path as interactive
 sessions, so there is no autonomous-only call-site gap to fix. Per the
 recommendation, no hook-side generator was built. The daemon-side

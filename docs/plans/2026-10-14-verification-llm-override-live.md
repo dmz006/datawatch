@@ -42,10 +42,10 @@ RESULT=pass
   test.
 - Sandbox global autonomous config: `verification_backend` empty,
   `verification_backends` unset. Execution backend of the Automaton:
-  `remote-node` (effort `low`).
+  `claude-code` (effort `low`).
 - Override chosen: `ollama-localhost` / `qwen3:1.7b`, the testdata
   registry entry. It differs from both the global verifier (empty) and
-  the execution backend (`remote-node`). testdata's `llms:` block isn't
+  the execution backend (`claude-code`). testdata's `llms:` block isn't
   loaded into the inference registry, so the story registered it
   inline: a compute node at `http://localhost:11434` plus the
   `ollama-localhost` LLM entry. It confirmed `/api/ask` answered
@@ -101,13 +101,13 @@ POST /api/autonomous/prds/e0ef099c/set_task_verification_llm
   "severity": "info",
   "summary": "WORLD.md was created containing exactly the line \"world\" (6 bytes, newline-terminated); no tracked files modified.",
   "verified_at": "2026-10-14T02:09:40.552880285-04:00",
-  "verifier_backend": "remote-node",
+  "verifier_backend": "claude-code",
   "verifier_source": "global"
 }
 ```
 
   With no override and an empty global `verification_backend`, the
-  verifier fell back to the Automaton's own backend (`remote-node`,
+  verifier fell back to the Automaton's own backend (`claude-code`,
   session-routed because the Automaton has a project directory).
   `verifier_model` is omitted because no model was configured at any
   level.
@@ -123,7 +123,7 @@ POST /api/autonomous/prds/e0ef099c/set_task_verification_llm
   no files is rejected by the "no changes detected" check before the
   LLM-judgment stage, and that result carries no `verifier_*` fields
   because nothing was judged. The story therefore executes on
-  remote-node.
+  claude-code.
 - An earlier manual probe of the same flow (Automaton `26df0420`, tasks
   `da94e5d9` override / `daf0c5ce` sibling) gave the same result:
-  `ollama-localhost` / `task` and `remote-node` / `global`.
+  `ollama-localhost` / `task` and `claude-code` / `global`.

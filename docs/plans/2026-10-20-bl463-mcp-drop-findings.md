@@ -126,7 +126,7 @@ There are **two different MCP server names** involved for one session, and code,
 operator memory mix them up:
 
 1. **`datawatch-<FullID>`** (per-session, user-scope) — the channel actually used by
-   remote-node sessions.
+   claude-code sessions.
    - `internal/channel/channel.go:181` `RegisterSessionMCP(sessionID, …)`:
      `name := "datawatch-" + sessionID`; the same literal reappears in
      `UnregisterSessionMCP` (:199) and `ChannelServerName` (:204).
@@ -145,12 +145,12 @@ operator memory mix them up:
      `channel.WriteProjectMCPConfig` (`internal/channel/mcp_config.go:99`
      `cfg.MCPServers["datawatch"] = spec`), and by the global `RegisterMCP`
      (`channel.go:176`).
-   - For **remote-node** sessions this path is explicitly avoided: the pre-launch hook
+   - For **claude-code** sessions this path is explicitly avoided: the pre-launch hook
      *removes* any `"datawatch"` entry from `.mcp.json`
      (`cmd/datawatch/main.go:1490-1496`, BL109 comment: a shared entry on the default
      port 7433 breaks multi-session setups) and uses the per-session named server
-     instead (:1485-1549, `BackendFamily != "remote-node"` vs `==` branch).
-   - For **non-remote-node** backends (opencode/goose/… that honour `.mcp.json`) the
+     instead (:1485-1549, `BackendFamily != "claude-code"` vs `==` branch).
+   - For **non-claude-code** backends (opencode/goose/… that honour `.mcp.json`) the
      shared `datawatch` entry is the only MCP wiring those backends see.
 
 **Key audit finding:** the mapping *session → MCP server name* is
@@ -183,8 +183,8 @@ sessions' names must NOT be used.
 
 | Mode | MCP wiring | Evidence |
 |---|---|---|
-| **host (tmux, remote-node)** | `claude mcp add --scope user datawatch-<FullID>` + `CLAUDE_SESSION_ID` env + random port (DATAWATCH_CHANNEL_PORT=0); `.mcp.json` `datawatch` entry removed | `main.go:1547`, `channel.go:181-196` |
-| **host (tmux, non-remote-node)** | shared `datawatch` entry in project `.mcp.json` | `main.go:1485-1490` |
+| **host (tmux, claude-code)** | `claude mcp add --scope user datawatch-<FullID>` + `CLAUDE_SESSION_ID` env + random port (DATAWATCH_CHANNEL_PORT=0); `.mcp.json` `datawatch` entry removed | `main.go:1547`, `channel.go:181-196` |
+| **host (tmux, non-claude-code)** | shared `datawatch` entry in project `.mcp.json` | `main.go:1485-1490` |
 | **container/agent (F10)** | session record gets `AgentID` set (runs inside a worker container spawned by a parent); the parent's own host-side channel naming rules still apply | `internal/session/store.go:121-126` |
 | **docker driver (agents)** | **no MCP registration at all** — `docker run` with a `callbackURL`; agents talk to the daemon over REST callbacks | `internal/agents/docker_driver.go` |
 

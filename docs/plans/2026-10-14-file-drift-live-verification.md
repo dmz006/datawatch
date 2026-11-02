@@ -30,7 +30,7 @@ resolved from `git rev-parse --show-toplevel`) as follows:
    untracked (`??`).
 
 Each Automaton was created in direct mode (explicit absolute `project_dir`) with
-backend `remote-node`, one story, and one task with `files: ["planned.txt"]`.
+backend `claude-code`, one story, and one task with `files: ["planned.txt"]`.
 The task spec said: append a line to `planned.txt`, then
 `git add -A && git commit -m 'update planned'`.
 

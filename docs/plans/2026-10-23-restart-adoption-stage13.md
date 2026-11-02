@@ -4,7 +4,7 @@ Restart onto the build that keeps a finished worker and re-verifies only, with o
 
 | PRD | Task | Session before | Session after |
 |---|---|---|---|
-| 2d950001 (remote-node) | verifying, worker session still live | 03cd | 03cd |
+| 2d950001 (claude-code) | verifying, worker session still live | 03cd | 03cd |
 
 - Result: the in-flight session was kept, with no duplicate session and no task reset. The PRD resumed because its worker session was alive.
 - The tmux server was untouched (NRestarts 3). The capacity API answered in about 5 ms.

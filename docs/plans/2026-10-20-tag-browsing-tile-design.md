@@ -220,7 +220,7 @@ status chip. The mapping to `sessionCard` is:
 ```
 +------------------------------------------+
 | Release pipeline               [running] |   header: .session-card-header
-| a1b2c3d4 · remote-node · sonnet          |   backend and model
+| a1b2c3d4 · claude-code · sonnet          |   backend and model
 | ███████░░░░░  4 / 9 tasks                |   progress bar
 | #work  #ios  +1                          |   tags
 | updated 4m ago        [Open]  [Stop] [⋯] |   activity and actions
@@ -240,7 +240,7 @@ status chip. The mapping to `sessionCard` is:
 ```
 +----------------------------------------+
 | ▌Release pipeline         running 4/9  [⋯]
-|  remote-node · #work +1 · 4m           |
+|  claude-code · #work +1 · 4m           |
 +----------------------------------------+
 ```
 
@@ -450,7 +450,7 @@ chip row. On conflicting edits, the last write wins, keyed by the combo's
 
 **Pros.**
 - One-tap access to the operator's common queries, such as "blocked mobile work" or
-  "running on remote-node".
+  "running on claude-code".
 - The store is small and independent of tag internals.
 - It sits beside the existing filter state, so the code change stays small.
 

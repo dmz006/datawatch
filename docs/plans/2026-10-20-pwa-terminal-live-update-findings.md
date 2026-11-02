@@ -112,7 +112,7 @@ Ruled out as the cause of the missing live frames. Evidence:
   (manager.go:3890) and `OutputSince` (manager.go:4087), which call `ReadAll` on
   the decrypted file, and in the opencode-acp startup scan
   (manager.go:~5736, `os.ReadFile`). These affect encrypted or ACP sessions only
-  and not the reported remote-node session. Noted for a later patch, not part of
+  and not the reported claude-code session. Noted for a later patch, not part of
   this fix.
 
 ### (3) Recreated pane or output pipe not re-attached

@@ -69,12 +69,12 @@ refs/remotes/origin/trunk; main exists: no
 ```
 {
   "check_main_carries": true,
-  "claude_backend": "remote-node",
+  "claude_backend": "claude-code",
   "claude_lanes": 3,
   "claude_mode": "",
   "count_verifier_wait": true,
   "decompose_ahead_min": 2,
-  "gpu_backend": "peer-e",
+  "gpu_backend": "peer-d",
   "gpu_lanes": 2,
   "gpu_mode": "",
   "gpu_model": "",
@@ -123,7 +123,7 @@ refs/remotes/origin/trunk; main exists: no
 | `1f1100a7` | (g) worktree not registered | blocked | `worktree_invalid` | its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository |
 | `1f1100d2` | (i) Claude-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line |
 | `1f1100a8` | (j) GPU-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100a8: proposal docs/plans/pending-gpu.md does not carry a Confirmed: yes line |
-| `1f1100c0` | (h) control, fully eligible | start_prd | — | first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0); backend would change from shell to peer-e |
+| `1f1100c0` | (h) control, fully eligible | start_prd | — | first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0); backend would change from shell to peer-d |
 
 - **PASS** — (a) stale draft: a blocked decision with eligibility_reason `stale`
   - `1f1100a1`: {"action":"blocked","eligibility_reason":"stale","mode":"shadow","executed":false}, reason "Automaton last updated 101 hours ago, older than the 72 hour stale limit"
@@ -272,7 +272,7 @@ MCP result (`autonomous_lane_fill_status`), refusals only:
 
 ## 4. Lane counts follow the LLM in-flight caps
 
-Claude backend `remote-node`, claude_lanes `3`; LLM entry updated with max_inflight 1: `200 {"name":"remote-node","ok":true} `.
+Claude backend `claude-code`, claude_lanes `3`; LLM entry updated with max_inflight 1: `200 {"name":"claude-code","ok":true} `.
 
 - **PASS** — with the Claude entry capped at 1 and claude_lanes 3, lane_counts shows effective 1, source llm_caps
   - lane_counts.claude: {"configured":3,"effective":1,"source":"llm_caps"}; Claude lanes in the status: 1
@@ -357,7 +357,7 @@ The dogfood step: what lane fill refused and why, next to what the daemon-side s
 | `1f1100d2` | (i) Claude-lane candidate, proposal confirmed in check 5 | refused: `proposal_not_confirmed` | counted as queued and runnable |
 | `1f1100a8` | (j) GPU-lane candidate, proposal confirmed in check 5 | refused: `proposal_not_confirmed` | counted as queued and runnable |
 
-**Counts.** Lane fill: eligible work for GPU lanes 1, for Claude lanes 0. The script's own rule: 9 Automata counted as queued and runnable. Script output for the state (its findings): `["IDLE Claude lane while 9 Automata are needs_review, approved or draft"]`; Claude pool it read: `{"name":"llm:remote-node","limit":1,"external":0,"held":0,"holders":null,"effective_max_inflight":1,"inflight_source":"explicit"}`.
+**Counts.** Lane fill: eligible work for GPU lanes 1, for Claude lanes 0. The script's own rule: 9 Automata counted as queued and runnable. Script output for the state (its findings): `["IDLE Claude lane while 9 Automata are needs_review, approved or draft"]`; Claude pool it read: `{"name":"llm:claude-code","limit":1,"external":0,"held":0,"holders":null,"effective_max_inflight":1,"inflight_source":"explicit"}`.
 
 **Daemon-side supervisor watch**, findings of kind idle_lane_eligible_work before the control was made stale: `[{"subject":"gpu-2","resolved":false},{"subject":"gpu-1","resolved":false}]`; after: `[{"subject":"gpu-2","resolved":true},{"subject":"gpu-1","resolved":true}]`.
 

@@ -46,7 +46,7 @@ An object with two members, `gpu` and `claude`. Each member has these fields:
 | `source` | string | Where the effective count came from: `config` (the configured count) or `llm_caps` (the sum of the in-flight caps of the enabled LLM entries for that lane kind's backend). Treat any other value as the raw text. |
 | `reason` | string | **Absent key when not set.** When `source` is `config` it says why the caps were not used (for example the cap-following setting is off, the lane kind is configured for none, no cap source, no enabled entry for the backend, or an entry is unlimited). It is absent when `source` is `llm_caps`. |
 
-Example: `"lane_counts": {"gpu": {"configured": 2, "effective": 2, "source": "config", "reason": "no enabled gpu entry for backend peer-e"}, "claude": {"configured": 3, "effective": 2, "source": "llm_caps"}}`.
+Example: `"lane_counts": {"gpu": {"configured": 2, "effective": 2, "source": "config", "reason": "no enabled gpu entry for backend peer-d"}, "claude": {"configured": 3, "effective": 2, "source": "llm_caps"}}`.
 
 ### Status field `modes`
 

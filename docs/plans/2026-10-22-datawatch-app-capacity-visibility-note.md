@@ -19,7 +19,7 @@ The PWA already renders all of this (a Capacity card on the Automata list, cause
 {
   "pools": [ … ], "leases": [ … ], "waiting": [ … ],
   "backoff": [
-    { "backend": "remote-node", "until": "2026-10-22T18:30:00Z",
+    { "backend": "claude-code", "until": "2026-10-22T18:30:00Z",
       "reason": "usage limit reached, resets 6:30pm", "reset_known": true }
   ],
   "budgets": [ … ],
@@ -27,14 +27,14 @@ The PWA already renders all of this (a Capacity card on the Automata list, cause
     "waiting": [
       { "task_id": "t_ab12", "prd_id": "5dfb0001", "prd_title": "…", "task_title": "…",
         "cause": "pool_full",
-        "reason": "pool llm:remote-node full (2/2, held by t_cd34)",
+        "reason": "pool llm:claude-code full (2/2, held by t_cd34)",
         "since": "2026-10-22T18:00:00Z",
         "resets_at": "2026-10-22T18:30:00Z",
         "holder": "t_cd34" }
     ],
     "running": [
       { "task_id": "t_cd34", "prd_id": "5dfb0001", "task_title": "…",
-        "pools": ["host", "llm:remote-node", "node:gpu-a"],
+        "pools": ["host", "llm:claude-code", "node:gpu-a"],
         "node": "gpu-a", "session_id": "5a9e0c41",
         "since": "2026-10-22T17:55:00Z",
         "note": "" }
