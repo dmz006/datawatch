@@ -95,5 +95,35 @@ exists on branch `automaton/64580001` and is not present here.
    env -u TMUX -u TMUX_TMPDIR GOMAXPROCS=1 \
      go test ./internal/autonomous/ -run TestAutomationIdleStartStop -race -count=300
    ```
-2. Cherry-pick `ec031667c` (+ regression test `027c9c58f`) onto this branch,
-   rerun the same command → expect failures=0.
+   Expect some `TestAutomationIdleStartStop ... directory not empty` failures.
+2. Fix + settle: cherry-pick `ec031667c` (plus the regression test `027c9c58f`, "no tick
+   after Stop returns") onto this branch, rerun the same command → expect failures=0.
+   That before/after delta isolates the idle loop as the writer and proves the
+   defect-class link to question-step2 (same fix shape: join-before-return) while the two
+   failures remain distinct incidents.
+
+## Re-verification (retry run 2026-11-02 13:48 UTC)
+
+Every citation above was re-checked against the live tree on 2026-11-02 and all still hold:
+
+- Test body at `automation_status_test.go:270-278` (1 ms tick, `Start/Start/Sleep(5ms)/
+  Stop/Stop/Start/Stop`) — confirmed verbatim.
+- `Start`: `automation_coordinator.go:156-157` `go c.idleLoop(c.idleStop, c.idleTick)`;
+  `laneFillDone` join pattern at lines 160-164 — confirmed verbatim.
+- `Stop`: `automation_coordinator.go:174-204`; sole join is `<-laneFillDone` (line 198);
+  no `idleDone` signal anywhere in `internal/autonomous` (grep re-run, zero hits).
+- `idleLoop` pass list confirmed at `automation_idle.go:36-43` (`checkIdle, checkBudget,
+  triagePass, heldQuestionPass, questionPass, repoCIWatchPass, securityFailurePass,
+  supervisorWatchPass`) — all state commits flow through the Manager rooted at
+  `NewManager(t.TempDir(), ...)` (`automation_coordinator_test.go:57`).
+- `git branch -a --contains ec031667c` re-run: only `automaton/64580001*` branches
+  (plus its task sub-branches) — the fix is still absent from
+  `automaton/4e190001`/`main`.
+- `.datawatch/verify/investigate-background-writers.sh` re-run this session (exit 0);
+  `.datawatch/deflake5/background-writers.txt` output identical (10 lines) and matches
+  the artifact listing in section 7 above.
+- Clarification: `automation_idle.go:24` (the ctx-cancel bridge goroutine) is itself
+  unjoined but writes no files; the file-writing surface is the `idleLoop` main goroutine's
+  tick body, which is the one `Stop` never joins.
+
+Companion evidence copy (scratch, gitignored): `.datawatch/deflake5/idle-stop-shared-cause.md`.
