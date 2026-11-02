@@ -66,6 +66,9 @@ func (c *PeerUsageCache) client() *http.Client {
 	if c.Client != nil {
 		return c.Client
 	}
+	// Follow-up: this fallback ignores the peer's tls_skip_verify. PeerRef
+	// carries no such field, so honouring it needs a new PeerRef field (and
+	// wiring), which is outside this fix.
 	return &http.Client{Timeout: defaultPeerUsageTimeout}
 }
 
