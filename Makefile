@@ -302,6 +302,7 @@ test:
 	go test ./...
 	bash tests/test-check-no-local-leaks.sh
 	bash tests/test-seed-leak-patterns.sh
+	bash tests/test-scrub-peer-names.sh
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
