@@ -1851,3 +1851,7 @@ Operator, 2026-11-02, quoted: "Claude at 16%". The calculator records 16% at Mon
 ## Burn guard decisions answered 2026-11-02
 
 Operator, 2026-11-02 06:50, through the PWA, on both burn guard decisions (the first rung taken when the weekly projection ran over the line, and its release when the projection fell): option "Leave it in place" (keep) on each, with no further words. Effect: the guard stays on and keeps its settings, and the one-lane cap is unchanged.
+
+## Reading 2026-11-02 11:12 EST: 19%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 19%". The calculator records 19% at Mon 11:12 (5.87 days left, pace line 16.2, 2.8 points ahead). The token tally estimated 18.0 for the same moment, so its fit was about one point low. Recent burn is 16.5 points per 24 hours, which projects 115.7% at the reset (over budget); the week average is 16.8 points per 24 hours (117.3%), and at the recent rate the allowance would run out Sat 09:11, about 23 hours before the reset. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed, and the rest of the work stays on the pi lane where the burn guard already routes it.
