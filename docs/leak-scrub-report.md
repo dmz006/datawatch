@@ -193,3 +193,60 @@ combined).
 - Addresses embedded purely as byte-value constructions
   (`net.IPv4(0x…, …)`) — no dotted literal, invisible to the pattern check.
 - `tmp-evidence/` run artifacts — see "Files touched" above.
+
+## Replaced: node and GPU identifiers
+
+This pass covers the operator machine's node hostname and GPU model name
+(the address/tailnet scrub above already moved the same machine's network
+identity; this section records the node-name and GPU-model sweep and its
+end state).
+
+### Replacement scheme
+
+| Role in a document | Neutral wording used |
+|---|---|
+| The operator's own machine as a compute node | `local node`, `remote node`; where a name is required by a URL, command, or node pool identifier, an `example.com` name named after the role (`local-node.example.com`, `remote-node.example.com`, `ollama-local-node`-style role labels) — never the real hostname |
+| The GPU where the document only needs a role | generic wording: "the GPU", "a high-end consumer GPU", or a memory-size fact (e.g. a 32 GB GPU) that carries capacity without identifying a model |
+| Documents quoting a real operator setting | the placeholder value, plus one sentence noting the real value lives in the operator's own configuration |
+| Session identifiers that embedded the hostname | neutral prefix + opaque suffix (no hostname fragment) |
+
+### Per-file replacement counts (node hostname + GPU model)
+
+A whole-tree, case-insensitive sweep for the runtime-discovered node
+hostname (full and short form), the full and shortened GPU product names
+(spaced and unspaced), and the bare model number found:
+
+| File | Node-hostname replacements | GPU-model replacements | Total |
+|---|---:|---:|---:|
+| tracked tree (all files, incl. `AGENT.md`, `CHANGELOG.md`, `docs/plans/**`, test fixtures) | 0 new in this pass | 0 new in this pass | 0 |
+
+Zero new replacements were required in this pass because the earlier
+address/hostname scrub (see "Replaced: hostnames" above) already moved
+every node and GPU reference in tracked content onto the neutral scheme
+tabled above. Remaining GPU tokens in tracked files are generic catalog
+examples (`h100`-class cards, third-party benchmark pages) that do not
+identify this operator's machine, and the two generated kernel BTF
+headers whose vendor IC identifiers merely share the 4-digit sequence are
+excluded in `scripts/leak-check.exclude` (they are btfgen output and must
+be regenerated, not hand-edited). Where a document quotes a real operator
+setting next to an example value, the example carries the placeholder and
+the sentence notes the real value lives in the operator config.
+
+### Renamed paths
+
+None: no tracked file or directory name carries a node or GPU identifier,
+and session identifiers in tracked content already use the neutral
+prefix scheme. No `mv` was needed in this pass.
+
+### Verification (this pass)
+
+- `.leak-patterns.local` (repository root, gitignored, never committed)
+  holds the runtime-discovered identifiers, one per line, created from
+  `scripts/leak-patterns.local.template`; `git check-ignore` confirms the
+  ignore.
+- `env -u TMUX -u TMUX_TMPDIR LEAK_CHECK_CLASSES=local bash
+  scripts/check-no-local-leaks.sh` → `local: 0` (and `address: 0`,
+  `home: 0`, `email: 0`).
+- `.datawatch/verify/replace-hostname-gpu-identifiers.sh` re-discovers the
+  identifiers at run time (none are stored in the script or this report)
+  and passes.
