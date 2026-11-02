@@ -1,0 +1,16 @@
+failures=6
+runs=800
+timed_out=0
+notes:
+- Reproduced under 48 CPU busy loops (one per core, nproc=48, PIDs recorded in .datawatch/deflake/busy.pids, all 48 confirmed dead afterwards via kill -0), GOMAXPROCS=1, -race -count=100.
+- 8 distinct TestUIPromptDismiss_ tests x 100 iterations = 800 completed runs (800 '=== RUN' lines in .datawatch/deflake/repro-before.log); 794 PASS, 6 FAIL; go test exit=1, elapsed 237s (< 480s timeout budget, timed_out=0).
+- Failing test names (each failed exactly once across its 100 iterations):
+  -- TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+  -- TestUIPromptDismiss_ClearedDuringDelayNeverSends
+  -- TestUIPromptDismiss_DelayHonored
+  -- TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+  -- TestUIPromptDismiss_SettingOffNeverSends
+  -- TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+- All 6 failures were detected DATA RACES (13 'WARNING: DATA RACE' lines total in the log), not assertion failures. 0 'no dismissed audit event' messages in the log.
+- Race is between writes in (*Manager).moveToBlocked (internal/session/ui_prompt_blocked.go:128, via Store.Mutate at internal/session/store.go:770) and reads in internal/session/ui_prompt_dismiss_test.go.
+- Full verbose log: .datawatch/deflake/repro-before.log; canonical result file: .datawatch/deflake/repro-before.txt. This root-level copy exists only so the result is visible outside the gitignored .datawatch/ scratch directory; it is a reproduction log, not source, and the definitive copy remains .datawatch/deflake/repro-before.txt.
