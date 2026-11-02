@@ -118,6 +118,15 @@ fi
 if [ "${DW_SKIP_INTERNAL_REFS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-internal-refs.sh" ]; then
   "$SMOKE_DIR/check-no-internal-refs.sh" >&2 || exit 1
 fi
+# — whole-tree local-environment leak audit. The check prints only
+# path:line: class report lines (plus its per-class count summary) and
+# never prints matched text; a failing exit fails the smoke.
+if [ "${DW_SKIP_LOCAL_LEAKS_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-no-local-leaks.sh" ]; then
+  if ! "$SMOKE_DIR/check-no-local-leaks.sh" "$REPO_DIR"; then
+    echo "local-environment leak check failed — reproduce with: make check-leaks" >&2
+    exit 1
+  fi
+fi
 # 2026-10-07 — version-bump/reuse audit. Compares against the most
 # recent release tag so a release never reuses an already-shipped
 # version even if the reuse happened several commits back.
