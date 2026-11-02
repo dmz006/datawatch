@@ -17,8 +17,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// dashShippedCardID is the dashboard card that shows the shipped-state read
+// surfaces (shipped.go): per-status counts with shipped separated from
+// cancelled while the autonomous.shipped surface is enabled +
+// count_separately holds.
+const dashShippedCardID = "shipped"
 
 // dashCard is a single card in the layout.
 type dashCard struct {
@@ -26,6 +33,12 @@ type dashCard struct {
 	CS     int    `json:"cs"`
 	RS     int    `json:"rs,omitempty"`
 	System bool   `json:"system,omitempty"`
+	// Data is the card's live payload, filled at read time for cards that
+	// need one (currently the shipped card): the per-status PRD/Automation
+	// counts computed under the in-force autonomous.shipped settings, plus
+	// those settings so the client never guesses. The layout file stores
+	// cards without Data; it only rides the list/get responses.
+	Data any `json:"data,omitempty"`
 }
 
 // dashLayout is the full layout file.
@@ -49,6 +62,8 @@ func defaultDashCards() []dashCard {
 		{ID: "smoke", CS: 6, RS: 2, System: true},
 		// BL387 Phase 3 — memory scope stats tile.
 		{ID: "memory-scope", CS: 3, RS: 1, System: true},
+		// shipped-state counts tile (shipped.go read surfaces).
+		{ID: dashShippedCardID, CS: 12, RS: 1, System: true},
 	}
 }
 
@@ -158,6 +173,11 @@ func (s *Server) dashCardsListHandler(w http.ResponseWriter, r *http.Request) {
 	if cards == nil {
 		cards = []dashCard{}
 	}
+	for i := range cards {
+		if cards[i].ID == dashShippedCardID {
+			cards[i].Data = s.shippedCardData()
+		}
+	}
 	writeJSONOK(w, cards)
 }
 
@@ -201,11 +221,53 @@ func (s *Server) dashCardGetHandler(w http.ResponseWriter, r *http.Request, id s
 	}
 	for _, c := range layout.Cards {
 		if c.ID == id {
+			if c.ID == dashShippedCardID {
+				c.Data = s.shippedCardData()
+			}
 			writeJSONOK(w, c)
 			return
 		}
 	}
 	http.Error(w, "card not found", http.StatusNotFound)
+}
+
+// shippedCardData is the live shipped card payload (shipped.go): the
+// per-status PRD and Automation counts under the in-force
+// autonomous.shipped settings — shipped separated from cancelled while
+// enabled + count_separately hold; with count_separately off a
+// shipped-yet-cancelled record folds back into "cancelled" — plus those
+// settings. A server without the autonomous manager gets a nil payload
+// (the card then renders with no data). The buckets are computed on every
+// read and never persisted; the layout file keeps cards data-less.
+func (s *Server) shippedCardData() any {
+	if s.autonomousMgr == nil {
+		return nil
+	}
+	ship := s.shippedSettings()
+	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	prds := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListPRDs() {
+		p, err := toPRD(raw)
+		if err != nil || p == nil {
+			continue
+		}
+		prds[autonomous.PRDEffectiveDisplayStatus(p, sep)]++
+	}
+	autos := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListAutomations() {
+		a := rawAutomationOf(raw)
+		autos[autonomous.AutomationEffectiveDisplayStatus(a, sep)]++
+	}
+	return map[string]any{
+		"prds":        prds,
+		"automations": autos,
+		"settings": map[string]any{
+			"enabled":          ship.EffectiveEnabled(),
+			"show_chip":        ship.EffectiveShowChip(),
+			"filter_default":   string(ship.EffectiveFilterDefault()),
+			"count_separately": ship.EffectiveCountSeparately(),
+		},
+	}
 }
 
 func (s *Server) dashCardUpdateHandler(w http.ResponseWriter, r *http.Request, id string) {

@@ -599,11 +599,28 @@ func qualityGatesSmokePackages(v any) []string {
 
 func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_list",
-		mcpsdk.WithDescription("BL24 — list all PRDs, newest first. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed), with the pushed ref/sha/time (pushed) or the push reason (not_pushed)."),
+		mcpsdk.WithDescription("BL24 — list all PRDs, newest first. When a PRD's push outcome is recorded, its item also carries git.push_state (pushed / not_pushed), with the pushed ref/sha/time (pushed) or the push reason (not_pushed). Narrow the list without changing any stored state: status takes comma-separated statuses and may include shipped — the shipped-state bucket selected by a non-empty merge commit, independent of the stored status; shipped true keeps only PRDs that carry shipped state, shipped false only ones that do not. When neither is given the full list is returned (full=1); when one is, the summary list under the in-force autonomous.shipped settings applies instead, and shipped=true matches only while enabled."),
+		mcpsdk.WithString("status", mcpsdk.Description("Comma-separated statuses to keep; may include shipped (the shipped-state bucket, not a stored status).")),
+		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only PRDs that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
 	)
 }
-func (s *Server) handleAutonomousPRDList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := s.proxyGet("/api/autonomous/prds", url.Values{"full": {"1"}})
+func (s *Server) handleAutonomousPRDList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	shipped := strings.ToLower(strings.TrimSpace(req.GetString("shipped", "")))
+	status := strings.Trim(strings.TrimSpace(req.GetString("status", "")), ",")
+	q := url.Values{}
+	if shipped == "" && status == "" {
+		q.Set("full", "1")
+	}
+	if shipped != "" {
+		if shipped != "true" && shipped != "false" {
+			return mcpsdk.NewToolResultError("shipped must be \"true\" or \"false\""), nil
+		}
+		q.Set("shipped", shipped)
+	}
+	if status != "" {
+		q.Set("status", status)
+	}
+	out, err := s.proxyGet("/api/autonomous/prds", q)
 	if err != nil {
 		return nil, err
 	}
@@ -711,6 +728,24 @@ func (s *Server) handleAutonomousShippedBackfill(_ context.Context, req mcpsdk.C
 	}
 	out, err := s.proxyJSON(http.MethodPost, path, nil)
 	return llmSetterResult(out, err)
+}
+
+// toolAutonomousShippedCounts + handler read the per-status shipped counts
+// (the PRD and Automation buckets) computed under the in-force
+// autonomous.shipped settings. It proxies the server's
+// GET /api/autonomous/shipped/counts endpoint — read-only, no writes, no
+// status touched.
+func (s *Server) toolAutonomousShippedCounts() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_shipped_counts",
+		mcpsdk.WithDescription("Read the per-status shipped counts — the PRD and Automation buckets — computed under the in-force autonomous.shipped settings. One count per displayed status, with the shipped bucket separated from cancelled while enabled + count_separately hold: a PRD/Automation cancelled without its work landing counts as cancelled, one whose work landed (non-empty merge commit) counts as shipped while the stored status stays cancelled. The response also echoes the effective settings (enabled, show_chip, filter_default, count_separately, backfill_on_start) it was computed under. Read-only: it never writes any shipped record and touches no status. Same numbers as the dashboard's shipped card and the autonomous shipped counts CLI verb."),
+	)
+}
+func (s *Server) handleAutonomousShippedCounts(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/shipped/counts", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
 }
 
 // llmSetterResult turns a proxied LLM setter response into a tool result.

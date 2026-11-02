@@ -441,6 +441,14 @@ const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit
 // shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
 const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
 
+// shippedCountsUsage is the comm-channel usage line for the per-status shipped
+// counts read.
+const shippedCountsUsage = "usage: autonomous shipped-counts   (per-status shipped counts: the PRD and Automation buckets, under the in-force autonomous.shipped settings)"
+
+// autonomousListUsage is the comm-channel usage line for the narrowable PRD
+// list.
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; shipped may appear in status)"
+
 // handleAutonomousShippedVerb serves the shipped-record comm verb for both
 // surfaces: it records the shipped state of a PRD (default) or an Automation
 // (when automation=true) through their own POST /.../shipped endpoints. Status
@@ -521,6 +529,64 @@ func (r *Router) handleAutonomousShippedBackfillVerb(args []string) {
 		return
 	}
 	r.reply("autonomous shipped-backfill", prettyJSON(out))
+}
+
+// handleAutonomousShippedCountsVerb serves the shipped-counts comm verb:
+// GET /api/autonomous/shipped/counts — the per-status PRD and Automation
+// count buckets computed under the in-force autonomous.shipped settings
+// (shipped separated from cancelled while enabled + count_separately hold),
+// with the effective settings echoed. Read-only.
+func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
+	out, err := r.commGet("/api/autonomous/shipped/counts", nil)
+	if err != nil {
+		r.reply("autonomous shipped-counts failed", err.Error())
+		return
+	}
+	r.reply("autonomous shipped-counts", prettyJSON(out))
+}
+
+// handleAutonomousListVerb serves "autonomous list" with optional filters:
+// shipped=true|false keeps only PRDs with / without shipped state (a
+// non-empty merge commit); status takes comma-separated statuses and may
+// include shipped. No filter = the full list (full=1, the original shape).
+// Shipped is status-like and orthogonal: it selects on the record's merge
+// commit and never changes the stored status.
+func (r *Router) handleAutonomousListVerb(args []string) {
+	q := url.Values{}
+	sawFilter := false
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply("autonomous list failed", autonomousListUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		switch k {
+		case "shipped":
+			if !strings.EqualFold(v, "true") && !strings.EqualFold(v, "false") {
+				r.reply("autonomous list failed", autonomousListUsage)
+				return
+			}
+			q.Set("shipped", strings.ToLower(v))
+			sawFilter = true
+		case "status":
+			q.Set("status", v)
+			sawFilter = true
+		default:
+			r.reply("autonomous list failed", autonomousListUsage)
+			return
+		}
+	}
+	if !sawFilter {
+		q.Set("full", "1")
+	}
+	out, err := r.commGet("/api/autonomous/prds", q)
+	if err != nil {
+		r.reply("autonomous list failed", err.Error())
+		return
+	}
+	r.reply("autonomous list", prettyJSON(out))
 }
 
 func (r *Router) handleAutonomous(cmd Command) {
@@ -615,12 +681,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous config-set", prettyJSON(out))
 	case "list":
-		out, err := r.commGet("/api/autonomous/prds", url.Values{"full": {"1"}})
-		if err != nil {
-			r.reply("autonomous list failed", err.Error())
-			return
-		}
-		r.reply("autonomous list", prettyJSON(out))
+		r.handleAutonomousListVerb(args)
 	case "get", "show":
 		if len(args) < 2 {
 			r.reply("autonomous get failed", "usage: autonomous get <prd-id>")
@@ -1248,6 +1309,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous set-kind", prettyJSON(out))
 	case "shipped", "shipped-record", "shipped_record", "record-shipped", "record_shipped":
 		r.handleAutonomousShippedVerb(args)
+	case "shipped-counts", "shipped_counts":
+		r.handleAutonomousShippedCountsVerb(args)
 	case "shipped-backfill", "shipped_backfill":
 		r.handleAutonomousShippedBackfillVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":

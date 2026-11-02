@@ -95,3 +95,78 @@ func TestShippedComm_UsageWithoutNetwork(t *testing.T) {
 		t.Errorf("bad-key shipped made %d daemon call(s); want 0", len(calls))
 	}
 }
+
+// TestShippedComm_ShippedCounts: the shipped-counts verb proxies the daemon's
+// per-status counts endpoint and echoes the buckets back on the comm channel.
+func TestShippedComm_ShippedCounts(t *testing.T) {
+	var calls []shippedCommCall
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, shippedCommCall{method: r.Method, path: r.URL.Path})
+		if r.Method != http.MethodGet || r.URL.Path != "/api/autonomous/shipped/counts" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Write([]byte(`{"prds":{"running":1,"completed":1,"shipped":2},"automations":{"active":1,"shipped":1},"settings":{"enabled":true,"show_chip":true,"filter_default":"all","count_separately":true}}`))
+	}
+	_, port := newFakePeerParent(t, handler)
+	r := setupRetryRouter(t, port)
+
+	out := joinReplies(r.HandleTestMessage("autonomous shipped-counts"))
+	if len(calls) != 1 || calls[0].method != http.MethodGet || calls[0].path != "/api/autonomous/shipped/counts" {
+		t.Fatalf("shipped-counts: want GET /api/autonomous/shipped/counts, got %+v", calls)
+	}
+	for _, want := range []string{"autonomous shipped-counts", "\"running\": 1", "\"shipped\": 2", "\"active\": 1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("reply missing %q: %q", want, out)
+		}
+	}
+}
+
+// TestShippedComm_ListShippedSelection: the list verb forwards a shipped
+// selection (and a status bucket that may include shipped) to the daemon as
+// query parameters; with no selection it reads the full list. A shipped
+// value that is neither true nor false is refused before anything is sent.
+func TestShippedComm_ListShippedSelection(t *testing.T) {
+	var uris []string
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/autonomous/prds" {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		uris = append(uris, r.URL.RequestURI())
+		w.Write([]byte(`{"prds":[{"id":"prd-1","status":"running"}],"total":1}`))
+	}
+	_, port := newFakePeerParent(t, handler)
+	r := setupRetryRouter(t, port)
+
+	if out := joinReplies(r.HandleTestMessage("autonomous list shipped=true")); !strings.Contains(out, "autonomous list") {
+		t.Fatalf("shipped=true reply: %q", out)
+	}
+	if out := joinReplies(r.HandleTestMessage("autonomous list shipped=false")); !strings.Contains(out, "autonomous list") {
+		t.Fatalf("shipped=false reply: %q", out)
+	}
+	if out := joinReplies(r.HandleTestMessage("autonomous list status=shipped")); !strings.Contains(out, "autonomous list") {
+		t.Fatalf("status=shipped reply: %q", out)
+	}
+	if out := joinReplies(r.HandleTestMessage("autonomous list")); !strings.Contains(out, "autonomous list") {
+		t.Fatalf("no-filter reply: %q", out)
+	}
+	if want := []string{"/api/autonomous/prds?shipped=true", "/api/autonomous/prds?shipped=false", "/api/autonomous/prds?status=shipped", "/api/autonomous/prds?full=1"}; len(uris) != len(want) {
+		t.Fatalf("daemon requests = %v; want %v", uris, want)
+	} else {
+		for i := range want {
+			if uris[i] != want[i] {
+				t.Errorf("request %d = %q; want %q", i, uris[i], want[i])
+			}
+		}
+	}
+
+	// shipped=banana -> usage, nothing proxied.
+	before := len(uris)
+	if out := joinReplies(r.HandleTestMessage("autonomous list shipped=banana")); !strings.Contains(out, "usage") {
+		t.Errorf("bogus shipped should print usage, got %q", out)
+	}
+	if len(uris) != before {
+		t.Errorf("bogus shipped made %d extra daemon call(s); want 0", len(uris)-before)
+	}
+}

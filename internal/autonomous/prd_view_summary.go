@@ -39,6 +39,14 @@ type SummaryView struct {
 	MergeCommit     string     `json:"merge_commit,omitempty"`
 	ShippedSource   string     `json:"shipped_source,omitempty"`
 
+	// Shipped flags that the record carries shipped state (a non-empty merge
+	// commit): a fact about the record, independent of any setting.
+	// EffectiveStatus is the record's *display* state: "shipped" (state
+	// present and the autonomous.shipped.enabled setting on), otherwise the
+	// stored status. The stored Status never moves because of shipped state.
+	Shipped         bool   `json:"shipped"`
+	EffectiveStatus string `json:"effective_status"`
+
 	// The fields below feed a collapsed Automata row. All are scalars, short
 	// lists or small count maps, so none grows with the amount of text the
 	// stories and tasks carry.
@@ -104,6 +112,12 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		MergedAt:        prd.MergedAt,
 		MergeCommit:     prd.MergeCommit,
 		ShippedSource:   prd.ShippedSource,
+		// Display state assuming the shipped surface is enabled (built
+		// without a config here): shipped records show "shipped". The REST
+		// layer folds the live autonomous.shipped.enabled setting in via
+		// ApplyShippedSettings.
+		Shipped:         prd.IsShipped(),
+		EffectiveStatus: PRDEffectiveDisplayStatus(prd, true),
 
 		Type:             prd.Type,
 		Backend:          prd.Backend,
@@ -145,6 +159,23 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		view.TaskCount += summary.TaskCount
 	}
 	return view
+}
+
+// ApplyShippedSettings folds the autonomous.shipped.enabled setting into the
+// view's display state: with the shipped surface enabled a record that
+// carries shipped state displays as "shipped"; with it disabled the display
+// state falls back to the stored status even though the record still carries
+// the shipped fields. The Shipped flag and the four shipped fields never
+// change — they describe the record, not the settings.
+func (v *SummaryView) ApplyShippedSettings(enabled bool) {
+	if v == nil {
+		return
+	}
+	if enabled && v.Shipped {
+		v.EffectiveStatus = ShippedDisplayStatus
+		return
+	}
+	v.EffectiveStatus = string(v.Status)
 }
 
 // SummaryRow is one row of the PRD list: a SummaryView without the

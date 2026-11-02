@@ -6,6 +6,10 @@
 //
 // `datawatch autonomous shipped backfill [--dry-run]` — one shipped-state
 // backfill pass over the base repository's main branch, via the daemon.
+//
+// `datawatch autonomous shipped counts` — read the per-status shipped
+// counts (the PRD and Automation buckets) computed under the in-force
+// autonomous.shipped settings, via GET /api/autonomous/shipped/counts.
 
 package main
 
@@ -150,5 +154,24 @@ hold.`,
 	}
 	backfillCmd.Flags().BoolVar(&backfill.dryRun, "dry-run", false, "Scan and compute the report without writing any shipped record")
 	cmd.AddCommand(backfillCmd)
+	countsCmd := &cobra.Command{
+		Use:   "counts",
+		Short: "Per-status shipped counts (PRD + Automation buckets) under the in-force autonomous.shipped settings",
+		Long: `Read the per-status count pair — the PRD and Automation buckets —
+computed under the in-force autonomous.shipped settings: one count per
+displayed status, with the shipped bucket separated from cancelled while
+enabled + count_separately hold (a record cancelled without its work
+landing counts as "cancelled"; one whose work landed counts as "shipped").
+The response also echoes the effective settings it was computed under.
+Read-only; the daemon does all the counting.
+
+Same numbers as the dashboard's shipped card and the
+autonomous_shipped_counts MCP tool.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return daemonGet("/api/autonomous/shipped/counts")
+		},
+	}
+	cmd.AddCommand(countsCmd)
 	return cmd
 }

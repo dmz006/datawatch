@@ -658,6 +658,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetKind(), tracked(s.handleAutonomousPRDSetKind))
 	mcpSrv.AddTool(s.toolAutonomousShippedRecord(), tracked(s.handleAutonomousShippedRecord))
 	mcpSrv.AddTool(s.toolAutonomousShippedBackfill(), tracked(s.handleAutonomousShippedBackfill))
+	mcpSrv.AddTool(s.toolAutonomousShippedCounts(), tracked(s.handleAutonomousShippedCounts))
 	mcpSrv.AddTool(s.toolCapacityStatus(), tracked(s.handleCapacityStatus))
 	mcpSrv.AddTool(s.toolCapacityAdmission(), tracked(s.handleCapacityAdmission))
 	mcpSrv.AddTool(s.toolAutonomousProgress(), tracked(s.handleAutonomousProgress))
