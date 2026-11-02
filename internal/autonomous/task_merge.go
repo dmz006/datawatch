@@ -316,7 +316,7 @@ func resolveAdditive(ctx context.Context, dir, path string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 	write := func(name, body string) string {
 		p := filepath.Join(tmp, name)
 		_ = os.WriteFile(p, []byte(body), 0o600)

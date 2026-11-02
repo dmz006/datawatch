@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -55,7 +54,6 @@ func newRoManager(t *testing.T, readOnlyTasks *bool) *Manager {
 // roSpawnGate records the order tasks reach spawn and lets a test hold a
 // chosen task inside spawn (the session "running") until released.
 type roSpawnGate struct {
-	mu      sync.Mutex
 	arrived map[string]chan struct{}
 	hold    map[string]chan struct{}
 }
