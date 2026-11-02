@@ -264,7 +264,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
-| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
@@ -860,6 +860,35 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 - **`autonomous_prd_get` — `ci_watch` field.** When the `ci-watch` completion guardrail ran, the Automaton includes `ci_watch {status, sha, repo, runs[], summary, category, issues, checked_at}`; absent when it never ran. `status`: `skipped` (nothing pushed, origin not GitHub, not a git repo, or `gh` missing; `summary` says which), `pass`, `warn` (judge flagged a non-blocking concern), `pending` (CI unfinished at the timeout; one follow-up check rewrites it later), `failed_policy` (project rules say an operator decides; Automaton blocked, nothing auto-fixed), `failed_content` (fixable finding; a corrective task is appended to the same Automaton when content auto-fix is enabled, otherwise blocked), `failed_infra` (runs cancelled/timed out/never started and the infra retry budget is spent; blocked), `error` (no judge configured; not blocking). `runs[]` items: `id`, `name`, `status`, `conclusion`, `url`. See [howto/ci-watch-guardrail.md](howto/ci-watch-guardrail.md).
 
 
+
+### `cost_report`
+
+Cost report over the daemon's recorded session spend: the `internal/costreport` engine, the same engine call `GET /api/cost/report` makes, with the daemon's `cost_report` config block as the source of every default. Grouped by automaton, automation, backend, or week; token totals always, USD estimates when rates are configured. Read-only.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `group_by` | string | No | One of `automaton`, `automation`, `backend`, `week`. Defaults to the `cost_report` config (`default_group_by`). |
+| `since` | string | No | Lower bound, RFC3339 or `YYYY-MM-DD`. Defaults to the `cost_report` config window (`default_window_days`). |
+| `until` | string | No | Upper bound, RFC3339 or `YYYY-MM-DD`. Defaults to now. |
+
+**Example response:**
+```json
+{
+  "group_by": "backend",
+  "rows": [
+    {"key": "claude-code", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000, "rate_configured": true, "usd_estimate": 0.78},
+    {"key": "opencode", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000, "rate_configured": true, "usd_estimate": 0.24}
+  ],
+  "retention_days": 90,
+  "lifetime_fallback": false
+}
+```
+
+Rows are sorted by key. `rate_configured` is `false` when at least one session in the row has no rate (the row then has no `usd_estimate`).
+
+---
 
 ### `list_sessions`
 

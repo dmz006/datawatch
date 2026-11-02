@@ -211,6 +211,15 @@ func (m *Manager) emitUsageEvent(ev UsageEvent) {
 	}
 }
 
+// CostRateFor returns the manager's effective rate for backend, the same
+// lookup AddUsage prices usage with (a rate for an exact backend name, else
+// the family fallback, else absent). Exposed so read-only surfaces — e.g. the
+// cost_report MCP tool — can price with the daemon's own table instead of
+// keeping a second copy of it.
+func (m *Manager) CostRateFor(backend string) (CostRate, bool) {
+	return m.costRate(backend)
+}
+
 // costRate returns the rate for backend, falling back to the matching
 // family (e.g. "opencode-acp" → "opencode") and finally the empty rate.
 func (m *Manager) costRate(backend string) (CostRate, bool) {

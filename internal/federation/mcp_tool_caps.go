@@ -223,6 +223,7 @@ var MCPToolCap = map[string]string{
 	"burn_guard_config_set":        CapUsageWrite,
 	"budget_status":                CapAutonomousRead,
 	"cost_rates":                   CapAnalyticsRead,
+	"cost_report":                  CapAnalyticsRead,
 	"cost_summary":                 CapAnalyticsRead,
 	"cost_usage":                   CapAnalyticsRead,
 	"council_config_get":           CapCouncilRead,
