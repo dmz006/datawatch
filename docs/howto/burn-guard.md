@@ -21,7 +21,7 @@ exec_steps:
     description: Worked example, a state-changing call. Allow 2 retries of one task on Claude before the task is held for you (0 to 20)
     args: {retry_limit_claude: 2}
   - tool: burn_guard_config_set
-    description: Worked example, a state-changing call. Turn on ask mode so the guard keeps at most one open question per change instead of sending one alert
+    description: Worked example, a state-changing call. Turn on ask mode so the guard also raises a question per change alongside the alert, keeping at most one open
     args: {ask_on_change: true}
 ---
 
@@ -92,7 +92,7 @@ evaluation with no restart, and one invalid value rejects the whole change.
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_pi_prompt, hold_claude` |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
-| `ask_on_change` | When false (default) one alert per change and no question; when true at most one open question per change | `false` |
+| `ask_on_change` | When false (default) one alert per change and no question; when true the per-change alert still goes out and at most one open question per change is kept | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
 | `cache_read_points_per_million` | Weekly points per million cache-read tokens, above 0 and at most 1000 | `0.0069` |
 | `refit_on_reading` | Refit the two prices when a new reading arrives | `true` |
@@ -104,24 +104,66 @@ the daemon log; the daemon still starts.
 
 `ask_on_change` picks how the guard reaches out about a change. When false
 (the default) it sends one alert per change and no question. When true it
-keeps at most one open question per change until you answer it, instead of
-alerting.
+keeps at most one open question per change until you answer it, alongside
+the per-change alert.
+
+### The question on top of the alert (`ask_on_change`)
+
+An alert goes out every time the guard applies or releases a rung; this
+setting decides whether a question then asks you to keep or release the
+change.
+
+- **`false` (the default) — one alert per change, no question.** The guard
+  applies or releases the rung, warns you with the numbers behind it, and
+  asks nothing of you. Each such alert also carries the one-line suggestion
+  *Set `usage.burn_guard.ask_on_change` to true to get a question per
+  change*, so you can turn the questions on directly from the alert.
+- **`true` — the guard asks.** For every step that actually changed a setting
+  it holds **at most one open question**, worded like *"The weekly burn
+  projects to 104.2% at the reset against a target of 90.0%. I did this:
+  lowered the claude-code inflight cap from 4 to 3. Release it, or leave
+  it?"* with the answers **Leave it as is** and **Release**. Answering
+  *Release* records your decision; the guard owns the rung and releases it
+  itself when it steps back. If a new rung change arrives while a question
+  is still open, the guard withdraws that open question first — the
+  withdrawal reason says it was *superseded by a newer burn guard rung
+  change* — and raises the question for the new step, so a staircase of
+  changes leaves you with one question, not a pile of them.
+
+A step raises a question only when it changed a setting. A hold (changed
+nothing), a `lower_inflight` rung whose cap was already at one, a release that
+would restore a cap that was never lowered, a step that only releases the
+hold (a `hold_claude` release), and turning the guard off all alert but ask
+nothing. Two more withdrawals keep you from ever answering
+a question that no longer stands: if you turn `ask_on_change` off again, the
+next change withdraws the last open question (reason: *ask_on_change is off,
+so the burn guard alerts only*), and when the daemon starts, any guard
+question a previous run left open that the current ladder state no longer
+supports is withdrawn as stale (reason: *at start the burn guard no longer
+applies the rung this question refers to*). You can set `ask_on_change` from any row of the *Where to change them* table
+below, without a restart — the guard reads the current value every interval.
 
 ### Where to change them
 
 | Surface | How |
 |---|---|
-| Web UI | Usage calculator view, **Burn guard** card: the settings under the status, **Run now** to evaluate once; Settings > Usage burn guard for the same keys; the **Burn guard** stat card in the Monitor panel |
-| MCP | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
-| CLI | `datawatch usage burn-guard status`, `run`, `config [key=value ...]`; `datawatch automation set-effort-ceiling <id> docs=low ...` (or `--clear`) for the effort ceiling |
-| REST | `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`; `GET /api/config` returns the block under `usage.burn_guard`; `POST /api/automations/{id}/set_effort_ceiling` for the effort ceiling |
+| YAML (config file) | `usage.burn_guard.ask_on_change: true` under the `usage.burn_guard` key; see the [configuration reference](../config-reference.yaml) |
+| Web UI | Usage calculator view, **Burn guard** card: the settings under the status (**Ask instead of alerting** is `ask_on_change`), **Run now** to evaluate once; Settings > Usage burn guard for the same keys; the **Burn guard** stat card in the Monitor panel |
+| CLI | `datawatch config set usage.burn_guard.ask_on_change true` (switch it back with `false`); `datawatch usage burn-guard status`, `run`, `config [key=value ...]`; `datawatch automation set-effort-ceiling <id> docs=low ...` (or `--clear`) for the effort ceiling |
+| MCP | `config_set` with `key: usage.burn_guard.ask_on_change`, `value: true`; `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
+| Chat | `configure usage.burn_guard.ask_on_change=true` |
+| REST | `PUT /api/config` with `{"usage.burn_guard.ask_on_change": true}`, or `PUT /api/usage/burn-guard/config` with `{"ask_on_change": true}`; `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`; `GET /api/config` returns the block under `usage.burn_guard`; `POST /api/automations/{id}/set_effort_ceiling` for the effort ceiling |
 | Comm channel | `usage burn-guard` for the status; settings through `configure usage.burn_guard.<key>=<value>` |
 
 ## Reading an alert
 
 Each time a rung is applied or released, the guard raises one warning alert
-titled `Burn guard: climb <rung>` or `Burn guard: step_back <rung>`, and one
-queue question. The text states what was done and the numbers behind it:
+titled `Burn guard: climb <rung>` or `Burn guard: step_back <rung>`. With
+`ask_on_change` on, it additionally raises the keeping/releasing question
+described above; off, the alert is the whole notice. The alert text states
+what was done and the numbers behind it, and (with `ask_on_change` off)
+carries the one-line suggestion to set `usage.burn_guard.ask_on_change` to
+`true` to get a question per change:
 
 > Burn guard stepped up to rung 1 of 3 (lower_inflight): lowered the claude-code
 > inflight cap from 3 to 2. (projected 31.4% at the reset, target 28.0%, burning

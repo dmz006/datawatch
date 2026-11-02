@@ -5428,7 +5428,7 @@ paths:
   # exposes the envelope + tree drill-downs that mobile + PWA use.
   /api/observer/stats:
     get:
-      summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes), plus the `ui_prompts` object when the daemon tracks Claude Code interstitial-prompt dismissals: total `dismissed` / `not_cleared` / `refused` counts since daemon start and a `by_kind` breakdown; in-memory, nil (omitted) until the first tracked dismissal
+      summary: StatsResponse v2 snapshot (structured host / cpu / mem / disk / gpu / sessions / backends / envelopes / processes), plus the `ui_prompts` object when the daemon tracks Claude Code interstitial-prompt dismissals — total `dismissed` / `not_cleared` / `refused` counts since daemon start and a `by_kind` breakdown; in-memory, nil (omitted) until the first tracked dismissal
       operationId: observerStats
       tags: [Observer]
       responses: {"200": {description: OK}, "503": {description: observer disabled}}
@@ -6794,7 +6794,11 @@ paths:
       operationId: burnGuardConfigGet
       tags: [Singletons]
       responses:
-        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude"}
+        "200":
+          description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, ask_on_change, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude"
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/BurnGuardConfig"}
         "401": {$ref: "#/components/responses/Unauthorized"}
     put:
       summary: Change burn guard settings; one invalid value rejects the whole body and nothing is stored
@@ -6809,7 +6813,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: {type: object}
+            schema: {$ref: "#/components/schemas/BurnGuardConfig"}
       responses:
         "200": {description: "{ok: true, config: the stored settings}"}
         "400": {description: A body that is empty, an unknown key or an invalid value}
@@ -10036,3 +10040,35 @@ components:
           type: array
           items: {type: string}
           description: "Per-record failures skipped without stopping the pass. Absent when none"
+    BurnGuardConfig:
+      type: object
+      description: |
+        The live `usage.burn_guard` settings, as `GET /api/usage/burn-guard/config`
+        returns them. Writes are a flat partial map over the same bare keys; one
+        unknown key or invalid value rejects the whole body and nothing is stored.
+      additionalProperties: true
+      properties:
+        enabled: {type: boolean, description: "Turn the guard on. Default true"}
+        interval_minutes: {type: integer, description: "How often the guard evaluates, in minutes, 1 to 1440. Default 60"}
+        margin_points: {type: number, description: "Points the projection may run over the pace line before the guard acts, 0 to 50. Default 2"}
+        ladder:
+          type: array
+          items: {type: string, enum: [lower_inflight, route_pi_prompt, hold_claude]}
+          description: "Ordered rungs applied while over the line. Default: all three in that order"
+        step_back: {type: boolean, description: "Undo rungs in reverse once the projection is back under the line. Default true"}
+        ask_on_change:
+          type: boolean
+          description: |
+            How the guard reaches out about a change. false (default): one alert
+            per change and no question. true: at most one open question per
+            change — a new change withdraws the open question, a step that
+            changed no setting asks nothing, and stale guard questions are
+            withdrawn at daemon start.
+        cache_write_points_per_million: {type: number, description: "Cache token prices in weekly points per million tokens, above 0 and at most 1000. Default 0.373"}
+        cache_read_points_per_million: {type: number, description: "Cache token prices in weekly points per million tokens, above 0 and at most 1000. Default 0.0069"}
+        refit_on_reading: {type: boolean, description: "Refit the cost model whenever a new usage reading arrives. Default true"}
+        effort_ceiling:
+          type: object
+          description: "Task kind to ceiling (low, medium, high, cheaper_backend); set per Automation, not here"
+          additionalProperties: {type: string, enum: [low, medium, high, cheaper_backend]}
+        retry_limit_claude: {type: integer, description: "Most retries of one task on Claude, 0 to 20. Default 2"}

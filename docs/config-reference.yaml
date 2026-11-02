@@ -3179,8 +3179,7 @@ usage:
     # Undo rungs in reverse once the projection is back under the line.
     # Default true.
     step_back: true
-    # Outbound mode. false (default) sends one alert per change and no
-    # question; true keeps at most one open question per change.
+    # Outbound mode: false (default) one alert per change, no question; true also keeps at most one open question per change.
     ask_on_change: false
     # Cache token prices in weekly points per million tokens. Above 0 and at
     # most 1000. Defaults 0.373 (write) and 0.0069 (read).
