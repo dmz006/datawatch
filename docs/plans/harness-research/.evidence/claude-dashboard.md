@@ -310,4 +310,4 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 [MIT](LICENSE)
 
-<!-- GitHub Topics: claude, claude-code, tui, tmux, session-manager, terminal, go, bubbletea, k9s, cli -->
+<!-- GitHub Topics: claude, remote-node, tui, tmux, session-manager, terminal, go, bubbletea, k9s, cli -->

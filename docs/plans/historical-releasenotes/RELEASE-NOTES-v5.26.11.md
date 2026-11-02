@@ -72,7 +72,7 @@ No new config knob.
 ```bash
 git pull
 # Restart the daemon: datawatch restart
-# Try a New PRD with backend=claude-code, effort=low.
+# Try a New PRD with backend=remote-node, effort=low.
 # Decompose, Approve, Run.
 # Tasks will now spawn real worker sessions (status: in_progress).
 # Operators running their own smoke before tag:

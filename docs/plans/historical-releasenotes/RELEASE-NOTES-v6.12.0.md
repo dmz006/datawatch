@@ -50,4 +50,4 @@ Datawatch-app issues to file (operator-directed):
 ### Tests
 
 - 1804 go tests pass
-- Smoke: 106 pass / 0 fail / 7 skip (claude-code state-engine variant skipped behind DW_MAJOR=1 per the cost rule)
+- Smoke: 106 pass / 0 fail / 7 skip (remote-node state-engine variant skipped behind DW_MAJOR=1 per the cost rule)

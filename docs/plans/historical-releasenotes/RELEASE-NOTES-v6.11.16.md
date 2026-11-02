@@ -26,7 +26,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.16
 
 When the operator toggles the mobile app to its "channel" view (`chatMode = true`) on a non-server-chat session, it renders `ChatEventList(events = state.events, ...)`. **`state.events` is the full session event stream** — output frames, pane captures, state changes, everything — formatted as chat-style bubbles.
 
-PWA's channel tab was only consuming `channel_reply` / `channel_notify` / `chat_message` (v6.11.14 added the latter). For terminal-mode claude-code sessions, none of those flow. So the PWA channel tab was empty even when activity was streaming over WS via the `output` channel.
+PWA's channel tab was only consuming `channel_reply` / `channel_notify` / `chat_message` (v6.11.14 added the latter). For terminal-mode remote-node sessions, none of those flow. So the PWA channel tab was empty even when activity was streaming over WS via the `output` channel.
 
 ## Fixed
 

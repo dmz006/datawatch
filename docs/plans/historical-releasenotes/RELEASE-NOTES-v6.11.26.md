@@ -16,7 +16,7 @@ Operator started a fresh claude session and observed the bug live: gap watcher f
 
 ### Added
 
-- **`scripts/release-smoke.sh` check 17 — BL266 gap watcher**: starts a fresh `smoke-state-engine` claude-code session, waits 22 s, asserts state flipped to `waiting_input`. Catches any future regression of the watcher / reverter-guard interaction.
+- **`scripts/release-smoke.sh` check 17 — BL266 gap watcher**: starts a fresh `smoke-state-engine` remote-node session, waits 22 s, asserts state flipped to `waiting_input`. Catches any future regression of the watcher / reverter-guard interaction.
 - **`scripts/release-smoke.sh` `cleanup_all` `sess)` kind**: tracked sessions get killed via `/api/sessions/kill` on EXIT (success or failure).
 - **`scripts/release-smoke.sh` orphan sweep extended**: now catches BOTH `autonomous:*` race-survivors AND any session named `smoke-*` (any state). Sweeps anything not in the pre-smoke baseline.
 

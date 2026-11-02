@@ -65,7 +65,7 @@ follow-up:
 | Image | Node at build? | Node at runtime? | Status |
 |---|---|---|---|
 | agent-base | No | No | ✅ clean foundation |
-| **agent-claude** | **No (v4.6.0)** | **No** | ✅ **fully node-free**. Builder pulls the per-platform native tarball (`@anthropic-ai/claude-code-linux-{x64,arm64}`) directly from npm registry CDN with `curl + tar`; runtime gets just the 236 MB ELF. No nodejs apt deps, no `npm install`, no `node_modules`. |
+| **agent-claude** | **No (v4.6.0)** | **No** | ✅ **fully node-free**. Builder pulls the per-platform native tarball (`@anthropic-ai/remote-node-linux-{x64,arm64}`) directly from npm registry CDN with `curl + tar`; runtime gets just the 236 MB ELF. No nodejs apt deps, no `npm install`, no `node_modules`. |
 | **agent-opencode** | **No (v4.6.0)** | **No (v4.6.0)** | ✅ **fully node-free**. Same pattern — pull `opencode-linux-{x64,arm64}` per-platform package, copy `package/bin/opencode` (native ELF) into runtime. Previous Dockerfile installed nodejs in BOTH stages (~80 MB in runtime); v4.6.0 drops both. |
 | parent-full | No | No | ✅ inherits agent-base |
 | agent-aider | No | No | ✅ aider is Python (pipx-isolated) |
@@ -80,7 +80,7 @@ node — and that's by design.
 Verified the per-platform tarball pattern works against the real
 npm registry CDN:
 
-  $ curl -sSL "https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.114.tgz" | tar -tz | head
+  $ curl -sSL "https://registry.npmjs.org/@anthropic-ai/remote-node-linux-x64/-/remote-node-linux-x64-2.1.114.tgz" | tar -tz | head
   package/LICENSE.md
   package/README.md
   package/claude          ← 236 MB ELF

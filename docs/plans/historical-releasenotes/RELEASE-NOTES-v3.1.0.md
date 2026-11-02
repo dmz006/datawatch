@@ -9,7 +9,7 @@ that unblock deeper coverage for the rest of the v3.x series.
 ## Highlights
 
 - **B30 fix** — Scheduled commands no longer require a 2nd Enter to
-  execute in TUI backends (claude-code, ink-based). Root cause: the
+  execute in TUI backends (remote-node, ink-based). Root cause: the
   parent fired `tmux send-keys <text> Enter` the instant the
   `waiting_input` state transition was observed, but the TUI was still
   finishing its prompt setup (phase 1: print prompt → phase 4: accept
@@ -35,7 +35,7 @@ that unblock deeper coverage for the rest of the v3.x series.
 
 | ID | Symptom | Root cause | Fix |
 |---|---|---|---|
-| B30 | Scheduled command lands in prompt but needs a 2nd Enter | claude-code/ink TUIs aren't ready for input at the moment their `waiting_input` state fires; tmux's one-shot `send-keys <text> Enter` swallowed the Enter as prompt-setup | `SendKeysWithSettle` two-step send; `session.schedule_settle_ms` config (default 200 ms) |
+| B30 | Scheduled command lands in prompt but needs a 2nd Enter | remote-node/ink TUIs aren't ready for input at the moment their `waiting_input` state fires; tmux's one-shot `send-keys <text> Enter` swallowed the Enter as prompt-setup | `SendKeysWithSettle` two-step send; `session.schedule_settle_ms` config (default 200 ms) |
 
 ---
 

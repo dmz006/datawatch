@@ -3,7 +3,7 @@
 **Date:** 2026-04-11
 **Priority:** high
 **Effort:** 1-2 days
-**Category:** detection / claude-code
+**Category:** detection / remote-node
 
 ---
 
@@ -46,7 +46,7 @@ Claude Code's TUI layout shows the `‚ùØ` prompt in the input area at ALL times ‚
 ### Phase 2: Improve detection accuracy (1 day)
 
 #### Option A: Increase debounce for Claude Code
-- Set per-backend debounce: `claude-code` detection config with `prompt_debounce: 10` (10 seconds)
+- Set per-backend debounce: `remote-node` detection config with `prompt_debounce: 10` (10 seconds)
 - This is conservative but eliminates most false positives
 - Downside: genuine prompts (permission dialogs, trust prompts) take 10s to detect
 
@@ -114,7 +114,7 @@ session:
 | File | Changes |
 |------|---------|
 | `internal/session/manager.go` | Output velocity check, expanded activeIndicators, oscillation backoff |
-| `internal/config/config.go` | Per-backend detection override for claude-code |
+| `internal/config/config.go` | Per-backend detection override for remote-node |
 | `cmd/datawatch/main.go` | Wire per-backend detection config |
 
 ## Success criteria

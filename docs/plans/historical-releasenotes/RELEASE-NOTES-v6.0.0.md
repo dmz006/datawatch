@@ -78,7 +78,7 @@ gosec G115 (integer overflow conversion) produced 45 HIGH findings, all in pre-e
 
 ### v5.28.8 — PWA bug fixes
 
-- **BL222** — Settings → General no longer duplicates Claude-specific fields (`skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode`, `default_effort`). All now live exclusively in Settings → LLM → claude-code.
+- **BL222** — Settings → General no longer duplicates Claude-specific fields (`skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode`, `default_effort`). All now live exclusively in Settings → LLM → remote-node.
 - **BL223** — RTK upgrade card renders correctly; was broken by `JSON.stringify()` inside `onclick` attributes. Replaced with `data-cmd` + `addEventListener`.
 - **BL224** — `orchestrator-flow.md` Mermaid diagram renders; unquoted `]` chars and `<br/>` in node labels fixed.
 - **BL225** — `prd-phase3-phase4-flow.md` Mermaid diagrams render; same label-quoting fix.
@@ -87,7 +87,7 @@ gosec G115 (integer overflow conversion) produced 45 HIGH findings, all in pre-e
 
 ### v5.28.5–v5.28.7 — Session state + diagnostics
 
-- **BL216 fix** — Session state no longer stalls on completion for claude-code sessions; the final line of output is captured before the state-machine transition.
+- **BL216 fix** — Session state no longer stalls on completion for remote-node sessions; the final line of output is captured before the state-machine transition.
 - Stats panel (BL34) lands as a live PWA metrics overlay with session counts, memory stats, and observer throughput.
 - CAP_BPF capability check added to `datawatch diagnose` output.
 

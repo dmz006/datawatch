@@ -61,7 +61,7 @@ on a multi-model node.
 
 **Registry gap (resurfaces in §f):** the `datawatch` node (`kind: ollama`,
 port 11434) has **no `declared_capacity`**, while the sibling
-`datawatch-openai` node (`kind: openai-compat`, port 3000, same host)
+`peer-a` node (`kind: openai-compat`, port 3000, same host)
 declares the B200. If both front the same physical GPU — plausible, same
 host — capacity admission currently can't see that relationship, and both
 nodes could schedule onto the same card unaware of each other.
@@ -98,7 +98,7 @@ efficiency gain from batching alone
 fixed-slot servers hit `NUM_PARALLEL` and start queuing. **For datawatch:**
 at the council/PRD concurrency levels this project targets (8–16), a
 PagedAttention engine on the B200 would likely out-throughput Ollama — and
-`datawatch-openai` already exists as an `openai-compat` node specifically to
+`peer-a` already exists as an `openai-compat` node specifically to
 make that swap possible without touching LLM registry call sites (§f).
 
 **Quant formats:** GGUF (Ollama/llama.cpp) supports the widest quant range
@@ -241,7 +241,7 @@ formula doesn't apply to its `head_count_kv: None` layers at all.
 those rows are upper bounds too. MoE does **not** shrink KV cache — it
 depends on heads/layers, not active-param count.
 
-**Plan 1 — B200 128 GB (`datawatch-openai`):** `qwen3.8:27b` ×4 slots @ 32k
+**Plan 1 — B200 128 GB (`peer-a`):** `qwen3.8:27b` ×4 slots @ 32k
 ctx q8_0 + `gemma3:12b` + `nomic-embed-text`:
 
 | Component | Calc | GB |
@@ -305,7 +305,7 @@ Live registry state (`compute_node_list`/`health`/`llm_list`, 2026-09-30):
 | Node | Kind | Priority | Declared capacity |
 |---|---|---|---|
 | `datawatch` | `ollama` | 90 | none declared (§a gap) |
-| `datawatch-openai` | `openai-compat` | 90 | 1× B200, 128 GB, `max_concurrent_models: 3` |
+| `peer-a` | `openai-compat` | 90 | 1× B200, 128 GB, `max_concurrent_models: 3` |
 | `local-node` | `ollama` | 70 | 1× 32 GB GPU, 32 GB, `max_concurrent_models: 10` |
 | `test-node` | `ollama` | 50 | stale duplicate of `datawatch`'s address |
 

@@ -47,10 +47,10 @@ Plans for 8 backlog items. Each can be implemented independently.
    ```yaml
    profiles:
      claude-work:
-       backend: claude-code
+       backend: remote-node
        # Uses default claude auth (Max subscription on work account)
      claude-personal:
-       backend: claude-code
+       backend: remote-node
        env:
          ANTHROPIC_API_KEY: "sk-ant-..."
          # Or: claude auth switches account context
@@ -253,7 +253,7 @@ volumes:
 ### Current state
 - Backend interface is well-defined (`llm.Backend`) with Launch, Version, Name
 - 8 backends already implemented — good patterns to follow
-- Claude-code and opencode have the most complex integrations (MCP, ACP)
+- remote-node and opencode have the most complex integrations (MCP, ACP)
 
 ### Plan
 Each backend follows the same pattern — create `internal/llm/backends/{name}/backend.go`:
@@ -335,8 +335,8 @@ Each backend follows the same pattern — create `internal/llm/backends/{name}/b
    ```json
    {
      "chain": [
-       {"task": "run linter", "backend": "claude-code", "dir": "/project"},
-       {"task": "fix lint errors", "backend": "claude-code", "dir": "/project"},
+       {"task": "run linter", "backend": "remote-node", "dir": "/project"},
+       {"task": "fix lint errors", "backend": "remote-node", "dir": "/project"},
        {"task": "run tests", "backend": "shell", "dir": "/project"}
      ]
    }

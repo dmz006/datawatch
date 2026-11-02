@@ -8,7 +8,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.6
 Two operator-reported bugs fixed:
 
 1. **Restart breaks session view** — when the daemon restarts and the operator is in a session, the terminal is not resized correctly and the tmux input bar disappears, requiring exit + re-enter.
-2. **Session-end not captured** — `DATAWATCH_COMPLETE:` was the only completion marker; natural claude-code task-completion phrases never transitioned the session out of running/waiting_input.
+2. **Session-end not captured** — `DATAWATCH_COMPLETE:` was the only completion marker; natural remote-node task-completion phrases never transitioned the session out of running/waiting_input.
 
 ## Bug 1 — restart breaks session view
 
@@ -30,9 +30,9 @@ Three changes:
 
 ### Root cause
 
-`internal/session/manager.go` `completionPatterns` had only `DATAWATCH_COMPLETE:`. That marker is only emitted when the operator's session-init prompt asks the model to print it explicitly. claude-code finishing a task naturally — saying things like "Task complete" or "All done" — never matched.
+`internal/session/manager.go` `completionPatterns` had only `DATAWATCH_COMPLETE:`. That marker is only emitted when the operator's session-init prompt asks the model to print it explicitly. remote-node finishing a task naturally — saying things like "Task complete" or "All done" — never matched.
 
-Additionally the reconcile loop (which detects tmux-pane-exit when claude-code is `/exit`'d) ran every 30 seconds.
+Additionally the reconcile loop (which detects tmux-pane-exit when remote-node is `/exit`'d) ran every 30 seconds.
 
 ### Fix
 

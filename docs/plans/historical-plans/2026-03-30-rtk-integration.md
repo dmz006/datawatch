@@ -158,7 +158,7 @@ RTK currently supports these LLM backends (from rtk-ai/rtk README):
 
 | LLM Backend | RTK Support | Datawatch Backend |
 |-------------|-------------|-------------------|
-| Claude Code | ✅ Full (PreToolUse hook) | claude-code |
+| Claude Code | ✅ Full (PreToolUse hook) | remote-node |
 | Cursor | ✅ Full | N/A (IDE) |
 | Copilot | ✅ Full | N/A (IDE) |
 | Gemini CLI | ✅ Full | gemini |

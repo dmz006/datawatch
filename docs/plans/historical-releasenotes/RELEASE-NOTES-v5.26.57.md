@@ -11,7 +11,7 @@
 
 Operator-asked: *"What does Claude skip permissions do? Is the recent autonomous skip permissions the same thing, or should already have been there right? Have we smoke tested it?"*
 
-Yes, it's been wired since BL3 — `cfg.Session.ClaudeSkipPermissions` controls whether the daemon launches claude-code with `--dangerously-skip-permissions` (per-tool-call approvals auto-yes). Autonomous PRD spawns inherit this; there's no separate "autonomous skip permissions" knob (the TUI status `⏵⏵ bypass permissions on` operators see is claude's display of the flag we passed).
+Yes, it's been wired since BL3 — `cfg.Session.ClaudeSkipPermissions` controls whether the daemon launches remote-node with `--dangerously-skip-permissions` (per-tool-call approvals auto-yes). Autonomous PRD spawns inherit this; there's no separate "autonomous skip permissions" knob (the TUI status `⏵⏵ bypass permissions on` operators see is claude's display of the flag we passed).
 
 Smoke didn't have a regression probe for the config knob until now. §7k:
 

@@ -23,7 +23,7 @@ v5.26.13: the REST DELETE handler in `internal/server/autonomous.go` now walks `
 
 ### `release-smoke.sh §7b` switched off `shell`
 
-The lifecycle test was using `backend: shell` to avoid burning LLM tokens — but per the new exclusion rule, smoke shouldn't be running through a backend the autonomous UI now hides. Section 7b now picks the first available LLM (`ollama` → `openwebui` → `opencode` → `claude-code` priority order); skips if none. ollama is local + free so on operator hosts with ollama wired (most), the smoke still runs without cost.
+The lifecycle test was using `backend: shell` to avoid burning LLM tokens — but per the new exclusion rule, smoke shouldn't be running through a backend the autonomous UI now hides. Section 7b now picks the first available LLM (`ollama` → `openwebui` → `opencode` → `remote-node` priority order); skips if none. ollama is local + free so on operator hosts with ollama wired (most), the smoke still runs without cost.
 
 ### One-shot orphan cleanup (manual run, this session only)
 

@@ -8,7 +8,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.23
 Three follow-up fixes:
 
 1. **Splash never dismissed for sessions with no recent output** — both `CapturePaneANSI` and `TailOutput` could return empty (brand-new session, just-spawned LLM), and v6.11.22's fallback only fired when one had content. Now subscribe always emits at least one frame (single-space placeholder) so the splash always clears.
-2. **Channel completion detection missed multi-sentence wrap-ups** — v6.11.20's whole-message-suffix was too strict: typical claude-code closes look like *"I've completed the task. Here's what changed. Let me know if anything else."* — the completion phrase is the suffix of an early sentence, not the message as a whole. Switched to per-sentence suffix matching, with the mid-sentence false-positive safety preserved.
+2. **Channel completion detection missed multi-sentence wrap-ups** — v6.11.20's whole-message-suffix was too strict: typical remote-node closes look like *"I've completed the task. Here's what changed. Let me know if anything else."* — the completion phrase is the suffix of an early sentence, not the message as a whole. Switched to per-sentence suffix matching, with the mid-sentence false-positive safety preserved.
 3. **Stats tab read from wrong source** — the WS `stats` event broadcasts `SystemStats`, not envelopes. Per-session envelopes live at `/api/observer/envelopes` (kind `session`). The tab now fetches that endpoint, prefers the matching `session:` envelope, falls back to the session's `backend:` envelope (e.g. `backend:claude-docker`) when no per-session envelope exists, and explains why if neither exists. Polls every 5 s while the tab is open.
 
 ### Fixed

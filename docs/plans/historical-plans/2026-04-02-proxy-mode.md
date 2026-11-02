@@ -150,10 +150,10 @@ When `new: <task>` is sent from a messaging channel:
 `list` command returns sessions from all servers:
 ```
 [local] Sessions (2):
-  [a3f2] running | claude-code | 10:30 | myproject
+  [a3f2] running | remote-node | 10:30 | myproject
   [b1c3] waiting_input | aider | 10:45 | api-refactor
 [prod] Sessions (1):
-  [d4e5] running | claude-code | 09:15 | deploy-pipeline
+  [d4e5] running | remote-node | 09:15 | deploy-pipeline
 [pi] Sessions (0): idle
 ```
 

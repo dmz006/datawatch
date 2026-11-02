@@ -57,7 +57,7 @@ own config dir, never in `~/.claude.json`.
 ### 3. Keep `WriteProjectMCPConfig` as-is
 
 Project-dir `.mcp.json` (BL109) is intentionally written to the session's project
-directory for non-claude-code backends. This is correct behaviour — leave it alone.
+directory for non-remote-node backends. This is correct behaviour — leave it alone.
 
 ### 4. Guard: never write to `$HOME` files from a non-default instance
 
@@ -79,7 +79,7 @@ write that would target a `$HOME`-level file and emit a warning instead.
 
 | Backend | Affected file | Fix needed |
 |---------|--------------|------------|
-| claude-code | `~/.claude.json` (via `claude mcp add`) | Scope to `$DATAWATCH_DATA_DIR/.claude/` via `CLAUDE_CONFIG_DIR` |
+| remote-node | `~/.claude.json` (via `claude mcp add`) | Scope to `$DATAWATCH_DATA_DIR/.claude/` via `CLAUDE_CONFIG_DIR` |
 | All | `~/.mcp.json` (via `SweepUserScopeMCPConfig`) | Write to `$DATAWATCH_DATA_DIR/.mcp.json` instead |
 | opencode | `<projectDir>/.mcp.json` | Already project-scoped — no change needed |
 | aider, gemini, goose | `<projectDir>/.mcp.json` | Already project-scoped — no change needed |

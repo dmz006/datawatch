@@ -25,7 +25,7 @@ Prompt detection patterns, rate limit patterns, and completion patterns are hard
 
 - Add `DetectionConfig` struct to each LLM config:
   ```yaml
-  claude-code:
+  remote-node:
     prompt_patterns: ["Enter to confirm", "Esc to cancel", "trust this folder"]
     completion_patterns: ["DATAWATCH_COMPLETE:"]
     rate_limit_patterns: ["You've hit your limit", "rate limit exceeded"]

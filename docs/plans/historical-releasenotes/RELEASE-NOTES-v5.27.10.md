@@ -24,14 +24,14 @@
 
 ### BL109 fix — `WriteProjectMCPConfig` prefers the Go bridge
 
-The per-session `.mcp.json` writer (added in BL109 for non-claude-code backends like opencode/gemini that auto-discover via project file) hardcoded `Command: <node>, Args: [<channel.js>]` even after the Go bridge migration in v5.4.0. That left stale `.mcp.json` files behind whenever a session ran with `projectDir = $HOME` (or any other dir): the file pointed at a `channel.js` that the v5.4.0+ daemon never extracted. Fixed by checking `BridgePath()` first — when the Go bridge is the active path, the writer emits `Command: <go-bridge>, Args: []` instead.
+The per-session `.mcp.json` writer (added in BL109 for non-remote-node backends like opencode/gemini that auto-discover via project file) hardcoded `Command: <node>, Args: [<channel.js>]` even after the Go bridge migration in v5.4.0. That left stale `.mcp.json` files behind whenever a session ran with `projectDir = $HOME` (or any other dir): the file pointed at a `channel.js` that the v5.4.0+ daemon never extracted. Fixed by checking `BridgePath()` first — when the Go bridge is the active path, the writer emits `Command: <go-bridge>, Args: []` instead.
 
 ### Per-session bridge log line
 
 Operators reading `tail -f ~/.datawatch/daemon.log` now see one line per session register:
 
 ```
-[channel] session ralfthewise-eac4 registered with go bridge at /home/<user>/.local/bin/datawatch-channel
+[channel] session peer-f-eac4 registered with go bridge at /home/<user>/.local/bin/datawatch-channel
 ```
 
 Instead of having to grep `[channel] using native Go bridge` + cross-reference session start times.

@@ -35,12 +35,12 @@ Operator: *"And make sure smoke tests for prd work with claude, opencode and oll
 Section 6 of `scripts/release-smoke.sh` now iterates every worker backend whose `enabled && available` is true on the running daemon:
 
 ```
-== 6.claude-code — CRUD ==
-  PASS  [claude-code] create PRD
-  PASS  [claude-code] PRD record has backend=claude-code
-  PASS  [claude-code] GET /children empty list
-  PASS  [claude-code] set_llm round-trip: backend=claude-code, model=claude-sonnet-4-5
-  PASS  [claude-code] hard-delete PRD
+== 6.remote-node — CRUD ==
+  PASS  [remote-node] create PRD
+  PASS  [remote-node] PRD record has backend=remote-node
+  PASS  [remote-node] GET /children empty list
+  PASS  [remote-node] set_llm round-trip: backend=remote-node, model=claude-sonnet-4-5
+  PASS  [remote-node] hard-delete PRD
 
 == 6.opencode — CRUD ==
   ... (same five checks)

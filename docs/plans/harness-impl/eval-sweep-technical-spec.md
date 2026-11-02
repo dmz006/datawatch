@@ -45,7 +45,7 @@ guarantees (§9), and open questions (§10).
 
 - **Not a code change.** It defines the contract; implementation is tracked in §7 (P0–P3).
 - **Not a new eval framework.** It reuses `Suite`/`Case`/`Grader`/`CaseResult` and `Grade` byte-for-byte.
-- **Not session-backend coverage.** Coding-agent kinds (`claude-code`, `aider`, `goose`, …) are *excluded* by design — see §4.6. If "evaluate an agent under test" is wanted, that is a separate, future story (session-prodded runner).
+- **Not session-backend coverage.** Coding-agent kinds (`remote-node`, `aider`, `goose`, …) are *excluded* by design — see §4.6. If "evaluate an agent under test" is wanted, that is a separate, future story (session-prodded runner).
 - **Not a store change.** Children and the `RunSet` parent reuse `~/.datawatch/evals/runs/`; no new database, no migration.
 
 ### 0.5 Design goals & requirements
@@ -124,7 +124,7 @@ The planner applies, in order, on the raw `SweepRequest`:
    *rejected* with `422` listing the offending name (disabled is an operator
    signal, not a silent skip).
 4. **Session-backend rejection** — any name whose kind is session-backend
-   (`claude-code`, `aider`, `goose`, `gemini`, `shell`, `opencode-acp`,
+   (`remote-node`, `aider`, `goose`, `gemini`, `shell`, `opencode-acp`,
    `opencode-prompt`) is a `422` at plan time (not at cell time). The error
    lists all offending names so the operator can fix the request in one
    shot instead of failing the first cell.
@@ -493,7 +493,7 @@ registry. The two coexist:
 | Package | Purpose | Sweep uses it? |
 |---|---|---|
 | `internal/inference` | one-shot LLM inference: adapter per kind, ComputeNode failover, RBAC | ✅ exclusively |
-| `internal/llm` | tmux coding agents (claude-code, aider sessions) | ❌ — session-backend kinds are rejected at plan time |
+| `internal/llm` | tmux coding agents (remote-node, aider sessions) | ❌ — session-backend kinds are rejected at plan time |
 
 The sweep never opens a tmux session. A cell is a `Dispatcher.Call`, which
 resolves the LLM row → walks ordered ComputeNodes → invokes the kind adapter →
@@ -512,7 +512,7 @@ session-backend kinds**:
 | `claude` | `adapters/claude.go` | ✅ | ✅ message `usage` | SaaS; real money — table shows it via BL6/LLM-row rates |
 | `gemini-api` | `adapters/gemini.go` | ✅ | ✅ `usageMetadata` | SaaS |
 | `opencode-api` | `adapters/opencode_api.go` | ✅ | ✅ OpenAI-compat `usage` | HTTP inference API |
-| `claude-code` | — (session) | ❌ | — | `IsSessionBackendKind==true` → `422` at plan time |
+| `remote-node` | — (session) | ❌ | — | `IsSessionBackendKind==true` → `422` at plan time |
 | `aider` | — (session) | ❌ | — | same |
 | `goose` | — (session) | ❌ | — | same |
 | `gemini` | — (session) | ❌ | — | same (distinct from `gemini-api`) |
@@ -608,7 +608,7 @@ call) is a second consumer name, handled the same way.
 
 ### 4.6 Why session-backend kinds are excluded
 
-`claude-code`, `aider`, `goose`, `gemini` (CLI), `shell`, `opencode-acp`,
+`remote-node`, `aider`, `goose`, `gemini` (CLI), `shell`, `opencode-acp`,
 `opencode-prompt` have **no inference adapter**: `Dispatcher.Call` for them
 returns `no adapter for kind <k>`. If a sweep allowed them, the first cell
 would fail with a confusing message and the operator would have to learn the

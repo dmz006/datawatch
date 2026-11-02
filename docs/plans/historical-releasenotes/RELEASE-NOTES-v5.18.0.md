@@ -2,14 +2,14 @@
 
 **Date:** 2026-04-26
 **Spans:** v5.17.0 → v5.18.0
-**Closed:** MCP channel one-way bug for TLS + claude-code daemons
+**Closed:** MCP channel one-way bug for TLS + remote-node daemons
 
 ## What's new
 
 ### Fix — MCP channel `/api/channel/ready` blocked by HTTP→HTTPS redirect
 
 **Symptom:** `claude mcp list` shows `datawatch-<session>: ✓ Connected`
-(stdio handshake works, claude-code can call the `reply` tool fine),
+(stdio handshake works, remote-node can call the `reply` tool fine),
 but the daemon never pushes messages back to claude. Output that the
 operator types in chat channels never reaches the running session.
 
@@ -21,7 +21,7 @@ MCP bridge (`datawatch-channel`) is configured with
 `/api/channel/ready` on startup so the daemon learns its loopback
 port. The bridge follows the redirect to HTTPS, hits the daemon's
 self-signed TLS cert, fails verify, and returns the error to its
-stderr (which goes to claude-code, not the daemon log):
+stderr (which goes to remote-node, not the daemon log):
 
 ```
 [datawatch-channel] notify ready (non-fatal):
@@ -68,7 +68,7 @@ $ DATAWATCH_API_URL=http://127.0.0.1:8080 datawatch-channel
 # (no more TLS verify error)
 
 $ tail ~/.datawatch/daemon.log
-[channel] ready for session ralfthewise-eac4 (channel_ready=true, port=41117)
+[channel] ready for session peer-f-eac4 (channel_ready=true, port=41117)
 ```
 
 ### Tests
@@ -81,14 +81,14 @@ $ tail ~/.datawatch/daemon.log
 
 ```bash
 datawatch update                 # check + install
-datawatch restart                # apply the fix; existing claude-code
+datawatch restart                # apply the fix; existing remote-node
                                  # MCP registrations re-spawn the bridge
                                  # automatically and notifyReady() now
                                  # succeeds.
 ```
 
 After the restart, the daemon log should show
-`[channel] ready for session <id>` for every active claude-code
+`[channel] ready for session <id>` for every active remote-node
 session. From the operator's side, sending a chat-channel message
 (`new:`, `reply:`, etc.) should now propagate to the running session
 without the asymmetric one-way silence.

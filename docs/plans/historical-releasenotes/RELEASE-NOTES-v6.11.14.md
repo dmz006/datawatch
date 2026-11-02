@@ -13,7 +13,7 @@ This patch addresses the visibility half. The running-detection wiring is held p
 
 `internal/server/web/app.js` `renderSessionDetail` had `showChannel = sessionMode === 'channel' && connReady`. The `connReady` gate hid the entire channel tab until the MCP channel server reported ready. After daemon restart, channel-ready takes a few seconds to re-assert; during that window the operator couldn't see channel history at all even though it existed in the ring buffer.
 
-Fix: changed to `showChannel = sessionMode === 'channel'`. The tab is visible whenever the session uses MCP channel mode (claude / claude-code), regardless of channel-ready state. Matches what the mobile app does. Input is still gated on `connReady` (you can't send a message until the channel is ready), but the activity log is always visible.
+Fix: changed to `showChannel = sessionMode === 'channel'`. The tab is visible whenever the session uses MCP channel mode (claude / remote-node), regardless of channel-ready state. Matches what the mobile app does. Input is still gated on `connReady` (you can't send a message until the channel is ready), but the activity log is always visible.
 
 ## Fixed — Bug B: chat-mode messages didn't feed the channel tab
 

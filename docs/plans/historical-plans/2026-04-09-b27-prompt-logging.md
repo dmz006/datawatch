@@ -71,7 +71,7 @@ session, mirroring the `copy` command for responses:
 
 ### Phase 3: Capture prompts via MCP channel
 
-For claude-code sessions using the MCP channel, Claude could expose the last
+For remote-node sessions using the MCP channel, Claude could expose the last
 user prompt through the channel. This would require:
 
 - A file similar to `/tmp/claude/response.md` for the prompt

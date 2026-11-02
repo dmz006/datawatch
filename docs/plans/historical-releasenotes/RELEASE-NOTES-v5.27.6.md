@@ -24,7 +24,7 @@ Operator scenario (2026-04-30): operator was scrolled up in the tmux pane when c
 
 Operator scenario (2026-04-30): claude printed a rate-limit message; datawatch missed it. Operator also noted the message lacked a parseable reset time.
 
-**Root cause:** `manager.go:3791` had `} else if len(line) < 200 {` — a per-line cap meant to stop false positives from giant log dumps containing words like "limit". Modern claude-code rate-limit dialogs are paragraph-length with context (`"5-hour limit reached. Use the limit reset time to plan... Resets at 2pm."` runs ~600 chars on one line). The gate dropped the line on the floor before any pattern match ran.
+**Root cause:** `manager.go:3791` had `} else if len(line) < 200 {` — a per-line cap meant to stop false positives from giant log dumps containing words like "limit". Modern remote-node rate-limit dialogs are paragraph-length with context (`"5-hour limit reached. Use the limit reset time to plan... Resets at 2pm."` runs ~600 chars on one line). The gate dropped the line on the floor before any pattern match ran.
 
 **Fix:** raise the gate to 1024 chars. Still keeps the false-positive guard (a megabyte stack trace mentioning "limit" won't trip), but accommodates realistic rate-limit message sizes.
 

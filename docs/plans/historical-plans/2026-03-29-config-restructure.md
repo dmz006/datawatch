@@ -30,7 +30,7 @@ The config.yaml file has grown organically with fields added across many version
   5. **Signal**: account, group, config_dir, device_name
   6. **Messaging**: telegram, discord, slack, matrix, ntfy, email, twilio, github_webhook, webhook
   7. **DNS Channel**: enabled, mode, domain, listen, upstream, secret
-  8. **LLM Backends**: claude-code, aider, goose, gemini, ollama, opencode, openwebui, shell
+  8. **LLM Backends**: remote-node, aider, goose, gemini, ollama, opencode, openwebui, shell
   9. **Update**: enabled, schedule, time_of_day
 - Add Go struct tags for YAML field ordering
 

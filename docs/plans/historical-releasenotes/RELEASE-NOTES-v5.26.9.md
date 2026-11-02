@@ -19,12 +19,12 @@ Validating end-to-end uncovered a multi-layer bug stack:
    - **Fix:** extended `loopbackBypassPaths` to cover `/api/ask`, `/api/sessions`, `/api/sessions/`, `/api/orchestrator/`, `/api/autonomous/`. Exact-match for collection paths (e.g. `/api/ask` ≠ `/api/asksomething`); prefix-match for sub-paths (e.g. `/api/sessions/start`). Tests in `redirect_bypass_test.go` cover both bypass + deny-overshoot cases.
 2. **Field-name mismatch.** The decomposer + verifier + per-task guardrail + orchestrator guardrail all built request bodies with `"prompt"` — but `/api/ask` decodes into `AskRequest{Question string \`json:"question"\`}`, so `Question` was always empty and every call returned `400 question required`. Bug shipped in v3.10.0 with BL24+BL25 and never tripped a test because nothing exercised the loopback end-to-end.
    - **Fix:** all four sites send `"question"`. The `effort` field (which `/api/ask` doesn't honor anyway) was dropped.
-3. **Backend incompatibility.** `/api/ask` only supports `ollama` + `openwebui` as headless ask targets. When the operator created a PRD with `backend: claude-code` (the worker backend per BL203), the decomposer inherited that and got `400 unsupported backend: claude-code`.
-   - **Fix:** new `askCompatible(b)` predicate. Decomposer resolution order: `amgrCfg.DecompositionBackend` → `req.Backend` (only if ask-compatible) → `"ollama"` default. Verifier + guardrails fall back to `ollama` when `VerificationBackend` / `GuardrailBackend` isn't ask-compatible. The PRD's `Backend` continues to drive the *worker* session (claude-code, opencode, etc.); the decomposer + verifier are decoupled and run on a headless backend.
+3. **Backend incompatibility.** `/api/ask` only supports `ollama` + `openwebui` as headless ask targets. When the operator created a PRD with `backend: remote-node` (the worker backend per BL203), the decomposer inherited that and got `400 unsupported backend: remote-node`.
+   - **Fix:** new `askCompatible(b)` predicate. Decomposer resolution order: `amgrCfg.DecompositionBackend` → `req.Backend` (only if ask-compatible) → `"ollama"` default. Verifier + guardrails fall back to `ollama` when `VerificationBackend` / `GuardrailBackend` isn't ask-compatible. The PRD's `Backend` continues to drive the *worker* session (remote-node, opencode, etc.); the decomposer + verifier are decoupled and run on a headless backend.
 4. **First-token timeout.** Cold ollama models (qwen3:8b+ on a busy host) regularly take > 60s to first token; `/api/ask` timed out half-way through decompose.
    - **Fix:** `askOllama` + `askOpenWebUI` HTTP client timeout bumped 60s → 300s.
 
-End-to-end validation: created a PRD targeting `claude-code`, called `POST /api/autonomous/prds/{id}/decompose` — daemon transparently routed to ollama, decomposed into stories+tasks, returned 200. Smoke test #7 asserts this every release going forward.
+End-to-end validation: created a PRD targeting `remote-node`, called `POST /api/autonomous/prds/{id}/decompose` — daemon transparently routed to ollama, decomposed into stories+tasks, returned 200. Smoke test #7 asserts this every release going forward.
 
 ### `scripts/release-smoke.sh` — every release runs this
 
@@ -82,7 +82,7 @@ All operator-driven items closed. v6.0 packaging items unchanged (cumulative rel
 git pull
 # Hard-refresh PWA tab once to pick up new SW cache + app.js.
 # Restart the daemon: datawatch restart
-# Try: create a PRD with backend=claude-code, click Decompose — it'll
+# Try: create a PRD with backend=remote-node, click Decompose — it'll
 # work for the first time since v3.10.0.
 # Operators running their own smoke before tag:
 #   ./scripts/release-smoke.sh   # against live daemon at localhost:8443

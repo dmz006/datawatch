@@ -415,7 +415,7 @@ Route to best backend based on task type, load, or rules.
 
 **Changes:**
 - `internal/config/config.go`: `routing_rules` section with patterns
-- Rules: "if task contains 'test' → use claude-code", "if all sessions busy → use ollama"
+- Rules: "if task contains 'test' → use remote-node", "if all sessions busy → use ollama"
 - `internal/session/manager.go`: apply rules before backend selection
 - Fallback: configured default backend
 - Web UI: routing rules editor in settings
@@ -571,11 +571,11 @@ surfaces a "+ New folder" affordance.
 **Status:** ✅ closed 2026-04-20 — **skipped**.
 
 Evaluation (full report in project memory): 14k stars, AGPL-3.0,
-Electron desktop app, last push 2026-03-23, claude-code consumer
+Electron desktop app, last push 2026-03-23, remote-node consumer
 (not a backend). **Three strikes for datawatch integration**:
 (1) AGPL-3.0 is viral and incompatible with datawatch's
 distribution model; (2) it's a desktop app with no headless
-API/library to wrap; (3) it sits on the same claude-code layer
+API/library to wrap; (3) it sits on the same remote-node layer
 datawatch already uses, so integrating would stack two
 orchestrators with zero capability gain. Worktree isolation and
 self-QA loop concepts mined as prior art for the BL24 roadmap

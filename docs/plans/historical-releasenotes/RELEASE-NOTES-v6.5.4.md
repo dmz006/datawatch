@@ -6,7 +6,7 @@ Smoke: 91/0/6
 
 ## Summary
 
-Patch release completing **BL251** — agent auth/settings injection for claude-code and opencode containers. `AgentSettings` on `ProjectProfile` resolves `ANTHROPIC_API_KEY` from the secrets store at spawn time (claude-code) and injects `OPENCODE_PROVIDER_URL`/`OPENCODE_MODEL` (opencode). Full 7-surface parity.
+Patch release completing **BL251** — agent auth/settings injection for remote-node and opencode containers. `AgentSettings` on `ProjectProfile` resolves `ANTHROPIC_API_KEY` from the secrets store at spawn time (remote-node) and injects `OPENCODE_PROVIDER_URL`/`OPENCODE_MODEL` (opencode). Full 7-surface parity.
 
 ## Added
 

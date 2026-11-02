@@ -9,7 +9,7 @@ status: done
 
 ## Problem
 
-TUI applications (claude-code, opencode) use alternate screen mode, cursor positioning, and 256-color ANSI sequences. The current web UI strips ANSI codes and shows raw text, making TUI output unreadable. Users must attach to tmux directly to see the real terminal.
+TUI applications (remote-node, opencode) use alternate screen mode, cursor positioning, and 256-color ANSI sequences. The current web UI strips ANSI codes and shows raw text, making TUI output unreadable. Users must attach to tmux directly to see the real terminal.
 
 ## Scope
 

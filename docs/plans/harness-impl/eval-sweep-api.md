@@ -119,7 +119,7 @@ max_parallel: 2                  # OPTIONAL worker-pool size; 0/omitted → eval
 1. Load the suite once; fail-fast `404` if unknown.
 2. Wildcard `["*"]` → every LLM where `IsSessionBackendKind == false`, `Disabled == false`, and an adapter is registered. An explicit name list bypasses the wildcard; unknown names → `400`.
 3. Explicit list containing a disabled LLM → `422` listing the name (disabled is an operator signal, not a silent skip).
-4. Explicit list containing a session-backend kind (`claude-code`, `aider`, `goose`, `gemini`-CLI, `shell`, `opencode-acp`, `opencode-prompt`) → `422` listing all offending names. Rejected at plan time, never at cell time.
+4. Explicit list containing a session-backend kind (`remote-node`, `aider`, `goose`, `gemini`-CLI, `shell`, `opencode-acp`, `opencode-prompt`) → `422` listing all offending names. Rejected at plan time, never at cell time.
 5. `*` expansion yielding zero backends (all disabled) → `422` `no enabled inference-kind LLMs to sweep against`.
 6. `models` length must be 0, 1, or `len(backends)` — else `400` `models length N does not match 0, 1, or backends length M`.
 7. `max_parallel` is clamped to `evals.max_parallel` (values above are silently lowered; `RunSet.max_parallel` records the applied value).

@@ -20,7 +20,7 @@ Pre-v5.26.12 every PRD row had a "Children (lazy)" disclosure with a `Load` butt
 
 ### Operator question: does autonomous mode auto-accept claude's trust-dir prompt?
 
-**Yes** — already handled. The operator's config has `session.claude.skip_permissions: true` (default since v3.0), which makes `internal/llm/claudecode/backend.go` append `--dangerously-skip-permissions` to the claude-code launch command. That single flag bypasses both the "Do you trust this folder?" dialog AND every per-tool permission prompt for the lifetime of the session.
+**Yes** — already handled. The operator's config has `session.claude.skip_permissions: true` (default since v3.0), which makes `internal/llm/claudecode/backend.go` append `--dangerously-skip-permissions` to the remote-node launch command. That single flag bypasses both the "Do you trust this folder?" dialog AND every per-tool permission prompt for the lifetime of the session.
 
 Autonomous PRDs spawn worker sessions through the same `Manager.Launch` code path that interactive sessions use, so they inherit `--dangerously-skip-permissions` automatically. No autonomous-specific code is needed.
 

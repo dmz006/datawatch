@@ -2,7 +2,7 @@
 
 This matrix covers the start-confirm tracker in the autonomous wait loop
 (`internal/autonomous/start_tracker.go`). The tracker decides whether a
-claude-code worker that was handed its task and sits in `waiting_input` has
+remote-node worker that was handed its task and sits in `waiting_input` has
 started, and ends it when the silence exceeds the bound. The busy probe that
 keeps the session state right is a separate mechanism; its findings are in
 `docs/plans/silent-first-tool-call-findings.md`.
@@ -39,7 +39,7 @@ unchanged.
 ## Known limits
 
 - The tests use a fake clock and fixed panes. They do not exercise a real
-  restart, the orphan sweep, or a real claude-code TUI. A live run on a sandboxed
+  restart, the orphan sweep, or a real remote-node TUI. A live run on a sandboxed
   daemon is still needed before this matrix counts as a restart-proof result.
 - State (c) with a frozen pane and no tool line is ended 121 s after its last
   evidence. The scenario states that expectation. A live worker shows a tool

@@ -15,7 +15,7 @@ Operator: *"In new prd, the llm backend should only show what is configured, and
 - `openPRDCreateModal` pre-fetches `/api/ollama/models` + `/api/openwebui/models` into `state._availableModels` on open (best-effort — failures leave the cache empty rather than blocking the modal).
 - New `updatePRDNewModelField(backend)` helper toggles the **Model** field based on the selected backend:
   - Has a populated list → Model field is shown as a `<select>` of available model names.
-  - No list (backend offline, no credentials, claude-code, gemini-via-CLI, etc.) → Model field is hidden entirely.
+  - No list (backend offline, no credentials, remote-node, gemini-via-CLI, etc.) → Model field is hidden entirely.
   - Backend changed → list re-resolves from the cache; no extra fetch.
 
 This means the New PRD modal now matches what's actually runnable. No more typing a model name into a free-form box for a backend that has no endpoint configured.

@@ -43,7 +43,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Parallelism | Low by design — `max_parallel_tasks: 3`, `node:datawatch` caps `max_concurrent_sessions: 1` (confirmed) → one decomposition runs at a time today |
 | Observed cost/time | **Unknown.** `cost_summary` shows 0 tokens/cost on every backend (01(f)); no duration found via `memory_recall`. Highest-value gap to start measuring before any routing change. |
 
-### 2. Coding worker sessions (opencode / claude-code)
+### 2. Coding worker sessions (opencode / remote-node)
 
 | Field | Value |
 |---|---|
@@ -54,7 +54,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Tool calling | Yes, extensively — defining trait of this workload; weak tool-calling is disqualifying here |
 | Structured output | No strict schema on model output; tool-call formatting must be reliable |
 | Parallelism | Same ceiling as decomposition — `max_parallel_tasks: 3`; live `capacity_status` shows exactly one active lease on `node:datawatch` |
-| Observed cost/time | **Unknown.** 210 opencode + 139 claude-code sessions recorded, all with zero tokens/cost (`cost_summary`, confirmed). Most expensive workload to be missing cost data for. |
+| Observed cost/time | **Unknown.** 210 opencode + 139 remote-node sessions recorded, all with zero tokens/cost (`cost_summary`, confirmed). Most expensive workload to be missing cost data for. |
 
 ### 3. Verifier (`autonomousVerify`)
 
@@ -171,18 +171,18 @@ workload, not a hypothetical one.
 | Parallelism | High — one per session ending, sessions end independently |
 | Observed cost/time | Unknown. Already on the system's smallest model — a validation case for the routing goal, not a further downsizing target |
 
-### 11. Interactive chat sessions (claude-code / opencode / ollama chat)
+### 11. Interactive chat sessions (remote-node / opencode / ollama chat)
 
 | Field | Value |
 |---|---|
 | Input / output tokens | Variable, user-driven / variable, human-consumed |
-| Context window | As large as active backend supports; `session.llm_backend: "claude-code"` is active default (confirmed), model selectable (opus/sonnet/haiku) |
+| Context window | As large as active backend supports; `session.llm_backend: "remote-node"` is active default (confirmed), model selectable (opus/sonnet/haiku) |
 | Latency tolerance | Strictly interactive — human waits on every turn; the one workload where per-token latency, not just wall-clock, matters |
 | Quality bar | Most failure-tolerant profiled — human in the loop catches and corrects immediately, no autonomous pipeline trusts it blindly |
-| Tool calling | Yes when backed by claude-code/opencode; no for plain ollama chat |
+| Tool calling | Yes when backed by remote-node/opencode; no for plain ollama chat |
 | Structured output | No |
 | Parallelism | Bounded by `session.max_sessions: 10`, `reserved_interactive: 1` (confirmed) — a concurrency ceiling on humans-in-sessions, not the target of "more parallel calls" |
-| Observed cost/time | Unknown per-session; 139 claude-code sessions recorded with `usd: 0` (confirmed) — same broken cost accounting as every backend (01(f)) |
+| Observed cost/time | Unknown per-session; 139 remote-node sessions recorded with `usd: 0` (confirmed) — same broken cost accounting as every backend (01(f)) |
 
 ## Summary: routing into tiers
 
@@ -190,7 +190,7 @@ workload, not a hypothetical one.
 |---|---|---|---|
 | **Fast-small** | Verifier, guardrail checks, memory embedding, fact extraction/summarization | Bounded input, cheap failure mode (except verifier's false-pass asymmetry), highest parallelism | Summarizer on `qwen3:1.7b`, embedding on `nomic-embed-text` — correct. Verifier + guardrail both fall back to the named `ollama` entry, also `qwen3:1.7b`@`local-node` — an *implicit but deterministic* pin, not silent drift (drift items 5-6, 01(c)) |
 | **Balanced** | Council persona proposals, vision description, voice/STT | Needs a distinct, specific perspective or an accurate short description, but no catastrophic downstream trust in any single call | Vision correctly pinned to `moondream:latest`. Council personas fall back to the same `ollama`/`qwen3:1.7b`@`local-node` entry (`council.llm_ref: ""`, drift item 4) — deterministic, but arguably under-provisioned for adversarial personas. Voice/STT is live on local Whisper (`medium`), not a gap |
-| **Strong** | Council synthesis, interactive chat sessions | Must reconcile 12 viewpoints fairly, or is directly human-facing | Interactive sessions correctly pinned to `claude-code`. Synthesis shares Council's `qwen3:1.7b` fallback |
+| **Strong** | Council synthesis, interactive chat sessions | Must reconcile 12 viewpoints fairly, or is directly human-facing | Interactive sessions correctly pinned to `remote-node`. Synthesis shares Council's `qwen3:1.7b` fallback |
 | **Frontier / agentic** | PRD decomposition/planning, coding worker sessions | Strict-JSON reliability and reliable multi-turn tool calling are non-negotiable; the only two call sites with explicit v8.18.0 injection-guard hardening | Both correctly pinned to `qwen3.8:27b` via opencode on `datawatch` — the one place today's routing already matches the target end-state |
 
 **Net picture (corrected):** the tiers that most need to stay strong

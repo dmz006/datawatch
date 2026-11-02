@@ -15,7 +15,7 @@ results themselves.
 available — daemon has moved five times since 05's 8.36.7 snapshot, same
 day), `eval_list_suites` (`[]`, unchanged), `llm_list`, `compute_node_list`,
 `ollama_stats`. No drift in registry/node facts since 03/05: same four
-compute nodes (`datawatch` priority 90 no declared capacity, `datawatch-openai`
+compute nodes (`datawatch` priority 90 no declared capacity, `peer-a`
 priority 90 with the declared B200, `local-node` priority 70 with the RTX
 32 GB GPU, `test-node` stale duplicate), same five LLM registry entries, same
 four models actually resident on local `local-node` Ollama (`moondream`,
@@ -27,7 +27,7 @@ four compute nodes and the same four models on `local-node`. One new data
 point worth recording: `cost_summary`'s session count climbed from 2243 (the
 task brief's snapshot) to 2298 in the interval between the two checks, while
 `total_tokens_in`/`total_tokens_out`/`total_usd` stayed exactly `0` across
-every backend (`claude-code`, `opencode`, `ollama`, `subprocess`, etc.) —
+every backend (`remote-node`, `opencode`, `ollama`, `subprocess`, etc.) —
 55 more sessions logged with zero token accounting confirms 01(f)/07 Part
 B's "broken, not just empty" framing; this isn't a cold registry that simply
 hasn't been used yet.

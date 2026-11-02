@@ -75,7 +75,7 @@ No new config knob.
 
 ## Known follow-ups
 
-- Validate claude-code can run an autonomous PRD end-to-end (operator-asked next). Different-LLM API path verified — set_llm + decisions log + task LLM resolution all confirmed via REST round-trip. End-to-end run with claude-code as the worker is the next validation target.
+- Validate remote-node can run an autonomous PRD end-to-end (operator-asked next). Different-LLM API path verified — set_llm + decisions log + task LLM resolution all confirmed via REST round-trip. End-to-end run with remote-node as the worker is the next validation target.
 - v6.0 packaging items unchanged.
 
 ## Upgrade path

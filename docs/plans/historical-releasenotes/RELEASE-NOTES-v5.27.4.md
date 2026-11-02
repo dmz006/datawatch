@@ -32,11 +32,11 @@ Surface coverage:
 
 datawatch-app is the requester (the mobile client now has the endpoint it needs to drop the double-POST workaround).
 
-### 2. Modern claude-code rate-limit pattern fix
+### 2. Modern remote-node rate-limit pattern fix
 
 Operator-reported: *"session limit reach filter and auto scheduled continue command doesn't work"*.
 
-claude-code switched to new phrasings that didn't match the v5.27.3-and-earlier pattern list:
+remote-node switched to new phrasings that didn't match the v5.27.3-and-earlier pattern list:
 
 - "5-hour limit reached ∙ resets 2pm"
 - "Weekly limit reached"

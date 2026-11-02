@@ -23,7 +23,7 @@ The PWA's scroll-mode buttons sent raw `PPage` / `NPage` keysyms via the generic
 
 ### Bug 2 — first click sometimes does nothing
 
-The pane-capture refresh flag was a boolean. On scroll click, PWA set `_scrollPendingRefresh = true` and sent the page key. While waiting for the post-scroll frame, claude-code's status-line timer fired a routine pane_capture frame; that frame consumed the flag (set it back to `false`) and drew pre-scroll content. Then the actual post-scroll frame arrived with the flag reset and was skipped.
+The pane-capture refresh flag was a boolean. On scroll click, PWA set `_scrollPendingRefresh = true` and sent the page key. While waiting for the post-scroll frame, remote-node's status-line timer fired a routine pane_capture frame; that frame consumed the flag (set it back to `false`) and drew pre-scroll content. Then the actual post-scroll frame arrived with the flag reset and was skipped.
 
 **Fix**: switched flag from boolean to deadline timestamp (`Date.now() + 700`). Every pane_capture frame within 700 ms of an operator scroll action forces a redraw, regardless of arrival order. The 700 ms window naturally expires so live updates resume normally afterward.
 

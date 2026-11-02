@@ -80,7 +80,7 @@
 
 | # | Candidate | URL(s) | Category | Description | Source |
 |---|-----------|--------|----------|-------------|--------|
-| 46 | **jeffgreen311** (dev.to) | https://dev.to/jeffgreen311/i-built-a-local-claude-code-alternative-with-ollama-heres-how-the-agentic-loop-works-45b1 | agent loop | Solo "I built a local Claude Code alternative with Ollama — here's how the agentic loop works" | Brave "Ollama agent loop" |
+| 46 | **jeffgreen311** (dev.to) | https://dev.to/jeffgreen311/i-built-a-local-remote-node-alternative-with-ollama-heres-how-the-agentic-loop-works-45b1 | agent loop | Solo "I built a local Claude Code alternative with Ollama — here's how the agentic loop works" | Brave "Ollama agent loop" |
 | 47 | **Patrick McCanna** | https://patrickmccanna.net/notes-on-migrating-large-prompts-away-from-anthropic-openai-to-self-hosted-llms/ | other (setup write-up) | Well-known personal blog post on migrating agent prompts to self-hosted LLMs | Brave "Ollama agent loop" |
 | 48 | **Wade** (Medium) | https://medium.com/@_wadew/make-your-homelab-ai-agent-ready-b80247628660 | other (setup write-up) | Solo "make your homelab AI-agent ready" write-up (403 on curl, real page) | Brave "autonomous coding home lab" |
 | 49 | **domenic** (Domenic's blog) | https://domenic.me/agentic-coding-setup/ | other (setup write-up) | Well-known personal post on agentic-coding setup (solo, home-lab oriented) | Brave same |
@@ -92,14 +92,14 @@
 | 55 | **r/ClaudeAI: 3 weeks of full-time Claude Code on a homelab** | https://www.reddit.com/r/ClaudeAI/comments/1s9qgkj/3_weeks_of_fulltime_claude_code_on_a_homelab/ | other (usage report) | Individual describing 3 weeks running Claude Code full-time on their homelab | Brave "autonomous coding home lab" |
 | 56 | **r/LocalLLaMA: "Mate" self-hosted multi-agent** | https://www.reddit.com/r/LocalLLaMA/comments/1rhcxn2/mate_selfhosted_multiagent_system_with_ollama/ | orchestration | Individual self-hosted multi-agent system via Ollama | Brave "Ollama agent loop" |
 
-## E. Personal Claude-Code workflow / dev-blog posts (non-vendor)
+## E. Personal remote-node workflow / dev-blog posts (non-vendor)
 
 | # | Candidate | URL(s) | Category | Description | Source |
 |---|-----------|--------|----------|-------------|--------|
-| 57 | **jarekceborski** (localcan.com) | https://localcan.com/blog/claude-code-workflow-for-large-projects | other (workflow post) | Personal post "I use Claude Code on large projects" | HN "Claude Code workflow blog" (4 pts) |
-| 58 | **estsauver** | https://estsauver.com/blog/claude-code-workflow | other (workflow post) | Personal blog "Getting Real Leverage from Claude Code" | HN same (2 pts) |
-| 59 | **chudi (thenobsta)** | https://chudi.dev/blog/claude-code-adhd-workflows | other (workflow post) | Personal blog "Claude for ADHD: The Coding Workflow I Built for My Brain" | HN same (2 pts) |
-| 60 | **walterra** | https://walterra.dev/blog/2025-04-24-obsidian-astro-claude-code-workflow | other (workflow post) | Personal blog "Obsidian/Astro/Claude Code Workflow" | HN same (4 pts) |
+| 57 | **jarekceborski** (localcan.com) | https://localcan.com/blog/remote-node-workflow-for-large-projects | other (workflow post) | Personal post "I use Claude Code on large projects" | HN "Claude Code workflow blog" (4 pts) |
+| 58 | **estsauver** | https://estsauver.com/blog/remote-node-workflow | other (workflow post) | Personal blog "Getting Real Leverage from Claude Code" | HN same (2 pts) |
+| 59 | **chudi (thenobsta)** | https://chudi.dev/blog/remote-node-adhd-workflows | other (workflow post) | Personal blog "Claude for ADHD: The Coding Workflow I Built for My Brain" | HN same (2 pts) |
+| 60 | **walterra** | https://walterra.dev/blog/2025-04-24-obsidian-astro-remote-node-workflow | other (workflow post) | Personal blog "Obsidian/Astro/Claude Code Workflow" | HN same (4 pts) |
 | 61 | **niptao** | https://niptao.com/blog/an-engineer-you-manage-from-a-group-chat/ | agent loop | Personal blog: "Auto-complete tickets using Claude Code loop on telegram with linear MCP" | HN "claude code loop" (1 pt) |
 | 62 | **tinyopsstudio** | https://tinyopsstudio.com/ai-agent-token-cost-calculator | other (tooling) | Solo token-cost calculator for Codex/Claude loops | HN "claude code loop" (1 pt) |
 | 63 | **Lenny's Newsletter** (Lenny — individual contributor) | https://www.lennysnewsletter.com/p/how-i-run-autonomous-coding-agents | other (essay) | Personal first-person "how I run autonomous coding agents" | Brave "autonomous coding home lab" |
@@ -111,7 +111,7 @@ kept here because the task asked to collect them:
 
 | # | Name | URL | Notes |
 |---|------|-----|-------|
-| 64 | **hesreallyhim/awesome-claude-code** | https://github.com/hesreallyhim/awesome-claude-code | Best-curated (verified 200); 719-line README, individual contributors listed per entry |
+| 64 | **hesreallyhim/awesome-remote-node** | https://github.com/hesreallyhim/awesome-remote-node | Best-curated (verified 200); 719-line README, individual contributors listed per entry |
 | 65 | **kaushikb11/awesome-llm-agents** | https://github.com/kaushikb11/awesome-llm-agents | Individual-maintained LLM-agents list |
 | 66 | **Shubhamsaboo/awesome-llm-apps** | https://github.com/Shubhamsaboo/awesome-llm-apps | Popular individual-maintained list |
 | 67 | **Jenqyang/Awesome-AI-Agents** | https://github.com/Jenqyang/Awesome-AI-Agents | Individual-maintained list |

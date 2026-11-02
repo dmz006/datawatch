@@ -12,7 +12,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.20
 
 ### Root cause
 
-v6.11.19 (BL265) added natural-language channel-state detection but matched on **any-substring**. Phrases like `task complete` appearing mid-message in normal claude-code output ("OK, the auth task is complete, now starting on routing") were prematurely transitioning sessions to `Complete`. The PWA's `pane_capture` handler at line 547 then skipped frames for sessions in terminal state → blank screen until the operator's next command bumped the cache.
+v6.11.19 (BL265) added natural-language channel-state detection but matched on **any-substring**. Phrases like `task complete` appearing mid-message in normal remote-node output ("OK, the auth task is complete, now starting on routing") were prematurely transitioning sessions to `Complete`. The PWA's `pane_capture` handler at line 547 then skipped frames for sessions in terminal state → blank screen until the operator's next command bumped the cache.
 
 ### Fix
 

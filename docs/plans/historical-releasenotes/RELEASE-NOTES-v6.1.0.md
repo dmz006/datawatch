@@ -29,7 +29,7 @@ Three hardening improvements to the channel bridge lifecycle:
 
 Per-backend artifact hygiene across all 6 surfaces:
 
-- **Backend artifact registry** mapping each LLM backend to its known project-dir patterns (`claude-code`, `opencode`, `aider`, `goose`, `gemini`).
+- **Backend artifact registry** mapping each LLM backend to its known project-dir patterns (`remote-node`, `opencode`, `aider`, `goose`, `gemini`).
 - **`EnsureIgnored(projectDir, backend)`** — appends artifact patterns to `.gitignore` idempotently on every session start.
 - **`CleanupArtifacts(projectDir, backend)`** — removes ephemeral backend files on session end.
 - Three YAML config fields: `session.gitignore_check_on_start`, `session.gitignore_artifacts`, `session.cleanup_artifacts_on_end`.

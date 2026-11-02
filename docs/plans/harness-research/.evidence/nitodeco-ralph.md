@@ -131,7 +131,7 @@ Ralph uses a layered configuration system with global (`~/.ralph/config.json`) a
 One of the following AI coding agents must be installed and available in your PATH:
 
 - **[Cursor CLI](https://docs.cursor.com/cli)** - available as `agent` command
-- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** - available as `claude` command
+- **[Claude Code](https://docs.anthropic.com/en/docs/remote-node)** - available as `claude` command
 - **[Codex CLI](https://github.com/openai/codex)** - available as `codex` command
 
 ## Development

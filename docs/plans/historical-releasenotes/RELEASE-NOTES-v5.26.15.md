@@ -20,7 +20,7 @@ The 📄 Response button on the tmux toolbar surfaces `Session.LastResponse`, wh
 | Single-glyph spinners | `●` `✢` `✶` `✻` `✽` `⠋…⠏` `❯` | Animation noise |
 | Box drawing | `╭` `╰` `│` `─` | TUI border decoration |
 | Status timer | `(7s · timeout 1m)`, `(5s)` | Live tick noise |
-| Footer hints | `esc to interrupt`, `shift+tab to cycle`, `↑↓ to navigate`, `enter to confirm` | claude-code TUI footer |
+| Footer hints | `esc to interrupt`, `shift+tab to cycle`, `↑↓ to navigate`, `enter to confirm` | remote-node TUI footer |
 | Mode markers | `bypass permissions`, `loading…`, `thinking…` | Status decoration |
 
 Preserved:

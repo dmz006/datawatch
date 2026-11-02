@@ -9,7 +9,7 @@ Channel-tab scroll-back. Operator: "It is working, but I can't scroll back in hi
 
 ### Fixed
 
-`internal/server/web/app.js` — bumped `channelReplies[sessionId]` cap from 50 → 1000 entries. v6.11.16 routed every `output` WS line through `handleChannelReply`, so the 50-entry cap was dropping ~20 seconds of activity in claude-code sessions. 1000 entries cover ~5–10 minutes of dense output — enough scroll-back without unbounded growth. Same bump applied to the channel-history fetch merge.
+`internal/server/web/app.js` — bumped `channelReplies[sessionId]` cap from 50 → 1000 entries. v6.11.16 routed every `output` WS line through `handleChannelReply`, so the 50-entry cap was dropping ~20 seconds of activity in remote-node sessions. 1000 entries cover ~5–10 minutes of dense output — enough scroll-back without unbounded growth. Same bump applied to the channel-history fetch merge.
 
 ### Note: running-vs-waiting detection from channel state
 

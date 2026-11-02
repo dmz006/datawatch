@@ -95,7 +95,7 @@ context and inject it as a preamble in the tmux session.
   that embeds the task, searches, and formats results as a context block
 - `internal/session/manager.go`: In `LaunchSession()`, after backend launch, if memory
   enabled, call `RetrieveContext` and display in tmux via send-keys
-- For claude-code: inject via `--system-prompt` flag or prepend to task text
+- For remote-node: inject via `--system-prompt` flag or prepend to task text
 - For openwebui: add as system message in conversation history
 
 **Config:**

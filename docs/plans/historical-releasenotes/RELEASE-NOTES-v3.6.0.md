@@ -81,12 +81,12 @@ session:
 projects:                                # BL27
   fooapp:
     dir: "/home/<user>/fooapp"
-    default_backend: "claude-code"
+    default_backend: "remote-node"
     description: "main project"
 
 templates:                               # BL5
   web:
-    backend: "claude-code"
+    backend: "remote-node"
     effort: "thorough"
     auto_git_commit: true
     description: "frontend dev"
