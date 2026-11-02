@@ -730,6 +730,18 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 		return
 	}
 
+	// Save the Automaton worktree's verification scripts before anything is
+	// removed. A failure is logged and never changes the release result.
+	m.mu.Lock()
+	wtDir := m.cfg.WorktreeDir
+	m.mu.Unlock()
+	if wtDir == "" {
+		wtDir = defaultWorktreeDir()
+	}
+	if _, err := saveVerifyScripts(filepath.Join(wtDir, prd.ID, ".datawatch", "verify"), savedVerifyScriptsDir(wtDir, prd.ID)); err != nil {
+		log.Printf("[autonomous] worktree-cleanup: saving verification scripts for %s: %v", prd.ID, err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), worktreeReleaseGitTimeout)
 	defer cancel()
 	// Task worktrees go first: the PRD branch cannot be released while

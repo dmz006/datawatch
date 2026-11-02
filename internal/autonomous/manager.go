@@ -3119,7 +3119,16 @@ func (m *Manager) DeletePRD(id string) error {
 			return fmt.Errorf("descendant prd %q is running; cancel it before deleting parent %q", running.ID, id)
 		}
 	}
-	return m.store.DeletePRD(id)
+	if err := m.store.DeletePRD(id); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	wtDir := m.cfg.WorktreeDir
+	m.mu.Unlock()
+	if err := removeSavedVerifyScripts(wtDir, id); err != nil {
+		log.Printf("[autonomous] removing saved verification scripts for %s: %v", id, err)
+	}
+	return nil
 }
 
 // descendantsOf walks the SpawnPRD tree rooted at parentID and
