@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,26 @@ func (h *uiPromptDismissHooks) first(outcome string) (UIPromptAuditEvent, bool) 
 		}
 	}
 	return UIPromptAuditEvent{}, false
+}
+
+func (h *uiPromptDismissHooks) snapshot() []UIPromptAuditEvent {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]UIPromptAuditEvent, len(h.events))
+	copy(out, h.events)
+	return out
+}
+
+// waitForDismissAudit polls the hook's event count for the outcome until
+// it reaches want (the audit hook may emit asynchronously, after the
+// session state is already restored), using waitUntilObserved so the
+// failure message says both what was waited for and what was seen.
+func waitForDismissAudit(t *testing.T, h *uiPromptDismissHarness, outcome string, want int, timeout time.Duration) {
+	t.Helper()
+	waitUntilObserved(t, timeout, fmt.Sprintf("%d %s audit event(s)", want, outcome), func() (bool, string) {
+		n := h.hooks.count(outcome)
+		return n == want, fmt.Sprintf("observed count=%d, want %d; events: %+v", n, want, h.hooks.snapshot())
+	})
 }
 
 func uiPromptDismissFixture(t *testing.T, name string) string {
@@ -136,13 +157,28 @@ func (h *uiPromptDismissHarness) pollPlain(timeout time.Duration, cond func() bo
 	pollUntil(h.t, timeout, cond, msg)
 }
 
+// parked (parkedLocked) is the same condition park() polls, but via the
+// store-locked snapshot the package uses elsewhere (liveSnap) so the
+// read cannot race the capture loop's state write under -race.
+func (h *uiPromptDismissHarness) parkedLocked() bool {
+	h.t.Helper()
+	snap, ok := liveSnap(h.t, h.mgr, h.sess)
+	return ok && snap.State == StateWaitingInput && h.mgr.UIPromptFor(h.sess.FullID) != nil
+}
+
 // park waits for the capture loop to recognise the blocked pane and move
 // the session to waiting_input with the prompt exposed.
 func (h *uiPromptDismissHarness) park() {
 	h.t.Helper()
-	h.tickUntil(10*time.Second, func() bool {
-		return h.sess.State == StateWaitingInput && h.mgr.UIPromptFor(h.sess.FullID) != nil
-	}, "session parked on the interstitial prompt")
+	h.tickUntil(10*time.Second, h.parkedLocked, "session parked on the interstitial prompt")
+}
+
+// clearedRecord is safe to poll while the capture loop is still running:
+// UIPromptFor reads the manager's occurrence map under its own mutex, so
+// the read cannot race the loop's state/context writes.
+func (h *uiPromptDismissHarness) clearedRecord() bool {
+	h.t.Helper()
+	return h.mgr.UIPromptFor(h.sess.FullID) == nil
 }
 
 // keySends returns the number of send-keys-literal calls and, when
@@ -208,26 +244,103 @@ func TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal(t *testing.T) {
 	// The pane returns to the idle prompt: the session must restore and the
 	// dismissed outcome book exactly once.
 	setFakePane(h.fake, h.sess.TmuxSession, uiPromptDismissFixture(t, "idle-prompt.txt"))
-	h.tickUntil(10*time.Second, func() bool {
-		return h.sess.State == StateRunning && h.mgr.UIPromptFor(h.sess.FullID) == nil
-	}, "session back to running and the UI prompt record cleared")
-	if h.sess.UIPrompt != nil {
-		t.Errorf("sess.UIPrompt should be cleared after the prompt leaves the pane")
-	}
+	h.pollPlain(10*time.Second, h.clearedRecord, "ui prompt record cleared after the prompt leaves the pane")
 
+	waitForDismissAudit(t, h, UIPromptOutcomeDismissed, 1, 10*time.Second)
 	ev, ok := h.hooks.first(UIPromptOutcomeDismissed)
 	if !ok {
-		t.Fatalf("no dismissed audit event; got %d events: %+v", len(h.hooks.events), h.hooks.events)
+		t.Fatalf("no dismissed audit event; got %d events: %+v", len(h.hooks.snapshot()), h.hooks.snapshot())
 	}
 	if h.hooks.count(UIPromptOutcomeDismissed) != 1 {
 		t.Fatalf("dismissed booked %d times, want exactly 1", h.hooks.count(UIPromptOutcomeDismissed))
 	}
 	if h.hooks.count(UIPromptOutcomeNotCleared) != 0 || h.hooks.count(UIPromptOutcomeRefused) != 0 {
-		t.Fatalf("unexpected other outcomes: %+v", h.hooks.events)
+		t.Fatalf("unexpected other outcomes: %+v", h.hooks.snapshot())
 	}
 	if ev.SessionFullID != h.sess.FullID || ev.Kind != "autocompact-threshold" ||
 		ev.Key != "Esc" || ev.Attempt != 1 || !strings.Contains(ev.SelectedOption, "Autocompact at 400k") {
 		t.Fatalf("dismissed event wrong: %+v", ev)
+	}
+
+	// Stop + join the capture loop before asserting session fields: while
+	// it runs the manager's post-clear bookkeeping is still in flight on
+	// its own goroutine, and unsynchronised session-field reads race its
+	// state/context writes under -race.
+	h.stop()
+	snap, ok := liveSnap(t, h.mgr, h.sess)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if snap.UIPrompt != nil {
+		t.Errorf("sess.UIPrompt should be cleared after the prompt leaves the pane")
+	}
+	if snap.State != StateRunning {
+		t.Fatalf("session state = %s, want running", snap.State)
+	}
+}
+
+// TestUIPromptDismiss_AuditObservedAfterDelayedHook: the audit hook may
+// emit its event asynchronously (a slow audit sink) — here it sleeps ~200
+// ms before appending the dismissed event, and the session state is
+// RESTORED before the event lands. A single read of the audit store right
+// after the state wait therefore sees zero events and fails
+// deterministically; the bounded waitForDismissAudit helper is what makes
+// observing the dismissal event exact.
+func TestUIPromptDismiss_AuditObservedAfterDelayedHook(t *testing.T) {
+	h := newUIPromptDismissHarness(t)
+	// Install this test's own delayed audit hook (overrides the
+	// harness's synchronous one).
+	h.mgr.SetUIPromptAuditHook(func(e UIPromptAuditEvent) {
+		time.Sleep(200 * time.Millisecond)
+		h.hooks.add(e)
+	})
+	h.park()
+
+	// Pass the 5 s dismiss delay: exactly one key goes out, and it is the
+	// single ESC byte.
+	*h.clockNow = h.clockNow.Add(6 * time.Second)
+	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 1 },
+		"one dismiss key sent after the delay")
+
+	// The pane returns to the idle prompt: the session restores BEFORE the
+	// delayed hook books the dismissed event. Poll the record-clear through
+	// the manager's own lock (safe while the loop runs) — do NOT read
+	// session fields here: the manager's post-clear bookkeeping is still
+	// in flight on the loop's goroutine.
+	setFakePane(h.fake, h.sess.TmuxSession, uiPromptDismissFixture(t, "idle-prompt.txt"))
+	h.pollPlain(10*time.Second, h.clearedRecord, "ui prompt record cleared after the prompt leaves the pane")
+
+	// The bounded wait is what observes the event: the hook is still
+	// asleep appending when the record clears, so a single read right
+	// here sees zero dismissed events (verified: swapping this for a
+	// single read deterministically fails the test).
+	waitForDismissAudit(t, h, UIPromptOutcomeDismissed, 1, 10*time.Second)
+
+	// Exactly one dismissed event, no other outcomes (all reads via the
+	// hook's own lock — safe while the loop runs).
+	if n := h.hooks.count(UIPromptOutcomeDismissed); n != 1 {
+		t.Fatalf("dismissed booked %d times, want exactly 1; events: %+v", n, h.hooks.snapshot())
+	}
+	if h.hooks.count(UIPromptOutcomeNotCleared) != 0 || h.hooks.count(UIPromptOutcomeRefused) != 0 {
+		t.Fatalf("unexpected other outcomes: %+v", h.hooks.snapshot())
+	}
+
+	// The key sent was the single ESC byte (exactly one send).
+	h.keySent()
+
+	// Only now stop + join the capture loop so the session-field
+	// assertions below cannot race the manager's goroutine under -race.
+	h.stop()
+	// The session restored to running with the prompt record cleared.
+	snap, ok := liveSnap(t, h.mgr, h.sess)
+	if !ok {
+		t.Fatal("session missing")
+	}
+	if snap.State != StateRunning {
+		t.Fatalf("session state = %s, want running", snap.State)
+	}
+	if info := h.mgr.UIPromptFor(h.sess.FullID); info != nil {
+		t.Fatalf("UI prompt still exposed after restoration: %+v", info)
 	}
 }
 
