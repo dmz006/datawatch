@@ -5,15 +5,77 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
+
+// controlLog is a mutex-guarded record of the requests the fake daemon saw.
+// The daemon's handler runs on its own goroutine, so every access goes
+// through the lock. It also counts requests that have reached the handler but
+// are not yet recorded, so reset can wait for them instead of relying on a
+// fixed sleep to separate one input's window from the next.
+type controlLog struct {
+	mu       sync.Mutex
+	cond     *sync.Cond
+	calls    []controlCall
+	inflight int
+}
+
+func newControlLog() *controlLog {
+	l := &controlLog{}
+	l.cond = sync.NewCond(&l.mu)
+	return l
+}
+
+// begin marks a request as having reached the handler.
+func (l *controlLog) begin() {
+	l.mu.Lock()
+	l.inflight++
+	l.mu.Unlock()
+}
+
+// add records the request and marks it as no longer in flight.
+func (l *controlLog) add(c controlCall) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.calls = append(l.calls, c)
+	l.inflight--
+	l.cond.Broadcast()
+}
+
+// reset waits until every request that reached the handler has been recorded
+// (bounded, so a wedged handler cannot hang the test), then clears the log.
+func (l *controlLog) reset() {
+	deadline := time.AfterFunc(5*time.Second, func() {
+		l.mu.Lock()
+		l.inflight = 0
+		l.cond.Broadcast()
+		l.mu.Unlock()
+	})
+	defer deadline.Stop()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for l.inflight > 0 {
+		l.cond.Wait()
+	}
+	l.calls = nil
+}
+
+// snapshot returns a copy of the recorded calls taken under the lock.
+func (l *controlLog) snapshot() []controlCall {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]controlCall(nil), l.calls...)
+}
 
 // setLLMFixture serves a fake daemon that records each request, and returns
 // a router wired to it.
-func setLLMFixture(t *testing.T) (*Router, *[]controlCall) {
+func setLLMFixture(t *testing.T) (*Router, *controlLog) {
 	t.Helper()
-	var calls []controlCall
+	calls := newControlLog()
 	_, port := newFakePeerParent(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.begin()
 		raw, _ := io.ReadAll(r.Body)
 		c := controlCall{method: r.Method, path: r.URL.Path}
 		if len(raw) > 0 {
@@ -21,25 +83,26 @@ func setLLMFixture(t *testing.T) (*Router, *[]controlCall) {
 				t.Errorf("body %q is not JSON: %v", raw, err)
 			}
 		}
-		calls = append(calls, c)
+		calls.add(c)
 		_, _ = w.Write([]byte(`{"id":"ab12","status":"running","version":9}`))
 	})
-	return setupRetryRouter(t, port), &calls
+	return setupRetryRouter(t, port), calls
 }
 
-func runSetLLMCases(t *testing.T, r *Router, calls *[]controlCall, cases []struct {
+func runSetLLMCases(t *testing.T, r *Router, calls *controlLog, cases []struct {
 	name, in, path string
 	want           map[string]any
 }) {
 	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			*calls = nil
+			calls.reset()
 			resp := r.HandleTestMessage(tc.in)
-			if len(*calls) != 1 {
-				t.Fatalf("%q made %d calls, want 1 (reply %v)", tc.in, len(*calls), resp)
+			seen := calls.snapshot()
+			if len(seen) != 1 {
+				t.Fatalf("%q made %d calls, want 1 (reply %v)", tc.in, len(seen), resp)
 			}
-			got := (*calls)[0]
+			got := seen[0]
 			if got.method != http.MethodPost || got.path != tc.path {
 				t.Errorf("request = %s %s, want POST %s", got.method, got.path, tc.path)
 			}
@@ -55,13 +118,13 @@ func runSetLLMCases(t *testing.T, r *Router, calls *[]controlCall, cases []struc
 	}
 }
 
-func runSetLLMUsage(t *testing.T, r *Router, calls *[]controlCall, inputs []string, usagePrefix string) {
+func runSetLLMUsage(t *testing.T, r *Router, calls *controlLog, inputs []string, usagePrefix string) {
 	t.Helper()
 	for _, in := range inputs {
-		*calls = nil
+		calls.reset()
 		resp := r.HandleTestMessage(in)
-		if len(*calls) != 0 {
-			t.Errorf("%q reached the daemon: %+v", in, *calls)
+		if seen := calls.snapshot(); len(seen) != 0 {
+			t.Errorf("%q reached the daemon: %+v", in, seen)
 		}
 		if len(resp) == 0 || !strings.HasPrefix(resp[0], usagePrefix) {
 			t.Errorf("%q reply = %v, want the usage line %q", in, resp, usagePrefix)
