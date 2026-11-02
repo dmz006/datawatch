@@ -52,7 +52,7 @@ func (s *Server) handleObserverEnvelopesAllPeers(_ context.Context, _ mcpsdk.Cal
 
 func (s *Server) toolObserverEnvelope() mcpsdk.Tool {
 	return mcpsdk.NewTool("observer_envelope",
-		mcpsdk.WithDescription("Drill-down — returns the process sub-tree for one envelope by id (e.g. \"session:ralfthewise-787e\" or \"backend:ollama\")."),
+		mcpsdk.WithDescription("Drill-down — returns the process sub-tree for one envelope by id (e.g. \"session:peer-d-787e\" or \"backend:ollama\")."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Envelope ID")),
 	)
 }

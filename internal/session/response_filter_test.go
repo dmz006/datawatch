@@ -33,10 +33,10 @@ func TestStripResponseNoise_DropsStatusTimer(t *testing.T) {
 		"running task: hostname read",
 		"(7s · timeout 1m)",
 		"(esc to interrupt)",
-		"hostname is ralfthewise",
+		"hostname is peer-d",
 	}, "\n")
 	got := stripResponseNoise(in)
-	if !strings.Contains(got, "hostname is ralfthewise") {
+	if !strings.Contains(got, "hostname is peer-d") {
 		t.Errorf("dropped real content: %q", got)
 	}
 	if strings.Contains(got, "timeout 1m") {
