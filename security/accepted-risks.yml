@@ -247,10 +247,10 @@ entries:
       method: "docker run --network none on the built agent-gemini and agent-aider images: dpkg -l, apt-cache rdepends --installed python3.11-minimal, grep of the aider pipx venv site-packages for xml.etree/xml.dom/pyexpat imports, read of the litellm and botocore call sites; Dockerfile.agent-gemini/aider read"
       analysis: "CVE-2026-7210 is a use-after-free in Python 3.11's expat bindings (xml.parsers.expat, used by xml.etree.ElementTree) triggered by crafted XML. agent-gemini: python3.11 is not installed by its Dockerfile; apt-cache rdepends lists nodejs and rsync as the dependents, there is no Python application in the image (gemini is a node program), and a grep finds no caller, so there it is dormant. agent-aider: Dockerfile.agent-aider installs python3 and runs aider from a pipx venv whose interpreter is /usr/bin/python3 (3.11.2), so the stdlib expat module is live. Grep of the venv shows ElementTree used by botocore (botocore/serialize.py and compat.py parse AWS service XML responses), by litellm (get_blog_posts.py calls ET.fromstring on an RSS feed fetched over httpx; prompt_templates/factory.py parse_xml_params calls ET.fromstring on model-produced function-call XML) and by networkx gexf. So untrusted XML from an LLM provider, AWS endpoint or remote feed can reach the vulnerable parser in agent-aider. Reachable in agent-aider, conditional on a hostile or compromised provider response; the datawatch Go service itself never parses XML in Python."
     first_added: "2026-05-31"
-    added: "2026-05-31"
-    expires: "2026-06-30"
-    validated_by: "claude-session"
-    reason: "No fix available in Debian bookworm as of this migration; re-check each release cycle (BL398 Phase 1's live rescan baseline)."
+    added: "2026-11-02"
+    expires: "2026-12-02"
+    validated_by: "operator 2026-11-02, queue answer: accept for 30 days"
+    reason: "Operator accepted this finding for 30 days on 2026-11-02 (queue answer, option accept). Debian bookworm lists python3.11 as open with no fixed version; re-check Debian each week and remove the entry as soon as a fixed version ships. The aider image runs sandboxed and aider is optional."
 
   - id: cve/CVE-2025-69534
     kind: container

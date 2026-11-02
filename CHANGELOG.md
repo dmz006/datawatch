@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.63.2 — Python XML finding accepted for 30 days
+
+### Security
+
+- **The accepted-risk entry for the critical Python 3.11 XML finding (CVE-2026-7210) is renewed for 30 days, by your decision.** Debian bookworm still lists the package as open with no fixed version, and the finding is reachable only in the aider agent image (the gemini image never calls the parser). The entry now expires on 2026-12-02 and records that the operator accepted it; Debian is re-checked each week and the entry is removed when a fix ships. The generated ignore file and the security review page are regenerated.
+
 ## v9.63.1 — The About card comes first
 
 ### Fixed

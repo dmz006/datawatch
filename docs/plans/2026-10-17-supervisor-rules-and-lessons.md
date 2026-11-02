@@ -686,3 +686,7 @@ The leak-check Automaton replaced the two cloud metadata addresses in the push a
 ## A scrub that touches build files needs a build (2026-11-02)
 
 The same scrub that changed the cloud metadata addresses also rewrote the container user name in seven Dockerfiles as a build argument declared before the first FROM. That argument is empty inside a stage, so the agent-base image failed to build, and the failure showed only in the next image refresh, hours after the release. Its review, lint and the Go suites cannot see it. Before merging any Automaton that edits files under docker/ or .github/, build the touched image locally or reproduce the changed line in a small Dockerfile, and check the next image-refresh run the same day.
+
+## The Python XML finding, answered 2026-11-02
+
+Operator, 2026-11-02 11:22, through the PWA, on the question about CVE-2026-7210 (a critical Python 3.11 XML parser finding with no Debian fix, reachable in the aider agent image): option "Accept the risk for 30 days", with no further words. Effect: the registry entry was renewed to 2026-12-02 in 9.63.2 with the operator's acceptance recorded; Debian is re-checked weekly and the entry is removed when a fixed version ships. The registry check still prints two escalation lines for it; they are the standing reminder, not an open item.

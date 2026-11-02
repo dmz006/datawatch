@@ -190,7 +190,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-70461 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70463 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-70464 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
-| CVE-2026-7210 | `python3.11, libpython3.11-*` | critical | agent-gemini, agent-aider | yes | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-7210 | `python3.11, libpython3.11-*` | critical | agent-gemini, agent-aider | yes | 2026-12-02 | Operator accepted this finding for 30 days on 2026-11-02 (queue answer, option a... |
 | CVE-2026-7246 | `python3-click` | high | agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-76642 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux-extra` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-05 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-77214 | `libexpat1` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2027-01-06 | Found live by image-refresh.yaml's blocking scan (new since the BL398 migration ... |
