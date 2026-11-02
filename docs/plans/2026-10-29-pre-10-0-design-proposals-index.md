@@ -6,6 +6,8 @@
 
 Operator, 2026-10-29, quoted: "Yes, draft the design proposals", in answer to the supervisor's offer to draft one short design proposal for each item below so the operator can answer in one pass. Every proposal says `Confirmed: no`; nothing is decided and no implementation PRD is filed until the operator answers and a `Confirmed: yes` line replaces it.
 
+Confirmed: yes. The operator answered every proposal in the queue between 2026-10-30 and 2026-11-01; the answers, with the operator's words, are recorded in the two tables near the end of this file, and every behaviour is a setting with those answers as the default. One item is parked by the operator's answer and stays unbuilt: the Claude model tiering eval and the tier-mismatch event, until after 10.0. This line was missing until 2026-11-02, which kept the implementation drafts out of the lane fill; the supervisor should have added it when the answers were read.
+
 ## The eight proposals
 
 | Item | File | Recommended | What it unlocks |
