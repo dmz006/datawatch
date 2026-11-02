@@ -123,9 +123,10 @@ type BurnGuard struct {
 
 	tickMu sync.Mutex // serialises ticks
 
-	mu        sync.Mutex // guards the fields below
-	status    BurnGuardStatus
-	refitWake chan struct{}
+	mu            sync.Mutex // guards the fields below
+	status        BurnGuardStatus
+	refitWake     chan struct{}
+	questionStore autonomous.BurnGuardQuestionStore
 }
 
 // NewBurnGuard builds the runner. store may be nil (no persistence across restarts).
@@ -154,6 +155,21 @@ func NewBurnGuard(in BurnGuardInputs, adm BurnGuardAdmission, sessions BurnGuard
 	g.status.Coefficients = g.fitter.Coefficients()
 	return g, nil
 }
+
+// AttachQuestionStore wires the daemon's question store so the guard's
+// ask_on_change handling runs: it withdraws the guard's open question before
+// raising a new one (at most one open), and when ask_on_change is off it
+// withdraws the open question instead of raising. Without one, a question goes
+// through the notifier as before.
+func (g *BurnGuard) AttachQuestionStore(st autonomous.BurnGuardQuestionStore) {
+	g.mu.Lock()
+	g.questionStore = st
+	g.mu.Unlock()
+}
+
+// LadderState is the persisted ladder state as it was loaded at start, which
+// the daemon consults when it prunes guard questions at start.
+func (g *BurnGuard) LadderState() burnguard.LadderState { return g.ladder.State() }
 
 // Run ticks every interval_minutes until ctx is cancelled, and once more at once whenever
 // OnReading signals a new reading. The interval is read each round, so a config change
@@ -358,10 +374,21 @@ func (g *BurnGuard) announce(d burnguard.Decision) {
 	}
 	title := "Burn guard: " + string(d.Direction) + " " + d.Rung
 	g.notify.Alert(alerts.LevelWarn, title, d.AlertText+running)
-	if d.QuestionText != "" {
-		if err := g.notify.Question(d.QuestionText + running); err != nil {
-			g.fail("queue question not raised: %v", err)
-		}
+	g.mu.Lock()
+	store, ask := g.questionStore, g.in.Config().AskOnChange
+	g.mu.Unlock()
+	if store != nil {
+		// the ask_on_change wiring: it withdraws the guard's open question
+		// before raising the new one, or, when ask_on_change is off, withdraws
+		// the open guard question instead of raising
+		autonomous.ApplyBurnGuardAskOnChange(store, ask, d, running)
+		return
+	}
+	if d.QuestionText == "" {
+		return
+	}
+	if err := g.notify.Question(d.QuestionText + running); err != nil {
+		g.fail("queue question not raised: %v", err)
 	}
 }
 
@@ -503,6 +530,9 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 	if err != nil {
 		return err
 	}
+	if s.questionStore != nil {
+		g.AttachQuestionStore(s.questionStore)
+	}
 	s.burnGuard = g
 	return nil
 }
@@ -534,6 +564,13 @@ func (s *Server) BurnGuard() *BurnGuard { return s.burnGuard }
 // not attached.
 func (s *Server) StartBurnGuard(ctx context.Context) {
 	if g := s.burnGuard; g != nil {
+		// at start: open guard questions a previous run raised for a state this
+		// one no longer requires are pruned now; a question the loaded state
+		// still applies is kept
+		if s.questionStore != nil {
+			g.AttachQuestionStore(s.questionStore)
+			autonomous.PruneBurnGuardQuestionsAtStart(s.questionStore, g.LadderState())
+		}
 		go g.Run(ctx)
 	}
 }
