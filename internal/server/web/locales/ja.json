@@ -3271,6 +3271,7 @@
   "burn_guard_ladder_empty": "少なくとも 1 つの段を残してください。",
   "burn_guard_step_back": "予測が線を下回ったら段を戻す",
   "burn_guard_ask_on_change": "アラートではなく質問する（オフ：変更ごとに1回のみアラート、質問なし；オン：変更ごとに最大1つの未回答質問を保つ）",
+  "burn_guard_ask_on_change_help": "バーンガードのハウトゥを開く — 設定のセクションで ask_on_change を説明：変更ごとにアラート1回で質問なし（既定）、または変更ごとに最大1つの未回答質問",
   "burn_guard_retry_limit": "Claude の再試行上限（0〜20）",
   "burn_guard_invalid_number": "範囲内の有効な数値を入力してください。",
   "burn_guard_effort_ceiling": "タスク種別ごとの工数上限:",
