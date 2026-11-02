@@ -7,7 +7,7 @@
 
 ### BL173-followup — production-cluster reachability verified
 
-The v5.28.1 release shipped a runbook for the operator to run on a production cluster when convenient. v5.28.2 closes the item by running the equivalent verification end-to-end **in the operator's testing cluster** (`kubectl context: testing`, 3-node Ubuntu 22.04 cluster on 10.8.2.0/24).
+The v5.28.1 release shipped a runbook for the operator to run on a production cluster when convenient. v5.28.2 closes the item by running the equivalent verification end-to-end **in the operator's testing cluster** (`kubectl context: testing`, 3-node Ubuntu 22.04 cluster on 192.0.2.82/24).
 
 **Deployment:**
 - `ghcr.io/dmz006/datawatch-parent-full:latest` (v5.28.1 image) as a Deployment in namespace `bl173-verify`
@@ -26,7 +26,7 @@ The v5.28.1 release shipped a runbook for the operator to run on a production cl
 
 Real cluster pod-network topology: peer pod → ClusterIP Service → parent pod **on a different node** (cross-node within the cluster overlay). Confirms the cluster→parent push code path works under a real cluster network — exactly the gap that motivated BL173-followup.
 
-The original "dev-workstation parent isn't reachable from testing-cluster pod overlay" gap is irrelevant in production: real deployments run the parent **inside** the cluster, which is what was tested here. The pod→host gap that blocked the dev-workstation scenario was confirmed earlier (`HTTP 000` when curling from a pod to `192.168.1.51:8443`); the right fix was always "deploy parent in-cluster", which v5.28.2 verifies works.
+The original "dev-workstation parent isn't reachable from testing-cluster pod overlay" gap is irrelevant in production: real deployments run the parent **inside** the cluster, which is what was tested here. The pod→host gap that blocked the dev-workstation scenario was confirmed earlier (`HTTP 000` when curling from a pod to `192.0.2.37:8443`); the right fix was always "deploy parent in-cluster", which v5.28.2 verifies works.
 
 ### Carries forward from v5.28.1
 

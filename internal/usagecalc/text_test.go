@@ -153,7 +153,7 @@ func TestFormatWidths(t *testing.T) {
 		assertFormWidths(t, Response{
 			Policy:      a.Advice.Policy,
 			Stale:       true,
-			StaleReason: `keeper "alpha" unreachable: dial tcp 10.0.0.5:9138: no route to host`,
+			StaleReason: `keeper "alpha" unreachable: dial tcp 192.0.2.5:9138: no route to host`,
 			CopiedAt:    &copiedAt,
 			Advice:      a,
 		})
@@ -292,14 +292,14 @@ func TestFormatStaleCopyLine(t *testing.T) {
 	resp := Response{
 		Policy:      a.Advice.Policy,
 		Stale:       true,
-		StaleReason: `keeper "alpha" unreachable: dial tcp 10.0.0.5:9138: no route to host`,
+		StaleReason: `keeper "alpha" unreachable: dial tcp 192.0.2.5:9138: no route to host`,
 		CopiedAt:    &copiedAt,
 		Advice:      a,
 	}
 
 	cli := FormatCLI(resp)
 	mustContainAll(t, "cli", cli,
-		`stale: using the last copy taken 2026-10-24 09:12:25; keeper "alpha" unreachable: dial tcp 10.0.0.5:9138: no route to host`,
+		`stale: using the last copy taken 2026-10-24 09:12:25; keeper "alpha" unreachable: dial tcp 192.0.2.5:9138: no route to host`,
 	)
 
 	comm := FormatComm(resp)

@@ -1430,7 +1430,9 @@ mcp:
   sse_port: 8081
   token: "mcp-auth-token"
   # Required when remote MCP clients reach SSE through the proxy:
-  public_url: "https://host.example.ts.net:8081"
+  # (example value only; your real proxy URL lives in your operator config
+  # and is not committed to this repository)
+  public_url: "https://proxy-host.example.net:8081"
 ```
 
 The MCP SSE transport tells each client where to POST messages (the
@@ -1448,11 +1450,11 @@ file is ignored with a warning at SSE start, so the bind address is advertised.
 
 | Access method | How to set `mcp.public_url` |
 |---|---|
-| YAML | `mcp.public_url: "https://host.example.ts.net:8081"` in `~/.datawatch/config.yaml` |
-| CLI | `datawatch config set mcp.public_url https://host.example.ts.net:8081` |
+| YAML | `mcp.public_url: "https://proxy-host.example.net:8081"` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set mcp.public_url https://proxy-host.example.net:8081` |
 | Web UI | Settings → Comms → MCP Server → "SSE public URL (reverse proxy)" |
-| REST API | `PUT /api/config` with `{"mcp.public_url": "https://host.example.ts.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
-| Comm channel | `configure mcp.public_url=https://host.example.ts.net:8081` |
+| REST API | `PUT /api/config` with `{"mcp.public_url": "https://proxy-host.example.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
+| Comm channel | `configure mcp.public_url=https://proxy-host.example.net:8081` |
 
 ### Unauthenticated listener startup warning
 
@@ -1607,7 +1609,7 @@ standalone mode (no browser address bar, full-screen app experience).
 4. Tap the browser menu (three dots) → "Add to Home Screen" or "Install app"
 5. The app will launch in standalone mode (no address bar)
 
-**If using Tailscale:** Access via `https://your-host.your-tailnet.ts.net:8080` —
+**If using Tailscale:** Access via `https://your-host.your-tailnet.example.net:8080` —
 Tailscale provides valid HTTPS certificates automatically.
 
 **Tab navigation in standalone mode:** Use the bottom navigation bar built into
@@ -1634,7 +1636,7 @@ Access via `https://your-host:8080` and accept the certificate warning once.
 
 If using Tailscale, access via the auto-HTTPS URL:
 ```
-https://your-host.your-tailnet.ts.net:8080
+https://your-host.your-tailnet.example.net:8080
 ```
 Tailscale provides valid certs automatically.
 
@@ -5806,7 +5808,7 @@ The allow-list is the only list of hosts that may receive a webhook. Each entry 
 
 **Delivery.** A webhook is signed with HMAC-SHA256 (`X-Datawatch-Signature: t=<unix>,v1=<hex>`), with `X-Datawatch-Delivery` and `X-Datawatch-Event` headers. A failed attempt is retried: 5 attempts in total, delays of 1, 4, 16 and 64 seconds with ±20 % jitter, a 10-second limit per attempt. Network errors, timeouts, `408`, `429` and `5xx` are retried; other `4xx`, `3xx` (redirects are not followed) and an over-size payload (64 KiB) are not. Peer forwarding uses the same schedule. A delivery that is dropped raises one error-level alert (*Lifecycle webhook delivery failed* or *Lifecycle peer forward failed*) and writes a final audit record. There is no outbox for a peer that stays offline.
 
-**SSRF guard.** A webhook URL must be `https`; `http` is accepted only for an allow-listed host. Loopback, link-local, unspecified, multicast, private (RFC 1918 and unique-local) and Tailscale CGNAT addresses are refused unless their host is on the allow-list. Cloud metadata addresses (`169.254.169.254`, `fd00:ec2::254`) are refused even when allow-listed, pending the operator's confirmation. The resolved address is checked again at connect time, on every attempt.
+**SSRF guard.** A webhook URL must be `https`; `http` is accepted only for an allow-listed host. Loopback, link-local, unspecified, multicast, private (RFC 1918 and unique-local) and Tailscale CGNAT addresses are refused unless their host is on the allow-list. Cloud metadata addresses (`192.0.2.169`, `2001:db8::254`) are refused even when allow-listed, pending the operator's confirmation. The resolved address is checked again at connect time, on every attempt.
 
 **Audit actions.** The JSON-lines audit log (`audit.log`) and, when the CEF mirror is enabled, `audit.log.cef` carry these actions:
 

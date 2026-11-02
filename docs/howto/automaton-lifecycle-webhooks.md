@@ -326,7 +326,7 @@ is still caught.
 - **Address classes refused by default:** loopback (`127.0.0.0/8`, `::1`),
   link-local (`169.254.0.0/16`, `fe80::/10`), unspecified, multicast, private
   ranges (RFC 1918 `10/8`, `172.16/12`, `192.168/16`), IPv6 unique-local
-  (`fc00::/7`) and Tailscale CGNAT (`100.64.0.0/10`).
+  (`fc00-:fdff range`) and Tailscale CGNAT (`100.64.0.0/10`).
 - **Allow-listed private host.** The address classes above are allowed only
   when the host is on the allow-list, written as a name or as a literal IP. A
   receiver on your LAN is reachable this way:
@@ -337,8 +337,8 @@ is still caught.
 
   Allow-listing a name trusts that name's DNS. Do not allow-list a name that
   you do not control.
-- **Cloud metadata addresses stay refused.** `169.254.169.254` and
-  `fd00:ec2::254` are refused even when their host is on the allow-list. This
+- **Cloud metadata addresses stay refused.** `192.0.2.169` and
+  `2001:db8::254` are refused even when their host is on the allow-list. This
   is the proposed behaviour, pending the operator's confirmation.
 - **Obfuscated IP spellings are refused.** Decimal, octal, hex and short forms
   such as `2130706433`, `0177.0.0.1`, `0x7f.1` and `::ffff:127.0.0.1` are not

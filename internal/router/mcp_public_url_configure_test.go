@@ -40,9 +40,9 @@ func TestCommConfigure_MCPPublicURLForwardedToDaemon(t *testing.T) {
 	sent := runConfigureCapture(t, func(key, value string) error {
 		gotKey, gotValue = key, value
 		return nil
-	}, "mcp.public_url=https://host.tailnet.ts.net:8081")
-	if gotKey != "mcp.public_url" || gotValue != "https://host.tailnet.ts.net:8081" {
-		t.Fatalf("forwarded %q=%q, want mcp.public_url=https://host.tailnet.ts.net:8081", gotKey, gotValue)
+	}, "mcp.public_url=https://host.tailnet.example.net:8081")
+	if gotKey != "mcp.public_url" || gotValue != "https://host.tailnet.example.net:8081" {
+		t.Fatalf("forwarded %q=%q, want mcp.public_url=https://host.tailnet.example.net:8081", gotKey, gotValue)
 	}
 	if len(sent) != 1 || !strings.Contains(sent[0], "mcp.public_url") {
 		t.Fatalf("sent = %q, want confirmation naming the key", sent)

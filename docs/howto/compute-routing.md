@@ -55,14 +55,17 @@ Add an Ollama node at a static address:
 compute_nodes:
   - name: gpu-1
     kind: ollama
-    address: http://10.0.0.10:11434
+    address: http://192.0.2.10:11434
     # routing: direct   ← implicit default
 ```
+
+(Example address only; the real node URL lives in your operator config and
+is not committed to this repository.)
 
 Or via CLI:
 
 ```
-datawatch compute node add gpu-1 kind=ollama address=http://10.0.0.10:11434
+datawatch compute node add gpu-1 kind=ollama address=http://192.0.2.10:11434
 ```
 
 Or REST:
@@ -70,7 +73,7 @@ Or REST:
 ```bash
 curl -X POST $DW/api/compute/nodes \
   -H "Content-Type: application/json" \
-  -d '{"name":"gpu-1","kind":"ollama","address":"http://10.0.0.10:11434"}'
+  -d '{"name":"gpu-1","kind":"ollama","address":"http://192.0.2.10:11434"}'
 ```
 
 **Probe:** the daemon pings the address on create/update. Use `?probe=skip` if the node is temporarily unreachable.

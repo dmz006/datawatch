@@ -21,7 +21,7 @@ The comms-config branch of the renderer (`loadCommsConfig`) had a bug: it was tr
 
 The general-config branch already had the correct multi-select with checkbox-list + connected-interface protection. The fix is to mirror that pattern in the comms branch:
 
-- Renders one checkbox per interface with `iface.label` (e.g. `"192.168.1.50 (eth0)"`)
+- Renders one checkbox per interface with `iface.label` (e.g. `"192.0.2.36 (eth0)"`)
 - Auto-protects the connected interface: if the operator unchecks "All interfaces" and removes the one they're currently connected through, `saveInterfaceField` re-checks it before persisting (prevents self-disconnect)
 - Connected interface gets a `(connected — auto-protected)` badge
 

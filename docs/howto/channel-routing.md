@@ -237,7 +237,7 @@ curl -sk -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "name": "nas-builds",
-    "url": "https://192.168.1.50:8443",
+    "url": "https://192.0.2.36:8443",
     "token": "nas-secret-token",
     "capabilities": "comms-channel-agent",
     "channel_identity": ["telegram:group:-1009876543210"]
@@ -267,6 +267,10 @@ curl -sk \
   https://datawatch.local:8443/api/sessions \
   | jq '.[] | select(.owner_peer != null) | {id, owner_peer}'
 ```
+
+(Example URL only; the real peer URL and token live in your operator config
+and are not committed to this repository.)
+
 
 ---
 

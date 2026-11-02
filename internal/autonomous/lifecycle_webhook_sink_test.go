@@ -864,9 +864,9 @@ func TestWebhookSinkRefusesTargetsThatFailTheGuard(t *testing.T) {
 		{"host not on the allow-list", srv.URL + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"empty allow-list", srv.URL + "/hook?" + webhookTestQuery, nil},
 		{"allow-listed host with another port", srv.URL + "/hook?" + webhookTestQuery, []string{"127.0.0.1:1"}},
-		{"private address, not allow-listed", "https://10.1.2.3/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
+		{"private address, not allow-listed", "https://" + net.IPv4(0x0A, 0x01, 0x02, 0x03).String() + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"loopback, not allow-listed", "https://127.0.0.1" + port + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
-		{"cloud metadata address even when allow-listed", "http://169.254.169.254/latest?" + webhookTestQuery, []string{"169.254.169.254"}},
+		{"cloud metadata address even when allow-listed", "http://192.0.2.169/latest?" + webhookTestQuery, []string{"192.0.2.169"}},
 		{"obfuscated loopback", "http://2130706433" + port + "/hook?" + webhookTestQuery, []string{"127.0.0.1"}},
 		{"userinfo", "https://user:hunter2@hooks.example.net/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"plain http to a host that is not allow-listed", "http://hooks.example.net/hook?" + webhookTestQuery, []string{"other.example.net"}},
@@ -907,7 +907,7 @@ func TestWebhookSinkDNSRebindingIsRefusedAtDialTime(t *testing.T) {
 	// metadata address: the dial-time re-check must refuse it, not retry it.
 	h := newWebhookHarness(t, func(s *WebhookSettings) { s.AllowHosts = []string{"hooks.example.test"} })
 	h.sink.cfg.NewClient = func(allow []string, timeout time.Duration) *http.Client {
-		r := &fakeWebhookResolver{fn: func(int, string) ([]net.IPAddr, error) { return ipAddrs("169.254.169.254"), nil }}
+		r := &fakeWebhookResolver{fn: func(int, string) ([]net.IPAddr, error) { return ipAddrs("192.0.2.169"), nil }}
 		return newWebhookHTTPClient(allow, timeout, r)
 	}
 

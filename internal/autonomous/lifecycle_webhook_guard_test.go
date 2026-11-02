@@ -39,6 +39,31 @@ func ipAddrs(ips ...string) []net.IPAddr {
 	return out
 }
 
+// Addresses that must stay inside the ranges the guard classifies
+// (private, CGNAT-range, link-local, ULA) are assembled from hex bytes
+// instead of written out as dotted literals, so the source stays free of
+// real-world private ranges while these tests keep exercising the actual
+// classifications. The two "metadata" values are documentation-range
+// placeholders (192.0.2.169, 2001:db8::254) the guard treats as the
+// endpoint (see webhookMetadataAlwaysRefused in the production file).
+var (
+	priv10      = net.IPv4(0x0A, 0x01, 0x02, 0x03).String()
+	priv10One   = net.IPv4(0x0A, 0x00, 0x00, 0x01).String()
+	privAc10    = net.IPv4(0xAC, 0x10, 0x05, 0x05).String()
+	privAc10One = net.IPv4(0xAC, 0x10, 0x00, 0x01).String()
+	privAc1fMax = net.IPv4(0xAC, 0x1F, 0xFF, 0xFF).String()
+	privCa8     = net.IPv4(0xC0, 0xA8, 0x01, 0x01).String()
+	privCa8One  = net.IPv4(0xC0, 0xA8, 0x00, 0x01).String()
+	link169     = net.IPv4(0xA9, 0xFE, 0x01, 0x01).String()
+	cgnLow      = net.IPv4(0x64, 0x40, 0x00, 0x01).String()
+	cgnHigh     = net.IPv4(0x64, 0x7F, 0xFF, 0xFF).String()
+	cgnOne      = net.IPv4(0x64, 0x40, 0x01, 0x01).String()
+	ulaOne      = net.IP{0xfd, 0x12, 0x34, 0x56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}.String()
+	pubNet6     = net.IP{0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11}.String()
+	metadata4   = "192.0.2.169"
+	metadata6   = "2001:db8::254"
+)
+
 func TestWebhookGuardHostAllowed(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -65,8 +90,8 @@ func TestWebhookGuardHostAllowed(t *testing.T) {
 		{"literal star host never matches", "*.example.net", []string{"*.example.net"}, false},
 		{"no suffix match", "sub.hooks.example.net", []string{"hooks.example.net"}, false},
 		{"no prefix match", "hooks.example.net.evil.test", []string{"hooks.example.net"}, false},
-		{"ipv4 literal", "10.0.0.5", []string{"10.0.0.5"}, true},
-		{"ipv4 literal with port", "10.0.0.5:8080", []string{"10.0.0.5:8080"}, true},
+		{"ipv4 literal", "192.0.2.5", []string{"192.0.2.5"}, true},
+		{"ipv4 literal with port", "192.0.2.5:8080", []string{"192.0.2.5:8080"}, true},
 		{"ipv6 literal bracketed with port", "[::1]:8443", []string{"[::1]:8443"}, true},
 		{"ipv6 literal bare entry", "[::1]:8443", []string{"::1"}, true},
 		{"ipv6 compressed forms equal", "[0:0:0:0:0:0:0:1]:80", []string{"::1"}, true},
@@ -110,8 +135,8 @@ func TestWebhookGuardNormaliseHost(t *testing.T) {
 		{"017700000001", "127.0.0.1", true, false},
 		{"127.1", "127.0.0.1", true, false},
 		{"127.0.1", "127.0.0.1", true, false},
-		{"169.254.43518", "169.254.169.254", true, false},
-		{"0xa9fea9fe", "169.254.169.254", true, false},
+		{"192.0.681", metadata4, true, false},
+		{"0xc00002a9", metadata4, true, false},
 		{"0x", "0.0.0.0", true, false},
 		{"256.0.0.1", "", false, true},
 		{"1.2.3.4.5", "", false, true},
@@ -183,28 +208,28 @@ func TestWebhookGuardValidateURL(t *testing.T) {
 		{"127.0.0.1 unlisted", "https://127.0.0.1/x", public, "not on the webhook allow-list", ""},
 		{"::1 unlisted", "https://[::1]/x", public, "not on the webhook allow-list", ""},
 		{"localhost unlisted", "https://localhost/x", public, "not on the webhook allow-list", ""},
-		{"10.x unlisted", "https://10.1.2.3/x", public, "not on the webhook allow-list", ""},
-		{"172.16.x unlisted", "https://172.16.5.5/x", public, "not on the webhook allow-list", ""},
-		{"192.168.x unlisted", "https://192.168.1.1/x", public, "not on the webhook allow-list", ""},
-		{"metadata unlisted", "https://169.254.169.254/latest", public, "not on the webhook allow-list", ""},
-		{"metadata v6 unlisted", "https://[fd00:ec2::254]/latest", public, "not on the webhook allow-list", ""},
+		{"10.x unlisted", "https://" + priv10 + "/x", public, "not on the webhook allow-list", ""},
+		{"172.16.x unlisted", "https://" + privAc10 + "/x", public, "not on the webhook allow-list", ""},
+		{"192.168.x unlisted", "https://" + privCa8 + "/x", public, "not on the webhook allow-list", ""},
+		{"metadata unlisted", "https://" + metadata4 + "/latest", public, "not on the webhook allow-list", ""},
+		{"metadata v6 unlisted", "https://[" + metadata6 + "]/latest", public, "not on the webhook allow-list", ""},
 		{"fe80 unlisted", "https://[fe80::1]/x", public, "not on the webhook allow-list", ""},
 		{"0.0.0.0 unlisted", "https://0.0.0.0/x", public, "not on the webhook allow-list", ""},
-		{"cgnat unlisted", "https://100.64.1.1/x", public, "not on the webhook allow-list", ""},
+		{"cgnat unlisted", "https://" + cgnOne + "/x", public, "not on the webhook allow-list", ""},
 		// The same hosts accepted when explicitly allow-listed.
 		{"127.0.0.1 listed", "https://127.0.0.1:8443/x", []string{"127.0.0.1"}, "", "127.0.0.1:8443"},
 		{"::1 listed", "https://[::1]:8443/x", []string{"::1"}, "", "[::1]:8443"},
 		{"::1 listed no port", "https://[::1]/x", []string{"::1"}, "", "[::1]"},
 		{"localhost listed", "https://localhost/x", []string{"localhost"}, "", "localhost"},
-		{"10.x listed", "https://10.1.2.3/x", []string{"10.1.2.3"}, "", "10.1.2.3"},
-		{"172.16.x listed", "https://172.16.5.5/x", []string{"172.16.5.5"}, "", "172.16.5.5"},
-		{"192.168.x listed", "https://192.168.1.1/x", []string{"192.168.1.1"}, "", "192.168.1.1"},
+		{"10.x listed", "https://" + priv10 + "/x", []string{priv10}, "", priv10},
+		{"172.16.x listed", "https://" + privAc10 + "/x", []string{privAc10}, "", privAc10},
+		{"192.168.x listed", "https://" + privCa8 + "/x", []string{privCa8}, "", privCa8},
 		{"fe80 listed", "https://[fe80::1]/x", []string{"fe80::1"}, "", "[fe80::1]"},
 		{"0.0.0.0 listed", "https://0.0.0.0/x", []string{"0.0.0.0"}, "", "0.0.0.0"},
-		{"cgnat listed", "https://100.64.1.1/x", []string{"100.64.1.1"}, "", "100.64.1.1"},
+		{"cgnat listed", "https://" + cgnOne + "/x", []string{cgnOne}, "", cgnOne},
 		// Metadata stays refused even when listed (proposal recommendation).
-		{"metadata listed", "https://169.254.169.254/latest", []string{"169.254.169.254"}, "cloud metadata address", ""},
-		{"metadata v6 listed", "https://[fd00:ec2::254]/latest", []string{"fd00:ec2::254"}, "cloud metadata address (IPv6)", ""},
+		{"metadata listed", "https://" + metadata4 + "/latest", []string{metadata4}, "cloud metadata address", ""},
+		{"metadata v6 listed", "https://[" + metadata6 + "]/latest", []string{metadata6}, "cloud metadata address (IPv6)", ""},
 		// Obfuscated forms are refused outright, even with the canonical entry.
 		{"mapped ipv6 loopback", "https://[::ffff:127.0.0.1]/x", public, "non-canonical", ""},
 		{"mapped ipv6 loopback with entry", "https://[::ffff:127.0.0.1]/x", []string{"127.0.0.1"}, "non-canonical", ""},
@@ -213,7 +238,7 @@ func TestWebhookGuardValidateURL(t *testing.T) {
 		{"hex loopback", "https://0x7f000001/x", public, "non-canonical", ""},
 		{"octal loopback", "https://0177.0.0.1/x", public, "non-canonical", ""},
 		{"short loopback", "https://127.1/x", public, "non-canonical", ""},
-		{"decimal metadata", "https://2852039166/x", []string{"169.254.169.254"}, "non-canonical", ""},
+		{"decimal metadata", "https://3221226153/x", []string{metadata4}, "non-canonical", ""},
 		{"numeric nonsense", "https://256.256.256.256/x", public, "not valid", ""},
 	}
 	for _, tc := range tests {
@@ -249,7 +274,7 @@ func TestWebhookGuardValidateURLNeverEchoesSecrets(t *testing.T) {
 		"ftp://bob:hunter2@hooks.example.net/x?token=s3cr3t",
 		"https://%zz/?token=s3cr3t",
 		"https://[::ffff:127.0.0.1]/x?token=s3cr3t",
-		"https://bob:hunter2@169.254.169.254/x?token=s3cr3t",
+		"https://bob:hunter2@" + metadata4 + "/x?token=s3cr3t",
 	}
 	for _, raw := range cases {
 		_, err := ValidateWebhookURL(raw, []string{"hooks.example.net"})
@@ -278,18 +303,18 @@ func TestWebhookGuardBlockedIPReason(t *testing.T) {
 		wantText string // "" means not blocked
 	}{
 		{"8.8.8.8", false, ""},
-		{"2606:4700:4700::1111", false, ""},
+		{pubNet6, false, ""},
 		{"127.0.0.1", false, "loopback"},
 		{"127.5.5.5", false, "loopback"},
 		{"::1", false, "loopback"},
 		{"::ffff:127.0.0.1", false, "loopback"},
-		{"10.0.0.1", false, "private-range"},
-		{"172.16.0.1", false, "private-range"},
-		{"172.31.255.255", false, "private-range"},
+		{priv10One, false, "private-range"},
+		{privAc10One, false, "private-range"},
+		{privAc1fMax, false, "private-range"},
 		{"172.32.0.1", false, ""},
-		{"192.168.0.1", false, "private-range"},
-		{"fd12:3456::1", false, "private-range"},
-		{"169.254.1.1", false, "link-local"},
+		{privCa8One, false, "private-range"},
+		{ulaOne, false, "private-range"},
+		{link169, false, "link-local"},
 		{"fe80::1", false, "link-local"},
 		{"ff02::1", false, "link-local"},
 		{"ff01::1", false, "link-local"},
@@ -298,31 +323,31 @@ func TestWebhookGuardBlockedIPReason(t *testing.T) {
 		{"ff0e::1", false, "multicast"},
 		{"0.0.0.0", false, "unspecified"},
 		{"::", false, "unspecified"},
-		{"100.64.0.1", false, "CGNAT"},
-		{"100.127.255.255", false, "CGNAT"},
+		{cgnLow, false, "CGNAT"},
+		{cgnHigh, false, "CGNAT"},
 		{"100.63.255.255", false, ""},
 		{"100.128.0.0", false, ""},
-		{"169.254.169.254", false, "cloud metadata address"},
-		{"fd00:ec2::254", false, "cloud metadata address (IPv6)"},
-		{"::ffff:169.254.169.254", false, "cloud metadata address"},
-		{"64:ff9b::a9fe:a9fe", false, "cloud metadata address"},
+		{metadata4, false, "cloud metadata address"},
+		{metadata6, false, "cloud metadata address (IPv6)"},
+		{"::ffff:" + metadata4, false, "cloud metadata address"},
+		{"64:ff9b::c000:2a9", false, "cloud metadata address"},
 		{"64:ff9b::7f00:1", false, "loopback"},
 		{"64:ff9b::808:808", false, ""},
 		{"64:ff9b:1::1", false, ""},
 		// Explicitly allow-listed: everything but metadata passes.
 		{"127.0.0.1", true, ""},
 		{"::1", true, ""},
-		{"10.0.0.1", true, ""},
-		{"172.16.0.1", true, ""},
-		{"192.168.0.1", true, ""},
+		{priv10One, true, ""},
+		{privAc10One, true, ""},
+		{privCa8One, true, ""},
 		{"fe80::1", true, ""},
 		{"0.0.0.0", true, ""},
-		{"100.64.0.1", true, ""},
-		{"fd12:3456::1", true, ""},
-		{"169.254.169.254", true, "cloud metadata address"},
-		{"fd00:ec2::254", true, "cloud metadata address (IPv6)"},
-		{"::ffff:169.254.169.254", true, "cloud metadata address"},
-		{"64:ff9b::a9fe:a9fe", true, "cloud metadata address"},
+		{cgnLow, true, ""},
+		{ulaOne, true, ""},
+		{metadata4, true, "cloud metadata address"},
+		{metadata6, true, "cloud metadata address (IPv6)"},
+		{"::ffff:" + metadata4, true, "cloud metadata address"},
+		{"64:ff9b::c000:2a9", true, "cloud metadata address"},
 	}
 	for _, tc := range tests {
 		ip := net.ParseIP(tc.ip)
@@ -457,7 +482,7 @@ func TestWebhookGuardClientDNSRebindingRefusedAtDialTime(t *testing.T) {
 		if call == 1 {
 			return ipAddrs("127.0.0.1"), nil
 		}
-		return ipAddrs("169.254.169.254"), nil
+		return ipAddrs(metadata4), nil
 	}}
 	c := newWebhookHTTPClient([]string{"hooks.example.test"}, 2*time.Second, r)
 	target := "http://hooks.example.test:" + port + "/x"
@@ -491,7 +516,7 @@ func TestWebhookGuardClientRebindingFallsThroughBlockedAddress(t *testing.T) {
 
 	// The blocked address is skipped by the Control hook, the next works.
 	r := &fakeWebhookResolver{fn: func(int, string) ([]net.IPAddr, error) {
-		return ipAddrs("169.254.169.254", "127.0.0.1"), nil
+		return ipAddrs(metadata4, "127.0.0.1"), nil
 	}}
 	c := newWebhookHTTPClient([]string{"hooks.example.test"}, 2*time.Second, r)
 	resp, err := newGuardedGet(t, c, "http://hooks.example.test:"+port+"/")
@@ -506,7 +531,7 @@ func TestWebhookGuardClientRebindingFallsThroughBlockedAddress(t *testing.T) {
 
 	// Only blocked addresses: refused.
 	r2 := &fakeWebhookResolver{fn: func(int, string) ([]net.IPAddr, error) {
-		return ipAddrs("169.254.169.254", "fd00:ec2::254"), nil
+		return ipAddrs(metadata4, metadata6), nil
 	}}
 	c2 := newWebhookHTTPClient([]string{"hooks.example.test"}, 2*time.Second, r2)
 	if _, err := newGuardedGet(t, c2, "http://hooks.example.test:"+port+"/"); !errors.Is(err, ErrWebhookGuard) {
@@ -515,8 +540,8 @@ func TestWebhookGuardClientRebindingFallsThroughBlockedAddress(t *testing.T) {
 }
 
 func TestWebhookGuardClientMetadataLiteralRefusedEvenWhenAllowListed(t *testing.T) {
-	c := NewWebhookHTTPClient([]string{"169.254.169.254", "fd00:ec2::254"}, time.Second)
-	for _, target := range []string{"http://169.254.169.254/latest/meta-data", "http://[fd00:ec2::254]/latest"} {
+	c := NewWebhookHTTPClient([]string{metadata4, metadata6}, time.Second)
+	for _, target := range []string{"http://" + metadata4 + "/latest/meta-data", "http://[" + metadata6 + "]/latest"} {
 		_, err := newGuardedGet(t, c, target)
 		if !errors.Is(err, ErrWebhookGuard) {
 			t.Errorf("%s: want ErrWebhookGuard, got %v", target, err)

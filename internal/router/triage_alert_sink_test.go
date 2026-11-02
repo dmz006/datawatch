@@ -27,7 +27,7 @@ func fullTriageRecord() *autonomous.TriageRecord {
 		Status:           "failed",
 		TaskID:           "task-3",
 		TaskTitle:        "Wire the page broker into the dispatcher",
-		Error:            "broker.Connect timed out after 30s (dial tcp 10.0.4.17:5672: i/o timeout)",
+		Error:            "broker.Connect timed out after 30s (dial tcp 192.0.2.217:5672: i/o timeout)",
 		SessionEndReason: "worker failed: repeated timeout against the staging broker",
 		RetryBudget: autonomous.TriageRetryBudget{
 			Infra:        autonomous.TriageRetryCategory{Limit: 2, Used: 1, Left: 1},

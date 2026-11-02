@@ -109,7 +109,7 @@ func TestValidateNoFixedReleaseVersion_Table(t *testing.T) {
 				Title: "Release",
 				Tasks: []Task{{
 					Title: "Version bump prep",
-					Spec:  "Add 10.0.0.1 to the release allowlist before the version bump",
+					Spec:  "Add 192.0.2.1 to the release allowlist before the version bump",
 				}},
 			}},
 			wantErr: false,

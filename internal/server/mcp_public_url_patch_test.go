@@ -12,8 +12,8 @@ import (
 
 func TestApplyConfigPatch_MCPPublicURL(t *testing.T) {
 	cfg := &config.Config{}
-	applyConfigPatch(cfg, map[string]interface{}{"mcp.public_url": " https://host.tailnet.ts.net:8081/ "})
-	if got, want := cfg.MCP.PublicURL, "https://host.tailnet.ts.net:8081"; got != want {
+	applyConfigPatch(cfg, map[string]interface{}{"mcp.public_url": " https://host.tailnet.example.net:8081/ "})
+	if got, want := cfg.MCP.PublicURL, "https://host.tailnet.example.net:8081"; got != want {
 		t.Errorf("mcp.public_url = %q, want %q", got, want)
 	}
 

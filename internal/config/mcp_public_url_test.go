@@ -6,7 +6,7 @@ func TestNormalizePublicURL(t *testing.T) {
 	valid := []struct{ name, in, want string }{
 		{"empty", "", ""},
 		{"whitespace only counts as empty", "  \t ", ""},
-		{"https with port", "https://host.tailnet.ts.net:8081", "https://host.tailnet.ts.net:8081"},
+		{"https with port", "https://host.tailnet.example.net:8081", "https://host.tailnet.example.net:8081"},
 		{"http with trailing slash", "http://127.0.0.1:8081/", "http://127.0.0.1:8081"},
 		{"mixed-case scheme", "HtTpS://Host.Example.com:8081", "HtTpS://Host.Example.com:8081"},
 		{"surrounding spaces", "  https://proxy.example.com/mcp//  ", "https://proxy.example.com/mcp"},

@@ -10,3 +10,10 @@
 # below saying why.
 
 # (none)
+
+# Generated kernel BTF headers (btfgen output): the 16-bit device/vendor
+# constants inside them belong to the kernel image, not to this machine,
+# and the header must be regenerated, not hand-edited. These paths
+# genuinely cannot be made clean, so they are excluded.
+internal/observer/ebpf/vmlinux_amd64/vmlinux.h
+internal/observer/ebpf/vmlinux_arm64/vmlinux.h

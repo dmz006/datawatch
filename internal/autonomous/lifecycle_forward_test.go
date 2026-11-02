@@ -688,7 +688,7 @@ func TestForwardEndpointPolicy(t *testing.T) {
 	good := []struct{ raw, want string }{
 		{"https://peer.example.net", ForwardedEventsPath},
 		{"https://peer.example.net/", ForwardedEventsPath},
-		{"http://10.0.0.5:8080", ForwardedEventsPath},
+		{"http://192.0.2.5:8080", ForwardedEventsPath},
 		{"https://peer.example.net/base/", "/base" + ForwardedEventsPath},
 	}
 	for _, c := range good {
