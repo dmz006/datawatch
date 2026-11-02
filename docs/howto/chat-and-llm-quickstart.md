@@ -33,8 +33,8 @@ together.
 
 - `datawatch start` — daemon up. See [`setup-and-install.md`](setup-and-install.md).
 - At least one LLM configured in the registry (v7.0+):
-  - `claude-code` (Anthropic) — needs `claude` CLI + `~/.claude.json`;
-    auto-registered as `claude-code` on first start.
+  - `remote-node` (Anthropic) — needs `claude` CLI + `~/.claude.json`;
+    auto-registered as `remote-node` on first start.
   - `ollama` (local) — free; needs `ollama` running + at least one
     model pulled (`ollama pull llama3.1:8b`); auto-registered as `ollama`.
     Models can also be pulled directly from the PWA via the Ollama
@@ -120,7 +120,7 @@ datawatch sessions kill $SID
    input bar at the bottom; press Enter to send.
 4. Channel tab (top of the detail view) renders the conversation as
    bubbles for backends that emit structured channel events
-   (opencode-acp, claude-code MCP). For ollama, channel = chat-message
+   (opencode-acp, remote-node MCP). For ollama, channel = chat-message
    events.
 5. To stop: Stop button in the toolbar.
 
@@ -154,7 +154,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 ### 5c. MCP
 
 Tools: `session_start`, `session_input`, `session_get`. From inside
-an MCP host (claude-code MCP, Cursor) the operator's AI can spawn
+an MCP host (remote-node MCP, Cursor) the operator's AI can spawn
 sessions in datawatch and watch / drive them; useful for
 multi-session orchestration where one LLM coordinates others.
 
@@ -168,7 +168,7 @@ You (Telegram → @datawatch_bot):
    start: Help me draft a one-paragraph commit message
 
 Datawatch (replies):
-   started session ralfthewise-7a3c (ollama llama3.1:8b)
+   started session peer-f-7a3c (ollama llama3.1:8b)
    <LLM's first response, streamed back>
 
 You:
@@ -200,7 +200,7 @@ Default backend in `~/.datawatch/datawatch.yaml`:
 session:
   default_llm: ollama
   default_model: llama3.1:8b
-  default_effort: normal     # claude-code only
+  default_effort: normal     # remote-node only
 
 channels:
   telegram:
@@ -222,7 +222,7 @@ channels:
                       │
                       ▼
               LLM backend
-       (ollama / claude-code / openai)
+       (ollama / remote-node / openai)
                       │
                       ▼ output
               session/<id>/output.log

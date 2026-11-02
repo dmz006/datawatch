@@ -69,7 +69,7 @@ Each step has these fields:
 
 | Field | Meaning |
 |---|---|
-| `backend` | The worker backend, for example `pi-prompt` or `claude-code`. Empty means the task's normally resolved worker. |
+| `backend` | The worker backend, for example `peer-e` or `remote-node`. Empty means the task's normally resolved worker. |
 | `model` | The model on that backend. Needs a backend. |
 | `effort` | Effort level for this step only (JSON form only). Empty means the task's effort. |
 | `attempts` | How many consecutive failed attempts this step covers. Default 1. |
@@ -81,14 +81,14 @@ covers its `attempts` failed attempts, step 2 covers the next ones, and so on.
 The **last step covers every remaining attempt**, so a one-step ladder means
 "this worker for every attempt until the limit."
 
-With `steps: pi-prompt:ollama/qwen3.8:27b@2,claude-code:claude-opus-5-5` and the
+With `steps: peer-e:ollama/qwen3.8:27b@2,remote-node:claude-opus-5-5` and the
 default `max_failures` of 3:
 
 | Attempt | Failed attempts so far | Worker |
 |---|---|---|
-| 1 | 0 | `pi-prompt` / `ollama/qwen3.8:27b` |
-| 2 | 1 | `pi-prompt` / `ollama/qwen3.8:27b` |
-| 3 | 2 | `claude-code` / `claude-opus-5-5` |
+| 1 | 0 | `peer-e` / `ollama/qwen3.8:27b` |
+| 2 | 1 | `peer-e` / `ollama/qwen3.8:27b` |
+| 3 | 2 | `remote-node` / `claude-opus-5-5` |
 | — | 3 | Held for review |
 
 Raise `max_failures` to 4 and the Claude step gets two attempts instead of one.
@@ -101,9 +101,9 @@ decision log gets a `failure_escalation` entry naming the worker.
 The daemon checks each step before the Automaton starts. A step that cannot run
 refuses the start and names the task and the step.
 
-- `claude-code` takes bare Claude names such as `claude-opus-5-5` or
+- `remote-node` takes bare Claude names such as `claude-opus-5-5` or
   `claude-sonnet-5-5`. It refuses provider-qualified names with a `/`.
-- `pi-prompt` (and the other pi-based backends) takes provider-qualified names
+- `peer-e` (and the other pi-based backends) takes provider-qualified names
   such as `ollama/qwen3.8:27b`. It refuses bare Claude names.
 
 ## Examples
@@ -115,7 +115,7 @@ model, then a larger local model you have pulled:
 
 ```sh
 datawatch autonomous failure-escalation global \
-  --steps "pi-prompt:ollama/qwen3.8:27b@2,pi-prompt:ollama/<larger-local-model>"
+  --steps "peer-e:ollama/qwen3.8:27b@2,peer-e:ollama/<larger-local-model>"
 ```
 
 ### Claude only
@@ -125,7 +125,7 @@ a higher limit so Opus gets a turn:
 
 ```sh
 datawatch autonomous failure-escalation global --max-failures 4 \
-  --steps "claude-code:claude-sonnet-5-5@2,claude-code:claude-opus-5-5"
+  --steps "remote-node:claude-sonnet-5-5@2,remote-node:claude-opus-5-5"
 ```
 
 ### Mixed: a local model, then a stronger Claude model
@@ -137,7 +137,7 @@ you only want it for risky work:
 
 ```sh
 datawatch autonomous failure-escalation set <automaton-id> --max-failures 4 \
-  --steps "pi-prompt:ollama/qwen3.8:27b@2,claude-code:claude-opus-5-5"
+  --steps "peer-e:ollama/qwen3.8:27b@2,remote-node:claude-opus-5-5"
 ```
 
 For a single task that needs a stronger worker from the start, put the same
@@ -226,7 +226,7 @@ Notes on the actions:
 ```sh
 # Retry with a changed worker and a narrowed file list, with a note
 datawatch autonomous resolve-review <automaton-id> --task <task-id> --action retry \
-  --backend claude-code --model claude-opus-5-5 --effort high \
+  --backend remote-node --model claude-opus-5-5 --effort high \
   --files internal/parser/parse.go --note "the failure is in the parser only"
 
 # Cancel
@@ -234,14 +234,14 @@ datawatch autonomous resolve-review <automaton-id> --task <task-id> --action can
 ```
 
 ```
-You: autonomous review-task <automaton-id> <task-id> retry backend=claude-code model=claude-opus-5-5 note=narrowed to the parser
+You: autonomous review-task <automaton-id> <task-id> retry backend=remote-node model=claude-opus-5-5 note=narrowed to the parser
 Bot: {"id":"<automaton-id>", ...}
 ```
 
 ```sh
 # REST
 curl -sk -X POST -H "Content-Type: application/json" \
-  -d '{"task_id":"<task-id>","action":"retry","backend":"claude-code","model":"claude-opus-5-5","files":["internal/parser/parse.go"],"note":"narrowed to the parser"}' \
+  -d '{"task_id":"<task-id>","action":"retry","backend":"remote-node","model":"claude-opus-5-5","files":["internal/parser/parse.go"],"note":"narrowed to the parser"}' \
   https://localhost:8443/api/autonomous/prds/<automaton-id>/resolve_task_review
 ```
 
@@ -307,8 +307,8 @@ no effort field, so set effort in the JSON form when you need it:
 
 ```json
 [
-  {"backend": "pi-prompt", "model": "ollama/qwen3.8:27b", "attempts": 2},
-  {"backend": "claude-code", "model": "claude-opus-5-5", "effort": "high"}
+  {"backend": "peer-e", "model": "ollama/qwen3.8:27b", "attempts": 2},
+  {"backend": "remote-node", "model": "claude-opus-5-5", "effort": "high"}
 ]
 ```
 

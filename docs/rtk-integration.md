@@ -55,7 +55,7 @@ RTK only activates for LLM backends that support the PreToolUse hook:
 
 | Backend | RTK Support | Notes |
 |---------|-------------|-------|
-| claude-code | Full | PreToolUse hook intercepts shell commands |
+| remote-node | Full | PreToolUse hook intercepts shell commands |
 | gemini | Full | Same hook mechanism |
 | aider | Partial | Some commands supported |
 | opencode | Unknown | Not tested |

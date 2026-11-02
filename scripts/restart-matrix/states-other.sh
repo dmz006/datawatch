@@ -14,7 +14,7 @@
 #   automation-branches   an Automation runs an entry PRD, forks into two active PRD branches and joins them
 #   scheduled-due         a scheduled spawn comes due while the daemon is down
 #   websocket-clients     two WebSocket clients ride out the restart (scripts/restart-matrix/ws-client.py)
-#   worker-node-placement two pi-prompt workers each run on a different compute node; the node pools,
+#   worker-node-placement two peer-e workers each run on a different compute node; the node pools,
 #                         the leases' nodes and the sessions are the same after the restart
 #
 # Usage:
@@ -155,7 +155,7 @@ ot_ws_summary() {
     | del(.restarted)' "$1" 2>/dev/null || echo '{"before":0,"after":0,"reconnect_seconds":null,"gave_up":true}'
 }
 
-# ot_boot_pi NAME — fresh sandbox whose pi and pi-prompt backends run a fake pi, with
+# ot_boot_pi NAME — fresh sandbox whose pi and peer-e backends run a fake pi, with
 # two compute nodes (one worker slot each) and the LLM entries that list them.
 ot_boot_pi() {
   unset RM_MAX_SESSIONS
@@ -167,11 +167,11 @@ ot_boot_pi() {
   rm_pi_nodes_register
 }
 
-# ot_prd_create_pi DIR — creates a PRD whose worker runs on pi-prompt with the pinned
+# ot_prd_create_pi DIR — creates a PRD whose worker runs on peer-e with the pinned
 # model; prints its id.
 ot_prd_create_pi() {
   local body
-  body="$(jq -n --arg dir "$1" --arg model "$RM_PI_MODEL" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "pi-prompt", model: $model}')"
+  body="$(jq -n --arg dir "$1" --arg model "$RM_PI_MODEL" '{spec: "Restart matrix probe: write a result file.", project_dir: $dir, backend: "peer-e", model: $model}')"
   rm_api POST /api/autonomous/prds "$body" | jq -r '.id // .prd.id // empty'
 }
 
@@ -589,7 +589,7 @@ state_websocket_clients() {
   rm_state_end "$SC_BEFORE" "$SC_FINAL" "messages before/after the restart: one $(jq -r .before <<<"$sum_one")/$(jq -r .after <<<"$sum_one"), two $(jq -r .before <<<"$sum_two")/$(jq -r .after <<<"$sum_two"); events during the outage are not replayed"
 }
 
-# Two pi-prompt workers, placed by the capacity ledger on two different compute nodes (one
+# Two peer-e workers, placed by the capacity ledger on two different compute nodes (one
 # slot each), are running when the daemon restarts. The fake pi processes live in the
 # multiplexer and survive; the new daemon adopts their sessions. Each node's pool must still
 # hold exactly one worker, each lease must name the node it had, no lease may lose its node
@@ -598,7 +598,7 @@ state_websocket_clients() {
 state_worker_node_placement() {
   local name=worker-node-placement a b
   SC_PRD=""
-  rm_state_begin "$name" "two pi-prompt workers, each on a different compute node, ride out a daemon restart"
+  rm_state_begin "$name" "two peer-e workers, each on a different compute node, ride out a daemon restart"
   ot_boot_pi "$name" || { sc_abort_state "$name" "sandbox daemon, compute nodes or LLM entries did not come up"; return; }
   echo 1 >"$RM_CTRL/planner_delay"
   echo 300 >"$RM_CTRL/pi_seconds"
@@ -666,7 +666,7 @@ state_worker_node_placement() {
   rm_check "workers_not_started_twice" "$([[ "$(jq -r .pi_starts "$before")" == 2 && "$(jq -r .pi_starts "$after")" == 2 ]] && echo 0 || echo 1)" "fake pi starts: $(jq -r .pi_starts "$before") -> $(jq -r .pi_starts "$after")"
   rm_check "worker_processes_survived" "$alive" "fake pi pids $pids_before alive after the restart: $([[ $alive == 0 ]] && echo yes || echo no)"
   rm_check "retry_counts_unchanged" "$([[ "$(jq -c '[.workers[] | .retry_count]' "$before")" == "$(jq -c '[.workers[] | .retry_count]' "$after")" ]] && echo 0 || echo 1)" "retries $(jq -c '[.workers[] | .retry_count]' "$before") -> $(jq -c '[.workers[] | .retry_count]' "$after")"
-  rm_state_end "$SC_BEFORE" "$SC_FINAL" "PRD A and PRD B each ran a pi-prompt worker on a different one-slot node"
+  rm_state_end "$SC_BEFORE" "$SC_FINAL" "PRD A and PRD B each ran a peer-e worker on a different one-slot node"
 }
 
 # --------------------------------------------------------------------- main ----

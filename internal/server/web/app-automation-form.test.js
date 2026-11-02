@@ -257,11 +257,11 @@ test('payload with locked members leaves the member list out and carries the bas
     members: [{ id: 'aaaa0001', prd_id: 'p1' }],
     membersLocked: true,
     expectedVersion: 2,
-    base: { backend: 'claude-code', model: 'sonnet', project_dir: '/work', budget_policy: { ceiling: 5 }, status: 'active' },
+    base: { backend: 'remote-node', model: 'sonnet', project_dir: '/work', budget_policy: { ceiling: 5 }, status: 'active' },
   })));
   assert.ok(!('members' in body));
   assert.ok(!('entry_member_id' in body));
-  assert.equal(body.backend, 'claude-code');
+  assert.equal(body.backend, 'remote-node');
   assert.equal(body.model, 'sonnet');
   assert.equal(body.project_dir, '/work');
   assert.deepEqual(body.budget_policy, { ceiling: 5 });
@@ -446,7 +446,7 @@ test('saving a new Automation posts the linear wiring and opens the returned Aut
 test('saving an edit of a draft PUTs the loaded version', async () => {
   const draft = {
     id: 'dr000001', name: 'Draft chain', description: '', status: 'draft', version: 3, entry_member_id: 'm1',
-    backend: 'claude-code', project_dir: '/work',
+    backend: 'remote-node', project_dir: '/work',
     members: [
       { id: 'm1', prd_id: 'aaaaaaaa1111', status: 'pending', on_complete: 'm2' },
       { id: 'm2', prd_id: 'bbbbbbbb2222', status: 'pending' },
@@ -468,7 +468,7 @@ test('saving an edit of a draft PUTs the loaded version', async () => {
   assert.equal(puts[0].url, '/api/automations/dr000001');
   assert.equal(puts[0].body.expected_version, 3);
   assert.equal(puts[0].body.name, 'Renamed chain');
-  assert.equal(puts[0].body.backend, 'claude-code', 'fields the form does not show are carried over');
+  assert.equal(puts[0].body.backend, 'remote-node', 'fields the form does not show are carried over');
   assert.equal(puts[0].body.project_dir, '/work');
   assert.deepEqual(puts[0].body.members.map(m => m.id), ['m1', 'm2']);
   assert.equal(puts[0].body.members[0].on_complete, 'm2');

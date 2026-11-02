@@ -49,7 +49,7 @@ sequenceDiagram
     Pod->>Pod: continue runStart with config.DefaultConfig()
     Pod->>Pod: start session in /workspace/<repo>
 
-    Note over Pod: Worker runs claude-code / opencode session
+    Note over Pod: Worker runs remote-node / opencode session
 
     Op->>API: GET /api/output?id=<session>
     API->>API: forwardSessionToAgent

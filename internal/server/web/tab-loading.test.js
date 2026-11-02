@@ -312,7 +312,7 @@ test('observer stats: loading, failed with Retry, and loaded', async () => {
 
 // ── Sessions ────────────────────────────────────────────────────────────────
 
-const SESS = (n, extra) => Object.assign({ id: 's' + n, full_id: 'host-s' + n, name: 'Session ' + n, state: 'running', backend: 'claude-code', task: 'do ' + n, updated_at: new Date().toISOString() }, extra);
+const SESS = (n, extra) => Object.assign({ id: 's' + n, full_id: 'host-s' + n, name: 'Session ' + n, state: 'running', backend: 'remote-node', task: 'do ' + n, updated_at: new Date().toISOString() }, extra);
 
 function sessionsPage(over = {}) {
   return (url) => {

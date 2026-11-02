@@ -83,7 +83,7 @@ graph TD
 
     subgraph "AI sessions (tmux)"
         Tmux["tmux pane\n+ pipe-pane log\n+ fsnotify monitor"]
-        Backends["LLM backends\nclaude-code / opencode / opencode-acp /\nollama / openwebui / gemini-api / opencode-api /\naider / goose / shell\n— RTK token-saving on supported backends"]
+        Backends["LLM backends\nremote-node / opencode / opencode-acp /\nollama / openwebui / gemini-api / opencode-api /\naider / goose / shell\n— RTK token-saving on supported backends"]
     end
 
     subgraph "Ephemeral agents"
@@ -218,12 +218,12 @@ graph TB
     subgraph WS["K8s — workers namespace (datawatch-workers)"]
         subgraph W1["Pod: dw-agent-A — datawatch (Go)"]
             W1Worker["datawatch start --foreground<br/>worker daemon"]
-            W1Sess["claude-code session"]
+            W1Sess["remote-node session"]
             W1Repo["/workspace/datawatch<br/>(git clone via parent token)"]
         end
         subgraph W2["Pod: dw-agent-B — datawatch-mobile (Kotlin)"]
             W2Worker["datawatch start --foreground"]
-            W2Sess["claude-code session"]
+            W2Sess["remote-node session"]
             W2Repo["/workspace/datawatch-mobile"]
         end
         subgraph W3["Pod: dw-agent-C — datawatch-ai (Python)"]

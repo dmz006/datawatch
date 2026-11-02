@@ -25,8 +25,8 @@ graph TD
     end
 
     subgraph "tmux sessions"
-        T1["cs-myhost-a3f2\n(claude-code)"]
-        T2["cs-myhost-b7c1\n(claude-code)"]
+        T1["cs-myhost-a3f2\n(remote-node)"]
+        T2["cs-myhost-b7c1\n(remote-node)"]
         L1["logs/myhost-a3f2.log"]
         L2["logs/myhost-b7c1.log"]
     end

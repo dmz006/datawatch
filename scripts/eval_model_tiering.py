@@ -727,11 +727,11 @@ def cmd_preflight(a):
     except EvalError as e:
         raise EvalError(f"daemon not reachable: {e}")
     llms = c.get("/api/llms").get("llms", [])
-    cc = next((l for l in llms if l.get("name") == "claude-code"), None)
+    cc = next((l for l in llms if l.get("name") == "remote-node"), None)
     if not cc:
-        raise EvalError("claude-code LLM not in /api/llms registry")
+        raise EvalError("remote-node LLM not in /api/llms registry")
     if cc.get("disabled"):
-        raise EvalError("claude-code LLM is disabled in the registry")
+        raise EvalError("remote-node LLM is disabled in the registry")
     models = c.get("/api/llm/claude/models")
     efforts = c.get("/api/llm/claude/efforts")
     valid_m = {x["value"] for x in models.get("aliases", [])} | {x["value"] for x in models.get("full_names", [])}
@@ -739,8 +739,8 @@ def cmd_preflight(a):
     bad = []
     for grid in ("execution_tiers", "decompose_tiers"):
         for t in m[grid]:
-            if t.get("backend") != "claude-code":
-                bad.append(f"{grid}:{t['id']} backend {t.get('backend')!r} is not claude-code")
+            if t.get("backend") != "remote-node":
+                bad.append(f"{grid}:{t['id']} backend {t.get('backend')!r} is not remote-node")
             if t["model"] not in valid_m:
                 bad.append(f"{grid}:{t['id']} model {t['model']!r} not in daemon claude models")
             if t.get("effort") is not None and t["effort"] not in valid_e:
@@ -752,7 +752,7 @@ def cmd_preflight(a):
     st.setdefault("started_at", now_iso())
     st.setdefault("run_date", _dt.date.today().isoformat())
     st["dw_base"] = c.base
-    st["observed_default_live"] = {"backend": "claude-code", "model": cc.get("model"), "effort": None,
+    st["observed_default_live"] = {"backend": "remote-node", "model": cc.get("model"), "effort": None,
                                    "datawatch_effort_hint": cc.get("default_effort"),
                                    "planning_backend": full.get("planning_backend"),
                                    "execution_backend": full.get("execution_backend"),
@@ -767,7 +767,7 @@ def cmd_preflight(a):
         st[f"{k}_at_start"] = vcfg[k]
     st["verification_backends_at_start"] = full.get("verification_backends") or []
     save_state(a.run_id, st)
-    log(f"claude-code registry model={cc.get('model')} default_effort={cc.get('default_effort')}")
+    log(f"remote-node registry model={cc.get('model')} default_effort={cc.get('default_effort')}")
     log(f"verification at start: {vcfg} backends_list={st['verification_backends_at_start']}")
     if st["verification_backends_at_start"]:
         log("WARN: autonomous.verification_backends is non-empty; the verifier tries that list before "
@@ -906,7 +906,7 @@ def cmd_create_prd(a):
             if len(newt) != 1:
                 raise EvalError(f"add_task {cell['name']}: could not identify new task")
             tid = newt[0]["id"]
-            prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": "claude-code", "model": cell["model"],
+            prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": "remote-node", "model": cell["model"],
                                                 "effort": cell["effort"] or "", "actor": ACTOR})
             # BL447 — give this task its own cell directory via the real
             # Task.ProjectDir override, not prose alone (the prose-only
@@ -926,7 +926,7 @@ def cmd_create_prd(a):
             errs.append(f"{cell['name']}: task missing")
             continue
         got = (t.get("backend"), t.get("model"), t.get("effort") or "")
-        want = ("claude-code", cell["model"], cell["effort"] or "")
+        want = ("remote-node", cell["model"], cell["effort"] or "")
         if got != want:
             errs.append(f"{cell['name']}: got {got} want {want}")
         want_dir = os.path.join(REPO, st["cells"][cell["name"]]["dir"])
@@ -1069,7 +1069,7 @@ def cmd_collect(a):
 # --------------------------------------------------------------------------
 
 DECOMPOSE_EFFORT_NOTE = (
-    "claude-code decompose runs as a one-shot session (cmd/datawatch/main.go decomposeFnSession -> "
+    "remote-node decompose runs as a one-shot session (cmd/datawatch/main.go decomposeFnSession -> "
     "runOneShotJSONSession), which passes the model but no effort; requested effort is recorded but is not "
     "known to reach the claude CLI. Cost comes from that session's transcript (cost_method=session-transcript); "
     "headless (ollama/openwebui) decompose has no transcript and would be cost_method=headless-unpriced."
@@ -1127,8 +1127,8 @@ def cmd_decompose_run(a):
             prd_set_title(c, pid, title)
             prd_action(c, pid, "set_memory_seed", {"enabled": False, "actor": ACTOR})
             prd_action(c, pid, "set_memory_harvest", {"enabled": False, "actor": ACTOR})
-            prd_action(c, pid, "set_llm", {"backend": "claude-code", "model": tier["model"], "effort": tier.get("effort") or "",
-                                           "decomposition_profile": "claude-code", "decomposition_model": tier["model"],
+            prd_action(c, pid, "set_llm", {"backend": "remote-node", "model": tier["model"], "effort": tier.get("effort") or "",
+                                           "decomposition_profile": "remote-node", "decomposition_model": tier["model"],
                                            "actor": ACTOR})
             log(f"[{tier['id']}] decomposing PRD {pid}")
             prd_action(c, pid, "decompose")
@@ -1379,7 +1379,7 @@ def cmd_vt_task(a):
         prd = prd_action(c, pid, "add_task", {"story_id": sid, "title": f"[eval] {cell_name}",
                                               "spec": cell_task_spec(cell, cdir, spec_text), "actor": ACTOR})
         tid = all_tasks(prd)[-1][3]["id"]
-        prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": "claude-code", "model": exec_tier["model"],
+        prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": "remote-node", "model": exec_tier["model"],
                                             "effort": exec_tier.get("effort") or "", "actor": ACTOR})
         prd_set_title(c, pid, title)
         prd_action(c, pid, "approve", {"actor": ACTOR, "note": f"verify-tier {a.tier}"})
@@ -1480,7 +1480,7 @@ def synthetic_results():
     tok = {"input_tokens": 10, "output_tokens": 20, "cache_creation_input_tokens": 30, "cache_read_input_tokens": 40}
     return {"run_id": "selftest", "eval_prd_id": "deadbeef", "repo_head_at_run": "0" * 40,
             "started_at": "2026-10-14T00:00:00Z", "finished_at": "2026-10-14T01:00:00Z", "rates_as_of": "2026-10-06",
-            "observed_default": {"backend": "claude-code", "model": "opus", "effort": None},
+            "observed_default": {"backend": "remote-node", "model": "opus", "effort": None},
             "cells": [
                 {"touchpoint": "execution", "task_type": "docs", "tier": "haiku-low", "rep": 1, "passed": True,
                  "wall_seconds": 61, "tokens": tok, "cost_usd_model_rates": 0.0012, "datawatch_est_cost_usd": 0.01},
@@ -1524,10 +1524,10 @@ def cmd_self_test(a):
         t2 = parse_transcripts([p], rd)
         assert t2["total"]["cost_usd"] == t["total"]["cost_usd"] and t2["duplicate_message_lines_skipped"] == 1, t2
         # transcript location mirrors claude_usage.go
-        uid = claude_session_uuid("ralfthewise-f7ec")
+        uid = claude_session_uuid("peer-f-f7ec")
         assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", uid), uid
         import uuid as _uuid
-        assert uid == str(_uuid.uuid5(_uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "ralfthewise-f7ec")), uid
+        assert uid == str(_uuid.uuid5(_uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "peer-f-f7ec")), uid
         tp = claude_transcript_path("/w/data.watch/x", "host-ab12", home=td)
         assert tp == os.path.join(td, ".claude", "projects", "-w-data-watch-x", claude_session_uuid("host-ab12") + ".jsonl"), tp
         os.makedirs(os.path.dirname(tp))

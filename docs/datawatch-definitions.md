@@ -16,7 +16,7 @@ Operators who want **one** place to drive AI work — not a tab in five differen
 - **Ephemeral container workers** in Docker or Kubernetes, spawned on demand with PQC bootstrap, distroless images, per-pod auth, and Tailscale mesh.
 - **Episodic memory** — your sessions remember each other. Vector-indexed project knowledge across sessions, with the spatial schema (floor / wing / room / hall / shelf / box) that makes recall actually work. The **scope hierarchy** (persona-global → persona-in-project → project-shared → **prd-shared** → **story-shared** → session-local) lets you borrow cross-agent context without polluting higher scopes, seed curated knowledge into a narrower scope, and promote session discoveries up to shared scopes with breadcrumb provenance. **Subprocess mode** (opencode, Goose, and other MCP-based tools) routes writes to `session-local` by default and recalls the full 6-layer hierarchy. **Warm-start seeding** pre-populates a new task session from applicable scopes before it begins work. **Memory harvest** auto-promotes session learnings to `story-shared` or `prd-shared` on task completion. **Archive-on-delete** promotes valuable memories to `project-shared` before purging an entity's scope when an Automaton is permanently deleted. **Archive import** seeds a new Automaton from a prior Automaton's archived memories. **Memory handoff** (`memory_handoff` MCP tool) writes a structured handoff summary to `story-shared` so the next task in the same story starts with a clear account of what was left and why. **Automaton memory report** (`GET /api/autonomous/prds/{id}/memory-report`, `memory_prd_report` MCP tool) aggregates and deduplicates all memories associated with a completed Automaton across all scopes in one call. See [`howto/automata-memory-workflow.md`](howto/automata-memory-workflow.md) for the complete lifecycle walkthrough.
 - **Multi-channel messaging** — Signal, Telegram, Discord, Slack, Matrix, Twilio, GitHub webhooks, generic webhooks, DNS channel; voice input via Whisper; image/photo attachments described by a configurable vision backend.
-- **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell.
+- **Pluggable LLM backends** — remote-node, aider, goose, gemini, opencode, opencode-acp, ollama, openwebui, custom shell.
 - **Operator identity** — a structured self-description you write once and the daemon injects into every spawned session as the L0 wake-up layer.
 - **Algorithm Mode** — a 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) you can drive a session through with output captured at each gate.
 - **Evals Framework** — rubric-based grading suites (string / regex / binary / LLM-rubric) with capability vs regression thresholds.
@@ -237,7 +237,7 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron �
 | `task` | string | — | Task prompt sent to the spawned AI session |
 | `shell` | string | — | Shell command to run (`--subprocess` auto-set; no LLM). Use `--task` or `--shell`, not both. |
 | `path` / `dir` | string | `""` | Working directory for the session (`--path` is an alias for `--dir`) |
-| `backend` | string | `""` | LLM backend name (e.g. `claude-code`); omit for `--shell` jobs |
+| `backend` | string | `""` | LLM backend name (e.g. `remote-node`); omit for `--shell` jobs |
 | `llm_ref` | string | `""` | Unified LLM registry reference (e.g. `"claude-sonnet"`) |
 | `model` | string | `""` | Model name override |
 | `effort` | string | `""` | Effort level: `quick`, `normal`, or `thorough` |
@@ -356,7 +356,7 @@ session:
         GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
 ```
 
-**How it works:** At session start, `WriteProjectMCPConfig` (non-claude-code backends) or `InjectExtrasIntoMCPConfig` (claude-code) merges each extra entry into `<project_dir>/.mcp.json`. Existing operator-added entries are preserved; only entries whose names match the extras list (or the built-in `datawatch` entry) are managed.
+**How it works:** At session start, `WriteProjectMCPConfig` (non-remote-node backends) or `InjectExtrasIntoMCPConfig` (remote-node) merges each extra entry into `<project_dir>/.mcp.json`. Existing operator-added entries are preserved; only entries whose names match the extras list (or the built-in `datawatch` entry) are managed.
 
 **Managing at runtime:**
 
@@ -551,7 +551,7 @@ The four Settings → Sessions controls behind this behaviour (also `configure s
 
 **Anti-clobber typing detection:** when an agent (via MCP, channel relay, or session→session send) sends input to an active session while the operator is typing in the xterm input bar, the daemon holds the message until 30 s of operator keystroke idle has elapsed, so agent messages never clobber in-progress operator input. Multiple agent messages that arrive during a typing window queue in arrival order (capacity 256) and flush immediately after the first held message is finally sent. Session-to-session AI relays (agent→agent) bypass the idle wait entirely. The queue closes cleanly on session delete.
 
-**Renderer lock:** on startup the daemon writes `"tui":"default"` into `<dataDir>/.claude/settings.json`, pinning claude-code to line-printing mode. This prevents Anthropic's server-side alt-screen flag from switching claude to alternate-screen output (`\e[?1049h`), which would break tmux scrollback and the `pipe-pane` capture that datawatch relies on.
+**Renderer lock:** on startup the daemon writes `"tui":"default"` into `<dataDir>/.claude/settings.json`, pinning remote-node to line-printing mode. This prevents Anthropic's server-side alt-screen flag from switching claude to alternate-screen output (`\e[?1049h`), which would break tmux scrollback and the `pipe-pane` capture that datawatch relies on.
 
 ### Inside a session — channel tab
 
@@ -578,7 +578,7 @@ The **Status** sub-tab (session detail → Status) shows a live sprint/git/test 
 | **Tests** | Last test run outcome (pass/fail/skip counts) |
 | **Git** | Current branch + recent commit |
 
-For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths.
+For remote-node sessions, the daemon auto-installs a `.claude/sprint/post-event.sh` hook script into the project directory on session start. Other backends (opencode, opencode-acp) emit equivalent events through their own hook paths.
 
 **CLI:** `datawatch session status <id>` · **REST:** `GET /api/sessions/{id}/status` · **MCP:** `session_timeline`
 
@@ -602,7 +602,7 @@ The "+" FAB on the Automata view launches a wizard.
 
 **Inferred** — type (software / research / operational / personal) and workspace (project profile or directory). The wizard pre-fills based on intent text; click any chip / pick a profile to override.
 
-**Execution** — backend + effort. Backend dropdown shows only backends with a configured key/endpoint; effort dropdown shows only the values the chosen backend supports (Ollama has no effort, claude-code has quick/normal/thorough).
+**Execution** — backend + effort. Backend dropdown shows only backends with a configured key/endpoint; effort dropdown shows only the values the chosen backend supports (Ollama has no effort, remote-node has quick/normal/thorough).
 
 **Advanced (collapsed)** — guided mode (per-step approval), enable scan/rules, story-level approval. Skill registries are picked from your synced skills (Settings → Automate → Skill Registries).
 
@@ -1013,7 +1013,7 @@ Legacy single-provider fields (`provider`, `url`, `engine`, `num_results` direct
 
 The v7 named-LLM registry. Each entry gives a friendly name to an LLM backend + model + compute node combination so you can reference it by name throughout the system (session start, Automata planning, pipeline tasks).
 
-**Card columns:** name, kind (ollama / openwebui / claude-code / etc.), compute nodes (failover order), enabled toggle, Test button.
+**Card columns:** name, kind (ollama / openwebui / remote-node / etc.), compute nodes (failover order), enabled toggle, Test button.
 
 **Add / Edit form fields:**
 - **Name** — short kebab-case slug (e.g. `my-gpu-ollama`); immutable after save
@@ -1032,7 +1032,7 @@ The v7 named-LLM registry. Each entry gives a friendly name to an LLM backend + 
 
 #### LLM Configuration (legacy)
 
-Per-backend enable/disable + setup for the original adapter system. Each backend card carries its own setup wizard (e.g. claude-code asks for `~/.claude.json`; ollama asks for the host URL). For new deployments, use the LLM Registry above.
+Per-backend enable/disable + setup for the original adapter system. Each backend card carries its own setup wizard (e.g. remote-node asks for `~/.claude.json`; ollama asks for the host URL). For new deployments, use the LLM Registry above.
 
 #### Cost Rates (USD / 1K tokens)
 
@@ -1297,11 +1297,11 @@ MCP tools that accept a session identifier (`session_id`, `parent_id`, `caller_s
 
 **`start_session` — `permission_mode` parameter:**
 
-The `start_session` MCP tool accepts a `permission_mode` string that sets the claude-code permission policy for the spawned session:
+The `start_session` MCP tool accepts a `permission_mode` string that sets the remote-node permission policy for the spawned session:
 
 | Value | Effect |
 |---|---|
-| `auto` | claude-code default (same as omitting the flag) |
+| `auto` | remote-node default (same as omitting the flag) |
 | `plan` | Read-only analysis; no file edits permitted |
 | `acceptEdits` | Auto-accept file edits without prompting |
 | `bypassPermissions` | Skip all permission prompts (use with caution) |
@@ -1442,7 +1442,7 @@ Key terms used across the docs, API, and hook payloads.
 
 **Usage calculator** — the advisor that reads the weekly allowance readings you type and says whether you are within or over budget for the week and what each lane count costs against the rest of it. It follows one of three policies (use it all, pace to the week, run flat out), which the operator chooses. It only advises and never stops or slows a lane. See [`howto/usage-calculator.md`](howto/usage-calculator.md).
 
-**Burn guard** — the guard that compares the projected weekly burn of the Claude sessions with the pace line of the usage calculator and, when the projection runs over the line plus a margin, steps down a ladder of admission changes: lower the Claude inflight cap, route new Claude work to `pi-prompt`, hold new Claude work. It steps back up, one rung per interval, when the projection is back under the line. It changes admission only and never ends a running session. Its settings are under `usage.burn_guard`, including the per-kind effort ceiling and the Claude retry limit. See [`howto/burn-guard.md`](howto/burn-guard.md).
+**Burn guard** — the guard that compares the projected weekly burn of the Claude sessions with the pace line of the usage calculator and, when the projection runs over the line plus a margin, steps down a ladder of admission changes: lower the Claude inflight cap, route new Claude work to `peer-e`, hold new Claude work. It steps back up, one rung per interval, when the projection is back under the line. It changes admission only and never ends a running session. Its settings are under `usage.burn_guard`, including the per-kind effort ceiling and the Claude retry limit. See [`howto/burn-guard.md`](howto/burn-guard.md).
 
 **review-needed (task status)** — a task held after its failed attempts reached the escalation limit. The status is `review_needed` in the API and reads "Held for review" in the web UI. It is not a failure and not finished: the task keeps its attempts and a report, the Automaton shows as blocked, and one error alert is raised. The operator retries it (optionally with a changed spec, worker or file list) or cancels it, from the web UI, the CLI, the REST API, MCP or the comm channel.
 
@@ -2023,7 +2023,7 @@ Infrastructure:
 - [`howto/file-service.md`](howto/file-service.md) — federated file service: upload/delete files, peers/ + discussions/ subdirs, config caps (v8.3.0)
 - [`howto/discussion-scopes.md`](howto/discussion-scopes.md) — discussion scopes: WAL-backed per-discussion memory, participant sync, conflict resolution (v8.4.0)
 - [`howto/dashboard.md`](howto/dashboard.md) — mission control: constellation, EKG, sprint pipeline, customisable cards
-- [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for claude-code sessions
+- [`howto/claude-hooks.md`](howto/claude-hooks.md) — hook script setup, status board, auto-install for remote-node sessions
 
 Memory + ops:
 - [`howto/cross-agent-memory.md`](howto/cross-agent-memory.md) — episodic memory + knowledge graph + 6-scope hierarchy (persona-global → persona-in-project → project-shared → prd-shared → story-shared → session-local) with borrow/seed/promote

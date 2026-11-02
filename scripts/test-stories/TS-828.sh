@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# TS-828 — three single-node ollama entries, a two-node pi-prompt entry, and
-# three pi-prompt workers on a sandbox daemon.
+# TS-828 — three single-node ollama entries, a two-node peer-e entry, and
+# three peer-e workers on a sandbox daemon.
 # tags: surface:api feature:capacity
 #
 # The story starts its own sandbox daemon from the built binary, with a
 # config generated from testdata/datawatch.yaml on free loopback ports. It
 # registers two compute nodes (loopback Ollama stand-ins, one slot each) and
 # the production entry shape the story protects: three single-node ollama
-# LLM entries (one node each), plus a pi-prompt entry whose compute_nodes
+# LLM entries (one node each), plus a peer-e entry whose compute_nodes
 # lists two of those nodes, plus a pi entry and an opencode entry. A fake pi
 # on PATH reads the per-session provider override the launch writes
 # (PI_CODING_AGENT_DIR/models.json) and posts one request to that provider's
 # base URL.
 #
-# Three pi-prompt sessions start through the API. The pi-prompt entry's
+# Three peer-e sessions start through the API. The peer-e entry's
 # own two-node list is the admission pool, so the ledger spreads the first
 # two over the two different nodes. The third must sit in the wait queue —
 # both slots are held — and must never take a node that is already in use.
@@ -52,17 +52,17 @@ DWP_NODE_A="alpha-node"
 DWP_NODE_B="bravo-node"
 # Production entry shape: three single-node ollama entries, one node each
 # (delta shares bravo-node, the production pattern of several entries on one
-# node), and the pi-prompt entry whose compute_nodes lists the two nodes the
+# node), and the peer-e entry whose compute_nodes lists the two nodes the
 # sessions may take. The pi and opencode entries complete the shape without
 # claiming a node.
 DWP_LLM_ALPHA="ollama-alpha"
 DWP_LLM_BRAVO="ollama-bravo"
 DWP_LLM_DELTA="ollama-delta"
-DWP_LLM_PROMPT="pi-prompt"
+DWP_LLM_PROMPT="peer-e"
 DWP_LLM_PI="pi"
 DWP_LLM_OPENCODE="opencode"
 # The backend the sessions start on, and the model they run.
-DWP_BACKEND="pi-prompt"
+DWP_BACKEND="peer-e"
 DWP_MODEL="ollama/qwen3.8:27b"
 DWP_SESSION_IDS=()
 DWP_DAEMON_PID=""
@@ -189,7 +189,7 @@ print(1 if len(m) == 2 and all(m.values()) else 0)
 }
 
 # dwp_waiting_seen — the third session is in the ledger's wait queue: a
-# waiter whose pools include the pi-prompt entry and whose candidate nodes
+# waiter whose pools include the peer-e entry and whose candidate nodes
 # are exactly the two the entry lists, held by nobody already leased.
 dwp_waiting_seen() {
   dwp_req GET /api/capacity
@@ -202,7 +202,7 @@ leased = {l.get("holder") for l in d.get("leases") or []}
 want = {"'"$DWP_NODE_A"'", "'"$DWP_NODE_B"'"}
 for w in d.get("waiting") or []:
     pools = w.get("pools") or []
-    if "llm:pi-prompt" in pools and set(w.get("nodes") or []) == want and w.get("holder") not in leased:
+    if "llm:peer-e" in pools and set(w.get("nodes") or []) == want and w.get("holder") not in leased:
         sys.exit(0)
 sys.exit(1)
 ' 2>/dev/null
@@ -249,7 +249,7 @@ dwp_write_config() {
   # The legacy ollama block is migrated into a kind-ollama entry. Capacity
   # keeps one entry per kind, so that migrated entry would shadow the story's
   # own kind-ollama entries; the block is left out.
-  # The pi-prompt launch resolves its binary from this block; "pi" is found on
+  # The peer-e launch resolves its binary from this block; "pi" is found on
   # the daemon's PATH, which starts with the story's bin directory.
   cat >> "$DWP_CFG" <<'PI_BLOCK'
 
@@ -435,7 +435,7 @@ dwp_run() {
   # The production entry shape. The three single-node ollama entries are what
   # the admission gate finds when it looks up the model's provider; each lists
   # exactly one node (delta shares bravo-node, the production pattern of
-  # several entries on one node). The pi-prompt entry's own two-node
+  # several entries on one node). The peer-e entry's own two-node
   # compute_nodes list is the pool the sessions are admitted against — the
   # ledger, not the entry count, is what limits them.
   dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_ALPHA\",\"kind\":\"ollama\",\"compute_nodes\":[\"$DWP_NODE_A\"]}"
@@ -446,7 +446,7 @@ dwp_run() {
   [[ "$DWP_CODE" == 2* ]] || { dwp_fail "entry $DWP_LLM_DELTA not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0; }
   # The in-flight cap is three so the entry is never the limit; the node
   # slots are. Its two-node compute_nodes list is the admission pool.
-  dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_PROMPT\",\"kind\":\"pi-prompt\",\"max_inflight\":3,\"compute_nodes\":[\"$DWP_NODE_A\",\"$DWP_NODE_B\"]}"
+  dwp_req POST /api/llms "{\"name\":\"$DWP_LLM_PROMPT\",\"kind\":\"peer-e\",\"max_inflight\":3,\"compute_nodes\":[\"$DWP_NODE_A\",\"$DWP_NODE_B\"]}"
   [[ "$DWP_CODE" == 2* ]] || { dwp_fail "entry $DWP_LLM_PROMPT not registered (HTTP $DWP_CODE): $DWP_BODY"; return 0; }
   # The pi and opencode entries complete the production shape; neither claims
   # a compute node, so they take no slot in the ledger. The daemon may already
@@ -588,7 +588,7 @@ dwp_cleanup() {
     # pi and opencode are exempt: they may be the daemon's own migrated entries
     # (409 at registration), not story-created ones.
     case "$DWP_BODY" in
-      *'"name":"ollama-alpha"'*|      *'"name":"ollama-bravo"'*|      *'"name":"ollama-delta"'*|      *'"name":"pi-prompt"'*)
+      *'"name":"ollama-alpha"'*|      *'"name":"ollama-bravo"'*|      *'"name":"ollama-delta"'*|      *'"name":"peer-e"'*)
         dwp_fail "story LLM entries still listed after cleanup" ;;
     esac
     dwp_req GET /api/compute/nodes
@@ -625,7 +625,7 @@ dwp_main() {
   dwp_run
   dwp_cleanup
   if [[ -n "$DWP_FAILED" ]]; then
-    ko "three pi-prompt workers on two one-slot nodes: $DWP_FAILED"
+    ko "three peer-e workers on two one-slot nodes: $DWP_FAILED"
   elif [[ "${RESULT:-}" == skip ]]; then
     return 0
   elif [[ -n "$DWP_NODE_LIST" ]]; then

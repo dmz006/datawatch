@@ -4,7 +4,7 @@
 
 ### Phase 1 — Core Bridge (Complete)
 
-**Scope:** Everything needed for the basic Signal → tmux → claude-code loop.
+**Scope:** Everything needed for the basic Signal → tmux → remote-node loop.
 
 **Delivered:**
 - `signal-cli` subprocess management (JSON-RPC daemon mode)
@@ -59,7 +59,7 @@
   - `datawatch session kill <id>`
   - `datawatch session tail <id> [--lines N]`
   - `datawatch session attach <id>`
-- `llm.Backend` interface with registry; implementations: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`
+- `llm.Backend` interface with registry; implementations: `remote-node`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`
 - `messaging.Backend` interface with registry; implementations: Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook
 - MCP server (`internal/mcp`) — stdio and HTTP/SSE transports for Cursor, Claude Desktop, VS Code, and remote AI agents
 
@@ -108,10 +108,10 @@ All backends implement `messaging.Backend` and are registered in `internal/messa
 
 ### Phase 6 — Additional LLM Backends (Complete)
 
-**Scope:** Support multiple AI coding tools as alternatives to `claude-code`.
+**Scope:** Support multiple AI coding tools as alternatives to `remote-node`.
 
 **Delivered:**
-- **claude-code** — Anthropic Claude Code CLI (default; supports interactive input)
+- **remote-node** — Anthropic Claude Code CLI (default; supports interactive input)
 - **aider** — `aider --yes --message "<task>"` in tmux
 - **goose** — `goose run --text "<task>"` in tmux
 - **gemini** — `gemini -p "<task>"` in tmux
@@ -191,7 +191,7 @@ All backends implement `llm.Backend` and are registered in `internal/llm/registr
 | signal-cli requires Java | Adds ~200 MB to system requirements; Java version mismatches cause failures | High — addressed in Phase 4 |
 | QR code library loaded from CDN in PWA | PWA non-functional without internet on first link attempt | Medium — should be bundled in web/ |
 | No test suite | Regressions are caught manually; CI cannot verify correctness | High — unit tests for router, store, config; integration tests for tmux manager |
-| Output prompt detection uses simple heuristics | May miss novel claude-code prompt patterns; may false-positive | Medium — could use PTY for better accuracy |
+| Output prompt detection uses simple heuristics | May miss novel remote-node prompt patterns; may false-positive | Medium — could use PTY for better accuracy |
 | No rate limiting on Signal message handling | A busy group or looping message could exhaust resources | Low — Signal groups are controlled environments |
 | `GetByShortID` does linear scan | O(n) lookup; acceptable at max_sessions=10 but not at scale | Low |
 | WebSocket CheckOrigin always returns true | Relies entirely on Tailscale for origin security | Low — acceptable given network security model |
@@ -204,7 +204,7 @@ All backends implement `llm.Backend` and are registered in `internal/llm/registr
 ### v0.1.0 — Multi-Backend Release (current)
 - Phases 1–3, 5, 6 complete
 - Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook backends
-- claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell LLM backends
+- remote-node, aider, goose, gemini, opencode, ollama, openwebui, shell LLM backends
 - MCP server for Cursor, Claude Desktop, VS Code, and remote AI agents
 - PWA with WebSocket streaming and REST API
 - Full install scripts (Linux user/root, macOS, Windows)

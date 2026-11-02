@@ -54,7 +54,7 @@ flowchart TD
 3. Container via `/proc/<pid>/cgroup` fallback.
 4. System catch-all.
 
-First-match wins per-PID; session attribution outranks backend so claude-code running inside a tmux session counts as session CPU, not free-floating backend CPU.
+First-match wins per-PID; session attribution outranks backend so remote-node running inside a tmux session counts as session CPU, not free-floating backend CPU.
 
 ## Degradation modes
 

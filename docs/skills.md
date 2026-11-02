@@ -82,7 +82,7 @@ entrypoint: ./run.sh
 compatible_with: [datawatch>=6.7.0]   # (a) compatibility hints
 requires: [test-runner-go]             # (b) dependency declarations
 applies_to:                            # (c) routing / applicability
-  agents: [claude-code, opencode]
+  agents: [remote-node, opencode]
   session_types: [coding]
   comm_channels: []                    # empty = any
 cost_hint: medium                      # (d) resource hints

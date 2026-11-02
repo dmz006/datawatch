@@ -59,7 +59,7 @@ The ladder is an ordered list of rungs. Each rung is a change to admission.
 | Rung | What it does |
 |---|---|
 | `lower_inflight` | Lowers the cap on how many Claude sessions may run at once. The original cap is remembered and restored when the rung is released |
-| `route_pi_prompt` | Sends new Claude work to the `pi-prompt` backend instead |
+| `route_pi_prompt` | Sends new Claude work to the `peer-e` backend instead |
 | `hold_claude` | Holds new Claude work. Work already running continues; held work starts again when the rung is released |
 
 The default ladder is `lower_inflight`, `route_pi_prompt`, `hold_claude`, in
@@ -114,7 +114,7 @@ Each time a rung is applied or released, the guard raises one warning alert
 titled `Burn guard: climb <rung>` or `Burn guard: step_back <rung>`, and one
 queue question. The text states what was done and the numbers behind it:
 
-> Burn guard stepped up to rung 1 of 3 (lower_inflight): lowered the claude-code
+> Burn guard stepped up to rung 1 of 3 (lower_inflight): lowered the remote-node
 > inflight cap from 3 to 2. (projected 31.4% at the reset, target 28.0%, burning
 > 0.95 points/hour against 0.80 allowed) 2 running session(s) were left alone.
 

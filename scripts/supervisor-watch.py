@@ -220,7 +220,7 @@ def usage_snapshot():
     d = get_json("https://localhost:8443/api/sessions", timeout=15, insecure=True)
     ss = d if isinstance(d, list) else (d or {}).get("sessions", [])
     rec = {"ts": int(time.time()), "s": {x["id"]: [x.get("model") or "default", x.get("tokens_in") or 0, x.get("tokens_out") or 0, x.get("name", "")[:30]]
-                                         for x in ss if x.get("backend_family") == "claude-code"}}
+                                         for x in ss if x.get("backend_family") == "remote-node"}}
     try:
         with open("/tmp/sv/usage-ledger.jsonl", "a") as f:
             f.write(json.dumps(rec) + "\n")
@@ -361,7 +361,7 @@ def main(argv=None):
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
     pools = {p["name"]: p for p in cap.get("pools", [])}
     waiting = cap.get("waiting") or []
-    cl, pi = pools.get("llm:claude-code", {}), pools.get("llm:pi-prompt", {})
+    cl, pi = pools.get("llm:remote-node", {}), pools.get("llm:peer-e", {})
     summary = "claude %s/%s pi %s/%s waiting %d prds-running %d" % (
         cl.get("held", "?"), cl.get("limit", "?"), pi.get("held", "?"), pi.get("limit", "?"), len(waiting), len(running))
     if cl.get("limit") and cl.get("held", 0) == 0 and queued_runnable:
@@ -375,10 +375,10 @@ def main(argv=None):
             findings.append("NODE %s holds %s sessions against a limit of %s (balancing broken)" % (name, pool["held"], pool["limit"]))
     for l in cap.get("leases") or []:
         lp = l.get("pools") or []
-        if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
+        if "llm:peer-e" in lp and not any(x.startswith("node:") for x in lp):
             why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
-            findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
-    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:datawatch-openai", "node:verdict")]
+            findings.append("LEASE %s holds a peer-e slot with %s" % (l.get("holder"), why))
+    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:peer-a", "node:verdict")]
     node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
     if idle_nodes and node_waiters:
         findings.append("PLACEMENT idle %s while %d request(s) wait for a busy node" % (",".join(idle_nodes), len(node_waiters)))

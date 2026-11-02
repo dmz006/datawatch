@@ -190,7 +190,7 @@ type Backend interface {
 }
 ```
 
-All LLM backends (claude-code, opencode, opencode-acp, opencode-api, ollama, openwebui,
+All LLM backends (remote-node, opencode, opencode-acp, opencode-api, ollama, openwebui,
 gemini-api, aider, goose, shell) implement this interface and are registered in
 `internal/llm/registry.go`. Named LLMs with ordered failover are managed by the LLM
 dispatcher (`internal/inference`). The active backend is selected via
@@ -202,7 +202,7 @@ dispatcher (`internal/inference`). The active backend is selected via
 
 ```mermaid
 stateDiagram-v2
-    [*] --> running : Start() called\ntmux + claude-code created
+    [*] --> running : Start() called\ntmux + remote-node created
 
     running --> waiting_input : Monitor detects idle prompt\n(output ends with ?, >, [y/N], etc.)
     waiting_input --> running : SendInput() called\nor new output detected

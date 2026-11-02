@@ -9,14 +9,14 @@
 # How it reaches a runnable state is the TS-796 approach: add_story/add_task
 # are rejected while an Automaton is "draft", so it decomposes first (planner
 # on ollama, a file-free placeholder spec), then replaces the planned story with
-# its own story + task. The execution backend is switched to claude-code
+# its own story + task. The execution backend is switched to remote-node
 # afterwards (ollama has no file tools). The completion judge (rules-review)
 # is switched on for this Automaton only, through its own guardrails override,
 # so no other configuration entry changes. The one daemon setting the story
 # touches, autonomous.judge_size_threshold_lines, is read first and put back by
 # an EXIT trap, so it is restored even when the story fails. The second judge is
 # triggered with rejudge when the Automaton ended blocked, else with plan-review.
-# Skips (never passes silently) when autonomous is disabled, claude-code is not
+# Skips (never passes silently) when autonomous is disabled, remote-node is not
 # available, decompose does not reach review, the run does not reach its judge
 # step, or the second judge cannot be triggered on this daemon.
 # tags: surface:api feature:automata conflict:llm
@@ -47,7 +47,7 @@ for x in d.get("decisions") or []:
 _story_ts_825() {
   if [[ "$(t3_check_autonomous)" != "yes" ]]; then skip "autonomous disabled"; return; fi
 
-  local exec_backend="claude-code" exec_ok
+  local exec_backend="remote-node" exec_ok
   exec_ok=$(api GET /api/backends | python3 -c '
 import json,sys
 d=json.load(sys.stdin)
@@ -131,7 +131,7 @@ _ts825_run() {
   task_id=$(echo "$t_resp" | python3 -c 'import json,sys;d=json.load(sys.stdin);print([s for s in d["stories"] if s["id"]==sys.argv[1]][0]["tasks"][-1]["id"])' "$story_id" 2>/dev/null || echo "")
   if [[ -z "$task_id" ]]; then rm -rf "$repo"; ko "add_task returned no task id"; return; fi
 
-  # ---- claude-code executes; the completion judge is on for this Automaton only ----
+  # ---- remote-node executes; the completion judge is on for this Automaton only ----
   api POST "/api/autonomous/prds/$atm_id/set_llm" "{\"backend\":\"$exec_backend\",\"effort\":\"low\"}" >/dev/null
   code=$(api_code PUT "/api/autonomous/prds/$atm_id/guardrails" '{"per_prd_guardrails":["rules-review"]}' | grep -oP '__HTTP_CODE_\K[0-9]+' || echo 0)
   if [[ "$code" != "200" ]]; then rm -rf "$repo"; ko "guardrails override returned $code"; return; fi

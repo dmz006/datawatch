@@ -27,9 +27,9 @@
 #   DW_BASE_TOKEN         bearer token for the sandbox daemon (optional)
 #   DW_LLM_BACKEND        LLM backend to run the worker sessions with
 #                         (default: opencode-acp — free, local; set
-#                         DW_LLM_BACKEND=claude-code or DW_MAJOR=1 to
+#                         DW_LLM_BACKEND=remote-node or DW_MAJOR=1 to
 #                         spend API quota instead)
-#   DW_MAJOR              set to 1 to allow claude-code when the default
+#   DW_MAJOR              set to 1 to allow remote-node when the default
 #                         free backend is unavailable (cost gate, matches
 #                         release-smoke.sh's convention)
 #   SMOKE_TIMEOUT_SECONDS completion wait per session (default: 240)
@@ -99,7 +99,7 @@ command -v git >/dev/null 2>&1 || { printf '  [FAIL] git not found\n'; exit 2; }
 # ---------------------------------------------------------------------------
 DEFAULT_BACKEND="opencode-acp"
 if [[ -z "${DW_LLM_BACKEND:-}" && "${DW_MAJOR:-0}" == "1" ]]; then
-  DEFAULT_BACKEND="claude-code"
+  DEFAULT_BACKEND="remote-node"
 fi
 PROBE_BACKEND="$DEFAULT_BACKEND"
 [[ "$PROBE_BACKEND" == "opencode-acp" ]] && PROBE_BACKEND="opencode"
@@ -118,12 +118,12 @@ else:
 }
 
 if [[ "$(backend_available "$PROBE_BACKEND")" != "yes" && "$DEFAULT_BACKEND" == "opencode-acp" && -z "${DW_LLM_BACKEND:-}" ]]; then
-  # Free backend not here — claude-code costs quota, gated behind DW_MAJOR=1
-  if [[ "$(backend_available "claude-code")" == "yes" && "${DW_MAJOR:-0}" == "1" ]]; then
-    DEFAULT_BACKEND="claude-code"
+  # Free backend not here — remote-node costs quota, gated behind DW_MAJOR=1
+  if [[ "$(backend_available "remote-node")" == "yes" && "${DW_MAJOR:-0}" == "1" ]]; then
+    DEFAULT_BACKEND="remote-node"
   else
     skip "no free LLM backend (opencode-acp) on sandbox — automatic-commit smoke skipped"
-    printf '         Re-run with DW_MAJOR=1 (allows claude-code, spends quota) or DW_LLM_BACKEND=<name>.\n'
+    printf '         Re-run with DW_MAJOR=1 (allows remote-node, spends quota) or DW_LLM_BACKEND=<name>.\n'
     printf '\n=== RESULTS ===\n'
     printf 'PASS: %d\nFAIL: %d\nSKIP: %d\n' "$PASS_COUNT" "$FAIL_COUNT" "$SKIP_COUNT"
     printf '%s\n' "ALL SKIPPED — no LLM backend available (cost gate closed)"

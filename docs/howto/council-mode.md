@@ -293,8 +293,8 @@ backend (or a different model on the same backend):
    → check the LLM registry entries you want available (sourced from
    the same registry `datawatch llm list` shows; nothing new to set up
    if you already have LLMs registered). Equivalent: `datawatch council
-   config set backends ollama-datawatch,claude-code` (comma-separated,
-   no spaces), or `backends: [ollama-datawatch, claude-code]` in
+   config set backends ollama-datawatch,remote-node` (comma-separated,
+   no spaces), or `backends: [ollama-datawatch, remote-node]` in
    `council.yaml`/`config.yaml`.
 2. **Assign a persona** — open its edit modal (⚙ View / edit / add
    personas → ✎ Edit) and pick a Backend from the pool; a Model
@@ -307,7 +307,7 @@ A persona's YAML gains two optional fields:
 ```yaml
 name: security-skeptic
 role: Security review
-backend: claude-code   # empty/omitted = council.llm_ref default
+backend: remote-node   # empty/omitted = council.llm_ref default
 model: claude-sonnet-5 # only meaningful alongside backend
 system_prompt: |
   ...

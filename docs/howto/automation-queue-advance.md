@@ -144,17 +144,17 @@ backend keeps it, and the Automation default only fills what they leave open.
    paused or blocked):
 
    ```bash
-   datawatch automation set-llm <id> --backend claude-code --model claude-opus-5-5 --effort high
+   datawatch automation set-llm <id> --backend remote-node --model claude-opus-5-5 --effort high
    ```
 
-   Chat: `automation set-llm <id> backend=claude-code model=claude-opus-5-5 effort=high`.
+   Chat: `automation set-llm <id> backend=remote-node model=claude-opus-5-5 effort=high`.
    REST: `POST /api/automations/{id}/set_llm` with the same names in the body.
    MCP: `automation_set_llm`.
 
 2. **Set the verification default** the same way:
 
    ```bash
-   datawatch automation set-verification-llm <id> --backend claude-code --model claude-sonnet-5-5
+   datawatch automation set-verification-llm <id> --backend remote-node --model claude-sonnet-5-5
    ```
 
 3. **Optionally pick a planner.** `--planning-backend` and `--planning-model`

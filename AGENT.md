@@ -1,7 +1,7 @@
 # AGENT.md — datawatch Guardrails
 
 This file defines operating rules for Claude when working on the **datawatch codebase itself**.
-For session-level guardrails (rules for each claude-code session launched by the daemon), see
+For session-level guardrails (rules for each remote-node session launched by the daemon), see
 `templates/session-CLAUDE.md`.
 
 ---
@@ -1669,7 +1669,7 @@ in flight, which doesn't communicate where the project IS.
 **Subject format:** `<emoji> <BL/feature> <sprint or scope> <version> — <one-line state with counters>`
 
 **Propagation:** this rule is mirrored in `templates/session-CLAUDE.md` so
-every datawatch-spawned claude-code session inherits it; opencode sessions
+every datawatch-spawned remote-node session inherits it; opencode sessions
 get the same via the parallel `templates/session-AGENTS.md` (TODO:
 verify on next opencode-backend session).
 
@@ -2222,7 +2222,7 @@ Always check memory first with `memory_recall` before answering from training da
 
 **For sessions launched by the datawatch daemon:**
 
-Every claude-code/aider/opencode session launched from the daemon will:
+Every remote-node/aider/opencode session launched from the daemon will:
 1. Have access to `DATAWATCH-CONTEXT.md` in the project root (comprehensive context loader)
 2. Automatically query memory for recent changes at session start
 3. Have full MCP access to memory tools listed above

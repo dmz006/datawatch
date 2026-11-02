@@ -226,10 +226,10 @@ with a live worker session. On boot, the resumed run looks at each
   agent never started (see the next section). The old behavior was to reset unconditionally
   and kill the worker; that is no longer the case.
 
-This applies to every worker backend (`claude-code`, `opencode` and
-`pi-prompt`). claude-code workers are adopted too: completion detection after
+This applies to every worker backend (`remote-node`, `opencode` and
+`peer-e`). remote-node workers are adopted too: completion detection after
 a restart ignores the task text the daemon typed into the session and the
-input placeholder, so a restart does not make a running claude-code worker
+input placeholder, so a restart does not make a running remote-node worker
 look finished. The Automaton itself also stays `running` across the restart:
 boot-resume recreates its executor under the same lock a manual run uses, so
 there is no gap in which another run request could start a second executor
@@ -252,7 +252,7 @@ shell as the task's session:
   error `session never started`. No retry is counted, and the task is launched
   once more on a new session. A task that was `verifying` on such a session is
   requeued the same way.
-- An adopted claude-code worker is held to the same start-confirm bound as a
+- An adopted remote-node worker is held to the same start-confirm bound as a
   launched one, `autonomous.session_start_confirm_seconds` (default 120
   seconds). The bound is measured from the worker's last evidence of life, so a
   worker that was active just before the restart is not ended early. A launched
@@ -362,7 +362,7 @@ DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
   go test -count=1 -timeout 25m -run TestDaemonRestartAdoptsLiveWorkerLive -v ./internal/session/
 ```
 
-The same check for a claude-code worker is a separate test:
+The same check for a remote-node worker is a separate test:
 
 ```sh
 env -u TMUX -u TMUX_TMPDIR \
@@ -371,7 +371,7 @@ DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
 ```
 
 `DW_LIVE_RESTART_BACKEND` selects the worker backend for that test (default
-`claude-code`); the default-backend test ignores it.
+`remote-node`); the default-backend test ignores it.
 
 Leave `DW_LIVE_RESTART_CMD` unset to restart through the operator path
 (`systemctl --user restart datawatch`, falling back to `datawatch restart`);
@@ -409,7 +409,7 @@ placeholder `make docs-index` would seed). Then retry the task with
 
 ## Worker finished a turn without the completion marker
 
-A claude-code worker sometimes finishes its turn, goes quiet at the prompt
+A remote-node worker sometimes finishes its turn, goes quiet at the prompt
 and never prints `DATAWATCH_COMPLETE`. Instead of waiting for the longer
 session idle timeout, datawatch sends the worker one nudge.
 
@@ -461,19 +461,19 @@ autonomous:
 Three places show what the daemon did with a worker's nudge: the journal,
 the task record and the config read.
 
-1. **The wait-start line.** When a claude-code worker finishes its turn, the
+1. **The wait-start line.** When a remote-node worker finishes its turn, the
    daemon logs one line as the wait for the completion marker begins:
 
    ```
-   [autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family claude-code, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false
+   [autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family remote-node, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false
    ```
 
    The second part of `task <automaton>/<task>` is the Automaton ID and the
    task ID. `nudge applies=yes` means the nudge owns this worker's idle clock.
    `pending` means the session was not visible yet; the daemon reads the
    backend family on each tick until it is, then logs
-   `backend family resolved to claude-code; nudge applies=yes`. `no` means the
-   worker is not claude-code and is never nudged. `persisted nudge=true` means
+   `backend family resolved to remote-node; nudge applies=yes`. `no` means the
+   worker is not remote-node and is never nudged. `persisted nudge=true` means
    a nudge for this session is already recorded on the task, so it is not sent
    again.
 
@@ -513,14 +513,14 @@ worker, its end reason finishes with the nudge history for that session:
 - `..., nudge 1 sent at 2026-10-25T16:20:00Z, outcome answered`: the nudge
   came first. The outcome is `sent` when no answer was recorded.
 
-**Which workers are nudged.** The nudge applies to every claude-code worker
+**Which workers are nudged.** The nudge applies to every remote-node worker
 waiting after its turn, whatever status the task shows, including a task in
 `verifying` whose only lease is the worker's. A worker whose session was not
 yet visible when its wait began is nudged from its first visible tick.
 
 ## Task failed with `session never started`
 
-A claude-code worker was handed its task and then sat in `waiting_input`
+A remote-node worker was handed its task and then sat in `waiting_input`
 with no sign of work for longer than `autonomous.session_start_confirm_seconds`
 (default `120`). The daemon ends that session and retries the task. After two
 such start failures the task stays failed.

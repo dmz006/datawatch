@@ -172,13 +172,13 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
 })
 
 // --- Permission relay -------------------------------------------------------
-// When claude-code requests permission for a tool, forward to datawatch
+// When remote-node requests permission for a tool, forward to datawatch
 // so it can ask the user via Signal/Telegram/etc.
 
 // Permission relay: forward claude's tool approval requests to datawatch.
 // The MCP SDK doesn't have typed schemas for experimental notifications,
 // so we intercept them via the raw transport layer after connection.
-// See: https://docs.anthropic.com/en/docs/claude-code/channels-reference#permission-relay
+// See: https://docs.anthropic.com/en/docs/remote-node/channels-reference#permission-relay
 // This is wired up after transport.connect() via a low-level message handler.
 
 // --- HTTP server for receiving messages from datawatch ----------------------

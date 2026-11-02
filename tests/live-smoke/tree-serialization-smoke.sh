@@ -25,7 +25,7 @@
 #       high enough that it cannot be the constraint.
 #
 # Requirements (local): a `datawatch` build (or BINARY=/path), a local LLM
-# reachable by pi-prompt->ollama (PI_MODEL), and a `claude` binary for task
+# reachable by peer-e->ollama (PI_MODEL), and a `claude` binary for task
 # execution. Everything runs in a throwaway scratch env under $SMOK_ROOT so it
 # never touches the operator daemon or the live workspace tree.
 #
@@ -94,7 +94,7 @@ cat > "$ROOT/sandbox/config.yaml" <<YAML
 hostname: ts-smoke
 log: { level: info, file: "$ROOT/sandbox/daemon.log" }
 server: { enabled: true, port: $PORT, https: false, bind: 127.0.0.1, basic_auth: false, tls: false, mcp: false }
-session: { enabled: true, llm_backend: claude-code }
+session: { enabled: true, llm_backend: remote-node }
 llm: {}
 claude_code: { enabled: true, binary: claude, model: null, timeout_seconds: 300 }
 pi:      { enabled: true, binary: pi, model: "$PI_MODEL", timeout_seconds: 120 }
@@ -105,10 +105,10 @@ autonomous:
   max_concurrent_tasks: 8            # HIGH: capacity must NOT be the gate; the per-tree lock is
   max_parallel_tasks: 8
   timeout_seconds: 600
-  execution_backend: claude-code
-  planning_backend: pi-prompt
+  execution_backend: remote-node
+  planning_backend: peer-e
   planning_model: "$PI_MODEL"
-  verification_backend: pi-prompt
+  verification_backend: peer-e
   verification_model: "$PI_MODEL"
   worktree_base_repo: "$ROOT/s1"
   block_on_file_drift: false          # out of scope for this test
@@ -117,7 +117,7 @@ autonomous:
   max_replan_attempts: 1
   max_child_retries: 1
   child_mode: inherit
-  llm: { enabled: true, backend: pi-prompt, model: "$PI_MODEL", provider_base_url: "http://127.0.0.1:11434", api_key: local, context_limit_tokens: 16384 }
+  llm: { enabled: true, backend: peer-e, model: "$PI_MODEL", provider_base_url: "http://127.0.0.1:11434", api_key: local, context_limit_tokens: 16384 }
 YAML
 
 # --- 4. start scratch daemon -------------------------------------------------
@@ -140,7 +140,7 @@ log "PRD A + B on shared tree s1"
 A=$(P "Create exactly one new file named A_LIST.txt at the project root containing the integers 1 through 150, one integer per line, no header, no footer. Do not modify any other file." "$ROOT/s1")
 B=$(P "Create exactly one new file named B_LOG.txt at the project root containing exactly 150 lines where line N is 'line N: B' for N=1..150. Do not modify any other file." "$ROOT/s1")
 log "A=$A B=$B";  echo "$A" > "$EVDIR/s1_A_id"; echo "$B" > "$EVDIR/s1_B_id"
-log "planning A+B (pi-prompt local)"
+log "planning A+B (peer-e local)"
 plan_wait "$A"; plan_wait "$B"
 log "approving + kicking both ~simultaneously"
 "$DW" autonomous prd-approve "$A" --url "$U" >/dev/null 2>&1
@@ -180,7 +180,7 @@ log "PRD C + D on distinct trees s2c / s2d"
 C=$(P "Create exactly one new file named C_FILE.txt at the project root containing the single line 'worktree C ok' and nothing else. Do not modify any other file." "$ROOT/s2c")
 D=$(P "Create exactly one new file named D_FILE.txt at the project root containing the single line 'worktree D ok' and nothing else. Do not modify any other file." "$ROOT/s2d")
 log "C=$C D=$D";  echo "$C" > "$EVDIR/s2_C_id"; echo "$D" > "$EVDIR/s2_D_id"
-log "planning C+D (pi-prompt local)"
+log "planning C+D (peer-e local)"
 plan_wait "$C"; plan_wait "$D"
 log "approving + kicking both ~simultaneously (distinct trees => expect parallel)"
 "$DW" autonomous prd-approve "$C" --url "$U" >/dev/null 2>&1

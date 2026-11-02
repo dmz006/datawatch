@@ -93,11 +93,11 @@ datawatch tailscale status
 
 # 2. Spawn an agent worker — it auto-joins.
 datawatch sessions start \
-  --backend claude-code \
+  --backend remote-node \
   --agent k8s \
   --cluster lab-east \
   --task "Run integration tests"
-#  → spawned session ralfthewise-abcd; agent dw-agent-abcd joining mesh ...
+#  → spawned session peer-f-abcd; agent dw-agent-abcd joining mesh ...
 
 # 3. List peers.
 sleep 10

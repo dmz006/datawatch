@@ -98,7 +98,7 @@ datawatch skills get test-first
 
 # 4. Use a skill in a session at spawn.
 datawatch sessions start \
-  --backend claude-code \
+  --backend remote-node \
   --skills test-first,rtk-cli-aware,secrets-scan \
   --task "Add a new endpoint to /api/sessions"
 # Skills get copied into <project_dir>/.datawatch/skills/<name>/
@@ -207,7 +207,7 @@ instructions: |
   ...
 
 # datawatch extensions:
-backends: [claude-code, opencode-acp]   # restrict to backends that benefit
+backends: [remote-node, opencode-acp]   # restrict to backends that benefit
 prerequisites: []                        # other skills required
 session_inject: true                     # auto-inject into session prompt
 ```

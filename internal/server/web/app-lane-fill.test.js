@@ -63,12 +63,12 @@ function countOccurrences(haystack, needle) {
 
 test('an occupied lane shows its id, type, state, occupant title and backend', () => {
   const html = render(status({
-    lanes: [lane({ id: 'gpu-1', type: 'gpu', state: 'occupied', occupant: { prd_id: 'p1', title: 'Cache column', backend: 'pi-prompt' } })],
+    lanes: [lane({ id: 'gpu-1', type: 'gpu', state: 'occupied', occupant: { prd_id: 'p1', title: 'Cache column', backend: 'peer-e' } })],
   }));
   assert.ok(html.includes('gpu-1'), 'lane id missing: ' + html);
   assert.ok(html.includes('GPU lane'), 'lane type label missing');
   assert.ok(html.includes('occupied'), 'occupied state missing');
-  assert.ok(html.includes('Cache column · pi-prompt'), 'occupant title and backend missing: ' + html);
+  assert.ok(html.includes('Cache column · peer-e'), 'occupant title and backend missing: ' + html);
 });
 
 test('an idle lane shows the idle state and its blocker text, and a marker when eligible work waits', () => {
@@ -93,7 +93,7 @@ test('a waiting_verifier lane shows the waiting-on-verifier label, its reason an
   const html = render(status({
     lanes: [lane({
       id: 'claude-2', type: 'claude', state: 'waiting_verifier',
-      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code' },
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'remote-node' },
       wait_reason: 'CI still running the checks', eligible_waiting: 2,
     })],
   }));
@@ -101,14 +101,14 @@ test('a waiting_verifier lane shows the waiting-on-verifier label, its reason an
   assert.ok(html.includes('Waiting on verifier'), 'waiting-on-verifier label missing: ' + html);
   assert.ok(html.includes('Waiting on verifier: CI still running the checks'), 'waiting reason missing: ' + html);
   assert.ok(html.includes('lane-fill-wait-reason'), 'reason element missing');
-  assert.ok(html.includes('Fix login · claude-code'), 'occupant must still show on a waiting_verifier lane');
+  assert.ok(html.includes('Fix login · remote-node'), 'occupant must still show on a waiting_verifier lane');
 });
 
 test('a waiting_verifier lane carries the reason from its occupant when the top-level field is empty', () => {
   const html = render(status({
     lanes: [lane({
       id: 'claude-2', type: 'claude', state: 'waiting_verifier', wait_reason: '',
-      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'claude-code', wait_reason: 'GPU slots taken' },
+      occupant: { prd_id: 'p2', title: 'Fix login', backend: 'remote-node', wait_reason: 'GPU slots taken' },
     })],
   }));
   assert.ok(html.includes('Waiting on verifier: GPU slots taken'), 'occupant wait_reason fallback missing: ' + html);

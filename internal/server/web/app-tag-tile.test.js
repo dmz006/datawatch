@@ -195,14 +195,14 @@ test('a tile carries the card classes, short id, backend, progress, tags and act
   const html = sb.renderWorkTile({
     id: 'a1b2c3d4e5', rootId: 'prd-a1b2c3d4e5', title: 'Release pipeline',
     statusClass: 'prd-card-status-running', statusHtml: '<span>Running</span>',
-    backend: 'claude-code · sonnet', progress: { done: 4, total: 9 }, progressLabel: '4 / 9',
+    backend: 'remote-node · sonnet', progress: { done: 4, total: 9 }, progressLabel: '4 / 9',
     tagIds: ['t1'], tagsById: TAGS, updatedAt: new Date(NOW - 4 * 60000).toISOString(), nowMs: NOW,
     primaryHtml: '<button>Open</button>', menuHtml: '<button>Pin</button>', onOpen: 'openIt()',
   });
   assert.match(html, /^<div class="prd-row prd-card prd-card-status-running work-tile" id="prd-a1b2c3d4e5"/);
   assert.match(html, /onclick="openIt\(\)"/);
   assert.match(html, />a1b2c3d4</, 'the short id is the first eight characters');
-  assert.match(html, /claude-code · sonnet/);
+  assert.match(html, /remote-node · sonnet/);
   assert.match(html, /style="width:44%;"/);
   assert.match(html, />4 \/ 9</);
   assert.match(html, /4m ago/);

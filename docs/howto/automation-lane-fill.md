@@ -45,8 +45,8 @@ work it has decided on, through the same start path a person uses.
 
 | Lane | What it is | Default count | Backend it runs |
 |---|---|---|---|
-| GPU lane | A channel on the local model pool. Two machines can share one pool, and which machine serves a given session is not fixed per lane. A GPU lane costs no Claude usage. | 2 | `pi-prompt` by default (`gpu_backend`), with the model in `gpu_model` |
-| Claude lane | A channel that runs one Automaton at a time on the Claude backend. | 3 (0 means none) | `claude-code` (`claude_backend`) |
+| GPU lane | A channel on the local model pool. Two machines can share one pool, and which machine serves a given session is not fixed per lane. A GPU lane costs no Claude usage. | 2 | `peer-e` by default (`gpu_backend`), with the model in `gpu_model` |
+| Claude lane | A channel that runs one Automaton at a time on the Claude backend. | 3 (0 means none) | `remote-node` (`claude_backend`) |
 
 A lane is **occupied** when an Automaton is running on it, or when a session is
 using the GPU pool that belongs to no Automaton. A lane is **idle** otherwise.
@@ -127,7 +127,7 @@ occupied and working lane, even if another piece waits.
   recorded as the basis for counting the lane available.
 - **CLI and comm channel**: `datawatch autonomous lane-fill [--limit N]`
   and `autonomous lane-fill [limit]` render the same lines. The lane line
-  reads `claude-1: occupied by <id> "<title>" (claude-code), waiting on
+  reads `claude-1: occupied by <id> "<title>" (remote-node), waiting on
   verifier: <reason>`, and a decision that placed work on that lane carries
   the same reason as `lane counted available by the verifier wait: <reason>`.
 - **PWA**: the **Lane fill** card shows the same lane objects with the same
@@ -197,9 +197,9 @@ Automaton's status or its plan.
 | `autonomous.lane_fill.idle_alert_minutes` | `30` | How long a lane may sit idle with eligible work waiting before an alert; `0` turns the alert off |
 | `autonomous.lane_fill.decompose_ahead_min` | `2` | The minimum number of decomposed Automata kept ready per lane type |
 | `autonomous.lane_fill.poll_seconds` | `60` | Seconds between planner polls; a value below 5 is raised to 5 |
-| `autonomous.lane_fill.gpu_backend` | `pi-prompt` | The backend the GPU lanes run |
+| `autonomous.lane_fill.gpu_backend` | `peer-e` | The backend the GPU lanes run |
 | `autonomous.lane_fill.gpu_model` | empty | The model the GPU lanes run; empty means the backend's own model |
-| `autonomous.lane_fill.claude_backend` | `claude-code` | The backend the Claude lanes run |
+| `autonomous.lane_fill.claude_backend` | `remote-node` | The backend the Claude lanes run |
 | `autonomous.lane_fill.count_verifier_wait` | `true` | Whether a lane waiting on a verifier slot counts available; `false` keeps it busy |
 | `autonomous.lane_fill.stale_after_hours` | `72` | How many hours an Automaton may go without any change before lane fill calls it stale and will not start it; `0` turns the rule off |
 | `autonomous.lane_fill.require_confirmed_proposal` | `true` | Whether an implementation Automaton needs a proposal file with a `Confirmed: yes` line; `false` turns the rule off |

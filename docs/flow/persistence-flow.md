@@ -30,7 +30,7 @@ sequenceDiagram
 
     Note over Tmux,Log: Session running — output captured
     Tmux->>Log: cat >> logs/myhost-a3f2.log [continuous, via pipe-pane]
-    Note over Log: log file grows as claude-code produces output
+    Note over Log: log file grows as remote-node produces output
 
     Note over Monitor,Disk: State change — waiting_input detected
     Monitor->>Store: Save(session{state:"waiting_input", LastPrompt:...})

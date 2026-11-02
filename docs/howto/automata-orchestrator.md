@@ -97,16 +97,16 @@ prds:
   - id: audit
     name: auth-audit
     title: Audit current auth flow
-    backend: claude-code
+    backend: remote-node
   - id: implement
     name: jwt-implementation
     title: Implement JWT issuance + middleware
-    backend: claude-code
+    backend: remote-node
     depends_on: [audit]
   - id: migrate
     name: migrate-cookies
     title: Migrate live sessions from cookies to JWT
-    backend: claude-code
+    backend: remote-node
     depends_on: [implement]
 guardrails:
   - rules

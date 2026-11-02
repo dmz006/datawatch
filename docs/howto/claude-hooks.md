@@ -19,7 +19,7 @@ exec_steps:
 
 The session detail's **Status** sub-tab renders a live "where is this
 session right now" board fed by Claude Code's hook events. datawatch
-auto-installs the hook scripts at session spawn (claude-code backend
+auto-installs the hook scripts at session spawn (remote-node backend
 only) and tears them down when the session ends. This howto covers
 the auto-install behaviour, opt-out, manual setup, and how to extend
 the Status board with richer payloads.
@@ -45,8 +45,8 @@ Additionally:
 ## Base requirements
 
 - `datawatch start` — daemon up.
-- A `claude-code` session (auto-install is claude-code specific;
-  other backends can use manual setup). The `claude-code` LLM backend
+- A `remote-node` session (auto-install is remote-node specific;
+  other backends can use manual setup). The `remote-node` LLM backend
   must be registered before spawning the session — see
   [`llm-registry.md`](llm-registry.md). For an end-to-end session setup
   walkthrough, see [`chat-and-llm-quickstart.md`](chat-and-llm-quickstart.md).
@@ -55,7 +55,7 @@ Additionally:
 
 ## Setup
 
-No manual setup required for claude-code sessions — auto-install
+No manual setup required for remote-node sessions — auto-install
 handles it. To **opt out** for a project:
 
 ```yaml
@@ -71,8 +71,8 @@ Or pass `--no-hooks` on `datawatch sessions start`.
 ### 4a. Happy path — auto-install (default)
 
 ```sh
-# 1. Start a claude-code session as normal.
-SID=$(datawatch sessions start --llm claude-code \
+# 1. Start a remote-node session as normal.
+SID=$(datawatch sessions start --llm remote-node \
   --task "refactor auth module" \
   --project-dir ~/work/myproject 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
@@ -93,7 +93,7 @@ datawatch sessions status $SID
 
 ### 4b. Happy path — PWA
 
-1. Start a session (Sessions → + FAB → LLM: claude-code → Start).
+1. Start a session (Sessions → + FAB → LLM: remote-node → Start).
 2. Open the session detail → **Status** tab.
 3. As Claude Code runs, cards populate:
    - **Current focus** — task description from the most-recent hook
@@ -233,7 +233,7 @@ instead of the task data for that card. Cards with no hook value keep
 showing the task data. Sessions that are not running an Automaton task
 show only what hooks send.
 
-Automaton claude-code task sessions take the same hook auto-install path
+Automaton remote-node task sessions take the same hook auto-install path
 as interactive sessions, so the opt-out and pitfalls below apply to them
 too.
 

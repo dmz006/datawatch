@@ -205,7 +205,7 @@ All 47 packages under `internal/`. Read the relevant package before touching it.
 
 | Backend name | Directory | Notes |
 |---|---|---|
-| `claude-code` | `llm/claudecode/` | Claude Code CLI in tmux; primary backend; CLAUDE_CONFIG_DIR must be in tmux env (v8.6.3+) |
+| `remote-node` | `llm/claudecode/` | Claude Code CLI in tmux; primary backend; CLAUDE_CONFIG_DIR must be in tmux env (v8.6.3+) |
 | `aider` | `backends/aider/` | Aider CLI in tmux |
 | `gemini` | `backends/gemini/` | Gemini CLI in tmux |
 | `goose` | `backends/goose/` | Goose 1.43.0+ in tmux; PromptBackend variant (`goose-prompt`) |
@@ -600,7 +600,7 @@ current state over either table.
 
 1. **Session state machine** — `FirstTick` guard must skip both detection AND activity marking
 2. **Backend resume** — When backend server restarts, create fresh session; never reconnect old ID
-3. **CLAUDE_CONFIG_DIR** — Must be in tmux session env for claude-code sessions; set via `hookEnv` in `manager.go` (v8.6.3+). Sessions started before v8.6.3 won't have it — restart daemon to fix
+3. **CLAUDE_CONFIG_DIR** — Must be in tmux session env for remote-node sessions; set via `hookEnv` in `manager.go` (v8.6.3+). Sessions started before v8.6.3 won't have it — restart daemon to fix
 4. **SendInput settle** — `scheduleSettleMs` (default 200ms) applies to ALL send sources since v8.12.9. Set >0 in config to fix Enter not delivered to React Ink TUIs
 5. **MCP channel "waiting" error** — `CLAUDE_CONFIG_DIR` not injected into tmux session env; fixed in v8.6.3 hookEnv
 6. **OpenCode Ollama provider shape** — `{"provider":{"ollama":{"apiUrl":...}}}` silently ignored. Use `{"npm":"@ai-sdk/openai-compatible","options":{"baseURL":"<host>/v1"},"models":{"<name>":{}}}` in opencode.json

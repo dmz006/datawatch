@@ -184,7 +184,7 @@ This automatically:
 2. Adds Claude section to test daemon config
 3. Imports the key via `secrets import claude --from-env CLAUDE_API_KEY`
 4. Uses `claude-haiku-4-5` with `quick` effort (minimizes cost)
-5. Tests can now use `backend:claude-code` in automaton specs
+5. Tests can now use `backend:remote-node` in automaton specs
 
 You can also import manually before running tests:
 

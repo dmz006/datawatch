@@ -458,7 +458,7 @@ Maintainer-only upstream monitoring (not part of the product).
 - **An operator's `rate_limit_patterns` override is applied as before and replaces the built-in matches.** When an operator sets their own patterns, they fully take the place of the built-in list — and, like everything else now, each operator pattern is matched at the start of a line as well.
 - **After upgrading, the usage back-off status shows the patterns as stale until an operator rechecks them.** Because a stored pattern that was not checked against the new start-of-the-line rule may no longer mean what it did before, the status flags the patterns as stale and asks an operator to reconfirm them rather than silently trusting old values.
 - **Back-off durations are unchanged.** The lengths of time a backend backs off are the same as before; only what triggers the detection changed.
-- **The built-in throttle list is now a per-backend table, and the shipped `rate_limit_patterns` default is empty.** The generic default list is gone; the Settings Detection Filters card shows that the built-in table applies instead of listing old phrases, and saving the card does not bring the generic list back. The claude-code usage-dialog lines (the approaching-limit warning, the reset-time announcement and the stop-and-wait menu option) stay detected, anchored to that backend's own dialog lines. A short section in `docs/operations.md` records the decision.
+- **The built-in throttle list is now a per-backend table, and the shipped `rate_limit_patterns` default is empty.** The generic default list is gone; the Settings Detection Filters card shows that the built-in table applies instead of listing old phrases, and saving the card does not bring the generic list back. The remote-node usage-dialog lines (the approaching-limit warning, the reset-time announcement and the stop-and-wait menu option) stay detected, anchored to that backend's own dialog lines. A short section in `docs/operations.md` records the decision.
 
 ## v9.31.5 — The Windows build works again, and a test now guards it
 
@@ -472,7 +472,7 @@ Maintainer-only upstream monitoring (not part of the product).
 
 ### Changed
 - The live pi progress strip is no longer shown on the session detail page. It had been added in v9.30.0 without discussion, takes a lot of
-  room, and on a claude-code session it was showing stale data from an
+  room, and on a remote-node session it was showing stale data from an
   unrelated old pi log. The progress snapshot stays as task data on the
   Automaton: the task card in the Status tab (automata.task_progress) keeps
   showing it, and the REST, MCP and CLI surfaces are unchanged.
@@ -503,11 +503,11 @@ Maintainer-only upstream monitoring (not part of the product).
 
 - **The security scan no longer goes red when GitHub throttles the report upload.** The owasp-zap workflow's last step attaches the scan reports to a release. It now runs only for a real release tag (never for a main branch run), retries with a growing wait when GitHub throttles the token, and, if the throttling persists, logs a warning and leaves the run green because the scan result is what counts; the reports stay available from the run's `owasp-zap-reports` artifact. A scan finding above the accepted thresholds, or any other upload error such as a permissions failure, still fails the run. A new section in `docs/operations.md` explains how to re-attach the reports by hand.
 
-## v9.30.1 — Descendant-only stall bound for pi-prompt workers
+## v9.30.1 — Descendant-only stall bound for peer-e workers
 
-### A pi-prompt worker parked behind a living child process is detected and reaped
+### A peer-e worker parked behind a living child process is detected and reaped
 
-- **A new stall detector covers a hole only pi-prompt has.** A one-shot `pi --print` worker writes nothing to its log until it finishes, so the log-mtime stall check is disabled for it — and a run whose runner has exited but whose working child (a build, a test) is still alive with no other sign of life was previously invisible. A new tracker (`DescendantStallTracker`) now measures silence per `poll_interval`, resets on any log write, any workdir file change, or any sign of life, and fires when a live working descendant is the only life sign. On trip the attempt ends as an infrastructure failure, its recorded descendants are cleaned up, it alerts, and the normal stall retry path picks up the task.
+- **A new stall detector covers a hole only peer-e has.** A one-shot `pi --print` worker writes nothing to its log until it finishes, so the log-mtime stall check is disabled for it — and a run whose runner has exited but whose working child (a build, a test) is still alive with no other sign of life was previously invisible. A new tracker (`DescendantStallTracker`) now measures silence per `poll_interval`, resets on any log write, any workdir file change, or any sign of life, and fires when a live working descendant is the only life sign. On trip the attempt ends as an infrastructure failure, its recorded descendants are cleaned up, it alerts, and the normal stall retry path picks up the task.
 - **New setting `autonomous.descendant_stall_seconds` (default 2700).** Zero or negative values read as the default on every surface, so the detector can never be silently turned off. The key is carried by YAML, REST `GET`/`PUT` config, MCP `autonomous_config_set`, CLI `datawatch config set`, comm channel `configure`, and the PWA settings card (five locales). See [implementation](docs/implementation.md) and [operations](docs/operations.md).
 
 ## v9.30.0 — Pi worker observability: progress, stale heartbeat, loop detector and thinking level
@@ -548,9 +548,9 @@ Maintainer-only upstream monitoring (not part of the product).
 - **The PWA keeps a failed recording.** When a transcription fails, the recording stays in the page with a message for the cause in five locales, a Retry button and a Discard button, in the session input bar, in other microphone-enabled fields and on the Settings test button. Retry resends the same audio; nothing is lost until you press Discard.
 - Docs: [`howto/voice-input.md`](docs/howto/voice-input.md#long-recordings-and-memory-local-whisper) covers the memory envelope (whisper `medium` needs about 1.5 GiB for weights plus several GiB at peak, so hosts with 8 GiB or less should use `small` or `base`), the cause table and the log fields. The flow is in [`flow/voice-transcribe-flow.md`](docs/flow/voice-transcribe-flow.md).
 
-### Large changes go to claude-code first when a judge runs
+### Large changes go to remote-node first when a judge runs
 
-- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `remote-node` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
 - **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
 - **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with the hold reason `judge_timeout_hold`, after the `judge_timeout_seconds` limit is spent on each backend. The Automaton decision log names the rule that routed the judge and the line count.
 - **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
@@ -562,7 +562,7 @@ Maintainer-only upstream monitoring (not part of the product).
 
 ### A pi backend's node list is read from its own LLM entry
 
-- Next patch above main: a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- Next patch above main: a `pi` or `peer-e` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
 - `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
 - Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
 
@@ -586,7 +586,7 @@ Maintainer-only upstream monitoring (not part of the product).
 
 ### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
 
-- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A `pi` or `peer-e` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
 - A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
 - A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
 - A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
@@ -598,14 +598,14 @@ Maintainer-only upstream monitoring (not part of the product).
 ### Node-hosted pi runners are seen as alive
 
 - The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
-- The pi-prompt idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
-- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a pi-prompt task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
+- The peer-e idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
+- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a peer-e task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
 
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
 
-**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+**Idle remote-node workers are nudged, and adopted sessions are nudged too** — idle remote-node workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
 ## v9.29.1 — Header Tags icon and a chips-only session tag row
 
@@ -651,7 +651,7 @@ The session header's Tags dropdown button is now a tag icon instead of the word 
 
 ### Node placement is tested against the production configuration
 
-- **Production-shaped unit fixtures.** The placement and adoption tests now run against the shape of the live configuration (three single-node ollama entries plus the pi-prompt entry that lists both nodes), which is the shape the earlier tests did not cover and the reason a placement defect passed its tests.
+- **Production-shaped unit fixtures.** The placement and adoption tests now run against the shape of the live configuration (three single-node ollama entries plus the peer-e entry that lists both nodes), which is the shape the earlier tests did not cover and the reason a placement defect passed its tests.
 - **A live placement story (`TS-828`).** Two pi workers must hold different nodes and a third must wait; the story runs against a sandbox daemon with two stand-in model hosts and ends everything it starts.
 - **Release smoke section 84.** The capacity ledger section of the release smoke checks the node pools and the one-engine-per-node limit on a sandbox daemon.
 - **A post-deploy invariant check.** `scripts/check-waiter-nodes.sh` is wired into the post-deploy step and reports a node over its limit with its lease holders.
@@ -737,7 +737,7 @@ Answers are **immutable**: picking an option, writing your own wording in a quot
 
 - **Untyped markup bodies are HTML-escaped.** A REST response with no `Content-Type` whose first bytes read as HTML, XML or SVG is now sent as `text/plain; charset=utf-8` and its body is HTML-escaped (`<` `>` `&` `"` `'`), so text that echoes request input (an error line, for example) cannot be read as a document. The `Content-Length` the handler declared is dropped for such a body, because the escaped body is longer. JSON and every response that already carries a `Content-Type` or `Content-Encoding` are not changed. This is the only change to a response body in this round, and it applies to the gzip middleware in front of every `/api` route. See [testing tracker: untyped markup bodies and nosniff](docs/testing-tracker.md#untyped-markup-bodies-and-nosniff-on-api-responses--unreleased).
 - **`X-Content-Type-Options: nosniff` on API responses.** The gzip middleware adds the header unless the handler set it, before the status line is written (net/http copies the headers there, so a later set would not reach the client). The MCP debug transport pins the same header, and when the stream's type is not `text/event-stream` or another non-HTML type it also escapes the payload. A stream that is already `text/event-stream` passes through byte for byte.
-- **Project directories are checked against the allowed roots on the value that is used.** The session manager, the git helpers (`internal/session/git.go`), the gitguard containment helpers, the claude-code backend (`CLAUDE.md` lookup) and the pipeline quality checks now hand the filesystem and `git` calls the path that passed the roots check, not the one that was requested. A relative path is refused, a sibling directory that only shares a root's name as a prefix is refused, and a path that is not under any allowed root returns no path. The allowed roots themselves (worktree base, workspace root, `server.allowed_project_roots`) are unchanged.
+- **Project directories are checked against the allowed roots on the value that is used.** The session manager, the git helpers (`internal/session/git.go`), the gitguard containment helpers, the remote-node backend (`CLAUDE.md` lookup) and the pipeline quality checks now hand the filesystem and `git` calls the path that passed the roots check, not the one that was requested. A relative path is refused, a sibling directory that only shares a root's name as a prefix is refused, and a path that is not under any allowed root returns no path. The allowed roots themselves (worktree base, workspace root, `server.allowed_project_roots`) are unchanged.
 - **Commit-message write path.** The message of a session snapshot, task commit or annotated tag is written to git's standard input (`git commit -F -`, `git tag -a -F -`) instead of `-m <text>` or a temporary file in the OS temp directory, so text that derives from a task title or summary never enters git's argument list. The temporary commit-message file is gone.
 - **PWA text is escaped where it is drawn.** The waiting-task line and its cause chip, the Automata progress bar and held badge, the chat bubble header, the Stats card numbers and session rows now pass every dynamic value through `escHtml`. A wait cause is looked up with a `switch`, so names such as `__proto__` and `constructor` render no chip instead of reaching the object prototype. Normal values look the same as before. Browser story `TS-826` in `docs/testing.md` covers it.
 - **Docs.** [`docs/plans/2026-10-27-codeql-local-reproduction.md`](docs/plans/2026-10-27-codeql-local-reproduction.md) records how the alerts were reproduced locally and what each fix does.
@@ -791,9 +791,9 @@ Answers are **immutable**: picking an option, writing your own wording in a quot
 
 ## v9.22.0 — Large diffs go to Claude first for the final judge
 
-### Large changes go to claude-code first when a judge runs
+### Large changes go to remote-node first when a judge runs
 
-- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `claude-code` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
+- **Size-aware judge routing.** When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines (default 400), the judges try `remote-node` first and the other backends follow in their usual order, still one attempt per backend. On 2026-10-26 an Automaton of about 1,000 changed lines spent the whole 30-minute limit on a local judge that could not finish; a large change no longer starts on that model.
 - **How lines are counted.** Added plus deleted lines on the Automaton branch against its merge base, with lock files left out. `0` turns the rule off.
 - **Nothing else changes.** In `balance` mode the load still decides and the order only breaks ties. A judge that times out on every backend still holds the Automaton with the hold reason `judge_timeout_hold`, after the `judge_timeout_seconds` limit is spent on each backend. The Automaton decision log names the rule that routed the judge and the line count.
 - **Settings on every surface.** YAML (`autonomous.judge_size_threshold_lines`), REST (`PUT /api/config` and `PUT /api/autonomous/config`), MCP (`autonomous_config_set`), the CLI (`autonomous config-set --judge-size-threshold-lines`), the comm channel (`autonomous judge-policy-set judge_size_threshold_lines=400`) and the PWA Settings autonomous card in five locales. See [howto/judge-policy.md](docs/howto/judge-policy.md#size-aware-routing).
@@ -806,7 +806,7 @@ Answers are **immutable**: picking an option, writing your own wording in a quot
 
 ## v9.21.2 — A restart keeps each pi worker on the node it was placed on
 
-- After a daemon restart, a surviving pi-prompt worker is re-adopted on the compute node it was placed on, read from the node recorded at placement, never guessed from names or DNS. Before this, both survivors could land on one node (`node:datawatch` 2 of 1) while the other GPU sat idle and requests waited.
+- After a daemon restart, a surviving peer-e worker is re-adopted on the compute node it was placed on, read from the node recorded at placement, never guessed from names or DNS. Before this, both survivors could land on one node (`node:datawatch` 2 of 1) while the other GPU sat idle and requests waited.
 - If a surviving worker's node cannot be determined, its lease is held on no node and flagged in `/api/capacity`, instead of defaulting to one node.
 - A restart smoke step checks that the node pools are unchanged across a daemon restart, and the operations guide describes where a re-adopted worker's node comes from.
 
@@ -816,7 +816,7 @@ Answers are **immutable**: picking an option, writing your own wording in a quot
 CodeQL findings on main are fixed in code, with no scanner setting changed:
 
 - Git helpers build their commands from fixed argument vectors, and subprocess-resume tasks no longer go through a shell wrapper (the two critical `go/command-injection` alerts).
-- One checked path-containment helper now guards the git guard, session, autonomous, pipeline and claude-code path sinks (the `go/path-injection` alerts), with unit tests for symlink, dot-dot, dangling-link and outside-root cases.
+- One checked path-containment helper now guards the git guard, session, autonomous, pipeline and remote-node path sinks (the `go/path-injection` alerts), with unit tests for symlink, dot-dot, dangling-link and outside-root cases.
 - The MCP debug transport and the gzip middleware write echoed values safely (`go/reflected-xss`), the federation hop chain bounds its allocation size, and three product-code web UI findings are fixed.
 - Test-only web alerts are dismissed in GitHub with reason "used in tests".
 
@@ -854,7 +854,7 @@ CodeQL findings on main are fixed in code, with no scanner setting changed:
 
 ### A pi backend's node list is read from its own LLM entry
 
-- a `pi` or `pi-prompt` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
+- a `pi` or `peer-e` backend takes its candidate nodes from its own LLM entry `compute_nodes`, ordered with load first and `scheduling_priority` as the tiebreak. The provider-kind lookup applies only to backends without their own node list.
 - `scripts/check-waiter-nodes.sh` reports the node each waiting request is bound to and exits 2 when every waiter of a multi-node backend sits on one node while another candidate is free.
 - Docs: [`automata-capacity.md`](docs/howto/automata-capacity.md) and [`compute-nodes.md`](docs/howto/compute-nodes.md) describe the node choice and how to read the script's output.
 
@@ -934,11 +934,11 @@ The judges (the Automaton guardrail, plan review and other autonomous judges) no
 - **Settings on every surface.** YAML, REST, MCP, the CLI (`autonomous config-set --judge-policy --judge-timeout-seconds`), the comm channel (`autonomous judge-policy` and `judge-policy-set`) and the PWA Settings autonomous card.
 - **Docs.** A new how-to, [howto/judge-policy.md](docs/howto/judge-policy.md), covers the role, the modes, the time limit, the alerts and how to resolve a hold. The API reference and the testing tracker are updated to match.
 
-## v9.17.6 — Pi-prompt workers lease the compute node they run on
+## v9.17.6 — peer-e workers lease the compute node they run on
 
 ### Pi workers are placed on the least-loaded healthy node and launched on the node they leased
 
-- A `pi` or `pi-prompt` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
+- A `pi` or `peer-e` worker whose LLM entry lists two or more compute nodes now goes to the least-loaded healthy node (sessions held over the node's session limit). `scheduling_priority` only breaks a tie between equally loaded nodes, then list order. Before, the highest-priority node with a free slot always won, so a fast node filled while the others sat idle. A full node is passed over.
 - A node that is not in the compute registry, or is inside a maintenance window, is skipped. The waiting reason names it, for example `waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by ...`.
 - A worker whose model has no provider (for example `qwen3.8:27b`) takes the provider of the backend's configured model, so it is admitted on the node it will actually run on.
 - A worker is launched against the node its lease names, including when the LLM entry lists only one node. If a worker holds capacity but no node was leased while its entry lists nodes, it is no longer launched on pi's default endpoint; the task fails with an error saying no compute node was leased.
@@ -970,21 +970,21 @@ An Automaton worker is no longer launched in a project directory that is not a r
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
 
-**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+**Idle remote-node workers are nudged, and adopted sessions are nudged too** — idle remote-node workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
-## v9.17.2 — Pi-prompt workers are no longer closed while still running
+## v9.17.2 — peer-e workers are no longer closed while still running
 
 ### Node-hosted pi runners are seen as alive
 
 - The liveness probes now recognise a pi runner that node hosts. The kernel names such a process `MainThread`, so the probes missed it; they now also read the script node runs and treat a script named after a runner as that runner.
-- The pi-prompt idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
-- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a pi-prompt task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
+- The peer-e idle check counts a live runner as work. A one-shot pi print run generates with no child process, so a runner that was alive and generating no longer reads as idle and is no longer ended by the session idle detector. Other backends still count only work children.
+- Held-task reviews and the attempt record carry the pi exit status, the last pane output and the process list when a peer-e task stalls. The new attempt fields are `runner_exit_status`, `runner_last_output` and `runner_processes`; they are optional and appear only when evidence was captured. The review report and the next attempt's prompt print them, and the stall error names the exit status when pi returned one.
 
 ### Shared navigation fits phone widths
 
 The PWA's bottom navigation bar fits 320 to 414 px phones. Its six buttons now share the bar width equally, so the bar no longer scrolls sideways. Long labels end with an ellipsis, and each button carries its full name as a title attribute, shown on hover in desktop browsers. The bottom buttons have a 40 px minimum width, and the header search button and the Observer section toggle are at least 40 px tall. A phone-width check (`make test-e2e-shared-nav`) gates the bar at 320, 360 and 390 px in light and dark, and a how-to describes the check and how to read its report. Desktop and tablet bar geometry is unchanged. Header and tab buttons other than those two are not yet at 44 px.
 
-**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+**Idle remote-node workers are nudged, and adopted sessions are nudged too** — idle remote-node workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
 ### One start tracker for launched and adopted workers
 
@@ -992,9 +992,9 @@ A worker the daemon launches and a worker adopted after a daemon restart now sha
 
 ## v9.17.1 — Idle worker nudge fires after the turn
 
-**Idle claude-code workers are nudged, and adopted sessions are nudged too** — idle claude-code workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
+**Idle remote-node workers are nudged, and adopted sessions are nudged too** — idle remote-node workers were never nudged because the idle check counted the runner process and its own MCP and channel servers as work, so the worker was never treated as idle; adopted sessions after a daemon restart had no nudge at all. Only work children (processes the runner started, such as a build or a test run) now block a nudge, and a worker adopted after a restart is nudged and stalled on the same schedule as a fresh one. Each nudge event records the session it was typed into (`session_id`) and its outcome (`sent`, `answered` or `stalled`).
 
-**Idle claude-code workers at the empty prompt are nudged after their turn** — a claude-code worker that finished its turn and sat idle at the empty prompt was never nudged, so only the session idle detector ended it, after the full idle limit. The confirmed cause was in the post-turn wait: it read the backend family once, when the wait started, so a session that was not yet visible then never got a nudge tracker. The wait also measured idleness from the log file's age, so pane redraws held the idle clock below the window, and a template line `DATAWATCH_COMPLETE: <summary of this task>` counted as a completion and ended nudge tracking. The fix reads the family on every tick until the session is visible, starts the idle clock at the start of the idle run, and no longer treats template placeholders as completions. The nudge now applies to every claude-code worker in the post-turn wait whatever the task status shows, and the fresh and adopted waits share one nudge decision. Logging: the wait start logs the backend family, whether the nudge applies, the windows, the session idle limit and whether a nudge is persisted, and warns once per wait when the nudge window is not shorter than the idle limit; each nudge, answer and stall is logged with its session and task. The idle detector's end reason now ends with the session's nudge history (`no nudge sent`, or `nudge N sent at <time>, outcome <sent|answered|stalled>`). `GET /api/config` returns the effective nudge and stall windows as read-only keys (`worker_idle_nudge_effective_seconds` and `worker_idle_nudge_stall_effective_seconds`); no setting or surface changes. Tests cover the empty-prompt reproduction and its variants (late-visible session, pane redraws, template echo, verifying status), late and replaced sessions, the log and end-reason wording, the effective-value read, and three executor-level scenarios (a verifying worker holding only its worker lease, an adopted session after a restart, nudge then stall then retry).
+**Idle remote-node workers at the empty prompt are nudged after their turn** — a remote-node worker that finished its turn and sat idle at the empty prompt was never nudged, so only the session idle detector ended it, after the full idle limit. The confirmed cause was in the post-turn wait: it read the backend family once, when the wait started, so a session that was not yet visible then never got a nudge tracker. The wait also measured idleness from the log file's age, so pane redraws held the idle clock below the window, and a template line `DATAWATCH_COMPLETE: <summary of this task>` counted as a completion and ended nudge tracking. The fix reads the family on every tick until the session is visible, starts the idle clock at the start of the idle run, and no longer treats template placeholders as completions. The nudge now applies to every remote-node worker in the post-turn wait whatever the task status shows, and the fresh and adopted waits share one nudge decision. Logging: the wait start logs the backend family, whether the nudge applies, the windows, the session idle limit and whether a nudge is persisted, and warns once per wait when the nudge window is not shorter than the idle limit; each nudge, answer and stall is logged with its session and task. The idle detector's end reason now ends with the session's nudge history (`no nudge sent`, or `nudge N sent at <time>, outcome <sent|answered|stalled>`). `GET /api/config` returns the effective nudge and stall windows as read-only keys (`worker_idle_nudge_effective_seconds` and `worker_idle_nudge_stall_effective_seconds`); no setting or surface changes. Tests cover the empty-prompt reproduction and its variants (late-visible session, pane redraws, template echo, verifying status), late and replaced sessions, the log and end-reason wording, the effective-value read, and three executor-level scenarios (a verifying worker holding only its worker lease, an adopted session after a restart, nudge then stall then retry).
 
 ## v9.17.0 — Lifecycle events to a webhook or a federation peer
 
@@ -1031,7 +1031,7 @@ The Observer tab now fits phone, tablet and desktop widths. A reusable mobile-fi
 
 ## v9.14.1 — Idle workers are nudged and retried
 
-Idle claude-code workers at an empty prompt are now nudged and retried. The idle nudge counted every child process of the session as work, including the session's own channel and MCP server children, so a worker sitting at an empty prompt was never nudged; only children that are real work now count. Nudge events are scoped to their session and the tracker is seeded after a daemon restart that adopts the session, the nudge-aware wait runs for adopted sessions, and every nudge, stall and retry is logged with the session and task ids and recorded on the task. Tests cover an idle session with an MCP child, a real work child, an adopted restart, and nudge then stall then retry.
+Idle remote-node workers at an empty prompt are now nudged and retried. The idle nudge counted every child process of the session as work, including the session's own channel and MCP server children, so a worker sitting at an empty prompt was never nudged; only children that are real work now count. Nudge events are scoped to their session and the tracker is seeded after a daemon restart that adopts the session, the nudge-aware wait runs for adopted sessions, and every nudge, stall and retry is logged with the session and task ids and recorded on the task. Tests cover an idle session with an MCP child, a real work child, an adopted restart, and nudge then stall then retry.
 
 ## v9.14.0 — imap_mcp channel config parity
 
@@ -1410,7 +1410,7 @@ Fixes a restart-time duplicate-worker defect where a daemon restart could leave 
 
 ### Fixed
 
-- **Hand-started prompt-style sessions are now one-shot.** A session started by hand with a `-prompt` backend (for example `datawatch session new --backend pi-prompt`) was recorded as interactive, so the completion validation gate, the finished-session reaper and retention did not cover it and it sat in `waiting_input` after the worker exited. Every backend whose name ends in `-prompt` now gets `one_shot` set when a session is created; explicitly interactive backends stay interactive and existing session records are not changed. The scratch-removal test now uses the system temp directory instead of a hard-coded path. Deterministic tests cover the creation-time decision, the reaper ending a finished prompt-style session, and unchanged existing records.
+- **Hand-started prompt-style sessions are now one-shot.** A session started by hand with a `-prompt` backend (for example `datawatch session new --backend peer-e`) was recorded as interactive, so the completion validation gate, the finished-session reaper and retention did not cover it and it sat in `waiting_input` after the worker exited. Every backend whose name ends in `-prompt` now gets `one_shot` set when a session is created; explicitly interactive backends stay interactive and existing session records are not changed. The scratch-removal test now uses the system temp directory instead of a hard-coded path. Deterministic tests cover the creation-time decision, the reaper ending a finished prompt-style session, and unchanged existing records.
 
 ## v9.5.92 — Automation model-tier defaults for execution, verification and planning
 
@@ -1490,7 +1490,7 @@ Fixes a restart-time duplicate-worker defect where a daemon restart could leave 
 
 ### Fixed
 
-- **A claude-code Automaton worker whose task was never typed in is now noticed and recovered.** If the wait for the worker's main prompt timed out (for example behind a startup banner or update notice), the task was never delivered, yet the worker sat idle for the whole task and the idle nudge only asked it for a completion line. Delivery now retries with bounded attempts and backoff, the main-prompt detection tolerates banner and notice lines on the pane, a delivery that still fails ends the session as a delivery failure so the executor retries the task with a fresh session (the reason is recorded on the task), and the idle nudge re-sends the task to a worker whose task was never delivered. Deterministic tests with a fake terminal multiplexer cover a late prompt, a prompt behind a banner, no prompt, and the nudge on an undelivered task.
+- **A remote-node Automaton worker whose task was never typed in is now noticed and recovered.** If the wait for the worker's main prompt timed out (for example behind a startup banner or update notice), the task was never delivered, yet the worker sat idle for the whole task and the idle nudge only asked it for a completion line. Delivery now retries with bounded attempts and backoff, the main-prompt detection tolerates banner and notice lines on the pane, a delivery that still fails ends the session as a delivery failure so the executor retries the task with a fresh session (the reason is recorded on the task), and the idle nudge re-sends the task to a worker whose task was never delivered. Deterministic tests with a fake terminal multiplexer cover a late prompt, a prompt behind a banner, no prompt, and the nudge on an undelivered task.
 
 ## v9.5.79 — Tests and the pi backend no longer leak temp files into /tmp
 
@@ -1540,11 +1540,11 @@ BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (
 - **The PWA terminal no longer throws "Cannot read properties of undefined (reading 'dimensions')" from xterm.** A session switch or reconnect could dispose the terminal while a scheduled fit/resize/scroll job was still pending, and the stale job crashed once xterm's render service was gone. Every fit, resize and scroll call is now guarded by a check that the terminal exists, is open and not disposed and that its container is visible and non-zero-sized, and pending resize/scroll timers are cancelled when the terminal is disposed. Tests: fake-xterm node tests (`internal/server/web/app-xterm-guard.test.js`) and a Playwright rapid-switch story (`scripts/test-stories/pwa/TS-800.mjs`).
 - **The service-worker-disabled console line on a self-signed certificate is now one quiet info line pointing at `docs/operations.md`.** Registration rejection due to an untrusted certificate is expected, not an operator-facing failure; the PWA now prints exactly one `console.info` (at most once per page load, no warn/error) and everything else keeps working normally. Enabling the service worker with a trusted certificate is documented in `docs/operations.md`.
 
-## v9.5.72 — A daemon restart no longer ends live claude-code workers
+## v9.5.72 — A daemon restart no longer ends live remote-node workers
 
 ### Fixed
 
-- **A daemon restart no longer ends live claude-code Automaton workers.** After a restart the one-shot reaper and the pane scanners read the wrapped tail of the typed launch command (`... echo 'DATAWATCH_COMPLETE: claude done'`, whose last fragment starts with the marker and ends with the closing quote) as the worker's own completion line, and ended the session a few seconds after startup. A completion line now has to be a real summary line: the wrapped tail of a quoted shell argument is ignored, and the one-shot reaper applies the same real-completion rules as the pane scanners. New deterministic mid-task restart tests use a fake terminal multiplexer with realistic claude-code pane content.
+- **A daemon restart no longer ends live remote-node Automaton workers.** After a restart the one-shot reaper and the pane scanners read the wrapped tail of the typed launch command (`... echo 'DATAWATCH_COMPLETE: claude done'`, whose last fragment starts with the marker and ends with the closing quote) as the worker's own completion line, and ended the session a few seconds after startup. A completion line now has to be a real summary line: the wrapped tail of a quoted shell argument is ignored, and the one-shot reaper applies the same real-completion rules as the pane scanners. New deterministic mid-task restart tests use a fake terminal multiplexer with realistic remote-node pane content.
 
 ## v9.5.71 — Lifecycle subscriptions: update, test-fire, pending-events queue and PWA tab
 
@@ -1557,11 +1557,11 @@ BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (
   - **Config** — `autonomous.notify.pending_events_max` (default 500, values below 1 fall back to 500) bounds each pending-events queue; applied at daemon start.
   - **Not in this change** — WebSocket payload enrichment and live toasts, the outbound webhook sink and federation forwarding. App-side (Android/iOS) subscription UI is tracked in [docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md).
 
-## v9.5.70 — Idle claude-code workers are nudged to finish before they are treated as stalled
+## v9.5.70 — Idle remote-node workers are nudged to finish before they are treated as stalled
 
 ### Added
 
-- **Idle nudge for claude-code workers** — a PRD-owned claude-code worker that sits idle with no output and no completion marker for `autonomous.worker_idle_nudge_seconds` (default 180) gets one nudge to print `DATAWATCH_COMPLETE`; if it is still silent `autonomous.worker_idle_nudge_stall_seconds` (default 600) after the nudge, it is killed and retried as a stall. Nudges are recorded on the task (`nudge_count`, `nudge_events`).
+- **Idle nudge for remote-node workers** — a PRD-owned remote-node worker that sits idle with no output and no completion marker for `autonomous.worker_idle_nudge_seconds` (default 180) gets one nudge to print `DATAWATCH_COMPLETE`; if it is still silent `autonomous.worker_idle_nudge_stall_seconds` (default 600) after the nudge, it is killed and retried as a stall. Nudges are recorded on the task (`nudge_count`, `nudge_events`).
 - **Idle-nudge settings on every surface, and nudge counts in status** — `autonomous.worker_idle_nudge_seconds` and `autonomous.worker_idle_nudge_stall_seconds` are now set through the web settings card (all 5 locales), `PUT /api/config`, the MCP `autonomous_config_set` tool, the `configure` chat command and `docs/config-reference.yaml`, and take effect on the next worker without a restart. `GET /api/autonomous/status` and `autonomous_status` now report `nudges_total`, `nudge_tasks` (per-task counts) and `nudges_by_backend`.
 - **Idle-nudge docs** — new recovery howto section *Worker finished a turn without the completion marker*, an operations subsection beside the session idle timeout, and testing-tracker rows (unit rows validated, live sandbox rows pending).
 
@@ -1575,7 +1575,7 @@ BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (
 
 ### Added
 
-- **Plan-tier-aware LLM capacity caps.** The LLM registry entry gains a `plan_tier` field (unset | `pro` | `max_5x` | `max_20x` | `api`; unknown values are rejected by `inference.LLM.Validate`), and `inference.EffectiveMaxInflight(llm, table)` derives the capacity-ledger per-LLM inflight cap: an explicit `max_inflight` > 0 always wins, else the tier table (new config key `autonomous.plan_tier_max_inflight`, map tier→int, default `pro: 1, max_5x: 2, max_20x: 4, api: 0` — operator policy, overridable; `api: 0` = unlimited until the dollar-budget phase lands), else a conservative kind default: 1 for subscription kinds (claude-code and the other non-local, non-API kinds), 0/unlimited for local Ollama/OpenWebUI kinds (still governed by the node: pools and the two-engines-per-GPU limit) and for dollar-metered API kinds. `cmd/datawatch` `syncPools` now sets each `llm:<name>` pool limit from `EffectiveMaxInflight`, re-synced by the existing 10s loop on registry change.
+- **Plan-tier-aware LLM capacity caps.** The LLM registry entry gains a `plan_tier` field (unset | `pro` | `max_5x` | `max_20x` | `api`; unknown values are rejected by `inference.LLM.Validate`), and `inference.EffectiveMaxInflight(llm, table)` derives the capacity-ledger per-LLM inflight cap: an explicit `max_inflight` > 0 always wins, else the tier table (new config key `autonomous.plan_tier_max_inflight`, map tier→int, default `pro: 1, max_5x: 2, max_20x: 4, api: 0` — operator policy, overridable; `api: 0` = unlimited until the dollar-budget phase lands), else a conservative kind default: 1 for subscription kinds (remote-node and the other non-local, non-API kinds), 0/unlimited for local Ollama/OpenWebUI kinds (still governed by the node: pools and the two-engines-per-GPU limit) and for dollar-metered API kinds. `cmd/datawatch` `syncPools` now sets each `llm:<name>` pool limit from `EffectiveMaxInflight`, re-synced by the existing 10s loop on registry change.
 - **Config validation for `autonomous.plan_tier_max_inflight`:** every key must be a known tier and every cap ≥ 0, else the daemon refuses to start with the key named.
 - **Tests:** table lookup / explicit-override / unset conservative defaults / kind classification / tier validation / `plan_tier` YAML+JSON round-trip (`internal/inference`), default + YAML round-trip + rejection of negative caps and unknown tiers (`internal/config`), and `TestSyncLLMLimits_PlanTierDrivesLedgerLimit` + `TestSyncLLMLimits_TableOverrideFollows` pinning the ledger limit to the derived value (`cmd/datawatch`).
 
@@ -1604,11 +1604,11 @@ BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (
 - **Park reasons and the park alert now name the resume action.** They previously told the operator to approve the PRD, which does not apply to a parked one.
 - **The boot-resume report records a parked PRD that still has a live worker.** A parked entry in `Status().BootResume` carries `live_sessions`, and resuming adds a `resumed_by_operator` entry, so the operator can see that a resume will re-adopt the worker.
 
-## v9.5.66 — A daemon restart no longer kills running claude-code workers
+## v9.5.66 — A daemon restart no longer kills running remote-node workers
 
 ### Fixed
 
-- **A daemon restart no longer ends in-flight claude-code Automaton workers.** Task-echo suppression now uses the persisted `TaskDeliveredAt` and the task text, so the task the daemon typed into the worker (and its placeholder) is not mistaken for a completion after a restart. A completion marker counts only after the echoed task text and only as a real summary line. Live delivered-task sessions are adopted on resume, and boot-resume adopts a claude-code worker the same way it already adopted other backends. New opt-in live test `TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive` (`DW_LIVE_RESTART_TEST=1`, sandbox daemon only); walkthrough in `docs/howto/autonomous-recovery.md`. No config keys, REST/MCP/PWA contracts or locale strings changed, so `docs/config-reference.yaml`, `docs/operations.md`, Mobile-Parity and Localization are N/A.
+- **A daemon restart no longer ends in-flight remote-node Automaton workers.** Task-echo suppression now uses the persisted `TaskDeliveredAt` and the task text, so the task the daemon typed into the worker (and its placeholder) is not mistaken for a completion after a restart. A completion marker counts only after the echoed task text and only as a real summary line. Live delivered-task sessions are adopted on resume, and boot-resume adopts a remote-node worker the same way it already adopted other backends. New opt-in live test `TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive` (`DW_LIVE_RESTART_TEST=1`, sandbox daemon only); walkthrough in `docs/howto/autonomous-recovery.md`. No config keys, REST/MCP/PWA contracts or locale strings changed, so `docs/config-reference.yaml`, `docs/operations.md`, Mobile-Parity and Localization are N/A.
 
 ## v9.5.65 — Automation coordinator: the queue advances itself
 
@@ -1639,7 +1639,7 @@ BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (
 
 ### Fixed
 ### Fixed
-- **Automaton workers no longer read ancestor-directory `CLAUDE.md` files.** A worker launched in a PRD worktree or the main checkout also loaded parent-directory `CLAUDE.md` files, such as another session's `Session:`/`Task:` guardrails, and stalled asking which task to do. The claude-code backend now passes `--settings '{"claudeMdExcludes":[...]}'` listing every `CLAUDE.md` in a strict ancestor of the project directory (absolute paths, computed per launch). The project's own `CLAUDE.md` and `~/.claude/CLAUDE.md` still load. It applies to Automaton-owned launches and resumes only; interactive sessions are unchanged. Verified on Claude Code 2.1.306. Tests in `internal/llm/claudecode/ancestors_test.go`, `internal/llm/claudecode/ancestors_launch_test.go` and `internal/session/exclude_ancestor_claudemd_test.go`; see `docs/operations.md` and `docs/plans/ancestor-claude-md-findings.md`.
+- **Automaton workers no longer read ancestor-directory `CLAUDE.md` files.** A worker launched in a PRD worktree or the main checkout also loaded parent-directory `CLAUDE.md` files, such as another session's `Session:`/`Task:` guardrails, and stalled asking which task to do. The remote-node backend now passes `--settings '{"claudeMdExcludes":[...]}'` listing every `CLAUDE.md` in a strict ancestor of the project directory (absolute paths, computed per launch). The project's own `CLAUDE.md` and `~/.claude/CLAUDE.md` still load. It applies to Automaton-owned launches and resumes only; interactive sessions are unchanged. Verified on Claude Code 2.1.306. Tests in `internal/llm/claudecode/ancestors_test.go`, `internal/llm/claudecode/ancestors_launch_test.go` and `internal/session/exclude_ancestor_claudemd_test.go`; see `docs/operations.md` and `docs/plans/ancestor-claude-md-findings.md`.
 
 ## v9.5.62 — PWA stays connected on cellular: stable reconnect, safe reload, incremental resync
 
@@ -1662,7 +1662,7 @@ Automatic commits made after an automated task now use the task's title as their
 ## v9.5.60 — Task delivery is protected from the completion detector
 
 ### Fixed
-- **claude-code worker sessions no longer end before their task is delivered.** A one-shot worker that showed a startup dialog and then finished or exited was recorded as complete even though the task text was never sent. Claiming a session for task delivery now arms the task-echo suppression straight away, so the typed task is not mistaken for a completion marker, and a shared, stricter guard rejects placeholder `DATAWATCH_COMPLETE` text. If a session still reaches a terminal state with no delivery recorded, the executor now treats it as a launch failure (wrapping `ErrWorkerStalled`) and retries it through the normal `auto_fix_retries` budget as an infrastructure failure instead of sending the empty session to verification. Covered by new `TestOneShotTaskDelivery*` and `TestLaunchFailure*` tests.
+- **remote-node worker sessions no longer end before their task is delivered.** A one-shot worker that showed a startup dialog and then finished or exited was recorded as complete even though the task text was never sent. Claiming a session for task delivery now arms the task-echo suppression straight away, so the typed task is not mistaken for a completion marker, and a shared, stricter guard rejects placeholder `DATAWATCH_COMPLETE` text. If a session still reaches a terminal state with no delivery recorded, the executor now treats it as a launch failure (wrapping `ErrWorkerStalled`) and retries it through the normal `auto_fix_retries` budget as an infrastructure failure instead of sending the empty session to verification. Covered by new `TestOneShotTaskDelivery*` and `TestLaunchFailure*` tests.
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
 
 ## v9.5.59 — PWA shows the datawatch eye during full-page refreshes
@@ -1885,7 +1885,7 @@ reliability, same scope knowledge, same failure information.**
 ### Fixed
 - **A one-shot Claude Code session no longer stalls on its start-up dialog.** The session manager now recognizes the trust-folder and similar start-up dialogs in the pane, dismisses them with the right keys, and then delivers the task, so a one-shot or PRD worker session no longer sits waiting on a prompt nobody answers. Covered by `internal/session/startup_dialog_dismiss_test.go` with a recorded dialog fixture; design note in `docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md`.
 
-- **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `pi-prompt`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `claude-code`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `pi-prompt`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
+- **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `peer-e`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `remote-node`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `peer-e`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
 
 ## v9.5.35 — Go 1.26.10 pin, deterministic autonomous tests, tolerant judge verdicts
 
@@ -2012,7 +2012,7 @@ Finished feature branches no longer conflict on the version number when they are
 
 ## v9.5.19 — autonomous: a per-node limit on local-model sessions, with a queue for the rest
 
-Each compute node can now run only a set number of local-model sessions at once. The new setting `autonomous.max_engines_per_node` controls that number and defaults to 1; values below 1 are treated as 1. It applies to sessions whose model runs on a local engine on that node (pi, pi-prompt, ollama, opencode, and opencode-acp). Hosted backends such as claude-code are not limited by it.
+Each compute node can now run only a set number of local-model sessions at once. The new setting `autonomous.max_engines_per_node` controls that number and defaults to 1; values below 1 are treated as 1. It applies to sessions whose model runs on a local engine on that node (pi, peer-e, ollama, opencode, and opencode-acp). Hosted backends such as remote-node are not limited by it.
 
 When a node is full, the session waits instead of starting past the limit. The task shows the reason "waiting for node <name>" with how many engines are in use and which tasks hold them. The capacity view lists each node's queue depth and current holders.
 
@@ -2022,7 +2022,7 @@ The setting can be changed from the config file, the REST API, the MCP tools, th
 - Version bump 9.5.18 -> 9.5.19 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
-The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
+The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or peer-e session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
 - Version bump 9.5.15 -> 9.5.16 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.17 — fix(test): the WebSocket delta test no longer fails under parallel load
 
@@ -2212,7 +2212,7 @@ task passes if it succeeds.
 
 ## v9.5.1 — fix(verifier): pi verifier sessions run the configured verification model, and failures name it
 
-**The autonomous verifier uses the model you configured for pi.** A pi or pi-prompt
+**The autonomous verifier uses the model you configured for pi.** A pi or peer-e
 verifier session now runs with the model set in `autonomous.verification_model`.
 Before, it silently fell back to another backend's default model, and those sessions
 often ended without a verdict.
@@ -2368,7 +2368,7 @@ exist) at every layer — REST, MCP (`autonomous_prd_add_task`), and CLI
 
 Found live during the pi backend's first PRD pilot: `llm update <name>
 --compute-nodes ...` (without `--kind`) silently reset a real `pi`/
-`pi-prompt` LLM entry's `kind` back to `"ollama"` — the flag's own
+`peer-e` LLM entry's `kind` back to `"ollama"` — the flag's own
 default — because `kind`, `model`, and `timeout_seconds` were sent on
 every `add`/`update` call unconditionally, unlike every other field on
 this command, which is only sent when the operator actually passed it.
@@ -2380,10 +2380,10 @@ Ollama chat session instead of pi. This bug affects every LLM kind's
 re-stating `--kind`/`--model`/`--timeout-seconds` had those fields reset
 too. `add` is unaffected (a brand-new entry still needs real defaults).
 
-## v9.1.22 — fix(pi): pi-prompt no longer types multi-KB task text inline
+## v9.1.22 — fix(pi): peer-e no longer types multi-KB task text inline
 
 Found during the first real pilot through datawatch's own session
-manager: `pi-prompt` typed the task text (wrapped with checkpoint/
+manager: `peer-e` typed the task text (wrapped with checkpoint/
 completion framing, so even a short task spec arrives as a multi-KB
 block) directly into the terminal. Any embedded newline in that block
 got submitted as a real Enter keypress mid-command, corrupting the shell
@@ -2395,12 +2395,12 @@ interactive `pi` backend and for opencode's own backend.
 
 Two new backends from [pi](https://pi.dev), a minimal open-source coding
 agent harness: `pi` (interactive, a real TUI session that stays open for
-follow-up input, resumable via pi's own `--session-id`) and `pi-prompt`
+follow-up input, resumable via pi's own `--session-id`) and `peer-e`
 (one-shot, blocking `pi --print`, same low-risk completion-detection shape
 as `aider`). Full config parity — YAML (`pi`/`pi_prompt`), REST
 (`GET`/`PUT /api/config`), comm channel (`configure pi.binary=...`, routes
 through the existing config-patch path with no new code), CLI setup
-wizard (`datawatch setup llm pi` / `pi-prompt`), and PWA (backend picker,
+wizard (`datawatch setup llm pi` / `peer-e`), and PWA (backend picker,
 config form, install hints). Deliberately not built: an RPC-protocol
 variant analogous to `opencode-acp` (pi's own `--mode rpc`) — would
 reintroduce the exact async completion-detection race class fixed in
@@ -2517,7 +2517,7 @@ sub-agent-spawning and outside-the-project-directory tools are denied by
 default. Found live: a local open model would state a one-line plan and
 then stop without ever calling a tool when given the full-length
 instructions; the same task completed correctly end to end once the
-instructions were shortened. claude-code tasks are unaffected — they keep
+instructions were shortened. remote-node tasks are unaffected — they keep
 the full-length instructions unchanged.
 
 ## v9.1.11 — fix(opencode): concurrent opencode tasks no longer share one background service
@@ -2734,7 +2734,7 @@ follow the override. Documented in `docs/api/autonomous.md` and
 ## v9.0.88 — fix(server): clear error for llm_test on a session-backend kind
 
 **BL443.** `llm_test` (`POST /api/llms/<name>/test`) on a session-backend
-kind (`claude-code`, `opencode`/`opencode-acp`/`opencode-prompt`, `aider`,
+kind (`remote-node`, `opencode`/`opencode-acp`/`opencode-prompt`, `aider`,
 `goose`, `gemini`, `shell`) now returns a clear `400` explaining that the
 kind runs in a real coding-agent session with no request/response
 ask-adapter, instead of falling through to `dispatcher.Call` and
@@ -2776,7 +2776,7 @@ never attributed processes to individual sessions, because session roots
 were never registered. Running tmux sessions (interactive and Automaton
 task sessions) are now registered on every stats tick and dropped when
 they end, so the Stats tab gets a per-session envelope. When there is
-none, the claude-code backend fallback now matches the observer's
+none, the remote-node backend fallback now matches the observer's
 `claude` signature. Subprocess and agent sessions have no tmux pane and
 still get no per-session envelope.
 
@@ -3241,17 +3241,17 @@ guardrail profile > global) and setters. No new REST route.
 
 How-to: [docs/howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md).
 
-## v9.0.74 — fix(autonomous): task effort reaches claude-code's real `--effort` flag
+## v9.0.74 — fix(autonomous): task effort reaches remote-node's real `--effort` flag
 
 ### Fixed
-- **Autonomous claude-code tasks now run at the effort you chose.**
+- **Autonomous remote-node tasks now run at the effort you chose.**
   A task's, story's or Automaton's effort (`low` / `medium` / `high` /
   `max`, with the legacy `quick` / `normal` / `thorough` mapped to
   `low` / `medium` / `high`) was only ever sent to the session as the
   legacy thoroughness hint, which never reaches the claude CLI, so
-  autonomous claude-code sessions started with no `--effort` flag at
+  autonomous remote-node sessions started with no `--effort` flag at
   all. The executor now also sends `claude_effort` to
-  `/api/sessions/start` for local claude-code sessions, and claude is
+  `/api/sessions/start` for local remote-node sessions, and claude is
   launched with the matching `--effort`. An empty or unrecognised
   effort sends nothing rather than guessing a level.
 - The legacy thoroughness value is still sent unchanged, so nothing
@@ -3259,8 +3259,8 @@ How-to: [docs/howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md)
   their request body is the same as before.
 - **Not covered yet:** tasks spawned on a cluster profile (container
   workers) do not carry the effort level.
-- **Known limitation:** the claude-code backend is shared between
-  sessions, so an effort level stays applied to later claude-code
+- **Known limitation:** the remote-node backend is shared between
+  sessions, so an effort level stays applied to later remote-node
   sessions that start without one of their own, until another session
   sets a different level.
 
@@ -3353,10 +3353,10 @@ setters (absent leaves a field unchanged, empty string clears it).
 Verifier selection reuses the existing `resolveVerifierBackendModel`
 safety logic and the `verification_backends` pool unchanged.
 
-## v9.0.66 — fix(session): one-shot claude-code tasks are delivered once, not re-pasted on every channel heartbeat
+## v9.0.66 — fix(session): one-shot remote-node tasks are delivered once, not re-pasted on every channel heartbeat
 
 ### Fixed
-- **One-shot claude-code workers no longer get their task re-pasted
+- **One-shot remote-node workers no longer get their task re-pasted
   about once a minute.** The channel bridge re-announces
   `POST /api/channel/ready` every 60 s so a restarted daemon re-learns
   its port. `handleChannelReady` re-typed the whole task every time one
@@ -4192,7 +4192,7 @@ subcommands.
   autonomous:guardrail:<id> session <id> timed out after 10m0s"`. The
   session log showed why: `There's an issue with the selected model
   (qwen3.8:27b). It may not exist or you may not have access to it.` —
-  a real claude-code session rejected an Ollama model name outright and
+  a real remote-node session rejected an Ollama model name outright and
   sat retrying forever.
 - **Root cause**: `resolveGuardrailBackendModel` (BL416 Phase 1) baked
   the flat, ask-only `autonomous.verification_model` config value into
@@ -4453,10 +4453,10 @@ subcommands.
 ### Fixed
 - **A session-routed verify/guardrail call could carry the flat,
   ask-compatible `verification_model` straight into a real
-  `claude-code` session, which rejected it outright.** Found live
+  `remote-node` session, which rejected it outright.** Found live
   confirming v9.0.44's fix actually worked end to end: the session
   spawn logged correctly (`[autonomous:verify:...] spawned ...
-  backend=claude-code`), but the session itself got stuck for the
+  backend=remote-node`), but the session itself got stuck for the
   entire 10-minute timeout — its pane showed *"There's an issue with
   the selected model (qwen3.8:27b). It may not exist or you may not
   have access to it."* `resolveVerifierBackendModel` (verify) and the
@@ -4480,7 +4480,7 @@ subcommands.
   `needsSessionJudgment`'s routing decision depends on to learn a
   backend's real kind — was written for its one original caller
   (`decomposeFn`'s ask-only path), which only ever checks whether an
-  error came back. On a non-ask-compatible kind (`claude-code`,
+  error came back. On a non-ask-compatible kind (`remote-node`,
   `opencode`, ...) it deliberately returned `("", "", err)` — empty
   kind. Both the verify and guardrail call sites discard that error
   (`_ = err`), so all they ever actually received back was an empty
@@ -4490,7 +4490,7 @@ subcommands.
   tool-capable silently fell through to the old `ollama` default —
   with no error, no log line, and no observable difference from before
   B124 shipped at all. Confirmed live: a real verify call against
-  `verification_backend: claude-code` produced
+  `verification_backend: remote-node` produced
   `"ollama HTTP 404: model 'qwen3.8:27b' not found"` — the exact
   signature of the old, unfixed path.
 
@@ -4575,7 +4575,7 @@ subcommands.
 - **The PRD verifier and per-task/per-story guardrail never actually got
   tool access, for any backend.** Both were hardwired through `/api/ask`
   (text-only, no file/tool access): a tool-capable backend
-  (claude-code, opencode, goose, aider, gemini, shell) had no adapter
+  (remote-node, opencode, goose, aider, gemini, shell) had no adapter
   there, so pointing verification at one silently downgraded to the
   `ollama` default with no warning. Both now spawn a real one-shot
   tool-using session (the same mechanism decompose's own session-based
@@ -4585,7 +4585,7 @@ subcommands.
   ground its verdict instead of judging from text alone.
 - **Tool-access detection is now fully data-driven, not a hardcoded
   backend-name list.** A new `llm.ToolCapable` optional interface lets
-  any backend declare `HasToolAccess() bool` — claude-code, opencode
+  any backend declare `HasToolAccess() bool` — remote-node, opencode
   (all three variants), goose (both variants), aider, gemini and shell
   all implement it. Whichever LLM an operator configures for
   `autonomous.verification_backend` (or a per-PRD/per-task/per-story
@@ -5117,13 +5117,13 @@ with zero verification scripts despite BL416's own design intent).
 - B121's decomposer fix (v9.0.28) inlined the full content of
   `AGENT.md`/`DATAWATCH-CONTEXT.md` (~160KB combined on this repo)
   into every session-based decompose prompt. Operator-raised same day:
-  a session-based decompose backend (claude-code, opencode, ...) is
+  a session-based decompose backend (remote-node, opencode, ...) is
   already running *in* the PRD's own `project_dir` with real
   file-reading tools — there's no need to pre-digest the files into
   the prompt at all. Inlining was also the direct trigger for B122's
   tmux chunked-paste corruption (confirmed live: even with B122's
   timing fix, a ~26-chunk payload from a second large prompt still
-  corrupted claude-code's input rendering and never submitted) — B122
+  corrupted remote-node's input rendering and never submitted) — B122
   alone wasn't sufficient; the payload itself needed to shrink, not
   just the timing around sending it.
 - `internal/autonomous/rules_context.go` now emits a short pointer
@@ -5154,7 +5154,7 @@ with zero verification scripts despite BL416's own design intent).
   prompt was a few KB at most) until today's B121 fix started
   injecting full `AGENT.md`/`DATAWATCH-CONTEXT.md` content into every
   decompose call — a ~160KB prompt, ~20 chunks. Found live: the
-  receiving TUI (claude-code, ink-based) couldn't reconcile 20
+  receiving TUI (remote-node, ink-based) couldn't reconcile 20
   back-to-back chunk writes that close together, corrupted its own
   input-line rendering (observed: ~13 unexpanded `[Pasted text #N]`
   placeholders stuck on the input line), and the trailing `Enter`
@@ -5218,7 +5218,7 @@ with zero verification scripts despite BL416's own design intent).
 ### Fixed
 - Found live immediately after v9.0.26's own B116-fix landed, while
   clearing `autonomous.planning_model` back to `""` after switching
-  `planning_backend` to `claude-code`: the `PUT /api/config` call
+  `planning_backend` to `remote-node`: the `PUT /api/config` call
   reported success and persisted the empty string to YAML correctly,
   but the live `autonomous.Manager` kept serving the stale value
   forever. Root cause: B116's scoped-propagation fix reads each
@@ -5237,7 +5237,7 @@ with zero verification scripts despite BL416's own design intent).
 
 ### Fixed
 - **B118** — session-based decompose (any coding-agent planning
-  backend: opencode, claude-code, goose, aider) needs a real
+  backend: opencode, remote-node, goose, aider) needs a real
   `project_dir` to root the planning session in, exactly like `Run()`
   does — but worktree auto-creation (BL407 Phase 1) only ever fired
   at `Run()` time, which happens *after* decompose. A worktree-mode
@@ -5281,7 +5281,7 @@ with zero verification scripts despite BL416's own design intent).
   `internal/server/autonomous_config_patch_test.go` for
   `execution_backend`'s round-trip.
 - Set `autonomous.planning_backend` and `autonomous.execution_backend`
-  to `claude-code` on this deployment — operator preference for
+  to `remote-node` on this deployment — operator preference for
   PRD-driven development work going forward (future work will
   experiment with other models/backends via the same knobs).
 
@@ -5839,11 +5839,11 @@ with zero verification scripts despite BL416's own design intent).
   Rule calls for a backlog entry even when a bug is already fixed, not
   just while it's open; this one was shipped without one.
 
-## v9.0.8 — fix: usage-tracker restart amplification (claude-code/opencode/goose/aider cost totals)
+## v9.0.8 — fix: usage-tracker restart amplification (remote-node/opencode/goose/aider cost totals)
 
 ### Fixed
 - Found live, 2026-10-09: `cost_summary` reported **4.3B output tokens /
-  $64,532.70** for `claude-code` — not plausible. Root cause: the
+  $64,532.70** for `remote-node` — not plausible. Root cause: the
   per-backend usage trackers (`claude_usage.go`, `aider_usage.go`
   — line-count based; `opencode_usage.go`, `goose_usage.go` —
   cumulative-last-total based) kept their "how much have I already
@@ -5899,7 +5899,7 @@ with zero verification scripts despite BL416's own design intent).
 ## v9.0.6 — fix: datawatch-channel sibling binary silently never updated
 
 ### Fixed
-- Found while updating `ralfthewise` after v9.0.5: its `~/.local/bin/
+- Found while updating `peer-f` after v9.0.5: its `~/.local/bin/
   datawatch-channel` binary was stale since 2026-05-12 even though the
   main `datawatch` binary had been updating normally every release.
   Root cause: `datawatch-channel` moved to its own dedicated goreleaser
@@ -5946,7 +5946,7 @@ with zero verification scripts despite BL416's own design intent).
   Root cause: `loadAboutOrphanedTmux()` used a bare `fetch('/api/stats')`
   instead of the federation-aware `apiFetch()` helper, so it always
   hit the local daemon regardless of which server was selected —
-  confirmed `ralfthewise` actually has 0 orphans of its own, the card
+  confirmed `peer-f` actually has 0 orphans of its own, the card
   was just silently showing the local host's list. Also cleaned up a
   dead/unused array in `killOrphanedTmux()` built from the same
   non-federated pattern (never actually invoked).
@@ -6124,8 +6124,8 @@ beyond what's already in 8.73.1.
 
 ### Fixed
 - `handleClaudeModels`'s `full_names`/`aliases` and the PWA's two
-  hardcoded claude-code model pickers (`populateModelSelect` call in
-  `llmAddComputeNodesChanged`, `MODELS_BY_BACKEND['claude-code']` in
+  hardcoded remote-node model pickers (`populateModelSelect` call in
+  `llmAddComputeNodesChanged`, `MODELS_BY_BACKEND['remote-node']` in
   `app.js`) were still pinned to the prior model generation (`haiku`
   → `claude-haiku-4-5-20251001`, `opus`/`sonnet` → `-4-7`/`-4-6`)
   despite the rest of the alias map already having been refreshed —
@@ -6152,7 +6152,7 @@ beyond what's already in 8.73.1.
 ## v8.79.0 — feat: Cross-Session Communication Rule (BL401)
 
 ### Added
-- A new policy section injected into spawned claude-code sessions'
+- A new policy section injected into spawned remote-node sessions'
   `CLAUDE.md`, mirroring the existing Memory Use Rule / RTK
   instructions pattern exactly (same injection mechanism, same
   idempotent-merge behavior) — steers the LLM toward datawatch's own
@@ -6752,7 +6752,7 @@ beyond what's already in 8.73.1.
 ## v8.73.32 — feat(federation): per-peer TLS cert-verification bypass for self-signed servers
 
 ### Added
-- Operator reported federation to `ralfthewise` failing while its web UI loaded fine. Root cause: `ralfthewise`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
+- Operator reported federation to `peer-f` failing while its web UI loaded fine. Root cause: `peer-f`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
 - New per-entry `tls_skip_verify` field (`multiserver.Entry`, `config.RemoteServerConfig`) disables cert verification for **that one peer only** — every other peer/server keeps full verification. Shared `multiserver.HTTPClient(skipVerify, timeout)` helper used by all 5 outbound call sites instead of 5 independently-drifting `http.Client` constructions.
 - Full-surface parity: REST (`fedPeerAdd`/`fedPeerUpdate`/plain server add/update — auto-pass-through, no DTU needed), MCP (`federation_peer_add/update`, `server_add/update` — new `tls_skip_verify` param), CLI (`federation peer add/update --tls-skip-verify`, `server add/update --tls-skip-verify`, and an interactive prompt in `datawatch setup server`), YAML (`servers[].tls_skip_verify`), PWA (checkbox on both the "Remote Servers" and "Federation Peers" forms, 2 new locale keys × 5 bundles). No comm-channel surface exists for server management, so none was added.
 - `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed, not mocked): confirms `TLSSkipVerify=false` fails with a certificate error against it and `TLSSkipVerify=true` succeeds against the *same* server.
@@ -7233,7 +7233,7 @@ This is Phase 1 of 4 for GH#192 (8-item Android/iOS parity batch); see `docs/pla
 
 ### Added
 - GH#172 D65 — three-finger swipe-up gesture. Real spec pulled from the `datawatch-app` repo's own parity audit (`docs/parity/sections/02-sessions-list.md` row 91: "64dp, 500ms debounce → opens the server picker") since the issue thread alone didn't say what the gesture does. The PWA's server picker is already an always-visible toolbar bar (decision D2a), not a hidden dialog, so there's no overlay to "open" — the gesture instead scrolls the active view to top and briefly highlights the picker bar. Hand-rolled on the raw Touch Events API (3 simultaneous `touches`, ≥64px net upward movement, 500ms debounce) — confirmed this is detectable on both Android Chrome and iOS Safari (3-finger-swipe-anywhere isn't a reserved OS/browser gesture on either platform).
-- GH#172 D67 — "other Android session-detail extras", also pulled from the real spec (`03-session-detail.md` rows 34/46/66) rather than left vague: (1) one-time "hooks installed" toast for claude-code sessions, fired on the first poll that observes `hook_health` flip to `alive`; (2) dismissible amber rate-limit inline notice in session detail showing the retry-at time, mirroring the apps' `RateLimitNotice`/`InlineNotices`; (3) Terminal/Chat mode preference — investigated and found the PWA has no equivalent construct to persist (session view is driven entirely by the fixed, server-set `output_mode`, not a live user-toggleable tab the apps have) — a genuine architecture difference, not a missed implementation, documented rather than forced.
+- GH#172 D67 — "other Android session-detail extras", also pulled from the real spec (`03-session-detail.md` rows 34/46/66) rather than left vague: (1) one-time "hooks installed" toast for remote-node sessions, fired on the first poll that observes `hook_health` flip to `alive`; (2) dismissible amber rate-limit inline notice in session detail showing the retry-at time, mirroring the apps' `RateLimitNotice`/`InlineNotices`; (3) Terminal/Chat mode preference — investigated and found the PWA has no equivalent construct to persist (session view is driven entirely by the fixed, server-set `output_mode`, not a live user-toggleable tab the apps have) — a genuine architecture difference, not a missed implementation, documented rather than forced.
 
 ### Fixed
 - Two real bugs found live via a user-submitted screenshot + a direct capture of the actual tmux pane behind it (not guessed from the screenshot alone): (1) the session-detail Timeline/Response buttons could wrap onto separate lines independently — `margin-left:auto` was on the Timeline button alone, which in a wrapping flex row pushes only that button to its line's right edge, leaving Response (the next sibling) to wrap onto its own blank line when it no longer fit. Fixed by grouping both buttons inside one inner flex span so they move as a unit. (2) Tofu/missing-glyph boxes in the terminal before "bypass permissions" — captured the exact bytes from a live pane and confirmed U+23F5 (⏵ BLACK MEDIUM RIGHT-POINTING TRIANGLE, part of Claude Code's own CLI status line) — root cause: `fontFamily: "'JetBrains Mono', 'Fira Code', monospace"` never actually loads either named font anywhere in this repo (no `@font-face`, no Google Fonts link), so it silently falls through to the OS default monospace (Menlo on iOS), which lacks that glyph. Broadened the fallback chain (`ui-monospace`, `Menlo`, `Consolas` added) as a best-effort breadth increase — explicitly not a guaranteed fix for every obscure codepoint; a real fix needs a bundled web font with full coverage, flagged as a deliberate follow-up rather than attempted here blind.
@@ -7259,24 +7259,24 @@ This is Phase 1 of 4 for GH#192 (8-item Android/iOS parity batch); see `docs/pla
 ### Fixed
 - B98 continued again: per the operator's follow-up ("openwebui is a configured service it can be used, and can you install other binaries needed"), installed `aider` (via `uv tool install --python 3.12 aider-chat` — the system's only Python is 3.14, which no released `aider-chat` version supports yet; `uv` fetched an isolated 3.12 toolchain with no system/sudo changes) and `@google/gemini-cli` (via `npm install -g`, works cleanly), then stood up a real local OpenWebUI instance (`ghcr.io/open-webui/open-webui:main` via Docker, `--network=host`, pointed at the existing local Ollama) to close out the two backends v8.63.11/v8.63.12 had left as "needs a live instance to verify."
 - **OpenWebUI**: live-verified against the real instance (admin account created, connected to local `qwen3:1.7b`) that `/api/chat/completions`' final SSE chunk — the one carrying `finish_reason` — includes a top-level `usage` object with `input_tokens`/`output_tokens`. `internal/llm/backends/openwebui/conversation.go`'s `sendAndStream` already scanned every chunk for `choices[].delta.content` and discarded everything else; extended the same inline decode struct to also capture `usage` and report it via a new `usageFn`/`SetUsageFn` (mirroring ollama's v8.63.11 shape exactly), wired in `cmd/datawatch/main.go` next to the existing `SetChatEmitter`.
-- **aider**: aider has no export command or structured API (confirmed from its own source, `aider/coders/base_coder.py`) — it prints its own per-turn usage line, `Tokens: <sent> sent, <received> received.`, directly into the same tmux pane log `monitorOutput` already tails, live-verified end to end (`aider --model ollama_chat/qwen3:1.7b --yes --message ...` run inside a real tmux pane with `pipe-pane` capture, confirmed the line prints clean with no ANSI contamination). New `internal/session/aider_usage.go` polls `sess.LogFile` (not a separate command) for that line. One real wrinkle caught by reading aider's source *before* writing the parser instead of guessing from a small live sample: aider's own `format_tokens()` abbreviates to `"X.Yk"` above 1,000 tokens and `"Nk"` (rounded, no decimal) above 10,000 — handled by `parseAiderTokenCount`, with the inherent precision loss at those thresholds documented as a known, accepted limitation (same honesty standard as claude-code's cache-token exclusion) rather than silently mis-parsed.
+- **aider**: aider has no export command or structured API (confirmed from its own source, `aider/coders/base_coder.py`) — it prints its own per-turn usage line, `Tokens: <sent> sent, <received> received.`, directly into the same tmux pane log `monitorOutput` already tails, live-verified end to end (`aider --model ollama_chat/qwen3:1.7b --yes --message ...` run inside a real tmux pane with `pipe-pane` capture, confirmed the line prints clean with no ANSI contamination). New `internal/session/aider_usage.go` polls `sess.LogFile` (not a separate command) for that line. One real wrinkle caught by reading aider's source *before* writing the parser instead of guessing from a small live sample: aider's own `format_tokens()` abbreviates to `"X.Yk"` above 1,000 tokens and `"Nk"` (rounded, no decimal) above 10,000 — handled by `parseAiderTokenCount`, with the inherent precision loss at those thresholds documented as a known, accepted limitation (same honesty standard as remote-node's cache-token exclusion) rather than silently mis-parsed.
 - **gemini**: binary now installed and its CLI mechanism researched (`--output-format json`/`stream-json`, Google's standard `usageMetadata.{promptTokenCount,candidatesTokenCount}` fields confirmed present in the installed package's bundle) but **not implemented** — live-verification needs real Google Cloud credentials this environment doesn't have, and the only usage-bearing output mode (`-o json`) would require rearchitecting `gemini`'s `Launch` to be Go-mediated (parse JSON, re-render just the text to the pane) the way `openwebui`'s backend already is, trading away the current plain-text tmux transcript for a implementation decision — surfaced to the operator rather than decided unilaterally.
 
 ## v8.63.12 — fix(session): B98 follow-up — opencode/goose session usage + ollama wiring gap
 
 ### Fixed
 - B98 continued: finished the "research all backends, then build" pass across opencode and goose, live-verifying each mechanism (not guessing from `--help` text) before writing code.
-- **opencode**: opencode assigns its own internal `ses_...` session ID at launch, which datawatch cannot pass in or predict (confirmed in the backend's own `LaunchResume` comment). `opencode session list --format json` exposes each session's `directory` + `created` (unix ms) fields; new `internal/session/opencode_usage.go` resolves the matching `ses_...` ID once (by project directory + closest creation time, cached for the monitor's lifetime) then polls `opencode export <id>` every 10s. Live-verified two real gotchas that pure doc-reading would have missed: `export` prints a human-readable `Exporting session: <id>` line before the JSON body (skipped before parsing), and `info.tokens.{input,output}` are **cumulative session-lifetime totals**, not per-turn deltas — tracked against a stored "last known total" and only the delta is reported, same shape as claude-code's line-count approach. Reasoning tokens (`info.tokens.reasoning`) are deliberately not folded in — unconfirmed whether they're additive with `output` or disjoint, and double-counting would be worse than the conservative omission (same rationale as B98's original cache-token exclusion for claude-code).
+- **opencode**: opencode assigns its own internal `ses_...` session ID at launch, which datawatch cannot pass in or predict (confirmed in the backend's own `LaunchResume` comment). `opencode session list --format json` exposes each session's `directory` + `created` (unix ms) fields; new `internal/session/opencode_usage.go` resolves the matching `ses_...` ID once (by project directory + closest creation time, cached for the monitor's lifetime) then polls `opencode export <id>` every 10s. Live-verified two real gotchas that pure doc-reading would have missed: `export` prints a human-readable `Exporting session: <id>` line before the JSON body (skipped before parsing), and `info.tokens.{input,output}` are **cumulative session-lifetime totals**, not per-turn deltas — tracked against a stored "last known total" and only the delta is reported, same shape as remote-node's line-count approach. Reasoning tokens (`info.tokens.reasoning`) are deliberately not folded in — unconfirmed whether they're additive with `output` or disjoint, and double-counting would be worse than the conservative omission (same rationale as B98's original cache-token exclusion for remote-node).
 - **goose**: live-verified that `goose session export --name <name> --format json` works directly as a lookup key — no need to resolve goose's own separate date-based internal ID (e.g. `20261007_1`) at all. But goose's `--name` is only passed at launch `if Session.Name != ""` (confirmed in the backend's `Launch`); when empty, goose assigns an unpredictable internal ID and there is no reliable lookup, so new `internal/session/goose_usage.go` is a deliberate no-op for that case rather than a guess. When `Name` is set, polls the export's `accumulated_usage.{input_tokens,output_tokens}` every 10s — also cumulative, same delta-tracking shape as opencode.
-- Both wired into `internal/session/manager.go`'s existing `monitorOutput` goroutine (started/stopped on the same lifecycle as the per-session output monitor, same pattern as claude-code's hook), gated on `BackendFamily == "opencode"/"opencode-prompt"` and `"goose"` respectively.
+- Both wired into `internal/session/manager.go`'s existing `monitorOutput` goroutine (started/stopped on the same lifecycle as the per-session output monitor, same pattern as remote-node's hook), gated on `BackendFamily == "opencode"/"opencode-prompt"` and `"goose"` respectively.
 - Fixed a real wiring gap found while closing out B98: v8.63.11 added `ollama.SetUsageFn` (`internal/llm/backends/ollama/conversation.go`) but never called it from `cmd/datawatch/main.go` — the setter existed, nothing ever registered a callback, so ollama chat-mode sessions were still silently at zero despite the backend already decoding `prompt_eval_count`/`eval_count`. Wired alongside the existing `SetChatEmitter`/`SetSaveConversationFn` call sites.
 - Still open (aider, gemini — binaries not installed in this environment, unresearched; OpenWebUI's own session-backend streaming path — unconfirmed whether its SSE stream carries a usage-bearing final chunk without a live instance to verify against; the separate, deliberately-deprioritized inference-adapter usage gap for Council/`/api/ask`/verifier calls).
 
-## v8.63.11 — fix(session): B98 — claude-code sessions now report real token usage/cost
+## v8.63.11 — fix(session): B98 — remote-node sessions now report real token usage/cost
 
 ### Fixed
-- B98: `Session.TokensIn`/`TokensOut`/`EstCostUSD` reported zero for every session on every backend — `Manager.AddUsage` was only ever called from the manual `POST /api/cost/usage` endpoint, never automatically from the real session lifecycle. Root cause researched across every backend datawatch supports (interactive and one-shot/PRD task sessions alike — confirmed both spawn through the identical `Backend.Launch` code path, not divergent modes) before writing any code: claude-code sessions run in full interactive TUI mode (no `--print`/`--output-format json`), so there's no structured per-turn usage on stdout to scrape.
-- Fixed for **claude-code** (the dominant contributor to the reported bug — 139 of the originally-reported zero-cost sessions): Claude Code already writes a JSONL transcript per session at a path this daemon can compute without any discovery step, since the session UUID passed via `--session-id` is already deterministic (seeded from the session's own ID). New `internal/session/claude_usage.go` polls that transcript every 10s (started/stopped on the same lifecycle as the existing per-session output monitor) and calls `AddUsage` with the real `input_tokens`/`output_tokens` from each new assistant turn. Deliberately does **not** fold in `cache_creation_input_tokens`/`cache_read_input_tokens` — Anthropic bills those at very different rates than base input tokens and `CostRate` has no cache-aware field, so including them would produce a wildly inflated dollar figure (one real sample transcript had 30,745 cache-creation tokens against 2 real input tokens) — worse than the honest zero it replaces. Needs a `CostRate` schema extension to do properly; tracked as a known gap, not guessed at.
+- B98: `Session.TokensIn`/`TokensOut`/`EstCostUSD` reported zero for every session on every backend — `Manager.AddUsage` was only ever called from the manual `POST /api/cost/usage` endpoint, never automatically from the real session lifecycle. Root cause researched across every backend datawatch supports (interactive and one-shot/PRD task sessions alike — confirmed both spawn through the identical `Backend.Launch` code path, not divergent modes) before writing any code: remote-node sessions run in full interactive TUI mode (no `--print`/`--output-format json`), so there's no structured per-turn usage on stdout to scrape.
+- Fixed for **remote-node** (the dominant contributor to the reported bug — 139 of the originally-reported zero-cost sessions): Claude Code already writes a JSONL transcript per session at a path this daemon can compute without any discovery step, since the session UUID passed via `--session-id` is already deterministic (seeded from the session's own ID). New `internal/session/claude_usage.go` polls that transcript every 10s (started/stopped on the same lifecycle as the existing per-session output monitor) and calls `AddUsage` with the real `input_tokens`/`output_tokens` from each new assistant turn. Deliberately does **not** fold in `cache_creation_input_tokens`/`cache_read_input_tokens` — Anthropic bills those at very different rates than base input tokens and `CostRate` has no cache-aware field, so including them would produce a wildly inflated dollar figure (one real sample transcript had 30,745 cache-creation tokens against 2 real input tokens) — worse than the honest zero it replaces. Needs a `CostRate` schema extension to do properly; tracked as a known gap, not guessed at.
 - Also fixed the identical "already-zero, now at least not under-counted further" gap for **ollama** session-backend chat mode (`internal/llm/backends/ollama/conversation.go`'s `/api/chat` streaming path): Ollama's own `prompt_eval_count`/`eval_count` fields, present on the final `"done":true` chunk, were being decoded-and-discarded; now wired into `AddUsage` the same way.
 - **Not yet fixed** (real research done, live-verification or more plumbing still needed before writing code): opencode (`opencode export <id>` has the right fields, but session-ID discovery at datawatch's end needs one live test), goose (`goose session export --name` confirmed with the right fields and a deterministic name, high confidence, just not yet wired), OpenWebUI's own session-backend streaming path (uncertain whether its SSE stream includes a usage-bearing final chunk without a live instance to verify against), aider/gemini (binaries not installed in this environment, unresearched). The one-shot inference-adapter path (Council/`/api/ask`/verifier calls via `internal/inference/adapters/{ollama,openwebui,claude}.go`) is a related but separate gap — those adapters also discard real usage fields already present in Ollama/OpenWebUI/Anthropic's responses, but fixing them doesn't move the B98-reported "sessions show $0" symptom, since Council/ask/verifier calls aren't attributed to a `session.Session` at all; left for a follow-up.
 
@@ -7311,10 +7311,10 @@ This is Phase 1 of 4 for GH#192 (8-item Android/iOS parity batch); see `docs/pla
 ## v8.63.6 — fix(channel): GH#174 — MCP channel bridges never re-register after daemon restart
 
 ### Fixed
-- `cmd/datawatch-channel` (the Go MCP bridge spawned per claude-code session) announced its listening port to the daemon exactly once, at startup (`notifyReady()`, guarded by a one-shot atomic). If the daemon later restarted, it forgot every session's `ChannelReady`/`ChannelPort` (that state lives in the daemon's session store, not the bridge) — and since the bridge never spoke again, "Waiting for MCP channel…" never cleared on any client (PWA/Android/iOS). Confirmed live (reporter's diagnostics): 2,435 sessions, 0 with `bridge_alive`; ports the daemon had on file didn't match what long-running bridges were actually listening on.
+- `cmd/datawatch-channel` (the Go MCP bridge spawned per remote-node session) announced its listening port to the daemon exactly once, at startup (`notifyReady()`, guarded by a one-shot atomic). If the daemon later restarted, it forgot every session's `ChannelReady`/`ChannelPort` (that state lives in the daemon's session store, not the bridge) — and since the bridge never spoke again, "Waiting for MCP channel…" never cleared on any client (PWA/Android/iOS). Confirmed live (reporter's diagnostics): 2,435 sessions, 0 with `bridge_alive`; ports the daemon had on file didn't match what long-running bridges were actually listening on.
 - Fixed with a periodic self-healing re-announce: the bridge now re-sends the same idempotent `POST /api/channel/ready` every 60s for its whole lifetime (new `sendReady`/`readyHeartbeat`), not just once. `handleChannelReady` already just overwrites `ChannelReady`/`ChannelPort` each call, so this is safe regardless of root cause (daemon restart, a dropped session record, a network blip) — self-heals within one interval instead of requiring the daemon to somehow rediscover already-alive bridges.
 - Not fixed (out of scope / needs its own investigation): the issue's third "likely fix" — possible duplicate bridge spawns for one session. The bridge process lifecycle is owned by Claude Code's own MCP client (this repo only ships the bridge binary, not its spawn/respawn logic), so this needs tracing on that side, not here.
-- **Deployment note**: this fixes the bridge binary (`cmd/datawatch-channel`), a separate executable from the daemon — rebuilding/restarting the daemon alone does not update already-running bridge subprocesses inside existing claude-code sessions. Those pick up the fix the next time their session (re)spawns a bridge. Installed the rebuilt binary to both `~/.local/bin/datawatch-channel` and `~/.datawatch/datawatch-channel` for new sessions going forward.
+- **Deployment note**: this fixes the bridge binary (`cmd/datawatch-channel`), a separate executable from the daemon — rebuilding/restarting the daemon alone does not update already-running bridge subprocesses inside existing remote-node sessions. Those pick up the fix the next time their session (re)spawns a bridge. Installed the rebuilt binary to both `~/.local/bin/datawatch-channel` and `~/.datawatch/datawatch-channel` for new sessions going forward.
 
 ## v8.63.5 — fix(config): GH#180 — two config/manager sync gaps
 
@@ -7467,7 +7467,7 @@ Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — P
 ## v8.60.1 — fix(pwa): planning-stage compute card resolved the wrong backend
 
 ### Fixed
-- The Automaton active-session card's planning-stage compute stats fell back to `prd.backend` (the execution backend, often `claude-code`, which has no compute nodes) when `decomposition_profile` was empty, instead of the backend the daemon actually decomposes with (`decomposition_profile`, else the global planning backend). It silently showed local daemon stats instead of the real planning compute node. Reported via the Android/iOS apps' own parity check, which already resolves this correctly via a shared resolver; the PWA now matches.
+- The Automaton active-session card's planning-stage compute stats fell back to `prd.backend` (the execution backend, often `remote-node`, which has no compute nodes) when `decomposition_profile` was empty, instead of the backend the daemon actually decomposes with (`decomposition_profile`, else the global planning backend). It silently showed local daemon stats instead of the real planning compute node. Reported via the Android/iOS apps' own parity check, which already resolves this correctly via a shared resolver; the PWA now matches.
 
 ## v8.60.0 — feat(pwa): PWA parity sweep Phase 3 batch 6 — Config Viewer + raw editor (GH#172 D79)
 
@@ -7517,7 +7517,7 @@ Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — P
 ## v8.56.0 — feat(session): PWA parity sweep Phase 3 batch 2 — persist Chrome-enabled flag (GH#172 D66)
 
 ### Added
-- **`Session.ChromeEnabled`** — new persisted/serialized field, set at session creation when `--chrome` is actually honored by the backend (same gate as the existing `SetChrome` call). Previously this decision lived only inside the claude-code backend's own private field, with no getter and no way for the PWA (or anything else) to know after the fact whether a session has Chrome DevTools Protocol browser automation enabled.
+- **`Session.ChromeEnabled`** — new persisted/serialized field, set at session creation when `--chrome` is actually honored by the backend (same gate as the existing `SetChrome` call). Previously this decision lived only inside the remote-node backend's own private field, with no getter and no way for the PWA (or anything else) to know after the fact whether a session has Chrome DevTools Protocol browser automation enabled.
 - **PWA**: a green "Chrome" badge on session cards when `chrome_enabled` is true, next to the existing agent-worker badge.
 
 Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4.
@@ -7525,7 +7525,7 @@ Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — P
 ## v8.55.0 — feat(autonomous): PWA parity sweep Phase 3 batch 1 — PRD permission_mode editor (GH#172 D75)
 
 ### Added
-- **`set_permission_mode`** — new REST action (`POST /api/autonomous/prds/{id}/set_permission_mode`) and `Manager.SetPermissionMode`, matching the same pattern as `set_memory_harvest`/`set_llm`. Validates against claude-code's 6 permission modes (the same set `start_session`'s MCP tool already validates); empty clears the PRD back to inheriting the session/config default. This is the real backend gap D75 was blocked on — found live while implementing it during Phase 1, now closed.
+- **`set_permission_mode`** — new REST action (`POST /api/autonomous/prds/{id}/set_permission_mode`) and `Manager.SetPermissionMode`, matching the same pattern as `set_memory_harvest`/`set_llm`. Validates against remote-node's 6 permission modes (the same set `start_session`'s MCP tool already validates); empty clears the PRD back to inheriting the session/config default. This is the real backend gap D75 was blocked on — found live while implementing it during Phase 1, now closed.
 - **PWA**: a "Permission" button next to "LLM" on the Automaton detail view opens a small picker for the new action.
 
 Part of the PWA parity sweep (`docs/plans/2026-10-05-pwa-parity-sweep.md`) — Phase 3 of 4, first batch.
@@ -7904,7 +7904,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.37.2 — fix(autonomous): per-task backend override left a stale model string from a different backend
 
 ### Fixed
-- **A per-task `set_task_llm` backend override didn't clear the inherited model, pairing a stale model string from the old backend with the new one** — found live diagnosing why PRD `8baa807b`'s task `0c56044c` kept stalling: it ran on `opencode`/`ollama/qwen3.8:27b` and repeatedly stalled on a large document-synthesis task. Overriding the task's backend to `claude-code` via `set_task_llm` (leaving `model` empty — "empty = backend default" per that tool's own documented contract) still passed the PRD's `model: "ollama/qwen3.8:27b"` straight through to the new claude-code session, because `backend` and `model` cascaded through task → story → PRD independently in `executor.go`'s resolution logic. claude-code doesn't recognize an Ollama model name and got stuck on its own interactive "There's an issue with the selected model" prompt instead of completing the one-shot task — twice, exhausting the task's retry budget and blocking the whole PRD. Extracted the resolution into `resolveTaskBackendModel` (both the primary task-execution cascade and the child-PRD-spawn cascade): model now only inherits from the same level backend was resolved from, so overriding backend alone correctly falls back to that backend's own default instead of a mismatched inherited model. 4 new regression tests.
+- **A per-task `set_task_llm` backend override didn't clear the inherited model, pairing a stale model string from the old backend with the new one** — found live diagnosing why PRD `8baa807b`'s task `0c56044c` kept stalling: it ran on `opencode`/`ollama/qwen3.8:27b` and repeatedly stalled on a large document-synthesis task. Overriding the task's backend to `remote-node` via `set_task_llm` (leaving `model` empty — "empty = backend default" per that tool's own documented contract) still passed the PRD's `model: "ollama/qwen3.8:27b"` straight through to the new remote-node session, because `backend` and `model` cascaded through task → story → PRD independently in `executor.go`'s resolution logic. remote-node doesn't recognize an Ollama model name and got stuck on its own interactive "There's an issue with the selected model" prompt instead of completing the one-shot task — twice, exhausting the task's retry budget and blocking the whole PRD. Extracted the resolution into `resolveTaskBackendModel` (both the primary task-execution cascade and the child-PRD-spawn cascade): model now only inherits from the same level backend was resolved from, so overriding backend alone correctly falls back to that backend's own default instead of a mismatched inherited model. 4 new regression tests.
 
 ## v8.37.1 — fix(pwa): session_state handler read the wrong payload shape, corrupting state.sessions
 
@@ -7944,7 +7944,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.9 — feat(autonomous): verifier capacity load-balances across multiple configured ollama nodes; fixes capacity-card PRD attribution and a config-merge bug
 
 ### Added
-- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-local-node"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a claude-code PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
+- **`autonomous.verification_backends`** — an ordered list of LLM registry names (e.g. `["ollama-datawatch", "ollama-local-node"]`) the verifier tries in order, using whichever currently has free node capacity. Found live: a remote-node PRD's verifier always fell back to one hardcoded default backend, which needed the *same exclusive `node:` capacity slot* a real local worker session on that node needed — so a 100%-cloud PRD's progress could be blocked indefinitely by unrelated local GPU contention it had nothing to do with. Each candidate uses its own registry-default model (forcing one model across heterogeneous nodes isn't safe). Empty (default) = exact single-backend behavior as before. Exposed through every surface: REST/YAML config, MCP (`autonomous_config_set`'s new `verification_backends` array param), and comm channel (new `autonomous config-get` / `autonomous config-set` verbs — this whole config surface previously had no comm-channel parity at all).
 
 ### Fixed
 - **The verifier's capacity requests never set `PRDID`** — so `/api/capacity?prd_id=<id>` and the capacity card could never show that a PRD was genuinely blocked waiting on the verifier; it just looked idle. Also: `?prd_id=` only ever filtered the `pools` list, never `leases`/`waiting`, so a PRD's scoped view could show unrelated PRDs' entries. Both fixed.
@@ -7977,12 +7977,12 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ### Fixed
 - **Task `depends_on` has never actually been enforced** — found live completing PRD `a2833a5e`: a task that finished depending on two files a cancelled sibling story never produced. Root cause: `depends_on` is documented as "other Task/Story IDs" and every consumer (`topoSort`, both the sequential and concurrent executor paths) compares it against IDs — but the decompose LLM can only reference a sibling by its *title* (IDs don't exist until `SetStories` assigns them), so an entry was always a title, never an ID, and silently matched nothing. In practice this meant dependency ordering was never real — tasks just ran in ID-creation order, which happens to closely approximate decompose's own sequence, masking the gap until a cancelled dependency's dependent proceeded without it. `SetStories` now resolves each `depends_on` title to its real ID once every sibling has one; an entry matching neither a known ID nor a sibling title is left untouched (e.g. a stale reference to something since removed) rather than silently dropped.
 - **A cancelled dependency was treated as satisfied, not unmet** — a task depending on an already-cancelled sibling (an earlier story the operator cancelled and never restarted) proceeded as if the dependency had been fulfilled, in the sequential executor path. The concurrent path had the mirror-image bug: a dependent of an already-terminal task was never seeded into either tracking map, so it could deadlock (silently stuck pending) instead of either proceeding or failing visibly. Both paths now correctly treat a cancelled (or failed) dependency as unmet, propagating failure to the dependent with a message distinguishing "was cancelled" from "failed".
-- **The one-shot stall-detector (v8.36.1) killed every opencode session almost immediately, regardless of whether it was actually stuck** — found live on PRD `8baa807b`: the shared prompt-detection pattern list includes a bare `"> "` to catch Claude Code's interactive menus, but that same pattern also matches opencode's own normal, persistent status line (`"> build · qwen3.8:27b"`), misclassifying every opencode one-shot session as `waiting_input` within seconds of spawn. Scoped the kill+retry to `claude-code` specifically — the only backend this was validated against; other backends fall back to the existing log-mtime staleness check.
+- **The one-shot stall-detector (v8.36.1) killed every opencode session almost immediately, regardless of whether it was actually stuck** — found live on PRD `8baa807b`: the shared prompt-detection pattern list includes a bare `"> "` to catch Claude Code's interactive menus, but that same pattern also matches opencode's own normal, persistent status line (`"> build · qwen3.8:27b"`), misclassifying every opencode one-shot session as `waiting_input` within seconds of spawn. Scoped the kill+retry to `remote-node` specifically — the only backend this was validated against; other backends fall back to the existing log-mtime staleness check.
 
 ## v8.36.3 — fix(autonomous): a deliberately cancelled story no longer rolls the PRD up to failed
 
 ### Fixed
-- **A PRD with one deliberately cancelled story and every other story genuinely completed still rolled up to `PRDFailed`** — found live completing the first real end-to-end claude-code Automaton run: the end-of-`Run()` rollup counted any non-`TaskCompleted` terminal status (including `TaskCancelled`) as a failure. Cancellation is an operator choice, not a failure; only `TaskFailed` marks the PRD failed now.
+- **A PRD with one deliberately cancelled story and every other story genuinely completed still rolled up to `PRDFailed`** — found live completing the first real end-to-end remote-node Automaton run: the end-of-`Run()` rollup counted any non-`TaskCompleted` terminal status (including `TaskCancelled`) as a failure. Cancellation is an operator choice, not a failure; only `TaskFailed` marks the PRD failed now.
 
 ## v8.36.2 — fix(ci): agent-gemini's version bump alone didn't fix brace-expansion/undici CVEs
 
@@ -7992,7 +7992,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.1 — fix(autonomous): one-shot sessions no longer hang on Claude Code's interactive prompts; agent-gemini CVE bump
 
 ### Fixed
-- **A one-shot claude-code session could hang indefinitely on Claude Code's own interactive disambiguation menu** — found live on the first real end-to-end claude-code Automaton run: `reset_task` retried a task whose prior attempt had genuinely succeeded (files written, committed) but only failed *verification*; the retry redelivered the identical original spec with no indication it was a retry, so Claude Code — reasonably, for an interactive user — noticed the target files already existed and stopped to ask what to do. A one-shot session has no human to answer that; it hung forever with no existing safety net (`stale_task_seconds`/`session.stale_timeout_seconds` unset). Three complementary fixes: every one-shot task spec now states up front that no human is present and the worker should make its own judgment call rather than pause to ask; `reset_task` now folds the cleared error/verification (including the verifier's specific issues, not just its summary) into a new retry hint so a retry explains what happened instead of looking like brand-new work; and the verifier's wait loop now detects a one-shot session stuck at `waiting_input` for ~9s and kills+retries it as a safety net. Verified live, twice — including catching and fixing an ambiguous retry-hint wording that let a worker satisfy the letter of "verify or redo" with only a checkpoint note instead of the actual required files.
+- **A one-shot remote-node session could hang indefinitely on Claude Code's own interactive disambiguation menu** — found live on the first real end-to-end remote-node Automaton run: `reset_task` retried a task whose prior attempt had genuinely succeeded (files written, committed) but only failed *verification*; the retry redelivered the identical original spec with no indication it was a retry, so Claude Code — reasonably, for an interactive user — noticed the target files already existed and stopped to ask what to do. A one-shot session has no human to answer that; it hung forever with no existing safety net (`stale_task_seconds`/`session.stale_timeout_seconds` unset). Three complementary fixes: every one-shot task spec now states up front that no human is present and the worker should make its own judgment call rather than pause to ask; `reset_task` now folds the cleared error/verification (including the verifier's specific issues, not just its summary) into a new retry hint so a retry explains what happened instead of looking like brand-new work; and the verifier's wait loop now detects a one-shot session stuck at `waiting_input` for ~9s and kills+retries it as a safety net. Verified live, twice — including catching and fixing an ambiguous retry-hint wording that let a worker satisfy the letter of "verify or redo" with only a checkpoint note instead of the actual required files.
 - **CI: `containers/agent-gemini` blocked by fixed-but-outdated npm transitive deps** — `brace-expansion` (CVE-2026-102276/102278) and `undici` (CVE-2026-19534), both fixed upstream; bumped the pinned `gemini-cli` 0.39.1 → 0.62.0 to pull in the patched versions.
 
 ## v8.36.0 — feat(capacity): interactive sessions and the verifier admit through the same ledger as autonomous tasks; session-delete memory-strategy; capacity-card node visibility + PRD scoping
@@ -8001,7 +8001,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 - **Session delete gets the same keep/purge/archive memory-strategy picker PRD hard-delete already had** — `POST /api/sessions/delete` accepts `memory_strategy`/`archive_role_filter`/`archive_to_scope`; PWA UI and MCP (`delete_session`) updated to match. Previously a session's memories were always silently kept with no choice at all, on any surface.
 - **Interactive session starts now respect shared compute-node capacity** — `POST /api/sessions/start` admits on the same `node:`/`llm:` pools an autonomous task on that backend would use (short wait, default 8s — `session.capacity_wait_seconds` — since this blocks a synchronous HTTP request, unlike the autonomous path's much longer default). Autonomous task spawns (`one_shot`) skip this — they already admit via the executor's own capacity check before ever reaching this handler.
 - **The BL25 verifier's own `/api/ask` call now admits through the capacity ledger too** — previously a completely unmanaged HTTP call with zero capacity interaction, meaning it could silently contend with other tasks on a fully-busy node instead of waiting its turn.
-- **Verifier backend/model default to the PRD's own backend/model when unconfigured** — previously always fell back to a hardcoded `ollama` regardless of what the PRD actually used, so a Claude-backed PRD's work was still judged by whatever the global Ollama default happened to be. Only takes effect when the PRD's backend is itself ask-compatible (ollama/openwebui, or a directly-configured Claude API entry) — session-only backends (claude-code, opencode, ...) have no single-shot ask adapter regardless of whose backend it is, and fall through to the `ollama` default exactly as before. New `autonomous.verification_model` config key (`verification_backend` already existed but was undocumented).
+- **Verifier backend/model default to the PRD's own backend/model when unconfigured** — previously always fell back to a hardcoded `ollama` regardless of what the PRD actually used, so a Claude-backed PRD's work was still judged by whatever the global Ollama default happened to be. Only takes effect when the PRD's backend is itself ask-compatible (ollama/openwebui, or a directly-configured Claude API entry) — session-only backends (remote-node, opencode, ...) have no single-shot ask adapter regardless of whose backend it is, and fall through to the `ollama` default exactly as before. New `autonomous.verification_model` config key (`verification_backend` already existed but was undocumented).
 - **`/api/capacity` accepts `?prd_id=`** to scope the pool list to that PRD's own backend usage (`host` plus only the `llm:`/`node:` pools its stories/tasks actually resolve to) — previously always the whole machine's ledger, so a Claude-only PRD's capacity card showed unrelated nodes any other PRD or task happened to be using. `capacity_status` MCP tool updated to match.
 - **Every registered compute node now always appears in `/api/capacity`**, even with no configured session cap and no current activity — previously invisible (the ledger deleted rather than zeroed an unconfigured pool), so real hardware could go unmonitored just because nobody set a limit on it. PWA capacity card lists these plainly as "no cap configured."
 
@@ -8503,7 +8503,7 @@ These fixes complete the enforcement hardening started in v8.25.10, which fixed 
 - **`execution_backend` autonomous config field** — a new `execution_backend` field in the autonomous `Config` struct (REST: `PUT /api/autonomous/config`, YAML: `autonomous.execution_backend`) sets the backend used for all PRD task sessions when neither the task nor the PRD has an explicit `backend` override. Allows operators to pin all autonomous tasks to `opencode` (or any other backend) without having to set it per-PRD.
 
 ### Fixed
-- After `reset_to_draft`, the PRD's `backend` field was cleared, causing the executor to fall through to the global `session.llm_backend` default (typically `claude-code`) instead of the intended backend. The new `execution_backend` config fallback closes this gap: task backend resolution now checks task → PRD → `cfg.ExecutionBackend` → global default.
+- After `reset_to_draft`, the PRD's `backend` field was cleared, causing the executor to fall through to the global `session.llm_backend` default (typically `remote-node`) instead of the intended backend. The new `execution_backend` config fallback closes this gap: task backend resolution now checks task → PRD → `cfg.ExecutionBackend` → global default.
 
 ### Internal
 - PRD `0fb4e302` re-run confirmed: session `75c4` logged `[opencode] wrote project config (model=ollama/qwen3.8:27b)`, verifying the fix end-to-end.
@@ -8577,7 +8577,7 @@ Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-ser
 ## v8.21.0 — feat(autonomous): session-based PRD decomposer with real codebase access
 
 ### Added
-- **Session-based PRD decomposer (Option B)** (`internal/autonomous/decompose.go`, `cmd/datawatch/main.go`) — when a PRD's `decomposition_profile` (or the global `planning_backend` config) resolves to a session-capable backend (`claude-code`, `opencode`, `goose`, etc.), `Decompose` now spawns a one-shot coding session instead of calling the stateless `/api/ask` endpoint. The session receives a task prompt instructing it to explore the actual codebase with full tool access, then write structured JSON to `.decompose-output.json` in the project directory. After the session completes (detected via the existing `DATAWATCH_COMPLETE:` pane-watcher mechanism), the daemon reads the output file and parses it with `ParsePlanning`. This eliminates hallucinated file paths and task specs that don't match the existing codebase — the LLM can `Read`, `Grep`, and `Bash` before writing the plan. Ask-compatible backends (`ollama`, `openwebui`) continue to use the existing `/api/ask` path unchanged.
+- **Session-based PRD decomposer (Option B)** (`internal/autonomous/decompose.go`, `cmd/datawatch/main.go`) — when a PRD's `decomposition_profile` (or the global `planning_backend` config) resolves to a session-capable backend (`remote-node`, `opencode`, `goose`, etc.), `Decompose` now spawns a one-shot coding session instead of calling the stateless `/api/ask` endpoint. The session receives a task prompt instructing it to explore the actual codebase with full tool access, then write structured JSON to `.decompose-output.json` in the project directory. After the session completes (detected via the existing `DATAWATCH_COMPLETE:` pane-watcher mechanism), the daemon reads the output file and parses it with `ParsePlanning`. This eliminates hallucinated file paths and task specs that don't match the existing codebase — the LLM can `Read`, `Grep`, and `Bash` before writing the plan. Ask-compatible backends (`ollama`, `openwebui`) continue to use the existing `/api/ask` path unchanged.
 - **`DecomposeRequest.ProjectDir`** — new field passed from `PRD.ProjectDir` so the session-based decompose knows where to run and where to write the output file.
 - **`PlanningPromptSession`** (`internal/autonomous/decompose.go`) — new prompt constant for the session-based decompose path; instructs the LLM to explore the project first, write raw JSON to the output file, and signal completion.
 
@@ -8589,7 +8589,7 @@ Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-ser
 ## v8.20.10 — fix(autonomous): generalize one-shot task delivery to all TUI backends
 
 ### Fixed
-- **One-shot PRD task delivery only worked for opencode, not goose / aider / other TUI backends** (`cmd/datawatch/main.go`) — the `SetStateChangeHandler` delivery block was guarded by `BackendFamily == "opencode"` so any other TUI backend assigned as the PRD task executor would start a session, sit idle at its prompt, and never receive the task. The condition is now a deny-list: all backends except `claude-code` (has channel bridge), `opencode-acp` (uses ACP structured API), and `subprocess` (shell task wrapping) receive the task via `send_input` when they reach `waiting_input` with `one_shot=true`. Renamed `opencodeTaskDelivered` sync.Map → `tuiTaskDelivered`; log prefix changed from `[opencode-task]` to `[tui-task]`.
+- **One-shot PRD task delivery only worked for opencode, not goose / aider / other TUI backends** (`cmd/datawatch/main.go`) — the `SetStateChangeHandler` delivery block was guarded by `BackendFamily == "opencode"` so any other TUI backend assigned as the PRD task executor would start a session, sit idle at its prompt, and never receive the task. The condition is now a deny-list: all backends except `remote-node` (has channel bridge), `opencode-acp` (uses ACP structured API), and `subprocess` (shell task wrapping) receive the task via `send_input` when they reach `waiting_input` with `one_shot=true`. Renamed `opencodeTaskDelivered` sync.Map → `tuiTaskDelivered`; log prefix changed from `[opencode-task]` to `[tui-task]`.
 
 ## v8.20.9 — fix(autonomous): opencode completion detection + session filter + sprint status
 
@@ -8611,7 +8611,7 @@ Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-ser
 ## v8.20.7 — fix(autonomous): opencode one-shot task prompt delivery; Start Planning UX
 
 ### Fixed
-- **Opencode TUI autonomous task sessions never received their task prompt** (`cmd/datawatch/main.go`) — the daemon's one-shot task delivery path lives in `handleChannelReady`, which fires when the MCP channel bridge calls `POST /api/channel/ready`. Claude-code sessions do this via their embedded channel bridge JS; opencode TUI sessions have no such bridge and never call that endpoint, so the session started but sat idle at the "Ask anything…" prompt indefinitely. The autonomous loop stalled waiting for the session to complete. Fix: added a `SetStateChangeHandler` hook that watches for `BackendFamily=="opencode" && OneShot && Task!=""` sessions entering `waiting_input`, then delivers the task via `send_input` (same mechanism as the claude-code one-shot path). A `sync.Map` guard ensures exactly one delivery per session.
+- **Opencode TUI autonomous task sessions never received their task prompt** (`cmd/datawatch/main.go`) — the daemon's one-shot task delivery path lives in `handleChannelReady`, which fires when the MCP channel bridge calls `POST /api/channel/ready`. remote-node sessions do this via their embedded channel bridge JS; opencode TUI sessions have no such bridge and never call that endpoint, so the session started but sat idle at the "Ask anything…" prompt indefinitely. The autonomous loop stalled waiting for the session to complete. Fix: added a `SetStateChangeHandler` hook that watches for `BackendFamily=="opencode" && OneShot && Task!=""` sessions entering `waiting_input`, then delivers the task via `send_input` (same mechanism as the remote-node one-shot path). A `sync.Map` guard ensures exactly one delivery per session.
 
 ## v8.20.6 — fix(pwa): Start Planning button disables in-place; Cancel button planning warning
 
@@ -8642,7 +8642,7 @@ Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-ser
 
 ### Fixed
 - **Autonomous task sessions were not being cleaned up after PRD completion** (`cmd/datawatch/main.go`) — `autonomousVerify` fired immediately after spawning the worker session, before the session had a chance to do any work. The verifier saw no git diff, returned `ok:true` by default, and the session was left running indefinitely. Sessions accumulated until manually killed. Fix: `autonomousVerify` now polls `session.Manager.GetSession` every 3 seconds until the spawned session reaches `StateComplete`, `StateFailed`, or `StateKilled` (or the context is cancelled), then best-effort kills it to clean up the tmux pane.
-- **New Automaton modal showed only ollama/openwebui in the Backend dropdown** (`internal/server/web/app.js`) — the execution backend picker in `openPRDCreateModal` had `planningOnly=true`, hiding opencode/goose/claude-code from the list. Removed the filter from the execution backend field. A separate "Planning backend (decompose)" field with `planningOnly=true` is now shown alongside it. The `decomposition_profile` from this field is included in the `set_llm` call on PRD creation.
+- **New Automaton modal showed only ollama/openwebui in the Backend dropdown** (`internal/server/web/app.js`) — the execution backend picker in `openPRDCreateModal` had `planningOnly=true`, hiding opencode/goose/remote-node from the list. Removed the filter from the execution backend field. A separate "Planning backend (decompose)" field with `planningOnly=true` is now shown alongside it. The `decomposition_profile` from this field is included in the `set_llm` call on PRD creation.
 
 ## v8.20.1 — fix(autonomous): cancelled PRD restart — Reset to Draft + Settings access
 
@@ -8656,19 +8656,19 @@ Extends the existing `extraMCPSpecs` injection primitive (from the extra-MCP-ser
 ## v8.20.0 — feat(autonomous): split PRD planning backend from task-execution backend
 
 ### Added
-- **Split decompose vs. execution backends for autonomous PRDs** (`internal/autonomous/`, `internal/server/autonomous.go`, `internal/server/web/app.js`) — the PRD's single `backend` field was previously used for both headless planning/decompose (requires ollama/openwebui) and task-session spawning (benefits from tool-capable agents like opencode or goose). The `DecompositionProfile` struct field (defined but unconnected since v5.26.60) is now wired as the per-PRD planning LLM. Decompose and DecomposeStreaming now use `prd.DecompositionProfile`, falling back to the global `autonomous.planning_backend` config. The execution `backend` field is now purely for task sessions and accepts any backend — opencode, claude-code, goose, etc.
+- **Split decompose vs. execution backends for autonomous PRDs** (`internal/autonomous/`, `internal/server/autonomous.go`, `internal/server/web/app.js`) — the PRD's single `backend` field was previously used for both headless planning/decompose (requires ollama/openwebui) and task-session spawning (benefits from tool-capable agents like opencode or goose). The `DecompositionProfile` struct field (defined but unconnected since v5.26.60) is now wired as the per-PRD planning LLM. Decompose and DecomposeStreaming now use `prd.DecompositionProfile`, falling back to the global `autonomous.planning_backend` config. The execution `backend` field is now purely for task sessions and accepts any backend — opencode, remote-node, goose, etc.
 - **`decomposition_profile` on `set_llm` endpoint** — `POST /api/autonomous/prds/{id}/set_llm` accepts a new optional `decomposition_profile` field, validated against the inference registry; `autonomous_prd_set_llm` MCP tool exposes the same field.
-- **PWA — two-field LLM settings** — the Set LLM modal and Settings modal now show separate pickers: "Execution backend (tasks)" (all backends, opencode/goose/claude-code available) and "Planning backend (decompose — ollama/openwebui only)". Removes the `planningOnly=true` restriction from the execution backend selectors in both modals.
+- **PWA — two-field LLM settings** — the Set LLM modal and Settings modal now show separate pickers: "Execution backend (tasks)" (all backends, opencode/goose/remote-node available) and "Planning backend (decompose — ollama/openwebui only)". Removes the `planningOnly=true` restriction from the execution backend selectors in both modals.
 
 ## v8.19.10 — fix: autonomous task sessions use PRD's named inference-registry LLM backend
 
 ### Fixed
-- **Autonomous task sessions ignoring configured LLM backend** (`internal/server/api.go`) — when an autonomous PRD has a named v7 inference-registry backend (e.g. `ollama-datawatch`) and its tasks are spawned, the executor sends `backend: "ollama-datawatch"` to `/api/sessions/start`. The session manager's legacy `llm.Get()` only knows fixed kind strings (`"ollama"`, `"openwebui"`, `"claude-code"`, …) and returned `"unknown LLM backend"` for the named entry, causing the manager to **silently fall through to its default backend (`claude-code`)** — so all autonomous task sessions ran with Claude even though the PRD was configured for ollama. The fix resolves `req.Backend` through the inference registry when `req.LLM` is unset: if the backend name matches an inference-registry entry, its `Kind` string replaces `req.Backend` before the session manager sees it, and the first `ComputeNode` is wired through for Ollama URL resolution.
+- **Autonomous task sessions ignoring configured LLM backend** (`internal/server/api.go`) — when an autonomous PRD has a named v7 inference-registry backend (e.g. `ollama-datawatch`) and its tasks are spawned, the executor sends `backend: "ollama-datawatch"` to `/api/sessions/start`. The session manager's legacy `llm.Get()` only knows fixed kind strings (`"ollama"`, `"openwebui"`, `"remote-node"`, …) and returned `"unknown LLM backend"` for the named entry, causing the manager to **silently fall through to its default backend (`remote-node`)** — so all autonomous task sessions ran with Claude even though the PRD was configured for ollama. The fix resolves `req.Backend` through the inference registry when `req.LLM` is unset: if the backend name matches an inference-registry entry, its `Kind` string replaces `req.Backend` before the session manager sees it, and the first `ComputeNode` is wired through for Ollama URL resolution.
 
 ## v8.19.9 — fix(pwa): PRD backend filter + Approve/Reject buttons in needs_review
 
 ### Fixed
-- **PRD backend picker** (`internal/server/web/app.js`) — PRD-level backend selectors (new PRD form, set-LLM modal, settings modal, wizard) now filter to planning-capable backends only via a new `planningOnly` parameter on `renderBackendSelect`. A new `HEADLESS_PLANNING_KINDS` constant (`Set(['ollama', 'openwebui'])`) gates the filter. Session-only backends (opencode, claude-code, aider, gemini, goose) were silently failing decompose with `planning backend has kind "X" which does not support headless planning via /api/ask`. Per-task backend overrides remain unfiltered since tasks execute in full sessions.
+- **PRD backend picker** (`internal/server/web/app.js`) — PRD-level backend selectors (new PRD form, set-LLM modal, settings modal, wizard) now filter to planning-capable backends only via a new `planningOnly` parameter on `renderBackendSelect`. A new `HEADLESS_PLANNING_KINDS` constant (`Set(['ollama', 'openwebui'])`) gates the filter. Session-only backends (opencode, remote-node, aider, gemini, goose) were silently failing decompose with `planning backend has kind "X" which does not support headless planning via /api/ask`. Per-task backend overrides remain unfiltered since tasks execute in full sessions.
 - **PRD Approve + Reject buttons missing in `needs_review`** (`internal/server/web/app.js`) — `_renderDetailHeader` was restructured in a prior release and only preserved "Request Revision" for the `needs_review`/`revisions_asked` toolbar, dropping Approve and Reject. All three action buttons are restored: green Approve (`prdAction` POST `approve`), red Reject (`prdActionPrompt` `reject`), and amber Request Revision (`prdActionPrompt` `request_revision`).
 - **Misleading lifecycle hint during plan review** (`internal/server/web/app.js`) — `renderLifecycleStrip` showed "Planning… review will become available shortly" even after decompose completed and stories were ready to review. The hint is now conditional: `needs_review` shows "Plan ready — review the stories below and Approve / Reject / Revise"; all other `review`-step states show the original in-progress message.
 
@@ -9266,7 +9266,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Added
 
-- **`session.extra_mcp_servers` config field (BL344 / GH#118)** — list of additional MCP servers injected into `.mcp.json` on every spawn alongside the built-in `datawatch` entry. For non-claude-code backends, extras are written via `WriteProjectMCPConfig`. For claude-code backends (where the datawatch bridge is registered separately via RegisterSessionMCP), extras are written via new `InjectExtrasIntoMCPConfig`. Existing operator-added entries are preserved. Example:
+- **`session.extra_mcp_servers` config field (BL344 / GH#118)** — list of additional MCP servers injected into `.mcp.json` on every spawn alongside the built-in `datawatch` entry. For non-remote-node backends, extras are written via `WriteProjectMCPConfig`. For remote-node backends (where the datawatch bridge is registered separately via RegisterSessionMCP), extras are written via new `InjectExtrasIntoMCPConfig`. Existing operator-added entries are preserved. Example:
   ```yaml
   session:
     extra_mcp_servers:
@@ -9400,7 +9400,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Fixed
 
-- **Auto-accept goroutine broke on the brief gap between two sequential startup dialogs** — when claude-code shows both the "trust this folder" and "Loading development channels" dialogs in sequence, the retry loop called `GetActiveStartupPromptInput` between dialogs (0–50 ms window with nothing visible), got `""`, and hit `break` — leaving the second dialog unhandled indefinitely. Fix: changed both auto-accept retry loops (DetectPrompt path and SetStateChangeHandler path) to `continue` on empty response instead of breaking. The goroutine now checks all 5 × 500 ms slots regardless, and only sends input when a dialog is actually visible.
+- **Auto-accept goroutine broke on the brief gap between two sequential startup dialogs** — when remote-node shows both the "trust this folder" and "Loading development channels" dialogs in sequence, the retry loop called `GetActiveStartupPromptInput` between dialogs (0–50 ms window with nothing visible), got `""`, and hit `break` — leaving the second dialog unhandled indefinitely. Fix: changed both auto-accept retry loops (DetectPrompt path and SetStateChangeHandler path) to `continue` on empty response instead of breaking. The goroutine now checks all 5 × 500 ms slots regardless, and only sends input when a dialog is actually visible.
 
 ---
 
@@ -9426,7 +9426,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Fixed
 
-- **Auto-accept startup prompts not firing for channel-enabled spawned sessions** — the existing auto-accept goroutine was wired only to the filter-engine `DetectPrompt` action handler. Channel-enabled sessions (the default for claude-code) take the `processOutputLine` structured-channel path which calls `tryTransitionToWaiting` → `onStateChange` directly, bypassing `DetectPrompt`. As a result, the trust-folder confirmation prompt ("Quick safety check", "Enter to confirm · Esc to cancel") was never auto-accepted for one-shot spawned sessions, causing them to sit idle indefinitely.
+- **Auto-accept startup prompts not firing for channel-enabled spawned sessions** — the existing auto-accept goroutine was wired only to the filter-engine `DetectPrompt` action handler. Channel-enabled sessions (the default for remote-node) take the `processOutputLine` structured-channel path which calls `tryTransitionToWaiting` → `onStateChange` directly, bypassing `DetectPrompt`. As a result, the trust-folder confirmation prompt ("Quick safety check", "Enter to confirm · Esc to cancel") was never auto-accepted for one-shot spawned sessions, causing them to sit idle indefinitely.
 
   Fix: moved the auto-accept goroutine launch into the `SetStateChangeHandler` callback so it fires for **any** path that transitions a session to `waiting_input`. The existing `LoadOrStore` guard prevents double-firing when both `DetectPrompt` and `onStateChange` fire for the same session startup sequence. The filter-engine path remains unchanged for non-channel backends.
 
@@ -9867,7 +9867,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 - **`docs/datawatch-definitions.md` — Session AI summarizer** — new section documenting the dual short/long summary pipeline (`last_response` + `last_summary_long`), `GET /api/sessions/{id}/current-status`, `session.summarizer.model` config, and parser resilience details (v8.9.0–v8.9.4).
 - **`docs/datawatch-definitions.md` — Anti-clobber typing detection** — documents the 30 s keystroke idle wait, per-session send queue (cap 256), AI-relay bypass, and queue lifecycle (BL336, v8.9.17–v8.9.19).
-- **`docs/datawatch-definitions.md` — Renderer lock** — documents `ensureClaudeTUISetting` writing `"tui":"default"` into the datawatch-scoped settings.json to pin claude-code to line-printing mode (BL337, v8.9.20).
+- **`docs/datawatch-definitions.md` — Renderer lock** — documents `ensureClaudeTUISetting` writing `"tui":"default"` into the datawatch-scoped settings.json to pin remote-node to line-printing mode (BL337, v8.9.20).
 - **`docs/datawatch-definitions.md` — Self-update pipeline** — documents goreleaser archive priority, `datawatch-channel` co-update, `GET /api/update/check` read-only endpoint, and auto-update config fields (BL338, v8.9.21).
 - **`docs/datawatch-definitions.md` — imap-mcp email command channel** — full config reference (`imap_mcp.enabled/url/account/subject_prefix`), receive/send model, trust-boundary note, imap-mcp v0.2.0 requirement (BL340, v8.9.23).
 - **`docs/datawatch-definitions.md` — MCP session name resolution + permission_mode** — documents session-name lookup with active-preference tiebreak; `start_session` `permission_mode` parameter reference table (BL341, v8.9.24).
@@ -10024,11 +10024,11 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ---
 
-## v8.9.20 — feat(session): pin claude-code to line-printing renderer via settings.json (2026-06-07)
+## v8.9.20 — feat(session): pin remote-node to line-printing renderer via settings.json (2026-06-07)
 
 ### Added
 
-- **Line-printing renderer lock** — `NewManager` now calls `ensureClaudeTUISetting` at startup, which writes `"tui": "default"` into the datawatch-scoped `settings.json` (at `<dataDir>/.claude/settings.json`). This merges with any existing settings and is idempotent. The setting pins claude-code to the pre-flag line-printing renderer, preventing Anthropic's server-side `tengu_pewter_brook` flag (~Jun 2–6 2026) from switching sessions into an alternate-screen (`\e[?1049h`) mode that bypasses tmux scrollback and `pipe-pane` capture.
+- **Line-printing renderer lock** — `NewManager` now calls `ensureClaudeTUISetting` at startup, which writes `"tui": "default"` into the datawatch-scoped `settings.json` (at `<dataDir>/.claude/settings.json`). This merges with any existing settings and is idempotent. The setting pins remote-node to the pre-flag line-printing renderer, preventing Anthropic's server-side `tengu_pewter_brook` flag (~Jun 2–6 2026) from switching sessions into an alternate-screen (`\e[?1049h`) mode that bypasses tmux scrollback and `pipe-pane` capture.
 
 ---
 
@@ -10070,7 +10070,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Fixed
 
-- **Stale `"datawatch"` entry in project `.mcp.json` still causes port 7433 conflict after v8.9.15 upgrade** — v8.9.15 stopped writing the global `"datawatch"` entry for claude-code sessions, but projects that had already been used with an older daemon retained the entry on disk. When a new session started, Claude Code still loaded it and spawned a bridge on port 7433 alongside the correct per-session bridge. Fixed by actively removing the `"datawatch"` key from `<projectDir>/.mcp.json` at session start for claude-code backends. Idempotent — no-op if the entry was already absent or the file doesn't exist.
+- **Stale `"datawatch"` entry in project `.mcp.json` still causes port 7433 conflict after v8.9.15 upgrade** — v8.9.15 stopped writing the global `"datawatch"` entry for remote-node sessions, but projects that had already been used with an older daemon retained the entry on disk. When a new session started, Claude Code still loaded it and spawned a bridge on port 7433 alongside the correct per-session bridge. Fixed by actively removing the `"datawatch"` key from `<projectDir>/.mcp.json` at session start for remote-node backends. Idempotent — no-op if the entry was already absent or the file doesn't exist.
 
 ---
 
@@ -10078,7 +10078,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Fixed
 
-- **Second claude-code session fails with "MCP server failed" / "failed to connect"** — for every claude-code session start, the daemon wrote a static `"datawatch"` entry to the project's `.mcp.json` (BL109) *and* registered a session-scoped `"datawatch-{id}"` entry via `RegisterSessionMCP` (which correctly uses `DATAWATCH_CHANNEL_PORT=0`). Claude Code loaded both, spawning two bridge processes. The `.mcp.json` entry lacked `DATAWATCH_CHANNEL_PORT`, so it always defaulted to 7433. When a second session started in the same project, its bridge failed to bind port 7433 (already in use), and Claude Code surfaced "MCP server failed". Fixed by skipping `WriteProjectMCPConfig` for claude-code backends — `RegisterSessionMCP` handles the registration correctly with all required env vars.
+- **Second remote-node session fails with "MCP server failed" / "failed to connect"** — for every remote-node session start, the daemon wrote a static `"datawatch"` entry to the project's `.mcp.json` (BL109) *and* registered a session-scoped `"datawatch-{id}"` entry via `RegisterSessionMCP` (which correctly uses `DATAWATCH_CHANNEL_PORT=0`). Claude Code loaded both, spawning two bridge processes. The `.mcp.json` entry lacked `DATAWATCH_CHANNEL_PORT`, so it always defaulted to 7433. When a second session started in the same project, its bridge failed to bind port 7433 (already in use), and Claude Code surfaced "MCP server failed". Fixed by skipping `WriteProjectMCPConfig` for remote-node backends — `RegisterSessionMCP` handles the registration correctly with all required env vars.
 
 ---
 
@@ -10237,7 +10237,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   - New `splitByLineHeaders` fallback recognises `SHORT` / `LONG` as section headings on their own lines, regardless of surrounding `===`, `[]`, `##`, `**`, `:` decoration.
   - Final paragraph-split fallback: first double-newline-separated paragraph → short; remainder → long.
   - Prompt updated to say "begin immediately with ===SHORT===" to improve compliance on first try.
-- **#114 — CLI `datawatch session send` missing Enter (daemon-offline path)**: The direct-tmux fallback used the old single-call `tmux send-keys -t session text Enter` without `-l` (literal flag), causing special characters to be misinterpreted and the settle race with bracketed-paste TUIs (claude-code, ink, opencode) to fire the wrong Enter. Fixed to match the daemon's `SendKeysWithSettle` pattern: strip trailing newlines → send `-l` literal text → 120 ms settle → send `Enter` separately.
+- **#114 — CLI `datawatch session send` missing Enter (daemon-offline path)**: The direct-tmux fallback used the old single-call `tmux send-keys -t session text Enter` without `-l` (literal flag), causing special characters to be misinterpreted and the settle race with bracketed-paste TUIs (remote-node, ink, opencode) to fire the wrong Enter. Fixed to match the daemon's `SendKeysWithSettle` pattern: strip trailing newlines → send `-l` literal text → 120 ms settle → send `Enter` separately.
 
 ---
 
@@ -10871,7 +10871,7 @@ Downstream-Review Rule.
 - **Comprehensive smoke test — 82 sections** — extends the original 64 sections with §33-§50: splash info + OpenAPI spec, cooldown surface, devices registry, federation sessions, marketplace + OpenWebUI models, orchestrator verdicts + templates, session templates CRUD, proxy gateway, MCP tools count + call round-trip, Docs-as-MCP (search/list/read), guardrail library + profiles via MCP, LLM registry via MCP, memory scopes via MCP, observer config + stats via MCP, pipeline + routing rules via MCP, telemetry via MCP, smoke progress DELETE, CLI surface (20 commands).
 - **Test plan v7.0.0** — 3810-line plan with T18–T22 sprints (TS-250–TS-364) covering 89 additional stories for REST, MCP, CLI, Docs-as-MCP, and smoke infrastructure. Master cookbook grows from 204 to 293 planned story rows.
 - **MCP loopback TLS fix** — `httpProxy` in MCP tools now uses `InsecureSkipVerify: true` so tools can reach the daemon's self-signed HTTPS endpoint after the HTTP→HTTPS redirect; previously all MCP tools that proxy back to the daemon failed TLS verification.
-- **Hook installer** — at claude-code session start, writes `<project_dir>/.claude/sprint/post-event.sh` + `.dw-env` + hooks into `settings.json`. Feeds Stop/PostToolUse/UserPromptSubmit/SubagentStop events to the Status board.
+- **Hook installer** — at remote-node session start, writes `<project_dir>/.claude/sprint/post-event.sh` + `.dw-env` + hooks into `settings.json`. Feeds Stop/PostToolUse/UserPromptSubmit/SubagentStop events to the Status board.
 
 ### Fixed
 - **Dashboard 2× height on small screens** — removed `grid-row:span 1` overrides from all three responsive breakpoints (900px, 600px, 480px) that were preventing `data-rs="2"` cards from working.
@@ -10978,7 +10978,7 @@ Downstream-Review Rule.
 
 ### Fixed
 - **BL305 — Template instantiation modal rendered LLM objects as `[object Object]`** — `state._prdBackends` is now an array of LLM objects (from `/api/llms`) but the "Use Template" modal mapped them with `escHtml(b)` instead of extracting `b.name`. Fixed to filter by `NON_LLM_BACKENDS` and render `b.name`. All other Automata pickers already used `/api/llms` correctly.
-- **BL306 — `decomposeFn` / `verifyFn` / `guardrailFn` now route named LLMs correctly** — Added `resolveAskBackend()` that looks up named LLMs in the inference registry and returns their adapter kind + model. Named LLMs of kind `ollama`/`openwebui` now route to `/api/ask` with the correct adapter kind; named LLMs of kind `claude-code` (or other non-ask-compatible kinds) return a clear error rather than silently falling back. `autonomousInferenceReg` captured from the outer var block so the registry is available in the closures. Verification and guardrail functions updated with the same pattern.
+- **BL306 — `decomposeFn` / `verifyFn` / `guardrailFn` now route named LLMs correctly** — Added `resolveAskBackend()` that looks up named LLMs in the inference registry and returns their adapter kind + model. Named LLMs of kind `ollama`/`openwebui` now route to `/api/ask` with the correct adapter kind; named LLMs of kind `remote-node` (or other non-ask-compatible kinds) return a clear error rather than silently falling back. `autonomousInferenceReg` captured from the outer var block so the registry is available in the closures. Verification and guardrail functions updated with the same pattern.
 
 ### Changed
 - **BL304 — Rename "decomposition" → "planning" across all surfaces** — Go config structs (`DecompositionBackend/Effort/Model` → `PlanningBackend/Effort/Model`) with legacy YAML shadow fields for back-compat; Go symbols (`DecompositionPrompt` → `PlanningPrompt`, `ParseDecomposition()` → `ParsePlanning()`) with aliases; MCP tool params (`decomposition_backend/effort` → `planning_backend/effort`); CLI `prd-plan` canonical + `prd-decompose` alias; HTTP `/api/autonomous/prds/{id}/plan` alias alongside `/decompose`; app.js labels, lifecycle hints, config keys; docs and OpenAPI spec updated throughout.
@@ -11050,15 +11050,15 @@ Downstream-Review Rule.
   - **Locale strings** — if any locale keys reference "decomposition" they must be renamed with old key kept for back-compat
   - Retro-filed 2026-05-16; operator confirmed BL221 Q13 intent was never landed beyond status-code alias.
 
-- **BL305 — Automata planning/verification backend pickers use stale `/api/backends` instead of `/api/llms`** — The decomposition and verification backend dropdowns in Settings > Automata (and in the create/detail modals) use `state._prdBackends` which is populated from `/api/backends`. That endpoint reflects `s.availableBackends` (Go-registered adapter names: "claude-code", "ollama", "openwebui", etc.) filtered by `s.llmEnabled()` which checks the old per-adapter YAML boolean flags (`cfg.Ollama.Enabled`, `cfg.Session.ClaudeEnabled`, etc.). As of v7.0.0, users manage their LLMs through the named LLM registry at `/api/llms` (kind + model + compute nodes + disable flag). These two systems are disconnected: a fresh install that creates named LLMs via the UI (e.g., "ollama", "ollama-datawatch") through `/api/llms` will NOT have `ollama: enabled: true` in YAML, so `llmEnabled("ollama")` returns false, and only "claude-code" appears in the decomposition/verification dropdowns. This also causes the mismatch the operator sees in Settings > Compute > LLMs (correct named-LLM list) vs the Automata backend pickers (empty or Claude-only). Fix: replace the `/api/backends` fetch in `state._prdBackends` and `loadGeneralConfig()` with a fetch to `/api/llms`, use `l.disabled !== true` as the enabled gate, and map `l.name` as the value. `renderBackendSelect()` and the `llm_backend` field renderer in `loadGeneralConfig()` both need updating. Retro-filed 2026-05-16.
+- **BL305 — Automata planning/verification backend pickers use stale `/api/backends` instead of `/api/llms`** — The decomposition and verification backend dropdowns in Settings > Automata (and in the create/detail modals) use `state._prdBackends` which is populated from `/api/backends`. That endpoint reflects `s.availableBackends` (Go-registered adapter names: "remote-node", "ollama", "openwebui", etc.) filtered by `s.llmEnabled()` which checks the old per-adapter YAML boolean flags (`cfg.Ollama.Enabled`, `cfg.Session.ClaudeEnabled`, etc.). As of v7.0.0, users manage their LLMs through the named LLM registry at `/api/llms` (kind + model + compute nodes + disable flag). These two systems are disconnected: a fresh install that creates named LLMs via the UI (e.g., "ollama", "ollama-datawatch") through `/api/llms` will NOT have `ollama: enabled: true` in YAML, so `llmEnabled("ollama")` returns false, and only "remote-node" appears in the decomposition/verification dropdowns. This also causes the mismatch the operator sees in Settings > Compute > LLMs (correct named-LLM list) vs the Automata backend pickers (empty or Claude-only). Fix: replace the `/api/backends` fetch in `state._prdBackends` and `loadGeneralConfig()` with a fetch to `/api/llms`, use `l.disabled !== true` as the enabled gate, and map `l.name` as the value. `renderBackendSelect()` and the `llm_backend` field renderer in `loadGeneralConfig()` both need updating. Retro-filed 2026-05-16.
 
 - **BL307 — `loadLLMConfig()` is a dead code path: `#llmConfigList` DOM element does not exist** — `app.js:10194` defines `loadLLMConfig()` which fetches `/api/backends` and tries to render an LLM toggle list into `document.getElementById('llmConfigList')`. That element ID does not appear anywhere in the current DOM template (`index.html`). The function runs silently — `getElementById` returns null and the render is a no-op. It is called from `loadSettingsTab()` at line 6513 every time the Settings tab opens. Net effect: the old per-adapter enable/disable toggle UI is invisible and broken; users have no way to enable `ollama: enabled: true` etc. through the PWA. Should be audited: either remove the old toggle panel (if `/api/llms` toggle is the replacement), or fix the DOM target. Retro-filed 2026-05-16.
 
 - **BL308 — `autonomous prd-set-llm` CLI + `autonomous set-llm` comm verb bypass the LLM registry** — `cmd/datawatch/cli_autonomous.go:~370` (`prd-set-llm`) and `internal/router/sx2_parity.go:~417` (`autonomous set-llm`) both accept a raw `--backend <name>` string and send it directly to `POST /api/autonomous/prds/{id}/set_llm` without validating it against the LLM registry (`inferenceReg`). A user can set `decomposition_backend: "ollama-datawatch"` (a named registry LLM) and the PRD will store it, but `decomposeFn` will not be able to resolve it (only bare adapter types are routed). No validation or lookup happens at the CLI/comm layer. Fix: on `prd-set-llm` and `set-task-llm`, validate the backend name against `GET /api/llms/{name}` first and reject unknown names with a clear error. Retro-filed 2026-05-16.
 
-- **BL309 — Pipeline executor passes raw `defaultBackend` string; never consults the LLM registry** — `internal/pipeline/executor.go:44` stores `e.backend` (a raw string: "ollama", "claude-code", etc.) and passes it to `StartSession()`. The pipeline never calls `inferenceReg.Get()` or checks `llm.Disabled`. A pipeline task assigned to `backend: "ollama-datawatch"` (a named LLM) will pass the name as-is to session start — which will succeed only if the v7 `req.LLM` path in `api.go:2406` happens to resolve it; if `req.Backend` is used instead, the adapter dispatch will fail. Currently there is no validation at pipeline construction time. Fix: pipeline should resolve the named LLM at start time (validate the name is in the registry, extract the `kind` adapter type, and store both). Retro-filed 2026-05-16.
+- **BL309 — Pipeline executor passes raw `defaultBackend` string; never consults the LLM registry** — `internal/pipeline/executor.go:44` stores `e.backend` (a raw string: "ollama", "remote-node", etc.) and passes it to `StartSession()`. The pipeline never calls `inferenceReg.Get()` or checks `llm.Disabled`. A pipeline task assigned to `backend: "ollama-datawatch"` (a named LLM) will pass the name as-is to session start — which will succeed only if the v7 `req.LLM` path in `api.go:2406` happens to resolve it; if `req.Backend` is used instead, the adapter dispatch will fail. Currently there is no validation at pipeline construction time. Fix: pipeline should resolve the named LLM at start time (validate the name is in the registry, extract the `kind` adapter type, and store both). Retro-filed 2026-05-16.
 
-- **BL306 — `decomposeFn` can only route to "ollama" or "openwebui"; claude-code planning has never worked; named LLMs not routable** — The `decomposeFn` closure in `cmd/datawatch/main.go` (line ~3203) routes through `POST /api/ask`. That endpoint only supports ollama and openwebui as headless "ask" targets — sending `backend: "claude-code"` returns 400 "unsupported backend". The `askCompatible` guard reflects this: `func(b string) bool { return b == "ollama" || b == "openwebui" }`. Consequence: (1) setting `autonomous.decomposition_backend: claude-code` in config has never triggered a claude-code decompose — the guard falls through to "ollama" default silently; (2) named LLMs from the `/api/llms` registry (e.g., "ollama-datawatch" with a specific compute node) are also not routable — `decomposeFn` only understands bare adapter type strings, not named LLM definitions. Fix requires one of: (a) extend `/api/ask` to route through the named LLM dispatcher so named LLMs work; (b) add a `/api/ask`-equivalent headless call for claude-code; (c) have `decomposeFn` detect the LLM kind from `/api/llms` and dispatch via the appropriate path. BL305 is a prerequisite (UI must show named LLMs). Note: the comment in main.go (`// v5.26.9`) documents the claude-code limitation — it was known and deferred; this BL tracks closing the gap. Retro-filed 2026-05-16.
+- **BL306 — `decomposeFn` can only route to "ollama" or "openwebui"; remote-node planning has never worked; named LLMs not routable** — The `decomposeFn` closure in `cmd/datawatch/main.go` (line ~3203) routes through `POST /api/ask`. That endpoint only supports ollama and openwebui as headless "ask" targets — sending `backend: "remote-node"` returns 400 "unsupported backend". The `askCompatible` guard reflects this: `func(b string) bool { return b == "ollama" || b == "openwebui" }`. Consequence: (1) setting `autonomous.decomposition_backend: remote-node` in config has never triggered a remote-node decompose — the guard falls through to "ollama" default silently; (2) named LLMs from the `/api/llms` registry (e.g., "ollama-datawatch" with a specific compute node) are also not routable — `decomposeFn` only understands bare adapter type strings, not named LLM definitions. Fix requires one of: (a) extend `/api/ask` to route through the named LLM dispatcher so named LLMs work; (b) add a `/api/ask`-equivalent headless call for remote-node; (c) have `decomposeFn` detect the LLM kind from `/api/llms` and dispatch via the appropriate path. BL305 is a prerequisite (UI must show named LLMs). Note: the comment in main.go (`// v5.26.9`) documents the remote-node limitation — it was known and deferred; this BL tracks closing the gap. Retro-filed 2026-05-16.
 
 - **BL310 — Smoke test TS-201 calls wrong URL `/api/llm` (missing trailing "s") — always 404** — The smoke test section that validates the LLM registry list (around line 4030 of `run-tests.sh`) calls `GET /api/llm` instead of `GET /api/llms`. The server registers `handleLLMs` under `/api/llms`; `/api/llm` is unregistered and returns 404. The smoke assertion likely checks the status code loosely or accepts 404 as "no LLMs configured", so the test passes while never actually exercising the real endpoint. Fix: correct the URL to `/api/llms` in the smoke script and tighten the assertion to require a 200 with `{"llms":[...]}` shape. Retro-filed 2026-05-16.
 
@@ -11069,7 +11069,7 @@ Downstream-Review Rule.
   4. **No test distinguishing `backend:"ollama-datawatch"` (named LLM) vs `backend:"ollama"` (adapter type)** — these take different code paths in `api.go:2406`; both paths are untested.
   5. **`llmEnabled()` has no unit test** — the hardcoded switch returns false for all named LLMs; no test asserts this behavior or catches accidental changes.
   6. **No `httptest.Server` integration test for `handleLLMs`** — full CRUD handler in `inference.go` is tested only at the in-memory registry level, not the HTTP layer.
-  7. **`DecompositionBackend` never tested with a named registry LLM** — `applyconfigpatch_b38_test.go` only tests the adapter-type string "claude-code"; the named-LLM path in `manager.go:338` is uncovered.
+  7. **`DecompositionBackend` never tested with a named registry LLM** — `applyconfigpatch_b38_test.go` only tests the adapter-type string "remote-node"; the named-LLM path in `manager.go:338` is uncovered.
   8. **No smoke coverage of `/api/backends` response shape** — the `{llm:[...], active:"..."}` JSON contract, version-cache invalidation, and the toggle-then-check cycle are untested.
   9. **No smoke coverage of `llm_add`/`llm_update`/`llm_delete`/`llm_enable`/`llm_in_use` MCP tools** — TS-275 checks only `backends_list`; the new `/api/llms`-backed MCP surface has zero smoke coverage.
   10. **No test for Automata backend picker ↔ LLM registry coherence** — no end-to-end test creates a named LLM via `/api/llms`, then checks that it appears in the picker sources used by the Automata settings section.
@@ -11246,7 +11246,7 @@ Chrome MCP available; verified live in browser.
 ### Added — Sessions toolbar redesign
 
 - **Item 5 — LLM filter collapse button.** The 8 backend-family badges
-  (claude-code / opencode / opencode-acp / opencode-prompt / openwebui /
+  (remote-node / opencode / opencode-acp / opencode-prompt / openwebui /
   ollama / shell / council-virtual) now hide behind a single
   `LLM (8) ▸` button that's left-justified next to the filter input.
   Click to expand the badges row inline; click again to collapse.
@@ -11337,7 +11337,7 @@ follow-ups to alpha.34 that complete the hook-integration arc.
 
 - `internal/hookinstaller/install.go` — writes `.claude/settings.json` +
   `.claude/sprint/post-event.sh` + `.claude/sprint/.dw-env` (chmod 600)
-  into `<project_dir>` at session spawn for `claude-code` sessions.
+  into `<project_dir>` at session spawn for `remote-node` sessions.
 - **Chainable hooks**: existing `settings.json` hooks are PRESERVED.
   The daemon's entry (`...post-event.sh Stop` etc.) is APPENDED to
   each event array if not already present. Idempotent: re-installs
@@ -11376,7 +11376,7 @@ follow-ups to alpha.34 that complete the hook-integration arc.
   - `UserPromptSubmit` (waiting_input → running)
   - `Activity` (other → running)
   - `Stop` (→ waiting_input / complete / failed / killed)
-- Covers claude-code, opencode-acp, openwebui, ollama-direct, council,
+- Covers remote-node, opencode-acp, openwebui, ollama-direct, council,
   autonomous workers — every backend that goes through the manager's
   state engine.
 
@@ -11728,7 +11728,7 @@ field; lockstep update across daemon + REST + MCP + comm + CLI + smoke
 
 Audit finding (docs/plans/alpha.27-llmbackend-rename-audit.md):
 `LLMBackend` and `LLMRef` are semantically distinct — `LLMBackend`
-holds the backend FAMILY (`claude-code`/`ollama`/`opencode`/...) used
+holds the backend FAMILY (`remote-node`/`ollama`/`opencode`/...) used
 by 46 lifecycle/cleanup/output-mode switch statements; `LLMRef` holds
 the v7 LLM registry entry name. Operator picked Path B from the
 interview: drop LLMBackend, add a clearer-named field, refactor sites
@@ -12067,7 +12067,7 @@ Plan-drift acknowledged: alpha.14–19 shipped operator-pulled-in UX work instea
 - `internal/server/api.go:3117-3122` builds the whisper response map by hand and omitted `backend`. PWA Settings → Voice dropdown read no value → defaulted to "whisper" → operator believed local whisper was active. Meanwhile `cfg.Whisper.Backend = "ollama"` triggered BL201 silent inheritance through OpenWebUI's audio API. Three-place divergence: YAML, daemon, PWA. Fix: add `"backend": s.cfg.Whisper.Backend`. Verified live with §22 smoke regression trap.
 
 **#254 — Toast bundling didn't bundle "[name] needs input" family** (operator-flagged during smoke):
-- `internal/server/web/app.js:9532` dedup key was `message + '||' + type` — exact-string match. Per-session messages like `[claude-code] needs input` had a unique string per session, so they never bundled. Fix: strip a leading `[…]` prefix from the dedup key so the family coalesces (display still shows the latest example session).
+- `internal/server/web/app.js:9532` dedup key was `message + '||' + type` — exact-string match. Per-session messages like `[remote-node] needs input` had a unique string per session, so they never bundled. Fix: strip a leading `[…]` prefix from the dedup key so the family coalesces (display still shows the latest example session).
 
 ### Changed
 
@@ -12196,7 +12196,7 @@ Operator: "instead of test should be an on/off, turning on does a pre-test befor
 Second batch of the v7.0.0 Compute Unification plan.
 
 ### Added
-- **Extended auto-migration** (`internal/inference/store.go`): new `MigrateAllLegacyBackends` walks every populated v6 cfg.<Backend> block and creates LLM registry entries (`<backend>-default`). Covers all 10 v6 backends (ollama, openwebui, claude-code, opencode, opencode-acp, opencode-prompt, aider, goose, gemini, shell). Idempotent.
+- **Extended auto-migration** (`internal/inference/store.go`): new `MigrateAllLegacyBackends` walks every populated v6 cfg.<Backend> block and creates LLM registry entries (`<backend>-default`). Covers all 10 v6 backends (ollama, openwebui, remote-node, opencode, opencode-acp, opencode-prompt, aider, goose, gemini, shell). Idempotent.
 - **Migration status surface**: new `/api/migration/status` (GET returns the migrated names + howto link; DELETE dismisses). PWA reads on first load and shows a one-time `showError`-style notice with link to the howto.
 - **`docs/howto/v7-compute-migration.md`**: walkthrough explaining what got migrated, how to verify, and what to do next.
 - **Cascade-delete auto-Node** (#238): DELETE /api/observer/peers/{name} also deletes the auto-created ComputeNode of the same name, fixing the smoke-leak pattern that left 18 orphaned ComputeNodes after smoke runs. Daemon-side fix; operator's existing leak (1 peer + 18 nodes) cleaned manually.
@@ -12221,7 +12221,7 @@ First batch of the v7.0.0 Compute Unification plan (docs/plans/2026-05-09-v7.0.0
 - **Smoke-cleanup safety**: reverted earlier dangerous orphan-sweep widening (council-* / llm_backend==council-virtual) that killed an operator-attached host session. Smoke now cleans up exactly what add_cleanup tracked. AGENT.md gained two new rules: smoke-cleanup-safety + per-sprint-rules-audit checklist.
 
 ### LLM Kinds (#228)
-- `internal/inference/llm.go` Kind enum + AllKinds expanded to all 10 v6 backends: `claude-code`, `opencode-acp`, `opencode-prompt`, `aider`, `goose`, `gemini`, `shell` (existing inference kinds `ollama`, `openwebui`, `opencode`, `claude` retained). Migration to LLM registry happens in batch 2 (alpha.15).
+- `internal/inference/llm.go` Kind enum + AllKinds expanded to all 10 v6 backends: `remote-node`, `opencode-acp`, `opencode-prompt`, `aider`, `goose`, `gemini`, `shell` (existing inference kinds `ollama`, `openwebui`, `opencode`, `claude` retained). Migration to LLM registry happens in batch 2 (alpha.15).
 
 ### Voice transcribe overhaul (#236, #237)
 - ChainedTranscriber wrapper — primary openai-compat → secondary local-whisper-venv last-resort.
@@ -12359,7 +12359,7 @@ Three operator-pulled-in pre-v7.0 deliverables in one cut, executed after operat
 
 - `go build ./...` — clean
 - `node --check internal/server/web/app.js` — OK (after Compute tab edits)
-- Live council quick-run against daemon — verified 2 council-virtual sessions (`ralfthewise-council-4169-ux-advocate`, `ralfthewise-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
+- Live council quick-run against daemon — verified 2 council-virtual sessions (`peer-f-council-4169-ux-advocate`, `peer-f-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
 - Chrome MCP visual: tab list = `[General, Plugins, Comms, Compute, Automata, About]` (no LLM, no Agents); Compute tab shows 11 cards; Automata tab includes `gc_projectprofiles`
 - Smoke 98/0/13 from alpha.9 baseline; re-run pending after this cut
 
@@ -12941,7 +12941,7 @@ compute node add gpu-3 kind=remote address=https://gpu-3:11434 max_concurrent_mo
 
 ### Next sprint
 
-S2 — LLM registry: every consumer (Council, /api/ask, BL297 wizard, agent spawn) routes through a single dispatcher with ordered ComputeNode failover. Adapters for ollama, openwebui, opencode, claude-code (all 4 currently-supported kinds; per ASK 21).
+S2 — LLM registry: every consumer (Council, /api/ask, BL297 wizard, agent spawn) routes through a single dispatcher with ordered ComputeNode failover. Adapters for ollama, openwebui, opencode, remote-node (all 4 currently-supported kinds; per ASK 21).
 
 ## [6.22.6] - 2026-05-08
 
@@ -14334,7 +14334,7 @@ Per the patch-vs-minor rule, this minor release ran the full regression:
 
 ### Fixed
 
-- **`internal/session/manager.go` `processOutputLine` structured-channel branch** — operator-debugged against live session a95f after another restart: "session list shows session a95f as waiting input with a last response visible; but it is clearly still running... session list isn't updating". Root cause: this branch returned at line 4156 BEFORE reaching the v6.12.2 LCE-bump path at line 4357, so claude-code MCP / opencode-acp sessions never bumped `LastChannelEventAt` from log-file output. Gap watcher kept them in WaitingInput indefinitely. Now bumps LCE at the top of the structured-channel branch (positive evidence of activity → resets watcher gap and flips back to Running if drifted).
+- **`internal/session/manager.go` `processOutputLine` structured-channel branch** — operator-debugged against live session a95f after another restart: "session list shows session a95f as waiting input with a last response visible; but it is clearly still running... session list isn't updating". Root cause: this branch returned at line 4156 BEFORE reaching the v6.12.2 LCE-bump path at line 4357, so remote-node MCP / opencode-acp sessions never bumped `LastChannelEventAt` from log-file output. Gap watcher kept them in WaitingInput indefinitely. Now bumps LCE at the top of the structured-channel branch (positive evidence of activity → resets watcher gap and flips back to Running if drifted).
 
 ### Tests
 
@@ -14448,7 +14448,7 @@ Datawatch-app issues to file (operator-directed):
 ### Tests
 
 - 1804 go tests pass
-- Smoke: 106 pass / 0 fail / 7 skip (claude-code state-engine variant skipped behind DW_MAJOR=1 per the cost rule)
+- Smoke: 106 pass / 0 fail / 7 skip (remote-node state-engine variant skipped behind DW_MAJOR=1 per the cost rule)
 
 ## [6.11.26] - 2026-05-05
 
@@ -14465,7 +14465,7 @@ Operator started a fresh claude session and observed the bug live: gap watcher f
 
 ### Added
 
-- **`scripts/release-smoke.sh` check 17 — BL266 gap watcher**: starts a fresh `smoke-state-engine` claude-code session, waits 22 s, asserts state flipped to `waiting_input`. Catches any future regression of the watcher / reverter-guard interaction.
+- **`scripts/release-smoke.sh` check 17 — BL266 gap watcher**: starts a fresh `smoke-state-engine` remote-node session, waits 22 s, asserts state flipped to `waiting_input`. Catches any future regression of the watcher / reverter-guard interaction.
 - **`scripts/release-smoke.sh` `cleanup_all` `sess)` kind**: tracked sessions get killed via `/api/sessions/kill` on EXIT (success or failure).
 - **`scripts/release-smoke.sh` orphan sweep extended**: now catches BOTH `autonomous:*` race-survivors AND any session named `smoke-*` (any state). Sweeps anything not in the pre-smoke baseline.
 
@@ -14509,7 +14509,7 @@ Three operator-reported regressions from v6.11.24:
 Operator-directed: replace the natural-language phrase classifier (v6.11.18→v6.11.23) as the **primary** state-change driver. Five releases of tuning string patterns kept missing real claude wraps, false-firing on mid-sentence text, or breaking the PWA. New architecture:
 
 - **Path B — structured ACP events**: opencode-acp's own SSE event stream (`session.status: busy/idle`, `session.idle`, `session.completed`, `message.completed`, `step-start`, `message.part.delta`, `message.part.updated`) drives state transitions directly. Authoritative — opencode's state machine is the source of truth for opencode-acp sessions; the NLP classifier is bypassed entirely.
-- **Path A — universal event-rate watcher**: any Running session whose last channel event (or pane-content change, or operator input) is older than **15 s** flips to WaitingInput. Handles backends with no structural idle signal (claude-code MCP, ollama chat).
+- **Path A — universal event-rate watcher**: any Running session whose last channel event (or pane-content change, or operator input) is older than **15 s** flips to WaitingInput. Handles backends with no structural idle signal (remote-node MCP, ollama chat).
 - **2 s "stale comms" PWA indicator**: the daemon broadcasts `last_channel_event_at` on every Session payload; the PWA renders an amber pulsing dot adjacent to the state badge after 2 s of silence (no state change). Gives early visual + alerting hook before the 15 s state flip.
 - **NLP classifier demoted to advisory**: it can still promote a "complete" or "input-needed" pattern through the structural engine (which enforces sticky-state guards), but it can no longer flip state on its own. Removes 5 releases of whack-a-mole.
 
@@ -14534,7 +14534,7 @@ Operator-directed: replace the natural-language phrase classifier (v6.11.18→v6
 
 - **`internal/server/web/style.css` `.scroll-bar-btn`** — operator: "scroll back for tmux feature isn't working since the buttons were resized". v6.11.20 stacked `flex: 1 1 0` (basis 0) AND `flex-basis: 33%` (overrode it to 33%); combined with `gap: 8px` the children's preferred sizes totalled >100% on narrow viewports, pushing the rightmost button outside the row where touch hits missed it. Dropped the explicit 33% basis.
 - **`internal/session/manager.go` `MarkChannelActivityFromText`** — DEMOTED from primary state-driver to advisory wrapper; bumps activity timestamp + promotes `complete`/`input` NLP signals through the structural engine (which enforces sticky-state guards).
-- **`internal/session/manager.go` `StartScreenCapture`** — pane-content change now bumps `LastChannelEventAt` so claude-code MCP sessions (which have no structural idle signal but do update the pane during tool calls) don't false-flip to WaitingInput during long tool calls.
+- **`internal/session/manager.go` `StartScreenCapture`** — pane-content change now bumps `LastChannelEventAt` so remote-node MCP sessions (which have no structural idle signal but do update the pane during tool calls) don't false-flip to WaitingInput during long tool calls.
 - **`internal/session/manager.go` `SendInput`** — operator typing bumps `LastChannelEventAt` so the gap watcher doesn't flip Running → WaitingInput while the LLM is still processing the just-sent input.
 
 ### Tests
@@ -14555,7 +14555,7 @@ Operator-directed: replace the natural-language phrase classifier (v6.11.18→v6
 Three follow-up fixes:
 
 1. **Splash never dismissed for sessions with no recent output** — both `CapturePaneANSI` and `TailOutput` could return empty (brand-new session, just-spawned LLM), and v6.11.22's fallback only fired when one had content. Now subscribe always emits at least one frame (single-space placeholder) so the splash always clears.
-2. **Channel completion detection missed multi-sentence wrap-ups** — v6.11.20's whole-message-suffix was too strict: typical claude-code closes look like *"I've completed the task. Here's what changed. Let me know if anything else."* — the completion phrase is the suffix of an early sentence, not the message as a whole. Switched to per-sentence suffix matching, with the mid-sentence false-positive safety preserved.
+2. **Channel completion detection missed multi-sentence wrap-ups** — v6.11.20's whole-message-suffix was too strict: typical remote-node closes look like *"I've completed the task. Here's what changed. Let me know if anything else."* — the completion phrase is the suffix of an early sentence, not the message as a whole. Switched to per-sentence suffix matching, with the mid-sentence false-positive safety preserved.
 3. **Stats tab read from wrong source** — the WS `stats` event broadcasts `SystemStats`, not envelopes. Per-session envelopes live at `/api/observer/envelopes` (kind `session`). The tab now fetches that endpoint, prefers the matching `session:` envelope, falls back to the session's `backend:` envelope (e.g. `backend:claude-docker`) when no per-session envelope exists, and explains why if neither exists. Polls every 5 s while the tab is open.
 
 ### Fixed
@@ -14684,7 +14684,7 @@ BL264 — channel-based session-state detection. Operator: "Use the channel if a
 
 ### Why
 
-The daemon's running-vs-waiting state machine has historically been driven by tmux pane pattern-matching alone. Pattern matchers can be fooled by stale prompt content (e.g., LLM finished a task but the previous prompt is still visible in the pane buffer). For backends with a structured channel — claude-code MCP, opencode-acp ACP — the channel itself is unambiguous evidence the session is actively working. Using it as a state signal eliminates the false-positive "WaitingInput" state during long-running LLM responses.
+The daemon's running-vs-waiting state machine has historically been driven by tmux pane pattern-matching alone. Pattern matchers can be fooled by stale prompt content (e.g., LLM finished a task but the previous prompt is still visible in the pane buffer). For backends with a structured channel — remote-node MCP, opencode-acp ACP — the channel itself is unambiguous evidence the session is actively working. Using it as a state signal eliminates the false-positive "WaitingInput" state during long-running LLM responses.
 
 ### Tests
 
@@ -14702,7 +14702,7 @@ Channel-tab scroll-back. Operator: "It is working, but I can't scroll back in hi
 
 ### Fixed
 
-`internal/server/web/app.js` — bumped `channelReplies[sessionId]` cap from 50 → 1000 entries. v6.11.16 routed every `output` WS line through `handleChannelReply`, so the 50-entry cap was dropping ~20 seconds of activity in claude-code sessions. 1000 entries cover ~5–10 minutes of dense output — enough scroll-back without unbounded growth. Same bump applied to the channel-history fetch merge.
+`internal/server/web/app.js` — bumped `channelReplies[sessionId]` cap from 50 → 1000 entries. v6.11.16 routed every `output` WS line through `handleChannelReply`, so the 50-entry cap was dropping ~20 seconds of activity in remote-node sessions. 1000 entries cover ~5–10 minutes of dense output — enough scroll-back without unbounded growth. Same bump applied to the channel-history fetch merge.
 
 ### Note: running-vs-waiting detection from channel state
 
@@ -14728,7 +14728,7 @@ Channel tab on PWA now mirrors what mobile shows. Operator: "Channel tab still h
 
 `composeApp/src/androidMain/kotlin/com/dmzs/datawatchclient/ui/sessions/SessionDetailScreen.kt:520` — when the operator toggles the mobile app to "channel" view (chatMode=true) on a non-server-chat session, it renders `ChatEventList(events = state.events, ...)`. `state.events` is the **full** session event stream — output frames, pane captures, state changes, everything — formatted as chat-style bubbles.
 
-PWA's channel tab was only consuming `channel_reply` / `channel_notify` / `chat_message` (v6.11.14 added the latter). For terminal-mode claude-code sessions, none of those flow. So the PWA channel tab was empty even when activity was streaming over WS via the `output` channel.
+PWA's channel tab was only consuming `channel_reply` / `channel_notify` / `chat_message` (v6.11.14 added the latter). For terminal-mode remote-node sessions, none of those flow. So the PWA channel tab was empty even when activity was streaming over WS via the `output` channel.
 
 ### Fixed
 
@@ -14779,7 +14779,7 @@ Channel tab visibility + chat-message inclusion. Operator: "I'm not seeing any a
 
 ### Fixed
 
-- **`internal/server/web/app.js`** `renderSessionDetail` — channel tab is now visible whenever the session uses MCP channel mode (claude / claude-code), not only when `connReady` is true. Previously the tab was hidden until the channel reported ready, so the operator couldn't see activity history during the post-restart channel-reconnect window. Mobile app shows it always; matching that.
+- **`internal/server/web/app.js`** `renderSessionDetail` — channel tab is now visible whenever the session uses MCP channel mode (claude / remote-node), not only when `connReady` is true. Previously the tab was hidden until the channel reported ready, so the operator couldn't see activity history during the post-restart channel-reconnect window. Mobile app shows it always; matching that.
 - **`internal/server/web/app.js`** `chat_message` WS handler — chat-mode messages (assistant + user content) now also feed into the Channel tab via `handleChannelReply`. Previously only `channel_reply` and `channel_notify` events populated the channel tab, so the tab missed everything happening over the standard chat path. Mobile app surfaces both; matching.
 
 ### Pending operator clarification
@@ -14988,7 +14988,7 @@ Revert v6.11.6's two aggressive changes that broke session reconnect after daemo
 ### Reverted
 
 - **`internal/server/web/app.js` reconnect path** — the `inputBarMissing` detection added in v6.11.6 forced unnecessary full re-renders during the WS open handler and broke reconnects. Restored the exact v5.26.35 + v5.26.45 + BL249 path that was working.
-- **`internal/session/manager.go` `completionPatterns`** — removed the 12 natural-language end-of-task phrases added in v6.11.6 (`Done!`, `All done`, `Successfully completed`, etc.). These false-fired on claude-code prose during normal model output. After daemon restart, the pane buffer replay matched these patterns and marked sessions as `complete` prematurely → operator's PWA refused to reconnect to a session it thought was already done. Restored to the pre-v6.11.6 single marker (`DATAWATCH_COMPLETE:`).
+- **`internal/session/manager.go` `completionPatterns`** — removed the 12 natural-language end-of-task phrases added in v6.11.6 (`Done!`, `All done`, `Successfully completed`, etc.). These false-fired on remote-node prose during normal model output. After daemon restart, the pane buffer replay matched these patterns and marked sessions as `complete` prematurely → operator's PWA refused to reconnect to a session it thought was already done. Restored to the pre-v6.11.6 single marker (`DATAWATCH_COMPLETE:`).
 
 The right way to add natural-language session-end detection is via `cfg.Detection.CompletionPatterns` (already supported, per-deployment opt-in with unit-testable phrasing), not by widening the global default set.
 
@@ -15007,7 +15007,7 @@ The right way to add natural-language session-end detection is via `cfg.Detectio
 Two operator-reported bugs:
 
 1. **Daemon-restart breaks session view** — terminal not resized correctly + tmux input bar disappears, forcing the operator to exit and re-enter.
-2. **Session-end not detected** — `DATAWATCH_COMPLETE:` was the only completion pattern, so claude-code finishing a task naturally never transitioned the session out of `running`/`waiting_input`.
+2. **Session-end not detected** — `DATAWATCH_COMPLETE:` was the only completion pattern, so remote-node finishing a task naturally never transitioned the session out of `running`/`waiting_input`.
 
 ### Fixed
 
@@ -15015,8 +15015,8 @@ Two operator-reported bugs:
   - Call `state.termFitAddon.fit()` BEFORE reading `t.cols`/`t.rows`. The browser may have resized during the disconnect; without the fit, the resize_term sent stale dims and tmux stayed at the wrong width (the "screen format messed up" report).
   - Detect the case where the input bar should exist for the active session but is missing from the DOM (e.g., scroll-mode + restart race) and force a full re-render instead of taking the "same session" optimized path.
   - Defensive: drop `input-disabled` class on reconnect even when the optimized path runs (covers cases where the class was sticky from disconnect).
-- **`internal/session/manager.go` `completionPatterns`** — added 12 natural-language end-of-task phrases that claude-code, gemini, and aider emit when reporting task completion: `Task complete`, `Task completed`, `Task is complete`, `Successfully completed`, `All tasks complete`, `All tasks completed`, `I've completed the task`, `I have completed the task`, `The task is now complete`, `The work is complete`, `All done`, `Done!`. All matched via `HasPrefix` on the trimmed line so paragraph mid-sentence text won't false-fire.
-- **`internal/session/manager.go` `StartReconciler`** — reconcile interval reduced from 30s → 10s so tmux-pane-exit detection (claude-code `/exit`, process death) fires faster.
+- **`internal/session/manager.go` `completionPatterns`** — added 12 natural-language end-of-task phrases that remote-node, gemini, and aider emit when reporting task completion: `Task complete`, `Task completed`, `Task is complete`, `Successfully completed`, `All tasks complete`, `All tasks completed`, `I've completed the task`, `I have completed the task`, `The task is now complete`, `The work is complete`, `All done`, `Done!`. All matched via `HasPrefix` on the trimmed line so paragraph mid-sentence text won't false-fire.
+- **`internal/session/manager.go` `StartReconciler`** — reconcile interval reduced from 30s → 10s so tmux-pane-exit detection (remote-node `/exit`, process death) fires faster.
 
 ### Mobile parity
 
@@ -15559,7 +15559,7 @@ BL252 Phases 1+2: PWA i18n coverage — core session views and session creation 
 
 ### Summary
 
-Patch release completing BL251: agent auth/settings injection for claude-code and opencode containers. `AgentSettings` on `ProjectProfile` resolves `ANTHROPIC_API_KEY` from the secrets store at spawn time (claude-code) and injects `OPENCODE_PROVIDER_URL`/`OPENCODE_MODEL` (opencode). Full 7-surface parity. Smoke: 91/0/6.
+Patch release completing BL251: agent auth/settings injection for remote-node and opencode containers. `AgentSettings` on `ProjectProfile` resolves `ANTHROPIC_API_KEY` from the secrets store at spawn time (remote-node) and injects `OPENCODE_PROVIDER_URL`/`OPENCODE_MODEL` (opencode). Full 7-surface parity. Smoke: 91/0/6.
 
 ### Added
 
@@ -15838,7 +15838,7 @@ See [RELEASE-NOTES-v6.1.0.md](docs/plans/RELEASE-NOTES-v6.1.0.md) for a consolid
 ### Added (BL219)
 
 - **LLM tooling artifact lifecycle** — new `internal/tooling` package and full 6-surface parity:
-  - **Backend artifact registry** maps each LLM backend (`claude-code`, `opencode`, `aider`, `goose`, `gemini`) to its known project-dir file/dir patterns.
+  - **Backend artifact registry** maps each LLM backend (`remote-node`, `opencode`, `aider`, `goose`, `gemini`) to its known project-dir file/dir patterns.
   - **`EnsureIgnored(projectDir, backend)`** appends artifact patterns to `.gitignore` (and `.cfignore`/`.dockerignore` if present) idempotently. Called on every `onPreLaunch` when `session.gitignore_check_on_start: true`.
   - **`CleanupArtifacts(projectDir, backend)`** removes ephemeral backend files on session end when `session.cleanup_artifacts_on_end: true`.
   - **REST**: `GET /api/tooling/status`, `POST /api/tooling/gitignore`, `POST /api/tooling/cleanup`
@@ -15918,7 +15918,7 @@ All tools forward to the matching `/api/*` endpoint via the existing `proxyJSON`
 - **BL233** — Container Workers settings section header showed "(F10)" sprint label in user-facing UI. Removed; label is now simply "Container Workers".
 - **BL234** — Settings → General had a duplicate Language card that was also in Settings → About. Removed from General; About is the canonical location (matches v5.28.3 design intent).
 - **BL235** — Branding / Splash config was in Settings → General but belongs in the app identity card. Moved to Settings → About alongside version, update, and orphaned-session controls.
-- **BL236** — `permission_mode` and `default_effort` fields in Settings → LLM → claude-code were free-text inputs requiring the operator to remember valid values. Changed to `<select>` dropdowns: permission mode offers `plan / acceptEdits / auto / bypassPermissions / dontAsk / default`; effort offers `quick / normal / thorough`.
+- **BL236** — `permission_mode` and `default_effort` fields in Settings → LLM → remote-node were free-text inputs requiring the operator to remember valid values. Changed to `<select>` dropdowns: permission mode offers `plan / acceptEdits / auto / bypassPermissions / dontAsk / default`; effort offers `quick / normal / thorough`.
 - **BL237** — BL220 new settings cards (Cost Rates, Global Cooldown, Session Templates, Device Aliases, Session Analytics, Audit Log, Pipeline Manager, Knowledge Graph) had no docs chip links. Docs links added to all section headers. "Global Cooldown (BL30)" internal ID removed from label.
 
 ## [6.0.1] - 2026-05-02
@@ -15947,7 +15947,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 - BL223: RTK upgrade card no longer renders raw JS as visible text
 - BL224/BL225: Mermaid diagrams in orchestrator-flow.md and prd-phase3-phase4-flow.md now render
 - BL222: Settings → General no longer duplicates Claude-specific LLM fields
-- BL216: Session state transitions correctly on completion for claude-code sessions
+- BL216: Session state transitions correctly on completion for remote-node sessions
 - MCP mode (SSE/stdio) visibility added to `/api/channel/info`
 
 **Security:** G115 integer-overflow conversions in OS/syscall interface code documented and globally suppressed in `.gosec-exclude` (pre-existing, not new code).
@@ -15979,7 +15979,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 
 ### Fixed (BL222)
 
-- **Settings → General no longer shows Claude-specific fields** — four fields (`skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode`) were duplicated between the General tab and Settings → LLM → claude-code, creating two edit surfaces for the same config keys. Removed from General; all four remain exclusively in the LLM → claude-code card. `session.default_effort` (effort hint: quick/normal/thorough) also moved from General to LLM → claude-code for the same reason.
+- **Settings → General no longer shows Claude-specific fields** — four fields (`skip_permissions`, `channel_enabled`, `claude_auto_accept_disclaimer`, `permission_mode`) were duplicated between the General tab and Settings → LLM → remote-node, creating two edit surfaces for the same config keys. Removed from General; all four remain exclusively in the LLM → remote-node card. `session.default_effort` (effort hint: quick/normal/thorough) also moved from General to LLM → remote-node for the same reason.
 
 ### Fixed (BL223)
 
@@ -16013,7 +16013,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 
 ### Fixed (datawatch#33)
 
-- **KG tools now available in claude-code sessions** — the per-session `datawatch-channel` bridge exposed memory tools (v5.27.7) but was missing KG (knowledge graph) tools. Added `kg_add`, `kg_query`, `kg_timeline`, `kg_invalidate`, `kg_stats` to complete the MCP surface. All forward to existing `/api/kg/*` REST endpoints; same pattern as memory tools.
+- **KG tools now available in remote-node sessions** — the per-session `datawatch-channel` bridge exposed memory tools (v5.27.7) but was missing KG (knowledge graph) tools. Added `kg_add`, `kg_query`, `kg_timeline`, `kg_invalidate`, `kg_stats` to complete the MCP surface. All forward to existing `/api/kg/*` REST endpoints; same pattern as memory tools.
 
 ### Fixed (datawatch#36)
 
@@ -16144,7 +16144,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 ### Added (BL207 — claude permission_mode + model + effort)
 
 - New REST endpoints `GET /api/llm/claude/{models,efforts,permission_modes}` (hardcoded lists; BL206 frozen per operator decision — no Anthropic /v1/models query).
-- New `session.permission_mode` config field (`plan`/`acceptEdits`/`auto`/`bypassPermissions`/`dontAsk`/`default`); when set, claude-code launches with `--permission-mode <value>`.
+- New `session.permission_mode` config field (`plan`/`acceptEdits`/`auto`/`bypassPermissions`/`dontAsk`/`default`); when set, remote-node launches with `--permission-mode <value>`.
 - Per-session overrides via `POST /api/sessions/start` body (`permission_mode`, `model`, `claude_effort`).
 - `PRD.PermissionMode` + `Task.PermissionMode` so PRDs can run a single design-only step inside an otherwise execute-the-plan PRD.
 - PWA New Session modal gains a claude-only options block (Permission mode / Model / Effort dropdowns).
@@ -16159,7 +16159,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 
 ### Fixed
 
-- Operator-reported rate-limit regression — `rateLimitPatterns` extended with modern claude-code phrasings (`limit reached`, `weekly usage limit`, `5-hour limit`, `opus/sonnet limit reached`).
+- Operator-reported rate-limit regression — `rateLimitPatterns` extended with modern remote-node phrasings (`limit reached`, `weekly usage limit`, `5-hour limit`, `opus/sonnet limit reached`).
 
 ## [5.27.3] - 2026-04-29
 
@@ -16180,7 +16180,7 @@ This release closes the v5.28.x patch window and marks the start of the v6.x fea
 
 ### Added (claude auto-accept disclaimer)
 
-- New `session.claude_auto_accept_disclaimer` config flag. When on + backend is `claude-code`, the existing FilterEngine `DetectPrompt` hook auto-sends `1\n` for "trust this folder" / "Quick safety check" and `\n` for "Loading development channels" after a 750ms debounce.
+- New `session.claude_auto_accept_disclaimer` config flag. When on + backend is `remote-node`, the existing FilterEngine `DetectPrompt` hook auto-sends `1\n` for "trust this folder" / "Quick safety check" and `\n` for "Loading development channels" after a 750ms debounce.
 - Full parity: YAML + REST `PUT /api/config` + MCP `config_set` + CLI + comm + PWA.
 
 ## [5.27.1] - 2026-04-28
@@ -16507,7 +16507,7 @@ Patch — §7k claude skip_permissions smoke + targetable smoke + smoke-frequenc
   PUT /api/config toggle/verify/restore for
   `session.skip_permissions` (maps to
   `cfg.Session.ClaudeSkipPermissions` internally; controls
-  whether claude-code launches with
+  whether remote-node launches with
   `--dangerously-skip-permissions`). 2 new PASS; smoke now
   58/0/1 (was 56/0/1).
 - **`SMOKE_ONLY=` env var** for targeted smoke runs:
@@ -17502,7 +17502,7 @@ Patch — response capture filters out animation spinners + TUI status decoratio
   - Single-glyph spinner / progress markers (`●`, `✶`, `✻`, `⠋…⠏`,
     `❯`, etc.).
   - Status timer fragments like `(7s · timeout 1m)` and `(5s)`.
-  - claude-code TUI footer hints (`esc to interrupt`, `shift+tab to
+  - remote-node TUI footer hints (`esc to interrupt`, `shift+tab to
     cycle`, `↑↓ to navigate`, etc.).
   - Box-drawing decoration (╭ ╰ │ ─).
   Bullet lists (`* item`) are preserved — only PURE-spinner lines
@@ -17578,7 +17578,7 @@ Patch — shell backend hidden from autonomous LLM dropdowns + cancel/delete now
 - **`release-smoke.sh §7b`** (autonomous run lifecycle) switched off
   `backend: shell` to align with the v5.26.13 exclusion rule. Now
   picks the first available LLM in priority order (`ollama` →
-  `openwebui` → `opencode` → `claude-code`); skips if none
+  `openwebui` → `opencode` → `remote-node`); skips if none
   available.
 
 ### Changed
@@ -17609,10 +17609,10 @@ Patch — children load eagerly with the rest of the PRD list.
 - **claude trust-dir auto-accept** (operator question): already
   handled. `session.claude.skip_permissions: true` in the operator's
   config (default since v3.0) makes the launcher pass
-  `--dangerously-skip-permissions` to claude-code, which bypasses
+  `--dangerously-skip-permissions` to remote-node, which bypasses
   the trust-folder dialog and every permission prompt for the
   duration of the session. Autonomous PRDs spawned with backend
-  `claude-code` inherit the same launch path so no separate
+  `remote-node` inherit the same launch path so no separate
   auto-accept is needed. If `skip_permissions: false`, the
   trust-folder prompt is detected by the existing promptPatterns
   list (manager.go:120) and surfaces as `waiting_input` — operator
@@ -17676,8 +17676,8 @@ Patch — scroll mode redraw fix (regression from v5.26.9) + smoke covers all th
 ### Added
 
 - **`release-smoke.sh` exercises every supported worker backend.**
-  Operator-reported: smoke must validate PRD CRUD with claude-code,
-  opencode, AND ollama as the worker backend, not just claude-code.
+  Operator-reported: smoke must validate PRD CRUD with remote-node,
+  opencode, AND ollama as the worker backend, not just remote-node.
   Section 6 now iterates every backend whose `enabled && available`
   is true on the running daemon and runs create + record-shape
   check + `/children` + `set_llm` round-trip + hard-delete per
@@ -17706,7 +17706,7 @@ Patch — autonomous loopback fix (broken since v3.10.0) + per-release functiona
      fixed.
   3. Backend incompatibility — `/api/ask` only supports ollama +
      openwebui as headless targets. The decomposer inheriting
-     `claude-code` from the PRD's worker backend got 400. New
+     `remote-node` from the PRD's worker backend got 400. New
      `askCompatible(b)` predicate; resolution order:
      `amgrCfg.DecompositionBackend` → `req.Backend` (only if
      ask-compatible) → `"ollama"`. Verifier + guardrails fall back
@@ -17971,7 +17971,7 @@ Patch — setup howto gains Helm/k8s install (with secrets + NFS storage) and a 
   for ops that want spawned workers in different clusters or
   per-cluster observer rolled into the parent's federation card.
 - **"Ready to code" walkthrough** — clone the repo, wire one LLM
-  backend (claude-code / Ollama / OpenWebUI), first real
+  backend (remote-node / Ollama / OpenWebUI), first real
   `datawatch session start --project-dir … --task …` with a
   walk-through of what each PWA tab shows, plus an optional
   `--before-cmd` / `--after-cmd` lint+test gate one-liner.
@@ -18272,7 +18272,7 @@ Minor — operator-blocking CRUD + UX cleanup + audit-gap closure.
 
 ## [5.18.0] - 2026-04-26
 
-Patch — MCP channel one-way bug for TLS + claude-code daemons.
+Patch — MCP channel one-way bug for TLS + remote-node daemons.
 
 ### Fixed
 
@@ -19621,9 +19621,9 @@ from the source-of-truth.
   No when the code returns true, several backends shipped two
   variants (regular task launcher + interactive chat/conversation
   mode) but only one was visible, and the explanatory paragraph
-  said "Only `claude-code` supports interactive input" while the
+  said "Only `remote-node` supports interactive input" while the
   table contradicted itself. Now correctly lists 5 interactive
-  backends — `claude-code`, `shell`, `opencode-acp`,
+  backends — `remote-node`, `shell`, `opencode-acp`,
   `openwebui` (chat mode), `ollama` (chat mode) — and 6
   single-shot variants. The Interactive Input Support paragraph
   reflects the same.
@@ -19779,7 +19779,7 @@ guide refresh).
     workflow patterns referenced in BL24.
   - New "Researched and skipped" subsection credits Aperant as
     prior art (AGPL-incompatible / Electron / sits on the same
-    claude-code layer; worktree-isolation + self-QA ideas kept
+    remote-node layer; worktree-isolation + self-QA ideas kept
     in BL24 roadmap).
   - Explicit operator-action note inviting per-feature additions
     for BL117 / BL33 / F10 / BL173 — the **Source:** rule for
@@ -20367,7 +20367,7 @@ but the **builder** still pulled nodejs (~80 MB apt) just to
 `npm install` and extract one binary. v4.6.0 closes the loop:
 
 - `Dockerfile.agent-claude`: builder fetches the per-platform native
-  tarball (`@anthropic-ai/claude-code-linux-{x64,arm64}`) directly
+  tarball (`@anthropic-ai/remote-node-linux-{x64,arm64}`) directly
   from the npm registry CDN with `curl + tar`. Verified the
   package layout (`package/claude` → 236 MB ELF) against the live
   registry at build doc time. Multi-arch via `$TARGETARCH`.
@@ -20705,7 +20705,7 @@ No breaking changes.
 ### Improved
 
 - **Claude rate-limit handling** (`B43`) — auto-select-wait + schedule-
-  resume now also fires on modern claude-code prompts ("Your usage
+  resume now also fires on modern remote-node prompts ("Your usage
   limit will reset at 9pm…", "try again in 4h 23m"). Reset-time
   parsing handles three families: `DATAWATCH_RATE_LIMITED:` protocol,
   prose clock-time (12h / 24h / "5:30 PM PST"), and relative
@@ -21034,7 +21034,7 @@ Deferred to later sprints per the plan:
 - **B34** — Tmux command lands the text but requires a second Enter
   to actually submit. The v4.0.2 fix (trim trailing `\n`) was
   necessary but not sufficient: the real root cause is that modern
-  bracketed-paste TUIs (claude-code, ink, opencode, Textual apps)
+  bracketed-paste TUIs (remote-node, ink, opencode, Textual apps)
   fold a single-tmux-call `Enter` into the paste event so it becomes
   "newline inside input" rather than "submit". Fix: `SendKeys` now
   always uses the two-step pattern — `-l` literal push, 120 ms
@@ -21197,7 +21197,7 @@ Closes / addresses 10 open GitHub issues filed by the datawatch-app
 - ✅ Aperant integration reviewed and **skipped** — AGPL-3.0
   license (incompatible with datawatch distribution), Electron
   desktop app with no headless API, sits on top of the same
-  claude-code layer datawatch already wraps. Borrowing worktree +
+  remote-node layer datawatch already wraps. Borrowing worktree +
   self-QA ideas into the BL24 roadmap as prior art alongside
   nightwire; no integration.
 - 🧊 **F7 libsignal — frozen**. 3–6 mo signal-cli replacement
@@ -21496,7 +21496,7 @@ Previously REST + YAML only; now reachable from MCP and CLI as well.
 - **Functional smoke** against a live daemon on port 18080 confirmed
   every Sx endpoint returns valid JSON and POST/DELETE round-trips
   persist (project upsert + delete, cooldown set + clear).
-  Cost-rate override (`session.cost_rates.claude-code: 0.005/0.020`)
+  Cost-rate override (`session.cost_rates.remote-node: 0.005/0.020`)
   applied correctly to the live `Manager`.
 
 ### Container images
@@ -22120,7 +22120,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 
 ### Fixed
 - **Memory config visibility** — `MemoryConfig` JSON serialization no longer uses `omitempty` on parent struct, so the entire memory section always appears in `/api/config` response. Toggle now correctly reflects enabled state.
-- **Fallback chain in claude-code setup** — profiles and fallback chain field moved into the claude-code LLM backend config popup.
+- **Fallback chain in remote-node setup** — profiles and fallback chain field moved into the remote-node LLM backend config popup.
 
 ### Changed
 - **Settings tab reorganization**:
@@ -22144,7 +22144,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 - **Settings UI reorganization**:
   - Episodic Memory config moved from General → **LLM tab** (alongside RTK, detection filters)
   - Web Server, MCP Server, Proxy Resilience moved from General → **Comms tab** (after servers, before comm config)
-  - Profiles & Fallback removed from General (belongs in claude-code backend setup)
+  - Profiles & Fallback removed from General (belongs in remote-node backend setup)
 
 ### Changed
 - Alert body format: `Prompt: {input}\n---\n{response}` when both are available
@@ -22251,7 +22251,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 
 ### Added
 - **`POST /api/sessions/restart` endpoint**: restarts a terminal-state session in-place with LLM conversation resume support
-- **Claude-code backend tests**: unit tests for `deriveSessionUUID` determinism, `isUUID` validation, and launch/resume session ID consistency
+- **remote-node backend tests**: unit tests for `deriveSessionUUID` determinism, `isUUID` validation, and launch/resume session ID consistency
 
 ## [1.2.1] - 2026-04-02
 
@@ -22296,7 +22296,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 
 ### Added
 - **OpenWebUI interactive mode**: replaced curl/python3 single-shot backend with a native Go conversation manager. Maintains message history for multi-turn follow-ups, streams SSE responses directly, and routes input through the Go HTTP client instead of tmux send-keys. No external dependencies (curl, python3) needed.
-- **RTK integration**: detects RTK installation, shows version/hooks status in stats API, collects token savings metrics (total_saved, avg_savings_pct, total_commands). Auto-runs `rtk init -g` if hooks not installed and `auto_init: true`. Only activates for RTK-supported LLM backends (claude-code, gemini, aider).
+- **RTK integration**: detects RTK installation, shows version/hooks status in stats API, collects token savings metrics (total_saved, avg_savings_pct, total_commands). Auto-runs `rtk init -g` if hooks not installed and `auto_init: true`. Only activates for RTK-supported LLM backends (remote-node, gemini, aider).
 - **Channel feature parity review**: comprehensive audit of all 11 communication backends. Identified gaps in threading, rich formatting, interactive components, and file handling. Prioritized plan created.
 - **Threaded conversations**: session alerts are now threaded per-session on Slack (via `thread_ts`), Discord (via `MessageThreadStart`), and Telegram (via `reply_to_message_id`). Thread IDs stored on Session for follow-up replies. Backends without threading fall back to flat messages.
 - **Rich markdown formatting**: `RichSender` interface for platforms supporting formatted text. Alert headers in bold, tasks in italics, output context in code blocks. Implemented for Slack (mrkdwn), Discord (native markdown), and Telegram (Markdown parse_mode).
@@ -22309,7 +22309,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 - **Multi-profile fallback chains**: named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
 - **`channel_ready` + `channel_port` session fields**: set automatically when the per-session MCP channel calls `/api/channel/ready`; exposed in REST API `/api/sessions`. Used for debounced state detection and per-session channel routing
 - **Prompt context capture**: prompt alerts now include up to 10 surrounding screen lines (`prompt_context` field on Session) giving meaningful context about what is being asked, instead of a single matched line or noisy fallback
-- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `ralfthewise: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
+- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `peer-f: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
 - **Rate-limit auto-continue**: when a rate limit is detected with a reset time, datawatch creates a persisted scheduled command to auto-resume the session after the limit resets — survives daemon restarts (replaces previous in-memory timer that was lost on reboot)
 - **`ScheduleStore.CancelBySession`**: new method to cancel all pending scheduled commands for a session; called automatically on session kill and delete to prevent orphan entries
 - **Channel tab bidirectional**: channel tab now shows outgoing sends (blue `→`), incoming replies (amber `←`), and notifications (purple `⚡`) — previously only showed Claude's rare `reply` tool calls
@@ -22633,7 +22633,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ## [0.7.6] - 2026-03-29
 
 ### Fixed
-- **Claude `enabled` flag** — claude-code backend now respects the per-backend enabled flag correctly
+- **Claude `enabled` flag** — remote-node backend now respects the per-backend enabled flag correctly
 - **ACP configurable timeouts** — opencode-acp startup, health check, and message timeouts now configurable via config
 - **Alert cards** — alert detail view cards now render with correct formatting and timestamps
 
@@ -22642,7 +22642,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ### Fixed
 - **False rate_limited detection** — code output containing "rate limit" text no longer triggers false rate limit state (200-char line length check)
 - **SendInput for rate_limited** — sessions in `rate_limited` state can now receive input (auto-wait confirmation)
-- **Prompt patterns** — 15+ new patterns for claude-code trust prompts, numbered menus, rate limit recovery
+- **Prompt patterns** — 15+ new patterns for remote-node trust prompts, numbered menus, rate limit recovery
 - **Restart prompt field** — resume prompt field correctly cleared between session starts
 - **Stale prompt** — `last_prompt` cleared on state transition back to running
 - **Rate limited badge** — CSS for `rate_limited` state badge in session cards
@@ -22721,7 +22721,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ### Added
 - **Interrupt-driven output monitoring** — replaced 50ms polling loop with `fsnotify` file watcher. Output lines are processed instantly on file write events with polling fallback if inotify is unavailable. Reduces CPU usage and latency.
 - **Fast prompt detection** — prompt patterns matched on each output line trigger a 1-second debounce instead of the full `input_idle_timeout` (default 10s). Consent prompts detected in ~2-4 seconds.
-- **Per-session MCP channel servers** — each claude-code session registers its own MCP server (`datawatch-{sessionID}`) with unique `CLAUDE_SESSION_ID` env var and random port (`DATAWATCH_CHANNEL_PORT=0`). Enables true multi-session channel support.
+- **Per-session MCP channel servers** — each remote-node session registers its own MCP server (`datawatch-{sessionID}`) with unique `CLAUDE_SESSION_ID` env var and random port (`DATAWATCH_CHANNEL_PORT=0`). Enables true multi-session channel support.
 - **MCP auto-retry** — detects "MCP server failed" in output and sends `/mcp` + Enter to reconnect. Configurable limit: `mcp_max_retries` (default 5). Available in Settings.
 - **Connection status banner** — channel/ACP sessions show a spinner banner until the MCP channel or ACP server confirms ready. Input is disabled until connected (but enabled if session needs input for consent prompts).
 - **Channel ready WebSocket event** — `channel_ready` broadcast from `/api/channel/ready` dismisses the banner and enables input. Now fires for all sessions, not just those with tasks.
@@ -22741,7 +22741,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 - **AGENT.md rules** — work tracking checklist, decision-making rule, configuration rule, release discipline.
 
 ### Changed
-- **CLAUDE.md → AGENT.md** — non-claude sessions get `AGENT.md` instead of `SESSION.md`. CLAUDE.md only created for `claude-code` backend. Skipped in project dir when `AGENT.md` already exists.
+- **CLAUDE.md → AGENT.md** — non-claude sessions get `AGENT.md` instead of `SESSION.md`. CLAUDE.md only created for `remote-node` backend. Skipped in project dir when `AGENT.md` already exists.
 - **Signal backend resilience** — `call()` has 30-second timeout and `b.done` channel select to prevent permanent hang. Router `send()` runs async in goroutine (all messaging backends).
 - **Toast position** — overlays the header bar (z-index 300, top: 0).
 - **Output polling reduced** — fallback polling at 50ms (from 500ms) when fsnotify unavailable.
@@ -22765,7 +22765,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ## [0.6.6] - 2026-03-28
 
 ### Fixed
-- **Session output tabs** — when a session uses the channel backend (claude-code), the session detail view now shows two tabs: **Tmux** (raw terminal output) and **Channel** (structured channel replies). Tabs are hidden when the session only has tmux output. Live-appended lines now route to the correct area: tmux output → Tmux tab, channel replies → Channel tab.
+- **Session output tabs** — when a session uses the channel backend (remote-node), the session detail view now shows two tabs: **Tmux** (raw terminal output) and **Channel** (structured channel replies). Tabs are hidden when the session only has tmux output. Live-appended lines now route to the correct area: tmux output → Tmux tab, channel replies → Channel tab.
 - **Stop button stays after kill** — after stopping a session, the action buttons (Stop / Restart / Delete) and state badge now update immediately without requiring a manual refresh. The kill confirms optimistically then waits for the WebSocket `state_change` event to confirm.
 - **`updateSessionDetailButtons`** — new helper that patches action buttons and state badge in-place; called from both `killSession` and `onSessionsUpdated` so WebSocket state changes also refresh the buttons.
 
@@ -22774,10 +22774,10 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ### Changed
 - **Claude-specific config fields renamed** — `SkipPermissions` → `ClaudeSkipPermissions`, `ChannelEnabled` → `ClaudeChannelEnabled`, `ClaudeCodeBin` → `ClaudeBin` in the Go struct. YAML keys (`skip_permissions`, `channel_enabled`, `claude_code_bin`) are unchanged for backward compatibility with existing configs.
 - **`Manager` struct field rename** — `claudeBin` → `llmBin`; `NewManager` parameter renamed accordingly. The legacy fallback path comment updated to reflect it works for any LLM binary, not just claude.
-- **`WriteCLAUDEMD` → `WriteSessionGuardrails`** — method renamed and made backend-aware: claude-code sessions write `CLAUDE.md` (the file claude-code reads for project instructions); all other backends write `SESSION.md` instead. Project-directory write now only applies to claude-code sessions.
+- **`WriteCLAUDEMD` → `WriteSessionGuardrails`** — method renamed and made backend-aware: remote-node sessions write `CLAUDE.md` (the file remote-node reads for project instructions); all other backends write `SESSION.md` instead. Project-directory write now only applies to remote-node sessions.
 - **Template path updated** — session guardrails template looked up as `session-guardrails.md` first (with fallback to legacy `session-CLAUDE.md` name).
-- **LLM backend fallback removed** — daemon startup no longer silently falls back to `claude-code` when `llm_backend` names an unregistered backend; instead returns an error with a hint to run `datawatch backend list`.
-- **Manager doc comment** — "manages claude-code sessions" → "manages LLM coding sessions".
+- **LLM backend fallback removed** — daemon startup no longer silently falls back to `remote-node` when `llm_backend` names an unregistered backend; instead returns an error with a hint to run `datawatch backend list`.
+- **Manager doc comment** — "manages remote-node sessions" → "manages LLM coding sessions".
 
 ## [0.6.4] - 2026-03-28
 
@@ -22909,7 +22909,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ## [0.5.15] - 2026-03-28
 
 ### Added
-- **MCP channel server for claude-code** — `channel/index.ts` TypeScript server implementing MCP stdio protocol; enables bidirectional tool-use notifications and reply routing without tmux.
+- **MCP channel server for remote-node** — `channel/index.ts` TypeScript server implementing MCP stdio protocol; enables bidirectional tool-use notifications and reply routing without tmux.
 - **Web UI dual-mode sessions** — session cards show `tmux`, `ch` (MCP channel), or `acp` (opencode ACP) mode badge.
 - **Ollama setup wizard** — queries available models from the Ollama server (`GET /api/tags`) instead of requiring manual model name entry.
 - **Dev channels consent prompt detection** — idle detector recognises `I am using this for local development` pattern and marks session as `waiting_input`.
@@ -22951,11 +22951,11 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 - **Android back button support** — `navigate()` now pushes `history.pushState` entries; the `popstate` event intercepts Android Chrome's back gesture and applies the double-press guard for active sessions.
 - **Settings About: version + update check** — About section now fetches version from `/api/health` and provides a "Check now" button that queries the GitHub releases API and shows an "Update" button when a newer release is available.
 - **Drag-and-drop session reordering** — session cards now have a ⠿ drag handle; dragging between cards reorders the list (replaces ↑↓ buttons).
-- **Numbered-menu prompt patterns** — idle detector now recognises claude-code's folder-trust numbered menu (lines containing "Yes, I trust", "Quick safety check", "Is this a project", "❯ 1.", etc.) as waiting-for-input prompts.
+- **Numbered-menu prompt patterns** — idle detector now recognises remote-node's folder-trust numbered menu (lines containing "Yes, I trust", "Quick safety check", "Is this a project", "❯ 1.", etc.) as waiting-for-input prompts.
 
 ### Fixed
 - **Signal not receiving user commands** — when signal-cli is linked to the user's own phone number, messages sent from their phone arrive as `syncMessage.sentMessage` (not `dataMessage`). The receive loop now parses these and dispatches them as commands. This was the root cause of "datawatch can send but cannot receive" on linked-device setups.
-- **Shell/custom backend launches claude-code** — `manager.Start()` now looks up the requested backend by name in the llm registry when `opt.Backend` is set, wiring the correct launch function. Previously `backendName` was updated but `launchFn` remained as claude-code.
+- **Shell/custom backend launches remote-node** — `manager.Start()` now looks up the requested backend by name in the llm registry when `opt.Backend` is set, wiring the correct launch function. Previously `backendName` was updated but `launchFn` remained as remote-node.
 - **ANSI codes break prompt pattern detection** — `monitorOutput` now calls `StripANSI()` on the last output line before pattern matching, so TUI-style prompts with color codes trigger `waiting_input` correctly.
 - **Empty project dir → "Please provide a directory path"** — `handleStartSession` (REST) and `MsgNewSession` (WS) now default `project_dir` to the user's home directory when not supplied.
 - **Install script can't find binary in archive** — `install.sh` now searches the extracted archive directory for any file matching `datawatch*` when the exact `datawatch` name isn't present (handles both GoReleaser and manually packaged archives).
@@ -22967,7 +22967,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ## [0.5.10] - 2026-03-27
 
 ### Added
-- **Session resume documentation** added to `docs/llm-backends.md` for claude-code (`--resume`) and opencode (`-s`).
+- **Session resume documentation** added to `docs/llm-backends.md` for remote-node (`--resume`) and opencode (`-s`).
 - **`root_path` and `update` config blocks** documented in `docs/operations.md` and `README.md`.
 
 ### Fixed
@@ -23003,7 +23003,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 - **Output filters management in web UI**: Settings page has a collapsible "Add Filter" form (pattern + action + description) posting to `POST /api/filters`. Existing filters have a Delete button.
 - **Directory browser navigation**: file browser in New Session form now has separate navigate-into and select actions. Clicking a folder navigates into it; a "✓ Use This Folder" button selects the current directory. `..` entry navigates up.
 - **`session.root_path` config field**: restricts the file browser to a subtree — users cannot navigate above this path. At the root boundary, `..` is hidden and the path is clamped silently.
-- **Session resume**: New Session form has an optional "Resume session ID" field. When set, claude-code launches with `--resume <ID>` and opencode with `-s <ID>`. Restart button pre-fills the resume ID from `sess.llm_session_id`.
+- **Session resume**: New Session form has an optional "Resume session ID" field. When set, remote-node launches with `--resume <ID>` and opencode with `-s <ID>`. Restart button pre-fills the resume ID from `sess.llm_session_id`.
 - **Auto-update daemon**: new `update` config section with `enabled`, `schedule` (hourly/daily/weekly), and `time_of_day` (HH:MM). On schedule, downloads a prebuilt binary from GitHub releases and hot-swaps the running executable.
 - **Backend availability in `/api/backends`**: each entry now includes `available` (bool) and `version` string. Web UI shows "(not installed)" for unavailable backends and a warning div when an unavailable backend is selected.
 
@@ -23092,7 +23092,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 
 ### Added
 - **`alerts` messaging command**: send `alerts [n]` to any messaging backend to view recent alert history; alerts are also broadcast proactively to all active messaging backends when they fire.
-- **`setup llm <backend>`**: CLI and messaging-channel setup wizards for all LLM backends — `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`.
+- **`setup llm <backend>`**: CLI and messaging-channel setup wizards for all LLM backends — `remote-node`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`.
 - **`setup session`**: wizard to configure session defaults (LLM backend, max sessions, idle timeout, tail lines, project dir, skip permissions).
 - **`setup mcp`**: wizard to configure the MCP server (enable, SSE, host, port, TLS, token).
 - **`datawatch test [--pr]`**: collects non-sensitive interface status (endpoints, binary paths, model names) for all enabled interfaces and optionally opens a GitHub PR updating `docs/testing-tracker.md`.
@@ -23212,12 +23212,12 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 - `completion` CLI command: shell completion for bash, zsh, fish, powershell
 - New REST endpoints: `/api/backends`, `/api/files`, `/api/sessions/start`, `/api/sessions/rename`
 - Directory browser in PWA: navigate the filesystem to select a project directory when starting a session
-- `skip_permissions` config field: pass `--dangerously-skip-permissions` to claude-code
+- `skip_permissions` config field: pass `--dangerously-skip-permissions` to remote-node
 - `kill_sessions_on_exit` config field: kill all active sessions when the daemon exits
 - `--llm-backend`, `--host`, `--port`, `--no-server`, `--no-mcp` flags on `datawatch start`
 - ANSI escape code stripping from session log output sent via messaging backends
-- `NO_COLOR=1` set when launching claude-code to reduce color noise
-- Extended claude-code permission dialog patterns for `waiting_input` detection
+- `NO_COLOR=1` set when launching remote-node to reduce color noise
+- Extended remote-node permission dialog patterns for `waiting_input` detection
 - Debug logging for Signal group ID mismatches to aid troubleshooting
 - Session list now shows `NAME/TASK` and `BACKEND` columns
 - AGENT.md versioning rule: every push requires a patch version bump
@@ -23233,7 +23233,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 ### Added
 - Signal group integration via signal-cli JSON-RPC daemon mode
 - QR code device linking (terminal and PWA)
-- claude-code session management via tmux
+- remote-node session management via tmux
 - Session state machine: running, waiting_input, complete, failed, killed
 - Async Signal notifications for state changes and input prompts
 - Session persistence across daemon restarts (JSON file store)
@@ -23246,7 +23246,7 @@ First stable release. All 7 LLM backends tested end-to-end, terminal rendering s
 - Server-Sent Events for QR linking flow in PWA
 - Pluggable LLM backend interface (internal/llm)
 - Pluggable messaging backend interface (internal/messaging)
-- claude-code directory constraints via --add-dir flag
+- remote-node directory constraints via --add-dir flag
 - Automatic git tracking: pre/post session commits
 - CLI session subcommands (no daemon required for local ops)
 - Universal Linux installer (root and non-root modes)

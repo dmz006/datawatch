@@ -185,7 +185,7 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 
 **A launch interrupted by a restart.** A worker whose agent never started before the restart (its pane holds only a bare shell) is not adopted. At boot the daemon ends that shell and resets the task to pending with the reason `session never started`. No retry is counted, and the task is launched once more. A task that was `verifying` on such a session is requeued the same way. A live session is adopted only once its agent has started, which the daemon checks by looking for the agent process, a channel-ready event, a delivered task or a first assistant turn, sampling three times a second apart so a snapshot taken between ticks is not read as a bare shell.
 
-**Start-confirm bound for launched and adopted sessions.** A claude-code worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For an adopted worker that is the latest update, channel event or log write the session left before the restart; when none is known, the clock starts at the task's launch time. A launched worker has no evidence of life until its first sign of work, so its clock starts at the first check that finds it silent. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
+**Start-confirm bound for launched and adopted sessions.** A remote-node worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For an adopted worker that is the latest update, channel event or log write the session left before the restart; when none is known, the clock starts at the task's launch time. A launched worker has no evidence of life until its first sign of work, so its clock starts at the first check that finds it silent. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
@@ -206,7 +206,7 @@ One more case runs part of the work again: a task verifying through a live verif
 
 **Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
 
-**Long task text and no-override restarts.** Restarting a session is no longer limited by how long its task text is. The claude-code backend, and the aider and goose-prompt one-shot paths, deliver the task through a scratch file that the typed command reads, so the full text is not typed inline. A no-override restart of a resumed conversation therefore no longer resends the original task. If a tmux command still fails, the returned and logged error now carries tmux's own stderr text (for example `command too long`) instead of a bare exit status.
+**Long task text and no-override restarts.** Restarting a session is no longer limited by how long its task text is. The remote-node backend, and the aider and goose-prompt one-shot paths, deliver the task through a scratch file that the typed command reads, so the full text is not typed inline. A no-override restart of a resumed conversation therefore no longer resends the original task. If a tmux command still fails, the returned and logged error now carries tmux's own stderr text (for example `command too long`) instead of a bare exit status.
 
 #### The restart matrix
 
@@ -253,7 +253,7 @@ If you routinely see PRDs parked for age, either raise `autonomous.resume_max_ag
 
 **Stuck Automaton.** An Automaton that stays `running` with every task finished, no live worker, verifier or guardrail session and no executor is caught by the stuck-running watchdog. After `autonomous.stuck_running_seconds` (default `900`; `0` or a negative value uses the default) it re-runs the completion rollup once; if the Automaton is still stuck after a second full bound it moves to `blocked`, with a `stuck_running_blocked` decision, an `autonomous_stuck_running_blocked` audit entry and the status event. The bound is read on every pass, so changing it needs no restart. See [autonomous recovery](howto/autonomous-recovery.md#stuck-running-watchdog).
 
-**Compute node of a surviving worker.** When the daemon restarts, a surviving pi-prompt worker is re-adopted on the compute node it was placed on. The node comes from the node recorded when the worker was placed. When none was recorded, it comes from the worker's own endpoint, matched against the compute node's address field - never from the worker's name and never from a DNS lookup. The node pools therefore show one worker per node before and after a restart. A worker whose node cannot be determined holds no node. It is shown as `node_unknown` on its lease in `GET /api/capacity` (also in `capacity_status` over MCP, and as `node unknown` in the status text) instead of being counted on a default node. If you see it, check the compute node's address field.
+**Compute node of a surviving worker.** When the daemon restarts, a surviving peer-e worker is re-adopted on the compute node it was placed on. The node comes from the node recorded when the worker was placed. When none was recorded, it comes from the worker's own endpoint, matched against the compute node's address field - never from the worker's name and never from a DNS lookup. The node pools therefore show one worker per node before and after a restart. A worker whose node cannot be determined holds no node. It is shown as `node_unknown` on its lease in `GET /api/capacity` (also in `capacity_status` over MCP, and as `node unknown` in the status text) instead of being counted on a default node. If you see it, check the compute node's address field.
 
 ### Data compatibility
 
@@ -285,7 +285,7 @@ All Signal commands are also available directly from the CLI. These commands con
 # List all sessions with status (shows name, backend, state)
 datawatch session list
 
-# Start a new claude-code session (uses current directory)
+# Start a new remote-node session (uses current directory)
 datawatch session new "build a REST API in Go"
 
 # Start with a name, explicit directory, and backend
@@ -383,7 +383,7 @@ signal:
   device_name: hal9000
 
 session:
-  # Maximum number of concurrent claude-code sessions.
+  # Maximum number of concurrent remote-node sessions.
   # Default: 10
   max_sessions: 10
 
@@ -396,21 +396,21 @@ session:
   # Default: 20
   tail_lines: 20
 
-  # Path to the claude-code binary. Can be an absolute path or a PATH-relative name.
+  # Path to the remote-node binary. Can be an absolute path or a PATH-relative name.
   # Default: claude
   claude_code_bin: /usr/local/bin/claude
 
   # Active LLM backend. Must match a registered backend name.
-  # Available: claude-code, aider, goose, gemini, opencode, shell
-  # Default: claude-code
-  llm_backend: claude-code
+  # Available: remote-node, aider, goose, gemini, opencode, shell
+  # Default: remote-node
+  llm_backend: remote-node
 
   # Default project directory for sessions started via messaging commands.
   # Sessions started via CLI or PWA use the directory selected at session creation.
   # Default: ~/.datawatch/workspace
   default_project_dir: ~/projects
 
-  # Pass --dangerously-skip-permissions to claude-code, bypassing permission prompts.
+  # Pass --dangerously-skip-permissions to remote-node, bypassing permission prompts.
   # Useful for headless/unattended sessions. Use with caution.
   # Default: false
   skip_permissions: false
@@ -683,7 +683,7 @@ Verification is the throughput limit of the Automata pipeline, so the verifier p
 
 **Restart reconcile.** When the daemon starts it lists the verifier sessions that survived the restart and reconciles them against the task store: verifiers of a task that no longer awaits verification are ended, when several verifiers exist for one task the newest is kept and the others ended, and a single surviving verifier is adopted and its lease re-bound to it. Running the reconcile again changes nothing.
 
-**Infra-failure escalation.** After `autonomous.verifier_infra_escalation_threshold` consecutive infra verifier failures on one task (default 2), the next verification of that task runs on `autonomous.fallback_verification_backend` (default the Claude backend, `claude-code`). The escalation is per task only: the count lives on the task, a pass or content result resets it, the end of the escalated run resets it, and other tasks keep using the configured verifier. It does nothing when the fallback equals the configured backend. Each escalation is recorded as a `verifier_escalation` decision on the PRD, as an `autonomous.verifier_escalation` entry in the audit log, and under `escalated` in the counters.
+**Infra-failure escalation.** After `autonomous.verifier_infra_escalation_threshold` consecutive infra verifier failures on one task (default 2), the next verification of that task runs on `autonomous.fallback_verification_backend` (default the Claude backend, `remote-node`). The escalation is per task only: the count lives on the task, a pass or content result resets it, the end of the escalated run resets it, and other tasks keep using the configured verifier. It does nothing when the fallback equals the configured backend. Each escalation is recorded as a `verifier_escalation` decision on the PRD, as an `autonomous.verifier_escalation` entry in the audit log, and under `escalated` in the counters.
 
 All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
 
@@ -888,7 +888,7 @@ tar czf datawatch-backup-$(date +%Y%m%d).tar.gz \
 
 ### Restore on a new machine
 
-1. Install dependencies: `signal-cli`, Java 17+, `tmux`, `claude` (claude-code CLI), `datawatch`
+1. Install dependencies: `signal-cli`, Java 17+, `tmux`, `claude` (remote-node CLI), `datawatch`
 
 2. Restore the backup:
    ```bash
@@ -1028,7 +1028,7 @@ sudo ufw allow in on tailscale0 to any port 8080
 tailscale status
 ```
 
-### claude-code not found (PATH in service environment)
+### remote-node not found (PATH in service environment)
 
 **Symptom:** Session starts, tmux session is created, but immediately transitions to `failed`. Logs show `claude: command not found`.
 
@@ -1413,7 +1413,7 @@ datawatch exposes multiple network services. Each should be configured for the d
 | GitHub Webhook | `127.0.0.1` | 9001 | HMAC-SHA256 | No | GitHub event receiver |
 | Generic Webhook | `127.0.0.1` | 9002 | Optional token | No | HTTP POST task receiver |
 | Twilio Webhook | `127.0.0.1` | 9003 | None built-in | No | SMS receiver |
-| Per-session MCP | `127.0.0.1` | Random | None | No | Internal claude-code channels |
+| Per-session MCP | `127.0.0.1` | Random | None | No | Internal remote-node channels |
 
 ### Recommended: Localhost + Reverse Proxy
 
@@ -2023,11 +2023,11 @@ on the installation token — the attach step will then complete normally.
 ### Alert Format
 
 Alert titles follow the format `hostname: name [id]: event` (e.g.
-`ralfthewise: myproject [a1b2]: running → waiting_input`). Toast notifications in the
+`peer-f: myproject [a1b2]: running → waiting_input`). Toast notifications in the
 web UI show a truncated title only (no body text); the full alert with prompt context
 is available in the Alerts tab.
 
-For claude-code sessions with an active MCP channel, console-based state detection is
+For remote-node sessions with an active MCP channel, console-based state detection is
 suppressed after the channel connects (`channel_ready: true`). This eliminates the
 rapid `running ↔ waiting_input` cycling caused by screen-scraping Claude's animated
 terminal. See `docs/claude-channel.md` for details.
@@ -2070,9 +2070,9 @@ reload filters
 
 **Config key:** `session.claude_auto_accept_disclaimer` (default: `false`)
 
-When enabled, datawatch detects claude-code's startup disclaimer / "trust this folder" / "Loading development channels" prompts and auto-accepts them by sending the appropriate confirmation key (Enter for plain confirms; "1\n" for the numbered "Yes, I trust this folder" menu).
+When enabled, datawatch detects remote-node's startup disclaimer / "trust this folder" / "Loading development channels" prompts and auto-accepts them by sending the appropriate confirmation key (Enter for plain confirms; "1\n" for the numbered "Yes, I trust this folder" menu).
 
-The detection mirrors the PRD-automation pattern: the prompt is recognised via `FilterActionDetectPrompt`, marked as `waiting_input`, and 750 ms later the auto-response is sent. Only fires when the active backend is `claude-code` and the flag is on; the existing operator-side trust-prompt review path is unaffected when the flag is off.
+The detection mirrors the PRD-automation pattern: the prompt is recognised via `FilterActionDetectPrompt`, marked as `waiting_input`, and 750 ms later the auto-response is sent. Only fires when the active backend is `remote-node` and the flag is on; the existing operator-side trust-prompt review path is unaffected when the flag is off.
 
 ```bash
 # Enable via CLI
@@ -2097,7 +2097,7 @@ threshold question is *“Want to autocompact at 400k tokens instead?”* with t
 Enter confirms the highlighted row and changes a setting. These sit on the
 session’s input path: a lane blocked on the prompt looks healthy while it idles,
 holding its slot, until a supervisor watch flags it as silent.
-datawatch recognises the known prompt shapes on a claude-code pane (a small,
+datawatch recognises the known prompt shapes on a remote-node pane (a small,
 explicit per-kind table matched on the pane’s last 20 non-empty lines after
 ANSI stripping; when in doubt it classifies *none*) and dismisses them with the
 one safe key for that kind — **Esc** (“not now”), never Enter on a choice that
@@ -2144,7 +2144,7 @@ The terminal auto-fits to the container width and supports 5000-line scrollback.
 
 **Anti-clobber typing hold (v8.9.17+):** When an agent or automation sends a message into an active session, the daemon checks whether you are actively typing in the xterm terminal. If TTY activity was detected within the last 30 seconds, the message is held until you pause (up to 90 seconds, then it sends anyway so no message is ever lost). Multiple messages that arrive while you are typing queue up in order — the first message waits for the idle gap, subsequent queued messages flush immediately after without re-waiting. This prevents agent pushes from clobbering mid-keystroke operator input when multiple sessions are running in parallel.
 
-**Line-printing renderer lock (v8.9.20+):** datawatch writes `"tui": "default"` into its scoped claude settings at startup (`<dataDir>/.claude/settings.json`). This pins the claude-code renderer to line-printing mode so tmux scrollback and `pipe-pane` capture continue to work correctly. Without this, Anthropic's server-side `tengu_pewter_brook` flag can switch claude-code sessions into an alternate-screen mode (`\e[?1049h`) that bypasses the tmux scrollback buffer and breaks `pipe-pane` capture.
+**Line-printing renderer lock (v8.9.20+):** datawatch writes `"tui": "default"` into its scoped claude settings at startup (`<dataDir>/.claude/settings.json`). This pins the remote-node renderer to line-printing mode so tmux scrollback and `pipe-pane` capture continue to work correctly. Without this, Anthropic's server-side `tengu_pewter_brook` flag can switch remote-node sessions into an alternate-screen mode (`\e[?1049h`) that bypasses the tmux scrollback buffer and breaks `pipe-pane` capture.
 
 **Known issue:** The web terminal display occasionally gets out of sync with the actual tmux pane content (blank screen, frozen output, or garbled rendering). If this happens, navigate back to the session list and re-enter the session, or refresh the browser page. This resets the screen capture and xterm.js state. Pull requests to improve terminal sync reliability are welcome.
 
@@ -2207,7 +2207,7 @@ running on the same project tree. Run them one at a time, or give one its own wo
 
 **RTK Token Savings:** When `rtk.enabled: true` and RTK is installed, the stats dashboard
 includes token savings metrics: total commands compressed, total tokens saved, and average
-savings percentage. RTK auto-initializes hooks on supported backends (claude-code, gemini,
+savings percentage. RTK auto-initializes hooks on supported backends (remote-node, gemini,
 aider) if `rtk.auto_init: true`. See `rtk` section in `docs/config-reference.yaml`.
 
 **Future:** Per-session network/CPU via eBPF (see `docs/plans/2026-03-30-ebpf-stats.md`).
@@ -2237,9 +2237,9 @@ Named profiles allow different accounts/API keys for the same backend.
 ```yaml
 profiles:
   claude-work:
-    backend: claude-code
+    backend: remote-node
   claude-personal:
-    backend: claude-code
+    backend: remote-node
     env:
       ANTHROPIC_API_KEY: "sk-ant-..."
 
@@ -2593,14 +2593,14 @@ Autonomous PRDs use two separate backends:
 
 | Role | Config | Description |
 |------|--------|-------------|
-| **Planning** (decompose) | `autonomous.planning_backend` (global) or `decomposition_profile` (per-PRD, takes priority) | Any configured LLM. `opencode`/`claude-code` spawn a full session with codebase tool access; `ollama`/`openwebui` run headless via `/api/ask`. |
-| **Execution** (task sessions) | `backend` per-PRD | Spawns interactive coding sessions. Any registered backend: `opencode`, `claude-code`, `goose`, `aider`, etc. |
+| **Planning** (decompose) | `autonomous.planning_backend` (global) or `decomposition_profile` (per-PRD, takes priority) | Any configured LLM. `opencode`/`remote-node` spawn a full session with codebase tool access; `ollama`/`openwebui` run headless via `/api/ask`. |
+| **Execution** (task sessions) | `backend` per-PRD | Spawns interactive coding sessions. Any registered backend: `opencode`, `remote-node`, `goose`, `aider`, etc. |
 
 **Global planning backend** (applies to all PRDs that don't set `decomposition_profile`):
 
 ```yaml
 autonomous:
-  planning_backend: "opencode"    # any configured LLM; opencode/claude-code get full codebase tool access
+  planning_backend: "opencode"    # any configured LLM; opencode/remote-node get full codebase tool access
   planning_effort: "thorough"
 ```
 
@@ -2675,7 +2675,7 @@ setting and remain locked to the 3 pre-Run statuses.
 task, per story or per Automaton. Resolution: task → story → Automaton
 → Automation → global `autonomous.verification_backend` / `verification_model` /
 `verification_effort`; a backend set at any per-unit level bypasses the
-`autonomous.verification_backends` pool. Verifier sessions are bounded by `autonomous.verification_timeout_seconds` (default 30m). Guardrail judge sessions are bounded by `autonomous.judge_timeout_seconds` (default 30m, counted from the judge's start, not from any wait for a capacity slot). A judge that times out moves to the next backend in `autonomous.judge_policy`, one attempt each; when every backend has timed out, the PRD needs review (`needs_review`, with a `judge-timeout` reason) and an error alert lists every attempt. When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines against its merge base (added plus deleted, lock files left out; default 400, `0` = off), the judge tries `claude-code` first and the other backends follow in their usual order, still one attempt each; in `balance` mode the load still decides and the order only breaks ties. The Automaton decision log names the rule and the line count, and a judge that times out on every backend still holds the Automaton. See `docs/howto/judge-policy.md`. If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
+`autonomous.verification_backends` pool. Verifier sessions are bounded by `autonomous.verification_timeout_seconds` (default 30m). Guardrail judge sessions are bounded by `autonomous.judge_timeout_seconds` (default 30m, counted from the judge's start, not from any wait for a capacity slot). A judge that times out moves to the next backend in `autonomous.judge_policy`, one attempt each; when every backend has timed out, the PRD needs review (`needs_review`, with a `judge-timeout` reason) and an error alert lists every attempt. When the Automaton branch has more than `autonomous.judge_size_threshold_lines` changed lines against its merge base (added plus deleted, lock files left out; default 400, `0` = off), the judge tries `remote-node` first and the other backends follow in their usual order, still one attempt each; in `balance` mode the load still decides and the order only breaks ties. The Automaton decision log names the rule and the line count, and a judge that times out on every backend still holds the Automaton. See `docs/howto/judge-policy.md`. If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
 keep, `""` to clear. The task's `verification` result records
 `verifier_backend` / `verifier_model` / `verifier_effort` /
 `verifier_source` (`task`, `story`, `prd` for the Automaton level,
@@ -2701,24 +2701,24 @@ empty ones are cleared, and `expected_version` is optional. Full reference:
 
 ```
 # MCP
-autonomous_prd_set_task_verification_llm(id="<prd-id>", task_id="<task-id>", verification_backend="claude-code", verification_model="opus")
+autonomous_prd_set_task_verification_llm(id="<prd-id>", task_id="<task-id>", verification_backend="remote-node", verification_model="opus")
 autonomous_prd_set_story_verification_llm(id="<prd-id>", story_id="<story-id>", verification_backend="ollama")
 autonomous_prd_set_verification_llm(id="<prd-id>", verification_effort="")   # clear
 
 # CLI
-datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend remote-node --model opus
 datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama
 datawatch autonomous prd-set-verification-llm <id> --effort ""
 
 # Comm channel
-autonomous set-task-verification-llm <id> <task-id> backend=claude-code model=opus
+autonomous set-task-verification-llm <id> <task-id> backend=remote-node model=opus
 autonomous set-story-verification-llm <id> <story-id> backend=ollama
 autonomous set-verification-llm <id> effort=
 
 # REST
 curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
   -H "Content-Type: application/json" \
-  -d '{"task_id":"<task-id>","verification_backend":"claude-code","verification_model":"opus"}'
+  -d '{"task_id":"<task-id>","verification_backend":"remote-node","verification_model":"opus"}'
 ```
 
 PWA: the task **Edit**, story **LLM** and Automaton **Set LLM** modals
@@ -3051,7 +3051,7 @@ autonomous:
 
 ### Worker idle nudge (autonomous.worker_idle_nudge_seconds, autonomous.worker_idle_nudge_stall_seconds)
 
-A claude-code worker that finishes a turn without printing its completion
+A remote-node worker that finishes a turn without printing its completion
 marker gets one nudge before the session idle timeout applies.
 
 - **`autonomous.worker_idle_nudge_seconds`** (default 180): how long the
@@ -3072,12 +3072,12 @@ marker gets one nudge before the session idle timeout applies.
   followed) or `stalled` (the worker stayed silent past the stall window).
   `autonomous_status` reports `nudges_total`, `nudge_tasks` and
   `nudges_by_backend`.
-- **Wait-start line:** when a claude-code worker finishes its turn, the
+- **Wait-start line:** when a remote-node worker finishes its turn, the
   journal gets one `post-turn wait start` line with the session, the task,
   the backend family, `nudge applies=yes|no|pending` (`pending` while the
   session is not yet visible), the nudge and stall windows, the session idle
   limit and `persisted nudge=true|false`. Example:
-  `[autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family claude-code, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false`.
+  `[autonomous] post-turn wait start: session <session> task <automaton>/<task>: backend family remote-node, nudge applies=yes, nudge window 3m0s, stall window 10m0s, session idle limit 15m0s, persisted nudge=false`.
 - **Nudge and outcome lines:** `idle worker <session> task <automaton>/<task>: nudge N sent after D idle`
   when the nudge is typed, then `nudge answered by completion marker`, `nudge answered by new output`
   or `nudge answered by session completion`. A stall logs `still silent for D after nudge; ending session for retry`.
@@ -3219,7 +3219,7 @@ tracked in [dmz006/datawatch-app#266](https://github.com/dmz006/datawatch-app/is
 
 ### Session start confirm timeout (autonomous.session_start_confirm_seconds)
 
-This bounds how long a claude-code autonomous session may sit in
+This bounds how long a remote-node autonomous session may sit in
 `waiting_input` with no sign of work after it has started. The default
 is 120 seconds (2 minutes). It exists because a session whose process is
 alive but that never actually begins working looks healthy to the plain
@@ -3230,7 +3230,7 @@ finished (including a spinner), a process the worker started, a change in
 the pane, or a channel event after the task was delivered. Assistant output
 is not the only proof. A worker in one long silent tool call is not ended.
 
-- **What it watches:** a claude-code task session that has started (the
+- **What it watches:** a remote-node task session that has started (the
   process is running) but shows no sign of work — it is still in
   `waiting_input` instead of getting to work.
 - **When it fires:** the session stayed in that state with no sign of work
@@ -3517,7 +3517,7 @@ reasons, confirming the smoke set): `docs/howto/quality-gate-scope.md`.
 
 ### Pi worker observability (progress, heartbeat, loop detection)
 
-Pi-based autonomous workers (interactive `pi` and the `pi-prompt` one-shot
+Pi-based autonomous workers (interactive `pi` and the `peer-e` one-shot
 backend) are watched through the worker's own session log. Pi writes that
 log natively as a stream of JSON lines (its session JSON mode); datawatch
 only ever *reads* it — it never parses the pane.
@@ -3543,7 +3543,7 @@ longer than `autonomous.stale_task_seconds` (falling back to
 infrastructure failure (`worker stalled: no output, no children, no file
 changes for N seconds (stale_task_seconds=...)`) and retried through its
 existing `auto_fix_retries` budget — even though the pane may still show
-output that looks like it worked. One-shot `pi-prompt` runs skip the
+output that looks like it worked. One-shot `peer-e` runs skip the
 log-mtime part of this check by design: `pi --print` writes its log only
 when it finishes, so the mtime gate would report false stalls; the other
 signals still apply. `autonomous.session_idle_timeout_seconds` (above)
@@ -3564,7 +3564,7 @@ over is caught at two levels, both from the same log:
    with identical arguments. A finding triggers the loop rescue, once per
    loop: the finding is recorded, a `task.looping` event is emitted, the
    task carries a `looping` status, and — for an interactive pi worker — a
-   corrective message is sent into the session; for a one-shot `pi-prompt`
+   corrective message is sent into the session; for a one-shot `peer-e`
    worker the run is stopped and retried with the loop hint attached.
 
 **Settings.**
@@ -3576,7 +3576,7 @@ over is caught at two levels, both from the same log:
   through web settings (Settings → Autonomous card, "Worker loop
   detection window"), or `datawatch config set autonomous.loop_detect_turns 5`.
 - `pi.thinking_level` — pi's own `--thinking` level, passed on every pi
-  worker launch (pi-prompt one-shots and pi sessions). `""` (default) =
+  worker launch (peer-e one-shots and pi sessions). `""` (default) =
   don't pass the flag and use pi's model default; allowed levels are
   `off`, `minimal`, `low`, `medium`, `high`. Per-task, per-story and
   per-PRD thinking-LLM overrides ("Set LLM" / thinking-LLM rows) take
@@ -4147,7 +4147,7 @@ foreign task line as its own instruction, stopped, and asked which task to
 do, which the daemon reports as "worker stopped and asked an interactive
 question instead of completing the one-shot task".
 
-**Mechanism.** The claude-code backend passes the launched `claude` a
+**Mechanism.** The remote-node backend passes the launched `claude` a
 per-worker `--settings` flag carrying the `claudeMdExcludes` setting:
 
 ```
@@ -4177,7 +4177,7 @@ Unit tests are listed in `docs/testing-tracker.md`.
 including resumed launches. Interactive and other non-Automaton sessions are
 never touched: the flag is set explicitly on each launch, so a stale
 setting cannot leak from a previous worker into an interactive session.
-Only the claude-code backend is affected.
+Only the remote-node backend is affected.
 
 **Confirm it.** Look at the session's launch command (the `claude ...` line
 at the top of the session's tmux pane or log). A worker shows
@@ -4220,9 +4220,9 @@ count in effect (the node's pool limit).
 ### What is gated
 
 Only sessions whose model runs on a local engine on that node are gated: the
-`pi`, `pi-prompt`, `ollama`, `opencode` and `opencode-acp` backends, when the
+`pi`, `peer-e`, `ollama`, `opencode` and `opencode-acp` backends, when the
 model's provider prefix (the text before the first `/`) names the node. Hosted
-backends such as `claude-code` are never gated by this setting, and neither is
+backends such as `remote-node` are never gated by this setting, and neither is
 a model with no provider prefix.
 
 ### Waiting for node
@@ -4398,7 +4398,7 @@ pool. Where it comes from, in precedence order:
    entry's subscription tier (`unset`, `pro`, `max_5x`, `max_20x`, `api`)
    mapped to a cap (default table: `pro: 1`, `max_5x: 2`, `max_20x: 4`,
    `api: 0` / unlimited);
-3. **kind default** — 1 in-flight for subscription kinds (claude-code and
+3. **kind default** — 1 in-flight for subscription kinds (remote-node and
    the other non-local, non-API kinds), unlimited for local
    Ollama/OpenWebUI kinds (those stay governed by the `node:` pools and
    `max_engines_per_node`) and for dollar-metered API kinds.
@@ -4864,11 +4864,11 @@ the same filters (`actor`, `action`, `subject`, `session_id`, `since`,
 `until`, `limit`), and an `action` ending in `*` is a prefix match:
 
 ```bash
-datawatch audit --action 'autonomous_budget_*' --subject claude-code --limit 20
+datawatch audit --action 'autonomous_budget_*' --subject remote-node --limit 20
 ```
 
 REST `GET /api/audit`, MCP `audit_query` and the `audit` chat command
-(`audit action=autonomous_budget_* subject=claude-code`) take the same
+(`audit action=autonomous_budget_* subject=remote-node`) take the same
 filters. The full table of causes, example texts, actors, subjects and values
 is in [howto/automata-capacity.md](howto/automata-capacity.md).
 
@@ -4894,9 +4894,9 @@ Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks a
 | `autonomous.lane_fill.idle_alert_minutes` | `30` | How long a lane may sit idle with eligible work waiting before one alert. `0` turns the alert off. |
 | `autonomous.lane_fill.decompose_ahead_min` | `2` | Decomposed Automata kept ready per lane type. |
 | `autonomous.lane_fill.poll_seconds` | `60` | Seconds between planner polls. Values below 5 are raised to 5. |
-| `autonomous.lane_fill.gpu_backend` | `pi-prompt` | Backend the GPU lanes run. |
+| `autonomous.lane_fill.gpu_backend` | `peer-e` | Backend the GPU lanes run. |
 | `autonomous.lane_fill.gpu_model` | empty | Model the GPU lanes run. Empty leaves it to the backend. |
-| `autonomous.lane_fill.claude_backend` | `claude-code` | Backend the Claude lanes run. |
+| `autonomous.lane_fill.claude_backend` | `remote-node` | Backend the Claude lanes run. |
 
 Every key is read live. Mode and threshold changes apply on the next poll, with no restart. A bad value is refused and nothing is written.
 

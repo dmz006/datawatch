@@ -30,7 +30,7 @@ opencode-acp emits typed SSE events:
 | `session.completed`, `message.completed` | Complete |
 
 These drive state directly. **Authoritative — overrides everything else.**
-claude-code MCP doesn't emit structural events, so its state derives
+remote-node MCP doesn't emit structural events, so its state derives
 from signals 2 + 3.
 
 ### 2. Channel reply / chat-message text (advisory)
@@ -103,7 +103,7 @@ A session is in WaitingInput, you're typing, it goes Running, then
 flips back to WaitingInput within seconds. Walk:
 
 ```sh
-SID=ralfthewise-abcd
+SID=peer-f-abcd
 
 # Pane 1: confirm output IS arriving on the log file.
 tail -F ~/.datawatch/sessions/$SID/output.log

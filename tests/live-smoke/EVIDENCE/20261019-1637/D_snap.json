@@ -6,7 +6,7 @@
     {
       "actor": "autonomous",
       "at": "2026-10-18T16:36:30.634386605-04:00",
-      "backend": "pi-prompt",
+      "backend": "peer-e",
       "kind": "decompose",
       "prompt_chars": 3227,
       "response_chars": 1931
@@ -108,7 +108,7 @@
             "severity": "critical",
             "summary": "Core deliverable D_FILE.txt is absent: not in the diff and not on disk; the repo's own verify script exits 1 with 'D_FILE.txt does not exist at project root'.",
             "verified_at": "2026-10-18T16:36:58.808591912-04:00",
-            "verifier_backend": "pi-prompt",
+            "verifier_backend": "peer-e",
             "verifier_model": "ollama/qwen3.8-64k:27b",
             "verifier_source": "global"
           },

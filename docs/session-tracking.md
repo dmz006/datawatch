@@ -18,12 +18,12 @@ Example: `~/.datawatch/sessions/hal9000-a3f2/`
 | `.git/` | Git repository — every event is a commit |
 | `README.md` | Auto-updated session overview (task, status, timestamps, tmux name) |
 | `task.md` | Original task description and any amendments |
-| `output.log` | Full raw claude-code output, streamed live by tmux pipe-pane. Kept on disk only: it is listed in `.git/info/exclude` and is **not** committed to the folder's git history (nor are `output.log.enc` / `output.log.pipe`). |
+| `output.log` | Full raw remote-node output, streamed live by tmux pipe-pane. Kept on disk only: it is listed in `.git/info/exclude` and is **not** committed to the folder's git history (nor are `output.log.enc` / `output.log.pipe`). |
 | `conversation.md` | Human-readable history of prompts received and inputs sent |
 | `timeline.md` | Append-only timestamped event log |
 | `session.json` | Machine-readable session state snapshot |
-| `CLAUDE.md` or `AGENT.md` | Session guardrails (auto-generated from templates). `CLAUDE.md` is used for claude-code sessions; `AGENT.md` is used for all other backends (opencode, aider, goose, etc.) |
-| `PAUSED.md` | Written by claude-code when it hits a rate limit (auto-deleted on resume) |
+| `CLAUDE.md` or `AGENT.md` | Session guardrails (auto-generated from templates). `CLAUDE.md` is used for remote-node sessions; `AGENT.md` is used for all other backends (opencode, aider, goose, etc.) |
+| `PAUSED.md` | Written by remote-node when it hits a rate limit (auto-deleted on resume) |
 
 ## Git Commit Timeline
 
@@ -107,10 +107,10 @@ status a3f2      — current state + recent output
 
 ## Rate Limit Handling
 
-When claude-code hits an API quota or rate limit, the session transitions to a
+When remote-node hits an API quota or rate limit, the session transitions to a
 `rate_limited` state instead of failing:
 
-1. claude-code writes `PAUSED.md` with a progress summary
+1. remote-node writes `PAUSED.md` with a progress summary
 2. The daemon detects the `DATAWATCH_RATE_LIMITED:` output line
 3. State changes to `rate_limited` — you receive a Signal/PWA notification
 4. The daemon schedules a retry after the reset time
@@ -144,7 +144,7 @@ send a3f2: continue from where you left off, see PAUSED.md for context
 Each session has a guardrails file auto-generated from templates and placed in both the
 session tracking folder and the project directory:
 
-- **claude-code sessions** use `CLAUDE.md` (generated from `templates/session-CLAUDE.md`)
+- **remote-node sessions** use `CLAUDE.md` (generated from `templates/session-CLAUDE.md`)
 - **All other backends** (opencode, aider, goose, etc.) use `AGENT.md` (generated from `templates/session-AGENT.md`)
 
 This file gives the LLM operating constraints for the session:

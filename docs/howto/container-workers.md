@@ -40,7 +40,7 @@ An "agent worker" is a container running:
   full daemon).
 - Tailscale sidecar (joins the mesh; gives the agent a private
   100.x.y.z address).
-- One LLM backend (claude-code, opencode-acp, ollama-local, etc.).
+- One LLM backend (remote-node, opencode-acp, ollama-local, etc.).
 - Per-pod auth via PQC bootstrap key + per-spawn token.
 
 The host daemon spawns the container, waits for it to register, then
@@ -94,7 +94,7 @@ datawatch agents status
 
 # 2. Spawn a worker for a one-off task.
 SID=$(datawatch sessions start \
-  --backend claude-code \
+  --backend remote-node \
   --agent k8s \
   --cluster lab-east \
   --profile datawatch-dev \
@@ -104,7 +104,7 @@ SID=$(datawatch sessions start \
 # 3. Wait for the agent to boot + join the mesh.
 sleep 15
 datawatch agents list
-#  → dw-agent-7a3c   session=ralfthewise-7a3c   cluster=lab-east   ts_ip=198.51.100.142   status=running
+#  → dw-agent-7a3c   session=peer-f-7a3c   cluster=lab-east   ts_ip=198.51.100.142   status=running
 ```
 
 (Example values; the real node layout and tailnet addresses live in your
@@ -132,7 +132,7 @@ datawatch agents terminate dw-agent-7a3c
 1. Settings → Agents → **Container Workers** card. Confirm fleet
    status: driver, reachable, mesh state.
 2. To spawn an agent-backed session: Sessions → + FAB → wizard:
-   - Backend: claude-code (or whichever)
+   - Backend: remote-node (or whichever)
    - **Agent**: dropdown — `local` (default) / `docker` / `k8s`
    - When agent is k8s: **Cluster** dropdown shows your Cluster
      Profiles
@@ -165,7 +165,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" $BASE/api/agents/mint
 # Spawn an agent (typically called by sessions/start; direct path:).
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"cluster":"lab-east","profile":"datawatch-dev","backend":"claude-code"}' \
+  -d '{"cluster":"lab-east","profile":"datawatch-dev","backend":"remote-node"}' \
   $BASE/api/agents
 
 # List + get + attestation.

@@ -69,7 +69,7 @@ function collectWith(sandbox, html, overrides, original) {
 test('the LLM edit form renders every budget field with its saved value', () => {
   const sandbox = loadApp();
   sandbox._llm = {
-    name: 'claude-pro', kind: 'claude-code',
+    name: 'claude-pro', kind: 'remote-node',
     budget: { ceiling_usd: 25.5, weekday: 'friday', time: '09:30', zone: 'America/New_York', allocation_pct: true, peer_window: ['alpha', 'beta'] },
   };
   const html = vm.runInContext('buildLLMForm(_llm)', sandbox);
@@ -104,7 +104,7 @@ test('the allocation checkbox is labelled as an estimate and the peer field says
 test('collectLLMForm reads a weekly budget back using the REST field names', () => {
   const sandbox = loadApp();
   const record = {
-    name: 'claude-pro', kind: 'claude-code',
+    name: 'claude-pro', kind: 'remote-node',
     budget: { ceiling_usd: 25.5, weekday: 'friday', time: '09:30', zone: 'America/New_York', allocation_pct: true, peer_window: ['alpha', 'beta'] },
   };
   sandbox._llm = record;
@@ -132,7 +132,7 @@ test('collectLLMForm builds a rolling budget from typed values and omits blank o
 
 test('an empty ceiling clears the stored budget by sending budget: null', () => {
   const sandbox = loadApp();
-  const record = { name: 'claude-pro', kind: 'claude-code', budget: { ceiling_usd: 10, hours: 24 } };
+  const record = { name: 'claude-pro', kind: 'remote-node', budget: { ceiling_usd: 10, hours: 24 } };
   sandbox._llm = record;
   const html = vm.runInContext('buildLLMForm(_llm)', sandbox);
   const out = collectWith(sandbox, html, { fe_llm_budget_ceiling: { value: '' } }, record);

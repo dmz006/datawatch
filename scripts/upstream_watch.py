@@ -140,8 +140,8 @@ PIN_SOURCES = {
         "tool": "eslint-plugin-security", "source": ("npm", "eslint-plugin-security"),
         "osv": ("npm", "eslint-plugin-security")},
     "CLAUDE_CODE_VERSION": {
-        "tool": "Claude Code", "source": ("npm", "@anthropic-ai/claude-code"),
-        "osv": ("npm", "@anthropic-ai/claude-code")},
+        "tool": "Claude Code", "source": ("npm", "@anthropic-ai/remote-node"),
+        "osv": ("npm", "@anthropic-ai/remote-node")},
     "GEMINI_CLI_VERSION": {
         "tool": "Gemini CLI", "source": ("npm", "@google/gemini-cli"),
         "osv": ("npm", "@google/gemini-cli")},

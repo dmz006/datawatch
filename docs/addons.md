@@ -58,7 +58,7 @@ Add config fields in `internal/config/config.go` and wire in `runStart()`.
 
 | Name | Package | Description |
 |------|---------|-------------|
-| claude-code | internal/llm/claudecode | Anthropic Claude Code CLI (default) |
+| remote-node | internal/llm/claudecode | Anthropic Claude Code CLI (default) |
 | ollama | internal/llm/backends/ollama | Local models via Ollama |
 | openwebui | internal/llm/backends/openwebui | OpenWebUI (OpenAI-compatible API) |
 

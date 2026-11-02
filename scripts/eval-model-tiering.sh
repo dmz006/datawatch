@@ -54,7 +54,7 @@ usage() {
 Usage: $SELF <subcommand> [options]
 
 Common
-  preflight            --run-id ID   Read-only: daemon reachable, claude-code available, every execution/
+  preflight            --run-id ID   Read-only: daemon reachable, remote-node available, every execution/
                                      decompose tier valid against the daemon's claude models/efforts; records
                                      the live default and the current verification_backend/model/effort as
                                      *_at_start in state.json.
@@ -243,10 +243,10 @@ verify_tier_self_test() {
   local tmp
   tmp=$(mktemp -d)
   export EVAL_MOCK_CONFIG="$tmp/config.json"
-  local orig='{"verification_backend":"claude-code","verification_model":"qwen3.8:27b","verification_effort":"","enabled":true}'
+  local orig='{"verification_backend":"remote-node","verification_model":"qwen3.8:27b","verification_effort":"","enabled":true}'
   mkdir -p "$rdir"
   echo "$orig" >"$EVAL_MOCK_CONFIG"
-  python3 -I -c 'import json,sys; json.dump({"run_id":sys.argv[2],"verification_backend_at_start":"claude-code",
+  python3 -I -c 'import json,sys; json.dump({"run_id":sys.argv[2],"verification_backend_at_start":"remote-node",
 "verification_model_at_start":"qwen3.8:27b","verification_effort_at_start":""},open(sys.argv[1],"w"))' \
     "$rdir/state.json" "$run_id"
   local fails=0

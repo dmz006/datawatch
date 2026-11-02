@@ -5,7 +5,7 @@ and must be confirmed by the maintainer before this file is used for enrollment.
 
 ## What datawatch is
 
-A Go daemon that lets a person run and supervise LLM coding-agent sessions (claude-code,
+A Go daemon that lets a person run and supervise LLM coding-agent sessions (remote-node,
 opencode, aider, pi and others) on a host, and control them from messaging channels
 (Signal, Telegram, Matrix, and others listed in `docs/messaging-backends.md`) or from
 a web UI / REST API / MCP. It can also run autonomous multi-step PRD execution that drives

@@ -44,7 +44,7 @@ sequenceDiagram
     participant Manager as Session Manager
     participant Store as sessions.json
     participant Tmux as tmux
-    participant Claude as claude-code
+    participant Claude as remote-node
 
     User->>Group: "new: refactor auth module"
     Group->>CLI: delivers message
@@ -58,7 +58,7 @@ sequenceDiagram
     Manager->>Tmux: new-session -d -s cs-myhost-a3f2
     Manager->>Tmux: pipe-pane -o → logs/myhost-a3f2.log
     Manager->>Tmux: send-keys → claude "refactor auth module"
-    Tmux->>Claude: starts claude-code process
+    Tmux->>Claude: starts remote-node process
     Manager->>Store: Save(session{state:running})
     Manager->>Manager: go monitorOutput(ctx, sess)
     Manager-->>Router: Session{ID:"a3f2", ...}
@@ -105,7 +105,7 @@ flowchart TD
 
 ```mermaid
 sequenceDiagram
-    participant Claude as claude-code (tmux)
+    participant Claude as remote-node (tmux)
     participant Log as myhost-a3f2.log
     participant Monitor as monitorOutput goroutine
     participant Manager as Session Manager
@@ -146,7 +146,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant Claude as claude-code
+    participant Claude as remote-node
     participant Tmux as tmux
     participant Log as myhost-a3f2.log
     participant Monitor as monitorOutput goroutine

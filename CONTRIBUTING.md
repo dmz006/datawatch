@@ -51,7 +51,7 @@ datawatch/
 ├── internal/
 │   ├── config/            # Configuration loading and defaults
 │   ├── llm/               # LLM backend interface + registry
-│   │   └── claudecode/    # claude-code backend implementation
+│   │   └── claudecode/    # remote-node backend implementation
 │   ├── messaging/         # Messaging backend interface
 │   ├── router/            # Signal command parsing and routing
 │   ├── server/            # HTTP/WebSocket server + PWA

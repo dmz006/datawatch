@@ -2,7 +2,7 @@
 
 Test data only: nothing here is read by the daemon, and creating it changes no
 default, daemon config or automaton-level LLM setting. It defines a second eval
-grid over the open (pi-prompt/Ollama) models, reusing the Claude tiering eval's
+grid over the open (peer-e/Ollama) models, reusing the Claude tiering eval's
 task fixtures unchanged. The grid is **pi-only**: every role runs through the pi
 backend, and the old opencode lane is out of scope (it was retired when this
 matrix was re-scoped; nothing in this directory references it anymore).
@@ -25,7 +25,7 @@ in the non-executor roles (see `docs/plans/2026-10-15-bl449-open-model-matrix.md
 
 ## Preflight
 
-`preflight` runs ONE real pi-prompt one-shot through the daemon for each
+`preflight` runs ONE real peer-e one-shot through the daemon for each
 distinct role/model (`POST /api/sessions/start` with the role's registry entry
 as `backend`, its `model` and its `thinking_level`), polls the session to a
 terminal state, and requires the model the session record reports to equal the
@@ -67,7 +67,7 @@ home-dir paths.
 Task types: `analysis`, `scripting`, `docs`, `review`.
 
 **No effort axis.** `matrix.json` has `"effort_axis": null` on purpose: effort
-is a claude-code-only control (see
+is a remote-node-only control (see
 `docs/plans/2026-10-14-recurring-model-eval-design.md`). Matrix cells pass no
 effort anywhere; the pi-side reasoning-effort axis instead is the `thinking_level`
 field described above, pinned per role and recorded per cell.

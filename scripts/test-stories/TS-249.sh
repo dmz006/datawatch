@@ -9,7 +9,7 @@ story_preflight "surface:api feature:sessions" || return 0
 _story_ts_249() {
     echo ""; echo "  >> TS-249: Full session + channel lifecycle journey"
     ts=$(date +%s)
-    sess=$(api POST /api/sessions/start "{\"task\":\"e2e-journey-$ts\",\"name\":\"e2e-journey-$ts\",\"backend\":\"claude-code\"}")
+    sess=$(api POST /api/sessions/start "{\"task\":\"e2e-journey-$ts\",\"name\":\"e2e-journey-$ts\",\"backend\":\"remote-node\"}")
     save_evidence "TS-249" "1_create.json" "$sess"
     sess_id=$(echo "$sess" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('id',''))" 2>/dev/null || echo "")
     if [[ -n "$sess_id" ]]; then

@@ -108,7 +108,7 @@ On timeout: `{"error": "elicitation timeout"}`
 
 ```bash
 datawatch mcp elicit --schema approval --prompt "Proceed with deploy?"
-datawatch mcp elicit --schema choice --prompt "Pick backend" --options "ollama,claude-code"
+datawatch mcp elicit --schema choice --prompt "Pick backend" --options "ollama,remote-node"
 ```
 
 ### Comm

@@ -305,7 +305,7 @@ session:
   root_path: /home/<user>        # file-browser clamp
   console_cols: 80
   console_rows: 24
-  skip_permissions: true     # claude-code --dangerously-skip-permissions
+  skip_permissions: true     # remote-node --dangerously-skip-permissions
   channel_enabled: true      # claude MCP channel mode
   auto_git_init: true
   auto_git_commit: false

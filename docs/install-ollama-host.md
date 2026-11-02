@@ -255,7 +255,7 @@ only the GPU-accelerated path opts into Ollama.
 | **BL274 Sprint 4 LLM-translation fallback** (`internal/server/docs_translator.go`) | Same `/api/generate` as `ask` | Translates non-curated howto prose into MCP-call sequences | `LLMTranslator` is nil; `docs_apply` against an unauthored howto returns `501` with explicit message. Curated howtos (22/22 today) work without Ollama. |
 | **Council Mode synthesis** (`internal/council`) | `/api/generate` (model from council config) | Multi-persona debate synthesis | Returns each persona's raw output; synthesis step skipped, operator reviews manually. |
 | **Eval llm_rubric grader** (`internal/evals/graders`) | `/api/generate` per grading rule | Auto-scores LLM output against rubric | Grader marked `skipped`; suite still runs the deterministic rules (regex/contains/etc.) |
-| **Autonomous decompose** (`internal/autonomous`) | `/api/generate` | Splits a PRD into stories | Returns 503 with explicit message; operator decomposes manually or switches PRD backend to claude-code/openwebui. |
+| **Autonomous decompose** (`internal/autonomous`) | `/api/generate` | Splits a PRD into stories | Returns 503 with explicit message; operator decomposes manually or switches PRD backend to remote-node/openwebui. |
 
 **Sidecar pattern.** All seven features read `cfg.Ollama.Host` — set it once
 in `~/.datawatch/config.yaml` and every feature follows. Pointing

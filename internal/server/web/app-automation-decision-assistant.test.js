@@ -52,9 +52,9 @@ test('detail page says the decision assistant is off when no setting exists', ()
 
 test('detail page shows backend, model, mode, hooks and thresholds', () => {
   const html = render(automation({
-    decision_assistant: { backend: 'pi-prompt', model: 'qwen3.8:27b', mode: 'live', hooks: ['empty_edge', 'budget_breach'], thresholds: { empty_edge: 0.9 } },
+    decision_assistant: { backend: 'peer-e', model: 'qwen3.8:27b', mode: 'live', hooks: ['empty_edge', 'budget_breach'], thresholds: { empty_edge: 0.9 } },
   }));
-  assert.match(html, /pi-prompt \/ qwen3\.8:27b/);
+  assert.match(html, /peer-e \/ qwen3\.8:27b/);
   assert.match(html, /data-mode="live"/);
   assert.match(html, /Live \(acts\)/);
   assert.match(html, /Empty edge, Budget breach/);
@@ -119,10 +119,10 @@ test('body builder clears on empty backend and keeps only chosen hooks', () => {
   const sb = loadApp({});
   assert.deepEqual(JSON.parse(JSON.stringify(sb.automationDecisionAssistantBody({ backend: '' }))), { clear: true });
   const body = JSON.parse(JSON.stringify(sb.automationDecisionAssistantBody({
-    backend: 'pi-prompt', model: 'q', mode: 'bogus', hooks: ['skip_member', 'nope'],
+    backend: 'peer-e', model: 'q', mode: 'bogus', hooks: ['skip_member', 'nope'],
     thresholds: { skip_member: '0.8', empty_edge: '0.5', budget_breach: '' },
   })));
-  assert.deepEqual(body, { backend: 'pi-prompt', model: 'q', mode: 'shadow', hooks: ['skip_member'], thresholds: { skip_member: 0.8 } });
+  assert.deepEqual(body, { backend: 'peer-e', model: 'q', mode: 'shadow', hooks: ['skip_member'], thresholds: { skip_member: 0.8 } });
 });
 
 test('the edit control posts set_decision_assistant for the open Automation', async () => {

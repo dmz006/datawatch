@@ -1,6 +1,6 @@
 # Claude Code Channel Integration
 
-datawatch supports two distinct communication modes when running claude-code sessions:
+datawatch supports two distinct communication modes when running remote-node sessions:
 **channel mode** (MCP channel) and **console mode** (tmux direct I/O). Understanding
 the difference matters for automation, permission handling, and troubleshooting.
 
@@ -65,13 +65,13 @@ startup and the session fails to launch with channel mode. Two recoveries:
 
 ### Console mode (tmux)
 
-Every claude-code session always runs inside a tmux window. The tmux pane is where
+Every remote-node session always runs inside a tmux window. The tmux pane is where
 the actual `claude` process lives — it has a real TTY, renders Claude's interactive
 UI, and receives raw keyboard input via `tmux send-keys`.
 
 Console mode is the **only** path for:
 
-- **Folder trust/permission prompts** — the very first time claude-code accesses a new
+- **Folder trust/permission prompts** — the very first time remote-node accesses a new
   directory it shows a numbered menu asking whether you trust the folder. This prompt
   is rendered in the terminal UI and must be answered by sending `1` (or `Enter`) to
   the tmux pane. It cannot be answered over the MCP channel.
@@ -212,7 +212,7 @@ Enter to confirm · Esc to cancel
 - datawatch detects this via the `trust this folder` / `Enter to confirm` prompt
   patterns and marks the session `waiting_input`.
 - Reply with `send <id>: 1` (or press `Enter` via the web UI quick-input button).
-- After trusting once, the folder is remembered by claude-code and the prompt will
+- After trusting once, the folder is remembered by remote-node and the prompt will
   not appear again for that directory.
 
 ### 2. Development channels consent prompt
@@ -276,7 +276,7 @@ In `~/.datawatch/config.yaml`:
 
 ```yaml
 session:
-  llm_backend: claude-code
+  llm_backend: remote-node
   channel_enabled: true
 ```
 
@@ -300,7 +300,7 @@ The web UI shows a mode badge on each session card and in the session detail hea
 | Badge | Mode | Meaning |
 |---|---|---|
 | `tmux` | Console only | Standard mode; all I/O through tmux |
-| `ch` | Channel | claude-code with MCP channel enabled |
+| `ch` | Channel | remote-node with MCP channel enabled |
 | `acp` | ACP | opencode with ACP API enabled |
 
 In channel mode, Claude's replies appear in the output area as amber-highlighted

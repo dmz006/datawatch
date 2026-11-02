@@ -141,7 +141,7 @@ the entry starts is placed on one node of the pool, and that node's
 `node:<name>` pool carries the worker's lease. An entry with one node behaves
 exactly as before: that node takes the lease and nothing is chosen.
 
-**Which node is picked.** A `pi` or `pi-prompt` backend takes its candidate
+**Which node is picked.** A `pi` or `peer-e` backend takes its candidate
 nodes from its own LLM entry's `compute_nodes` list. The ledger orders them with
 load first: the node holding the fewest sessions relative to its limit goes
 first, and `scheduling_priority` (0 to 100, default 50, higher first) only
@@ -177,7 +177,7 @@ waits like any other request. A worker that survives a daemon restart keeps the
 node recorded for it. A respawned verifier and a task returning from an external
 wait are placed the same way. No cap or setting changed.
 
-**Slots per node.** A node that hosts a local engine (`pi`, `pi-prompt`,
+**Slots per node.** A node that hosts a local engine (`pi`, `peer-e`,
 `ollama`, `opencode`, `opencode-acp`) has a slot count: how many workers it
 runs at once. The count is the first of these that applies:
 
@@ -238,7 +238,7 @@ order:
    override always wins;
 2. **`plan_tier` + the table** — the tier's mapped value;
 3. **conservative kind default** — 1 in-flight for subscription kinds
-   (claude-code and the other non-local, non-API kinds), unlimited for
+   (remote-node and the other non-local, non-API kinds), unlimited for
    local Ollama/OpenWebUI kinds (those stay governed by the `node:` pools
    and `max_engines_per_node`) and for dollar-metered API kinds (cap those
    with a per-LLM dollar budget, below).
@@ -336,7 +336,7 @@ When a backend runs out of usage (a rate limit or a weekly cap), starting
 more autonomous work on it only burns retries. A usage back-off flag holds
 autonomous dispatch to that one backend until the limit lifts. The flag is
 in memory and per backend: it is lost on a daemon restart, and backing off
-`claude-code` never affects `pi` or `ollama`. The implementation lives in
+`remote-node` never affects `pi` or `ollama`. The implementation lives in
 `internal/autonomous/backoff.go`; the design is in
 `docs/plans/2026-10-14-concurrency-and-budget-design.md`.
 
@@ -380,9 +380,9 @@ The same four operations exist on every surface, with the same names and
 arguments:
 
 - REST: `GET /api/usage-backoff` (status), `POST /api/usage-backoff` with
-  `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}`
+  `{"backend": "remote-node", "minutes": 45, "reason": "weekly cap"}`
   (`until`, an RFC3339 time, replaces `minutes`), and
-  `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` (omit the
+  `DELETE /api/usage-backoff` with `{"backend": "remote-node"}` (omit the
   backend, or pass `all`, to clear every flag).
 - MCP: `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`.
 - CLI: `datawatch usage-backoff status`,
@@ -437,14 +437,14 @@ a weekly window that resets on a weekday at a clock time in a zone.
 
 ```bash
 # Rolling: $50 over any 168 hours
-datawatch llm update claude-code --budget-ceiling-usd 50 --budget-hours 168
+datawatch llm update remote-node --budget-ceiling-usd 50 --budget-hours 168
 
 # Weekly: $80 per week, resetting Monday 09:00 New York time
-datawatch llm update claude-code --budget-ceiling-usd 80 \
+datawatch llm update remote-node --budget-ceiling-usd 80 \
   --budget-weekday monday --budget-time 09:00 --budget-zone America/New_York
 
 # Remove it
-datawatch llm update claude-code --clear-budget
+datawatch llm update remote-node --clear-budget
 ```
 
 The same object is available everywhere: the PWA (Settings > Compute > LLM
@@ -456,7 +456,7 @@ leave it out to keep the stored one, send `null` or `{}` to clear it.
 
 ```bash
 datawatch budget status              # every budgeted LLM
-datawatch budget status --llm claude-code
+datawatch budget status --llm remote-node
 ```
 
 REST `GET /api/budget` (or `?llm=<name>`), MCP `budget_status`, and the comm
@@ -693,11 +693,11 @@ of the wait is known, the time it ends.
 
 | Cause label | Exact text shown | Meaning |
 |---|---|---|
-| Pool full | `pool llm:claude-code full (2/2, held by t-3f9a1c, t-8b20de)` | A pool the task needs is at its limit. The holders are the sessions using the slots. With no holder to name, it reads `held by other sessions`. |
+| Pool full | `pool llm:remote-node full (2/2, held by t-3f9a1c, t-8b20de)` | A pool the task needs is at its limit. The holders are the sessions using the slots. With no holder to name, it reads `held by other sessions`. |
 | Node busy | `waiting for node gpu-1: 1/1 engines in use, held by t-3f9a1c` | Every engine on the compute node is in use. |
-| Back-off, reset time known | `backend claude-code backed off until 14:30 UTC (resets in 42m)` | The backend ran out of usage and told datawatch when it lifts. |
-| Back-off, reset time unknown | `backend claude-code backed off until 15:12 UTC (reset time unknown; next attempt allowed then, in 1h)` | The backend gave no reset time, so datawatch holds it for the maximum back-off and then lets one attempt through. |
-| Budget window full | `budget window full: claude-code spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
+| Back-off, reset time known | `backend remote-node backed off until 14:30 UTC (resets in 42m)` | The backend ran out of usage and told datawatch when it lifts. |
+| Back-off, reset time unknown | `backend remote-node backed off until 15:12 UTC (reset time unknown; next attempt allowed then, in 1h)` | The backend gave no reset time, so datawatch holds it for the maximum back-off and then lets one attempt through. |
+| Budget window full | `budget window full: remote-node spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
 | Global cooldown | `global cooldown until 14:30 UTC (in 12m)` | The daemon-wide rate-limit cooldown is active. When its end is not known the text is `global cooldown active`. |
 | Awaiting external | `await_external: CI run on the branch` | The worker parked itself on an outside condition (see "Park on an external condition"). A bare `await_external` means it gave no condition. A long condition is cut at 400 characters. |
 | Tree lock | `tree lock: tree:/home/<user>/project held by task t-7c1d44 (PRD 4e2a9b10) since 2026-10-22T18:10:00Z` | Another task holds the write lock on the same project tree. If the lock record cannot be read: `tree lock: <key> held by unknown holder (record unreadable)`. |
@@ -762,7 +762,7 @@ so nothing is hidden and nothing is lost. What you see:
   task title (short id)* first, then its reason; a running task shows its
   `Holds:` line with the same readable holders.
 - **Wait reasons.** When a reason names holders — a full pool or a busy node
-  — you see their titles, e.g. `pool llm:claude-code full (2/2, held by
+  — you see their titles, e.g. `pool llm:remote-node full (2/2, held by
   "Ship the beta" / "Write the migration" (t-3f9a1c))`. Reasons that name no
   holders (back-off, budget) read exactly as before. The session status tab
   shows the same readable sentence next to the raw one.
@@ -904,19 +904,19 @@ or an LLM name.
 
 ```bash
 # REST
-curl -sk "https://localhost:8443/api/audit?action=autonomous_budget_*&subject=claude-code&since=2026-10-20T00:00:00Z&limit=20"
+curl -sk "https://localhost:8443/api/audit?action=autonomous_budget_*&subject=remote-node&since=2026-10-20T00:00:00Z&limit=20"
 
 # CLI (the session filter is --session-id)
-datawatch audit --action 'autonomous_budget_*' --subject claude-code \
+datawatch audit --action 'autonomous_budget_*' --subject remote-node \
   --since 2026-10-20T00:00:00Z --limit 20
 ```
 
 ```text
 # MCP: audit_query with the same arguments
-{"action": "autonomous_budget_*", "subject": "claude-code", "since": "2026-10-20T00:00:00Z", "limit": 20}
+{"action": "autonomous_budget_*", "subject": "remote-node", "since": "2026-10-20T00:00:00Z", "limit": 20}
 
 # Chat channels: key=value words, no spaces around the =
-audit action=autonomous_budget_* subject=claude-code since=2026-10-20T00:00:00Z limit=20
+audit action=autonomous_budget_* subject=remote-node since=2026-10-20T00:00:00Z limit=20
 ```
 
 To follow one task, filter on its id: `datawatch audit --subject t-3f9a1c`

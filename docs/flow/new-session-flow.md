@@ -8,7 +8,7 @@ sequenceDiagram
     participant Bridge as SignalCLIBackend
     participant Router as Router
     participant Manager as Session Manager
-    participant LLM as llm.Backend (claude-code)
+    participant LLM as llm.Backend (remote-node)
     participant Tmux as tmux
     participant Store as sessions.json
     participant Monitor as monitorOutput goroutine

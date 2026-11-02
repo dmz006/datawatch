@@ -50,7 +50,7 @@ For multiple sources:
 
 | Project | Why skipped | What was kept as prior art |
 |---------|-------------|---------------------------|
-| Aperant ([aperantdesktop.com](https://aperantdesktop.com/), see BL inventory) | AGPL-3.0 incompatible with datawatch distribution; Electron desktop app with no headless API; sits on top of the same claude-code layer datawatch uses | Worktree-isolation + self-QA ideas borrowed into BL24 roadmap as prior art alongside nightwire — no integration |
+| Aperant ([aperantdesktop.com](https://aperantdesktop.com/), see BL inventory) | AGPL-3.0 incompatible with datawatch distribution; Electron desktop app with no headless API; sits on top of the same remote-node layer datawatch uses | Worktree-isolation + self-QA ideas borrowed into BL24 roadmap as prior art alongside nightwire — no integration |
 
 *Update this table as new source projects are referenced or evaluated.*
 

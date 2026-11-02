@@ -10,7 +10,7 @@ interact with it directly.
 
 | Method | How |
 |--------|-----|
-| **YAML** | `session.llm_backend: claude-code` in `~/.datawatch/config.yaml` |
+| **YAML** | `session.llm_backend: remote-node` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch setup llm` (interactive wizard) |
 | **Web UI** | Settings tab → General → **Datawatch** card → Default LLM backend dropdown |
 | **REST API** | `PUT /api/config` with `{"session.llm_backend": "aider"}` |
@@ -21,7 +21,7 @@ Per-backend settings (binary path, console size, output/input mode) are configur
 - **REST API**: `PUT /api/config` with e.g. `{"aider.binary": "/usr/local/bin/aider"}`
 - **Comm channel**: `configure aider.binary=/usr/local/bin/aider`
 
-Available backends: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `opencode-acp`, `opencode-prompt`, `ollama`, `openwebui`, `shell`
+Available backends: `remote-node`, `aider`, `goose`, `gemini`, `opencode`, `opencode-acp`, `opencode-prompt`, `ollama`, `openwebui`, `shell`
 
 ---
 
@@ -37,7 +37,7 @@ Available backends: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `open
 
 | Backend | Name | Interactive input | External service | Notes |
 |---|---|---|---|---|
-| Claude Code | `claude-code` | **Yes** | Anthropic API | Default; agentic coding loop. Channel mode (MCP bridge) wires structured tool callbacks + permission relay. |
+| Claude Code | `remote-node` | **Yes** | Anthropic API | Default; agentic coding loop. Channel mode (MCP bridge) wires structured tool callbacks + permission relay. |
 | Shell | `shell` | **Yes** | Custom command | Bring-your-own; tmux pane stays attached so anything that reads stdin works. |
 | opencode-acp | `opencode-acp` | **Yes** | Configurable (anthropic / openai / others via opencode) | opencode driven over the Agent Coding Protocol (HTTP/SSE). Thinking + structured replies render in the chat panel. |
 | OpenWebUI (chat) | `openwebui` (chat mode) | **Yes** | OpenWebUI instance | The `InteractiveBackend` variant uses the OpenAI-compatible chat completions API; pure Go, no tmux. Picked when you start a session with the chat input mode. |
@@ -92,7 +92,7 @@ Five backends accept interactive input from datawatch (the
 `send <id>: <msg>` command, the PWA input bar, and chat / Signal /
 Telegram replies):
 
-- **`claude-code`** — full agentic loop, plus channel mode for
+- **`remote-node`** — full agentic loop, plus channel mode for
   structured tool callbacks.
 - **`shell`** — anything you can drive over stdin in a tmux pane.
 - **`opencode-acp`** — opencode over the Agent Coding Protocol,
@@ -112,10 +112,10 @@ task and exit when complete. For these:
 
 ### One-shot (`one_shot`) sessions
 
-All backends named `*-prompt` (`pi-prompt`, `goose-prompt`, `opencode-prompt`, …)
+All backends named `*-prompt` (`peer-e`, `goose-prompt`, `opencode-prompt`, …)
 are one-shot: the `one_shot` flag is recorded on the session at creation, even
 when the session is started by hand (PWA, REST, MCP) without a `one_shot` field
-in the request. Interactive backends (`claude-code`, `pi`, `aider`, `goose` TUI,
+in the request. Interactive backends (`remote-node`, `pi`, `aider`, `goose` TUI,
 `gemini`, `opencode`, `opencode-acp`, `shell`, chat-mode backends) are **not**
 flagged one-shot by default — `one_shot` only appears if a start request
 explicitly asks for it. The decision is made once, at session creation; existing
@@ -138,13 +138,13 @@ pair. The refusal names the model and the backend.
 ### The pairing rule
 
 - A bare Claude alias such as `claude-haiku-5-5` is refused on the `pi` and
-  `pi-prompt` backends. pi resolves a bare alias across providers and exits
+  `peer-e` backends. pi resolves a bare alias across providers and exits
   with no output. Use a provider-qualified name such as
-  `anthropic/claude-haiku-5-5` on pi, or use the `claude-code` backend with a
+  `anthropic/claude-haiku-5-5` on pi, or use the `remote-node` backend with a
   bare name.
 - A provider-tagged model such as `ollama/qwen3.8:27b` is refused on
-  `claude-code`, which takes only bare Claude model names. Use a bare name on
-  `claude-code`.
+  `remote-node`, which takes only bare Claude model names. Use a bare name on
+  `remote-node`.
 
 The check runs when a PRD, story, task, or verification or guardrail model is
 set. It applies to REST, MCP, and the comm channel alike. A refused set leaves
@@ -156,9 +156,9 @@ not started, and the error names each offending task. This means records written
 before the check existed are also refused, instead of spawning a session that
 exits with no output.
 
-### pi-prompt failure marker
+### peer-e failure marker
 
-On the `pi-prompt` backend, a run that fails no longer reports success. A
+On the `peer-e` backend, a run that fails no longer reports success. A
 non-zero exit from pi, or a run that produces no output, prints
 `DATAWATCH_PI_FAILED` and does not print `DATAWATCH_COMPLETE`. The failure line
 names the exit status and the model, for example:
@@ -207,12 +207,12 @@ backend can serve wins:
 
 Tiers 1–2 are explicit pins for the resolved judge backend.
 Tiers 3–5 are global defaults configured for the global pi-family backend;
-when a judge resolves to the `claude-code` backend they are skipped (they
+when a judge resolves to the `remote-node` backend they are skipped (they
 are pi-style model names that backend would reject), and only the explicit
 PRD/task pins may win. Every tier is validated against the judge's resolved
 backend with the [pairing rule](#the-pairing-rule) above — a provider-tagged
-model is refused on `claude-code`, a bare Claude alias is refused on `pi`
-and `pi-prompt` — so a tier that the backend cannot serve is skipped with a
+model is refused on `remote-node`, a bare Claude alias is refused on `pi`
+and `peer-e` — so a tier that the backend cannot serve is skipped with a
 recorded reason, never launched.
 
 ### Loud failure when no tier resolves
@@ -258,12 +258,12 @@ rather than borrowing the backend default.
 
 ---
 
-## claude-code (default)
+## remote-node (default)
 
-**Name:** `claude-code`
+**Name:** `remote-node`
 
 Anthropic's official Claude Code CLI. This is the default backend. It supports full
-interactive input — datawatch can detect when claude-code is waiting for your response
+interactive input — datawatch can detect when remote-node is waiting for your response
 and route replies from your messaging app or MCP client directly to it.
 
 ### Prerequisites
@@ -274,18 +274,18 @@ and route replies from your messaging app or MCP client directly to it.
 ### Installation
 
 ```bash
-npm install -g @anthropic-ai/claude-code
-# or follow https://docs.anthropic.com/en/docs/claude-code
+npm install -g @anthropic-ai/remote-node
+# or follow https://docs.anthropic.com/en/docs/remote-node
 ```
 
 ### Configuration
 
 ```yaml
 session:
-  llm_backend: claude-code
-  claude_code_bin: claude          # path to the claude binary; default: "claude" (claude-code only)
-  skip_permissions: false          # pass --dangerously-skip-permissions (claude-code only)
-  channel_enabled: true            # enable MCP channel server (claude-code only)
+  llm_backend: remote-node
+  claude_code_bin: claude          # path to the claude binary; default: "claude" (remote-node only)
+  skip_permissions: false          # pass --dangerously-skip-permissions (remote-node only)
+  channel_enabled: true            # enable MCP channel server (remote-node only)
 ```
 
 ### How it runs
@@ -294,18 +294,18 @@ session:
 claude --print --add-dir <project_dir> '<task>'
 ```
 
-The `--add-dir` flag limits claude-code's file access to the project directory. Output
+The `--add-dir` flag limits remote-node's file access to the project directory. Output
 is piped into a tmux session and logged to `~/.datawatch/logs/<hostname>-<id>.log`.
 
 ### Interactive input
 
-When claude-code outputs a prompt ending with `?`, `[y/N]`, `>`, or similar patterns,
+When remote-node outputs a prompt ending with `?`, `[y/N]`, `>`, or similar patterns,
 datawatch marks the session as `waiting_input` and notifies you via your messaging
 backend. Reply with `send <id>: <your answer>` to route input back to the session.
 
 ### Channel mode (MCP channel)
 
-claude-code supports an optional MCP channel (`channel_enabled: true`) that adds a
+remote-node supports an optional MCP channel (`channel_enabled: true`) that adds a
 second, structured communication path alongside the tmux console. Tool output and
 Claude's replies flow over the channel as clean text; folder-trust and consent prompts
 still require console interaction.
@@ -321,7 +321,7 @@ identification in Claude's `/resume` picker.
 
 ### Session resume
 
-claude-code stores conversation history keyed by a session ID. To resume a previous
+remote-node stores conversation history keyed by a session ID. To resume a previous
 conversation, select it from the **Resume previous session** dropdown in the New Session
 form (web UI), or pass it via API. The session is launched with `--resume <ID>`.
 
@@ -330,7 +330,7 @@ session's details (name, task, directory, backend) and selects it in the resume 
 
 ### Rate limit detection
 
-claude-code is the only backend with captured throttle lines. The built-in
+remote-node is the only backend with captured throttle lines. The built-in
 phrases are the usage-limit lines of its own limit messages and usage dialog
 (the hard-limit lines, the extra-usage line, the approaching-limit warning, the
 reset-time announcements and the stop-and-wait menu option). Every one is
@@ -341,16 +341,16 @@ Before a line is matched, the detector trims surrounding whitespace and
 lowercases it, and strips ANSI cursor escapes it would otherwise misread; all
 matches are line-start anchored, so a line that merely quotes one of these
 phrases inside ordinary output does not match. The `⎿` gutter glyph plus two
-spaces that claude-code prints before secondary lines, and the numbered menu
+spaces that remote-node prints before secondary lines, and the numbered menu
 rows of its usage dialog (with or without the `❯` cursor), are tolerated as
 that family's own prefixes. Table phrases are only checked on lines under 2048
 characters; the shared protocol line is not subject to that length gate.
 
 On top of the tool's own lines, the session carries two plain protocol lines
 the detector recognizes line-start on every backend: `DATAWATCH_RATE_LIMITED:`
-when the session reports a throttle (claude-code also writes `PAUSED.md` with
+when the session reports a throttle (remote-node also writes `PAUSED.md` with
 a progress summary while paused), and `DATAWATCH_COMPLETE:` when it finishes.
-A rate-limited claude-code session is held in a paused `rate_limited` state and
+A rate-limited remote-node session is held in a paused `rate_limited` state and
 resumed on retry, not failed — it still completes normally.
 
 If you set `detection.rate_limit_patterns`, your list replaces these built-in
@@ -481,7 +481,7 @@ cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose run
 
 ## pi
 
-**Name:** `pi` (interactive) / `pi-prompt` (one-shot)
+**Name:** `pi` (interactive) / `peer-e` (one-shot)
 
 [pi](https://pi.dev) ([earendil-works/pi](https://github.com/earendil-works/pi)) is a
 minimal open-source coding agent harness that calls provider SDKs (Anthropic,
@@ -507,7 +507,7 @@ pi --version
 
 ```yaml
 session:
-  llm_backend: pi   # or pi-prompt for one-shot execution
+  llm_backend: pi   # or peer-e for one-shot execution
 
 pi:
   enabled: true
@@ -526,13 +526,13 @@ pi_prompt:
 # Interactive mode (pi backend) — stays open after the first turn
 cd <project_dir> && pi --approve --session-id '<id>' '<task>'
 
-# One-shot mode (pi-prompt backend) — blocks until done, then exits
+# One-shot mode (peer-e backend) — blocks until done, then exits
 cd <project_dir> && pi --print --mode text --approve '<task>'
 ```
 
 ### Which node a pi worker uses
 
-A pi or pi-prompt worker runs on the compute node its capacity lease holds.
+A pi or peer-e worker runs on the compute node its capacity lease holds.
 When the node is known, the daemon points pi at that node for the launch. The
 node is the one the entry's pool chose, or the entry's only node (see
 [Compute-node pools and slots](howto/automata-capacity.md#compute-node-pools-and-slots)).
@@ -598,7 +598,7 @@ Check these in order:
 ### Notes
 
 - `pi` backend is interactive (real TUI, stays open for follow-up input);
-  `pi-prompt` is one-shot (`--print`), blocks until pi is genuinely done,
+  `peer-e` is one-shot (`--print`), blocks until pi is genuinely done,
   then exits — same low-risk, no-async-completion-signal shape as `aider`.
 - Session resume on the `pi` backend uses pi's own `--session-id`, which
   both creates and resumes a session by an arbitrary caller-supplied ID —
@@ -620,7 +620,7 @@ Check these in order:
 
 There is no captured pi throttle line in `testdata/rate_limit_lines/` — no
 in-tree source quotes one, so no fixture exists for this family. The only
-built-in detection for `pi` and `pi-prompt` is the shared `DATAWATCH_RATE_LIMITED:`
+built-in detection for `pi` and `peer-e` is the shared `DATAWATCH_RATE_LIMITED:`
 protocol line the session itself prints, matched line-start after trimming.
 An operator-configured `detection.rate_limit_patterns` (flat substring, all
 backends) is the escape hatch if pi starts printing a specific throttle line.
@@ -763,7 +763,7 @@ Large local models (30B+ params, or "thinking"/reasoning-enabled models like qwe
 Two layers of defense:
 
 1. **Prevention** — `opencode.ollama_chunk_timeout_sec` / `opencode.ollama_header_timeout_sec` (config-accessible via YAML/REST/MCP/comm/PWA per the Configuration Accessibility Rule) raise opencode's own timeouts past the pauses observed on locally-hosted models, so the request doesn't get killed in the first place.
-2. **Detection fallback** — the autonomous PRD executor's built-in stall detectors (`cmd/datawatch/sse_stall.go`): the verifier wait loop scans one-shot opencode session scrollback every ~30s and the automata watchdog every 60s, both through the one shared scan in that file. The scan applies only to the opencode family (decided from the session's backend — claude-code, pi, openwebui, ollama and the rest are never scanned for this and keep their own silence and activity detectors), and counts only a line that IS a known provider error as opencode prints it: a short line beginning with the phrase (optionally after an `Error:` or `AI_APICallError:` prefix), compared case-insensitively, that is new relative to the session's previous scan, and not inside a tool result or code block. On a match the session is ended so the executor's retry path fires (e.g. a genuine network/provider outage), with the matched line, the backend family and the scan source (verifier wait loop or automata watchdog) recorded in the end reason. If opencode ever prints a stall message not on the list, it will not be caught automatically — check `docs/plans/README.md` for the current bug if you hit this.
+2. **Detection fallback** — the autonomous PRD executor's built-in stall detectors (`cmd/datawatch/sse_stall.go`): the verifier wait loop scans one-shot opencode session scrollback every ~30s and the automata watchdog every 60s, both through the one shared scan in that file. The scan applies only to the opencode family (decided from the session's backend — remote-node, pi, openwebui, ollama and the rest are never scanned for this and keep their own silence and activity detectors), and counts only a line that IS a known provider error as opencode prints it: a short line beginning with the phrase (optionally after an `Error:` or `AI_APICallError:` prefix), compared case-insensitively, that is new relative to the session's previous scan, and not inside a tool result or code block. On a match the session is ended so the executor's retry path fires (e.g. a genuine network/provider outage), with the matched line, the backend family and the scan source (verifier wait loop or automata watchdog) recorded in the end reason. If opencode ever prints a stall message not on the list, it will not be caught automatically — check `docs/plans/README.md` for the current bug if you hit this.
 
 ### Language Server Protocol — LSP (v8.7.0)
 
@@ -804,7 +804,7 @@ lsp:
       extensions: [".cpp", ".cc", ".c", ".h", ".hpp"]
 ```
 
-**Note:** Claude Code does not support native LSP. For claude-code sessions, use shell commands for diagnostics: `gopls check ./...`, `tsc --noEmit`, `pyright .`.
+**Note:** Claude Code does not support native LSP. For remote-node sessions, use shell commands for diagnostics: `gopls check ./...`, `tsc --noEmit`, `pyright .`.
 
 ### Notes
 

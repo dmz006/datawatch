@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# TS-820 — two pi-prompt workers hold different compute nodes, on a sandbox daemon.
+# TS-820 — two peer-e workers hold different compute nodes, on a sandbox daemon.
 # tags: surface:api feature:capacity
 #
 # The story starts its own sandbox daemon from the built binary, with a config
 # generated from testdata/datawatch.yaml on free loopback ports. It registers
 # two compute nodes (loopback Ollama stand-ins with different scheduling
-# priorities, one slot each) and one pi-prompt LLM entry listing both. A fake
+# priorities, one slot each) and one peer-e LLM entry listing both. A fake
 # pi on PATH reads the per-session provider override the launch writes
 # (PI_CODING_AGENT_DIR/models.json) and posts one request to that provider's
-# base URL. After two pi-prompt sessions start through the API, GET
+# base URL. After two peer-e sessions start through the API, GET
 # /api/capacity must show the two workers holding different nodes, and each
 # stand-in must have received exactly one pi request. The sessions, the LLM
 # entry, the nodes, the stand-ins, the daemon and the scratch directory are all
@@ -41,10 +41,10 @@ TS817_NODE_A="ts817-alpha"
 TS817_NODE_B="ts817-beta"
 # The LLM entry that lists both nodes is an ollama-kind entry: the admission
 # gate looks up the model's provider ("ollama") among entries by kind. The
-# pi-prompt backend the sessions start on is named by its own entry, which
+# peer-e backend the sessions start on is named by its own entry, which
 # the admission reads as the backend name.
 TS817_LLM="ts817-ollama"
-TS817_BACKEND="pi-prompt"
+TS817_BACKEND="peer-e"
 TS817_MODEL="ollama/qwen3.8:27b"
 TS817_SESSION_IDS=()
 TS817_DAEMON_PID=""
@@ -186,7 +186,7 @@ ts817_write_config() {
   # The legacy ollama block is migrated into a kind-ollama entry linked to a
   # template node. Capacity keeps one entry per kind, so that migrated entry
   # would shadow the story's own kind-ollama entry; the block is left out.
-  # The pi-prompt launch resolves its binary from this block; "pi" is found on
+  # The peer-e launch resolves its binary from this block; "pi" is found on
   # the daemon's PATH, which starts with the story's bin directory.
   cat >> "$TS817_CFG" <<'PI_BLOCK'
 
@@ -391,12 +391,12 @@ ts817_run() {
   ts817_req POST /api/compute/nodes "{\"name\":\"$TS817_NODE_B\",\"kind\":\"ollama\",\"address\":\"http://127.0.0.1:$port_b\",\"scheduling_priority\":50,\"session_slots\":1}"
   [[ "$TS817_CODE" == 2* ]] || { ts817_fail "node $TS817_NODE_B not registered (HTTP $TS817_CODE): $TS817_BODY"; return 0; }
 
-  # One LLM entry that lists both nodes, plus the pi-prompt backend entry.
+  # One LLM entry that lists both nodes, plus the peer-e backend entry.
   ts817_req POST /api/llms "{\"name\":\"$TS817_LLM\",\"kind\":\"ollama\",\"compute_nodes\":[\"$TS817_NODE_A\",\"$TS817_NODE_B\"]}"
   [[ "$TS817_CODE" == 2* ]] || { ts817_fail "LLM entry not registered (HTTP $TS817_CODE): $TS817_BODY"; return 0; }
   # The in-flight cap is two so the entry is never the limit; the node slots are.
-  ts817_req POST /api/llms "{\"name\":\"$TS817_BACKEND\",\"kind\":\"pi-prompt\",\"max_inflight\":2}"
-  [[ "$TS817_CODE" == 2* ]] || { ts817_fail "pi-prompt backend entry not registered (HTTP $TS817_CODE): $TS817_BODY"; return 0; }
+  ts817_req POST /api/llms "{\"name\":\"$TS817_BACKEND\",\"kind\":\"peer-e\",\"max_inflight\":2}"
+  [[ "$TS817_CODE" == 2* ]] || { ts817_fail "peer-e backend entry not registered (HTTP $TS817_CODE): $TS817_BODY"; return 0; }
 
   if ! ts817_wait_until 60 ts817_pools_ready; then
     ts817_req GET /api/capacity
@@ -409,7 +409,7 @@ ts817_run() {
   for i in 1 2; do
     project="$TS817_TMP/project-$i"
     mkdir -p "$project"
-    ts817_req POST /api/sessions/start "{\"task\":\"ts817 pi-prompt worker $i\",\"project_dir\":\"$project\",\"backend\":\"$TS817_BACKEND\",\"model\":\"$TS817_MODEL\",\"name\":\"ts817-worker-$i\"}"
+    ts817_req POST /api/sessions/start "{\"task\":\"ts817 peer-e worker $i\",\"project_dir\":\"$project\",\"backend\":\"$TS817_BACKEND\",\"model\":\"$TS817_MODEL\",\"name\":\"ts817-worker-$i\"}"
     if [[ "$TS817_CODE" != 2* ]]; then
       ts817_fail "session $i did not start (HTTP $TS817_CODE): $TS817_BODY"
       return 0
@@ -513,9 +513,9 @@ ts817_main() {
   ts817_run
   ts817_cleanup
   if [[ -n "$TS817_FAILED" ]]; then
-    ko "two pi-prompt workers on compute nodes: $TS817_FAILED"
+    ko "two peer-e workers on compute nodes: $TS817_FAILED"
   elif [[ -n "$TS817_NODES_SEEN" ]]; then
-    ok "two pi-prompt workers hold different nodes ($TS817_NODES_SEEN); each stand-in received one pi request"
+    ok "two peer-e workers hold different nodes ($TS817_NODES_SEEN); each stand-in received one pi request"
   else
     skip "story ended without a verdict"
   fi

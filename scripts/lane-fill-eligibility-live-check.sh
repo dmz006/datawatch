@@ -629,7 +629,7 @@ CLAUDE_BACKEND="$(lfc claude_backend)"; CLAUDE_LANES_CFG="$(lfc claude_lanes)"
 LLMS="$(api GET /api/llms)"
 HAVE_ENTRY="$(printf '%s' "$LLMS" | jq_r --arg n "$CLAUDE_BACKEND" '(if type=="array" then . else (.llms // []) end) | map(select(.name==$n)) | length')"
 if [[ "$HAVE_ENTRY" == 0 ]]; then
-  ENTRY_CODE="$(api_both POST /api/llms "{\"name\":\"$CLAUDE_BACKEND\",\"kind\":\"claude-code\",\"max_inflight\":1}")"
+  ENTRY_CODE="$(api_both POST /api/llms "{\"name\":\"$CLAUDE_BACKEND\",\"kind\":\"remote-node\",\"max_inflight\":1}")"
   ENTRY_MADE=yes
 else
   ENTRY_CODE="$(api_both PUT "/api/llms/$CLAUDE_BACKEND" "{\"max_inflight\":1}")"
@@ -687,7 +687,7 @@ for p in prds:
     else:
         verdict[p["id"]] = "not queued (%s)" % st
 pools = {x["name"]: x for x in cap.get("pools", [])}
-cl, pi = pools.get("llm:claude-code", {}), pools.get("llm:pi-prompt", {})
+cl, pi = pools.get("llm:remote-node", {}), pools.get("llm:peer-e", {})
 lines = []
 if cl.get("limit") and cl.get("held", 0) == 0 and queued_runnable:
     lines.append("IDLE Claude lane while %d Automata are needs_review, approved or draft" % queued_runnable)

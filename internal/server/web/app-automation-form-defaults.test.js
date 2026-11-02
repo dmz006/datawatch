@@ -27,7 +27,7 @@ const PRDS = {
 
 const DRAFT = {
   id: 'dr000001', name: 'Draft chain', description: '', status: 'draft', version: 3, entry_member_id: 'm1',
-  backend: 'claude-code', model: 'claude-sonnet-5-5', effort: 'high',
+  backend: 'remote-node', model: 'claude-sonnet-5-5', effort: 'high',
   planning_backend: 'ollama', planning_model: 'qwen',
   budget_policy: { ceiling_type: 'dollar', ceiling_value: 5, window: 'week', pacing: 'even', on_breach: 'block' },
   members: [
@@ -76,7 +76,7 @@ function loadApp(routes = ROUTES) {
   vm.createContext(sandbox);
   loadScript(path.join(__dirname, 'app.js'), sandbox);
   sandbox._i18n.bundle = bundle('en');
-  vm.runInContext("state._prdBackends = [{ name: 'claude-code' }, { name: 'ollama' }]", sandbox);
+  vm.runInContext("state._prdBackends = [{ name: 'remote-node' }, { name: 'ollama' }]", sandbox);
   sandbox.__calls = calls;
   sandbox.__els = els;
   return sandbox;
@@ -122,11 +122,11 @@ async function openEdit(source = DRAFT) {
 test('automationReadModelDefaults reads a filled execution and verification row', async () => {
   const sb = await openNew();
   useFields(sb, {
-    automation_execBackend: 'claude-code', automation_execEffort: 'high', automation_execModelInner: 'claude-opus-5-5',
+    automation_execBackend: 'remote-node', automation_execEffort: 'high', automation_execModelInner: 'claude-opus-5-5',
     automation_verifBackend: 'ollama', automation_verifEffort: 'low', automation_verifModelInner: 'qwen3',
   });
   assert.deepEqual(plain(sb.automationReadModelDefaults()), {
-    backend: 'claude-code', model: 'claude-opus-5-5', effort: 'high',
+    backend: 'remote-node', model: 'claude-opus-5-5', effort: 'high',
     verification_backend: 'ollama', verification_model: 'qwen3', verification_effort: 'low',
   });
 });
@@ -134,11 +134,11 @@ test('automationReadModelDefaults reads a filled execution and verification row'
 test('automationReadModelDefaults gives empty strings for a part of a row left alone', async () => {
   const sb = await openNew();
   useFields(sb, {
-    automation_execBackend: 'claude-code', automation_execEffort: '', automation_execModelInner: '',
+    automation_execBackend: 'remote-node', automation_execEffort: '', automation_execModelInner: '',
     automation_verifBackend: '', automation_verifEffort: 'low', automation_verifModelInner: '',
   });
   assert.deepEqual(plain(sb.automationReadModelDefaults()), {
-    backend: 'claude-code', model: '', effort: '',
+    backend: 'remote-node', model: '', effort: '',
     verification_backend: '', verification_model: '', verification_effort: 'low',
   });
 });
@@ -168,10 +168,10 @@ test('automationReadBudgetPolicy reads a percent policy with a backend', async (
   const sb = await openNew();
   useFields(sb, Object.assign({}, BUDGET_DOLLAR, {
     automationBudgetValue: '40', automationBudgetType: 'allocation_pct', automationBudgetWindow: 'month',
-    automationBudgetPacing: 'none', automationBudgetOnBreach: 'pause', automationBudgetBackend: 'claude-code',
+    automationBudgetPacing: 'none', automationBudgetOnBreach: 'pause', automationBudgetBackend: 'remote-node',
   }));
   assert.deepEqual(plain(sb.automationReadBudgetPolicy()), {
-    ceiling_type: 'allocation_pct', ceiling_value: 40, window: 'month', pacing: 'none', on_breach: 'pause', backend: 'claude-code',
+    ceiling_type: 'allocation_pct', ceiling_value: 40, window: 'month', pacing: 'none', on_breach: 'pause', backend: 'remote-node',
   });
 });
 
@@ -213,10 +213,10 @@ test('buildAutomationFormPayload carries the model default keys and budget_polic
   const policy = { ceiling_type: 'dollar', ceiling_value: 7, window: 'day', pacing: 'none', on_breach: 'pause' };
   const body = plain(sb.buildAutomationFormPayload({
     name: 'Chain', members: [{ id: 'm1', prd_id: 'aaaaaaaa1111' }],
-    modelDefaults: { backend: 'claude-code', model: 'm', effort: 'high', verification_backend: 'ollama', verification_model: 'q', verification_effort: 'low' },
+    modelDefaults: { backend: 'remote-node', model: 'm', effort: 'high', verification_backend: 'ollama', verification_model: 'q', verification_effort: 'low' },
     budgetPolicy: policy,
   }));
-  assert.equal(body.backend, 'claude-code');
+  assert.equal(body.backend, 'remote-node');
   assert.equal(body.model, 'm');
   assert.equal(body.effort, 'high');
   assert.equal(body.verification_backend, 'ollama');
@@ -248,7 +248,7 @@ test('buildAutomationFormPayload leaves the loaded defaults alone when the form 
   const body = plain(sb.buildAutomationFormPayload({
     name: 'Chain', members: [{ id: 'm1', prd_id: 'aaaaaaaa1111' }], expectedVersion: 3, base: DRAFT,
   }));
-  assert.equal(body.backend, 'claude-code');
+  assert.equal(body.backend, 'remote-node');
   assert.equal(body.model, 'claude-sonnet-5-5');
   assert.deepEqual(body.budget_policy, DRAFT.budget_policy);
 });
@@ -259,7 +259,7 @@ test('saving a new Automation sends the model defaults and budget_policy in the 
   const sb = await openNew();
   vm.runInContext("_automationForm.members = [{ id: 'm1', prd_id: 'aaaaaaaa1111' }]; _automationForm.entryMemberId = 'm1'", sb);
   useFields(sb, Object.assign({
-    automation_execBackend: 'claude-code', automation_execEffort: 'max', automation_execModelInner: 'claude-opus-5-5',
+    automation_execBackend: 'remote-node', automation_execEffort: 'max', automation_execModelInner: 'claude-opus-5-5',
     automation_verifBackend: '', automation_verifEffort: '', automation_verifModelInner: '',
   }, BUDGET_DOLLAR));
   sb.automationFormDefaultsChanged();
@@ -269,7 +269,7 @@ test('saving a new Automation sends the model defaults and budget_policy in the 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].method, 'POST');
   assert.equal(sent[0].url, '/api/automations');
-  assert.equal(sent[0].body.backend, 'claude-code');
+  assert.equal(sent[0].body.backend, 'remote-node');
   assert.equal(sent[0].body.effort, 'max');
   assert.equal(sent[0].body.model, 'claude-opus-5-5');
   assert.equal(sent[0].body.verification_backend, '');
@@ -297,9 +297,9 @@ test('an invalid budget shows its message and sends nothing', async () => {
 test('the planning pair goes only through set_llm after the update, never in the PUT body', async () => {
   const sb = await openEdit();
   useFields(sb, Object.assign({
-    automation_execBackend: 'claude-code', automation_execEffort: 'high', automation_execModelInner: 'claude-sonnet-5-5',
+    automation_execBackend: 'remote-node', automation_execEffort: 'high', automation_execModelInner: 'claude-sonnet-5-5',
     automation_verifBackend: '', automation_verifEffort: '', automation_verifModelInner: '',
-    automation_planBackend: 'claude-code', automation_planModelInner: 'claude-haiku-5-5',
+    automation_planBackend: 'remote-node', automation_planModelInner: 'claude-haiku-5-5',
   }, BUDGET_DOLLAR));
   sb.automationFormDefaultsChanged();
   await sb.saveAutomationForm();
@@ -308,8 +308,8 @@ test('the planning pair goes only through set_llm after the update, never in the
   assert.deepEqual(sent.map(c => c.method + ' ' + c.url), ['PUT /api/automations/dr000001', 'POST /api/automations/dr000001/set_llm']);
   assert.ok(!('planning_backend' in sent[0].body) && !('planning_model' in sent[0].body), 'not in the update body');
   assert.equal(sent[0].body.expected_version, 3);
-  assert.equal(sent[0].body.backend, 'claude-code');
-  assert.deepEqual(sent[1].body, { planning_backend: 'claude-code', planning_model: 'claude-haiku-5-5' });
+  assert.equal(sent[0].body.backend, 'remote-node');
+  assert.deepEqual(sent[1].body, { planning_backend: 'remote-node', planning_model: 'claude-haiku-5-5' });
 });
 
 test('an emptied planning pair is sent as empty strings, which clear it', async () => {
@@ -331,7 +331,7 @@ test('an unchanged planning pair sends no set_llm request, and a create never do
 
   const created = await openNew();
   vm.runInContext("_automationForm.members = [{ id: 'm1', prd_id: 'aaaaaaaa1111' }]; _automationForm.entryMemberId = 'm1'", created);
-  useFields(created, { automation_planBackend: 'claude-code', automation_planModelInner: 'x' });
+  useFields(created, { automation_planBackend: 'remote-node', automation_planModelInner: 'x' });
   await created.saveAutomationForm();
   await flushAsync();
   assert.deepEqual(writes(created).map(c => c.method + ' ' + c.url), ['POST /api/automations']);

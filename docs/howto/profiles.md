@@ -59,7 +59,7 @@ That's it — profiles are operator-authored YAMLs.
 cat > ~/.datawatch/profiles/projects/datawatch-dev.yaml <<'EOF'
 name: datawatch-dev
 project_dir: ~/work/datawatch
-default_llm: claude-code
+default_llm: remote-node
 default_effort: thorough
 skills:
   - go-style
@@ -79,7 +79,7 @@ EOF
 
 # 2. List + verify.
 datawatch profiles projects list
-#  → datawatch-dev   workspace=~/work/datawatch  llm=claude-code
+#  → datawatch-dev   workspace=~/work/datawatch  llm=remote-node
 
 datawatch profiles projects get datawatch-dev
 
@@ -105,7 +105,7 @@ datawatch profiles clusters list
 #  → lab-east   ns=datawatch-agents  context=...
 
 # 5. Spawn an agent worker against the cluster.
-datawatch sessions start --llm claude-code --agent k8s \
+datawatch sessions start --llm remote-node --agent k8s \
   --cluster lab-east --profile datawatch-dev --task "Run integration tests"
 ```
 
@@ -175,9 +175,9 @@ Project Profile schema:
 ```yaml
 name: <required; matches filename>
 project_dir: <required; absolute or ~ path>
-default_llm: <claude-code | ollama | openai | ...>
+default_llm: <remote-node | ollama | openai | ...>
 default_model: <optional; LLM-specific>
-default_effort: <quick | normal | thorough>      # claude-code only
+default_effort: <quick | normal | thorough>      # remote-node only
 skills: [<skill-name>, ...]
 git:
   auto_init: <bool>
@@ -234,7 +234,7 @@ service_account: <optional>
 - **Profile name vs filename mismatch.** Daemon takes the `name:`
   field from the YAML, not the filename. Keep them in sync to avoid
   confusion.
-- **Operator-overrides win.** `--llm claude-code` on the spawn
+- **Operator-overrides win.** `--llm remote-node` on the spawn
   command overrides the profile's `default_llm`. Useful but easy
   to forget.
 - **Skills not synced.** Profile references a skill not in the local

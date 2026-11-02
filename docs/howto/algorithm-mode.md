@@ -68,7 +68,7 @@ on demand, against any running session.
 
 ```sh
 # 1. Start a session in your project workspace.
-SID=$(datawatch sessions start --llm claude-code \
+SID=$(datawatch sessions start --llm remote-node \
   --project-dir ~/work/foo \
   --task "Decide whether to migrate the cron jobs to k8s CronJobs" 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
@@ -146,27 +146,27 @@ TOKEN=$(cat ~/.datawatch/token); BASE=https://localhost:8443
 
 # Start
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/start
+  -d '{"session_id":"peer-f-abcd"}' $BASE/api/algorithm/start
 
 # Advance (current phase → next)
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/advance
+  -d '{"session_id":"peer-f-abcd"}' $BASE/api/algorithm/advance
 
 # Status
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  $BASE/api/algorithm/status/ralfthewise-abcd
+  $BASE/api/algorithm/status/peer-f-abcd
 #  → {"session_id":"...","phase":"orient","captured":["observe.md"]}
 
 # Measure with eval
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd","evals":"cronjob-correctness"}' \
+  -d '{"session_id":"peer-f-abcd","evals":"cronjob-correctness"}' \
   $BASE/api/algorithm/measure
 
 # Reset / Abort
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/reset
+  -d '{"session_id":"peer-f-abcd"}' $BASE/api/algorithm/reset
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"session_id":"ralfthewise-abcd"}' $BASE/api/algorithm/abort
+  -d '{"session_id":"peer-f-abcd"}' $BASE/api/algorithm/abort
 ```
 
 ### 5c. MCP
@@ -178,7 +178,7 @@ Args shape: `{ "session_id": "<full-id>" }` for most. `algorithm_measure`
 accepts an optional `{"evals": "<suite-name>"}` to fold an eval verdict
 into the captured Measure output.
 
-Useful when the LLM itself drives the harness — claude-code can call
+Useful when the LLM itself drives the harness — remote-node can call
 `algorithm_advance` once it judges the current phase complete.
 
 ### 5d. Comm channel

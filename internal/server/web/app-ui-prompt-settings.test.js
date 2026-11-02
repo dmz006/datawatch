@@ -87,7 +87,7 @@ async function renderSessionsCard(extraRoutes) {
 test('Sessions card renders the four UI prompt settings with values, help and docs links', async () => {
   const { panel } = await renderSessionsCard();
   const html = panel.innerHTML;
-  const docsHref = 'href="/diagrams.html#docs/datawatch-definitions.md#claude-code-interstitial-prompts"';
+  const docsHref = 'href="/diagrams.html#docs/datawatch-definitions.md#remote-node-interstitial-prompts"';
   const hits = html.split(docsHref).length - 1;
   // One docs link per row plus the card level docs link every settings card now carries.
   assert.equal(hits, 5, 'each of the four rows and the card carry the docs help link');
@@ -174,7 +174,7 @@ test('DOCS_LINKS_BY_KEY maps all four settings to the definitions section', asyn
   const { sb } = await renderSessionsCard();
   const table = vm.runInContext('DOCS_LINKS_BY_KEY', sb);
   for (const key of UI_SETTING_KEYS) {
-    assert.equal(table[key], 'datawatch-definitions.md#claude-code-interstitial-prompts', key);
+    assert.equal(table[key], 'datawatch-definitions.md#remote-node-interstitial-prompts', key);
   }
 });
 

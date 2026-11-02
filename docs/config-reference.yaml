@@ -1,7 +1,7 @@
 # ── Identity ──
 # Machine identification and data storage paths.
 # Identifies this machine in messages and session IDs. Auto-detected if empty.
-hostname: ralfthewise
+hostname: peer-f
 # Root directory for sessions.json, logs/, and state files.
 data_dir: /var/lib/datawatch
 # Found 2026-10-10 -- general opt-out across every comm channel for the
@@ -35,8 +35,8 @@ identity:
 # ── Session Management ──
 # Controls session creation, LLM defaults, and project git integration.
 session:
-  # Active LLM backend. Options: claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, ollama, openwebui, shell
-  llm_backend: claude-code
+  # Active LLM backend. Options: remote-node, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, ollama, openwebui, shell
+  llm_backend: remote-node
   # How many days to keep a finished session's folder under <data_dir>/sessions/
   # before it is deleted. The session record stays in the list. 0 or unset = 30.
   session_retention_days: 30
@@ -88,7 +88,7 @@ session:
   alert_context_lines: 10
   # Default working directory for new sessions started without a project_dir,
   # on every surface (REST, MCP, comm channel, CLI). Sessions write CLAUDE.md
-  # and, for non-claude-code backends, .mcp.json into this directory.
+  # and, for non-remote-node backends, .mcp.json into this directory.
   default_project_dir: ~
   # Restrict file browser to this directory tree (empty = no restriction)
   root_path: ""
@@ -99,7 +99,7 @@ session:
   file_service_root: ""
   # Path to the claude CLI binary
   claude_code_bin: claude
-  # Enable the claude-code backend
+  # Enable the remote-node backend
   claude_enabled: true
   # Pass --dangerously-skip-permissions to claude
   skip_permissions: true
@@ -120,7 +120,7 @@ session:
   mcp_max_retries: 5
   # Settle delay (ms) between sending literal text and Enter for any send_input call.
   # 0 = legacy single send-keys (triggers missed-Enter bug on React Ink TUIs).
-  # 200 (default) fixes claude-code and other Ink-based TUIs.
+  # 200 (default) fixes remote-node and other Ink-based TUIs.
   # Applies to ALL send sources (schedule, MCP, CLI, API) since v8.12.9.
   schedule_settle_ms: 200
 
@@ -146,8 +146,8 @@ session:
 
   # Inject additional MCP servers into every spawned session's .mcp.json.
   # Each entry is merged alongside the built-in datawatch MCP bridge entry.
-  # For non-claude-code backends, extras go via WriteProjectMCPConfig.
-  # For claude-code sessions, extras go via InjectExtrasIntoMCPConfig.
+  # For non-remote-node backends, extras go via WriteProjectMCPConfig.
+  # For remote-node sessions, extras go via InjectExtrasIntoMCPConfig.
   # ${ENV_VAR} references in env values are expanded at spawn time.
   extra_mcp_servers:
     - name: imap-mcp           # Key name in .mcp.json mcpServers block
@@ -187,7 +187,7 @@ session:
   # fall through to built-in defaults. Override here when your account
   # plan differs from the public price card.
   cost_rates:
-    claude-code:
+    remote-node:
       in_per_k:  0.003
       out_per_k: 0.015
   # Log verbosity: info, debug, warn, error
@@ -400,7 +400,7 @@ signal:
   # signal-cli data directory
   config_dir: /var/lib/signal-cli
   # Name shown in Signal's Linked Devices list
-  device_name: ralfthewise
+  device_name: peer-f
 
 # ── Messaging Backends ──
 # Communication channels for commands and notifications.
@@ -630,7 +630,7 @@ audit:
 
 cross_session:
   # Inject the Cross-Session Communication Rule into spawned
-  # claude-code sessions' CLAUDE.md -- steers the LLM toward
+  # remote-node sessions' CLAUDE.md -- steers the LLM toward
   # datawatch's own audited memory/discussion/reply MCP tools instead
   # of Claude Code's native cross-session messaging, for anything
   # that should be audited or might cross a host/container boundary.
@@ -680,7 +680,7 @@ pi:
   binary: pi
   # Model as "provider/model" (e.g. ollama/qwen3.8:27b); empty uses pi's own default
   model: ""
-  # Level passed to pi's own --thinking flag on every pi launch (pi-prompt
+  # Level passed to pi's own --thinking flag on every pi launch (peer-e
   # one-shots and pi sessions). empty = don't pass the flag (pi's model
   # default); allowed: off, minimal, low, medium, high. Per-task/story/PRD
   # thinking-LLM overrides take precedence over this global default.
@@ -690,7 +690,7 @@ pi:
   # Terminal height
   console_rows: 0
 pi_prompt:
-  # Enable pi-prompt backend (one-shot `pi --print` mode)
+  # Enable peer-e backend (one-shot `pi --print` mode)
   enabled: false
   # Path to pi binary; defaults to pi.binary when empty
   binary: ""
@@ -822,7 +822,7 @@ rtk:
   binary: rtk
   # Display token savings in system statistics dashboard
   show_savings: true
-  # Auto-run 'rtk init -g' if hooks not installed (only for supported backends: claude-code, gemini, aider)
+  # Auto-run 'rtk init -g' if hooks not installed (only for supported backends: remote-node, gemini, aider)
   auto_init: true
   # Seconds between 'rtk discover' checks for optimization opportunities (0 = disabled)
   discover_interval: 0
@@ -1009,7 +1009,7 @@ servers:
 profiles:
   # Example profile with env var overrides:
   # claude-personal:
-  #   backend: claude-code
+  #   backend: remote-node
   #   env:
   #     ANTHROPIC_API_KEY: "sk-ant-..."
   # gemini-fallback:
@@ -1575,10 +1575,10 @@ autonomous:
   #   Automata kept ready per lane. Default 2.
   # poll_seconds: whole number >= 0. Seconds between planner polls. Default 60;
   #   0 means 60 and any value below 5 is raised to 5.
-  # gpu_backend: the backend the GPU lanes run. Default pi-prompt.
+  # gpu_backend: the backend the GPU lanes run. Default peer-e.
   # gpu_model: the model the GPU lanes run. Empty (the default) means the
   #   backend's own default model.
-  # claude_backend: the backend the Claude lanes run. Default claude-code.
+  # claude_backend: the backend the Claude lanes run. Default remote-node.
   # count_verifier_wait: bool, default true (an absent key reads as true).
   #   When true, a Claude lane whose Automaton occupies it only while waiting
   #   on a verifier slot counts as available within the Claude lane count, so
@@ -1629,9 +1629,9 @@ autonomous:
     idle_alert_minutes: 30
     decompose_ahead_min: 2
     poll_seconds: 60
-    gpu_backend: pi-prompt
+    gpu_backend: peer-e
     gpu_model: ""
-    claude_backend: claude-code
+    claude_backend: remote-node
     count_verifier_wait: true
     stale_after_hours: 72
     require_confirmed_proposal: true
@@ -1888,7 +1888,7 @@ autonomous:
     # ceiling; a member being resumed uses its spend so far as the estimate.
     # Example (set through the operation above, shown as JSON):
     #   {"ceiling_type": "dollar", "ceiling_value": 40, "window": "week",
-    #    "pacing": "even", "on_breach": "pause", "backend": "claude-code",
+    #    "pacing": "even", "on_breach": "pause", "backend": "remote-node",
     #    "reset_weekday": "monday", "reset_time": "09:00",
     #    "reset_zone": "America/New_York", "peer_window": ["edge"]}
   notify:
@@ -2158,8 +2158,8 @@ autonomous:
   # resume_max_age_seconds: 3600
   # Number of local-model sessions one compute node runs at once. Default 1;
   # values below 1 are clamped to 1. The cap applies only to sessions whose
-  # model runs on a local engine on that node (pi, pi-prompt, ollama, opencode,
-  # opencode-acp). Hosted backends such as claude-code are not gated by this key.
+  # model runs on a local engine on that node (pi, peer-e, ollama, opencode,
+  # opencode-acp). Hosted backends such as remote-node are not gated by this key.
   # Sessions past the cap wait in the node queue (see docs/operations.md →
   # "Compute-node queue").
   # A compute node that hosts a local engine takes its own count: the node's
@@ -2261,7 +2261,7 @@ autonomous:
   # PUT /api/llms/{name} / MCP llm_update; see docs/api-mcp-mapping.md). Its
   # llm:<name> pool limit is then the value mapped above, unless an explicit
   # max_inflight > 0 on that entry wins outright. An entry with neither gets
-  # a conservative kind default (1 for subscription kinds such as claude-code,
+  # a conservative kind default (1 for subscription kinds such as remote-node,
   # unlimited for local Ollama/OpenWebUI kinds — which stay governed by the
   # node: pools and max_engines_per_node — and for dollar-metered API kinds).
   # The default table is operator policy, not a technical limit: pro=1,
@@ -2358,7 +2358,7 @@ autonomous:
   capacity_rate_tokens: 0
   capacity_rate_window_seconds: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:
-  # opencode/claude-code spawn a full session with codebase tool access (recommended);
+  # opencode/remote-node spawn a full session with codebase tool access (recommended);
   # ollama/openwebui run headless via /api/ask. Old key "decomposition_backend" accepted on read.
   # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm,
   # the PWA Settings modal, or CLI --decomposition-profile. Per-PRD value takes priority.
@@ -2371,10 +2371,10 @@ autonomous:
   # BL25 verifier backend. Empty = default to the PRD's own backend (v8.36.0)
   # when it resolves to an ask-compatible kind (ollama/openwebui, or a
   # directly-configured Claude API entry) — falls back to the global
-  # "ollama" default when the PRD's backend is session-only (claude-code,
+  # "ollama" default when the PRD's backend is session-only (remote-node,
   # opencode, ...), which has no single-shot /api/ask adapter regardless of
   # whose backend it is. Set explicitly to force a different backend (e.g.
-  # ollama when planning backend is claude-code) for cross-backend
+  # ollama when planning backend is remote-node) for cross-backend
   # independence, or to pin a specific model via verification_model below.
   verification_backend: ""
   # BL25 verifier model override. Empty = default to the PRD's own model
@@ -2392,7 +2392,7 @@ autonomous:
   # (ErrNoGuardrailModel) — a pi-family judge NEVER runs on the backend's
   # built-in default model. Pairing is validated per tier (a bare Claude
   # alias on a pi-family backend, or a provider-qualified model on
-  # claude-code, is skipped with a recorded reason).
+  # remote-node, is skipped with a recorded reason).
   guardrail_model: ""
   # BL41 effort hint for the planning LLM call.
   # BL304: renamed from decomposition_effort; old key still accepted on read.
@@ -2419,7 +2419,7 @@ autonomous:
   judge_timeout_seconds: 1800
   # Size-aware judge routing. When the change under review is larger than this
   # many changed lines (added plus deleted, on the Automaton branch against its
-  # merge base, lock files left out), the judge tries claude-code first and the
+  # merge base, lock files left out), the judge tries remote-node first and the
   # other backends follow in their usual order, still one attempt per backend.
   # In balance mode the load still decides and the order only breaks ties.
   # 0 turns the rule off. Default 400.
@@ -2460,7 +2460,7 @@ autonomous:
   smoke_verification_backend: ""
   smoke_verification_model: ""
   # autonomous
-  # Idle nudge for PRD-owned claude-code workers: after this many seconds idle the
+  # Idle nudge for PRD-owned remote-node workers: after this many seconds idle the
   # worker is sent one message asking it to print its completion line or continue.
   # 0 or unset => 180.
   # Read-only effective value: GET /api/config (autonomous section) returns
@@ -2475,11 +2475,11 @@ autonomous:
   # verification runs on fallback_verification_backend (then the count resets).
   # 0 or unset => 2.
   verifier_infra_escalation_threshold: 2
-  # Backend used for that one escalated verification. Empty => claude-code.
-  fallback_verification_backend: claude-code
+  # Backend used for that one escalated verification. Empty => remote-node.
+  fallback_verification_backend: remote-node
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
-  descendant_stall_seconds: 2700   # bounds a pi-prompt worker whose only liveness is a work child process: no output, file change or log write for this long (default 2700) => reaped as an infra failure
-  # A claude-code autonomous session must show a sign of work within this many
+  descendant_stall_seconds: 2700   # bounds a peer-e worker whose only liveness is a work child process: no output, file change or log write for this long (default 2700) => reaped as an infra failure
+  # A remote-node autonomous session must show a sign of work within this many
   # seconds of starting: an assistant turn, a tool call (line or spinner), a
   # process it started, a pane change or a channel event after delivery. Still
   # in waiting_input with no sign of work past this => 'session never started'
@@ -2487,7 +2487,7 @@ autonomous:
   # retried before the task stays failed. The silence is measured from the last
   # evidence of life: the last sign of work, or for a worker the daemon launched
   # that has shown none yet, the first check that finds it silent. One start
-  # tracker applies to a claude-code worker the daemon launches and to one it
+  # tracker applies to a remote-node worker the daemon launches and to one it
   # adopts after a restart; an adopted worker's clock starts from its last
   # evidence of life before the restart.
   # 0 or unset falls back to the 120s default
@@ -2822,8 +2822,8 @@ autonomous:
     steps: []
     # Example ladder: two tries on the local model, then a Claude model.
     # steps:
-    #   - {backend: pi-prompt, model: "ollama/qwen3.8:27b", attempts: 2}
-    #   - {backend: claude-code, model: claude-opus-5-5, effort: high}
+    #   - {backend: peer-e, model: "ollama/qwen3.8:27b", attempts: 2}
+    #   - {backend: remote-node, model: claude-opus-5-5, effort: high}
 
   # ── Prompt injection guard (v8.18.0) ──
   # Scans user-supplied PRD/task specs for known prompt injection phrases

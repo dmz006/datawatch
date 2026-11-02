@@ -3,7 +3,7 @@ docs:
   index: true
   topics: [sessions, tmux, lifecycle]
 exec_params:
-  - {name: llm, required: true, description: "LLM registry name (e.g. claude-code, my-ollama). Use 'datawatch llm list' to see options."}
+  - {name: llm, required: true, description: "LLM registry name (e.g. remote-node, my-ollama). Use 'datawatch llm list' to see options."}
   - {name: task, required: true, description: "Initial task / prompt for the session"}
   - {name: project_dir, required: false, default: ".", description: "Working directory"}
   - {name: compute_node, required: false, description: "Compute node name override (must be in the LLM's node list if set)"}
@@ -65,9 +65,9 @@ v7.0 added two new orthogonal identifiers carried on every session object:
 
 | Field | JSON key | Meaning |
 |-------|----------|---------|
-| `LLMRef` | `llm_ref` | LLM registry entry name used to start this session (e.g. `claude-code`). Present only when session was started via the v7 `llm` path. |
+| `LLMRef` | `llm_ref` | LLM registry entry name used to start this session (e.g. `remote-node`). Present only when session was started via the v7 `llm` path. |
 | `ComputeNodeRef` | `compute_node_ref` | Compute Node the session is bound to. Set when `compute_node` was specified or auto-resolved from the LLM's node list. |
-| `BackendFamily` | `backend_family` | Adapter family string (`claude-code`, `ollama`, `opencode`, etc.). Renamed from `llm_backend` in v7.0-alpha.27. External tooling must read `backend_family`; the legacy `llm_backend` key is no longer emitted. |
+| `BackendFamily` | `backend_family` | Adapter family string (`remote-node`, `ollama`, `opencode`, etc.). Renamed from `llm_backend` in v7.0-alpha.27. External tooling must read `backend_family`; the legacy `llm_backend` key is no longer emitted. |
 
 **Migration note:** If you have scripts or apps reading `sess.llm_backend`, switch them to `sess.backend_family`. Stored `state.json` files from before alpha.27 load cleanly (the daemon accepts both on read), but all new writes use the new key.
 
@@ -117,7 +117,7 @@ See [`operations.md`](../operations.md) "Allowed project roots" for the full rul
 #    --llm   → LLM registry name (replaces legacy --backend)
 #    --compute → optional; must be in the LLM's compute_nodes list if set
 SID=$(datawatch sessions start \
-  --llm claude-code \
+  --llm remote-node \
   --project-dir ~/work/foo \
   --task "Audit the auth module for input-validation gaps" 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
@@ -140,9 +140,9 @@ datawatch sessions input $SID "Start with the password reset flow"
 
 # 5. Inspect via API — note v7 field names.
 datawatch sessions get $SID | jq
-#  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
-#     "task":"...","llm_ref":"claude-code","compute_node_ref":"gpu-box-1",
-#     "backend_family":"claude-code","last_channel_event_at":"..."}
+#  → {"id":"abcd","full_id":"peer-f-abcd","state":"running",
+#     "task":"...","llm_ref":"remote-node","compute_node_ref":"gpu-box-1",
+#     "backend_family":"remote-node","last_channel_event_at":"..."}
 
 # 6. Rebind LLM in-flight (surgical patch, safe while session is running):
 datawatch sessions set-llm-ref $SID my-other-llm
@@ -162,7 +162,7 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
    daemon knows about; new sessions go to the top by default.
 2. **Filter bar** — above the session list, three controls left to right:
    - **LLM (N) ▸** — collapses/expands a badge row showing each
-     backend-family (`claude-code`, `opencode`, `opencode-acp`,
+     backend-family (`remote-node`, `opencode`, `opencode-acp`,
      `opencode-prompt`, `openwebui`, `ollama`, `shell`,
      `council-virtual`). Click a badge to filter; button highlights
      when a filter is active.
@@ -225,7 +225,7 @@ tail -50 ~/.datawatch/sessions/$SID/output.log
      chat_message). Native swipe-back through the 1000-entry buffer.
    - **Status** — two sub-tabs:
      - **Status** — hook-fed board: Current focus / Sprint / Tests /
-       Git cards (populated when claude-code hook scripts are wired;
+       Git cards (populated when remote-node hook scripts are wired;
        see [`claude-hooks.md`](claude-hooks.md)).
      - **Stats** — CPU ring + RSS + threads + FDs + GPU (if observer
        plugin enabled). Sections layout: process metrics + memory +
@@ -252,7 +252,7 @@ optional.
 # Start — v7 LLM registry path.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"llm":"claude-code","task":"...","project_dir":"/home/<user>/workspace/myproject"}' \
+  -d '{"llm":"remote-node","task":"...","project_dir":"/home/<user>/workspace/myproject"}' \
   $BASE/api/sessions/start
 
 # Start — with explicit compute node.
@@ -263,11 +263,11 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 
 # List + filter.
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/sessions?state=running&llm=claude-code"
+  "$BASE/api/sessions?state=running&llm=remote-node"
 
 # Get by ID — note v7 field names in response.
 curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/sessions/<full-id>
-# → {"id":"...","backend_family":"claude-code","llm_ref":"claude-code",
+# → {"id":"...","backend_family":"remote-node","llm_ref":"remote-node",
 #    "compute_node_ref":"gpu-box-1","state":"running",...}
 
 # Rebind LLM in-place (safe while session is running).
@@ -295,7 +295,7 @@ Tools: `start_session`, `list_sessions`, `session_output`, `send_input`,
 "project_dir": "...", "compute_node": "?", "profile": "?"}`. Returns
 the full session metadata including `llm_ref` and `compute_node_ref`.
 
-When invoked from inside an existing session (e.g. claude-code
+When invoked from inside an existing session (e.g. remote-node
 spawning a sub-session), the parent session ID is recorded so the
 two are linked in the cross-session memory subsystem.
 
@@ -329,7 +329,7 @@ Session templates schema:
 
 ```yaml
 name: audit-flow
-llm: claude-code
+llm: remote-node
 effort: thorough
 skills: [secrets-scan, sast]
 profile: prod-audit
@@ -436,7 +436,7 @@ automatically against the seeded fixture. See
   │  ┌──────────────────────────────────┐    │
   │  │ cs-<id> tmux session              │    │
   │  │   ┌────────────────────────────┐  │    │
-  │  │   │ LLM (claude-code / ollama /│  │    │
+  │  │   │ LLM (remote-node / ollama /│  │    │
   │  │   │  opencode / etc.)          │  │    │
   │  │   └────────────────────────────┘  │    │
   │  └──────────────────────────────────┘    │

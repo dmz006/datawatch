@@ -522,10 +522,10 @@ A_ENABLED=$(curl "${curl_args[@]}" "$BASE/api/autonomous/config" 2>/dev/null | p
 if [[ "$A_ENABLED" != "yes" ]]; then
   skip "autonomous disabled; skipping CRUD test"
 else
-  # v5.26.10 — exercise each enabled worker backend (claude-code,
+  # v5.26.10 — exercise each enabled worker backend (remote-node,
   # opencode, ollama) through the same CRUD path. Operator-reported:
   # smoke must validate that PRDs work with claude, opencode, AND
-  # ollama as the worker backend, not just claude-code.
+  # ollama as the worker backend, not just remote-node.
   AVAIL=$(curl "${curl_args[@]}" "$BASE/api/backends" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
@@ -533,11 +533,11 @@ have = {b["name"] for b in d.get("llm",[]) if b.get("enabled") and b.get("availa
 # Only run the CRUD probe against backends the daemon will actually
 # accept; "available" gates on the binary being installed / endpoint
 # reachable.
-target = [b for b in ("claude-code","opencode","ollama") if b in have]
+target = [b for b in ("remote-node","opencode","ollama") if b in have]
 print(",".join(target))
 ' 2>/dev/null || echo "")
   if [[ -z "$AVAIL" ]]; then
-    skip "no claude-code/opencode/ollama backend enabled+available"
+    skip "no remote-node/opencode/ollama backend enabled+available"
   else
     IFS=',' read -ra BACKENDS <<< "$AVAIL"
     for B in "${BACKENDS[@]}"; do
@@ -569,9 +569,9 @@ print(",".join(target))
       fi
 
       # set_llm round-trip — pin a model relevant to the backend.
-      MODEL="${B/-code/}"  # claude-code → claude; opencode → opencode; ollama → ollama
+      MODEL="${B/-code/}"  # remote-node → claude; opencode → opencode; ollama → ollama
       [[ "$B" == "ollama" ]] && MODEL="qwen3:8b"
-      [[ "$B" == "claude-code" ]] && MODEL="claude-sonnet-4-5"
+      [[ "$B" == "remote-node" ]] && MODEL="claude-sonnet-4-5"
       [[ "$B" == "opencode" ]] && MODEL="claude-sonnet-4-5"
       SETL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
         -d "{\"backend\":\"$B\",\"effort\":\"low\",\"model\":\"$MODEL\",\"actor\":\"smoke\"}" \
@@ -603,7 +603,7 @@ else
   # returns parseable JSON. v5.26.9 fixed the prompt→question field +
   # the askCompatible fallback.
   PD=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-    -d '{"spec":"List the files in /tmp and write a one-line summary.","project_dir":"/tmp","backend":"claude-code","effort":"low"}' \
+    -d '{"spec":"List the files in /tmp and write a one-line summary.","project_dir":"/tmp","backend":"remote-node","effort":"low"}' \
     "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
   if [[ -z "$PD" ]]; then
     ko "decompose-test: PRD create failed"
@@ -647,8 +647,8 @@ else
   RUN_B=$(curl "${curl_args[@]}" "$BASE/api/backends" | python3 -c '
 import json, sys
 d = json.load(sys.stdin)
-# Prefer ollama (local + free), then openwebui (local), then opencode, then claude-code.
-order = ["ollama", "openwebui", "opencode", "claude-code"]
+# Prefer ollama (local + free), then openwebui (local), then opencode, then remote-node.
+order = ["ollama", "openwebui", "opencode", "remote-node"]
 have = {b["name"]: b for b in d.get("llm",[])}
 for name in order:
     b = have.get(name)
@@ -1129,7 +1129,7 @@ H "7k. Claude skip_permissions config round-trip"
 # round-trips through GET / PUT /api/config so a regression in
 # the dotted-key handler can't silently disable it. The same
 # config is what the daemon reads at startup before Register'ing
-# the claude-code backend with --dangerously-skip-permissions.
+# the remote-node backend with --dangerously-skip-permissions.
 SK_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c 'import json,sys;d=json.load(sys.stdin);v=d.get("session",{}).get("skip_permissions","missing");print(str(v).lower())' 2>/dev/null)
 if [[ "$SK_BEFORE" == "missing" ]]; then
   skip "session.claude.skip_permissions key not in /api/config response shape"
@@ -1443,7 +1443,7 @@ for s in (ss or []):
       FIX_BACKEND=$(curl "${curl_args[@]}" -s "$BASE/api/backends" 2>/dev/null | python3 -c '
 import json,sys
 d=json.load(sys.stdin); llm=d.get("llm") or []
-prefer=["shell","opencode-acp","opencode","claude-code"]
+prefer=["shell","opencode-acp","opencode","remote-node"]
 avail=[b.get("name") for b in llm if b.get("available") and b.get("name")]
 for p in prefer:
     if p in avail: print(p); break
@@ -2189,7 +2189,7 @@ H "17. v6.11.26 BL266 — running/waiting state engine (gap watcher)"
 # session, polls every 2 s up to 40 s, asserts state flips to
 # waiting_input within the watcher's gap window + LLM init time.
 #
-# Cost rule (operator 2026-05-05): the claude-code variant is GATED
+# Cost rule (operator 2026-05-05): the remote-node variant is GATED
 # behind DW_MAJOR=1 because each run consumes API quota. Default smoke
 # uses opencode-acp (free, local). The claude variant is required on
 # major releases (vX.0.0) to confirm the watcher works for the
@@ -2283,12 +2283,12 @@ for s in (ss or []):
 # Default: opencode-acp (free, local). Skipped gracefully if unavailable.
 state_engine_check "opencode-acp"
 
-# Major-release-only: claude-code (consumes API quota). Set DW_MAJOR=1
+# Major-release-only: remote-node (consumes API quota). Set DW_MAJOR=1
 # before the next vX.0.0 release to validate.
 if [[ "${DW_MAJOR:-0}" == "1" ]]; then
-  state_engine_check "claude-code"
+  state_engine_check "remote-node"
 else
-  skip "state-engine[claude-code]: gated behind DW_MAJOR=1 (cost). Run with DW_MAJOR=1 for major releases."
+  skip "state-engine[remote-node]: gated behind DW_MAJOR=1 (cost). Run with DW_MAJOR=1 for major releases."
 fi
 
 H "18. v6.12.1 — Automata flow (PRD CRUD + execute path)"
@@ -2922,7 +2922,7 @@ fi
 
 H "39. Session templates CRUD"
 TPL_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
-  -d '{"name":"smoke-template","spec":"smoke test template","backend":"claude-code","effort":"low"}' \
+  -d '{"name":"smoke-template","spec":"smoke test template","backend":"remote-node","effort":"low"}' \
   "$BASE/api/templates" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
 if [[ -z "$TPL_ID" ]]; then
   skip "session template create returned no id — templates may not be enabled"
@@ -4805,7 +4805,7 @@ rm -rf "$NAV_EVD"
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
 # Runs scripts/restart-matrix.sh --strict, one state at a time, for the rows
 # that must survive a daemon restart (worker-node-placement among them: two
-# pi-prompt workers on two compute nodes keep their node pools, lease nodes and
+# peer-e workers on two compute nodes keep their node pools, lease nodes and
 # sessions across the restart). The matrix starts its own throwaway
 # daemons (own config, data dir, free ports, TLS off, own multiplexer socket
 # dir) and refuses to start when a target matches the production daemon, so
@@ -5094,7 +5094,7 @@ fi
 
 H "84. Capacity ledger — node pools, pi leases, waiter placement"
 # Read-only checks against GET /api/capacity of the running daemon:
-# (a) no node pool holds above its limit, (b) every running pi or pi-prompt
+# (a) no node pool holds above its limit, (b) every running pi or peer-e
 # lease also holds a node:<name> lease (a lease without a node placement
 # cannot be attributed to any node), (c) no request waits for a busy node
 # while another candidate node sits idle (delegated to
@@ -5125,7 +5125,7 @@ for p in d.get("pools", []):
       ko "node pool(s) over limit: $(echo "$CAP_OL" | tr '\n' '; ')"
     fi
 
-    # 84.2 every running pi / pi-prompt lease also holds a node:<name> lease
+    # 84.2 every running pi / peer-e lease also holds a node:<name> lease
     # (line 1 = count of such leases, line 2 = the ones missing a node lease)
     CAP_PI=$(echo "$CAP" | python3 -c '
 import json, sys
@@ -5133,7 +5133,7 @@ d = json.load(sys.stdin)
 total, bad = 0, []
 for l in d.get("leases", []):
     pools = [str(p) for p in l.get("pools") or []]
-    if not ({"llm:pi", "llm:pi-prompt"} & set(pools)):
+    if not ({"llm:pi", "llm:peer-e"} & set(pools)):
         continue
     total += 1
     if not any(p.startswith("node:") for p in pools):
@@ -5143,9 +5143,9 @@ print("; ".join(bad))' 2>/dev/null)
     CAP_PI_N=$(echo "$CAP_PI" | sed -n '1p')
     CAP_PI_BAD=$(echo "$CAP_PI" | sed -n '2p')
     if [[ -z "${CAP_PI_BAD:-}" ]]; then
-      ok "all ${CAP_PI_N:-0} running pi/pi-prompt lease(s) hold a node lease"
+      ok "all ${CAP_PI_N:-0} running pi/peer-e lease(s) hold a node lease"
     else
-      ko "pi/pi-prompt lease(s) missing a node lease: $CAP_PI_BAD"
+      ko "pi/peer-e lease(s) missing a node lease: $CAP_PI_BAD"
     fi
 
     # 84.3 waiter placement via check-waiter-nodes.sh (rc 2 = the daemon-bound

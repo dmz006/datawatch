@@ -41,163 +41,163 @@
   "execution_tiers": [
     {
       "id": "opus-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "low"
     },
     {
       "id": "opus-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "medium"
     },
     {
       "id": "opus-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "high"
     },
     {
       "id": "sonnet-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "low"
     },
     {
       "id": "sonnet-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "medium"
     },
     {
       "id": "sonnet-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "high"
     },
     {
       "id": "haiku-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "low"
     },
     {
       "id": "haiku-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "medium"
     },
     {
       "id": "haiku-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "high"
     },
     {
       "id": "fable-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "low"
     },
     {
       "id": "fable-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "medium"
     },
     {
       "id": "fable-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "high"
     },
     {
       "id": "default",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": null,
-      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+      "note": "today's observed default: remote-node LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
     }
   ],
   "decompose_tiers": [
     {
       "id": "opus-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "low"
     },
     {
       "id": "opus-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "medium"
     },
     {
       "id": "opus-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "high"
     },
     {
       "id": "sonnet-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "low"
     },
     {
       "id": "sonnet-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "medium"
     },
     {
       "id": "sonnet-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "high"
     },
     {
       "id": "haiku-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "low"
     },
     {
       "id": "haiku-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "medium"
     },
     {
       "id": "haiku-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "high"
     },
     {
       "id": "fable-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "low"
     },
     {
       "id": "fable-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "medium"
     },
     {
       "id": "fable-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "high"
     },
     {
       "id": "default",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": null,
-      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+      "note": "today's observed default: remote-node LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
     }
   ],
   "decompose_fixture": {
@@ -229,96 +229,96 @@
   "valid_source": "datawatch MCP claude_models + claude_efforts, read 2026-10-13 (source: hardcoded, refreshed each major release)",
   "reps": 1,
   "observed_default": {
-    "backend": "claude-code",
+    "backend": "remote-node",
     "model": "opus",
     "effort": null,
     "datawatch_effort_hint": "normal",
-    "planning_backend": "claude-code",
-    "execution_backend": "claude-code",
-    "verification_backend": "claude-code",
+    "planning_backend": "remote-node",
+    "execution_backend": "remote-node",
+    "verification_backend": "remote-node",
     "verification_model": "qwen3.8:27b",
-    "source": "datawatch MCP llm_get claude-code (model=opus, default_effort=normal) + autonomous_config_get, read 2026-10-13",
+    "source": "datawatch MCP llm_get remote-node (model=opus, default_effort=normal) + autonomous_config_get, read 2026-10-13",
     "note": "datawatch's default_effort 'normal' is its own quick/normal/thorough hint and is NOT passed to claude as --effort; with no --effort flag the claude CLI's own default effort applies. Matches no grid tier exactly, hence the extra 'default' tier."
   },
   "tiers": [
     {
       "id": "opus-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "low"
     },
     {
       "id": "opus-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "medium"
     },
     {
       "id": "opus-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": "high"
     },
     {
       "id": "sonnet-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "low"
     },
     {
       "id": "sonnet-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "medium"
     },
     {
       "id": "sonnet-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "sonnet",
       "effort": "high"
     },
     {
       "id": "haiku-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "low"
     },
     {
       "id": "haiku-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "medium"
     },
     {
       "id": "haiku-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "haiku",
       "effort": "high"
     },
     {
       "id": "fable-low",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "low"
     },
     {
       "id": "fable-medium",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "medium"
     },
     {
       "id": "fable-high",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "fable",
       "effort": "high"
     },
     {
       "id": "default",
-      "backend": "claude-code",
+      "backend": "remote-node",
       "model": "opus",
       "effort": null,
-      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+      "note": "today's observed default: remote-node LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
     }
   ],
   "tiers_note": "legacy alias of execution_tiers, kept for the existing fixture verifier / driver that read .tiers[]"

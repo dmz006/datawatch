@@ -6,7 +6,7 @@ bidirectional messages.
 ## Prerequisites
 
 - datawatch running with `session.channel_enabled: true`
-- A claude-code session that has passed the startup prompts (channel_ready = true)
+- A remote-node session that has passed the startup prompts (channel_ready = true)
 - Web UI open to the session detail view
 
 ## Step 1: Verify Channel Is Connected

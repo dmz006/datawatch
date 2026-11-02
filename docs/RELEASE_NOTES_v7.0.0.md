@@ -122,4 +122,4 @@ These items are tracked but ship in v7.x patches:
 
 This release was built across 2026-05-08 → 2026-05-09 in a sustained autonomous run, driven by operator's BL295 design interview (30 questions answered upfront so sprints didn't need to stop mid-stream). 9 alpha cuts shipped in ~24 hours.
 
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
+🤖 Generated with [Claude Code](https://claude.com/remote-node)

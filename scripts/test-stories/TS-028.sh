@@ -8,7 +8,7 @@ story_preflight "surface:api feature:automata" || return 0
 
 _story_ts_028() {
   local p
-  p=$(api POST /api/autonomous/prds '{"spec":"test-prd-harddelete-'"$$"'","project_dir":"/tmp","backend":"claude-code","effort":"low"}')
+  p=$(api POST /api/autonomous/prds '{"spec":"test-prd-harddelete-'"$$"'","project_dir":"/tmp","backend":"remote-node","effort":"low"}')
   local del_id
   del_id=$(echo "$p" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")
   if [[ -z "$del_id" ]]; then

@@ -293,7 +293,7 @@ const state = {
 // Returns the communication mode for a session: 'acp' | 'channel' | 'tmux'
 function getSessionMode(backend) {
   if (backend === 'opencode-acp') return 'acp';
-  if (backend === 'claude' || backend === 'claude-code') return 'channel';
+  if (backend === 'claude' || backend === 'remote-node') return 'channel';
   return 'tmux';
 }
 
@@ -1333,7 +1333,7 @@ function handleMessage(msg) {
         // chat sessions) renders the FULL session event stream as
         // bubbles via ChatEventList, not just MCP channel_reply
         // events. PWA was only showing channel_reply / channel_notify
-        // / chat_message — for terminal-mode claude-code sessions,
+        // / chat_message — for terminal-mode remote-node sessions,
         // none of those flow, so the tab was empty. Add the cleaned
         // output stream as channel-incoming entries so the PWA
         // matches what mobile shows.
@@ -2087,7 +2087,7 @@ function handleChannelReply(data) {
   // v6.11.17 — operator: "I can't scroll back in history". Bumped
   // from 50 → 1000. Since v6.11.16 every output WS line routes through
   // here, the 50-entry cap was dropping ~20 seconds of activity in
-  // claude-code sessions. 1000 entries cover ~5–10 minutes of dense
+  // remote-node sessions. 1000 entries cover ~5–10 minutes of dense
   // output — enough scroll-back without unbounded growth.
   if (state.channelReplies[session_id].length > 1000) {
     state.channelReplies[session_id] = state.channelReplies[session_id].slice(-1000);
@@ -3102,9 +3102,9 @@ function renderSessionsView() {
   // Collect unique backend types from all sessions for compact filter badges
   const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
   const backendShort = {
-    'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
+    'remote-node': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
     'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
-    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+    'aider': 'aider', 'pi': 'pi', 'peer-e': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
     'council-virtual': '🎭 Council', // GH#172 D64
   };
   const backendBadges = backendTypes.map(bt => {
@@ -4100,7 +4100,7 @@ function renderSessionDetail(sessionId) {
     : '';
 
   // Dual output areas: channel tab visible whenever the session uses MCP
-  // channel mode (claude / claude-code), regardless of channel-ready state.
+  // channel mode (claude / remote-node), regardless of channel-ready state.
   // v6.11.14 — operator: "I'm not seeing any activity on the channel
   // tab, in the mobile app I do". Previously the tab was hidden until
   // connReady fired — so during the post-restart window before the
@@ -4674,7 +4674,7 @@ function termFitToWidth() {
 //   - opencode TUI (backend_family 'opencode'): cursor-based in-place rendering
 //     produces zero tmux scrollback, so use the client-side capture-history ring
 //     buffer accumulated from pane_capture WS frames.
-//   - shell / claude-code / others: have real tmux scrollback, so use the
+//   - shell / remote-node / others: have real tmux scrollback, so use the
 //     tmux copy-mode path (same as the original implementation).
 function renderCaptureFrame(lines) {
   if (!state.terminal || !lines || !lines.length) return;
@@ -4919,7 +4919,7 @@ function renderPaneFrame(data) {
             } else {
               // Accumulate client-side capture history (used for opencode TUI
               // sessions that use in-place cursor rendering and produce zero
-              // tmux scrollback; shell and claude-code use tmux copy-mode).
+              // tmux scrollback; shell and remote-node use tmux copy-mode).
               const frameKey = capLines2.join('\n');
               if (!state._captureHistory) state._captureHistory = [];
               const lastKey = state._captureHistory.length > 0
@@ -5192,7 +5192,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
       if (!_termUsable(term, container)) return;
       _termSafeFit(term, fitAddon, container);
       // If configured cols DON'T fit, only enforce for backends that need it
-      // (claude-code needs 120 — allow horizontal scroll)
+      // (remote-node needs 120 — allow horizontal scroll)
       if (term.cols < minCols && fitsInContainer) {
         try { term.resize(minCols, term.rows); } catch (e) {}
       } else if (term.cols < minCols && configCols >= 120) {
@@ -5739,8 +5739,8 @@ function renderSessionStats(sessionId) {
       let labelHint = t('session_stats_process_title') || 'Process Stats';
       if (!env && sess && sess.backend_family) {
         // Observer signature names differ from backend families
-        // (claude-code runs as the `claude` signature).
-        const sig = sess.backend_family === 'claude-code' ? 'claude' : sess.backend_family;
+        // (remote-node runs as the `claude` signature).
+        const sig = sess.backend_family === 'remote-node' ? 'claude' : sess.backend_family;
         env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sig || e.id === 'backend:' + sig + '-docker'));
         if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
       }
@@ -6107,7 +6107,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   const refetch = `event.stopPropagation();renderSessionStatusBoard('${escJsAttr(sessionId)}')`;
   const docsLink = (anchor, label) => `<a href="${escHtml(anchor)}" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:none;border-bottom:1px dashed var(--accent2,#60a5fa);margin-left:6px;font-size:11px;" onclick="event.stopPropagation()">${escHtml(label)} ↗</a>`;
   const hooksDoc = '/diagrams.html#docs/howto/claude-hooks.md';
-  // GH#172 D67 — one-time "hooks installed" toast for claude-code
+  // GH#172 D67 — one-time "hooks installed" toast for remote-node
   // sessions (Android: status_hooks_installed_toast; iOS: applyDetailExtras
   // SessionToast). Fires exactly once per session on the first poll that
   // observes hook_health flip to 'alive', tracked in a module-level Set
@@ -6126,7 +6126,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     if (board.hook_health === 'stale') {
       return `<span style="color:var(--warning,#f59e0b);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_stale_tip')||'Hooks installed but no event in >5 min — agent may just be in a long thinking turn. Click to re-poll.')}" onclick="${refetch}">●</span> <span style="cursor:pointer;text-decoration:underline dotted;" onclick="${refetch}" title="Click to re-poll">hooks stale</span>${docsLink(hooksDoc, t('common_docs')||'Docs')}`;
     }
-    return `<span style="color:var(--text2);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_missing_tip')||'No hook events received yet. For non-claude-code backends or unhooked sessions this is expected. Click to re-poll.')}" onclick="${refetch}">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed')}${docsLink(hooksDoc, t('common_setup')||'Set up')}`;
+    return `<span style="color:var(--text2);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_missing_tip')||'No hook events received yet. For non-remote-node backends or unhooked sessions this is expected. Click to re-poll.')}" onclick="${refetch}">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed')}${docsLink(hooksDoc, t('common_setup')||'Set up')}`;
   })();
 
   // Automaton detail (server-built from the PRD/story/task this session
@@ -8001,7 +8001,7 @@ function renderNewSessionView() {
         <!-- GATE alpha.36 (operator 2026-05-10): row generalized from
              "Claude options" to "LLM options". Shown when any LLM is
              picked; populated based on the LLM's kind. Permission mode
-             is claude-code-only and stays hidden for other LLMs. Model
+             is remote-node-only and stays hidden for other LLMs. Model
              + Effort populate from the same per-backend conditional
              tables the wizard uses. -->
         <div class="form-group" id="sessClaudeRow" style="display:none;">
@@ -8186,7 +8186,7 @@ function onSessLLMChange() {
   const name = llmSel.value;
   // GATE alpha.36 (operator 2026-05-10): drive the LLM options row
   // (renamed from "Claude options"). Show whole row when an LLM is
-  // picked. Permission mode visible only for claude-code. Model +
+  // picked. Permission mode visible only for remote-node. Model +
   // Effort populate from per-backend lists driven by the LLM's kind.
   const llmObj = (window._sessV7LLMs || []).find(l => l.name === name);
   const kind = llmObj && llmObj.kind || '';
@@ -8195,8 +8195,8 @@ function onSessLLMChange() {
   const modelSel = document.getElementById('sessClaudeModel');
   const effortSel = document.getElementById('sessClaudeEffort');
   if (optsRow) optsRow.style.display = name ? '' : 'none';
-  if (permSel) permSel.style.display = (kind === 'claude-code') ? '' : 'none';
-  if (kind === 'claude-code') {
+  if (permSel) permSel.style.display = (kind === 'remote-node') ? '' : 'none';
+  if (kind === 'remote-node') {
     if (typeof populateClaudeOptionDropdowns === 'function') populateClaudeOptionDropdowns();
   } else if (name) {
     // For non-claude LLMs: rebuild model + effort with backend-conditional
@@ -8303,7 +8303,7 @@ function onSessLLMChange() {
   // per-persona, so it CAN have compute nodes and follows the standard
   // 2+ rule. Local-runtime kinds (ollama / openwebui) only show the
   // picker when 2+ nodes are pinned.
-  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose']);
+  const SAAS_KINDS = new Set(['remote-node','gemini','aider','goose']);
   if (SAAS_KINDS.has(llm && llm.kind) || nodes.length < 2) {
     setCompVisible(false);
     if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
@@ -8440,13 +8440,13 @@ function renderSessionBacklog() {
 function backendSetupHint(name) {
   const docsBase = 'https://github.com/dmz006/datawatch/blob/main/docs';
   const hints = {
-    'claude-code': `Install Claude Code: <code>npm install -g @anthropic-ai/claude-code</code><br>Then run: <code>datawatch setup llm claude-code</code>`,
+    'remote-node': `Install Claude Code: <code>npm install -g @anthropic-ai/remote-node</code><br>Then run: <code>datawatch setup llm remote-node</code>`,
     'ollama':      `Install Ollama: <a href="https://ollama.com/download" target="_blank" rel="noopener" style="color:var(--accent);">ollama.com/download</a><br>Then run: <code>datawatch setup llm ollama</code>`,
     'opencode':    `Install opencode: <a href="https://opencode.ai" target="_blank" rel="noopener" style="color:var(--accent);">opencode.ai</a><br>Then run: <code>datawatch setup llm opencode</code>`,
     'opencode-acp':  `Install opencode with ACP support. See <a href="${docsBase}/backends.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/backends.md</a>`,
     'aider':       `Install aider: <code>pip install aider-install && aider-install</code><br>Then run: <code>datawatch setup llm aider</code>`,
     'pi':          `Install pi: <code>npm install -g @earendil-works/pi-coding-agent</code><br>Then run: <code>datawatch setup llm pi</code>`,
-    'pi-prompt':   `Install pi: <code>npm install -g @earendil-works/pi-coding-agent</code><br>Then run: <code>datawatch setup llm pi-prompt</code>`,
+    'peer-e':   `Install pi: <code>npm install -g @earendil-works/pi-coding-agent</code><br>Then run: <code>datawatch setup llm peer-e</code>`,
     'gemini':      `Install Gemini CLI: <code>npm install -g @google/gemini-cli</code><br>Then run: <code>datawatch setup llm gemini</code>`,
     'goose':       `Install Goose: see <a href="https://block.github.io/goose/docs/getting-started/installation" target="_blank" rel="noopener" style="color:var(--accent);">Goose docs</a><br>Then run: <code>datawatch setup llm goose</code>`,
     'openwebui':   `Configure Open WebUI URL and API key: <code>datawatch setup llm openwebui</code>`,
@@ -8592,10 +8592,10 @@ function fetchBackends() {
         }
         // Show/hide resume field based on backend support
         if (resumeGroup) resumeGroup.style.display = sr ? '' : 'none';
-        // v5.27.5 — show claude-specific dropdowns only for claude-code.
+        // v5.27.5 — show claude-specific dropdowns only for remote-node.
         const claudeRow = document.getElementById('sessClaudeRow');
         if (claudeRow) {
-          const isClaudeCode = (sel.value === 'claude-code');
+          const isClaudeCode = (sel.value === 'remote-node');
           claudeRow.style.display = isClaudeCode ? '' : 'none';
           if (isClaudeCode) populateClaudeOptionDropdowns();
         }
@@ -8606,7 +8606,7 @@ function fetchBackends() {
     })
     .catch(() => {
       const sel = document.getElementById('backendSelect');
-      if (sel) sel.innerHTML = '<option value="">claude-code</option>';
+      if (sel) sel.innerHTML = '<option value="">remote-node</option>';
     });
 }
 
@@ -8801,7 +8801,7 @@ function submitNewSession() {
     profile: document.getElementById('profileSelect')?.value || '',
     auto_git_commit: gitCommit ? gitCommit.checked : true,
     auto_git_init: gitInit ? gitInit.checked : false,
-    // v5.27.5 — claude-code per-session overrides. Empty values fall
+    // v5.27.5 — remote-node per-session overrides. Empty values fall
     // through to global cfg.Session defaults on the daemon side.
     permission_mode: document.getElementById('sessPermissionMode')?.value || '',
     claude_effort: document.getElementById('sessClaudeEffort')?.value || '',
@@ -8809,7 +8809,7 @@ function submitNewSession() {
     // Daemon overrides backend with LLM.Kind when llm is set.
     llm: v7LLMSel ? v7LLMSel.value : '',
     compute_node: (v7LLMSel && v7LLMSel.value && v7CompSel) ? v7CompSel.value : '',
-    // v8.7.0 — OpenCode-specific options; falls back to sessClaudeModel for claude-code.
+    // v8.7.0 — OpenCode-specific options; falls back to sessClaudeModel for remote-node.
     model: document.getElementById('sessOpenCodeModel')?.value || document.getElementById('sessClaudeModel')?.value || '',
     lsp_language: document.getElementById('sessOpenCodeLSP')?.value || '',
   };
@@ -8928,10 +8928,10 @@ const DOCS_LINKS_BY_KEY = {
   gc_sess: DOCS_DEFINITIONS + '#sessions',
   // UI prompt handling (Claude Code interstitial prompts) — all four
   // Settings → Sessions rows open the same definitions section.
-  settings_dismiss_ui_prompts: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
-  settings_ui_prompt_dismiss_delay_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
-  settings_ui_prompt_clear_bound_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
-  settings_ui_prompt_max_attempts: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
+  settings_dismiss_ui_prompts: DOCS_DEFINITIONS + '#remote-node-interstitial-prompts',
+  settings_ui_prompt_dismiss_delay_seconds: DOCS_DEFINITIONS + '#remote-node-interstitial-prompts',
+  settings_ui_prompt_clear_bound_seconds: DOCS_DEFINITIONS + '#remote-node-interstitial-prompts',
+  settings_ui_prompt_max_attempts: DOCS_DEFINITIONS + '#remote-node-interstitial-prompts',
   gc_summarizer: DOCS_DEFINITIONS + '#session-ai-summarizer',
   gc_whisper: 'howto/voice-input.md',
   test_whisper: 'howto/voice-input.md',
@@ -9099,8 +9099,8 @@ const DOCS_CHANNEL_TYPES = {
 
 // LLM backend (lowercase, '-' -> '_') -> its section of llm-backends.md.
 const DOCS_LLM_BACKENDS = {
-  claude_code: 'llm-backends.md#claude-code-default',
-  claudecode: 'llm-backends.md#claude-code-default',
+  claude_code: 'llm-backends.md#remote-node-default',
+  claudecode: 'llm-backends.md#remote-node-default',
   aider: 'llm-backends.md#aider',
   pi: 'llm-backends.md#pi',
   pi_prompt: 'llm-backends.md#pi',
@@ -11502,7 +11502,7 @@ window._renderLLMEditPanel = function(existing) {
   const host = document.querySelector('.app') || document.body;
   const old = document.getElementById('llmAddPanel');
   if (old) old.remove();
-  const allKinds = ['ollama','openwebui','opencode','claude-code','opencode-acp','opencode-prompt','aider','pi','pi-prompt','goose','gemini','council','shell'];
+  const allKinds = ['ollama','openwebui','opencode','remote-node','opencode-acp','opencode-prompt','aider','pi','peer-e','goose','gemini','council','shell'];
   const kindOpts = allKinds.map(k => `<option value="${k}" ${k === (existing.kind||'') ? 'selected' : ''}>${k}</option>`).join('');
   const nodes = (window._computeNodesCache || []);
   const selectedNodes = new Set(existing.compute_nodes || []);
@@ -11708,16 +11708,16 @@ window._renderLLMEditPanel = function(existing) {
 };
 
 // SaaS kinds: hide compute nodes + auto-detect node name from kind.
-const _llmSaasKinds = new Set(['claude-code', 'aider', 'goose', 'gemini']);
-const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
+const _llmSaasKinds = new Set(['remote-node', 'aider', 'goose', 'gemini']);
+const _llmSaasNodeName = { 'remote-node': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
 
-const _llmSessionBackendKinds = new Set(['claude-code','aider','pi','pi-prompt','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
+const _llmSessionBackendKinds = new Set(['remote-node','aider','pi','peer-e','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
 
 window._llmKindChanged = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || '';
   const isSaas = _llmSaasKinds.has(kind);
   const isSessionBackend = _llmSessionBackendKinds.has(kind);
-  const isClaudeCode = kind === 'claude-code';
+  const isClaudeCode = kind === 'remote-node';
   const cnSect = document.getElementById('llmComputeNodesSect');
   const aaSect = document.getElementById('llmAutoAddSect');
   const nodeEl = document.getElementById('llmNewModelNode');
@@ -11744,7 +11744,7 @@ window._llmProbeSaasModels = function(kind) {
   const already = new Set(
     (window._llmCollectModels ? window._llmCollectModels() : []).map(em => em.model)
   );
-  if (kind === 'claude-code') {
+  if (kind === 'remote-node') {
     apiFetch('/api/llm/claude/models').then(d => {
       const aliases = (d.aliases || []).map(a => a.value);
       const full = (d.full_names || []).map(a => a.value);
@@ -11768,7 +11768,7 @@ window._llmAddModelRow = function() {
     showToast('Model name required', 'error', 2000);
     return;
   }
-  // For SaaS kinds, the node is the service name (e.g. "claude" for claude-code).
+  // For SaaS kinds, the node is the service name (e.g. "claude" for remote-node).
   const node = isSaas ? (_llmSaasNodeName[kind] || kind) : (nodeEl ? nodeEl.value : '');
   const model = modelEl.value.trim();
   const tbody = document.getElementById('llmModelsBody');
@@ -13408,7 +13408,7 @@ window.loadPRDPanel = loadPRDPanel;
 // the assignment silently, but new picks can't choose it.
 const NON_LLM_BACKENDS = new Set(['shell']);
 // Backends that support headless /api/ask inference (planning + decompose).
-// Session-only backends (claude-code, opencode, aider, gemini, goose) spawn
+// Session-only backends (remote-node, opencode, aider, gemini, goose) spawn
 // a tmux session and cannot be called headlessly — decompose will fail if
 // one of those is selected as the PRD-level backend.
 // Planning backend accepts any registered LLM (session-capable or headless).
@@ -13448,10 +13448,10 @@ function renderBackendSelect(id, current, onchange, planningOnly) {
 // GATE alpha.36 (operator 2026-05-10): effort options are now backend-
 // conditional. (inherit) backend → only (inherit) is offered; each LLM
 // backend exposes only the levels its provider actually understands.
-// claude-code values match /api/llm/claude/efforts authoritatively.
+// remote-node values match /api/llm/claude/efforts authoritatively.
 const EFFORT_BY_BACKEND = {
   '':                ['', /* inherit */ ],
-  'claude-code':     ['', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'remote-node':     ['', 'low', 'medium', 'high', 'xhigh', 'max'],
   'ollama':          ['', 'low', 'medium', 'high'],
   'openwebui':       ['', 'low', 'medium', 'high'],
   'opencode':        ['', 'quick', 'normal', 'thorough'],
@@ -13475,7 +13475,7 @@ function renderEffortSelect(id, current, onchange, backend) {
 // work can wire `/api/backends/<name>/models` for live model lists.
 const MODELS_BY_BACKEND = {
   '':                ['(inherit)'],
-  'claude-code':     ['(inherit)', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
+  'remote-node':     ['(inherit)', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
   'opencode':        ['(inherit)'],
   'opencode-acp':    ['(inherit)'],
   'opencode-prompt': ['(inherit)'],
@@ -15409,7 +15409,7 @@ window.refreshLLMModelField = function(wrapId, innerId, backendId, currentValue)
   }
   wrap.style.display = '';
   if (models.length === 0) {
-    // Backend selected but no fetched model list (goose, claude-code, shell, etc.)
+    // Backend selected but no fetched model list (goose, remote-node, shell, etc.)
     // Fall through to show a free-text input so the operator can type a model name.
     inner.innerHTML = `<input type="text" class="form-input" style="font-size:12px;width:100%;padding:3px 6px;" placeholder="(backend default)" value="${escHtml(currentValue||'')}" />`;
     return;
@@ -15496,7 +15496,7 @@ window.ensureLLMModelLists = function() {
       state._availableModels['opencode-prompt'] = ocModels;
       if (oc.default_model) state._openCodeDefaultModel = oc.default_model;
     }
-    // claude-code's model list is the alias + full-name set from
+    // remote-node's model list is the alias + full-name set from
     // handleClaudeModels (internal/server/api.go) — hardcoded, refreshed
     // each major release per AGENT.md "Major release alias refresh".
     // Aliases lead the dropdown (what most operators want — "opus" tracks
@@ -15505,7 +15505,7 @@ window.ensureLLMModelLists = function() {
     if (claude && (Array.isArray(claude.aliases) || Array.isArray(claude.full_names))) {
       const aliasVals = (claude.aliases || []).map(a => a.value).filter(Boolean);
       const fullVals = (claude.full_names || []).map(f => f.value).filter(Boolean);
-      state._availableModels['claude-code'] = [...aliasVals, ...fullVals];
+      state._availableModels['remote-node'] = [...aliasVals, ...fullVals];
     }
     state._llmModelListsFull = true;
   });
@@ -15817,7 +15817,7 @@ function openPRDSetLLMModal(prdID, current) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Execution backend runs task sessions (opencode, claude-code, goose, etc.). Planning backend runs decompose — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Defaults to global autonomous.planning_backend when left empty.'}</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_set_llm_hint')||'Execution backend runs task sessions (opencode, remote-node, goose, etc.). Planning backend runs decompose — opencode/remote-node get full codebase tool access; ollama/openwebui run headless. Defaults to global autonomous.planning_backend when left empty.'}</div>
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">Execution backend (task sessions)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
@@ -15884,7 +15884,7 @@ function openPRDSetPermissionModeModal(prdID, current) {
       <button class="btn-icon" onclick="_prdCloseModal()" title="${t('btn_close')||'Close'}">&#10005;</button>
     </div>
     <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:10px;">
-      <div style="font-size:11px;color:var(--text2);">${t('prd_permission_mode_hint')||'claude-code --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.'}</div>
+      <div style="font-size:11px;color:var(--text2);">${t('prd_permission_mode_hint')||'remote-node --permission-mode default for tasks spawned under this automaton. Inherited by each task unless overridden there.'}</div>
       <select id="prdSetPermissionMode" class="form-select">${opts}</select>
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -16005,7 +16005,7 @@ function openPRDSettingsModal(prdID) {
                 ${renderBackendSelect('prdSettingsDecompositionProfile', cur.decomposition_profile, `refreshLLMModelField('prdSettingsDecompModelWrap','prdSettingsDecompModelInner','prdSettingsDecompositionProfile','')`, true)}
                 <div id="prdSettingsDecompModelWrap" style="display:none;"><div id="prdSettingsDecompModelInner"></div></div>
               </div>
-              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui run headless. Empty = use global autonomous.planning_backend.</div>
+              <div style="font-size:10px;color:var(--text2);margin-top:2px;">Any configured LLM — opencode/remote-node get full codebase tool access; ollama/openwebui run headless. Empty = use global autonomous.planning_backend.</div>
             </div>
             <!-- v6.13.4 — operator: "skills should be a selectable list
                  from what is installed... if no skills installed say
@@ -16601,7 +16601,7 @@ const GENERAL_CONFIG_FIELDS = [
     // Judges (Automaton guardrail, plan review, other autonomous judges)
     // try these backends in order, one attempt each. Empty follows the
     // verifier routing policy. The time limit counts the judge run only.
-    { key: 'autonomous.judge_policy', label: 'Judge backends (ordered, comma-separated; empty = verifier routing policy)', labelKey: 'settings_judge_policy', helpKey: 'settings_judge_policy_help', type: 'text', placeholder: 'claude-code, ollama-datawatch', csv: true },
+    { key: 'autonomous.judge_policy', label: 'Judge backends (ordered, comma-separated; empty = verifier routing policy)', labelKey: 'settings_judge_policy', helpKey: 'settings_judge_policy_help', type: 'text', placeholder: 'remote-node, ollama-datawatch', csv: true },
     { key: 'autonomous.judge_timeout_seconds', label: 'Judge time limit (sec, 0=30m)', labelKey: 'settings_judge_timeout', helpKey: 'settings_judge_timeout_help', type: 'number', min: 0, placeholder: '1800' },
     { key: 'autonomous.judge_size_threshold_lines', label: 'Judge size threshold (lines, 0=off)', labelKey: 'settings_judge_size_threshold', helpKey: 'settings_judge_size_threshold_help', type: 'number', min: 0, placeholder: '400' },
     // GH#172/#182 — planning_effort, verification_effort, and
@@ -16625,7 +16625,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.stuck_running_seconds', label: 'Stuck Automaton timeout (seconds)', labelKey: 'settings_stuck_running_seconds', helpKey: 'settings_stuck_running_seconds_help', type: 'number', min: 0, placeholder: '900' },
     { key: 'autonomous.verifier_no_progress_timeout_seconds', label: 'Verifier no-progress timeout (sec, 0=10min)', labelKey: 'settings_verifier_no_progress_timeout', type: 'number', placeholder: '600' },
     { key: 'autonomous.verifier_infra_escalation_threshold', label: 'Verifier infra escalation threshold (0=2)', labelKey: 'settings_verifier_infra_escalation_threshold', type: 'number', placeholder: '2' },
-    { key: 'autonomous.fallback_verification_backend', label: 'Fallback verification backend (empty=claude-code)', labelKey: 'settings_fallback_verification_backend', type: 'text', placeholder: 'claude-code' },
+    { key: 'autonomous.fallback_verification_backend', label: 'Fallback verification backend (empty=remote-node)', labelKey: 'settings_fallback_verification_backend', type: 'text', placeholder: 'remote-node' },
     { key: 'autonomous.task_max_attempt_seconds', label: 'Max task attempt time (sec, 0=off)', labelKey: 'settings_task_max_attempt_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.task_no_progress_seconds', label: 'No-progress stop (sec, 0=off)', labelKey: 'settings_task_no_progress_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
@@ -16714,7 +16714,7 @@ const GENERAL_CONFIG_FIELDS = [
     // retry-then-fail behaviour. Steps use the compact text form.
     { key: 'autonomous.failure_escalation.enabled', label: 'Failure escalation enabled', labelKey: 'settings_failure_escalation_enabled', type: 'toggle' },
     { key: 'autonomous.failure_escalation.max_failures', label: 'Failed attempts before the task is held for review (minimum 1, default 3)', labelKey: 'settings_failure_escalation_max_failures', type: 'number', placeholder: '3', min: 1, step: 1, default: '3' },
-    { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
+    { key: 'autonomous.failure_escalation.steps', label: 'Escalation steps (backend:model@attempts, comma separated)', labelKey: 'settings_failure_escalation_steps', type: 'failure_escalation_steps', placeholder: 'ollama:qwen3.8:27b@2,remote-node:claude-sonnet-5-5', hintKey: 'settings_failure_escalation_steps_hint' },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -16807,9 +16807,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.lane_fill.idle_alert_minutes', label: 'Lane fill idle alert (minutes a lane sits idle with work waiting, 0 = off, default 30)', labelKey: 'settings_lane_fill_idle_alert_minutes', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
     { key: 'autonomous.lane_fill.decompose_ahead_min', label: 'Lane fill decompose-ahead minimum (decomposed Automata kept ready per lane, default 2)', labelKey: 'settings_lane_fill_decompose_ahead_min', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
     { key: 'autonomous.lane_fill.poll_seconds', label: 'Lane fill poll interval (seconds, minimum 5, default 60)', labelKey: 'settings_lane_fill_poll_seconds', type: 'number', placeholder: '60', min: 5, step: 1, default: '60' },
-    { key: 'autonomous.lane_fill.gpu_backend', label: 'Lane fill GPU backend (default pi-prompt)', labelKey: 'settings_lane_fill_gpu_backend', type: 'text', placeholder: 'pi-prompt', default: 'pi-prompt' },
+    { key: 'autonomous.lane_fill.gpu_backend', label: 'Lane fill GPU backend (default peer-e)', labelKey: 'settings_lane_fill_gpu_backend', type: 'text', placeholder: 'peer-e', default: 'peer-e' },
     { key: 'autonomous.lane_fill.gpu_model', label: 'Lane fill GPU model (empty = backend default)', labelKey: 'settings_lane_fill_gpu_model', type: 'text', placeholder: '' },
-    { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default claude-code)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'claude-code', default: 'claude-code' },
+    { key: 'autonomous.lane_fill.claude_backend', label: 'Lane fill Claude backend (default remote-node)', labelKey: 'settings_lane_fill_claude_backend', type: 'text', placeholder: 'remote-node', default: 'remote-node' },
     { key: 'autonomous.lane_fill.count_verifier_wait', label: 'Lane fill count verifier wait (on by default)', labelKey: 'settings_lane_fill_count_verifier_wait', type: 'toggle' },
     { key: 'autonomous.lane_fill.stale_after_hours', label: 'Lane fill stale after (hours an Automaton may sit queued before it is refused as stale, 0 = never, default 72)', labelKey: 'settings_lane_fill_stale_after_hours', type: 'number', placeholder: '72', min: 0, step: 1, default: '72' },
     { key: 'autonomous.lane_fill.require_confirmed_proposal', label: 'Lane fill require confirmed proposal (an implementation Automaton needs a confirmed proposal, on by default)', labelKey: 'settings_lane_fill_require_confirmed_proposal', type: 'toggle', default: true },
@@ -17005,7 +17005,7 @@ const LLM_CONFIG_FIELDS = [
     { key: 'vision.max_image_bytes', label: 'Max image size bytes (0 = 10 MB)', type: 'number', placeholder: '0' },
   ]},
   { id: 'cross_session', section: 'Cross-Session Communication Rule', docs: 'howto/cross-session-policy.md', fields: [
-    { key: 'cross_session.enabled', label: 'Inject policy into spawned claude-code sessions', labelKey: 'settings_cross_session_enabled', type: 'toggle' },
+    { key: 'cross_session.enabled', label: 'Inject policy into spawned remote-node sessions', labelKey: 'settings_cross_session_enabled', type: 'toggle' },
   ]},
 ];
 
@@ -18265,7 +18265,7 @@ function _failureEscalationEditorHTML(prdID, taskID, policy) {
       <label style="font-size:11px;color:var(--text2);">${escHtml(t('review_override_max_failures'))}<br>
         <input id="feMax-${scope}" type="number" min="1" step="1" class="form-input" style="width:90px;font-size:12px;" value="${p.max_failures ? escHtml(String(p.max_failures)) : ''}" /></label>
       <label style="font-size:11px;color:var(--text2);flex:1;min-width:220px;">${escHtml(t('review_override_steps'))}<br>
-        <input id="feSteps-${scope}" type="text" class="form-input" style="font-size:12px;width:100%;" value="${escHtml(_failureEscalationStepsText(p.steps))}" placeholder="${escHtml('ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5')}" /></label>
+        <input id="feSteps-${scope}" type="text" class="form-input" style="font-size:12px;width:100%;" value="${escHtml(_failureEscalationStepsText(p.steps))}" placeholder="${escHtml('ollama:qwen3.8:27b@2,remote-node:claude-sonnet-5-5')}" /></label>
     </div>
     <div style="display:flex;gap:6px;margin-top:6px;">
       <button type="button" class="btn-secondary" onclick="event.stopPropagation();prdSaveFailureEscalation(${pid},${tid},'${scope}',false)">${escHtml(t('review_override_save'))}</button>
@@ -19200,14 +19200,14 @@ const GIT_FIELDS = [
 ];
 
 const LLM_FIELDS = {
-  // claude-code: all settings moved to LLM registry (openLLMSetup redirects to openLLMEditPanel).
+  // remote-node: all settings moved to LLM registry (openLLMSetup redirects to openLLMEditPanel).
   // Only claude_enabled remains in session config.
-  'claude-code': [
+  'remote-node': [
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
   ],
   'aider':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'pi':             [{ key:'binary', label:'Binary path', type:'text', placeholder:'pi' }, { key:'model', label:'Model (provider/model, optional)', type:'text', placeholder:'ollama/qwen3.8:27b' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
-  'pi-prompt':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'pi' }, { key:'model', label:'Model (provider/model, optional)', type:'text', placeholder:'ollama/qwen3.8:27b' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'peer-e':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'pi' }, { key:'model', label:'Model (provider/model, optional)', type:'text', placeholder:'ollama/qwen3.8:27b' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'goose':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'gemini':         [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'ollama':         [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
@@ -19220,7 +19220,7 @@ const LLM_FIELDS = {
 
 // Config section names in config.yaml for each LLM
 const LLM_CFG_SECTION = {
-  'claude-code':'session','aider':'aider','pi':'pi','pi-prompt':'pi_prompt','goose':'goose','gemini':'gemini','ollama':'ollama',
+  'remote-node':'session','aider':'aider','pi':'pi','peer-e':'pi_prompt','goose':'goose','gemini':'gemini','ollama':'ollama',
   'opencode':'opencode','opencode-acp':'opencode_acp','opencode-prompt':'opencode_prompt','openwebui':'openwebui','shell':'shell_backend'
 };
 
@@ -23791,7 +23791,7 @@ window._wizardBackendChanged = function() {
   const modelWrap = document.getElementById('wizardModelWrap');
   if (effortWrap) effortWrap.innerHTML = renderEffortSelect('wizardEffort', '', '', backend);
   // GATE alpha.36 (operator 2026-05-10): live-fetch model lists for
-  // backends that expose them. Static fallback for claude-code (model
+  // backends that expose them. Static fallback for remote-node (model
   // IDs are released names). Ollama + openwebui hit their real /api
   // endpoints. Opencode reads OPENCODE_MODELS env from the project
   // profile — operator picks model in that env, so we surface a hint
@@ -23818,7 +23818,7 @@ window._wizardBackendChanged = function() {
     showModel(); apiFetch('/api/ollama/models').then(setOpts).catch(() => setOpts(null));
   } else if (backend === 'openwebui') {
     showModel(); apiFetch('/api/openwebui/models').then(setOpts).catch(() => setOpts(null));
-  } else if (backend === 'claude-code') {
+  } else if (backend === 'remote-node') {
     showModel(); modelWrap.innerHTML = renderModelSelect('wizardModel', '', '', backend);
   } else {
     // opencode variants / council / inherit — model picker doesn't apply.
@@ -27432,7 +27432,7 @@ window._loadPRDActiveSessionCard = function(prd) {
           // Planning: also show compute node stats for the backend that
           // actually runs decompose. GH#184 (dmz006/datawatch) — this used
           // to fall back to prd.backend (the EXECUTION backend, often
-          // claude-code with no compute nodes, so it silently showed local
+          // remote-node with no compute nodes, so it silently showed local
           // stats instead); the daemon decomposes with decomposition_profile,
           // else the global autonomous.planning_backend (manager.go
           // Decompose), never prd.backend. Matches the Android/iOS apps'
@@ -38549,7 +38549,7 @@ function _runtimeBadge(sess) {
     return '🌐';
   }
   if (bf.includes('proxy')) return '⇢';
-  if (bf === 'claude-code' || bf === 'opencode-acp' || bf === 'local') return '🖥';
+  if (bf === 'remote-node' || bf === 'opencode-acp' || bf === 'local') return '🖥';
   if (bf) return '🌐';
   return '';
 }
@@ -40687,7 +40687,7 @@ function loadAutomataSettingsPanel() {
         </div>
         <div class="settings-row" style="flex-direction:column;align-items:stretch;">
           <div class="settings-label">${escHtml(t('settings_failure_escalation_steps')||'Escalation steps (backend:model@attempts, comma separated)')}</div>
-          <input type="text" class="form-input" style="font-size:12px;margin-top:4px;" placeholder="ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5" value="${escHtml(_failureEscalationStepsText((ac.failure_escalation || {}).steps))}"
+          <input type="text" class="form-input" style="font-size:12px;margin-top:4px;" placeholder="ollama:qwen3.8:27b@2,remote-node:claude-sonnet-5-5" value="${escHtml(_failureEscalationStepsText((ac.failure_escalation || {}).steps))}"
             onchange="saveGeneralField('autonomous.failure_escalation.steps',this.value)">
           <div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(t('settings_failure_escalation_steps_hint')||'Each step covers its attempts, and the last step covers the rest.')}</div>
         </div>

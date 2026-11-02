@@ -157,7 +157,7 @@ RUN install_packages \
         # operator essentials only
         procps file tree which sudo && \
     # debian's fd-find binary is /usr/bin/fdfind; symlink to `fd` for
-    # compatibility with claude-code's hardcoded `fd` invocations.
+    # compatibility with remote-node's hardcoded `fd` invocations.
     ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
 # ── Layer 2: GitHub CLI (built from source in ghbuilder) ────────────────

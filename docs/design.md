@@ -4,7 +4,7 @@
 
 ## 1. Problem Statement
 
-Managing long-running AI coding sessions is hard when you are away from your keyboard. A `claude-code` task might take 20–40 minutes, require occasional yes/no confirmations, and produce output you want to review without sitting at a terminal. There is no good way to:
+Managing long-running AI coding sessions is hard when you are away from your keyboard. A `remote-node` task might take 20–40 minutes, require occasional yes/no confirmations, and produce output you want to review without sitting at a terminal. There is no good way to:
 
 - Start a task on a remote machine from your phone
 - Receive a notification when the AI pauses and needs a decision
@@ -23,7 +23,7 @@ You need a way to **delegate tasks, receive async updates, and respond to prompt
 - **MCP server for IDE integration** — Cursor, Claude Desktop, and VS Code can list, start, and interact with sessions directly via the Model Context Protocol
 - **Session persistence across daemon restarts** — sessions are stored in a flat JSON file; monitors resume on startup so a daemon restart does not lose session state
 - **Single binary, minimal dependencies** — one `datawatch` binary; only `tmux` is always required; messaging backends and LLM tools are optional dependencies enabled per-config
-- **Pluggable LLM backends** — claude-code, aider, goose, gemini, opencode, ollama, openwebui, or a custom shell script
+- **Pluggable LLM backends** — remote-node, aider, goose, gemini, opencode, ollama, openwebui, or a custom shell script
 
 ---
 
@@ -48,7 +48,7 @@ Sessions persist in `sessions.json`. When the daemon restarts, it reads the sess
 Signal provides end-to-end encryption for all task content and command messages. Tailscale provides an encrypted WireGuard overlay for PWA access — no certificate management required. An optional bearer token provides an additional authentication layer for shared Tailscale networks. The daemon runs as a non-privileged user. No data leaves the local machine.
 
 ### Extensibility
-The messaging protocol and LLM backend are expressed as Go interfaces. Swapping Signal for Slack, or `claude-code` for `aider`, requires implementing an interface and wiring it into `main.go` — no changes to the router, session manager, or HTTP server.
+The messaging protocol and LLM backend are expressed as Go interfaces. Swapping Signal for Slack, or `remote-node` for `aider`, requires implementing an interface and wiring it into `main.go` — no changes to the router, session manager, or HTTP server.
 
 ---
 
@@ -62,7 +62,7 @@ The messaging protocol and LLM backend are expressed as Go interfaces. Swapping 
 
 ### tmux for session management
 
-**Decision:** Each `claude-code` session runs inside a named tmux session (`cs-{hostname}-{id}`).
+**Decision:** Each `remote-node` session runs inside a named tmux session (`cs-{hostname}-{id}`).
 
 **Rationale:** tmux is the most reliable way to run long-lived interactive processes that can be attached to manually, detached without killing the process, and piped for output capture. The `pipe-pane` feature writes all terminal output to a log file, giving a reliable audit trail. tmux has been stable for over a decade and is available in every Linux/macOS package manager. A user can always `tmux attach -t cs-myhost-a3f2` to interact directly, bypassing the Signal interface entirely.
 
@@ -128,9 +128,9 @@ type Backend interface {
     Version() string
 }
 ```
-The session manager calls `Launch()` to start the AI assistant inside the pre-created tmux session. `projectDir` is passed as the working directory; for claude-code this is also the `--add-dir` constraint. Swapping `claude-code` for any other backend requires implementing this interface and setting `session.llm_backend` in config.
+The session manager calls `Launch()` to start the AI assistant inside the pre-created tmux session. `projectDir` is passed as the working directory; for remote-node this is also the `--add-dir` constraint. Swapping `remote-node` for any other backend requires implementing this interface and setting `session.llm_backend` in config.
 
-Available implementations: `claude-code`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`.
+Available implementations: `remote-node`, `aider`, `goose`, `gemini`, `opencode`, `ollama`, `openwebui`, `shell`.
 
 ### `messaging.Backend` interface
 ```go
@@ -162,7 +162,7 @@ The PWA API and WebSocket server are independent of the Signal backend. Commands
 | Network loss (Tailscale) | WebSocket disconnect; client reconnects | PWA auto-reconnects with exponential backoff |
 | Daemon restart | Startup reads sessions.json | `ResumeMonitors()` re-attaches goroutines to all active sessions |
 | sessions.json corruption | JSON unmarshal error on startup | Daemon starts with empty session list and logs an error |
-| claude-code not in PATH | tmux session exits immediately | Session transitions to `failed`; notification sent |
+| remote-node not in PATH | tmux session exits immediately | Session transitions to `failed`; notification sent |
 | Java not installed | signal-cli subprocess fails to start | Daemon reports error on startup; `datawatch link` also fails |
 
 ---
@@ -171,7 +171,7 @@ The PWA API and WebSocket server are independent of the Signal backend. Commands
 
 ### Completed
 
-**Phase 1 — Core bridge** (Signal → tmux → claude-code loop, session lifecycle, persistence, QR linking)
+**Phase 1 — Core bridge** (Signal → tmux → remote-node loop, session lifecycle, persistence, QR linking)
 
 **Phase 2 — PWA and WebSocket interface** (embedded HTTP server, real-time streaming, installable PWA, REST API, Swagger UI)
 
@@ -182,7 +182,7 @@ Comprehensive documentation suite, `install/install.sh`, systemd service files, 
 Signal, Telegram, Matrix, Discord, Slack, Twilio SMS, ntfy, email, GitHub webhook, generic webhook.
 
 **Phase 6 — Additional LLM backends** (all shipped)
-claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell.
+remote-node, aider, goose, gemini, opencode, ollama, openwebui, shell.
 
 **MCP server** — Cursor, Claude Desktop, VS Code, and remote AI agent integration via Model Context Protocol (stdio and HTTP/SSE transports).
 

@@ -1,13 +1,13 @@
 ---
 docs:
   index: true
-  topics: [sessions, memory, federation, security, claude-code]
+  topics: [sessions, memory, federation, security, remote-node]
 exec_params: []
 exec_steps: []
 ---
 # How-to: Cross-Session Communication Rule
 
-A short policy section datawatch injects into spawned claude-code
+A short policy section datawatch injects into spawned remote-node
 sessions' `CLAUDE.md`, steering the LLM toward datawatch's own
 audited memory/discussion/reply tools instead of Claude Code's native
 session-to-session messaging, for anything that should be audited or
@@ -42,7 +42,7 @@ or retrieve later is still fine without going through datawatch.
 ## Base requirements
 
 - `datawatch` daemon running.
-- Applies to **claude-code sessions only** — the policy merges into
+- Applies to **remote-node sessions only** — the policy merges into
   `CLAUDE.md` specifically; other backends get `AGENT.md` with no
   equivalent section (there's no native cross-session messaging
   concept to steer away from on those backends).
@@ -66,7 +66,7 @@ Settings → Cross-Session Communication Rule in the PWA.
 Mirrors the existing Memory Use Rule / RTK instructions pattern
 exactly — same merge logic, same file:
 
-1. A new claude-code session starts in a project directory.
+1. A new remote-node session starts in a project directory.
 2. If that directory's `CLAUDE.md` (or `AGENT.md`, preferred if it
    exists) doesn't exist yet, the full session-guardrails template is
    written fresh — the policy section is appended if
@@ -83,7 +83,7 @@ grep -A2 "Cross-Session Communication Rule" <project_dir>/CLAUDE.md
 ## Diagram
 
 ```
-  New claude-code session spawns in <project_dir>
+  New remote-node session spawns in <project_dir>
          │
          ▼
   WriteSessionGuardrails(templatePath, sess, opts)
@@ -106,7 +106,7 @@ grep -A2 "Cross-Session Communication Rule" <project_dir>/CLAUDE.md
 ## Common pitfalls
 
 - **Policy doesn't appear in CLAUDE.md.** Confirm the session's
-  backend is actually `claude-code` — every other backend writes
+  backend is actually `remote-node` — every other backend writes
   `AGENT.md` with no equivalent merge step. Also confirm
   `cross_session.enabled` wasn't turned off.
 - **I turned it off but it's still in an existing CLAUDE.md.**

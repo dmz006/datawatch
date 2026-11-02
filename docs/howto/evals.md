@@ -109,8 +109,8 @@ datawatch evals runs --suite json-output --limit 10
 datawatch evals get-run <run-id>
 
 # 5. Compare across backends.
-datawatch evals compare json-output --backends claude-code,opencode-acp,ollama
-#  → claude-code      score=92  PASS
+datawatch evals compare json-output --backends remote-node,opencode-acp,ollama
+#  → remote-node      score=92  PASS
 #    opencode-acp     score=83  PASS
 #    ollama:llama3    score=58  FAIL (capability threshold 70)
 ```

@@ -3,8 +3,8 @@
     "prd_id": "6f3e1f5d",
     "read_via": "datawatch MCP autonomous_prd_get",
     "read_at": "2026-10-13",
-    "decompose_backend": "claude-code",
-    "decompose_model": "(LLM registry default for claude-code: opus; no effort flag)",
+    "decompose_backend": "remote-node",
+    "decompose_model": "(LLM registry default for remote-node: opus; no effort flag)",
     "note": "Structural shape only (titles, counts, dependency edges, file lists). Full spec bodies are deliberately omitted. Story/task ids are the real ids from the record; scoring uses positions and edges, never ids."
   },
   "story_count": 2,

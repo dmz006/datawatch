@@ -69,7 +69,7 @@ values tell it how to choose when goals conflict.
 ## Base requirements
 
 - `datawatch start` — daemon running and reachable.
-- An LLM backend with at least one model configured (claude-code,
+- An LLM backend with at least one model configured (remote-node,
   ollama, openai, etc. — any will work). See
   [`llm-registry.md`](llm-registry.md) for setup and verification.
 - No additional services. Identity lives entirely in
@@ -146,7 +146,7 @@ datawatch identity get
 Verify injection on a fresh session:
 
 ```sh
-SID=$(datawatch sessions start --llm claude-code --task "Hello" --project-dir /tmp 2>&1 \
+SID=$(datawatch sessions start --llm remote-node --task "Hello" --project-dir /tmp 2>&1 \
   | grep -oP 'session \K[a-z0-9-]+')
 sleep 2
 grep -A30 'L0:' ~/.datawatch/sessions/$SID/wakeup.log
@@ -189,7 +189,7 @@ field examples and structure suggestions inline.
     closes. The Identity card now shows a summary block with
     timestamps.
 11. To verify the injection works, spawn a fresh session: PWA → bottom
-    nav **Sessions** → **+** FAB → backend `claude-code` → task
+    nav **Sessions** → **+** FAB → backend `remote-node` → task
     `What do you know about me?` → **Start**. The first response
     should mirror your role / focus back.
 
@@ -241,7 +241,7 @@ Both PATCH and PUT return the post-update identity object as JSON.
 ### 5c. MCP
 
 Tools exposed through the daemon's MCP server. From any MCP host
-(claude-code MCP, Cursor, opencode-acp), the operator's AI can call:
+(remote-node MCP, Cursor, opencode-acp), the operator's AI can call:
 
 | Tool | Args | Returns |
 |---|---|---|
@@ -250,7 +250,7 @@ Tools exposed through the daemon's MCP server. From any MCP host
 | `set_identity` | Same fields | Replaces the whole identity (PUT semantics). A call with no content over a saved identity is refused with `identity_wipe_refused`. |
 | `identity_backups`, `restore_identity`, `reset_identity` | see "Backups, restore and the empty-write guard" below | List, restore and explicitly clear. |
 
-Example invocation from a claude-code session:
+Example invocation from a remote-node session:
 
 > *Operator:* "Update my current focus to debugging the state-engine bug."
 >
@@ -486,7 +486,7 @@ How identity flows into a spawned session's wake-up stack:
              │   prepended to system prompt
              ▼
   ┌──────────────────────────────────────────┐
-  │ LLM session (claude-code, ollama, ...)   │
+  │ LLM session (remote-node, ollama, ...)   │
   │   sees identity BEFORE the first user    │
   │   message                                │
   └──────────────────────────────────────────┘

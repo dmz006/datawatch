@@ -41,7 +41,7 @@ States: `draft` → `planning` → `needs_review` → `approved` → `running`
 ## Base requirements
 
 - `datawatch start` — daemon up.
-- A configured LLM backend (claude-code, opencode-acp, ollama, etc.).
+- A configured LLM backend (remote-node, opencode-acp, ollama, etc.).
   See [`llm-registry.md`](llm-registry.md) for registering and managing
   LLM backends.
 - For containerised execution: a Cluster Profile. For local execution
@@ -69,7 +69,7 @@ Optional YAML to pin a planning backend (v7 config key):
 # ~/.datawatch/datawatch.yaml
 autonomous:
   enabled: true
-  planning_backend: claude-code   # was "decomposition_backend" before v7.0
+  planning_backend: remote-node   # was "decomposition_backend" before v7.0
   planning_effort: high           # was "decomposition_effort"
   planning_model: ""              # was "decomposition_model" — empty = LLM default
   max_concurrent_tasks: 1         # tasks of one Automaton run at once; 1 = sequential
@@ -96,7 +96,7 @@ PRD_ID=$(datawatch autonomous create \
   --name "auth-refactor" \
   --title "Refactor auth to use JWT-only sessions" \
   --goal "Replace cookie+CSRF with JWT-only; deprecate the cookie middleware" \
-  --backend claude-code \
+  --backend remote-node \
   --profile prod-audit 2>&1 | grep -oP 'id=\K[0-9a-f]+')
 
 # 2. Trigger planning (LLM-driven; async).
@@ -187,7 +187,7 @@ state-aware actions matches the PWA.
 # Create.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"auth-refactor","title":"...","goal":"...","backend":"claude-code"}' \
+  -d '{"name":"auth-refactor","title":"...","goal":"...","backend":"remote-node"}' \
   $BASE/api/autonomous/prds
 
 # Plan (canonical endpoint; /decompose is a back-compat alias).
@@ -244,7 +244,7 @@ id: abc123
 name: auth-refactor
 title: Refactor auth to use JWT-only sessions
 goal: Replace cookie+CSRF with JWT-only; deprecate the cookie middleware
-backend: claude-code
+backend: remote-node
 profile: prod-audit
 status: needs_review
 stories:
@@ -329,7 +329,7 @@ empty field in the PWA) to clear and inherit again.
 ```bash
 # Stronger verifier for one risky task.
 datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> \
-  --backend claude-code --model opus --effort high
+  --backend remote-node --model opus --effort high
 
 # Cheaper verifier for a routine story.
 datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> \
@@ -343,7 +343,7 @@ datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> \
 PWA: task **Edit**, story **LLM** or Automaton **Set LLM** →
 *Verification LLM* row. MCP: `autonomous_prd_set_task_verification_llm`
 / `_set_story_verification_llm` / `_set_verification_llm`. Chat:
-`autonomous set-task-verification-llm <id> <task-id> backend=claude-code model=opus`.
+`autonomous set-task-verification-llm <id> <task-id> backend=remote-node model=opus`.
 REST: `POST /api/autonomous/prds/{id}/set_task_verification_llm`
 (see [`../api/autonomous.md`](../api/autonomous.md)).
 

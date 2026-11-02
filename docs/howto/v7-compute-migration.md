@@ -25,7 +25,7 @@ On first v7 startup with this version, the daemon walks your `config.yaml` and c
 |-------------------------|---------------------------|-----------------|-----------------|
 | `cfg.ollama`            | `ollama-default`          | `ollama`        | `host` + `model`|
 | `cfg.openwebui`         | `openwebui-default`       | `openwebui`     | `url` + `model` |
-| `cfg.session.claude_bin`| `claude-code-default`     | `claude-code`   | binary path     |
+| `cfg.session.claude_bin`| `remote-node-default`     | `remote-node`   | binary path     |
 | `cfg.opencode`          | `opencode-default`        | `opencode`      | binary path     |
 | `cfg.opencode_acp`      | `opencode-acp-default`    | `opencode-acp`  | binary path     |
 | `cfg.opencode_prompt`   | `opencode-prompt-default` | `opencode-prompt` | binary path |

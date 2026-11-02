@@ -27,7 +27,7 @@ Example: `[laptop][a3f2] Started session for: write unit tests`
 
 ### `new: <task>`
 
-Start a new `claude-code` session with the given task description.
+Start a new `remote-node` session with the given task description.
 
 **Syntax:** `new: <task description>`
 
@@ -44,7 +44,7 @@ Attach: tmux attach -t cs-myserver-a3f2
 ```
 
 **Notes:**
-- The task is passed directly to `claude-code` as the prompt
+- The task is passed directly to `remote-node` as the prompt
 - A tmux session is created named `cs-<hostname>-<id>`
 - Output is logged to `~/.datawatch/logs/<hostname>-<id>.log`
 
@@ -75,8 +75,8 @@ list
 **Session states:**
 | State | Meaning |
 |---|---|
-| `running` | claude-code is actively working |
-| `waiting_input` | claude-code is waiting for a response from you |
+| `running` | remote-node is actively working |
+| `waiting_input` | remote-node is waiting for a response from you |
 | `complete` | Session finished (tmux exited cleanly) |
 | `failed` | Session ended unexpectedly |
 | `killed` | Session was terminated with `kill` |
@@ -168,7 +168,7 @@ kill a3f2
 ```
 
 **Notes:**
-- This kills the tmux session, which terminates `claude-code`
+- This kills the tmux session, which terminates `remote-node`
 - Session state is set to `killed`
 - This action cannot be undone
 
@@ -193,7 +193,7 @@ attach a3f2
 
 **Notes:**
 - You must SSH into the host machine to attach
-- Attaching lets you interact with claude-code directly from the terminal
+- Attaching lets you interact with remote-node directly from the terminal
 
 ---
 
@@ -206,7 +206,7 @@ Show the command reference.
 **Response:**
 ```
 [myserver] datawatch commands:
-new: <task>       - start a new claude-code session
+new: <task>       - start a new remote-node session
 list              - list sessions + status
 status <id>       - recent output from session
 send <id>: <msg>  - send input to waiting session
@@ -459,7 +459,7 @@ alerts 10
 ```
 [myserver] Last 5 alert(s):
   [a1b2] 14:30:01 INFO — Rate limit detected
-    claude-code rate-limited; session a3f2 paused
+    remote-node rate-limited; session a3f2 paused
   [c3d4] 14:28:44 WARN — Trust dialog
     Permission dialog detected in session b7c1
 ```
@@ -523,7 +523,7 @@ Step 1/3: Enter bot token:
 
 *Messaging backends:* `signal`, `telegram`, `discord`, `slack`, `matrix`, `twilio`, `ntfy`, `email`, `webhook`, `github`, `web`, `server`
 
-*LLM backends:* `llm claude-code`, `llm aider`, `llm goose`, `llm gemini`, `llm opencode`, `llm ollama`, `llm openwebui`, `llm shell`
+*LLM backends:* `llm remote-node`, `llm aider`, `llm goose`, `llm gemini`, `llm opencode`, `llm ollama`, `llm openwebui`, `llm shell`
 
 *Session and MCP:* `session`, `mcp`
 
@@ -873,7 +873,7 @@ Interactive wizard to configure a backend or subsystem. Available services:
 
 | Service | Description |
 |---|---|
-| `llm claude-code` | Configure claude CLI binary and permission settings |
+| `llm remote-node` | Configure claude CLI binary and permission settings |
 | `llm aider` | Configure aider (binary path, enable/disable) |
 | `llm goose` | Configure goose (binary path, enable/disable) |
 | `llm gemini` | Configure Gemini CLI (binary path, enable/disable) |
@@ -926,7 +926,7 @@ Start a new AI coding session.
 |---|---|
 | `--dir` / `-d` | Project directory (default: current working directory) |
 | `--name` / `-n` | Optional human-readable name for the session |
-| `--backend` | LLM backend to use for this session (e.g. `claude-code`, `aider`) |
+| `--backend` | LLM backend to use for this session (e.g. `remote-node`, `aider`) |
 
 **Example:**
 ```bash
@@ -958,7 +958,7 @@ List all registered LLM backends. The active backend (from config or `--llm-back
 **Example output:**
 ```
 BACKEND      ACTIVE  VERSION
-claude-code  *       1.2.3
+remote-node  *       1.2.3
 aider                0.58.0
 goose
 ```
@@ -1012,7 +1012,7 @@ Includes **overlap guard**: if the previous spawn for this schedule is still run
 | `--shell` | Shell command to run (sets `--subprocess` automatically; no LLM required) |
 | `--path` | Working directory (alias for `--dir`) |
 | `--dir` | Working directory for the spawned session |
-| `--backend` | LLM backend name (e.g. `claude-code`) |
+| `--backend` | LLM backend name (e.g. `remote-node`) |
 | `--model` | Model name override |
 | `--llm-ref` | Unified LLM registry reference (alternative to `--backend`) |
 | `--effort` | Thoroughness: `quick`, `normal`, or `thorough` |
@@ -1041,7 +1041,7 @@ datawatch schedule spawn \
 datawatch schedule spawn \
   --cron "0 2 * * *" \
   --path /home/<user>/workspace/project \
-  --backend claude-code \
+  --backend remote-node \
   --schedule-name nightly-report \
   --task "Generate a summary of today's commits and open issues"
 
@@ -1138,7 +1138,7 @@ Pre-populate the command library and output filter store with useful defaults.
 
 Seeded commands: `approve` (yes), `reject` (no), `enter` (newline), `continue`, `skip`, `abort` (Ctrl-C)
 
-Seeded filters include common claude-code patterns:
+Seeded filters include common remote-node patterns:
 - `Do you want to proceed?` → schedule auto-approve
 - Rate limit messages → alert
 - Trust dialog → alert (no auto-approve)

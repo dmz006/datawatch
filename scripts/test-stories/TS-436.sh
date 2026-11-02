@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TS-436 — POST /api/sessions/start with llm=claude-code sets llm_ref on returned session
+# TS-436 — POST /api/sessions/start with llm=remote-node sets llm_ref on returned session
 # tags: surface:api feature:sessions
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-436"
@@ -8,7 +8,7 @@ story_preflight "surface:api feature:sessions" || return 0
 _story_ts_436() {
   local resp code body
   resp=$(api_code POST /api/sessions/start \
-    "{\"task\":\"test-llm-ref-ts436-$$\",\"backend\":\"shell\",\"llm\":\"claude-code\",\"project_dir\":\"/tmp\"}")
+    "{\"task\":\"test-llm-ref-ts436-$$\",\"backend\":\"shell\",\"llm\":\"remote-node\",\"project_dir\":\"/tmp\"}")
   code=$(echo "$resp" | sed -n 's/.*__HTTP_CODE_\([0-9]*\)__.*/\1/p')
   body=$(echo "$resp" | sed 's/__HTTP_CODE_[0-9]*__//')
   save_evidence TS-436 "resp.json" "$body"

@@ -18,7 +18,7 @@ _story_ts_027() {
   fi
   add_cleanup profile-proj "$pname"
   local atm
-  atm=$(api POST /api/autonomous/prds '{"spec":"test-prd-profile-'"$$"'","project_profile":"'"$pname"'","effort":"low","backend":"claude-code"}')
+  atm=$(api POST /api/autonomous/prds '{"spec":"test-prd-profile-'"$$"'","project_profile":"'"$pname"'","effort":"low","backend":"remote-node"}')
   save_evidence TS-027 "automaton_create.json" "$atm"
   local atm2_id
   atm2_id=$(echo "$atm" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))' 2>/dev/null || echo "")

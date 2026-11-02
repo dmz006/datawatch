@@ -532,7 +532,7 @@ function sessionRow(i, full) {
   const bigTask = i % SEED.bigTaskEvery === 0;
   const row = {
     id, full_id: 'perfhost-' + id, name: 'perf-session-' + String(i).padStart(4, '0'), project_dir: '/srv/perf/project',
-    state: SESSION_STATES[i % SESSION_STATES.length], hostname: 'perfhost', backend_family: 'claude-code',
+    state: SESSION_STATES[i % SESSION_STATES.length], hostname: 'perfhost', backend_family: 'remote-node',
     created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T01:00:00Z', output_mode: 'log', input_mode: 'none',
   };
   const task = bigTask ? textOf(SEED.bigTaskBytes) : 'seeded task ' + i + ': ' + textOf(200);

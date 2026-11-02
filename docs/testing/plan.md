@@ -105,7 +105,7 @@ This multi-sprint roadmap is tracked separately and scoped for a future minor ve
 
 ### Open-model matrix (pi workers only)
 
-A roles × task-types grid over the open (pi-prompt/Ollama) models, run through
+A roles × task-types grid over the open (peer-e/Ollama) models, run through
 the daemon as a scratch Automaton — separate from the per-version story cookbooks.
 Definition and task fixtures: `testdata/eval/open-model-matrix/` (reuses the
 `testdata/eval/model-tiering` fixtures). Driver: `scripts/eval-open-model-matrix.sh`
@@ -233,7 +233,7 @@ During the v8.0.0 e2e cycle we repeatedly hit test failures caused by missing pr
 | Observer peer attachment to compute nodes | `observer.peers.allow_register: true` in daemon config | `federated-observer.md` |
 | Council mode runs | LLM registered under `council.llm_ref` | `llm-registry.md`, `chat-and-llm-quickstart.md` |
 | Cross-agent memory (embedding recall) | Embedding model pulled in Ollama | `ollama-marketplace.md` |
-| LLM registry tests | `claude-code` is auto-registered; other kinds need explicit setup | `llm-registry.md` |
+| LLM registry tests | `remote-node` is auto-registered; other kinds need explicit setup | `llm-registry.md` |
 | `docs_read` MCP calls | Uses `path` param (`"path": "howto/..."`), not `howto` | `docs-as-mcp.md` |
 | Federation peer tests | Peers must be registered; connection-refused is a structured error | `federated-observer.md` |
 | Secrets GET / DELETE | Secret must exist first (create fixture before testing read/delete) | `secrets-manager.md` |

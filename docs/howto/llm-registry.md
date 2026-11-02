@@ -7,7 +7,7 @@ exec_params:
     description: LLM name (e.g. my-ollama, claude-api, gpu-box)
     required: true
   - name: kind
-    description: "LLM kind: ollama | openwebui | opencode | claude | claude-code | aider | goose | gemini | shell"
+    description: "LLM kind: ollama | openwebui | opencode | claude | remote-node | aider | goose | gemini | shell"
     required: true
   - name: model
     description: Model name (e.g. llama3.1:8b, claude-sonnet-5)
@@ -39,7 +39,7 @@ model datawatch can reach. Each entry is a named definition:
 
 ```
 name     — the identifier consumers use (sessions, Council, /api/ask, Automata)
-kind     — the protocol adapter (ollama, openwebui, claude, claude-code, …)
+kind     — the protocol adapter (ollama, openwebui, claude, remote-node, …)
 models[] — per-node model assignments ({node, model} pairs)
 compute_nodes — ordered failover list of Compute Node names
 ```
@@ -48,7 +48,7 @@ Before v7, every backend had its own config block (`cfg.ollama`,
 `cfg.aider`, …) and separate mental model. In v7 they collapse here:
 Settings → Compute → LLM Configuration.
 
-> **Auto-registered LLMs**: The daemon automatically registers a `claude-code` entry (kind `claude-code`) at startup if the `claude` binary is on PATH. No manual `llm add` step is needed for Claude Code sessions. Other kinds (`ollama`, `claude`, `aider`, etc.) must be registered explicitly. Use `GET /api/llms` (plural) or `datawatch llm list` to see what is currently registered, including any auto-registered entries.
+> **Auto-registered LLMs**: The daemon automatically registers a `remote-node` entry (kind `remote-node`) at startup if the `claude` binary is on PATH. No manual `llm add` step is needed for Claude Code sessions. Other kinds (`ollama`, `claude`, `aider`, etc.) must be registered explicitly. Use `GET /api/llms` (plural) or `datawatch llm list` to see what is currently registered, including any auto-registered entries.
 
 ### LLM kinds
 
@@ -58,7 +58,7 @@ Settings → Compute → LLM Configuration.
 | `openwebui` | OpenWebUI HTTP API | Yes | OpenWebUI front-end proxy |
 | `opencode` | Ollama-compatible wrapper | Yes | opencode session backend |
 | `claude` | Anthropic API (cloud) | No | Cloud inference, Council |
-| `claude-code` | tmux session agent | No | AI coding assistant sessions |
+| `remote-node` | tmux session agent | No | AI coding assistant sessions |
 | `opencode-acp` | tmux session agent | Optional | opencode ACP sessions |
 | `opencode-prompt` | tmux session agent | Optional | opencode prompt sessions |
 | `aider` | tmux session agent | Optional | aider coding assistant |
@@ -68,7 +68,7 @@ Settings → Compute → LLM Configuration.
 
 **Inference kinds** (`ollama`, `openwebui`, `opencode`, `claude`) go
 through the dispatcher for one-shot calls (Council debates, `/api/ask`,
-agent spawning). **Session-backend kinds** (`claude-code`, `aider`,
+agent spawning). **Session-backend kinds** (`remote-node`, `aider`,
 `goose`, etc.) own a tmux session end-to-end; the registry holds their
 binary path, model selection, and console preferences.
 
@@ -127,7 +127,7 @@ for the full migration table and verification steps.
   Node registered. See [`compute-mode.md`](compute-mode.md).
 - For `claude` kind: an Anthropic API key (literal or `${secret:name}`
   reference — see [`secrets-manager.md`](secrets-manager.md)).
-- For session-backend kinds (`claude-code`, `aider`, …): the relevant
+- For session-backend kinds (`remote-node`, `aider`, …): the relevant
   binary on PATH on the Compute Node host.
 
 ## Setup
@@ -167,16 +167,16 @@ datawatch llm add claude-api \
 datawatch llm test claude-api
 ```
 
-### Add a coding-agent LLM (claude-code)
+### Add a coding-agent LLM (remote-node)
 
 ```sh
-# claude-code has no compute nodes — it resolves against the local binary.
-datawatch llm add claude-code \
-  --kind claude-code
+# remote-node has no compute nodes — it resolves against the local binary.
+datawatch llm add remote-node \
+  --kind remote-node
 
 # Optionally specify a model list (presented to users in the session wizard).
-datawatch llm models add claude-code --model claude-opus-4-5
-datawatch llm models add claude-code --model claude-sonnet-5
+datawatch llm models add remote-node --model claude-opus-4-5
+datawatch llm models add remote-node --model claude-sonnet-5
 ```
 
 ## Tag roles on LLMs
@@ -323,7 +323,7 @@ datawatch llm list
 #  → name            kind         enabled  models
 #    claude-api      claude       yes      claude-sonnet-5
 #    my-ollama       ollama       yes      llama3.1:8b  (node: gpu-box)
-#    claude-code     claude-code  yes      —
+#    remote-node     remote-node  yes      —
 
 # 2. Fetch one entry.
 datawatch llm get my-ollama
@@ -354,7 +354,7 @@ datawatch llm enable my-ollama --pretest
 
 # 9. Delete (blocked if active sessions are using it).
 datawatch llm delete my-ollama
-#  → 409 Conflict: blocked_by: [{kind:session, id:ralfthewise-7a3c, ...}]
+#  → 409 Conflict: blocked_by: [{kind:session, id:peer-f-7a3c, ...}]
 
 # 10. Safe path: reassign bindings first, then delete.
 datawatch llm reassign my-ollama --to-llm claude-api
@@ -573,7 +573,7 @@ personas returns `409 Conflict` with a `blocked_by` list:
 ```json
 {
   "blocked_by": [
-    {"kind":"session","id":"ralfthewise-7a3c","name":"my-session","state":"running"},
+    {"kind":"session","id":"peer-f-7a3c","name":"my-session","state":"running"},
     {"kind":"automata","id":"prd-001","title":"Deploy feature X","state":"planning"}
   ]
 }
@@ -625,7 +625,7 @@ datawatch llm force-delete my-ollama
   (ollama/openwebui/…)    (fallback)
 ```
 
-For session-backend kinds (`claude-code`, `aider`, …) the dispatcher
+For session-backend kinds (`remote-node`, `aider`, …) the dispatcher
 does not make a network call — it resolves the binary path and model
 selection stored in the LLM entry, then the session manager spawns the
 tmux process.

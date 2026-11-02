@@ -530,7 +530,7 @@ defer func() { _, _ = mc.Flush(ctx) }()
 ```
 
 **BL109 — Auto-wire MCP into every spawned LLM session (shipped):**
-Until now MCP wiring only fired for claude-code (via the bespoke
+Until now MCP wiring only fired for remote-node (via the bespoke
 `claude mcp add` shell-out). BL109 generalises so every backend that
 honours the `modelcontextprotocol/spec` `.mcp.json` discovery file
 gets the datawatch MCP server pre-wired:
@@ -540,7 +540,7 @@ gets the datawatch MCP server pre-wired:
   a single `datawatch` server entry; existing operator-added entries
   under other names are preserved.
 - The session pre-launch hook runs the writer for every backend,
-  then keeps the existing claude-code-specific registration path
+  then keeps the existing remote-node-specific registration path
   alongside it.
 - `channel.NodePath` now honours `DATAWATCH_NODE_BIN` so operators
   on hosts where node isn't on the daemon's PATH (and tests) can

@@ -18,7 +18,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | Document | Description |
 |---|---|
 | [backends.md](backends.md) | Overview of all LLM and messaging backends |
-| [llm-backends.md](llm-backends.md) | Detailed guide for every LLM backend (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) |
+| [llm-backends.md](llm-backends.md) | Detailed guide for every LLM backend (remote-node, aider, goose, gemini, opencode, ollama, openwebui, shell) |
 | [messaging-backends.md](messaging-backends.md) | Detailed guide for every messaging backend (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook) |
 
 ## Interfaces

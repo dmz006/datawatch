@@ -4,7 +4,7 @@ INCIDENT (confirmed live, 2026-10-13): the datawatch daemon OOM-killed itself tw
 
 ROOT CAUSE (confirmed via direct process/cgroup inspection, not assumed):
 - internal/session/tracker.go's commit path (commit() around line 598-609) runs `git add -A` then `git commit -m <msg> --allow-empty` on EVERY tracked session event (every input sent, every output recorded, etc.), via the Tracker type documented at the top of the file ("Tracker manages the per-session git-tracked folder").
-- There is no .gitignore / exclusion for output.log, which OutputLogPath() (line ~441-444) documents as "Full claude-code output (live)" — an ever-growing, append-only file for a long-lived session.
+- There is no .gitignore / exclusion for output.log, which OutputLogPath() (line ~441-444) documents as "Full remote-node output (live)" — an ever-growing, append-only file for a long-lived session.
 - There is no repo-size or gc management at repo init (git init / config user.email / user.name, lines ~32-42) — no gc.auto tuning, no pack memory limits.
 - Over the life of a long-running session, `git add -A` + commit snapshots the full, growing output.log repeatedly. Until a gc/repack happens, these are stored as separate large loose objects. Eventually git's own default gc.auto threshold (loose object count) trips implicitly on a subsequent `git add -A && git commit`, spawning `git gc --auto` -> `git repack -d -l --no-write-bitmap-index` -> `git pack-objects --local --delta-base-offset --honor-pack-keep ... --keep-true-parents --non-empty --all --reflog --indexed-objects --unpacked --incremental`.
 - pack-objects' delta search across many large near-duplicate blobs is memory-hungry and uncapped by default (no pack.windowMemory limit set anywhere). Confirmed directly: this process hit 108GB+ RSS before being killed, on a host with 122GB RAM + 8GB swap (swap was fully exhausted at the time).
@@ -34,4 +34,4 @@ OUT OF SCOPE for this PRD:
 - Re-architecting the Tracker/session model beyond what's needed to stop unbounded git growth.
 - Changing autonomous.max_parallel_tasks (already set to 1 by the operator directly; leave it).
 
-This is the first PRD run under the new "all datawatch development work goes through the autonomous PRD system" operating model (operator directive, 2026-10-13) — the operator wants this run closely observed since it's the first one. Use claude-code for decompose, task execution, and verification throughout.
+This is the first PRD run under the new "all datawatch development work goes through the autonomous PRD system" operating model (operator directive, 2026-10-13) — the operator wants this run closely observed since it's the first one. Use remote-node for decompose, task execution, and verification throughout.

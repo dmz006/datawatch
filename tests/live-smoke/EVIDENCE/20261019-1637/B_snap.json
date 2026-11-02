@@ -6,7 +6,7 @@
     {
       "actor": "autonomous",
       "at": "2026-10-18T16:28:01.623639172-04:00",
-      "backend": "pi-prompt",
+      "backend": "peer-e",
       "kind": "decompose",
       "prompt_chars": 3254,
       "response_chars": 2508

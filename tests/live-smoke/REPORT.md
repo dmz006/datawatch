@@ -2,7 +2,7 @@
 
 **Run:** 2026-10-18 16:28–16:39 (operator local time) · **datawatch v9.5.4** (built from
 HEAD) · **scratch daemon** port 18912 (isolated from the operator daemon) · planner
-`pi-prompt → ollama` (local, direct) · executor `claude-code` (local).
+`peer-e → ollama` (local, direct) · executor `remote-node` (local).
 **Capacity control:** `max_concurrent_tasks=8` so capacity is *not* the gate — only the
 per-tree lock can refuse.
 

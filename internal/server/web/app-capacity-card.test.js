@@ -46,9 +46,9 @@ test('pools show limit, used count, a usage bar and holders by short id', () => 
 });
 
 test('a back-off flag with a reset time shows backend, the time and the reason', () => {
-  const html = render({ backoff: [{ backend: 'claude-code', until: '2026-10-22T15:00:00Z', reason: 'weekly limit reached', reset_known: true }] });
+  const html = render({ backoff: [{ backend: 'remote-node', until: '2026-10-22T15:00:00Z', reason: 'weekly limit reached', reset_known: true }] });
   assert.ok(html.includes('Usage back-off'), 'back-off title missing');
-  assert.ok(html.includes('claude-code'), 'backend missing');
+  assert.ok(html.includes('remote-node'), 'backend missing');
   assert.ok(html.includes('weekly limit reached'), 'reason missing');
   assert.ok(html.includes('Resets:'), 'reset time label missing: ' + html);
   assert.ok(!html.includes('reset time unknown'), 'known reset must not show the unknown label');

@@ -32,8 +32,8 @@ The HTTP/WebSocket server binds to 0.0.0.0 by default. Access is controlled by:
 For public-facing deployments, always enable both the token and TLS.
 
 ### File System Access
-claude-code sessions run with access to the configured project directory.
-The --add-dir flag limits claude-code's file system scope to that directory tree.
+remote-node sessions run with access to the configured project directory.
+The --add-dir flag limits remote-node's file system scope to that directory tree.
 Sessions run as the user who started the datawatch daemon.
 
 ### Secrets in Tasks

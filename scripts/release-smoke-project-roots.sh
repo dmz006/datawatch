@@ -32,9 +32,9 @@
 #                         (default: $HOME/.datawatch/prd-worktrees)
 #   DW_LLM_BACKEND        LLM backend for the accepted session
 #                         (default: opencode-acp — free, local; set
-#                         DW_LLM_BACKEND=claude-code or DW_MAJOR=1 to
+#                         DW_LLM_BACKEND=remote-node or DW_MAJOR=1 to
 #                         spend API quota instead)
-#   DW_MAJOR              set to 1 to allow claude-code when the default
+#   DW_MAJOR              set to 1 to allow remote-node when the default
 #                         free backend is unavailable (cost gate, matches
 #                         release-smoke.sh's convention)
 #   KEEP_TEST_DIR         set to 1 to keep the scratch folders for inspection
@@ -256,8 +256,8 @@ BACKEND="${DW_LLM_BACKEND:-}"
 if [[ -z "$BACKEND" ]]; then
   BACKEND="opencode-acp"
   if [[ "$(backend_available opencode)" != "yes" ]]; then
-    if [[ "${DW_MAJOR:-0}" == "1" && "$(backend_available claude-code)" == "yes" ]]; then
-      BACKEND="claude-code"
+    if [[ "${DW_MAJOR:-0}" == "1" && "$(backend_available remote-node)" == "yes" ]]; then
+      BACKEND="remote-node"
     else
       BACKEND=""
     fi
@@ -268,7 +268,7 @@ else
   [[ "$(backend_available "$PROBE")" == "yes" ]] || BACKEND=""
 fi
 if [[ -z "$BACKEND" ]]; then
-  printf '         Re-run with DW_MAJOR=1 (allows claude-code, spends quota) or DW_LLM_BACKEND=<name>.\n'
+  printf '         Re-run with DW_MAJOR=1 (allows remote-node, spends quota) or DW_LLM_BACKEND=<name>.\n'
   skip_all "no available LLM backend on the sandbox — project-roots smoke skipped"
 fi
 ok "worker backend: $BACKEND"

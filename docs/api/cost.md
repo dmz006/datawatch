@@ -35,7 +35,7 @@ in YAML and via the REST surface above:
 ```yaml
 session:
   cost_rates:
-    claude-code:
+    remote-node:
       in_per_k:  0.003
       out_per_k: 0.015
     gemini:
@@ -80,7 +80,7 @@ curl -sS http://localhost:8080/api/cost | jq .
   "total_tokens_out":  45000,
   "total_usd": 1.0275,
   "per_backend": {
-    "claude-code": {"sessions": 12, "tokens_in": 110000, "tokens_out": 42000, "usd": 0.96},
+    "remote-node": {"sessions": 12, "tokens_in": 110000, "tokens_out": 42000, "usd": 0.96},
     "ollama":      {"sessions":  2, "tokens_in":  10000, "tokens_out":  3000, "usd": 0}
   }
 }
@@ -91,7 +91,7 @@ curl -sS http://localhost:8080/api/cost | jq .
 ```bash
 curl -X PUT http://localhost:8080/api/cost/rates \
   -H 'Content-Type: application/json' \
-  -d '{"rates":{"claude-code":{"in_per_k":0.0025,"out_per_k":0.012}}}'
+  -d '{"rates":{"remote-node":{"in_per_k":0.0025,"out_per_k":0.012}}}'
 ```
 
 The override is applied to the live `Manager` immediately and
@@ -102,7 +102,7 @@ persisted to the config file.
 ## AI / MCP integration notes
 
 - `tokens_in/out` and `est_cost_usd` are written by `Manager.AddUsage`,
-  which is called by per-backend response parsers (claude-code is wired
+  which is called by per-backend response parsers (remote-node is wired
   initially; other backends' parsers land in subsequent releases).
   Until then, AI agents can call `POST /api/cost/usage` directly to
   record usage from their own counters.

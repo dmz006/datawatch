@@ -2,7 +2,7 @@ claude-signal (0.1.0-1) unstable; urgency=low
 
   * Initial release.
   * Signal group messaging integration via signal-cli.
-  * claude-code session management via tmux.
+  * remote-node session management via tmux.
   * Progressive Web App with WebSocket real-time interface.
   * OpenAPI 3.0 specification with Swagger UI.
 

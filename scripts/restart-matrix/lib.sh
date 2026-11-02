@@ -296,7 +296,7 @@ EOF
 }
 
 # rm_write_config_pi — extends the sandbox config when RM_PI_NODES=1: the pi and
-# pi-prompt backends run the fake pi that rm_pi_nodes_setup writes into the sandbox.
+# peer-e backends run the fake pi that rm_pi_nodes_setup writes into the sandbox.
 rm_write_config_pi() {
   # A PRD's project dir must lie under an allowed project root; the sandbox dir is not under
   # the default roots, so name it (inside the server block, after its last key).
@@ -499,7 +499,7 @@ rm_sandbox_down() {
 
 # ------------------------------------------------- pi workers on two nodes ----
 #
-# Opt-in plumbing for the worker-node-placement state, which needs pi-prompt
+# Opt-in plumbing for the worker-node-placement state, which needs peer-e
 # workers placed on compute nodes. A state calls it as
 #
 #   RM_PI_NODES=1; rm_sandbox_new NAME; unset RM_PI_NODES   # config gets the pi blocks
@@ -597,7 +597,7 @@ rm_node_stub_stop() {
 
 # rm_pi_nodes_register — two compute nodes with distinct explicit addresses and one
 # worker slot each, an ollama entry (the engine the model's provider resolves to) and a
-# pi-prompt entry, both listing the two nodes. Returns 1 when the daemon refuses any.
+# peer-e entry, both listing the two nodes. Returns 1 when the daemon refuses any.
 rm_pi_nodes_register() {
   local n port models body refused=0
   for n in "$RM_NODE_A:$RM_NODE_PORT_A" "$RM_NODE_B:$RM_NODE_PORT_B"; do
@@ -607,10 +607,10 @@ rm_pi_nodes_register() {
       jq -e '.name' >/dev/null 2>&1 || { rm_log "compute node ${n%%:*} was not accepted"; refused=1; }
   done
   models="$(jq -nc --arg a "$RM_NODE_A" --arg b "$RM_NODE_B" --arg m "${RM_PI_MODEL#*/}" '[{node: $a, model: $m}, {node: $b, model: $m}]')"
-  for n in ollama pi-prompt; do
+  for n in ollama peer-e; do
     body="$(jq -nc --arg name "$n" --arg a "$RM_NODE_A" --arg b "$RM_NODE_B" --argjson models "$models" \
       '{name: $name, kind: $name, compute_nodes: [$a, $b], models: $models, max_inflight: 4}')"
-    # The daemon may have created the entry itself from the config (the pi-prompt binary), so
+    # The daemon may have created the entry itself from the config (the peer-e binary), so
     # replace it in place; deleting it would only tombstone it. Create it when it is absent.
     { rm_api PUT "/api/llms/$n" "$body" | jq -e '.name' >/dev/null 2>&1 ||
       rm_api POST /api/llms "$body" | jq -e '.name' >/dev/null 2>&1; } || { rm_log "llm entry $n was not accepted"; refused=1; }

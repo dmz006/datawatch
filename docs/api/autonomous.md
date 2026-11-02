@@ -349,7 +349,7 @@ Automaton belongs to, `global`, or `pool`).
 # a stronger verifier for one risky task
 curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
   -H "Content-Type: application/json" \
-  -d '{"task_id":"<task-id>","verification_backend":"claude-code","verification_model":"opus","verification_effort":"high"}'
+  -d '{"task_id":"<task-id>","verification_backend":"remote-node","verification_model":"opus","verification_effort":"high"}'
 
 # clear it again (inherit story → Automaton → global)
 curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
@@ -399,7 +399,7 @@ one `verifier_policy` object in `PUT /api/autonomous/config`):
 | `claude_cap_window_minutes` | Window length for the cap. `0` = 60. |
 | `force_stronger_on_retry` | Send a retried verification to the stronger verifier. |
 | `final_gate_stronger` | Send the final verification gate to the stronger verifier. |
-| `stronger_backend` / `stronger_model` | The stronger verifier. Empty means `claude-code` and the default Sonnet model. |
+| `stronger_backend` / `stronger_model` | The stronger verifier. Empty means `remote-node` and the default Sonnet model. |
 
 A config write is validated before anything is stored: an unknown `mode`,
 an empty entry in `backends`, a negative `claude_session_cap` or
@@ -447,7 +447,7 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verifier_p
 # global policy: prefer a free local backend, cap Claude verifiers at 4 per hour
 curl -sX PUT http://localhost:7433/api/autonomous/config \
   -H "Content-Type: application/json" \
-  -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
+  -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","remote-node"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
 ```
 
 ### Judge routing and time limit (`autonomous.judge_policy` / `autonomous.judge_timeout_seconds` / `autonomous.judge_size_threshold_lines`)
@@ -461,7 +461,7 @@ capacity slot does not count against it. When every backend in the judge policy
 has timed out, the Automaton is held in `needs_review` and an error alert lists
 every attempt. `autonomous.judge_size_threshold_lines` (default 400, `0` = off) is the
 changed-line count (added plus deleted, on the Automaton branch against its merge
-base, lock files left out) above which the judges try `claude-code` first and the
+base, lock files left out) above which the judges try `remote-node` first and the
 rest follow in their usual order, still one attempt per backend; the decision log
 names the rule and the line count. The settings are read and written with `GET/PUT /api/autonomous/config`
 (`judge_policy`, `judge_timeout_seconds`, `judge_size_threshold_lines`), MCP `autonomous_config_set`, the CLI
@@ -476,8 +476,8 @@ A task that keeps failing moves up a ladder of workers and, at `max_failures` fa
 ```
 POST /api/autonomous/prds/{id}/set_failure_escalation
 {"task_id": "<optional>", "policy": {"enabled": true, "max_failures": 4,
-  "steps": [{"backend": "pi-prompt", "model": "ollama/qwen3.8:27b", "attempts": 2},
-            {"backend": "claude-code", "model": "claude-opus-5-5", "effort": "high"}]},
+  "steps": [{"backend": "peer-e", "model": "ollama/qwen3.8:27b", "attempts": 2},
+            {"backend": "remote-node", "model": "claude-opus-5-5", "effort": "high"}]},
  "actor": "operator"}
 
 POST /api/autonomous/prds/{id}/set_failure_escalation
@@ -491,7 +491,7 @@ POST /api/autonomous/prds/{id}/set_failure_escalation
 
 ```
 POST /api/autonomous/prds/{id}/resolve_task_review
-{"task_id": "t1", "action": "retry", "spec": "<replacement spec>", "backend": "claude-code",
+{"task_id": "t1", "action": "retry", "spec": "<replacement spec>", "backend": "remote-node",
  "model": "claude-opus-5-5", "effort": "high", "files": ["internal/parser/parse.go"],
  "note": "the failure is in the parser only", "actor": "operator"}
 
@@ -524,7 +524,7 @@ Both routes write an audit entry (`set_failure_escalation` or `resolve_task_revi
 |---|---|---|
 | Automaton | `failure_escalation` | The Automaton's override (omitted when unset). |
 | Task | `failure_escalation` | The task's override (omitted when unset). |
-| Task | `attempts` | One entry per failed, stalled or cancelled attempt: `number`, `backend`, `model`, `effort`, `started_at`, `ended_at`, `duration_seconds`, `outcome`, `failure_category`, `failure_summary`, `verifier_summary`, `verifier_issues`, `changed_files`, `snapshot_ref`, `escalated`, `runner_exit_status`, `runner_last_output`, `runner_processes`. The three runner fields are set only for a pi-prompt attempt that stalled and are omitted otherwise: `runner_exit_status` is pi's exit status when the pane showed it, `runner_last_output` the last non-empty pane lines (at most 20, oldest first), `runner_processes` the runner's processes as `pid name argv` lines (at most 40). The task's `runner_evidence` is internal: the worker wait loop sets it just before a stall and clears it when the attempt is recorded, so it is never returned on its own. |
+| Task | `attempts` | One entry per failed, stalled or cancelled attempt: `number`, `backend`, `model`, `effort`, `started_at`, `ended_at`, `duration_seconds`, `outcome`, `failure_category`, `failure_summary`, `verifier_summary`, `verifier_issues`, `changed_files`, `snapshot_ref`, `escalated`, `runner_exit_status`, `runner_last_output`, `runner_processes`. The three runner fields are set only for a peer-e attempt that stalled and are omitted otherwise: `runner_exit_status` is pi's exit status when the pane showed it, `runner_last_output` the last non-empty pane lines (at most 20, oldest first), `runner_processes` the runner's processes as `pid name argv` lines (at most 40). The task's `runner_evidence` is internal: the worker wait loop sets it just before a stall and clears it when the attempt is recorded, so it is never returned on its own. |
 | Task | `escalation_failures` | Failed attempts since the last operator action. Any reset of the task sets it back to 0. |
 | Task | `review_summary` | Set while the task is held: `held_at`, `failure_count`, `total_seconds` and `text`, a plain-text report of every attempt. |
 | Task | `operator_worker_set` | `true` when the operator's last review retry chose the task's worker. The escalation ladder then keeps that worker; a retry without a worker change clears it. |
@@ -1078,7 +1078,7 @@ member's setting wins over the Automation's.
 
 ```
 POST /api/automations/3fa9c2d1/set_decision_assistant
-{"backend": "pi-prompt", "model": "qwen3.8:27b", "mode": "shadow",
+{"backend": "peer-e", "model": "qwen3.8:27b", "mode": "shadow",
  "hooks": ["empty_edge", "budget_breach"], "thresholds": {"empty_edge": 0.85},
  "expected_version": 4, "actor": "operator"}
 ```
@@ -1110,7 +1110,7 @@ that member's spend. `set_budget` sets, replaces or clears one of them.
 POST /api/automations/3fa9c2d1/set_budget
 {"expected_version": 7, "actor": "operator", "reason": "weekly cap",
  "ceiling_type": "dollar", "ceiling_value": 40, "window": "week",
- "pacing": "even", "on_breach": "pause", "backend": "claude-code",
+ "pacing": "even", "on_breach": "pause", "backend": "remote-node",
  "reset_weekday": "monday", "reset_time": "09:00", "reset_zone": "America/New_York"}
 ```
 
@@ -1417,17 +1417,17 @@ and the new `version`, and adds a matching entry to the Automation's
 # run every member on a stronger model unless it names its own
 curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
   -H "Content-Type: application/json" \
-  -d '{"backend":"claude-code","model":"claude-opus-5-5","effort":"high"}'
+  -d '{"backend":"remote-node","model":"claude-opus-5-5","effort":"high"}'
 
 # a separate, cheaper planner for decomposing members, and clear the model
 curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
   -H "Content-Type: application/json" \
-  -d '{"planning_backend":"pi-prompt","planning_model":"qwen3.8:27b","model":""}'
+  -d '{"planning_backend":"peer-e","planning_model":"qwen3.8:27b","model":""}'
 
 # a different verifier, guarded by the version you read
 curl -sX POST http://localhost:7433/api/automations/<id>/set_verification_llm \
   -H "Content-Type: application/json" \
-  -d '{"expected_version":7,"backend":"claude-code","model":"claude-sonnet-5-5"}'
+  -d '{"expected_version":7,"backend":"remote-node","model":"claude-sonnet-5-5"}'
 ```
 
 The same operations are reachable as the MCP tools `automation_set_llm` and
@@ -1454,7 +1454,7 @@ Lane fill runs a planner on every coordinator poll. It records, for each idle la
   "last_poll_at": "2026-10-24T13:00:00Z",
   "lanes": [
     {"id": "gpu-1", "type": "gpu", "state": "occupied",
-     "occupant": {"prd_id": "a1b2c3d4", "title": "Example Automaton", "backend": "pi-prompt"},
+     "occupant": {"prd_id": "a1b2c3d4", "title": "Example Automaton", "backend": "peer-e"},
      "blocker": "", "eligible_waiting": 0},
     {"id": "claude-1", "type": "claude", "state": "idle", "occupant": null,
      "blocker": "no eligible work for this lane", "eligible_waiting": 0}
@@ -1496,9 +1496,9 @@ autonomous:
     idle_alert_minutes: 30     # 0 turns the idle alert off
     decompose_ahead_min: 2     # decomposed Automata kept ready per lane type
     poll_seconds: 60           # minimum 5
-    gpu_backend: pi-prompt
+    gpu_backend: peer-e
     gpu_model: ""              # empty = the backend's own model
-    claude_backend: claude-code
+    claude_backend: remote-node
 ```
 
 **Surfaces.** The same status is read by MCP `autonomous_lane_fill_status`, the CLI `datawatch autonomous lane-fill [--limit N] [--json]` and the comm verb `autonomous lane-fill [limit]`. The preference is set with MCP `autonomous_prd_set_lane_preference`, the CLI `datawatch autonomous prd-set-lane-preference <id> gpu|claude|any` and the comm verb `autonomous set-lane-preference <prd-id> gpu|claude|any`. The PWA shows the status on the Automation sub-tab.
@@ -1957,7 +1957,7 @@ autonomous:
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
   stuck_running_seconds:  900         # stuck-running watchdog: an Automaton running with every task finished, no live session and no live executor for this long gets its completion roll-up re-fired once, then is blocked after a second full bound; 0 = 900
-  descendant_stall_seconds: 2700      # pi-prompt only: bound on a stalled worker whose only liveness is a live working descendant process; exceeded => infrastructure failure, descendants are cleaned up, task is retried via the auto_fix_retries budget; 0 or below => use the default 2700
+  descendant_stall_seconds: 2700      # peer-e only: bound on a stalled worker whose only liveness is a live working descendant process; exceeded => infrastructure failure, descendants are cleaned up, task is retried via the auto_fix_retries budget; 0 or below => use the default 2700
   task_max_attempt_seconds:  0        # wall-clock cap on one task attempt in seconds; 0 = off; recommended 5400
   task_no_progress_seconds:  0        # stop an attempt after N seconds without output, file changes, commits, or a CPU-using child process; 0 = off; recommended 1800
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
@@ -1970,11 +1970,11 @@ autonomous:
     claude_cap_window_minutes: 0      # window length; 0 = 60
     force_stronger_on_retry: false    # retried verification goes to the stronger verifier
     final_gate_stronger:  false       # final verification gate goes to the stronger verifier
-    stronger_backend:     ""          # empty = claude-code
+    stronger_backend:     ""          # empty = remote-node
     stronger_model:       ""          # empty = the default Sonnet model
   judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
   judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
-  judge_size_threshold_lines: 400     # changed lines above which claude-code is tried first; 0 = size rule off
+  judge_size_threshold_lines: 400     # changed lines above which remote-node is tried first; 0 = size rule off
   automation:
     create_search_mode:   shadow      # off | shadow | on: search-before-create over the existing Automata, registry rows and branches
     create_search_threshold: 0.5      # score at or above which an existing Automaton counts as an overlap; above 0, at most 1
@@ -2007,8 +2007,8 @@ hosts a local engine when the node has no operator `session_slots` and its
 observer reports neither GPU data nor system memory with a model size. It is
 the last step of the rule in [Node slots](#node-slots-session_slots). The
 default is `1`, and a value below `1` is clamped to `1`. Only sessions on a
-local engine on that node count (`pi`, `pi-prompt`, `ollama`, `opencode`,
-`opencode-acp`); hosted backends such as `claude-code` are not gated by it.
+local engine on that node count (`pi`, `peer-e`, `ollama`, `opencode`,
+`opencode-acp`); hosted backends such as `remote-node` are not gated by it.
 Sessions past the count wait with the reason `waiting for node <name>`. The
 operator guide, including queue priority, is in `docs/operations.md` →
 "Compute-node queue".
@@ -2266,7 +2266,7 @@ datawatch autonomous prd-run <id>
 datawatch autonomous prd-cancel <id>
 datawatch autonomous prd-set-llm <id> --guardrail-backend ollama --guardrail-model qwen3.8:27b
 datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-backend ""   # clear
-datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus --effort high
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend remote-node --model opus --effort high
 datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama --model qwen3:8b
 datawatch autonomous prd-set-verification-llm <id> --model ""   # clear the Automaton-level verifier model
 datawatch autonomous tag-list [--include-sub]
@@ -2337,8 +2337,8 @@ rest POST /api/autonomous/prds {"spec":"add pagination","project_dir":"/srv/app"
 rest POST /api/autonomous/prds/abcd1234/plan
 rest POST /api/autonomous/prds/abcd1234/run
 autonomous set-llm abcd1234 guardrail_backend=ollama guardrail_model=qwen3.8:27b
-autonomous set-task-llm abcd1234 t1 claude-code high guardrail_backend=ollama
-autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus effort=high
+autonomous set-task-llm abcd1234 t1 remote-node high guardrail_backend=ollama
+autonomous set-task-verification-llm abcd1234 t1 backend=remote-node model=opus effort=high
 autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
 autonomous set-verification-llm abcd1234 model=
 autonomous tags

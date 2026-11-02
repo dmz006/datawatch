@@ -1,5 +1,5 @@
 """Open-model matrix eval driver (roles x task types = cells; the tracked matrix
-is 5 pi-prompt roles — baseline plus execution-role candidates — x 4 task types
+is 5 peer-e roles — baseline plus execution-role candidates — x 4 task types
 = 20 cells).
 
 Run as `python3 -I scripts/eval_open_model_matrix.py <subcommand>`; normally
@@ -283,7 +283,7 @@ def llm_test(c, name):
 
 def preflight_start_body(role, project_dir):
     """Request body for the preflight one-shot: the same fields the autonomous
-    executor sends for a pi-prompt task (registry entry as `backend`, bare model,
+    executor sends for a peer-e task (registry entry as `backend`, bare model,
     per-role thinking level), with every git side effect off."""
     body = {"task": PREFLIGHT_PROMPT, "project_dir": project_dir, "backend": role["llm"],
             "model": role["model"], "name": f"eval-preflight-{role['role']}", "one_shot": True,
@@ -300,7 +300,7 @@ def preflight_start_body(role, project_dir):
 
 def pi_preflight_run(c, role, project_dir, timeout_s=PREFLIGHT_RUN_TIMEOUT_S, poll_s=PREFLIGHT_POLL_S,
                      sleep=time.sleep):
-    """ONE real pi-prompt one-shot through the daemon for this role. Returns
+    """ONE real peer-e one-shot through the daemon for this role. Returns
     {"used_model", "state", "session_id"} where used_model is the model the
     daemon's session record reports. The session is always ended through the
     API by its exact full id, whatever the outcome."""
@@ -351,7 +351,7 @@ def cmd_preflight(a):
     for role in m["roles"]:
         key = (role["llm"], role["model"], role.get("thinking_level"))
         if key not in seen:
-            log(f"preflight {role['role']}: pi-prompt one-shot on {role['llm']} / {role['model']} "
+            log(f"preflight {role['role']}: peer-e one-shot on {role['llm']} / {role['model']} "
                 f"(thinking {thinking_disp(role.get('thinking_level'))})")
             try:
                 seen[key] = (pi_preflight_run(c, role, scratch), None)
@@ -436,7 +436,7 @@ def cmd_create_prd(a):
         log(f"PRD-level thinking level set to {m['prd_thinking_level']}")
     # Operator-reported 2026-10-15: this whole matrix is meant to be
     # Claude-free, but decompose (planning) and the per-task guardrail
-    # verifier both silently defaulted to the global claude-code setting
+    # verifier both silently defaulted to the global remote-node setting
     # — only the cells' own workers were ever actually local. Pin both
     # to a local model before decomposing. In the tracked matrix the
     # baseline role holds the decompose/validate/guardrail roles: decompose
@@ -491,7 +491,7 @@ def cmd_create_prd(a):
         tid = new[0]["id"]
         prd_action(c, pid, "set_task_project_dir", {"task_id": tid, "project_dir": cdir, "actor": ACTOR})
         # set_task_llm's `backend` is validated against the LLM registry, so the
-        # registry entry name (a pi-prompt entry) goes there; model pins it.
+        # registry entry name (a peer-e entry) goes there; model pins it.
         prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": cell["llm"],
                                             "model": cell["expected_model"], "actor": ACTOR})
         # Per-task thinking-level override: applied only when the role pins a

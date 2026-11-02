@@ -29,7 +29,7 @@ council_run, observer_envelopes, etc. directly.
 The Model Context Protocol (MCP) is Anthropic's open spec for
 LLM-to-tool wiring. Datawatch ships an MCP server that:
 
-- Speaks stdio MCP (for claude-code MCP, Cursor, opencode-acp).
+- Speaks stdio MCP (for remote-node MCP, Cursor, opencode-acp).
 - Mirrors every REST endpoint as a typed tool.
 - Audit-logs every invocation through the same path as REST + CLI.
 
@@ -39,7 +39,7 @@ Live tool catalogue at `https://localhost:8443/api/mcp/docs`.
 
 - `datawatch start` — daemon up.
 - An MCP host (any of):
-  - **claude-code MCP** — Claude Code CLI.
+  - **remote-node MCP** — Claude Code CLI.
   - **Cursor** — IDE with MCP support.
   - **opencode-acp** — opencode's ACP protocol bridges into MCP.
   - **Custom** — anything that speaks stdio MCP.
@@ -75,7 +75,7 @@ For the MCP host, point at the daemon's stdio entry:
 }
 ```
 
-(In claude-code: `claude mcp add datawatch -- datawatch mcp`.)
+(In remote-node: `claude mcp add datawatch -- datawatch mcp`.)
 
 ## Two happy paths
 
@@ -172,7 +172,7 @@ non-stdio path for clients that can't speak MCP directly.
 ### 5c. MCP — the operator-canonical surface
 
 ```jsonc
-// Inside an MCP host like claude-code or Cursor:
+// Inside an MCP host like remote-node or Cursor:
 // (operator types) "List my running datawatch sessions, then start one against ollama with task 'hello'"
 
 // (LLM calls) session_list({})
@@ -222,7 +222,7 @@ ACL rules use the same scope syntax as the secrets manager
 ```
   ┌──────────────────────┐    ┌──────────────────────┐
   │ MCP host             │    │ MCP host             │
-  │  (claude-code, Cursor│    │  (custom)            │
+  │  (remote-node, Cursor│    │  (custom)            │
   │   opencode-acp)      │    │                      │
   └─────────┬────────────┘    └──────────┬───────────┘
             │ stdio MCP                  │ stdio MCP
@@ -322,7 +322,7 @@ datawatch mcp status
 ## Screenshots needed (operator weekend pass)
 
 - [ ] `/api/mcp/docs` rendered tool catalogue (PWA browser view)
-- [ ] claude-code with datawatch MCP host wired (`claude mcp list` output)
+- [ ] remote-node with datawatch MCP host wired (`claude mcp list` output)
 - [ ] Cursor with datawatch MCP host configured (settings JSON)
 - [ ] An LLM-driven session_start round-trip (LLM ⇄ MCP ⇄ daemon log)
 

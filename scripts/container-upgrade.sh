@@ -11,11 +11,11 @@
 #   scripts/container-upgrade.sh --apply   # rewrite files
 #
 # Sources used:
-#   GitHub releases API for: claude-code, aider, rtk, signal-cli,
+#   GitHub releases API for: remote-node, aider, rtk, signal-cli,
 #       gradle, kotlin, go (mirror), rust toolchain, golangci-lint,
 #       gopls, delve, bun
 #   npm registry for: pnpm, typescript, tsx, eslint, opencode-ai,
-#       @anthropic-ai/claude-code, @google/gemini-cli
+#       @anthropic-ai/remote-node, @google/gemini-cli
 #   astral.sh for: uv
 #   PyPI for: poetry, ruff, pyright
 
@@ -54,7 +54,7 @@ pypi_latest() {
 # Resolve every version we care about. Failures (network, rate-limit) leave
 # the variable empty and that bump is skipped.
 echo "→ resolving upstream versions…"
-NEW_CLAUDE_CODE=$(npm_latest "@anthropic-ai/claude-code" || true)
+NEW_CLAUDE_CODE=$(npm_latest "@anthropic-ai/remote-node" || true)
 NEW_OPENCODE=$(npm_latest "opencode-ai" || true)
 NEW_GEMINI_CLI=$(npm_latest "@google/gemini-cli" || true)
 NEW_AIDER=$(pypi_latest "aider-chat" || true)

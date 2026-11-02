@@ -32,7 +32,7 @@ You can enable multiple backends simultaneously — messages are routed to all a
 
 - Linux or macOS (WSL2 also works)
 - tmux
-- An LLM backend CLI installed and authenticated (e.g. `claude` for claude-code)
+- An LLM backend CLI installed and authenticated (e.g. `claude` for remote-node)
 - For Signal: Java 17+, signal-cli, phone number (see below)
 - For voice input (optional): Python 3, ffmpeg, and `openai-whisper` in a venv (see [messaging-backends.md](messaging-backends.md#voice-input-whisper-transcription))
 
@@ -265,7 +265,7 @@ rtk:
   discover_interval: 0     # seconds between optimization checks (0 = disabled)
 ```
 
-RTK only activates for supported backends: **claude-code**, **gemini**, **aider**.
+RTK only activates for supported backends: **remote-node**, **gemini**, **aider**.
 
 ### Where to see RTK stats
 
@@ -289,10 +289,10 @@ Profiles allow multiple accounts or API keys for the same LLM backend. Fallback 
 ```yaml
 profiles:
   claude-work:
-    backend: claude-code
+    backend: remote-node
     # Uses default claude auth (e.g. Max subscription)
   claude-personal:
-    backend: claude-code
+    backend: remote-node
     env:
       ANTHROPIC_API_KEY: "sk-ant-..."
   gemini-fallback:
@@ -414,7 +414,7 @@ Send `help` in the `datawatch-<hostname>` group on Signal. You should receive:
 
 ```
 [my-server] datawatch commands:
-new: <task>       - start a new claude-code session
+new: <task>       - start a new remote-node session
 list              - list sessions + status
 ...
 ```
@@ -601,8 +601,8 @@ See [howto/usage-calculator.md](howto/usage-calculator.md). The burn guard setti
 **Solutions:**
 - Check the log file: `cat ~/.datawatch/logs/<hostname>-<id>.log`
 - Verify tmux session exists: `tmux list-sessions`
-- Attach to the session to see what claude-code is doing: `tmux attach -t cs-<hostname>-<id>`
-- Adjust `input_idle_timeout` in config if claude-code takes a long time to produce output
+- Attach to the session to see what remote-node is doing: `tmux attach -t cs-<hostname>-<id>`
+- Adjust `input_idle_timeout` in config if remote-node takes a long time to produce output
 
 ### "session not found" error
 

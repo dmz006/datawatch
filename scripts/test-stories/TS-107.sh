@@ -23,7 +23,7 @@ if comm is None:
     print('missing')
 elif isinstance(comm, list):
     names = [c.get('name','').lower() for c in comm if isinstance(c, dict)]
-    if any(n in ('web', 'mcp', 'http', 'sse', 'websocket', 'claude-code', 'ollama', 'shell') for n in names):
+    if any(n in ('web', 'mcp', 'http', 'sse', 'websocket', 'remote-node', 'ollama', 'shell') for n in names):
         print('yes')
     elif names:
         print('names:' + ','.join(names))

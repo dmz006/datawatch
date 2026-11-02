@@ -143,7 +143,7 @@ EOF
 
 # 5. Tag + scope for finer control.
 datawatch secrets set ANTHROPIC_API_KEY "sk-ant-..." \
-  --tags work,ci --scopes plugin:claude-code,session:approved
+  --tags work,ci --scopes plugin:remote-node,session:approved
 
 # 6. Read explicitly (audit-logged).
 datawatch secrets get GITHUB_TOKEN

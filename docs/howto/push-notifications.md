@@ -51,7 +51,7 @@ The daemon auto-emits to both channels when a monitored event fires.
 **Events that trigger a push:**
 
 All session backends emit hook events automatically (v7.0+). Push fires
-for any backend that uses the session state engine (claude-code,
+for any backend that uses the session state engine (remote-node,
 opencode-acp, openwebui, ollama, council, autonomous workers).
 
 | Event | Hook type | Topic(s) published |

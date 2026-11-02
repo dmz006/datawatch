@@ -4,7 +4,7 @@ End-to-end view of how hook events become structured telemetry.
 
 ```mermaid
 flowchart TD
-    HookScript["post-event.sh<br/>(claude-code hook)"]
+    HookScript["post-event.sh<br/>(remote-node hook)"]
     TodoWrite["TodoWrite stdin<br/>(Claude task list)"]
     StateJSON[".claude/sprint/state.json"]
 

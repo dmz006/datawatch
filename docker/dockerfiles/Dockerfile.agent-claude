@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1.7
 # vim: ft=dockerfile
 #
-# datawatch agent-claude — claude-code only.
+# datawatch agent-claude — remote-node only.
 #
 # claude.exe (236MB) is a native ELF binary, NO node runtime needed.
-# We use a temporary builder stage with node to npm-install claude-code,
+# We use a temporary builder stage with node to npm-install remote-node,
 # then COPY just the binary + symlink into the agent-base runtime,
 # leaving node behind. Result: ~250-300MB lighter than baking node in.
 
@@ -14,14 +14,14 @@ ARG CLAUDE_CODE_VERSION=2.1.114
 
 # ── Stage 1: builder — fetch the per-platform native tarball directly
 #
-# Anthropic publishes claude-code as @anthropic-ai/claude-code (the
+# Anthropic publishes remote-node as @anthropic-ai/remote-node (the
 # meta package — has only a stub at bin/claude.exe) plus per-platform
 # optional dependencies that ship the actual native binary:
 #
-#   @anthropic-ai/claude-code-linux-x64           → package/claude (ELF)
-#   @anthropic-ai/claude-code-linux-arm64         → package/claude
-#   @anthropic-ai/claude-code-linux-x64-musl      → package/claude
-#   @anthropic-ai/claude-code-linux-arm64-musl    → package/claude
+#   @anthropic-ai/remote-node-linux-x64           → package/claude (ELF)
+#   @anthropic-ai/remote-node-linux-arm64         → package/claude
+#   @anthropic-ai/remote-node-linux-x64-musl      → package/claude
+#   @anthropic-ai/remote-node-linux-arm64-musl    → package/claude
 #
 # We don't need npm or nodejs — npm tarballs are plain gzipped tars on
 # the registry CDN. curl + tar gets us the right binary for $TARGETARCH
@@ -34,8 +34,8 @@ ARG TARGETARCH
 ARG CLAUDE_CODE_VERSION
 RUN install_packages curl ca-certificates tar && \
     case "$TARGETARCH" in \
-      amd64) PKG="claude-code-linux-x64" ;; \
-      arm64) PKG="claude-code-linux-arm64" ;; \
+      amd64) PKG="remote-node-linux-x64" ;; \
+      arm64) PKG="remote-node-linux-arm64" ;; \
       *) echo "unsupported TARGETARCH=$TARGETARCH"; exit 1 ;; \
     esac && \
     mkdir -p /out && \
@@ -64,5 +64,5 @@ RUN chmod 755 /usr/local/bin/claude
 USER datawatch
 
 LABEL datawatch.variant="agent-claude" \
-      datawatch.agent="claude-code" \
-      datawatch.tools.claude-code=$CLAUDE_CODE_VERSION
+      datawatch.agent="remote-node" \
+      datawatch.tools.remote-node=$CLAUDE_CODE_VERSION

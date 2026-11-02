@@ -1,7 +1,7 @@
 ---
 docs:
   index: true
-  topics: [mcp, sampling, elicitation, claude-code, council, triggers, v7]
+  topics: [mcp, sampling, elicitation, remote-node, council, triggers, v7]
 exec_params:
   - {name: trigger, required: false, description: "Trigger name (e.g. alert_triage, morning_briefing, council_deliberation)"}
 exec_steps:
@@ -10,7 +10,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: mcp__datawatch__get_stats
-    description: Check if a claude-code session is connected for sampling
+    description: Check if a remote-node session is connected for sampling
     args: {}
     read_only: true
 ---
@@ -44,7 +44,7 @@ to the MCP host (Claude Code / Claude Desktop) and gets a completion back.
 ## Base requirements
 
 - `datawatch start` — daemon up.
-- An active claude-code or claude-desktop MCP session. Sampling is triggered by the MCP client (Claude), not called directly.
+- An active remote-node or claude-desktop MCP session. Sampling is triggered by the MCP client (Claude), not called directly.
 - An LLM backend configured for the session that will receive the sampling request. See [llm-registry.md](llm-registry.md) and [chat-and-llm-quickstart.md](chat-and-llm-quickstart.md).
 
 > **Pre-conditions**: MCP sampling requires an LLM backend configured and reachable. See [llm-registry.md](llm-registry.md).

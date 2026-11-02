@@ -663,7 +663,7 @@ These tests were validated during development and remain passing:
 
 | Backend | Tested | Validated | Notes |
 |---------|--------|-----------|-------|
-| claude-code | Yes | Yes | Channel mode, skip_permissions, trust prompt, MCP auto-retry |
+| remote-node | Yes | Yes | Channel mode, skip_permissions, trust prompt, MCP auto-retry |
 | opencode | Yes | Yes | TUI mode, binary auto-detected |
 | opencode-acp | Yes | Yes | Serve mode, HTTP/SSE, remote ollama |
 | shell | Yes | Yes | Interactive bash |
@@ -1142,8 +1142,8 @@ throwaway `HOME`, a private `TMUX_TMPDIR` with `TMUX` unset, and
 
 | Field | Details |
 |-------|---------|
-| **Description** | A one-shot claude-code-family session whose pane shows Claude Code's `✔ Update installed · /restart to apply` footer (the captured fixture `internal/session/testdata/claude_self_update_dialog.txt`) receives its task exactly once across repeated channel-ready heartbeats and a daemon restart. The footer is logged as `[self-update]` and no key is sent for it. |
-| **Steps** | `make build`. Start the sandbox daemon. Point the sandbox's `claude-code` LLM `binary` at a stand-in script that prints the fixture, shows an idle `❯ ` and logs every line reaching the pane; restart the sandbox. `POST /api/sessions/start` `{"backend":"claude-code","one_shot":true,"task":"…"}` → session `2f09`. Simulate the bridge heartbeat with `POST /api/channel/ready {"session_id":…,"port":40999}` three times, 60 s apart (two full intervals). Restart the sandbox daemon and POST once more. Read the pane receive log, daemon stdout and `data_dir/daemon-crash.log`. Kill and delete the sessions, stop the sandbox, remove its directory. |
+| **Description** | A one-shot remote-node-family session whose pane shows Claude Code's `✔ Update installed · /restart to apply` footer (the captured fixture `internal/session/testdata/claude_self_update_dialog.txt`) receives its task exactly once across repeated channel-ready heartbeats and a daemon restart. The footer is logged as `[self-update]` and no key is sent for it. |
+| **Steps** | `make build`. Start the sandbox daemon. Point the sandbox's `remote-node` LLM `binary` at a stand-in script that prints the fixture, shows an idle `❯ ` and logs every line reaching the pane; restart the sandbox. `POST /api/sessions/start` `{"backend":"remote-node","one_shot":true,"task":"…"}` → session `2f09`. Simulate the bridge heartbeat with `POST /api/channel/ready {"session_id":…,"port":40999}` three times, 60 s apart (two full intervals). Restart the sandbox daemon and POST once more. Read the pane receive log, daemon stdout and `data_dir/daemon-crash.log`. Kill and delete the sessions, stop the sandbox, remove its directory. |
 | **Expected** | As written in the request: exactly one `[self-update] dismissed …` line, the dismiss key reaching the pane, zero repeated task deliveries. The shipped fix sends **no** key, because the footer is passive (plan doc *Dismiss key*). The checks that apply to the shipped fix are therefore: one task delivery; later POSTs answer `already_delivered`; zero keystrokes besides the task; `[self-update] … no key sent` logged. |
 | **Actual** | POST #1 `ok`, #2 `already_delivered`, #3 `already_delivered`, #4 (after restart) `already_delivered`. The pane received exactly one line, the task, with no ESC byte and no empty Enter lines. `task_delivered_at` was persisted and survived the restart. `[self-update] CLI update notice on dw-selfupdate-sandbox-2f09 — passive footer, no key sent, session left as-is` was logged **3 times**, not once: first render, the redraw after the task was typed, and the post-restart scan. It is debounced to 10 s and fires only on new output or screen changes; a static pane logged nothing more through two heartbeats. |
 | **Result** | PASS for once-only delivery and no keystroke. The "exactly one line" and "key reaches the pane" expectations do not apply to the shipped fix (see Expected/Actual). |
@@ -1152,7 +1152,7 @@ throwaway `HOME`, a private `TMUX_TMPDIR` with `TMUX` unset, and
 one-shot session (`8414`) in the same sandbox had its task re-delivered
 by the TUI one-shot path (`[tui-task]`) after **each** sandbox daemon
 restart, three times in all. That path's once-only guard is in memory
-only. It never handles claude-code, so it is unrelated to the 348b/258d
+only. It never handles remote-node, so it is unrelated to the 348b/258d
 incident.
 
 ### Gates
@@ -1567,18 +1567,18 @@ Run records: `docs/testing/runs/shared-nav-mobile-fit/`. The plan is `docs/plans
 - **Runner side effect.** `make test-e2e-shared-nav` runs `npm ci` in `scripts/test-stories/pwa`. That replaces the tracked symlink `scripts/test-stories/pwa/node_modules` (it points to `/home/<user>/workspace/datawatch/scripts/test-stories/pwa/node_modules`) with a real directory, which git shows as a deleted file. The symlink was restored with `git checkout` after each run.
 - **Runner `EVIDENCE_DIR`.** `scripts/e2e-pwa.sh` line 41 sets `EVIDENCE_DIR=""`, so an `EVIDENCE_DIR` set in the environment is ignored. In local mode a passing run deletes its report. The record copied the gate reports out during the run (`make-run/gate-reports/`). Fixing the script is a separate change.
 
-## TS-817 — Two pi-prompt workers hold different compute nodes (sandbox daemon)
+## TS-817 — Two peer-e workers hold different compute nodes (sandbox daemon)
 
 | Field | Details |
 |-------|---------|
-| **Description** | Two pi-prompt sessions started through the API on a sandbox daemon built from this tree land on different compute nodes. The story registers two loopback Ollama stand-ins as compute nodes (scheduling priority 90 and 50, one session slot each), an ollama-kind LLM entry listing both nodes, and the pi-prompt backend entry the sessions start on. A fake `pi` on the daemon's PATH reads the per-session provider override the launch writes (`PI_CODING_AGENT_DIR/models.json`) and posts one request to that provider's base URL. |
-| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/test-stories/TS-817.sh` (needs `bin/datawatch` built with `go build -o bin/datawatch ./cmd/datawatch/`, plus `curl`, `python3` and `tmux`). 1. Start a sandbox daemon from the built binary on free loopback ports, with a config generated from `testdata/datawatch.yaml`. 2. Start the two stand-ins. 3. Register the two nodes, the LLM entry and the backend entry. 4. Start two sessions with `backend: pi-prompt`. 5. Read `GET /api/capacity`. 6. Stop the sessions and remove the entries, nodes, stand-ins, daemon and scratch directory. |
+| **Description** | Two peer-e sessions started through the API on a sandbox daemon built from this tree land on different compute nodes. The story registers two loopback Ollama stand-ins as compute nodes (scheduling priority 90 and 50, one session slot each), an ollama-kind LLM entry listing both nodes, and the peer-e backend entry the sessions start on. A fake `pi` on the daemon's PATH reads the per-session provider override the launch writes (`PI_CODING_AGENT_DIR/models.json`) and posts one request to that provider's base URL. |
+| **Steps** | `env -u TMUX -u TMUX_TMPDIR bash scripts/test-stories/TS-817.sh` (needs `bin/datawatch` built with `go build -o bin/datawatch ./cmd/datawatch/`, plus `curl`, `python3` and `tmux`). 1. Start a sandbox daemon from the built binary on free loopback ports, with a config generated from `testdata/datawatch.yaml`. 2. Start the two stand-ins. 3. Register the two nodes, the LLM entry and the backend entry. 4. Start two sessions with `backend: peer-e`. 5. Read `GET /api/capacity`. 6. Stop the sessions and remove the entries, nodes, stand-ins, daemon and scratch directory. |
 | **Expected** | Both sessions start. Each node pool shows limit 1 and held 1. The two leases name different nodes, one each. Each stand-in logs exactly one request, `POST /v1/chat/completions`. Cleanup leaves no LLM entry, node or process behind. |
-| **Actual** | PASS on two consecutive runs. Leases: `ts817-alpha` and `ts817-beta`, one each; pools `node:ts817-alpha` 1/1, `node:ts817-beta` 1/1, `llm:pi-prompt` 2/2. Each stand-in's log held one line, `POST /v1/chat/completions`. Cleanup killed the sessions, deleted the entries and nodes, stopped the daemon and stand-ins, and removed the scratch directory. The operator's default tmux session was not touched. |
+| **Actual** | PASS on two consecutive runs. Leases: `ts817-alpha` and `ts817-beta`, one each; pools `node:ts817-alpha` 1/1, `node:ts817-beta` 1/1, `llm:peer-e` 2/2. Each stand-in's log held one line, `POST /v1/chat/completions`. Cleanup killed the sessions, deleted the entries and nodes, stopped the daemon and stand-ins, and removed the scratch directory. The operator's default tmux session was not touched. |
 | **Result** | PASS |
 
 Notes:
-- The nodes are listed on an ollama-kind LLM entry because the admission gate looks up the model's provider (`ollama`) among entries by kind. The sessions start on a separate `pi-prompt` entry, since the gate reads the backend name from the registry.
+- The nodes are listed on an ollama-kind LLM entry because the admission gate looks up the model's provider (`ollama`) among entries by kind. The sessions start on a separate `peer-e` entry, since the gate reads the backend name from the registry.
 - The story's generated config leaves out the template's legacy `ollama:` block. That block is migrated into an ollama-kind entry linked to a template node, and capacity keeps one entry per kind, so the migrated entry would shadow the story's own.
 - The daemon's tmux calls go through a shim on its PATH that pins them to a socket the story owns. This keeps the sessions off the shared default tmux server, and the shim is removed with the scratch directory.
 - Set `TS817_KEEP=1` to keep the scratch directory for inspection. Set `TMPDIR` to choose where the scratch directory is created.
@@ -1588,7 +1588,7 @@ Notes:
 - Sandbox daemon, stand-ins, sessions, LLM entries, compute nodes and scratch directory: created and removed by the story.
 - Cleanup done: PASS
 
-## pi-prompt early exit and process name measurement
+## peer-e early exit and process name measurement
 
 Read-only measurement of a real pi print run. No Go source was changed. Scratch output (stdout, stderr, samples, exit status) lives under `.datawatch/pi-measure/`, which is ignored by git.
 
@@ -1649,7 +1649,7 @@ Verdict: pi runs to completion — with a real model it stayed alive for the who
 
 ## Node-hosted pi runner liveness fix
 
-A pi runner that node hosts reports the kernel name `MainThread`, so the idle probes did not see it, and a one-shot pi print run has no child process while it generates. The fix has three parts: the probes resolve a node-hosted runner through the script node runs, the pi-prompt idle check counts a live runner as work, and a stalled pi-prompt task records the pi exit status, the last pane output and the process list. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The pane tests start a private tmux server on a temporary socket directory and reap only the processes they started.
+A pi runner that node hosts reports the kernel name `MainThread`, so the idle probes did not see it, and a one-shot pi print run has no child process while it generates. The fix has three parts: the probes resolve a node-hosted runner through the script node runs, the peer-e idle check counts a live runner as work, and a stalled peer-e task records the pi exit status, the last pane output and the process list. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The pane tests start a private tmux server on a temporary socket directory and reap only the processes they started.
 
 Two checks for this change:
 
@@ -1690,7 +1690,7 @@ Two checks for this change:
 
 | Field | Details |
 |-------|---------|
-| **Description** | `TestIdleLivenessProbe` checks that the pi-prompt family uses the runner probe and every other family (claude-code, opencode, an unknown family, an empty family) uses the work-child probe. `TestIdleLivenessProbe_LiveRunnerNoChildNotStalled` checks that a live runner with no child is not reported as stalled by the idle observation. |
+| **Description** | `TestIdleLivenessProbe` checks that the peer-e family uses the runner probe and every other family (remote-node, opencode, an unknown family, an empty family) uses the work-child probe. `TestIdleLivenessProbe_LiveRunnerNoChildNotStalled` checks that a live runner with no child is not reported as stalled by the idle observation. |
 | **Steps** | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'TestIdleLivenessProbe' -count=1 -v` |
 | **Expected** | Both tests and all five subtests pass. |
 | **Actual** | PASS. `--- PASS: TestIdleLivenessProbe (0.00s)` with five passing subtests, `--- PASS: TestIdleLivenessProbe_LiveRunnerNoChildNotStalled (0.00s)`, then `ok  github.com/dmz006/datawatch/cmd/datawatch  0.007s` |
@@ -1716,11 +1716,11 @@ Two checks for this change:
 | **Actual** | PASS. Six `--- PASS` lines, then `ok  github.com/dmz006/datawatch/internal/autonomous  0.039s` |
 | **Result** | PASS |
 
-## Live pi-prompt run with a node-hosted runner
+## Live peer-e run with a node-hosted runner
 
-`TestPiPromptLiveRunWithNodeRunner` in `cmd/datawatch/pi_prompt_live_run_test.go` runs a real pi print command in a private tmux pane and watches it with `hasLiveRunnerProcess`, the probe the pi-prompt exit-silence detector uses. It is gated: it skips unless `DATAWATCH_LIVE_PI` is `1` and `pi`, `tmux` and `pgrep` are on PATH. It sets `TMUX_TMPDIR` to a temporary directory and `TMUX` to empty, starts a bash pane in a scratch project directory, and types a command in the shape of the pi-prompt launch (`pi --print --mode text --approve --model <model> '<task>'`, output teed to a file, status written to a second file, one outcome marker printed at the end). The marker words are split across two shell words in the typed command, so the pane echo of the command never matches. The test then samples every 2 s until the pane shows a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line or 300 s pass. It asserts that the runner was seen alive at least once and that the final pane shows one of the two markers. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The test reaps only the processes it started, and a check afterwards found no pi process and no tmux server of its own left.
+`TestPiPromptLiveRunWithNodeRunner` in `cmd/datawatch/pi_prompt_live_run_test.go` runs a real pi print command in a private tmux pane and watches it with `hasLiveRunnerProcess`, the probe the peer-e exit-silence detector uses. It is gated: it skips unless `DATAWATCH_LIVE_PI` is `1` and `pi`, `tmux` and `pgrep` are on PATH. It sets `TMUX_TMPDIR` to a temporary directory and `TMUX` to empty, starts a bash pane in a scratch project directory, and types a command in the shape of the peer-e launch (`pi --print --mode text --approve --model <model> '<task>'`, output teed to a file, status written to a second file, one outcome marker printed at the end). The marker words are split across two shell words in the typed command, so the pane echo of the command never matches. The test then samples every 2 s until the pane shows a `DATAWATCH_COMPLETE` or `DATAWATCH_PI_FAILED` line or 300 s pass. It asserts that the runner was seen alive at least once and that the final pane shows one of the two markers. Every command ran from the project root under `env -u TMUX -u TMUX_TMPDIR`. The test reaps only the processes it started, and a check afterwards found no pi process and no tmux server of its own left.
 
-The earlier measurement (section "pi-prompt early exit and process name measurement") recorded that a node-hosted pi reports the kernel name `MainThread`, has no child process while it generates, and finished in 14 s with the same model. That is the case the runner probe was changed for.
+The earlier measurement (section "peer-e early exit and process name measurement") recorded that a node-hosted pi reports the kernel name `MainThread`, has no child process while it generates, and finished in 14 s with the same model. That is the case the runner probe was changed for.
 
 | Field | Details |
 |-------|---------|
@@ -1750,11 +1750,11 @@ Result: PASS. The runner was seen alive in 5 of 7 samples while pi generated, an
 
 ## Two-node pi worker placement
 
-Live check that the placement rules put pi-prompt workers of an Automaton on the compute nodes their capacity leases name, on a running sandbox daemon built from this tree, with two compute nodes behind one LLM entry.
+Live check that the placement rules put peer-e workers of an Automaton on the compute nodes their capacity leases name, on a running sandbox daemon built from this tree, with two compute nodes behind one LLM entry.
 
 | Field | Details |
 |-------|---------|
-| **Description** | Automata with independent pi-prompt tasks and a bare model name (`qwen3.8:27b`). The daemon qualifies the name with the pi-prompt default provider (`ollama/qwen3.8:27b`), leases a node for each task from the ollama-kind LLM entry that lists both nodes, makes the model resident on the leased node under the node's own name (`qwen3.8:27b`), then launches the worker there. Each node allows two sessions. |
+| **Description** | Automata with independent peer-e tasks and a bare model name (`qwen3.8:27b`). The daemon qualifies the name with the peer-e default provider (`ollama/qwen3.8:27b`), leases a node for each task from the ollama-kind LLM entry that lists both nodes, makes the model resident on the leased node under the node's own name (`qwen3.8:27b`), then launches the worker there. Each node allows two sessions. |
 | **Steps** | 1. Register both nodes and the LLM entry. 2. Start three tasks and read the capacity endpoint. 3. Compare each worker with the node its lease names, and check the split across nodes. 4. With one node full and the other holding one task, start three more tasks. 5. Stop and delete everything the check created. |
 | **Expected** | Three leases, each naming a node, no node pool above its limit of two. Each worker runs on the node its lease names, with the model loaded there by the node's own name. The work splits across the two nodes (two on one, one on the other). With one node full, a new task goes to the other node, and a task that finds both nodes full shows its waiting reason. |
 | **Actual** | As expected. Both nodes took loads, the split was two on the first node and one on the second, every worker was pointed at the node its lease names, the fourth task took the last slot on the second node, and the other two showed a waiting reason that names both full nodes and their holders. |
@@ -1790,12 +1790,12 @@ HTTP 200
 {"name":"place-ollama","ok":true}
 ```
 
-The pi-prompt backend entry exists already; its in-flight cap is raised so it is not the limit. Planning goes through the openwebui entry, so the planning stand-in gets a node record and the entry lists it:
+The peer-e backend entry exists already; its in-flight cap is raised so it is not the limit. Planning goes through the openwebui entry, so the planning stand-in gets a node record and the entry lists it:
 
 ```
-$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"pi-prompt","kind":"pi-prompt","max_inflight":6}' $BASE/api/llms/pi-prompt
+$ curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"name":"peer-e","kind":"peer-e","max_inflight":6}' $BASE/api/llms/peer-e
 HTTP 200
-{"name":"pi-prompt","ok":true}
+{"name":"peer-e","ok":true}
 ```
 
 ```
@@ -1813,7 +1813,7 @@ HTTP 200
 Pools after registration, from `GET $BASE/api/capacity` (name, limit, held), read a few seconds later once the node limits had been applied:
 
 ```
-llm:pi-prompt     limit 6  held 0
+llm:peer-e     limit 6  held 0
 node:place-first  limit 2  held 0
 node:place-second limit 2  held 0
 node:place-planner limit 1 held 0
@@ -1823,12 +1823,12 @@ Observed: PASS. Both nodes, the LLM entry that lists them, and the node pool lim
 
 ### Step 2: three tasks on one Automaton, then the capacity endpoint
 
-The Automaton is created with the pi-prompt backend and the bare model name, then decomposed; the planning call goes to the stand-in, which returns three tasks. Each task is given its own project directory, concurrency is set to three, the plan coverage report is acknowledged by the operator (the stand-in plan has no requirement list), and the Automaton is approved and run.
+The Automaton is created with the peer-e backend and the bare model name, then decomposed; the planning call goes to the stand-in, which returns three tasks. Each task is given its own project directory, concurrency is set to three, the plan coverage report is acknowledged by the operator (the stand-in plan has no requirement list), and the Automaton is approved and run.
 
 ```
-$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"spec":"Placement check: three independent worker tasks that do nothing.","project_dir":"<scratch>/projects/r1","backend":"pi-prompt","model":"qwen3.8:27b"}' $BASE/api/autonomous/prds
+$ curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"spec":"Placement check: three independent worker tasks that do nothing.","project_dir":"<scratch>/projects/r1","backend":"peer-e","model":"qwen3.8:27b"}' $BASE/api/autonomous/prds
 HTTP 200
-{"id":"cd2b0001","backend":"pi-prompt","model":"qwen3.8:27b","status":"draft", ...   (trimmed)
+{"id":"cd2b0001","backend":"peer-e","model":"qwen3.8:27b","status":"draft", ...   (trimmed)
 ```
 
 ```
@@ -1849,7 +1849,7 @@ HTTP 200
 Twenty-five seconds later, from `GET $BASE/api/capacity` (trimmed to pools and leases):
 
 ```
-llm:pi-prompt     limit 6  held 3  hold_nodes [place-second, place-first, place-first]
+llm:peer-e     limit 6  held 3  hold_nodes [place-second, place-first, place-first]
 node:place-first  limit 2  held 2  hold_nodes [place-first, place-first]
 node:place-second limit 2  held 1  hold_nodes [place-second]
 lease cf560001  node place-second  model ollama/qwen3.8:27b  session a759
@@ -1895,7 +1895,7 @@ Observed: PASS.
 A second Automaton (`961e0001`, tasks `98000001`, `98000002`, `98000003`, project directories `r4`, `r5`, `r6`) is created, decomposed, configured and run with the same calls as in step 2. The first node is full (2 of 2) and the second holds one task. Twenty-five seconds later:
 
 ```
-llm:pi-prompt     limit 6  held 4
+llm:peer-e     limit 6  held 4
 node:place-first  limit 2  held 2  hold_nodes [place-first, place-first]
 node:place-second limit 2  held 2  hold_nodes [place-second, place-second]
 lease 98000003  node place-second  model ollama/qwen3.8:27b  session c7e3
@@ -1913,7 +1913,7 @@ Observed: PASS. With one node full, the new task went to the other node; the two
 
 ### Step 5: stop and delete what the check created
 
-Both Automata were cancelled and deleted with `?hard=true`, which also ends their sessions; the LLM entry and the three node records were deleted; and the pi-prompt and openwebui entries were put back as they were (`max_inflight` 0; no node list). Selected commands and their responses:
+Both Automata were cancelled and deleted with `?hard=true`, which also ends their sessions; the LLM entry and the three node records were deleted; and the peer-e and openwebui entries were put back as they were (`max_inflight` 0; no node list). Selected commands and their responses:
 
 ```
 $ curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" "$BASE/api/autonomous/prds/cd2b0001?hard=true"
@@ -2101,13 +2101,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" $BASE/api/capacity
 |------|------|--------------|
 | `TestBuiltinRateLimitFixtureDetection` | `internal/session/rate_limit_lines_test.go` | every fixture line is detected by its backend family, and every table phrase occurs in that family's recorded lines |
 | `TestBuiltinRateLimitAnchoredMatching` | `internal/session/rate_limit_lines_test.go` | line-start matching per backend family |
-| `TestRateLimitClaudeDialogEntries` | `internal/session/rate_limit_lines_test.go` | the usage-dialog entries still detect for claude-code and for no other backend |
+| `TestRateLimitClaudeDialogEntries` | `internal/session/rate_limit_lines_test.go` | the usage-dialog entries still detect for remote-node and for no other backend |
 | `TestRateLimitLineFixturesMatchPerBackend` | `internal/session/rate_limit_lines_test.go` | each captured line matches its own backend after the detector's normalisation |
 | `TestRateLimitOrdinaryTextDoesNotMatch` | `internal/session/rate_limit_lines_test.go` | quoted-phrase lines in `testdata/rate_limit_lines/ordinary/` match no backend |
 | `TestBuiltinFlatFingerprintEncodesBackend` | `internal/session/rate_limit_lines_test.go` | the patterns version digest changes when a phrase moves between backends |
 | `TestRateLimitDefaultWiringAndScoping` | `internal/session/rate_limit_lines_test.go` | an unset operator config produces the built-in table, scoped per backend |
 | `TestRateLimitOperatorFlatListKeepsSubstringBehavior` | `internal/session/rate_limit_lines_test.go` | an operator list keeps flat-substring matching for every backend |
-| `TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput` | `internal/session/throttle_detector_quoted_phrase_test.go` | the incident: a quoted phrase mid-sentence on a pi-prompt worker changes no state and fires no listener, back-off or fallback; fail-before evidence is in `docs/plans/assets/throttle-detector-fail-before.md` |
+| `TestRateLimitDetectorIgnoresQuotedPhraseInThrottleTaskOutput` | `internal/session/throttle_detector_quoted_phrase_test.go` | the incident: a quoted phrase mid-sentence on a peer-e worker changes no state and fires no listener, back-off or fallback; fail-before evidence is in `docs/plans/assets/throttle-detector-fail-before.md` |
 | `TestRateLimitDetector_5hWeeklyModernPhrasings` / `TestRateLimitDetector_LongLineGuard` | `internal/session/v5274_ratelimit_modern_test.go` | the modern 5-hour and weekly phrasings and the long-line guard, rewritten against the per-backend matcher |
 | `TestGetDetection_RateLimitPatternsOperatorKept` | `internal/config/config_test.go` | an operator list in the config is returned unchanged |
 | `app-detection-filters.test.js` (5 tests) | `internal/server/web/` | the card shows no flat default phrases, shows the built-in hint only while no list is set, keeps the other sections' defaults, and the two new keys exist in all five locales |

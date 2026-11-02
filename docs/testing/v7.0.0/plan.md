@@ -104,10 +104,10 @@ Results → `docs/testing/v7.0.0/cookbook.md`
 
 ## T2 — Sessions
 
-### TS-010 — Create session (claude-code backend)
+### TS-010 — Create session (remote-node backend)
 **Tags**: [surface:api] [feature:sessions] [conflict:llm]  
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"test-session-001","backend":"claude-code","project_dir":"/tmp","effort":"quick"}' $TEST_BASE/api/sessions`
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"test-session-001","backend":"remote-node","project_dir":"/tmp","effort":"quick"}' $TEST_BASE/api/sessions`
 2. Assert response contains `id` field, save `SESSION_ID`
 3. Register for cleanup via `add_cleanup sess $SESSION_ID`
 4. Save to `evidence/TS-010/create.json`
@@ -234,7 +234,7 @@ Results → `docs/testing/v7.0.0/cookbook.md`
 ### TS-020 — Create Automaton via REST
 **Tags**: [surface:api] [feature:automata]  
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"spec":"test-prd-001: echo hello world","project_dir":"/tmp","backend":"claude-code","effort":"low"}' $TEST_BASE/api/autonomous/prds`
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"spec":"test-prd-001: echo hello world","project_dir":"/tmp","backend":"remote-node","effort":"low"}' $TEST_BASE/api/autonomous/prds`
 2. Assert response contains `id`, `spec`, `status`; save `AUTOMATON_ID`
 3. `add_cleanup automaton $AUTOMATON_ID`
 4. Save to `evidence/TS-020/create.json`
@@ -1945,7 +1945,7 @@ Results → `docs/testing/v7.0.0/cookbook.md`
 ### TS-183 — Hook event parity: all session backends emit Start/Activity/Stop
 **Tags**: `[surface:api]` `[feature:parity]` `[feature:sessions]`
 **Steps**:
-For each backend in `[claude-code, opencode, ollama, shell]`:
+For each backend in `[remote-node, opencode, ollama, shell]`:
 1. Create test session with that backend: `POST /api/sessions` with `backend=<backend>` (or session create endpoint)
 2. POST Start hook: `POST /api/sessions/<id>/hook-event {"event":"Start","data":{}}`
 3. Assert 200
@@ -2191,7 +2191,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Tags**: `[surface:api]` `[feature:sessions]` `[feature:howto]`
 **Howto**: `sessions-deep-dive.md`
 **Steps**:
-1. `POST /api/sessions {name:"test-session-lifecycle", backend:"claude-code"}` → id
+1. `POST /api/sessions {name:"test-session-lifecycle", backend:"remote-node"}` → id
 2. `GET /api/sessions` → assert session appears (may take a moment; retry 3×)
 3. `POST /api/sessions/{id}/hook-event {event:"Start"}` → 200
 4. `POST /api/channel/reply {text:"test reply", session_id:"{id}"}` → 200
@@ -2219,7 +2219,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Howto**: `algorithm-mode.md`
 **Steps**:
 1. `GET /api/algorithm` → assert shape (phase list)
-2. `POST /api/algorithm/start {"backend":"claude-code"}` → assert `{session_id, phase:"observe"}`
+2. `POST /api/algorithm/start {"backend":"remote-node"}` → assert `{session_id, phase:"observe"}`
 3. `POST /api/algorithm/advance` → assert `{phase:"orient"}`
 4. Stop/cleanup algorithm session
 **Expected**: Algorithm mode starts at observe, advances to orient on request
@@ -2242,7 +2242,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Howto**: `profiles.md`
 **Steps**:
 1. `POST /api/profiles/projects {"name":"test-profile-proj"}` → id
-2. `POST /api/autonomous/prds {"title":"test-profile-automaton","backend":"claude-code"}` → automaton_id
+2. `POST /api/autonomous/prds {"title":"test-profile-automaton","backend":"remote-node"}` → automaton_id
 3. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":"test-profile-proj"}` → 200
 4. `GET /api/autonomous/prds/{automaton_id}` → assert `project_profile` set
 5. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":""}` → clear
@@ -2365,10 +2365,10 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Steps**:
 1. `POST /api/profiles/projects {"name":"test-journey-proj"}` → proj_id
 2. `POST /api/profiles/clusters {"name":"test-journey-cluster"}` → cluster_id
-3. `POST /api/autonomous/prds {"title":"test-journey-automaton","backend":"claude-code","question":"test"}` → automaton_id
+3. `POST /api/autonomous/prds {"title":"test-journey-automaton","backend":"remote-node","question":"test"}` → automaton_id
 4. `PUT /api/autonomous/prds/{automaton_id} {"project_profile":"test-journey-proj","cluster_profile":"test-journey-cluster"}` → 200
 5. `GET /api/autonomous/prds/{automaton_id}` → assert both profiles attached
-6. `POST /api/autonomous/prds/{automaton_id}/set_llm {"backend":"claude-code","model":"claude-sonnet-4-5"}` → 200
+6. `POST /api/autonomous/prds/{automaton_id}/set_llm {"backend":"remote-node","model":"claude-sonnet-4-5"}` → 200
 7. `PUT /api/autonomous/config {"per_story_approval":true}` → 200
 8. Restore: `PUT /api/autonomous/config {"per_story_approval":false}`
 9. `DELETE /api/autonomous/prds/{automaton_id}`, DELETE profiles
@@ -2430,7 +2430,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 1. `GET /api/identity` → save original role
 2. `PATCH /api/identity {"role":"test-journey-identity"}` → 200
 3. `GET /api/algorithm` → assert 200
-4. `POST /api/algorithm/start {"backend":"claude-code"}` → session_id, assert phase=observe
+4. `POST /api/algorithm/start {"backend":"remote-node"}` → session_id, assert phase=observe
 5. `POST /api/algorithm/advance` → assert phase=orient
 6. Stop algorithm session (DELETE or cancel endpoint)
 7. `PATCH /api/identity {"role":"<original>"}` → restore
@@ -2467,7 +2467,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 #### TS-249 — Full session + channel lifecycle journey
 **Tags**: `[surface:api]` `[feature:sessions]` `[feature:journey]`
 **Steps**:
-1. `POST /api/sessions {"name":"test-journey-session","backend":"claude-code"}` → sess_id
+1. `POST /api/sessions {"name":"test-journey-session","backend":"remote-node"}` → sess_id
 2. `POST /api/sessions/{sess_id}/hook-event {"event":"Start","data":{}}` → 200
 3. `POST /api/sessions/{sess_id}/hook-event {"event":"Activity","data":{"text":"test activity"}}` → 200
 4. `POST /api/channel/reply {"text":"test channel message","session_id":"{sess_id}"}` → 200
@@ -2695,7 +2695,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 ### TS-271 — algorithm_start + algorithm_get via MCP
 **Tags**: [surface:mcp] [feature:mcp] [feature:algorithm]
 **Steps**:
-1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_start","arguments":{"backend":"claude-code"}}' $TEST_BASE/api/mcp/call -o evidence/TS-271/start.json`
+1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_start","arguments":{"backend":"remote-node"}}' $TEST_BASE/api/mcp/call -o evidence/TS-271/start.json`
 2. `python3 -c "import json; d=json.load(open('evidence/TS-271/start.json')); sid=d.get('result',{}).get('session_id') or d.get('session_id'); assert sid or 'error' in str(d).lower(), d"`
 3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"algorithm_get","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-271/get.json`
 4. `python3 -c "import json; d=json.load(open('evidence/TS-271/get.json')); assert 'result' in d or 'content' in d, d"`
@@ -3022,7 +3022,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Steps**:
 1. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"routing_rules_list","arguments":{}}' $TEST_BASE/api/mcp/call -o evidence/TS-297/list.json`
 2. `python3 -c "import json; d=json.load(open('evidence/TS-297/list.json')); assert 'result' in d or 'content' in d, d"`
-3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"routing_rules_test","arguments":{"session_name":"test-probe","backend":"claude-code"}}' $TEST_BASE/api/mcp/call -o evidence/TS-297/test.json`
+3. `curl -sk -H "Authorization: Bearer $TEST_TOKEN" -H "Content-Type: application/json" -d '{"name":"routing_rules_test","arguments":{"session_name":"test-probe","backend":"remote-node"}}' $TEST_BASE/api/mcp/call -o evidence/TS-297/test.json`
 4. `python3 -c "import json; d=json.load(open('evidence/TS-297/test.json')); assert 'result' in d or 'matched' in str(d) or 'error' in str(d).lower(), d"`
 **Expected**: Rules listed and test returns match result or graceful no-match
 **Evidence**: `list.json`, `test.json`
@@ -3178,7 +3178,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 ### TS-319 — datawatch routing-rules test exits 0
 **Tags**: [surface:cli] [feature:cli] [feature:parity]
 **Steps**:
-1. `datawatch --data-dir $TEST_DATA routing-rules test --session-name probe-319 --backend claude-code 2>&1; echo "EXIT:$?"`
+1. `datawatch --data-dir $TEST_DATA routing-rules test --session-name probe-319 --backend remote-node 2>&1; echo "EXIT:$?"`
 2. Assert exit code is 0 or 1 (not a crash)
 **Expected**: Exits cleanly; prints matched rule or "no match" message
 **Evidence**: `out.txt`
@@ -3623,7 +3623,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 ### TS-371 — LLM add with session fields round-trip
 **Tags**: [surface:api] [feature:config]
 **Steps**:
-1. `POST /api/llms {"name":"e2e-llm-<ts>","backend":"claude-code","model":"claude-sonnet-4-5","session":{"system_prompt":"test"}}`
+1. `POST /api/llms {"name":"e2e-llm-<ts>","backend":"remote-node","model":"claude-sonnet-4-5","session":{"system_prompt":"test"}}`
 2. Assert response contains `id`
 3. `GET /api/llms/{id}` — verify session fields present
 **Expected**: LLM with session fields created and retrievable
@@ -3682,7 +3682,7 @@ For each verb in `[!help, !sessions, !status, !backends, !memory recall test, !k
 **Tags**: [surface:api] [feature:config]
 **Steps**:
 1. List LLMs via `GET /api/llms`
-2. Find a backend with `kind` in `["aider","goose","shell","claude-code","opencode"]`
+2. Find a backend with `kind` in `["aider","goose","shell","remote-node","opencode"]`
 3. `POST /api/llms/{id}/enable` or `PUT /api/llms/{id} {"enabled":true}`
 4. Assert HTTP 200 (no pretest timeout)
 **Expected**: Enable succeeds without running inference pretest for session backends; fixes #46

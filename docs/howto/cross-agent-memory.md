@@ -218,7 +218,7 @@ kg:
 ## Diagram
 
 ```
-   Session A (claude-code)            Session B (ollama, different host)
+   Session A (remote-node)            Session B (ollama, different host)
         │                                       │
         │ remember: <fact>                     │ recall: <query>
         ▼                                       │

@@ -376,11 +376,11 @@ paths:
                     items:
                       type: string
                     description: Registered LLM backend names
-                    example: ["claude-code", "aider"]
+                    example: ["remote-node", "aider"]
                   active:
                     type: string
                     description: Currently active backend name
-                    example: "claude-code"
+                    example: "remote-node"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1015,9 +1015,9 @@ paths:
         (whole number >= 0, default 30; 0 = off), `autonomous.lane_fill.decompose_ahead_min`
         (whole number >= 0, default 2), `autonomous.lane_fill.poll_seconds` (whole number
         >= 0, default 60; values below 5 are raised to 5), `autonomous.lane_fill.gpu_backend`
-        (default pi-prompt), `autonomous.lane_fill.gpu_model` (string; empty = the
+        (default peer-e), `autonomous.lane_fill.gpu_model` (string; empty = the
         backend's own model), `autonomous.lane_fill.claude_backend` (default
-        claude-code), `autonomous.lane_fill.count_verifier_wait` (true|false, default
+        remote-node), `autonomous.lane_fill.count_verifier_wait` (true|false, default
         true), `autonomous.lane_fill.stale_after_hours` (whole number >= 0; an unset
         key reads as 72 and an explicit `0` turns the stale rule off),
         `autonomous.lane_fill.require_confirmed_proposal` (true|false, default true),
@@ -3138,7 +3138,7 @@ paths:
         and `judge_timeout_seconds` (time limit for one judge run, default 1800).
         `judge_size_threshold_lines` is the number of changed lines (added plus
         deleted, on the Automaton branch against its merge base, lock files left
-        out) above which the judges try `claude-code` first, default 400; 0 turns
+        out) above which the judges try `remote-node` first, default 400; 0 turns
         the size rule off.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
@@ -5012,7 +5012,7 @@ paths:
               type: object
               required: [name]
               properties:
-                name: {type: string, example: "claude-code"}
+                name: {type: string, example: "remote-node"}
       responses:
         "200": {description: "{status: ok, active: <name>}"}
         "400": {description: unknown backend}
@@ -5302,7 +5302,7 @@ paths:
       tags: [Observer]
       parameters:
         - {name: id, in: query, required: true, schema: {type: string},
-           description: "envelope id, e.g. session:ralfthewise-787e or backend:ollama"}
+           description: "envelope id, e.g. session:peer-f-787e or backend:ollama"}
       responses: {"200": {description: OK}, "404": {description: envelope not found}, "503": {description: observer disabled}}
   /api/observer/config:
     get:
@@ -8703,7 +8703,7 @@ components:
         llm_backend:
           type: string
           description: LLM backend used for this session
-          example: "claude-code"
+          example: "remote-node"
         tmux_session:
           type: string
           description: tmux session name
@@ -8737,10 +8737,10 @@ components:
       type: string
       enum: [running, waiting_input, complete, failed, killed]
       description: |
-        - `running`: claude-code is actively running
-        - `waiting_input`: claude-code is waiting for user response
-        - `complete`: claude-code exited successfully
-        - `failed`: claude-code exited with error
+        - `running`: remote-node is actively running
+        - `waiting_input`: remote-node is waiting for user response
+        - `complete`: remote-node exited successfully
+        - `failed`: remote-node exited with error
         - `killed`: session was manually terminated
 
     LLMEntry:
@@ -8956,7 +8956,7 @@ components:
           type: string
         llm_backend:
           type: string
-          example: "claude-code"
+          example: "remote-node"
         messaging_backend:
           type: string
           example: "signal"

@@ -149,11 +149,11 @@ snapshot; `review.sh` PASSES on the ground-truth verdict.
 
 ### Today's default (`observed_default`)
 
-Read 2026-10-13 via `llm_get claude-code` + `autonomous_config_get`: the
-claude-code backend launches with `--model opus` and **no `--effort` flag**.
+Read 2026-10-13 via `llm_get remote-node` + `autonomous_config_get`: the
+remote-node backend launches with `--model opus` and **no `--effort` flag**.
 datawatch's `default_effort: "normal"` is its own quick/normal/thorough hint
 and is not passed to claude, so the claude CLI's built-in default effort
-applies. Planning, execution and verification backends are all `claude-code`.
+applies. Planning, execution and verification backends are all `remote-node`.
 
 That doesn't match any of the 12 grid tiers exactly, because "unset" isn't the
 same as an explicit `medium`/`high`, and the CLI default can change between
@@ -165,7 +165,7 @@ tier.
 ## Costing: why a separate `rates.json`
 
 datawatch's own cost table (`cost_rates`, `internal/session/cost.go`) has one
-flat `claude-code` rate for every Claude model (a Sonnet-ballpark
+flat `remote-node` rate for every Claude model (a Sonnet-ballpark
 $3/$15 per M). `internal/session/claude_usage.go` also deliberately leaves
 cache tokens out. So it can't tell tiers apart. Model choice is the variable
 under test, and cache reads dominate long agentic sessions. The eval therefore

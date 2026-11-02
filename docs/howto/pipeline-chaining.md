@@ -63,24 +63,24 @@ goal: Prepare a release candidate end-to-end
 steps:
   - id: changelog
     task: "Write the CHANGELOG entry for the changes since vX.Y.Z-1"
-    backend: claude-code
+    backend: remote-node
 
   - id: tests
     task: "Run the full test suite; fix any failures."
-    backend: claude-code
+    backend: remote-node
     after: [changelog]
     eval_suite: tests-green
     retry: { max_attempts: 2, backoff: 30s }
 
   - id: review
     task: "Review the diff for security issues."
-    backend: claude-code
+    backend: remote-node
     after: [tests]
     requires_approval: true
 
   - id: tag
     task: "Tag + push the release."
-    backend: claude-code
+    backend: remote-node
     after: [review]
     inherit_context: true
 EOF
@@ -106,8 +106,8 @@ datawatch pipelines approve $PID --step review
 
 # 6. Inspect a specific step's session.
 datawatch pipelines step-session $PID --step tests
-#  → ralfthewise-abcd
-datawatch sessions tail ralfthewise-abcd | head -50
+#  → peer-f-abcd
+datawatch sessions tail peer-f-abcd | head -50
 
 # 7. Cancel.
 datawatch pipelines cancel $PID
@@ -196,11 +196,11 @@ status: running
 steps:
   - id: changelog
     task: "..."
-    backend: claude-code
+    backend: remote-node
     status: completed
     started_at: ...
     completed_at: ...
-    session_id: ralfthewise-...
+    session_id: peer-f-...
   - id: tests
     task: "..."
     after: [changelog]

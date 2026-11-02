@@ -719,7 +719,7 @@ datawatch compute node add inference-only-1 \
 
 ## How a pi-family worker picks its node
 
-A worker on the `pi` or `pi-prompt` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`); the same list decides where that entry's verifier and judge run. A listed node that does not serve the model is skipped. The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
+A worker on the `pi` or `peer-e` backend runs on one of the compute nodes listed by its LLM entry (`compute_nodes`); the same list decides where that entry's verifier and judge run. A listed node that does not serve the model is skipped. The capacity ledger chooses the node when the worker is admitted, and the worker is then launched on that node. The choice follows these rules.
 
 **Least-loaded healthy node wins.** Each candidate node has a pool with a session limit (the node's `session_slots`). A node's load is the sessions it holds, counting sessions another part of the system already runs on it, divided by that limit. The worker goes to the node with the lowest load. A node with no limit counts as unloaded. Only when two nodes are equally loaded does `scheduling_priority` decide: the higher value goes first, and equal priorities keep the order of the entry's `compute_nodes` list.
 
@@ -741,7 +741,7 @@ A maintenance window opening or closing takes effect at once. A node added to or
 **No lease on a node, no launch.** If a worker holds capacity but no node was leased, and its LLM entry lists compute nodes, the daemon does not launch it. Starting it would send the work to pi's default endpoint instead of a node of the entry. The task is marked failed with an error of this form:
 
 ```
-task <task-id> not spawned: pi-prompt worker on model <model> holds capacity but no compute node was leased, and its LLM entry lists compute nodes
+task <task-id> not spawned: peer-e worker on model <model> holds capacity but no compute node was leased, and its LLM entry lists compute nodes
 ```
 
 An entry that lists no nodes is not affected.

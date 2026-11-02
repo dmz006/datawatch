@@ -29,7 +29,7 @@ const HELD_TASK = {
   title: 'Wire the audit log',
   status: 'review_needed',
   spec: 'Add audit entries to every write',
-  backend: 'claude-code',
+  backend: 'remote-node',
   effort: 'high',
   model: '',
   files: ['internal/audit/log.go', 'internal/audit/log_test.go'],
@@ -41,7 +41,7 @@ const HELD_TASK = {
       changed_files: ['internal/audit/log.go'],
     },
     {
-      number: 2, backend: 'claude-code', duration_seconds: 30, outcome: 'stalled', escalated: true,
+      number: 2, backend: 'remote-node', duration_seconds: 30, outcome: 'stalled', escalated: true,
       changed_files: [],
     },
   ],
@@ -125,7 +125,7 @@ test('settings: the autonomous fields expose enabled, max_failures and steps wit
   const steps = byKey('autonomous.failure_escalation.steps');
   assert.ok(steps, 'steps field present');
   assert.equal(steps.type, 'failure_escalation_steps');
-  assert.equal(steps.placeholder, 'ollama:qwen3.8:27b@2,claude-code:claude-sonnet-5-5');
+  assert.equal(steps.placeholder, 'ollama:qwen3.8:27b@2,remote-node:claude-sonnet-5-5');
   assert.equal(steps.hintKey, 'settings_failure_escalation_steps_hint');
   assert.equal(steps.labelKey, 'settings_failure_escalation_steps');
 });
@@ -135,10 +135,10 @@ test('steps text: the compact form round-trips through the parser and bad items 
   const steps = [
     { backend: 'ollama', model: 'qwen3.8:27b', attempts: 2 },
     { attempts: 1 },
-    { backend: 'claude-code', model: 'claude-sonnet-5-5' },
+    { backend: 'remote-node', model: 'claude-sonnet-5-5' },
   ];
   const text = vm.runInContext('_failureEscalationStepsText', sandbox)(steps);
-  assert.equal(text, 'ollama:qwen3.8:27b@2,-@1,claude-code:claude-sonnet-5-5');
+  assert.equal(text, 'ollama:qwen3.8:27b@2,-@1,remote-node:claude-sonnet-5-5');
   assert.deepEqual(plain(vm.runInContext('_parseFailureEscalationSteps', sandbox)(text)), steps);
   assert.equal(vm.runInContext('_failureEscalationStepsText', sandbox)(undefined), '');
   assert.deepEqual(plain(vm.runInContext('_parseFailureEscalationSteps', sandbox)('   ')), []);

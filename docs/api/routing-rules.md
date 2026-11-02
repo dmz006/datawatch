@@ -8,7 +8,7 @@ through to the request's explicit backend or `session.llm_backend`.
 
 ## When to use
 
-- Route "fix the test" / "add tests" tasks to claude-code while
+- Route "fix the test" / "add tests" tasks to remote-node while
   letting Ollama handle quick research questions.
 - Route privacy-sensitive prompts to a local backend (`ollama`,
   `openwebui`) regardless of operator default.
@@ -23,7 +23,7 @@ through to the request's explicit backend or `session.llm_backend`.
 session:
   routing_rules:
     - pattern:     "(?i)(test|spec|coverage)"
-      backend:     "claude-code"
+      backend:     "remote-node"
       description: "Test work goes to Claude"
     - pattern:     "(?i)(quick|small|tiny)"
       backend:     "ollama"

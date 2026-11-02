@@ -76,10 +76,10 @@ Two exceptions:
 **Pin versus default.** A global verification backend
 (`autonomous.verification_backend`) is only a default and never pins. An
 unpinned judge uses the normal chain, the size rule and the one-attempt-per-backend
-fallback. For example, with `autonomous.verification_backend` set to `pi-prompt`,
-no task or PRD override, and `autonomous.judge_policy` set to `pi-prompt` then
-`claude-code`, the judge tries `pi-prompt` first, moves to `claude-code` if
-`pi-prompt` times out, and a large change is tried on `claude-code` first. A task
+fallback. For example, with `autonomous.verification_backend` set to `peer-e`,
+no task or PRD override, and `autonomous.judge_policy` set to `peer-e` then
+`remote-node`, the judge tries `peer-e` first, moves to `remote-node` if
+`peer-e` times out, and a large change is tried on `remote-node` first. A task
 or PRD override is the only pin: the judge uses only that backend and never moves.
 
 When the judge list is empty, the verifier policy is `fixed`, and that policy
@@ -106,7 +106,7 @@ is not eligible, whatever the mode.
 Every pick is written to the Automaton's decision log with the judge role, the
 backend, the model and the reason, and to the audit log. Look for a
 `judge_policy` decision whose note starts with `role=judge`. The reason reads
-like `prefer-free: claude-code has a free slot` or `prefer-free: all full, waiting on ollama-a`.
+like `prefer-free: remote-node has a free slot` or `prefer-free: all full, waiting on ollama-a`.
 
 ## Running a judge on a free Claude lane when local slots are full
 
@@ -118,10 +118,10 @@ the Claude backend and runs there if it has a free slot.
 autonomous:
   verifier_policy:
     mode: prefer-free
-    backends: [ollama-a, ollama-b, claude-code]
+    backends: [ollama-a, ollama-b, remote-node]
     claude_session_cap: 4
     claude_cap_window_minutes: 60
-  judge_policy: [ollama-a, ollama-b, claude-code]
+  judge_policy: [ollama-a, ollama-b, remote-node]
   judge_timeout_seconds: 1800
 ```
 
@@ -129,9 +129,9 @@ How it plays out:
 
 1. The judge checks `ollama-a` and `ollama-b`. Both are full, so neither is
    chosen.
-2. The judge checks `claude-code`. It has a free slot and the Claude session
+2. The judge checks `remote-node`. It has a free slot and the Claude session
    cap for the window is not reached, so the judge runs there. The decision log
-   says `prefer-free: claude-code has a free slot`.
+   says `prefer-free: remote-node has a free slot`.
 3. If the Claude backend is also full, the judge waits on the first eligible
    backend, `ollama-a`, for its slot. It waits there but is re-checked (see
    [A waiting request moves when another backend frees up](#a-waiting-request-moves-when-another-backend-frees-up)).
@@ -216,10 +216,10 @@ A judge call tries each backend in the judge policy at most once.
 - When every backend has timed out, the attempts equal the length of the judge
   policy list. The total never goes above that length.
 
-Example: a judge policy of `[ollama-a, ollama-b, claude-code]`, with a 30-minute
+Example: a judge policy of `[ollama-a, ollama-b, remote-node]`, with a 30-minute
 limit. If `ollama-a` times out, a warning names it and the judge moves to
 `ollama-b`. If `ollama-b` also times out, a second warning names it and the
-judge moves to `claude-code`. If `claude-code` times out too, there is no backend
+judge moves to `remote-node`. If `remote-node` times out too, there is no backend
 left, the Automaton is held (see below) and an error is raised. Three attempts,
 three limits, and nothing else.
 
@@ -228,7 +228,7 @@ three limits, and nothing else.
 A large change is slow for a small local model to judge. On 2026-10-26 an
 Automaton of about 1,000 changed lines timed out on the local judge, and the
 whole 30-minute limit was spent on a model that could not finish. Size-aware
-routing sends a large change to `claude-code` first so the limit is not spent
+routing sends a large change to `remote-node` first so the limit is not spent
 on a backend that cannot finish.
 
 `autonomous.judge_size_threshold_lines` is the number of changed lines above
@@ -243,10 +243,10 @@ which the rule applies.
   order. A change of 401 or more is a large change.
 - **`0` turns it off.** Nothing is measured and the judge backends are tried in
   their usual order. A negative value is refused.
-- **Above the threshold, `claude-code` is tried first.** It moves to the front of
+- **Above the threshold, `remote-node` is tried first.** It moves to the front of
   the judge's backend list, and the other backends follow in their usual order.
   It is still one attempt per backend (see [One attempt per backend](#one-attempt-per-backend)),
-  so the number of attempts does not change. If `claude-code` is not in the
+  so the number of attempts does not change. If `remote-node` is not in the
   list, the order is unchanged.
 - **Balance mode still picks by load.** In `balance` mode the load decides which
   backend runs, and the size rule only breaks ties between equally loaded
@@ -266,10 +266,10 @@ The Automaton decision log shows which rule routed the judge and the line count,
 at the start of each `judge_policy` decision:
 
 ```
-size rule: 1012 changed lines is above the threshold of 400, claude-code tried first; <the usual reason>
+size rule: 1012 changed lines is above the threshold of 400, remote-node tried first; <the usual reason>
 default order: 212 changed lines is at or below the threshold of 400; <the usual reason>
 default order: size routing is off (threshold 0); <the usual reason>
-default order: 1012 changed lines is above the threshold of 400 but claude-code is not in the chain; <the usual reason>
+default order: 1012 changed lines is above the threshold of 400 but remote-node is not in the chain; <the usual reason>
 ```
 
 Set it with any of the five methods:
@@ -340,7 +340,7 @@ Every attempt is listed, in the order tried:
 ```
 backend ollama-a, started 2026-10-26T09:14:02Z: timed out after 30m0s (limit 30m0s)
 backend ollama-b, started 2026-10-26T09:44:03Z: timed out after 30m0s (limit 30m0s)
-backend claude-code, started 2026-10-26T10:14:04Z: no capacity slot within the wait, the judge did not run
+backend remote-node, started 2026-10-26T10:14:04Z: no capacity slot within the wait, the judge did not run
 ```
 
 Read the summary in any of these places:
@@ -392,8 +392,8 @@ fix the cause, then pick the route that matches the hold.
 | YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_size_threshold_lines` | Edit the keys and restart the daemon |
 | REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400}`; or `PUT /api/config` with the dotted keys |
 | MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number) and `judge_size_threshold_lines` (number) |
-| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400` |
-| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_size_threshold_lines=400`; or `configure autonomous.judge_timeout_seconds=1800` |
+| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,remote-node --judge-timeout-seconds 1800 --judge-size-threshold-lines 400` |
+| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,remote-node judge_timeout_seconds=1800 judge_size_threshold_lines=400`; or `configure autonomous.judge_timeout_seconds=1800` |
 | PWA | Settings, autonomous card | The `judge_policy` comma list, the `judge_timeout_seconds` field and the `judge_size_threshold_lines` field (Judge size threshold) on the same card |
 
 Notes on the write forms:
@@ -411,7 +411,7 @@ Notes on the write forms:
 Example, by MCP:
 
 ```
-autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_timeout_seconds=1800)
+autonomous_config_set(judge_policy=["ollama-a","ollama-b","remote-node"], judge_timeout_seconds=1800)
 ```
 
 ## Troubleshooting

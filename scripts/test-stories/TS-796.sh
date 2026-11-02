@@ -14,7 +14,7 @@
 # ollama, a file-free placeholder spec so the decompose
 # verification_script coverage gate has nothing to demand), then
 # replaces the planned story with its own story + two tasks. The
-# execution backend is switched to claude-code afterwards: ollama has
+# execution backend is switched to remote-node afterwards: ollama has
 # no file tools, and a task that changes no files is rejected before
 # the LLM verifier ever runs. testdata's llms: block is not loaded into
 # the inference registry, so the override LLM is registered inline
@@ -27,7 +27,7 @@ story_preflight "surface:api feature:automata conflict:llm" || return 0
 _story_ts_796() {
   if [[ "$(t3_check_autonomous)" != "yes" ]]; then skip "autonomous disabled"; return; fi
 
-  local exec_backend="claude-code"
+  local exec_backend="remote-node"
   local exec_ok
   exec_ok=$(api GET /api/backends | python3 -c '
 import json,sys

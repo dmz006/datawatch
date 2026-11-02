@@ -71,7 +71,7 @@ datawatch status
 #  → daemon: running  PID 49334
 #    listeners: 0.0.0.0:8443 (https), 0.0.0.0:8080 (http→redirect)
 #    sessions: 4
-#    llms: claude-code (✓), ollama (✓)
+#    llms: remote-node (✓), ollama (✓)
 #    channels: telegram (✓)
 
 # Diagnose (deep health — backends, channels, observer, memory, KG).
@@ -176,7 +176,7 @@ server:
   bearer_token: ${secret:SERVER_TOKEN}
 
 session:
-  default_llm: claude-code
+  default_llm: remote-node
   default_effort: normal
   max_sessions: 50
 

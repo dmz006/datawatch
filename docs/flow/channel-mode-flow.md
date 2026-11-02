@@ -1,7 +1,7 @@
 # Claude MCP channel mode flow
 
 End-to-end picture of how `claude_channel_enabled: true` wires the
-running claude-code session to the parent daemon for permission
+running remote-node session to the parent daemon for permission
 relay, structured tool callbacks, and inbound notifications. Covers
 the path that ran on the Node.js bridge prior to the native Go rewrite.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# TS-446 — comm new:llm=claude-code:<task> creates session with llm_ref set (checked via REST)
+# TS-446 — comm new:llm=remote-node:<task> creates session with llm_ref set (checked via REST)
 # tags: surface:comm feature:sessions
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 CURRENT_STORY="TS-446"
