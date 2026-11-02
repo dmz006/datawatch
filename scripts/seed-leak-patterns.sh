@@ -19,6 +19,8 @@
 #     lines starting with '#' in the source list are skipped; duplicates are
 #     removed case-insensitively against the existing file content.
 #   * Output is counts only: 'seeded N names'. A name is never printed.
+#     When the name source yields no names at all, a one-line notice saying
+#     nothing was seeded is printed instead of a silent empty run.
 #   * When the daemon is not reachable, nothing is seeded, a line saying so
 #     is printed, and the script exits 0.
 #   * Test hook: when LEAK_SEED_NAMES_CMD is set, it is the command whose
@@ -199,6 +201,9 @@ trap 'rm -f "$NAMES_TMP"' EXIT
 if [ -n "${LEAK_SEED_NAMES_CMD:-}" ]; then
     # Test hook: the command's stdout IS the name list.
     raw="$(bash -c "$LEAK_SEED_NAMES_CMD" 2>/dev/null)" || raw=""
+    if [ -z "$raw" ]; then
+        echo "seed-leak-patterns: source gave no names — nothing seeded"
+    fi
 elif [ -z "$JSON_TOOL" ]; then
     # Neither jq nor python3: nothing can be parsed, so nothing is seeded.
     raw=""

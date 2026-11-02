@@ -17,12 +17,24 @@
 #     path; the working tree is never touched.
 #   * The script under test is honoured from LEAK_SEED_SCRIPT (default:
 #     scripts/seed-leak-patterns.sh; relative paths resolve against the
-#     repository root).
+#     repository root). The leak checker used by the integration cases is
+#     honoured from LEAK_CHECK_SCRIPT (default:
+#     scripts/check-no-local-leaks.sh, resolved the same way).
 #   * Every script invocation runs under `env -u TMUX -u TMUX_TMPDIR`;
-#     no tmux server commands, no kill by name, no git mutations.
+#     no tmux server commands, no kill by name, no git mutations outside
+#     the throwaway `mktemp -d` trees the integration cases commit.
 #   * The script's environment is explicit per case: LEAK_SEED_NAMES_CMD,
 #     DW_BASE, DW_BASE_TOKEN and DW_CONFIG are unset in this suite's
-#     environment and only ever set here, one case at a time.
+#     environment and only ever set here, one case at a time; the
+#     LEAK_CHECK_* variables likewise only ever reach the checker
+#     per-invocation.
+#   * The integration cases use one fake name composed at run time from
+#     fragments with a zz-fake prefix (printf %s, never a literal), seed
+#     it the same way an operator would, and then run the real leak
+#     checker over throwaway git trees — including a case-variant hit —
+#     with LEAK_CHECK_LOCAL pointing at the seeded file. The combined
+#     stdout and stderr of the seeding step and of the checker step must
+#     never contain the fake name.
 #
 # Usage:
 #   bash tests/test-seed-leak-patterns.sh
@@ -44,6 +56,21 @@ case "$SCRIPT_OVERRIDE" in
 esac
 if [ ! -f "$SEED_SCRIPT" ]; then
     echo "setup: seed script not found: $SEED_SCRIPT" >&2
+    exit 2
+fi
+
+CHECKER_OVERRIDE="${LEAK_CHECK_SCRIPT:-scripts/check-no-local-leaks.sh}"
+unset LEAK_CHECK_CLASSES LEAK_CHECK_PATTERNS LEAK_CHECK_ALLOWED_EMAILS \
+      LEAK_CHECK_ALLOWED_ADDRESSES LEAK_CHECK_EXCLUDE LEAK_CHECK_LOCAL \
+      LEAK_CHECK_SCRIPT 2>/dev/null || true
+CHECKER=""
+case "$CHECKER_OVERRIDE" in
+../*) CHECKER="$SCRIPT_DIR/${CHECKER_OVERRIDE#../}" ;;
+./*)  CHECKER="$SCRIPT_DIR/${CHECKER_OVERRIDE#./}" ;;
+*)    CHECKER="$SCRIPT_DIR/$CHECKER_OVERRIDE" ;;
+esac
+if [ ! -f "$CHECKER" ]; then
+    echo "setup: leak checker not found: $CHECKER" >&2
     exit 2
 fi
 
@@ -175,7 +202,120 @@ else
     fail "no jq and no python3: graceful run, nothing seeded, exit 0" "out=[$out] rc=$rc"
 fi
 
-# --------------------------------------------------------------- summary
+# ------------------------------------------------------ leak-check integration
+# One fake name, composed at run time from fragments with a zz-fake prefix,
+# is the sole fixture for cases i1..i5: no tracked file holds it, and the
+# case-variant spelling is derived at run time.
+FN_P1="zz-"
+FN_P2="fake-"
+FN_P3="cypress-41"
+FN="$(printf '%s%s%s' "$FN_P1" "$FN_P2" "$FN_P3")"
+VARN="$(printf '%s' "$FN" | tr '[:lower:]' '[:upper:]')"
+
+# run_check DIR [ENV=VALUE ...] — runs the leak checker over one throwaway
+# git tree with exactly the given environment assignments (nothing else is
+# set); rc in C_RC, combined stdout+stderr in C_OUT.
+run_check() {
+    local dir="$1"
+    shift
+    if (( $# > 0 )); then
+        C_OUT="$(env -u TMUX -u TMUX_TMPDIR "$@" bash "$CHECKER" "$dir" 2>&1)"
+    else
+        C_OUT="$(env -u TMUX -u TMUX_TMPDIR bash "$CHECKER" "$dir" 2>&1)"
+    fi
+    C_RC=$?
+}
+
+# has_name TEXT — true when TEXT contains the fake name (either spelling)
+has_name() {
+    printf '%s\n' "$1" | grep -qiF -- "$FN"
+}
+
+# new_git_tree DIR FILE LINE — throwaway work tree: one tracked text file
+new_git_tree() {
+    local dir="$1" f="$2" line="$3"
+    mkdir -p "$dir"
+    printf '%s\n' "$line" >"$dir/$f"
+    git -C "$dir" init -q
+    git -C "$dir" config user.name "t"
+    git -C "$dir" config user.email "t@example.invalid"
+    git -C "$dir" add -A
+    git -C "$dir" commit -qm "init"
+}
+
+# --------------------------------------------------------------- case i1
+# (a) Seeding a name plus a case-variant duplicate lands exactly one
+# pattern line in the seeded file.
+D="$W/i1"
+mkdir -p "$D"
+I1_HOOK="$(printf "printf '%%s\\n' '%s' '%s'" "$FN" "$VARN")"
+out="$(LEAK_SEED_NAMES_CMD="$I1_HOOK" run_seeded "$D" patterns)"
+PAT="$D/patterns"
+if [ "$out" = "seeded 1 names" ] \
+    && [ "$(grep -ci -- "$FN" "$PAT")" = "1" ] \
+    && [ "$(grep -cvE '^[[:space:]]*(#|$)' "$PAT")" = "1" ]; then
+    ok "seeding name plus case-variant duplicate leaves exactly one pattern line"
+else
+    fail "seeding name plus case-variant duplicate leaves exactly one pattern line" "out=[$out] pattern-lines=$(grep -ci -- "$FN" "$PAT" 2>/dev/null)"
+fi
+
+# --------------------------------------------------------------- case i2
+# (b) A tree whose only line is the name in a different case is reported
+# by the checker as `path:line: local` and the run exits 1.
+D="$W/i2"
+new_git_tree "$D" "notes.txt" "$VARN"
+run_check "$D" "LEAK_CHECK_CLASSES=local" "LEAK_CHECK_LOCAL=$PAT"
+if [ "$C_RC" = "1" ] && printf '%s\n' "$C_OUT" | grep -Eq '^notes\.txt:1: local$' \
+    && printf '%s\n' "$C_OUT" | grep -q '^local: 1$'; then
+    ok "tree with the name in different case is reported as notes.txt:1: local, exit 1"
+else
+    fail "tree with the name in different case is reported as notes.txt:1: local, exit 1" "rc=$C_RC report-lines=$(printf '%s\n' "$C_OUT" | grep -cE '^[^ ]+:[0-9]+: local')"
+fi
+
+# --------------------------------------------------------------- case i3
+# (c) The combined stdout+stderr of the seeding step (i1) and of the
+# checker step (i2) must never contain the fake name.
+if has_name "$out" || has_name "$C_OUT"; then
+    fail "seeding output and checker output never contain the fake name" "a captured step output holds the name"
+else
+    ok "seeding output and checker output never contain the fake name"
+fi
+
+# --------------------------------------------------------------- case i4
+# (d) Unreachable / empty name source: nothing seeded, the notice is
+# printed, exit 0.
+D="$W/i4"
+mkdir -p "$D"
+D4_OUT="$W/i4.out"
+D4_ERR="$W/i4.err"
+( cd "$D" || exit 9
+  LEAK_SEED_NAMES_CMD=false env -u TMUX -u TMUX_TMPDIR bash "$SEED_SCRIPT" t \
+      >"$D4_OUT" 2>"$D4_ERR" )
+rc=$?
+D4_COMBINED="$(cat "$D4_OUT" "$D4_ERR" 2>/dev/null)"
+if [ "$rc" = "0" ] \
+    && ! has_name "$D4_COMBINED" \
+    && printf '%s\n' "$D4_COMBINED" | grep -q 'seeded 0 names' \
+    && printf '%s\n' "$D4_COMBINED" | grep -qi -- 'nothing seeded' \
+    && ! grep -vE '^[[:space:]]*(#|$)' "$D/t" 2>/dev/null | grep -q .; then
+    ok "unreachable name source: nothing seeded, notice printed, exit 0"
+else
+    fail "unreachable name source: nothing seeded, notice printed, exit 0" "rc=$rc lines=$(printf '%s\n' "$D4_COMBINED" | tr '\n' '|')"
+fi
+
+# --------------------------------------------------------------- case i5
+# (e) A clean tree passes: exit 0, no local finding, the checker still
+# reads the seeded local patterns file.
+D="$W/i5"
+new_git_tree "$D" "notes.txt" "nothing to see in this note"
+run_check "$D" "LEAK_CHECK_CLASSES=local" "LEAK_CHECK_LOCAL=$PAT"
+if [ "$C_RC" = "0" ] && printf '%s\n' "$C_OUT" | grep -q '^local: 0$' \
+    && ! has_name "$C_OUT"; then
+    ok "clean tree passes against the seeded local patterns file, exit 0"
+else
+    fail "clean tree passes against the seeded local patterns file, exit 0" "rc=$C_RC finding-lines=$(printf '%s\n' "$C_OUT" | grep -cE '^[^ ]+:[0-9]+: local')"
+fi
+
 echo "----------------------------------------"
 echo "cases passed: $PASS, failed: $FAILN"
 if [ "$FAILN" -eq 0 ]; then
