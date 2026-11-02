@@ -58,11 +58,19 @@ func TestQuestionStep2Restarts_AnsweredEventExactlyOnce(t *testing.T) {
 		cancel := mgr.Subscribe(autonomous.LifecycleFilter{
 			Kinds: []string{autonomous.KindQuestionAnswered, autonomous.KindQuestionWithdrawn},
 		}, capture.push)
+		// Confirmed ordering: the t.TempDir() calls in qstep2New ran
+		// earlier in the test, so their cleanup is registered first and
+		// t.Cleanup's last-in-first-out order runs this cancel BEFORE the
+		// temp directories are removed.
 		t.Cleanup(cancel)
 		st, err := autonomous.NewQuestionStore(f.path)
 		if err != nil {
 			t.Fatalf("reopen store: %v", err)
 		}
+		// A reopened store needs no close: QuestionStore holds no open
+		// file handle (appendLocked opens the file, appends, syncs and
+		// closes it on every append) and has no Close method, so there is
+		// nothing to release here or in t.Cleanup.
 		// The daemon's start path: the switch is on, so the sink is
 		// wired and the unmarked records re-fire once.
 		st.ApplyEventSwitch(true, mgr.EmitQuestionEvent, t.Fatalf)
