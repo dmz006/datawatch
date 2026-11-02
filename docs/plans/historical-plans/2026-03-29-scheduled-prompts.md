@@ -59,7 +59,7 @@ datawatch already has a `ScheduleStore` (`internal/session/schedule.go`) that su
 
 ```bash
 # Schedule a new session
-datawatch schedule new "in 2 hours" --task "fix auth bug" --backend remote-node --dir /path
+datawatch schedule new "in 2 hours" --task "fix auth bug" --backend claude-code --dir /path
 
 # Schedule with natural language
 datawatch schedule new "tomorrow at 9am" --task "review PR #42" --backend opencode-acp

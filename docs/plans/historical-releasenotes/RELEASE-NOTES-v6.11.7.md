@@ -26,7 +26,7 @@ I have completed the task · The task is now complete · The work is complete
 All done · Done!
 ```
 
-These false-fired on remote-node's natural prose. When the daemon restarted and the pane buffer replayed, the patterns matched, the session was marked `complete` prematurely, and the PWA refused to reconnect to what it now thought was a finished session.
+These false-fired on claude-code's natural prose. When the daemon restarted and the pane buffer replayed, the patterns matched, the session was marked `complete` prematurely, and the PWA refused to reconnect to what it now thought was a finished session.
 
 Restored to the pre-v6.11.6 single marker: `DATAWATCH_COMPLETE:`.
 

@@ -368,11 +368,11 @@ Each breadcrumb item is clickable. Clicking a parent navigates back to that leve
 │  ████████░░░░░░░░░░░░░░░░                                               │
 ├─ Stories + Tasks tree ──────────────────────────────────────────────────┤
 │  ▼ Story 1: Project setup               [completed] ✓                  │
-│    Task 1.1: init repo          [completed] ✓  remote-node             │
-│    Task 1.2: CI config          [completed] ✓  remote-node             │
+│    Task 1.1: init repo          [completed] ✓  claude-code             │
+│    Task 1.2: CI config          [completed] ✓  claude-code             │
 │  ▶ Story 2: API layer                   [in_progress] ⚡               │
-│    Task 2.1: design routes      [completed] ✓  remote-node             │
-│    Task 2.2: implement handlers [in_progress] ⚡ remote-node  → session│
+│    Task 2.1: design routes      [completed] ✓  claude-code             │
+│    Task 2.2: implement handlers [in_progress] ⚡ claude-code  → session│
 │    Task 2.3: write tests        [pending] ○                            │
 │  ○ Story 3: Database migrations         [pending]                      │
 │  ○ Story 4: Auth middleware             [pending]                      │
@@ -433,7 +433,7 @@ The wizard is a **single vertical stream**, not tabbed steps. Fields appear as e
 │  ← auto-detected — tap to change                            │
 │                                                              │
 │  ─── execution ────────────────────────────────────────── │
-│  Backend: [remote-node ▾]   Effort: [high ▾]               │
+│  Backend: [claude-code ▾]   Effort: [high ▾]               │
 │  Model: [claude-sonnet-4-6 ▾]   Permission: [default ▾]    │
 │  (Permission mode shown only for claude backends)           │
 │                                                              │
@@ -462,7 +462,7 @@ The wizard is a **single vertical stream**, not tabbed steps. Fields appear as e
 | Backend selector | Always | — |
 | Effort selector | Backend has effort options | Backend has no effort concept |
 | Model selector | Backend has a known model list | Backend has no model list |
-| Permission mode | Backend is `remote-node` | Other backends |
+| Permission mode | Backend is `claude-code` | Other backends |
 | Cluster profile | Project profile selected as workspace | Using directory mode |
 | Guided mode | Type is research / operational / personal (pre-checked); coding (unchecked) | — |
 | Skills | `~/.datawatch/skills/` is non-empty | No skills installed |
@@ -849,7 +849,7 @@ When an operator rejects a task or story, or when a guardrail blocks execution, 
 
 **Fix analysis mini-session:**
 
-The mini-session is a short `remote-node` session (or configured backend) with a constrained system prompt:
+The mini-session is a short `claude-code` session (or configured backend) with a constrained system prompt:
 ```
 You are a code review assistant. Analyze this task failure and propose
 specific, concrete fixes. Do not execute anything. Output only a structured
@@ -927,7 +927,7 @@ Settings
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `autonomous.default_backend` | Default backend for new automata | `remote-node` |
+| `autonomous.default_backend` | Default backend for new automata | `claude-code` |
 | `autonomous.default_effort` | Default effort level | `high` |
 | `autonomous.default_model` | Default model | session default |
 | `autonomous.default_permission_mode` | Default permission mode | `default` |
@@ -1508,7 +1508,7 @@ All phases build on the v6.1 foundation (skills, evals, identity layer). Each ph
 - [ ] Voice input button (🎤) — if available: `navigator.mediaDevices.getUserMedia` → speech-to-text
 - [ ] "Inferred" section: type badge (auto-detected with annotation), workspace picker — both editable
 - [ ] Type auto-inference: keyword scan on intent text + workspace dir extension scan (see Section 7.4)
-- [ ] "Execution" section: backend selector, effort selector (shown/hidden per backend), model selector, permission mode (remote-node only)
+- [ ] "Execution" section: backend selector, effort selector (shown/hidden per backend), model selector, permission mode (claude-code only)
 - [ ] "Advanced" section (collapsed): Guided Mode toggle, skills picker (shown only if `~/.datawatch/skills/` non-empty), per-story approval toggle, guardrails expander, security scan toggle (pre-checked), rules check toggle (pre-checked)
 - [ ] "Or use a template" link: opens Templates tab with pre-selection UX
 - [ ] Cancel + Launch buttons; Launch creates automaton immediately and navigates to detail view

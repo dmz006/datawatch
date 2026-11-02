@@ -11,7 +11,7 @@
 
 ## 1. Goal
 
-Datawatch becomes the *control plane* for ephemeral, AI-driven agent containers. A user (or another agent) starts a session against a **Project Profile** + **Cluster Profile**; the parent daemon spawns a containerized full-daemon worker on the chosen Docker host or Kubernetes cluster, the worker clones the profile's git repo using a short-lived minted token, runs the AI backend (remote-node, etc.), commits + opens a PR, gets validated, and is torn down. Memory is federated (shared, sync-back, or fully ephemeral per profile policy). Workers can recursively spawn child workers under monitored gates. Everything is reachable via the parent's proxy — no per-pod ingress.
+Datawatch becomes the *control plane* for ephemeral, AI-driven agent containers. A user (or another agent) starts a session against a **Project Profile** + **Cluster Profile**; the parent daemon spawns a containerized full-daemon worker on the chosen Docker host or Kubernetes cluster, the worker clones the profile's git repo using a short-lived minted token, runs the AI backend (claude-code, etc.), commits + opens a PR, gets validated, and is torn down. Memory is federated (shared, sync-back, or fully ephemeral per profile policy). Workers can recursively spawn child workers under monitored gates. Everything is reachable via the parent's proxy — no per-pod ingress.
 
 This is the foundation for **multi-agentic** datawatch: orchestrator-and-workers as the principal pattern, peer-to-peer as a fallback for cross-instance communication.
 
@@ -223,7 +223,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
   - Replace `slim`/`full` with a stack: every per-language worker FROM's a common `agent-base`. Profiles pick a variant; auto-detection from cloned repo on first spawn (Sprint 2 wires this).
   - **Base swap** to `bitnami/minideb:bookworm` (~28MB vs 75MB for debian-slim, kept current monthly).
   - **Variants:**
-    - `agent-base` — tmux, git, gh, ripgrep, jq, fd, build-essential, ssh, curl, remote-node, opencode, aider, gemini-cli, rtk, datawatch binary. ~400MB target.
+    - `agent-base` — tmux, git, gh, ripgrep, jq, fd, build-essential, ssh, curl, claude-code, opencode, aider, gemini-cli, rtk, datawatch binary. ~400MB target.
     - `agent-go` — adds Go 1.25, gopls, golangci-lint, delve.
     - `agent-node` — adds typescript, tsx, eslint, bun (node 22 already in base).
     - `agent-python` — adds uv, poetry, ruff, pyright (python3 + pipx already in base).
@@ -453,7 +453,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 - gh CLI auth model changes — pin a version; document the install assumption.
 - PQC libs are evolving (CIRCL is solid but APIs do shift). Vendor or pin a minor.
 
-**Exit criteria:** Spawn a session against a real test repo, watch remote-node make a one-line change, see the commit + PR appear, confirm the token is gone from gh's list of active tokens.
+**Exit criteria:** Spawn a session against a real test repo, watch claude-code make a one-line change, see the commit + PR appear, confirm the token is gone from gh's list of active tokens.
 
 ---
 
@@ -641,7 +641,7 @@ Full per-story status is annotated inline below with `[x] shipped` / `[ ] pendin
 2. Creates Cluster Profile `testing-k8s` (kind=k8s, context=testing, namespace=dw-agents).
 3. New Session → picks both profiles, task = "add a TODO to README.md".
 4. Worker pod appears in `kubectl get pods -n dw-agents`. Terminal streams in browser via parent proxy. Session card shows the trust prompt (B25 ✓) and the worker badge.
-5. remote-node clones the repo, edits, commits.
+5. claude-code clones the repo, edits, commits.
 6. Session reports done. Validator pod spawned, checks PR, marks pass.
 7. Worker pod terminated. Memory synced back. gh PAT revoked.
 8. UI shows green tick + PR link.

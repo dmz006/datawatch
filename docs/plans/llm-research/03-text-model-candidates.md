@@ -4,13 +4,13 @@ Compiled 2026-09-29 against the same live datawatch instance documented in
 [01 — Current State](01-current-state.md) and [02 — Workload Profiles](02-workload-profiles.md).
 Environment facts below were re-verified live this session via `llm_list`,
 `compute_node_list`, and `ollama_stats` and match the brief exactly (no drift
-since 01/02): registry entries `remote-node`, `ollama-datawatch`
+since 01/02): registry entries `claude-code`, `ollama-datawatch`
 (`auto_add_models: true`, 10 models incl. `qwen3.8:27b`, `gpt-oss:120b`,
 `qwen3-coder-next:q4_K_M`), `ollama-local-node` (7-model list, stale vs.
 the 4 actually installed locally per `ollama_stats`: `moondream:latest`,
 `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`), `opencode` (node
 `datawatch`), `openwebui-datawatch`; compute nodes `datawatch` (priority 90,
-`max_concurrent_sessions: 1`, no declared hardware), `peer-a`
+`max_concurrent_sessions: 1`, no declared hardware), `remote-node`
 (Blackwell B200 128 GB, `max_concurrent_models: 3`), `local-node` (32 GB GPU
 32 GB, `max_concurrent_models: 10`, priority 70), `test-node` (duplicate
 address of `datawatch`, priority 50, stale).
@@ -140,7 +140,7 @@ Sizes/specs marked "training knowledge, unverified live" per the note above.
 
 | Model | Role today | Params (active) | Disk/VRAM | Confirmed live? |
 |---|---|---|---|---|
-| remote-node (opus/sonnet/haiku) | Interactive sessions, default backend | N/A — hosted API | N/A | Yes (`llm_list`) |
+| claude-code (opus/sonnet/haiku) | Interactive sessions, default backend | N/A — hosted API | N/A | Yes (`llm_list`) |
 | qwen3.8:27b | PRD decomposition + coding workers (frontier/agentic tier) | 27.3B dense | 17.7 GB / 15.5 GB VRAM, currently loaded | Yes (01, re-confirmed this session) |
 | gpt-oss:120b | Installed, not pinned to any call site | ~117B (small-active MoE) | 65.4 GB, not loaded | Yes (01, `llm_list` this session) |
 | qwen3-coder-next:q4_K_M | Installed, not pinned to any call site | 79.7B dense | 51.7 GB, not loaded | Yes (01, `llm_list` this session) |
@@ -188,7 +188,7 @@ value gap) before swapping the frontier tier to any unverified alternative.
    behavior.
 
 ### Strong tier (Council synthesis, interactive chat sessions)
-1. **Keep interactive chat sessions on remote-node** — 02 explicitly says
+1. **Keep interactive chat sessions on claude-code** — 02 explicitly says
    this tier is correctly pinned today and is the one workload where per-
    token latency directly affects a waiting human; none of the candidates
    here beat a hosted frontier model on that dimension.
@@ -273,11 +273,11 @@ value gap) before swapping the frontier tier to any unverified alternative.
 - **Re-verified 2026-09-30 (retry pass, fresh session):** re-ran `llm_list`,
   `compute_node_list`, and `ollama_stats` live. Zero drift from every fact
   in this document's opening paragraph and the incumbents table: same 5
-  registry entries (`remote-node`, `ollama-datawatch` with `auto_add_models`
+  registry entries (`claude-code`, `ollama-datawatch` with `auto_add_models`
   and the same 10-model list including `qwen3.8:27b` and `gpt-oss:120b`,
   `ollama-local-node` still carrying the same stale 7-model list,
   `opencode` on node `datawatch`, `openwebui-datawatch`); same 4 compute
-  nodes with identical priorities (`datawatch` 90, `peer-a` 90,
+  nodes with identical priorities (`datawatch` 90, `remote-node` 90,
   `local-node` 70, `test-node` 50, stale duplicate address unchanged);
   local `local-node` Ollama still exactly 4 models (`moondream:latest`,
   `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`, 7.8 GB total).

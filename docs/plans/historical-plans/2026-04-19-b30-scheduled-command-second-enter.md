@@ -14,7 +14,7 @@ prompt **but does not execute**. An operator-typed Enter from the
 web UI / CLI / comm channel after the scheduled fire is required to
 actually submit it.
 
-Observed with remote-node sessions (TUI-based). Likely reproducible
+Observed with claude-code sessions (TUI-based). Likely reproducible
 with any backend that uses a React-for-terminals rendering library
 (ink-based TUIs) or bracketed-paste input handling.
 
@@ -58,7 +58,7 @@ This is a **new bug**. File it fresh as **B30**.
    above: `mgr.SendInput(sess.FullID, sc.Command, "schedule")`.
 3. **`Manager.SendInput`** (`internal/session/manager.go:1056`)
    for the tmux-backed backends (every backend except opencode-acp
-   / openwebui / ollama-chat — remote-node falls in this bucket)
+   / openwebui / ollama-chat — claude-code falls in this bucket)
    ends with:
    ```go
    m.tmux.SendKeys(sess.TmuxSession, input)
@@ -87,7 +87,7 @@ content. Three candidate root causes, in descending likelihood:
 `fireInputSchedules` is invoked from the `NeedsInputHandler`
 callback chain, which fires the instant the parent sees the
 `waiting_input` state transition. That transition is detected from
-output-line pattern-matching — i.e., the moment remote-node *starts*
+output-line pattern-matching — i.e., the moment claude-code *starts*
 printing its prompt widget.
 
 An ink / React-for-terminals TUI renders the prompt in phases:
@@ -132,7 +132,7 @@ noted for completeness.
 
 ## Repro plan (for fix validation — not execution yet)
 
-1. Start a remote-node session (`datawatch session new …`).
+1. Start a claude-code session (`datawatch session new …`).
 2. Schedule a command that fires in 30s:
    ```
    datawatch session schedule add <id> "just say hello"
@@ -200,7 +200,7 @@ adds 200 ms of latency).
       comm, MCP, CLI) when Fix A is picked.
 - [ ] Test: settle-delay config field round-trips (YAML, REST,
       MCP `config_set`, comm `configure`).
-- [ ] Manual: scheduled command against a real remote-node session
+- [ ] Manual: scheduled command against a real claude-code session
       fires the command AND submits it on a single fire event.
 - [ ] AGENT.md release-testing rule applied — verified against the
       operator's `testing` K8s cluster before shipping.

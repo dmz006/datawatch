@@ -38,7 +38,7 @@ PWA + Android migration off the hardcoded lists tracked at [datawatch-app#31](ht
 
 ### 3. channel.js bridge memory tools (BL212, datawatch#29)
 
-The `datawatch-channel` Go bridge spawned per remote-node session now exposes the parent's memory subsystem as MCP tools:
+The `datawatch-channel` Go bridge spawned per claude-code session now exposes the parent's memory subsystem as MCP tools:
 
 | Tool | Purpose | Forwards to |
 |---|---|---|
@@ -48,7 +48,7 @@ The `datawatch-channel` Go bridge spawned per remote-node session now exposes th
 | `memory_forget` | Delete by ID | `POST /api/memory/delete` |
 | `memory_stats` | Backend status + counts | `GET /api/memory/stats` |
 
-Pre-v5.27.7 the bridge only exposed `reply` — remote-node sessions had to `curl https://localhost:8443/api/memory/...` to use memory at all. Operator confirmed: 36 stored entries were inaccessible via MCP tooling that AGENT.md documents as available.
+Pre-v5.27.7 the bridge only exposed `reply` — claude-code sessions had to `curl https://localhost:8443/api/memory/...` to use memory at all. Operator confirmed: 36 stored entries were inaccessible via MCP tooling that AGENT.md documents as available.
 
 New `bridge.callParent(ctx, method, path, body)` helper supports either GET or POST + reads the response body (vs the existing fire-and-forget `postToParent`). New `urlQueryEscape` keeps the bridge stdlib-only (no `net/url` import).
 
@@ -85,7 +85,7 @@ Mobile mirror tracked at [datawatch-app#31](https://github.com/dmz006/datawatch-
 git pull
 datawatch update && datawatch restart
 # Hard-reload the PWA (cache name → datawatch-v5-27-7).
-# remote-node sessions automatically pick up the new bridge on next launch.
+# claude-code sessions automatically pick up the new bridge on next launch.
 ```
 
 No data migration. No new schema.

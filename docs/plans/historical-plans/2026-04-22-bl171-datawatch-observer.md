@@ -93,7 +93,7 @@ Lives at `GET /api/stats`. Live-streamed via the existing `MsgStats` WebSocket b
     "running": 2,
     "waiting": 1,
     "rate_limited": 0,
-    "per_backend": { "remote-node": 3, "openwebui": 1 }
+    "per_backend": { "claude-code": 3, "openwebui": 1 }
   },
 
   "backends": [
@@ -125,7 +125,7 @@ Lives at `GET /api/stats`. Live-streamed via the existing `MsgStats` WebSocket b
 
   "envelopes": [                     // ROLLED-UP per session + per backend
     {
-      "id": "session:peer-f-787e",
+      "id": "session:peer-d-787e",
       "kind": "session",
       "label": "Claude-dev",
       "root_pid": 4089,
@@ -228,7 +228,7 @@ Configurable signatures in `observer.backend_signatures`:
 ```yaml
 observer:
   backend_signatures:
-    claude:    { exec: ["claude", "remote-node"], track: true }
+    claude:    { exec: ["claude", "claude-code"], track: true }
     ollama:    { exec: ["ollama"],                 track: true }
     openwebui: { exec: ["open-webui"],             track: true }
     aider:     { exec: ["aider"],                   track: true }
@@ -589,7 +589,7 @@ observer:
     docker_discovery:    true
     gpu_attribution:     true
     backend_signatures:
-      claude:    { exec: [claude, remote-node] }
+      claude:    { exec: [claude, claude-code] }
       ollama:    { exec: [ollama] }
       openwebui: { exec: [open-webui] }
       aider:     { exec: [aider] }

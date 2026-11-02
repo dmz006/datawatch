@@ -33,7 +33,7 @@ Plus three follow-on patterns:
 Same operator note. The smoke-test session just runs `echo`, but operators want the path from "binary on disk" to "actually coding against an LLM". v5.26.2 adds a four-step **Ready to code** section:
 
 1. **Clone the repo** — `git clone` locally, with a callout for K8s installs that need `gitToken.existingSecret` for the worker token-broker (or a mounted SSH Secret per `container-workers.md`).
-2. **Wire one LLM backend** — concrete invocations for remote-node, Ollama, OpenWebUI; `datawatch setup llm` to flip the default.
+2. **Wire one LLM backend** — concrete invocations for claude-code, Ollama, OpenWebUI; `datawatch setup llm` to flip the default.
 3. **First real coding session** — `datawatch session start --project-dir … --llm-backend … --task …` walked through end-to-end, with what each PWA tab shows (Output / Channel / Response) and how to send follow-ups.
 4. **Pre-commit / pre-push integration** — `--before-cmd` / `--after-cmd` one-liner pair that gates session completion on lint + tests, with a pointer to `pipeline-chaining` for full DAG semantics.
 

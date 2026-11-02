@@ -3,7 +3,7 @@
 Date: 2026-10-28 (the daemon host, branch build, commit `da44be860`)
 Scope: live end-to-end check that a line *quoting* one of the rate-limit
 detector's list entries mid-sentence does **not** trip the detector on a
-live peer-e session and does **not** activate a usage back-off. This run
+live pi-prompt session and does **not** activate a usage back-off. This run
 changed no source files and did not attempt to produce a real throttle.
 
 ## Setup
@@ -15,7 +15,7 @@ changed no source files and did not attempt to produce a real throttle.
   `.datawatch-test-*`, so `git check-ignore -v` reports it as ignored and it never appears in `git status`. Config
   (`.../live/config.yaml`) has an isolated `data_dir`, `server` on
   `127.0.0.1:18219` (no `server.token`, so REST probes needed no bearer
-  auth), `session.llm_backend: peer-e`, and a `project_dir` at
+  auth), `session.llm_backend: pi-prompt`, and a `project_dir` at
   `.../live/project` — an **empty plain directory, not a checkout and not a
   git repository of its own** (the daemon's `allowed_project_roots` are
   the PRD worktree root and the workspace root; earlier
@@ -35,17 +35,17 @@ changed no source files and did not attempt to produce a real throttle.
 ## Detector table context (verbatim)
 
 The registered list entry quoted by the test line is the **first phrase of
-the `remote-node` backend family** in
+the `claude-code` backend family** in
 `internal/session/rate_limit_lines.go` → `builtinRateLimitPhrases` (its
 verbatim text is the first entry of that table and of
-`testdata/rate_limit_lines/remote-node.txt`; it is not repeated here).
+`testdata/rate_limit_lines/claude-code.txt`; it is not repeated here).
 
 The file's package comment states the matching rules that make this test
 meaningful: a line is a built-in signal only when the trimmed line **starts
 with** a phrase of the session's own backend family (optionally behind the
-family's recorded gutter prefix, `⎿  ` for remote-node), case-insensitive —
+family's recorded gutter prefix, `⎿  ` for claude-code), case-insensitive —
 "Quoting a phrase anywhere else on the line is never a detection, for any
-backend." The session's own family here is `peer-e`, whose table is empty
+backend." The session's own family here is `pi-prompt`, whose table is empty
 (`nil`) except for the shared protocol marker
 `DATAWATCH_RATE_LIMITED:` (also line-start only).
 
@@ -68,7 +68,7 @@ Observed cmdline at start:
 
 `GET /api/health` → `"status":"ok"`, `"version":"<build version>"`, REST listener
 `loopback:true`.
-`GET /api/backends` → `{"active":"peer-e","llm":[{"name":"remote-node","available":true,"enabled":true}]}`
+`GET /api/backends` → `{"active":"pi-prompt","llm":[{"name":"claude-code","available":true,"enabled":true}]}`
 
 ### 1. Usage back-off status before
 
@@ -82,7 +82,7 @@ curl -s http://127.0.0.1:18219/api/usage-backoff
 
 Observed: **no active back-off** (`"active":[]`).
 
-### 2. Start one peer-e session (empty non-git project dir)
+### 2. Start one pi-prompt session (empty non-git project dir)
 
 ```
 curl -s -X POST http://127.0.0.1:18219/api/sessions/start \
@@ -90,20 +90,20 @@ curl -s -X POST http://127.0.0.1:18219/api/sessions/start \
   -d '{"task":"When you receive a message, respond with the single word ok
       and nothing else, then stay idle.",
        "project_dir":"<sandbox dir>/live/project",
-       "backend":"peer-e","model":"ollama/qwen3.8-64k:27b",
+       "backend":"pi-prompt","model":"ollama/qwen3.8-64k:27b",
        "name":"throttle-live-quoted-line"}'
 ```
 
 Observed: session `65aa` (`<host>-65aa`), `backend_family:
-"peer-e"`, `state: "running"`, pane `cs-<host>-65aa`,
+"pi-prompt"`, `state: "running"`, pane `cs-<host>-65aa`,
 `one_shot: true`, `input_mode: "tmux"`.
 
 ### 3. Send the quoted line as input
 
 The line is an ordinary sentence about a throttle bug that quotes the
-remote-node list entry verbatim **in the middle of the sentence** (the entry
-is the first remote-node list entry). Neither it nor the shared marker sits at the
-line start, and the session family (`peer-e`) has no phrase table — this
+claude-code list entry verbatim **in the middle of the sentence** (the entry
+is the first claude-code list entry). Neither it nor the shared marker sits at the
+line start, and the session family (`pi-prompt`) has no phrase table — this
 is exactly the combination the anchored, per-backend matcher must not fire
 on:
 
@@ -112,7 +112,7 @@ curl -s -X POST http://127.0.0.1:18219/api/sessions/send \
   -H 'Content-Type: application/json' \
   -d '{"session_id":"<host>-65aa",
        "text":"While debugging the throttle bug, I saw the retry log print
-       \"<first remote-node list entry>\" before the wait window began.",
+       \"<first claude-code list entry>\" before the wait window began.",
        "source":"throttle-live-validation"}'
 ```
 
@@ -126,7 +126,7 @@ it is the pane treating the sentence as a shell word, expected and
 harmless):
 
 ```
-...$ While debugging the throttle bug, I saw the retry log print "<first remote-node list entry>" before the wait window began.
+...$ While debugging the throttle bug, I saw the retry log print "<first claude-code list entry>" before the wait window began.
 ```
 
 ### 4. Usage back-off status and session state after (immediately, and
@@ -144,7 +144,7 @@ Both times (t0 at 19:18:14 and t+20 s at 19:18:34):
 ```
 
 Session `65aa` state: `running` at the moment of the send; `complete`
-afterwards (peer-e one-shot finished its turn normally — it replied and
+afterwards (pi-prompt one-shot finished its turn normally — it replied and
 the pane returned to the prompt). It never entered any
 `rate_limited`/back-off state.
 
@@ -158,8 +158,8 @@ the pane returned to the prompt). It never entered any
 | Usage back-off after t+20 s | still clear | still clear (`"active":[]`) |
 | Session state after | not rate-limited | `running` → `complete` (normal one-shot finish) |
 
-The mid-sentence quote of the first remote-node list entry on a
-peer-e session did not activate the detector: no back-off appeared at
+The mid-sentence quote of the first claude-code list entry on a
+pi-prompt session did not activate the detector: no back-off appeared at
 either probe and the session did not flip to the rate-limited state —
 consistent with the anchored, per-backend matching documented in
 `rate_limit_lines.go`.

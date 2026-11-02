@@ -69,7 +69,7 @@ Strict cuts to keep v1 tractable:
 - `Executor` that wraps `pipeline.Executor` for the Task DAG and reuses BL28 quality gates + BL29 checkpoints.
 - `Verifier` that posts the post-task git diff to the BL103 validator agent (or to a `session.Manager.Start()` with a different profile when no validator is configured).
 - `Loop` background goroutine — uses BL40 `session.ListStale` for crash recovery.
-- LLM decomposition prompt (remote-node by default; configurable per `session.routing_rules`).
+- LLM decomposition prompt (claude-code by default; configurable per `session.routing_rules`).
 - REST endpoints + full parity (MCP + CLI + comm).
 - Tests + per-component docs.
 - Operator usage doc at `docs/api/autonomous.md` covering the LLM prompt template.

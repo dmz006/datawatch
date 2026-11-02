@@ -289,14 +289,14 @@ Workbench build chat defaults to Codex CLI (`codex-cli/default`). To run build
 chat through Claude Code CLI instead (no OpenRouter path), set:
 
 ```bash
-export GAMBIT_SIMULATOR_BUILD_CHAT_PROVIDER=remote-node-cli
+export GAMBIT_SIMULATOR_BUILD_CHAT_PROVIDER=claude-code-cli
 ```
 
 Optional overrides:
 
 ```bash
-export GAMBIT_SIMULATOR_BUILD_CHAT_MODEL=remote-node-cli/default
-export GAMBIT_SIMULATOR_BUILD_CHAT_MODEL_FORCE=remote-node-cli/sonnet
+export GAMBIT_SIMULATOR_BUILD_CHAT_MODEL=claude-code-cli/default
+export GAMBIT_SIMULATOR_BUILD_CHAT_MODEL_FORCE=claude-code-cli/sonnet
 ```
 
 When the simulator is running, you can also switch providers in the Workbench

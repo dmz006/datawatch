@@ -81,7 +81,7 @@ Add the council to your favorite MCP client using the commands below.
 
 <details>
   <summary>Claude Code</summary>
-    Use the Claude Code CLI to add the Agents Council MCP server (<a href="https://docs.anthropic.com/en/docs/remote-node/mcp">guide</a>):
+    Use the Claude Code CLI to add the Agents Council MCP server (<a href="https://docs.anthropic.com/en/docs/claude-code/mcp">guide</a>):
 
 ```bash
 claude mcp add council npx agents-council@latest mcp
@@ -189,7 +189,7 @@ The Summon feature lets you bring a Claude or Codex agent into the active Counci
 
 Prerequisites:
 
-- [Claude Code](https://github.com/anthropics/remote-node) must be installed and available in your PATH
+- [Claude Code](https://github.com/anthropics/claude-code) must be installed and available in your PATH
 - Run `claude` at least once to authenticate
 
 How it works:

@@ -68,7 +68,7 @@ since 2026-09-17; `council_config_get` still returns `llm_ref: ""` and
 transient blip; `ollama-datawatch`'s and `ollama-local-node`'s registry
 entries are each still pinned to their single original `compute_nodes` entry
 (no failover list), confirming Proposal 4's problem statement; `cost_summary`
-climbed from 2,263 to **2,267** sessions (`remote-node` 148→152, all other
+climbed from 2,263 to **2,267** sessions (`claude-code` 148→152, all other
 per-backend counts including the 1,882-session `subprocess` bucket
 unchanged) with `total_tokens_in`/`total_tokens_out`/`total_usd` still
 exactly `0` across all seven backends — reconfirming Part B's B1 problem
@@ -169,7 +169,7 @@ The compute-node edit form already auto-suggests a "Computed max"
 concurrent-requests figure from VRAM × GPU count (confirmed via `docs_read`),
 but that number isn't consumed by the admission ledger — it just informs a
 human filling in the form. Net effect: Council's 12 personas can never
-usefully spread across the two nodes' real headroom (`peer-a`
+usefully spread across the two nodes' real headroom (`remote-node`
 declares `max_concurrent_models: 3`, `local-node` declares 10) because the
 ledger reasons in whole-session slots per node, not VRAM budget per model.
 
@@ -409,12 +409,12 @@ checked.
 
 - **`cost_summary`** (re-run live): 2,263 sessions, `total_tokens_in: 0`,
   `total_tokens_out: 0`, `total_usd: 0` across **seven** backends — `claude`
-  (6), `remote-node` (148), `goose` (2), `ollama` (6), `ollama-datawatch` (6),
+  (6), `claude-code` (148), `goose` (2), `ollama` (6), `ollama-datawatch` (6),
   `opencode` (213), and `subprocess` (**1,882** — 83% of all sessions, and
   not named in the brief's backend list). Session count climbed from 2,260
   (01(f)'s last pass) to 2,263 during this write-up; every token/USD field
   stayed exactly `0`.
-- **`cost_rates`**: `remote-node`/`opencode`/`opencode-acp`/`opencode-prompt`/
+- **`cost_rates`**: `claude-code`/`opencode`/`opencode-acp`/`opencode-prompt`/
   `goose`/`aider` all `$0.003`/`$0.015` per 1K in/out; `gemini`
   `$0.0035`/`$0.0105` — but flat `$0`/`$0` for `ollama`, `openwebui`, and
   `shell`. Non-zero rates exist where usage is zero; the backends that could
@@ -434,7 +434,7 @@ checked.
 
 ### Why the numbers are zero: two different situations, not one
 
-**Terminal/subprocess backends** (`remote-node`, `opencode`, `goose`,
+**Terminal/subprocess backends** (`claude-code`, `opencode`, `goose`,
 `aider`, and the 1,882-session `subprocess` bucket) run as CLI
 processes/PTYs, not JSON HTTP calls the daemon controls end-to-end — 01(d)
 already shows PRD decompose and worker-task execution running via `opencode`
@@ -502,7 +502,7 @@ calls through the node the daemon already targets and reuse path (a).
 per-session "Calls" sub-tab beside the existing Stats tab), CLI.
 
 **Effort: L.** Path (a) is close to mechanical. Path (b) is the
-effort-heavy, uncertain half — whether remote-node/opencode expose
+effort-heavy, uncertain half — whether claude-code/opencode expose
 structured usage wasn't confirmed this session (outside this project's docs
 scope), and the proxy fallback is real new plumbing if they don't.
 
@@ -529,11 +529,11 @@ checked 2026-09-30): U.S. average residential price **18.31 cents/kWh**. At
 full draw: `0.575 kW × $0.1831 = $0.1053/hour`. No sustained decode-rate was
 measured this session; using an illustrative, explicitly unbenchmarked 80
 tok/s: 288,000 tok/hour → **≈$0.00037/1k tokens** for energy alone —
-roughly 8–40x below remote-node's $0.003/$0.015. The commonly-cited $1,999
+roughly 8–40x below claude-code's $0.003/$0.015. The commonly-cited $1,999
 launch MSRP was not independently re-verified this session — flag before
 using it for amortization.
 
-**Worked example — B200 (`peer-a`), only partially sourced.**
+**Worked example — B200 (`remote-node`), only partially sourced.**
 Per-GPU TDP could not be confirmed from an official source this session:
 the DGX B200 datasheet PDF returned no readable body text via `WebFetch`,
 the HGX B200 page lists platform FLOPS/memory but no per-GPU wattage, and
@@ -672,7 +672,7 @@ Re-ran `cost_summary`, `cost_rates`, and `get_version` live via the
 `datawatch-local-node-707f` MCP connection to check for drift since this
 Part B was first written. `cost_summary`'s session count climbed from 2,263
 to **2,267**; every token/USD field across all seven backends (`claude`,
-`remote-node`, `goose`, `ollama`, `ollama-datawatch`, `opencode`,
+`claude-code`, `goose`, `ollama`, `ollama-datawatch`, `opencode`,
 `subprocess`) is still exactly `0`. `cost_rates` is unchanged — flat `$0`/`$0`
 for `ollama`/`openwebui`/`shell`, non-zero list pricing everywhere else.
 `get_version` still reports **8.36.1** (8.36.2 available), matching Part A's
@@ -687,7 +687,7 @@ failed verification for an unrelated reason (`verifier: unparseable
 response`). Re-ran the same five live checks rather than rewriting Part A/B.
 `cost_summary`: **2,301** sessions (up from 2,267 last pass), still
 `total_tokens_in: 0` / `total_tokens_out: 0` / `total_usd: 0` across all seven
-backends (`claude` 6, `remote-node` 178, `goose` 2, `ollama` 6,
+backends (`claude` 6, `claude-code` 178, `goose` 2, `ollama` 6,
 `ollama-datawatch` 6, `opencode` 220, `subprocess` 1,883). `cost_rates`:
 unchanged — `ollama`/`openwebui`/`shell` still flat `$0`/`$0`, everything
 else at unchanged list pricing. `eval_list_suites`: still `[]`. `alert_rule_list`:

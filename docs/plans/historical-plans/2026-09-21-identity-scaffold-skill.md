@@ -50,7 +50,7 @@ entrypoint: SKILL.md
 compatible_with: [datawatch>=6.7.0]   # (a)
 requires: [memory_remember, memory_pin, memory_wakeup, memory_list, memory_wal]  # (b)
 applies_to:                          # (c) Applicability (manifest.go:99-103)
-  agents: [remote-node, opencode]
+  agents: [claude-code, opencode]
   session_types: [personal]
 cost_hint: low                       # (d)
 verify: ""                           # (e) — no post-sync command in v0.1

@@ -23,7 +23,7 @@ Status: live audit complete (sandbox). No product code was changed. Every findin
 
 | PRD | Backend | Task | Session at start |
 |---|---|---|---|
-| `fad30001` | remote-node | `0d320001` (Timed loop task) | `b755`, tmux `cs-bl462-sandbox-b755` |
+| `fad30001` | claude-code | `0d320001` (Timed loop task) | `b755`, tmux `cs-bl462-sandbox-b755` |
 | `99a40001` | opencode | `48d60002` (Timed loop task) | `4cb7`, tmux `cs-bl462-sandbox-4cb7` |
 
 Both PRDs were approved and run at 18:46:01. Both tasks sat in `verifying` with their session live, which is the status that the boot-resume path has to handle.
@@ -38,8 +38,8 @@ Timestamps are local (EDT, UTC-4). Log file paths are relative to `.bl462-sandbo
 
 - Sandbox tmux (`TMUX_TMPDIR=.bl462-sandbox/tmux`): `cs-bl462-sandbox-b755` (pane pid 1772975, cmd `claude`), `cs-bl462-sandbox-4cb7` (pane pid 1772990, cmd `opencode`). Both panes alive.
 - Daemon sessions: `b755` = `running`, `4cb7` = `waiting_input`. The `waiting_input` on the opencode session is how the daemon sees an opencode `run` whose TUI prints nothing while a tool call is in flight, not an actual prompt.
-- Capacity ledger (`GET /api/capacity`): pool `host` held 2 (holders `0d320001`, `48d60002`), `llm:remote-node` held 1 (`0d320001`, session `b755`), `llm:opencode` held 1 (`48d60002`, session `4cb7`). Both leases bound to their session IDs.
-- Timed loops: remote-node at tick 13, opencode at tick 17.
+- Capacity ledger (`GET /api/capacity`): pool `host` held 2 (holders `0d320001`, `48d60002`), `llm:claude-code` held 1 (`0d320001`, session `b755`), `llm:opencode` held 1 (`48d60002`, session `4cb7`). Both leases bound to their session IDs.
+- Timed loops: claude-code at tick 13, opencode at tick 17.
 
 ## Restart #1 (SIGTERM 18:47:14.065, old pid gone 18:47:14.574, new pid 1777035 ready 18:47:22)
 
@@ -131,7 +131,7 @@ Code facts (`internal/autonomous/worktree.go`):
 - `ensureWorktreeIfConfigured` is called from `executor.go:183`, `manager.go:1040`, and `manager.go:1216`. It is skipped entirely when `prd.ProjectDir` is set (true for both sandbox PRDs, which is why they were not worktree-mode).
 - After a restart, the lease gap, the in-progress reset, and the live-session skip are **the same code** as main-tree PRDs. Nothing in `worktree.go` changes behavior on boot.
 
-Implication: a worktree-mode PRD whose session survives a restart would behave exactly like the remote-node and opencode cases above (lease lost, session kept), **but this is inferred from the code and not observed live.**
+Implication: a worktree-mode PRD whose session survives a restart would behave exactly like the claude-code and opencode cases above (lease lost, session kept), **but this is inferred from the code and not observed live.**
 
 ---
 
@@ -157,17 +157,17 @@ Characterization:
 
 Timeline after restart #2 (times EDT):
 
-- **18:54:46** — the remote-node execution loop reached tick 240. The execution session `b755` printed its last tick and the executor moved task `0d320001` to the verifier. The verifier session `2b05` (`pi`, `autonomous:verify:0d320001`) spawned, and a lease `verify:0d320001` (model `ollama/qwen3.8-64k:27b`, pool `host`) was taken at 18:54:46.674.
+- **18:54:46** — the claude-code execution loop reached tick 240. The execution session `b755` printed its last tick and the executor moved task `0d320001` to the verifier. The verifier session `2b05` (`pi`, `autonomous:verify:0d320001`) spawned, and a lease `verify:0d320001` (model `ollama/qwen3.8-64k:27b`, pool `host`) was taken at 18:54:46.674.
 - **18:54:46 (approximately)** — `b755` was recorded as `killed`, and its tmux server pane `cs-bl462-sandbox-b755` disappeared. The daemon logs contain no explicit line for this kill. It happened after the loop had ended and during normal operation, after restart #2, so it is **not** attributed to the restart. Noted as an observation (see F10).
 - **~18:55:26** — the opencode loop reached tick 240. Its `output.log` grew from 936 bytes to 4221 bytes after the loop ended, so the pipe-pane bridge re-attached after restart #1 and kept delivering output (F6 confirmed).
 - **18:55:33** — the subprocess child `sleep 420` exited. The exact end line `bl462-subproc-end` appeared in `data/sessions/bl462-sandbox-9c87/output.log`. The child was still alive at 18:55:35 and gone by 19:00:03 (`pgrep` count 0). The session record stayed `failed` the whole time (F4 confirmed).
 - **18:57:31** — opencode PRD `99a40001` reached `completed`. Its task `48d60002` completed with verifier `a10f` (pi, `waiting_input`, output file ready, then killed by the executor). The executor's normal path worked after the restart.
-- **~18:59:43** — remote-node PRD `fad30001` reached `completed`. Task `0d320001` completed with verification.
+- **~18:59:43** — claude-code PRD `fad30001` reached `completed`. Task `0d320001` completed with verification.
 - **Final ledger (18:59:43):** `host` held 0, `leases []`, `waiting []`. No lease leaked and no double-count remained. Final session states: `9c87` failed (subprocess), `2b05` killed (verifier), `a10f` killed (verifier).
 
 (d) per backend, final:
 
-- **remote-node** (`fad30001`): loop completed, verification ran, PRD `completed`.
+- **claude-code** (`fad30001`): loop completed, verification ran, PRD `completed`.
 - **opencode** (`99a40001`): loop completed, verification ran, PRD `completed`.
 
 So both tasks reached their normal terminal state after two daemon restarts, and the PRD rollup advanced. The restart therefore did not break the task outcome in this run. It did break the observability and capacity accounting described above.
@@ -205,7 +205,7 @@ Each finding states BROKEN or CONFIRMED-WORKING, the reproduction, the code loca
 - **Code:** `internal/session/manager.go` `ResumeMonitors`, the `TmuxSession == ""` branch (~4612–4660).
 - **Fix direction:** on boot, look for the child pid (persist it on start, e.g. in the tracking dir). If it is alive, keep the session `running` and re-attach a waiter that polls the pid and reads its output file, then finish it normally when the pid exits. Only mark `failed` when the pid is gone and no exit code was recorded.
 
-### F5. Live remote-node tmux sessions survive a daemon restart and keep being monitored — CONFIRMED-WORKING
+### F5. Live claude-code tmux sessions survive a daemon restart and keep being monitored — CONFIRMED-WORKING
 
 - **Reproduction:** two restarts with `b755` live. The tmux pane and `claude` process survive, `pane_pipe=1`, `output.log` grows after each restart, and the PRD task keeps its session.
 - **Code:** `internal/session/manager.go` `ResumeMonitors` (re-pipe at ~4700, `RepipeOutput`), `ReconnectBackends`, and boot-resume's `recovery` screen capture.
@@ -228,9 +228,9 @@ Each finding states BROKEN or CONFIRMED-WORKING, the reproduction, the code loca
 - **Code:** `internal/autonomous/worktree.go` `EnsureWorktree` reuses `<WorktreeDir>/<id>` when `.git` exists and `Git.Branch` is set.
 - **Not live-tested.** It inherits F1 and F3.
 
-### F10. A remote-node execution session was marked `killed` after its loop ended, with no log line explaining it — OPEN (not attributed to the restart)
+### F10. A claude-code execution session was marked `killed` after its loop ended, with no log line explaining it — OPEN (not attributed to the restart)
 
-- **Reproduction:** remote-node task `0d320001`. Its loop finished at ~18:54:46, the verifier `2b05` spawned at the same moment, and session `b755` then read `killed` and its tmux pane disappeared. The daemon logs contain no kill line for `b755`.
+- **Reproduction:** claude-code task `0d320001`. Its loop finished at ~18:54:46, the verifier `2b05` spawned at the same moment, and session `b755` then read `killed` and its tmux pane disappeared. The daemon logs contain no kill line for `b755`.
 - **Why it matters:** the task still completed, so the outcome was fine. But the execution session was killed by something that is not logged. It is not attributed to either restart, since both restarts had happened earlier and this happened during normal operation.
 - **Fix direction:** log the caller and reason whenever a session transitions to `killed`, so that a silent kill is distinguishable from an operator or executor kill.
 

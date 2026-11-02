@@ -1,7 +1,7 @@
 # datawatch v5.27.5 — release notes
 
 **Date:** 2026-04-29
-**Patch.** Three operator-asked remote-node options bundled with full configuration parity, plus a new AGENT.md rule for keeping the hardcoded alias list fresh.
+**Patch.** Three operator-asked claude-code options bundled with full configuration parity, plus a new AGENT.md rule for keeping the hardcoded alias list fresh.
 
 ## What's new
 
@@ -9,7 +9,7 @@
 
 Operator-asked: *"can you set plan mode on session starts so we can use it for PRDs?"*
 
-remote-node accepts `--permission-mode <mode>` with values `default | plan | acceptEdits | auto | bypassPermissions | dontAsk`. **`plan`** is the design-without-writing-files mode you want for PRD decomposition + design-review sessions.
+claude-code accepts `--permission-mode <mode>` with values `default | plan | acceptEdits | auto | bypassPermissions | dontAsk`. **`plan`** is the design-without-writing-files mode you want for PRD decomposition + design-review sessions.
 
 datawatch v5.27.5 surfaces it through every parity layer:
 
@@ -21,8 +21,8 @@ datawatch v5.27.5 surfaces it through every parity layer:
 | MCP | `config_set` with key `session.permission_mode` |
 | CLI | `datawatch config set session.permission_mode plan` |
 | Comm | `configure session.permission_mode plan` |
-| PWA — global | Settings → LLM → remote-node → Permission mode field; Settings → General → Sessions → Claude permission mode |
-| PWA — per-session | New Session modal → Claude options → Permission mode dropdown (visible when backend=remote-node) |
+| PWA — global | Settings → LLM → claude-code → Permission mode field; Settings → General → Sessions → Claude permission mode |
+| PWA — per-session | New Session modal → Claude options → Permission mode dropdown (visible when backend=claude-code) |
 | PRD-level | `PRD.PermissionMode` field — applied to every task that doesn't override |
 | Task-level | `Task.PermissionMode` — most-specific-wins fallthrough (task → PRD → session default) |
 
@@ -30,7 +30,7 @@ When `permission_mode` is non-empty, the legacy `--dangerously-skip-permissions`
 
 ### 2. `--model` and `--effort` exposed as first-class session options
 
-Same parity matrix. PWA New Session modal gains Model + Effort dropdowns (when backend=remote-node), populated from the new endpoints below. PRD `Backend` / `Effort` / `Model` fields already existed (BL203, v5.4.0); v5.27.5 ensures the per-session path can also override directly without going through a PRD.
+Same parity matrix. PWA New Session modal gains Model + Effort dropdowns (when backend=claude-code), populated from the new endpoints below. PRD `Backend` / `Effort` / `Model` fields already existed (BL203, v5.4.0); v5.27.5 ensures the per-session path can also override directly without going through a PRD.
 
 ### 3. Hardcoded alias / effort / permission-mode list endpoints
 

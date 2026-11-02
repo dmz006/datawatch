@@ -28,7 +28,7 @@ by name instead of restating an ad hoc equivalent.
 ## 1. One-page summary
 
 - **The two highest-stakes call sites are already correctly pinned and
-  should stay put**: interactive sessions on `remote-node`, and PRD
+  should stay put**: interactive sessions on `claude-code`, and PRD
   planning/coding-worker execution on `qwen3.8:27b`@`datawatch`. Every
   smaller/faster candidate surveyed in [03](03-text-model-candidates.md) is
   a *quality-shape* argument, not a measured win — there is still no
@@ -73,7 +73,7 @@ effort argument from [07](07-datawatch-improvements.md) Part A.
 | Workload | Incumbent today | Recommended primary | Fast/parallel alternative | Node | Expected gain | Evidence |
 |---|---|---|---|---|---|---|
 | PRD planning | `qwen3.8:27b` via opencode | **Keep qwen3.8:27b** — no swap yet | Qwen3-30B-A3B (MoE) as a *benchmarked challenger only* | `datawatch` | None claimed — measure first | [02 profile 1](02-workload-profiles.md#1-prd-decomposition--planning-decomposefn), [03 Frontier tier](03-text-model-candidates.md#frontieragentic-tier-prd-decomposition-coding-worker-sessions) |
-| Coding worker sessions | `qwen3.8:27b` via opencode | **Keep qwen3.8:27b** | Same MoE challenger as above | `datawatch` | None claimed — measure first | [02 profile 2](02-workload-profiles.md#2-coding-worker-sessions-opencode--remote-node), 03 Frontier tier |
+| Coding worker sessions | `qwen3.8:27b` via opencode | **Keep qwen3.8:27b** | Same MoE challenger as above | `datawatch` | None claimed — measure first | [02 profile 2](02-workload-profiles.md#2-coding-worker-sessions-opencode--claude-code), 03 Frontier tier |
 | Verifier | **Live-drifted**: `qwen3.8:27b`@`ollama-datawatch` (was `qwen3:1.7b` per 01; changed since, confirmed again this session) | Qwen3-4B-Instruct-2507 (fast-small) | Phi-4-mini (MIT, no license review) | `local-node` | Frees `node:datawatch`'s 1-session slot from verifier contention — but see §7 fork 5 before applying | [07 live-drift note](07-datawatch-improvements.md), [03 Fast-small tier](03-text-model-candidates.md#fast-small-tier-verifier-guardrail-memory-embedding-fact-extractionsummarization) |
 | Guardrail | `qwen3:1.7b` (fallback; subsystem disabled) | Qwen3-4B-Instruct-2507 | Phi-4-mini | `local-node` | Ready-to-run once `orchestrator.enabled: true` | [02 profile 4](02-workload-profiles.md#4-guardrail-checks-autonomousguardrail), 03 Fast-small tier |
 | Council personas (×12) | `qwen3:1.7b` (fallback; `council.llm_ref` empty) | Qwen3-30B-A3B (MoE) | Gemma3:12b — already installed and loaded, zero-effort quick win | `local-node` | Better adversarial-persona quality (`hacker`/`app-hacker`/`security-skeptic` currently on the fleet's smallest model) without linear compute cost | [02 profile 5](02-workload-profiles.md#5-council-persona-proposals-12-personas), [03 Balanced tier](03-text-model-candidates.md#balanced-tier-council-personas-vision-voicestt-once-wired-up) |
@@ -82,7 +82,7 @@ effort argument from [07](07-datawatch-improvements.md) Part A.
 | Voice/STT | Whisper `medium`, local venv | **Keep** — live and wired, not a gap | Consider CPU-node isolation (07 Proposal 3) | `local-node` (CPU) | Separates STT load from GPU-resident Ollama traffic | [02 profile 8](02-workload-profiles.md#8-voice--speech-to-text-signal-telegram-slack-voice-notes), [07 Proposal 3](07-datawatch-improvements.md#proposal-3--cpu-compute-node-profile) |
 | Memory embedding | `nomic-embed-text` | **Keep** — already correctly pinned | Consider CPU-node move (07 Proposal 3) — GPU is idle for this anyway | `local-node` | Frees the one bit of 32 GB GPU VRAM this workload occupies for the balanced-tier models above | [02 profile 9](02-workload-profiles.md#9-memory-embedding-nomic-embed-text), 07 Proposal 3 |
 | Fact extraction / summarization | `qwen3:1.7b` via `ollama-local-node` | **Keep** — already the fleet's smallest model, a validation case not a downsizing target | — | `local-node` | None needed | [02 profile 10](02-workload-profiles.md#10-memory-fact-extraction--session-summarization) |
-| Interactive sessions | `remote-node` (opus default) | **Keep remote-node** | — | External API | Correctly pinned — human-in-the-loop latency, no local candidate competes | [02 profile 11](02-workload-profiles.md#11-interactive-chat-sessions-remote-node--opencode--ollama-chat), [03 Strong tier](03-text-model-candidates.md#strong-tier-council-synthesis-interactive-chat-sessions) |
+| Interactive sessions | `claude-code` (opus default) | **Keep claude-code** | — | External API | Correctly pinned — human-in-the-loop latency, no local candidate competes | [02 profile 11](02-workload-profiles.md#11-interactive-chat-sessions-claude-code--opencode--ollama-chat), [03 Strong tier](03-text-model-candidates.md#strong-tier-council-synthesis-interactive-chat-sessions) |
 
 **No candidate in this table has been benchmarked against real fleet
 traffic.** [03](03-text-model-candidates.md) itself flags roughly 20 failed
@@ -123,7 +123,7 @@ touching `datawatch` at all — matching 05's own Plan 2/3 conclusion that
 the 32 GB GPU is comfortably under budget for this shape.
 
 **`datawatch` (undeclared hardware — 05(a) flags it as likely the same
-physical box as the 128 GB B200 declared for `peer-a`, not
+physical box as the 128 GB B200 declared for `remote-node`, not
 independently confirmed):** 05's Plan 1 (~47.8/128 GB: `qwen3.8:27b`×4
 slots@32k q8_0 + `gemma3:12b` + `nomic-embed-text`) shows real headroom
 exists on the B200 side; this fleet's actual placement is narrower today:
@@ -164,7 +164,7 @@ applied — read-only tools only were used this session.**
   via `capacity_status`) — the prerequisite for §3's Plan-1-style
   `qwen3.8:27b` multi-slot fan-out on `datawatch`. This document does not
   decide fork 6 itself (trade-off: more simultaneous VRAM pressure on a GPU
-  whose sharing with `peer-a` isn't fully confirmed, §6) — it only
+  whose sharing with `remote-node` isn't fully confirmed, §6) — it only
   shows what applying it would look like.
 - **Add a `roles:` block** ([07 Proposal 1](07-datawatch-improvements.md#proposal-1--workload-role-model-tiers-role--llm-mapping))
   mapping the nine workload roles to registry entries, with an explicit
@@ -313,14 +313,14 @@ reports computed-effective concurrency per node, not just a flat limit.
   ([03](03-text-model-candidates.md#moe-vs-dense-for-this-fleets-goal)) was
   never tested against real concurrent requests this session.
 - **Terminal/subprocess cost tracking (83% of sessions) has an open
-  question with no owner**: whether remote-node/opencode expose structured
+  question with no owner**: whether claude-code/opencode expose structured
   token usage at all. If not, [B1](07-datawatch-improvements.md#proposal-b1--per-call-usage-records)'s
   terminal half needs new proxy plumbing, not just a parser.
 - **The B200's real per-GPU power draw was never confirmed** — only a
   system-level 8-GPU figure from NVIDIA's DGX B200 page
   ([07 Proposal B2](07-datawatch-improvements.md#proposal-b2--local-compute-cost-model)).
   Any B200 cost-per-token figure here is a bounded range, not a fact.
-- **`datawatch` and `peer-a` may be the same physical box** —
+- **`datawatch` and `remote-node` may be the same physical box** —
   would mean the B200 is shared, not dedicated; not confirmed from this
   project's read-only scope ([01(a)](01-current-state.md#a-hardware-per-compute-node)).
   Matters for §3's layout if true.
@@ -338,7 +338,7 @@ Presented with trade-offs, not picked silently, per this document's brief.
    the frontier tier at concurrency 8-16 — one published benchmark shows
    ~2.8× per-request efficiency gain at concurrency 32 vs. 1
    ([05(b)](05-serving-and-hardware.md#b-alternatives-to-ollama)) — at the
-   cost of running two serving engines. `peer-a`'s existing
+   cost of running two serving engines. `remote-node`'s existing
    `openai-compat` node ([05(f)](05-serving-and-hardware.md#f-multi-node-balancing))
    means this swap doesn't require touching any LLM registry call site.
 2. **Whether to add a dedicated voice pipeline change at all.** Whisper
@@ -366,7 +366,7 @@ Presented with trade-offs, not picked silently, per this document's brief.
 6. **Whether to raise `node:datawatch`'s `max_concurrent_sessions` above
    1.** An alternative to fork 5 — lets planner/worker/verifier run
    concurrently without moving the verifier, at the cost of more
-   simultaneous VRAM pressure on a GPU whose sharing with `peer-a`
+   simultaneous VRAM pressure on a GPU whose sharing with `remote-node`
    isn't fully confirmed (§6).
 7. **Target value for `council.max_parallel`.** Anywhere from 2 (documented
    default) to the full natural width of 12 — depends on Phase 1's real

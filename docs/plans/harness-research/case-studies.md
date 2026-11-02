@@ -37,7 +37,7 @@ individuals: their entries resolved to the same vendor repos already in
 - Specs technique: https://ghuntley.com/specs/
 
 **What the harness does**
-A bare-bash fresh-context autonomous coding loop — `while :; do cat PROMPT.md | remote-node; done` — where all durable state lives on disk (specs/, fix_plan.md, AGENT.md, git) and the context window is deliberately disposable. Huntley ran it to build an entire new programming language (compiler + stdlib) without humans writing code. The loop itself is dumb; the chassis is the file system plus a stack of numbered prompt invariants.
+A bare-bash fresh-context autonomous coding loop — `while :; do cat PROMPT.md | claude-code; done` — where all durable state lives on disk (specs/, fix_plan.md, AGENT.md, git) and the context window is deliberately disposable. Huntley ran it to build an entire new programming language (compiler + stdlib) without humans writing code. The loop itself is dumb; the chassis is the file system plus a stack of numbered prompt invariants.
 
 **Problem (what they were solving)**
 The coding agent resets its context on every turn, so any non-trivial build loses the plan mid-flight and starts re-deciding from scratch. His fix is to make the context disposable on purpose and move durable state to files the agent re-reads each iteration.
@@ -299,7 +299,7 @@ Verma's recoverable-error-as-prompt technique is directly applicable to BL367 au
 ## 9. Jeff Green — Eve V2 (persona + 40-round local agentic loop)
 
 **Who / URLs**
-- Jeff Green (jeffgreen311 / S0LF0RG3) — https://dev.to/jeffgreen311/i-built-a-local-remote-node-alternative-with-ollama-heres-how-the-agentic-loop-works-45b1
+- Jeff Green (jeffgreen311 / S0LF0RG3) — https://dev.to/jeffgreen311/i-built-a-local-claude-code-alternative-with-ollama-heres-how-the-agentic-loop-works-45b1
 - Repo: https://github.com/JeffGreen311/eve-agent-v2-unleashed · Models: https://ollama.com/jeffgreen311
 
 **What the harness does**

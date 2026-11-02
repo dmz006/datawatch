@@ -5,7 +5,7 @@ Parent release: the next patch above main at merge time.
 
 ## What changed in datawatch
 
-A new burn guard compares the projected weekly burn of the Claude sessions with the pace line of the usage calculator. When the projection runs over the line plus a margin, it steps down a ladder of admission changes (lower the Claude inflight cap, route new Claude work to `peer-e`, hold new Claude work) and steps back when the burn is under the line. It never ends a running session. Each change raises one warning alert and one queue question. Task kinds also get an effort ceiling, and a task has a limit on retries on Claude. Howto: `docs/howto/burn-guard.md`.
+A new burn guard compares the projected weekly burn of the Claude sessions with the pace line of the usage calculator. When the projection runs over the line plus a margin, it steps down a ladder of admission changes (lower the Claude inflight cap, route new Claude work to `pi-prompt`, hold new Claude work) and steps back when the burn is under the line. It never ends a running session. Each change raises one warning alert and one queue question. Task kinds also get an effort ceiling, and a task has a limit on retries on Claude. Howto: `docs/howto/burn-guard.md`.
 
 This is a capability-parity issue: the app needs the guard's **status**, its **settings** and its **alerts**.
 

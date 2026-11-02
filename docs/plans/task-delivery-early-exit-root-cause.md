@@ -4,7 +4,7 @@ Read-only investigation. No source file was changed.
 
 ## Symptom
 
-Autonomous remote-node worker sessions (one-shot, PRD-owned) die about 1.5 to 2 s after the task is claimed, and the task is never delivered. Timeline of every failing session (0129, be23, 6b9c, 8763, 950d, 195b, ...):
+Autonomous claude-code worker sessions (one-shot, PRD-owned) die about 1.5 to 2 s after the task is claimed, and the task is never delivered. Timeline of every failing session (0129, be23, 6b9c, 8763, 950d, 195b, ...):
 
 ```
 created
@@ -44,4 +44,4 @@ Defects 1 to 3 are confirmed in code. The link "the echoed task triggers the com
 2. Make the placeholder guard in both scans and in `processOutputLine` match any `DATAWATCH_COMPLETE:` line that still contains an angle-bracket placeholder (`<...summary`), via one shared helper, so spec wording cannot defeat it.
 3. In the executor wait loop (`cmd/datawatch/main.go:4672`), a terminal state reached when the task was never delivered (`!mgr.TaskDelivered(id)`) or with no completion marker in the output is a delivery failure: log it, record it as a retryable infra stall (`ErrWorkerStalled`), and do not run the verifier on it. Log every kill in this path with the caller so a silent kill cannot recur.
 4. Tests: a session-manager test that claims delivery and feeds a pane containing the typed task with a wrapped `DATAWATCH_COMPLETE: <one-line plain-text summary ...>` line and asserts no completion; a test that `ClaimTaskDelivery` arms the guard and `ReleaseTaskDelivery` clears it; an executor test that a killed session with no delivery is retried as a stall without verification. Run with `env -u TMUX -u TMUX_TMPDIR`; never use any command that stops a tmux server.
-5. Repro to confirm first: enable detection debug logging, spawn one autonomous remote-node task and check for `StartScreenCapture: visible-scan match` right after `[channel] task delivered` is attempted.
+5. Repro to confirm first: enable detection debug logging, spawn one autonomous claude-code task and check for `StartScreenCapture: visible-scan match` right after `[channel] task delivered` is attempted.

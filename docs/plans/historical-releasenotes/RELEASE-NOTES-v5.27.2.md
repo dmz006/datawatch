@@ -31,16 +31,16 @@ The existing `auto_restart_on_config` toggle only fires for the small `RESTART_F
 
 The Server interface gained `RegisterReloader` + `ReloadSubsystem`; the HTTPServer wrapper exposes both; main.go registers the three default reloaders at startup.
 
-### 2. `session.claude_auto_accept_disclaimer` — auto-confirm remote-node's startup prompts
+### 2. `session.claude_auto_accept_disclaimer` — auto-confirm claude-code's startup prompts
 
 Operator-asked: *"there should be a configuration option in claude llm 'Auto Accept Disclaimer' that will when starting a claude session recognize the warning messages (like we did for PRD automation) and auto accept if enabled."*
 
-remote-node ships two startup prompts that block forward progress until a human types something:
+claude-code ships two startup prompts that block forward progress until a human types something:
 
 - **"Yes, I trust this folder" / "Quick safety check"** — the numbered menu the CLI shows when entering a project directory it hasn't seen before.
 - **"Loading development channels" / "I am using this for local development"** — the disclaimer the `--dangerously-load-development-channels` flag gates behind.
 
-Datawatch already has FilterEngine hooks that detect both via `FilterActionDetectPrompt` (lines 8819-8820 of `cmd/datawatch/main.go`'s seed-filter list). v5.27.2 extends the `DetectPrompt` callback in main.go: when the new `session.claude_auto_accept_disclaimer` flag is true AND the active backend is `remote-node` AND the matched line is one of the two disclaimer patterns, the daemon waits 750 ms (lets the prompt finish painting) and sends the appropriate confirmation key:
+Datawatch already has FilterEngine hooks that detect both via `FilterActionDetectPrompt` (lines 8819-8820 of `cmd/datawatch/main.go`'s seed-filter list). v5.27.2 extends the `DetectPrompt` callback in main.go: when the new `session.claude_auto_accept_disclaimer` flag is true AND the active backend is `claude-code` AND the matched line is one of the two disclaimer patterns, the daemon waits 750 ms (lets the prompt finish painting) and sends the appropriate confirmation key:
 
 - `1\n` — for the numbered "Yes, I trust this folder" menu.
 - `\n` — for the "Loading development channels" disclaimer (just press Enter to continue).
@@ -56,7 +56,7 @@ Default is `false` so the operator opts in explicitly. When off, the existing tr
 | MCP | `config_set` with key `session.claude_auto_accept_disclaimer` |
 | CLI | `datawatch config set session.claude_auto_accept_disclaimer true` |
 | Comm channel | `configure session.claude_auto_accept_disclaimer true` |
-| PWA | Settings → LLM → remote-node → "Auto-accept startup disclaimer" toggle (also surfaces under Settings → General → Sessions for operators who prefer the All-Sessions view) |
+| PWA | Settings → LLM → claude-code → "Auto-accept startup disclaimer" toggle (also surfaces under Settings → General → Sessions for operators who prefer the All-Sessions view) |
 
 The flag is read at runtime from `cfg.Session.ClaudeAutoAcceptDisclaimer`, so a `datawatch reload` picks it up without a restart.
 

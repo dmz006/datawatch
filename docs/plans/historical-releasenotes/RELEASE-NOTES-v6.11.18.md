@@ -9,7 +9,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.18
 
 ## What's new
 
-`internal/session/manager.go` `MarkChannelActivity(fullID)` — when a channel-bearing backend (remote-node MCP, opencode-acp ACP) emits a reply or chat message, the daemon now treats that as authoritative evidence the session is actively running. Bumps state out of `WaitingInput` back to `Running`; respects terminal states and `RateLimited`.
+`internal/session/manager.go` `MarkChannelActivity(fullID)` — when a channel-bearing backend (claude-code MCP, opencode-acp ACP) emits a reply or chat message, the daemon now treats that as authoritative evidence the session is actively running. Bumps state out of `WaitingInput` back to `Running`; respects terminal states and `RateLimited`.
 
 Wired in:
 - `internal/server/api.go` `BroadcastChannelReply` + `handleChannelReply` — fires after channel reply recorded.

@@ -23,9 +23,9 @@ All six checks **pass**; no `FAIL` lines and no offline-fixture fallback was req
 ## What the run found (live, 2026-11-02 03:56 UTC)
 
 - **83 findings** total: **46 advisories** (OSV, advisory-only for pins that may still date even where it is stated that there is no newer version) and **37 stale pins** (a newer upstream release exists).
-- **Most advisory-heavy pins:** pnpm 10.33.0 (18 advisories), Go stdlib 1.26.6 (15 advisories), @anthropic-ai/remote-node 2.1.114 (4), aider-chat 0.86.0 (4, including duplicate OSV+PYSEC for the same issue), poetry 1.8.5 (4).
+- **Most advisory-heavy pins:** pnpm 10.33.0 (18 advisories), Go stdlib 1.26.6 (15 advisories), @anthropic-ai/claude-code 2.1.114 (4), aider-chat 0.86.0 (4, including duplicate OSV+PYSEC for the same issue), poetry 1.8.5 (4).
 - **Stale pins by severity (from the report):**
-  - *patch (auto-eligible):* remote-node 2.1.114→2.1.316, pyright 1.1.404→1.1.414, aider-chat 0.86.0→0.86.2, bundler-audit 0.9.2→0.9.3, ruby-lsp 0.26.9→0.26.11, signal-cli 0.14.2→v0.14.9.
+  - *patch (auto-eligible):* claude-code 2.1.114→2.1.316, pyright 1.1.404→1.1.414, aider-chat 0.86.0→0.86.2, bundler-audit 0.9.2→0.9.3, ruby-lsp 0.26.9→0.26.11, signal-cli 0.14.2→v0.14.9.
   - *minor (auto-eligible):* bandit, gemini-cli, gh 2.102.0→v2.103.3 (with the `GH_COMMIT`-linked edit), kotlin, rubocop, ruff, bun, delve, golangci-lint, goose, kubectl, opencode, pip-audit, tsx, uv, yq.
   - *minor, human-only:* Go toolchain 1.26.10/1.26.6→go1.27.3 in 5 Dockerfiles (with the toolchain-floor script linked edit), Trivy v0.73.0→v0.76.1 in `.github/workflows/image-refresh.yaml`.
   - *major, human-only:* brakeman, bundler, eslint, poetry, typescript, eslint-plugin-security, helm, pnpm, rtk.

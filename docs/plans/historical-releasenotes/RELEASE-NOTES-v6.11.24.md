@@ -8,7 +8,7 @@ GH release: https://github.com/dmz006/datawatch/releases/tag/v6.11.24
 Operator-directed: replace the natural-language phrase classifier (v6.11.18→v6.11.23) as the **primary** state-change driver. Five releases of tuning string patterns kept missing real claude wraps, false-firing on mid-sentence text, or breaking the PWA. New architecture:
 
 - **Path B — structured ACP events**: opencode-acp's own SSE event stream (`session.status: busy/idle`, `session.idle`, `session.completed`, `message.completed`, `step-start`, `message.part.delta`, `message.part.updated`) drives state transitions directly. Authoritative — opencode's state machine is the source of truth for opencode-acp sessions; the NLP classifier is bypassed entirely.
-- **Path A — universal event-rate watcher**: any Running session whose last channel event (or pane-content change, or operator input) is older than **15 s** flips to WaitingInput. Handles backends with no structural idle signal (remote-node MCP, ollama chat).
+- **Path A — universal event-rate watcher**: any Running session whose last channel event (or pane-content change, or operator input) is older than **15 s** flips to WaitingInput. Handles backends with no structural idle signal (claude-code MCP, ollama chat).
 - **2 s "stale comms" PWA indicator**: the daemon broadcasts `last_channel_event_at` on every Session payload; the PWA renders an amber pulsing dot adjacent to the state badge after 2 s of silence (no state change). Gives early visual + alerting hook before the 15 s state flip.
 - **NLP classifier demoted to advisory**: it can still promote a "complete" or "input-needed" pattern through the structural engine (which enforces sticky-state guards), but it can no longer flip state on its own. Removes 5 releases of whack-a-mole.
 
@@ -33,7 +33,7 @@ Operator-directed: replace the natural-language phrase classifier (v6.11.18→v6
 
 - **`internal/server/web/style.css` `.scroll-bar-btn`** — operator: "scroll back for tmux feature isn't working since the buttons were resized". v6.11.20 stacked `flex: 1 1 0` (basis 0) AND `flex-basis: 33%` (overrode it to 33%); combined with `gap: 8px` the children's preferred sizes totalled >100% on narrow viewports, pushing the rightmost button outside the row where touch hits missed it. Dropped the explicit 33% basis.
 - **`internal/session/manager.go` `MarkChannelActivityFromText`** — DEMOTED from primary state-driver to advisory wrapper; bumps activity timestamp + promotes `complete`/`input` NLP signals through the structural engine (which enforces sticky-state guards).
-- **`internal/session/manager.go` `StartScreenCapture`** — pane-content change now bumps `LastChannelEventAt` so remote-node MCP sessions (which have no structural idle signal but do update the pane during tool calls) don't false-flip to WaitingInput during long tool calls.
+- **`internal/session/manager.go` `StartScreenCapture`** — pane-content change now bumps `LastChannelEventAt` so claude-code MCP sessions (which have no structural idle signal but do update the pane during tool calls) don't false-flip to WaitingInput during long tool calls.
 - **`internal/session/manager.go` `SendInput`** — operator typing bumps `LastChannelEventAt` so the gap watcher doesn't flip Running → WaitingInput while the LLM is still processing the just-sent input.
 
 ### Tests

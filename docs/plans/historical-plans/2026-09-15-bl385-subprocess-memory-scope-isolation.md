@@ -39,7 +39,7 @@ exist (v7.0.0 BL295). The missing pieces are:
 ## Workflow diagram
 
 ```
-NON-SUBPROCESS SESSION (remote-node interactive, operator CLI, PWA)
+NON-SUBPROCESS SESSION (claude-code interactive, operator CLI, PWA)
   │
   └─► Flat global memory store — memory_remember writes globally
         memory_recall returns global results

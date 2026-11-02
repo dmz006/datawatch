@@ -69,4 +69,4 @@ Findings:
 
 ## Chosen fix
 
-Pass `--settings` with `claudeMdExcludes` listing the foreign ancestor `CLAUDE.md` paths on every remote-node worker launch, computed from the worker's working directory (all ancestor `CLAUDE.md` files except the worktree's own). Do not use the env var or `--bare`.
+Pass `--settings` with `claudeMdExcludes` listing the foreign ancestor `CLAUDE.md` paths on every claude-code worker launch, computed from the worker's working directory (all ancestor `CLAUDE.md` files except the worktree's own). Do not use the env var or `--bare`.

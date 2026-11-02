@@ -28,7 +28,7 @@ type LLM struct {
     //   { node: "gpu-1", model: "qwen3:120b" }
     // When ComputeNodes contains a single entry, every Models[i].node
     // must equal that one entry. When ComputeNodes is empty (SaaS
-    // kinds: remote-node, gemini), Models[i].node is empty.
+    // kinds: claude-code, gemini), Models[i].node is empty.
     Models          []EnabledModel
 
     AutoAddModels   bool       // when set, daemon's model-refresh loop
@@ -128,7 +128,7 @@ Replace the single `Model` text input with a structured **per-node table**:
   Filter: [____________]  Page size: [5▾]   1–4 of 4
   ─────────────────────────────────────────────────────
   Sessions
-    🟢 peer-f-a95f  smoke-state-engine  running
+    🟢 peer-d-a95f  smoke-state-engine  running
     ⚪ ring-laptop-2bfd  ring dispatch       complete
     🔴 dev-c123          test                killed
   Automata

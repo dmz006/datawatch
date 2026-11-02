@@ -54,7 +54,7 @@ Three surfaces accept a sweep, mirroring the existing `eval_run` surface:
 1. Load the suite once via the existing `evalsRunner.LoadSuite`; fail fast if the suite is unknown (`404`).
 2. Resolve the backend list against the **inference registry**, not the legacy `internal/llm` coding-agent registry:
    - Each entry may be an LLM name from `inference.Registry.List()`/`Get()`, or the convenience value `*` = "every enabled inference kind" (all LLMs where `IsSessionBackendKind(kind) == false` and `Disabled == false` and an adapter is registered).
-   - Session-backend kinds (`remote-node`, `aider`, `goose`, `gemini`, `shell`, `opencode-acp`, `opencode-prompt`) have **no inference adapter** (`inference.IsSessionBackendKind`) — the planner rejects them with a clear error instead of letting `Dispatcher.Call` fail per cell.
+   - Session-backend kinds (`claude-code`, `aider`, `goose`, `gemini`, `shell`, `opencode-acp`, `opencode-prompt`) have **no inference adapter** (`inference.IsSessionBackendKind`) — the planner rejects them with a clear error instead of letting `Dispatcher.Call` fail per cell.
    - Skips LLMs where `entry.Disabled == true` (inverse-enabled toggle, `LLM.Enabled()`).
 3. Apply `ModelOverride` per cell (scalar model = all cells, or one per backend positionally). Empty model = the LLM row's own `Model`/`Models` selection.
 4. Produce the **matrix**: `cells = suite × backends` (× any requested model_override cells). Cap cells at a hard ceiling (`evals.max_cells`).
@@ -146,7 +146,7 @@ The dispatcher call already handles everything the sweep needs across kinds:
 
 ### Session-backend kinds are out of scope
 
-`remote-node`, `aider`, `goose`, `gemini` (CLI), `shell`, `opencode-acp`, `opencode-prompt` have no inference adapter — `Dispatcher.Call` would return "no adapter for kind". The planner rejects them at matrix-expansion time (one error listing the offending names) so a sweep never burns a cell on a mis-target. If a future story needs eval-against-a-coding-agent, it ships as a separate session-prodded runner, not inside this sweep.
+`claude-code`, `aider`, `goose`, `gemini` (CLI), `shell`, `opencode-acp`, `opencode-prompt` have no inference adapter — `Dispatcher.Call` would return "no adapter for kind". The planner rejects them at matrix-expansion time (one error listing the offending names) so a sweep never burns a cell on a mis-target. If a future story needs eval-against-a-coding-agent, it ships as a separate session-prodded runner, not inside this sweep.
 
 ### Consumer name addition
 

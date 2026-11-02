@@ -1,11 +1,11 @@
-# Silent first tool call leaves a busy remote-node worker in waiting_input
+# Silent first tool call leaves a busy claude-code worker in waiting_input
 
 Status: fixed in the daemon state engine (busy probe). Live reproduction not
 run in this environment; the findings below come from reading the code paths.
 
 ## Symptom
 
-A remote-node one-shot worker is given its task with `send_input`. Its first
+A claude-code one-shot worker is given its task with `send_input`. Its first
 action is a long tool call (for example a test run or a long shell command)
 that prints nothing new for a while. The session record stays `waiting_input`
 even though the worker is busy.
@@ -28,7 +28,7 @@ event is dropped, or the delivery path fails to mark running. Findings:
    `WaitingInput`. The 15 s clock starts at delivery, so a worker that makes no
    further channel event flips about 15 s after delivery.
 
-3. **Only output-driven events keep the clock alive for remote-node.** The
+3. **Only output-driven events keep the clock alive for claude-code.** The
    sources that call `MarkChannelEvent(EventRunning)` are:
    - the pane-content change branch of `StartScreenCapture`
      (`internal/session/manager.go`, `MarkChannelEvent(sess.FullID, EventRunning)`
@@ -61,7 +61,7 @@ reads it as idle. The delivery path marks running correctly.
 
 ## Why no structural fix was made
 
-The structural fix would be a remote-node tool-start signal, for example a
+The structural fix would be a claude-code tool-start signal, for example a
 `PreToolUse` hook that posts a channel event. That needs a change to the
 Claude Code hook configuration that the daemon writes, which is outside the
 state engine this change covers. It is not implemented here. The probe is the
@@ -88,13 +88,13 @@ Where it runs:
 - `DeliverOneShotTask`, right after a successful `SendInput` and
   `MarkTaskDelivered`.
 - `runChannelStateWatcherTick`, in two places:
-  - a recovery pass: a delivered one-shot remote-node session in `WaitingInput`
+  - a recovery pass: a delivered one-shot claude-code session in `WaitingInput`
     whose pane is busy returns to `Running`;
   - the gap pass: a `Running` session past the gap whose pane is busy keeps
     `Running`, and its clock restarts through the write above, so the next flip
     check is a full gap later.
 
-Scope: the probe applies only to `BackendFamily == "remote-node"` with a tmux
+Scope: the probe applies only to `BackendFamily == "claude-code"` with a tmux
 session. Other backends keep the existing gap behaviour. The child check is the
 injectable `Manager.paneChildFn`. Its default runs `tmux display-message` for
 the pane pid and then `pgrep -P`. Tests replace it with a fake.
@@ -108,9 +108,9 @@ the pane pid and then `pgrep -P`. Tests replace it with a fake.
   processes as children even when idle, so a child counts as work only when the
   pane shows no idle prompt.
 - The probe makes one pane capture and up to two cheap process calls per
-  probed session per watcher tick. Only delivered one-shot remote-node sessions
+  probed session per watcher tick. Only delivered one-shot claude-code sessions
   that are waiting, and running sessions past the gap, are probed.
-- Not verified live. The daemon was not run against a real remote-node worker
+- Not verified live. The daemon was not run against a real claude-code worker
   here. The unit tests use a fake tmux and a fake child check.
 
 ## Parity surface
@@ -142,7 +142,7 @@ restart:
 after delivery (`WaitingInput` to `Running`), bare shell pane staying
 `WaitingInput`, terminal states staying sticky, the gap watcher not flipping a
 busy session and flipping it once the pane goes quiet, the recovery pass, and
-the scope limit to remote-node. All use `NewFakeTmux` and a fake child check.
+the scope limit to claude-code. All use `NewFakeTmux` and a fake child check.
 
 ## Start-tracker restart-matrix findings
 

@@ -11,7 +11,7 @@
 
 Operator: *"Last response is now only garbage and not any text from the last set of responses."*
 
-The v5.26.23 filter overcorrected from v5.26.15: where v5.26.15 was too aggressive (killed prose framed in TUI borders), v5.26.23 was too charitable. Concrete failures captured from a live `remote-node` session that was still thinking when the operator inspected `/api/sessions/response`:
+The v5.26.23 filter overcorrected from v5.26.15: where v5.26.15 was too aggressive (killed prose framed in TUI borders), v5.26.23 was too charitable. Concrete failures captured from a live `claude-code` session that was still thinking when the operator inspected `/api/sessions/response`:
 
 ```
 ✻                                2

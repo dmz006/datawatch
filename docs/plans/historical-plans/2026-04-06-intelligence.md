@@ -288,7 +288,7 @@ After each subtask completes:
 session:
   verification:
     enabled: true
-    backend: remote-node      # which backend to use for verification
+    backend: claude-code      # which backend to use for verification
     profile: reviewer         # optional profile override
     auto_reject_commit: true  # block git commit on rejection
 ```
@@ -352,7 +352,7 @@ memory:
 session:
   verification:
     enabled: false
-    backend: remote-node
+    backend: claude-code
     auto_reject_commit: true
   quality_gates:
     enabled: false
