@@ -17,3 +17,6 @@
 # genuinely cannot be made clean, so they are excluded.
 internal/observer/ebpf/vmlinux_amd64/vmlinux.h
 internal/observer/ebpf/vmlinux_arm64/vmlinux.h
+
+# The allowed-address list names the public cloud metadata constants it allows.
+scripts/leak-check.allowed-addresses

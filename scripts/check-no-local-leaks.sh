@@ -97,6 +97,7 @@ fi
 PATTERNS_FILE="$(resolve_from_script "${LEAK_CHECK_PATTERNS:-leak-check.patterns}")"
 ALLOWED_FILE="$(resolve_from_script "${LEAK_CHECK_ALLOWED_EMAILS:-leak-check.allowed-emails}")"
 EXCLUDE_FILE="$(resolve_from_script "${LEAK_CHECK_EXCLUDE:-leak-check.exclude}")"
+ADDR_ALLOWED_FILE="$(resolve_from_script "${LEAK_CHECK_ALLOWED_ADDRESSES:-leak-check.allowed-addresses}")"
 
 [[ -f "$PATTERNS_FILE" ]] || die2 "patterns file not found: $PATTERNS_FILE"
 [[ -f "$ALLOWED_FILE" ]] || die2 "allowed-emails file not found: $ALLOWED_FILE"
@@ -169,6 +170,15 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     EXCLUDE_GLOBS+=("$line")
 done <"$EXCLUDE_FILE"
 
+ADDR_ALLOWED=()
+if [[ -f "$ADDR_ALLOWED_FILE" && -r "$ADDR_ALLOWED_FILE" ]]; then
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="$(trim "$line")"
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        ADDR_ALLOWED+=("$line")
+    done <"$ADDR_ALLOWED_FILE"
+fi
+
 LOCAL_PATTERNS=()
 if [[ -f "$LOCAL_FILE" && -r "$LOCAL_FILE" ]]; then
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -239,6 +249,13 @@ match_class() { # class rel file
         mapfile -t NS < <(grep -nE -e "$re" -- "$f" 2>/dev/null | cut -d: -f1)
         for n in "${NS[@]}"; do
             [[ -n "${SEEN[$cls:$n]:-}" ]] && continue
+            if [[ "$cls" == address ]] && (( ${#ADDR_ALLOWED[@]} > 0 )); then
+                # Well-known public constants (the cloud metadata endpoints)
+                # may stay; a line whose only matches are those passes.
+                aline="$(sed -n "${n}p" -- "$f")"
+                for a in "${ADDR_ALLOWED[@]}"; do aline="${aline//"$a"/ }"; done
+                printf '%s\n' "$aline" | grep -qE -e "$re" || continue
+            fi
             SEEN["$cls:$n"]=1
             record "$cls" "$rel" "$n"
         done

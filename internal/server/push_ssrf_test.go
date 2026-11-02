@@ -20,12 +20,12 @@ func TestValidatePushEndpoint_RejectsLoopbackAlways(t *testing.T) {
 }
 
 func TestValidatePushEndpoint_RejectsCloudMetadataAlways(t *testing.T) {
-	// The metadata-style endpoint (192.0.2.169, a documentation-range
-	// placeholder) doesn't resolve via a hostname lookup in this test (no
+	// The metadata-style endpoint (169.254.169.254, the well-known cloud
+	// metadata address) doesn't resolve via a hostname lookup in this test (no
 	// DNS record), so validate the IP classifier directly -- the real
 	// blocking happens at dial time either way (pushHTTPClient), this just
 	// confirms the classifier itself flags it.
-	if reason := blockedIPReason(net.ParseIP("192.0.2.169")); reason == "" {
+	if reason := blockedIPReason(net.ParseIP("169.254.169.254")); reason == "" {
 		t.Fatal("expected cloud metadata address to be classified as blocked")
 	}
 }

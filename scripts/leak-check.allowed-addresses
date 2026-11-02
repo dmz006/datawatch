@@ -1,0 +1,13 @@
+# scripts/leak-check.allowed-addresses
+#
+# Well-known public address constants that the leak check lets stay in the
+# tree because the code, its tests and its documentation must name them:
+# the cloud metadata endpoints that the SSRF guards always refuse. They
+# identify no machine of the operator. One literal address per line; a line
+# of a file passes when removing these literals leaves no address match.
+# This file itself is excluded from the scan (see scripts/leak-check.exclude).
+#
+# Keep this list to public constants. Never add a private, tailnet or
+# internal address of any machine.
+169.254.169.254
+fd00:ec2::254

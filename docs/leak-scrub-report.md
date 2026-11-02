@@ -27,8 +27,8 @@ least one replaced token.
 |---|---|
 | RFC 1918 private IPv4 (`10/8`, `172.16/12`, `192.168/16`) | TEST-NET-1 `192.0.2.0/24`, TEST-NET-2 `198.51.100.0/24`, TEST-NET-3 `192.0.3.0/24` / `203.0.113.0/24` |
 | Tailscale CGNAT `100.64/10` (tailnet node IPs) | TEST-NET-2 `198.51.100.0/24` |
-| Link-local `169.254/16` (incl. the cloud metadata endpoint) | `192.0.2.169` (RFC 5737 TEST-NET-1) |
-| IPv6 unique-local (ULA, fc–fd) and link-local (fe80-prefixed) literals | `2001:db8::/32` (RFC 3849), e.g. `2001:db8::254` |
+| Link-local `169.254/16` | `192.0.2.0/24` documentation range, except the two well-known cloud metadata addresses, which are public constants the code must keep and which are listed in `scripts/leak-check.allowed-addresses` |
+| IPv6 unique-local (ULA, fc–fd) and link-local (fe80-prefixed) literals | `2001:db8::/32` (RFC 3849) |
 | Hex byte-endpoint literals that encoded a private address | re-derived hex for the TEST-NET-1 placeholder (`192.0.2.x`), or byte-value construction `net.IPv4(0x…, 0x…, 0x…, 0x…)` in tests so the RFC1918 branches stay exercised without dotted literals |
 | Class-wide RFC 1918 CIDR mentions (comments/prose) | left as CIDR classes or rewritten as "RFC 1918" — a class reference is not a usable address |
 

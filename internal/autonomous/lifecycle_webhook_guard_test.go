@@ -43,8 +43,9 @@ func ipAddrs(ips ...string) []net.IPAddr {
 // (private, CGNAT-range, link-local, ULA) are assembled from hex bytes
 // instead of written out as dotted literals, so the source stays free of
 // real-world private ranges while these tests keep exercising the actual
-// classifications. The two "metadata" values are documentation-range
-// placeholders (192.0.2.169, 2001:db8::254) the guard treats as the
+// classifications. The two "metadata" values are the well-known cloud
+// metadata addresses (169.254.169.254, fd00:ec2::254) the guard always
+// refuses; they are public constants, listed in scripts/leak-check.allowed-addresses, and the guard treats them as the
 // endpoint (see webhookMetadataAlwaysRefused in the production file).
 var (
 	priv10      = net.IPv4(0x0A, 0x01, 0x02, 0x03).String()
@@ -60,8 +61,8 @@ var (
 	cgnOne      = net.IPv4(0x64, 0x40, 0x01, 0x01).String()
 	ulaOne      = net.IP{0xfd, 0x12, 0x34, 0x56, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}.String()
 	pubNet6     = net.IP{0x26, 0x06, 0x47, 0x00, 0x47, 0x00, 0, 0, 0, 0, 0, 0, 0, 0, 0x11, 0x11}.String()
-	metadata4   = "192.0.2.169"
-	metadata6   = "2001:db8::254"
+	metadata4   = "169.254.169.254"
+	metadata6   = "fd00:ec2::254"
 )
 
 func TestWebhookGuardHostAllowed(t *testing.T) {
@@ -135,8 +136,8 @@ func TestWebhookGuardNormaliseHost(t *testing.T) {
 		{"017700000001", "127.0.0.1", true, false},
 		{"127.1", "127.0.0.1", true, false},
 		{"127.0.1", "127.0.0.1", true, false},
-		{"192.0.681", metadata4, true, false},
-		{"0xc00002a9", metadata4, true, false},
+		{"169.254.43518", metadata4, true, false},
+		{"0xa9fea9fe", metadata4, true, false},
 		{"0x", "0.0.0.0", true, false},
 		{"256.0.0.1", "", false, true},
 		{"1.2.3.4.5", "", false, true},
@@ -238,7 +239,7 @@ func TestWebhookGuardValidateURL(t *testing.T) {
 		{"hex loopback", "https://0x7f000001/x", public, "non-canonical", ""},
 		{"octal loopback", "https://0177.0.0.1/x", public, "non-canonical", ""},
 		{"short loopback", "https://127.1/x", public, "non-canonical", ""},
-		{"decimal metadata", "https://3221226153/x", []string{metadata4}, "non-canonical", ""},
+		{"decimal metadata", "https://2852039166/x", []string{metadata4}, "non-canonical", ""},
 		{"numeric nonsense", "https://256.256.256.256/x", public, "not valid", ""},
 	}
 	for _, tc := range tests {
@@ -330,7 +331,7 @@ func TestWebhookGuardBlockedIPReason(t *testing.T) {
 		{metadata4, false, "cloud metadata address"},
 		{metadata6, false, "cloud metadata address (IPv6)"},
 		{"::ffff:" + metadata4, false, "cloud metadata address"},
-		{"64:ff9b::c000:2a9", false, "cloud metadata address"},
+		{"64:ff9b::a9fe:a9fe", false, "cloud metadata address"},
 		{"64:ff9b::7f00:1", false, "loopback"},
 		{"64:ff9b::808:808", false, ""},
 		{"64:ff9b:1::1", false, ""},
@@ -347,7 +348,7 @@ func TestWebhookGuardBlockedIPReason(t *testing.T) {
 		{metadata4, true, "cloud metadata address"},
 		{metadata6, true, "cloud metadata address (IPv6)"},
 		{"::ffff:" + metadata4, true, "cloud metadata address"},
-		{"64:ff9b::c000:2a9", true, "cloud metadata address"},
+		{"64:ff9b::a9fe:a9fe", true, "cloud metadata address"},
 	}
 	for _, tc := range tests {
 		ip := net.ParseIP(tc.ip)

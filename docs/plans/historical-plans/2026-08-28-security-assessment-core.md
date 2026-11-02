@@ -319,7 +319,7 @@ Two sandboxes ran in parallel: `.sec-sandbox/` = empty `server.token` (ports 180
       `/api/proxy/comm/`, `federation peer_test`, observer peer push, `llm_test`,
       `marketplace` fetch, `smoke forward` set+fire, `skills registry connect` (git URL),
       tailscale ACL push, `datawatch update` — for each: is target host restricted? Can a
-      peer-token caller steer the target? Internal-IP (192.0.2.169, 127.0.0.1, 100.x)
+      peer-token caller steer the target? Internal-IP (169.254.169.254, 127.0.0.1, 100.x)
       probes against the sandbox.
 - [x] **C4 ReDoS**: user-settable detection patterns (global + per-LLM) applied to every
       session output line — craft a `PUT /api/config` pattern `(a+)+$`-style and time a

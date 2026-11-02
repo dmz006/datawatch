@@ -38,7 +38,7 @@ set -u
 # case, and each case sets exactly the variables it needs.
 SCRIPT_OVERRIDE="${LEAK_CHECK_SCRIPT:-scripts/check-no-local-leaks.sh}"
 unset LEAK_CHECK_CLASSES LEAK_CHECK_PATTERNS LEAK_CHECK_ALLOWED_EMAILS \
-      LEAK_CHECK_EXCLUDE LEAK_CHECK_LOCAL LEAK_CHECK_SCRIPT
+      LEAK_CHECK_ALLOWED_ADDRESSES LEAK_CHECK_EXCLUDE LEAK_CHECK_LOCAL LEAK_CHECK_SCRIPT
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 case "$SCRIPT_OVERRIDE" in
     /*) CHECKER="$SCRIPT_OVERRIDE" ;;
@@ -329,6 +329,43 @@ case_classes_email_only() {
         || bad "LEAK_CHECK_CLASSES=email flags only the email line" "$reason"
 }
 
+# Allowed addresses: a listed public constant passes; any other address on
+# another line is still flagged, and the report never prints either value.
+allow_fixture() {
+    mkfx c6-allow
+    CASE6_META="$(printf '%s%s' '169.254' '.169.254')"
+    CASE6_OTHER="$(printf '%s%s' '169.254' '.7.7')"
+    printf '%s\n' "$CASE6_META" > "$T/allow.txt"
+}
+
+case_allowed_address_passes() {
+    allow_fixture
+    printf 'refused endpoint %s here\n' "$CASE6_META" > "$T/c6-allow/f.txt"
+    do_run "$T/c6-allow" "LEAK_CHECK_CLASSES=address" "LEAK_CHECK_ALLOWED_ADDRESSES=$T/allow.txt"
+    expect_pass "an address on the allowed-address list passes"
+}
+
+case_allowed_address_other_still_flagged() {
+    allow_fixture
+    printf 'refused endpoint %s here\n' "$CASE6_META" > "$T/c6-allow/f.txt"
+    printf 'other host %s here\n' "$CASE6_OTHER" >> "$T/c6-allow/f.txt"
+    do_run "$T/c6-allow" "LEAK_CHECK_CLASSES=address" "LEAK_CHECK_ALLOWED_ADDRESSES=$T/allow.txt"
+    local reason=""
+    [[ "$RC" -eq 1 ]] || reason="expected exit 1, got $RC"
+    if [[ -z "$reason" ]] && ! printf '%s\n' "$OUT" | grep -Eq '^f\.txt:2: address$'; then
+        reason="report lacks the f.txt:2: address line"
+    fi
+    if [[ -z "$reason" ]] && printf '%s\n' "$OUT" | grep -Eq '^f\.txt:1: '; then
+        reason="the allowed address on line 1 was flagged"
+    fi
+    if [[ -z "$reason" ]] && { contains "$CASE6_META" || contains "$CASE6_OTHER"; }; then
+        reason="report contains an address value"
+    fi
+    [[ -z "$reason" ]] \
+        && ok "an address outside the allowed list is still flagged" \
+        || bad "an address outside the allowed list is still flagged" "$reason"
+}
+
 case_classes_address_only() {
     case5_fixture
     do_run "$T/c5-mixed" "LEAK_CHECK_CLASSES=address"
@@ -390,6 +427,8 @@ case_local_file_comment_only
 case_classes_home_only_passes
 case_classes_email_only
 case_classes_address_only
+case_allowed_address_passes
+case_allowed_address_other_still_flagged
 case_usage_missing_root
 case_usage_two_args
 

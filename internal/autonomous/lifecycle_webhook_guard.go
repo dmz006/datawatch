@@ -55,7 +55,7 @@ import (
 )
 
 // webhookMetadataAlwaysRefused keeps the cloud metadata addresses
-// (192.0.2.169, 2001:db8::254) refused even when their host is on the
+// (169.254.169.254, fd00:ec2::254) refused even when their host is on the
 // allow-list. Pending operator confirmation: the proposal recommends this
 // deliberate narrowing of the "unless explicitly allow-listed" rule because
 // no legitimate event receiver lives there and an allow-list typo must not
@@ -422,9 +422,9 @@ func webhookBlockedIPReason(ip net.IP, explicitlyAllowed bool) string {
 
 func webhookMetadataReason(ip net.IP) string {
 	switch {
-	case ip.Equal(net.ParseIP("192.0.2.169")):
+	case ip.Equal(net.ParseIP("169.254.169.254")):
 		return "cloud metadata address"
-	case ip.Equal(net.ParseIP("2001:db8::254")):
+	case ip.Equal(net.ParseIP("fd00:ec2::254")):
 		return "cloud metadata address (IPv6)"
 	}
 	return ""
