@@ -40,6 +40,11 @@ func TestShippedBackfillMarkedAndCancelledUntouched(t *testing.T) {
 	if rep.PrdsMarked != 3 {
 		t.Errorf("PrdsMarked = %d, want 3", rep.PrdsMarked)
 	}
+	// The fixture's cancelled PRD has no merge, so this pass marks no
+	// cancelled PRD.
+	if rep.PrdsWouldMarkCancelled != 0 {
+		t.Errorf("PrdsWouldMarkCancelled = %d, want 0", rep.PrdsWouldMarkCancelled)
+	}
 	if rep.PrdsAlreadyMarked != 0 {
 		t.Errorf("PrdsAlreadyMarked = %d, want 0", rep.PrdsAlreadyMarked)
 	}
@@ -119,6 +124,9 @@ func TestShippedBackfillMarkedAndCancelledUntouched(t *testing.T) {
 	if rep2.PrdsMarked != 0 || rep2.AutomationsMarked != 0 {
 		t.Errorf("second pass marked %d prds, %d automations, want 0/0", rep2.PrdsMarked, rep2.AutomationsMarked)
 	}
+	if rep2.PrdsWouldMarkCancelled != 0 {
+		t.Errorf("second pass PrdsWouldMarkCancelled = %d, want 0", rep2.PrdsWouldMarkCancelled)
+	}
 	if rep2.PrdsAlreadyMarked != 3 {
 		t.Errorf("second pass PrdsAlreadyMarked = %d, want 3", rep2.PrdsAlreadyMarked)
 	}
@@ -138,8 +146,14 @@ func TestShippedBackfillDryRunMakesNoWrites(t *testing.T) {
 	if rep.Errors != nil {
 		t.Fatalf("rep.Errors = %v, want empty", rep.Errors)
 	}
-	if rep.PrdsMarked != 0 || rep.AutomationsMarked != 0 {
-		t.Errorf("dry run wrote %d prds, %d automations, want 0/0", rep.PrdsMarked, rep.AutomationsMarked)
+	if rep.PrdsMarked != 3 {
+		t.Errorf("dry run PrdsMarked = %d, want 3 (the PRDs it would mark)", rep.PrdsMarked)
+	}
+	if rep.AutomationsMarked != 0 {
+		t.Errorf("dry run wrote %d automations, want 0", rep.AutomationsMarked)
+	}
+	if rep.PrdsWouldMarkCancelled != 0 {
+		t.Errorf("dry run PrdsWouldMarkCancelled = %d, want 0", rep.PrdsWouldMarkCancelled)
 	}
 	if rep.PrdsAlreadyMarked != 0 || rep.LeftCancelled != 1 {
 		t.Errorf("dry run report wrong: %+v", rep)
