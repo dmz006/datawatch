@@ -2101,11 +2101,11 @@ Added in v8.73.34, filed and closed same round as GH#193's cleanup.
 
 ## Federation per-peer TLS skip-verify (`tls_skip_verify`)
 
-Added in v8.73.32. Prompted by a live operator report (federation to `ralfthewise` failing against its self-signed cert).
+Added in v8.73.32. Prompted by a live operator report (federation to `peer-d` failing against its self-signed cert).
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
-| `multiserver.HTTPClient` / `Store.Test()` | Yes | Yes | `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed TLS, not a mock); asserts `TLSSkipVerify=false` fails with a cert error and `=true` succeeds against the identical server | Not yet re-validated against the real `ralfthewise` end-to-end — pending after this ships and the daemon restarts |
+| `multiserver.HTTPClient` / `Store.Test()` | Yes | Yes | `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed TLS, not a mock); asserts `TLSSkipVerify=false` fails with a cert error and `=true` succeeds against the identical server | Not yet re-validated against the real `peer-d` end-to-end — pending after this ships and the daemon restarts |
 | REST (`fedPeerAdd`/`fedPeerUpdate`, plain `/api/servers` add/update) | Yes (existing suite) | No | Auto-pass-through confirmed by code reading (both decode straight into/onto `Entry`) | Not independently exercised with this specific field by name |
 | MCP (`federation_peer_add/update`, `server_add/update`) | No | No | New `tls_skip_verify` param added to 4 tool schemas + handler body maps, mirroring the existing `enabled`-field explicit-presence pattern | No MCP-level test added this pass — same risk profile as `enabled`, which also has none |
 | CLI (`federation peer add/update`, `server add/update`, `setup server`) | No | No | New `--tls-skip-verify` flags + an interactive prompt in `setup server`, mirroring existing flag patterns | Not exercised live this pass |

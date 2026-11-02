@@ -5962,7 +5962,7 @@ with zero verification scripts despite BL416's own design intent).
 ## v9.0.6 — fix: datawatch-channel sibling binary silently never updated
 
 ### Fixed
-- Found while updating `ralfthewise` after v9.0.5: its `~/.local/bin/
+- Found while updating `peer-d` after v9.0.5: its `~/.local/bin/
   datawatch-channel` binary was stale since 2026-05-12 even though the
   main `datawatch` binary had been updating normally every release.
   Root cause: `datawatch-channel` moved to its own dedicated goreleaser
@@ -6009,7 +6009,7 @@ with zero verification scripts despite BL416's own design intent).
   Root cause: `loadAboutOrphanedTmux()` used a bare `fetch('/api/stats')`
   instead of the federation-aware `apiFetch()` helper, so it always
   hit the local daemon regardless of which server was selected —
-  confirmed `ralfthewise` actually has 0 orphans of its own, the card
+  confirmed `peer-d` actually has 0 orphans of its own, the card
   was just silently showing the local host's list. Also cleaned up a
   dead/unused array in `killOrphanedTmux()` built from the same
   non-federated pattern (never actually invoked).
@@ -6815,7 +6815,7 @@ beyond what's already in 8.73.1.
 ## v8.73.32 — feat(federation): per-peer TLS cert-verification bypass for self-signed servers
 
 ### Added
-- Operator reported federation to `ralfthewise` failing while its web UI loaded fine. Root cause: `ralfthewise`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
+- Operator reported federation to `peer-d` failing while its web UI loaded fine. Root cause: `peer-d`'s datawatch serves a self-signed certificate (`CN=server`, issuer==subject — its own auto-generated fallback cert), and every federation outbound call (`Store.Test()`, `/api/proxy/{name}/...`, `/api/proxy/{name}/ws`, `/remote/{name}/...`, aggregated-sessions fan-out) does strict TLS verification with no way to trust a specific peer's cert — `tls: failed to verify certificate: x509: certificate signed by unknown authority`.
 - New per-entry `tls_skip_verify` field (`multiserver.Entry`, `config.RemoteServerConfig`) disables cert verification for **that one peer only** — every other peer/server keeps full verification. Shared `multiserver.HTTPClient(skipVerify, timeout)` helper used by all 5 outbound call sites instead of 5 independently-drifting `http.Client` constructions.
 - Full-surface parity: REST (`fedPeerAdd`/`fedPeerUpdate`/plain server add/update — auto-pass-through, no DTU needed), MCP (`federation_peer_add/update`, `server_add/update` — new `tls_skip_verify` param), CLI (`federation peer add/update --tls-skip-verify`, `server add/update --tls-skip-verify`, and an interactive prompt in `datawatch setup server`), YAML (`servers[].tls_skip_verify`), PWA (checkbox on both the "Remote Servers" and "Federation Peers" forms, 2 new locale keys × 5 bundles). No comm-channel surface exists for server management, so none was added.
 - `TestStore_Test_TLSSkipVerify` — a real `httptest.NewTLSServer` (genuinely self-signed, not mocked): confirms `TLSSkipVerify=false` fails with a certificate error against it and `TLSSkipVerify=true` succeeds against the *same* server.
@@ -12422,7 +12422,7 @@ Three operator-pulled-in pre-v7.0 deliverables in one cut, executed after operat
 
 - `go build ./...` — clean
 - `node --check internal/server/web/app.js` — OK (after Compute tab edits)
-- Live council quick-run against daemon — verified 2 council-virtual sessions (`ralfthewise-council-4169-ux-advocate`, `ralfthewise-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
+- Live council quick-run against daemon — verified 2 council-virtual sessions (`peer-d-council-4169-ux-advocate`, `peer-d-council-4169-ops-realist`) appear in `/api/sessions` with `state=running`, `backend=council-virtual`
 - Chrome MCP visual: tab list = `[General, Plugins, Comms, Compute, Automata, About]` (no LLM, no Agents); Compute tab shows 11 cards; Automata tab includes `gc_projectprofiles`
 - Smoke 98/0/13 from alpha.9 baseline; re-run pending after this cut
 
@@ -22372,7 +22372,7 @@ and conversation mining. **All memory backlog items (BL43-BL67) are now implemen
 - **Multi-profile fallback chains**: named profiles with different accounts/API keys per backend. `session.fallback_chain` config auto-switches to the next profile on rate limit. Profile env vars applied to tmux session on launch. Configurable via YAML, web UI (Settings → Profiles & Fallback), and REST API.
 - **`channel_ready` + `channel_port` session fields**: set automatically when the per-session MCP channel calls `/api/channel/ready`; exposed in REST API `/api/sessions`. Used for debounced state detection and per-session channel routing
 - **Prompt context capture**: prompt alerts now include up to 10 surrounding screen lines (`prompt_context` field on Session) giving meaningful context about what is being asked, instead of a single matched line or noisy fallback
-- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `ralfthewise: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
+- **Alert title format**: all alert titles now use `hostname: name [id]: event` (e.g. `peer-d: myproject [a1b2]: running → waiting_input`) for consistent identification across local and remote channels
 - **Rate-limit auto-continue**: when a rate limit is detected with a reset time, datawatch creates a persisted scheduled command to auto-resume the session after the limit resets — survives daemon restarts (replaces previous in-memory timer that was lost on reboot)
 - **`ScheduleStore.CancelBySession`**: new method to cancel all pending scheduled commands for a session; called automatically on session kill and delete to prevent orphan entries
 - **Channel tab bidirectional**: channel tab now shows outgoing sends (blue `→`), incoming replies (amber `←`), and notifications (purple `⚡`) — previously only showed Claude's rare `reply` tool calls

@@ -354,7 +354,7 @@ datawatch llm enable my-ollama --pretest
 
 # 9. Delete (blocked if active sessions are using it).
 datawatch llm delete my-ollama
-#  → 409 Conflict: blocked_by: [{kind:session, id:ralfthewise-7a3c, ...}]
+#  → 409 Conflict: blocked_by: [{kind:session, id:peer-d-7a3c, ...}]
 
 # 10. Safe path: reassign bindings first, then delete.
 datawatch llm reassign my-ollama --to-llm claude-api
@@ -573,7 +573,7 @@ personas returns `409 Conflict` with a `blocked_by` list:
 ```json
 {
   "blocked_by": [
-    {"kind":"session","id":"ralfthewise-7a3c","name":"my-session","state":"running"},
+    {"kind":"session","id":"peer-d-7a3c","name":"my-session","state":"running"},
     {"kind":"automata","id":"prd-001","title":"Deploy feature X","state":"planning"}
   ]
 }

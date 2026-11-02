@@ -1524,10 +1524,10 @@ def cmd_self_test(a):
         t2 = parse_transcripts([p], rd)
         assert t2["total"]["cost_usd"] == t["total"]["cost_usd"] and t2["duplicate_message_lines_skipped"] == 1, t2
         # transcript location mirrors claude_usage.go
-        uid = claude_session_uuid("ralfthewise-f7ec")
+        uid = claude_session_uuid("peer-d-f7ec")
         assert re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", uid), uid
         import uuid as _uuid
-        assert uid == str(_uuid.uuid5(_uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "ralfthewise-f7ec")), uid
+        assert uid == str(_uuid.uuid5(_uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), "peer-d-f7ec")), uid
         tp = claude_transcript_path("/w/data.watch/x", "host-ab12", home=td)
         assert tp == os.path.join(td, ".claude", "projects", "-w-data-watch-x", claude_session_uuid("host-ab12") + ".jsonl"), tp
         os.makedirs(os.path.dirname(tp))

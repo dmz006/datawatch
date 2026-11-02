@@ -140,7 +140,7 @@ datawatch sessions input $SID "Start with the password reset flow"
 
 # 5. Inspect via API — note v7 field names.
 datawatch sessions get $SID | jq
-#  → {"id":"abcd","full_id":"ralfthewise-abcd","state":"running",
+#  → {"id":"abcd","full_id":"peer-d-abcd","state":"running",
 #     "task":"...","llm_ref":"claude-code","compute_node_ref":"gpu-box-1",
 #     "backend_family":"claude-code","last_channel_event_at":"..."}
 
