@@ -7952,7 +7952,7 @@ All of this was verified against a live daemon, not just `go test`: started the 
 ## v8.36.7 — fix(autonomous): a worker's `git add -A` could reach the operator's home directory when its project dir had no git repo of its own
 
 ### Fixed
-- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/user/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
+- **A one-shot task's `git add -A` could silently stage the operator's entire home directory** — found live while retrying PRD `a2833a5e`'s story-2 tasks: `/home/<user>/workspace/llm-research` (the PRD's `project_dir`) had never been `git init`'d on its own, so every git command run from inside it (including the daemon's own pre-task `git -C projectDir rev-parse HEAD` capture, which doesn't error on this — it silently returns the discovered ancestor repo's SHA instead) walked upward and landed on a stray `.git` at the operator's home directory. A worker's checkpoint-protocol `git add -A` — which stages relative to the *discovered repo's root*, not the task's project dir — began staging `.gnupg`, `.kube`, `.docker`, `.claude.json`, `.bash_history`, and the rest of the home directory before being caught and killed. Verified nothing sensitive was ever actually committed (checked the home-dir repo's full history: only `workspace/llm-research/*` paths across its entire log, no remote configured). `autonomousSpawn` now calls `ensureProjectDirOwnGitRepo` before every task: if a project dir's discovered git toplevel resolves to exactly the operator's home directory (the specific dangerous case — a project dir intentionally nested inside some *other* real repo is left untouched), it gets its own dedicated repo first.
 - Migrated the 6 other project directories found in the same exposed state (`Android`, `datawatch-intelligence`, `email`, `openrig-datawatch`, plus two ephemeral e2e/sandbox dirs) to their own repos as a one-time operational cleanup; not part of the code fix itself.
 - **CI: `attach stats-cluster tarball` release-asset upload retry window widened 3×90s → 8×60s** — observed on the v8.36.6 release: `gh release view`/`gh release upload` returned "release not found" for 3 full minutes of retries starting 6 minutes after goreleaser's own log confirmed the release was published (same tag, same repo, same token) — a read-path propagation lag, not a permissions or job-ordering bug. A manual retry ~15 minutes post-publish succeeded immediately; widened the in-job budget to comfortably cover it.
 
@@ -8343,7 +8343,7 @@ This completes BL381's PWA surface. REST + MCP + CLI + comm channel + fedCap shi
 
 ### Fixed
 - **Automata watchdog blind to `verifying`/`running_tests` tasks** — the built-in watchdog goroutine only scanned tasks in `in_progress` state for SSE stall patterns. Tasks stuck in `verifying` or `running_tests` (where the opencode session has an active SSE stream but the LLM backend timed out) were never detected and never killed, leaving them stuck until manual operator intervention. The watchdog now covers all three active task states.
-- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/user/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
+- **Insecure spawned `automata-watchdog` schedule removed** — a cron schedule was spawning opencode sessions with a task prompt that (1) issued `curl` to the local daemon API, (2) ran `tmux capture-pane` to read other sessions' terminal content (a cross-session secret read boundary violation), and (3) wrote reports to `/home/<user>/.datawatch/` outside the workspace. The schedule has been deleted and the spawned session killed. The built-in Go watchdog goroutine already covers SSE stall detection without any of these security issues.
 
 ## v8.27.0 — feat(autonomous): cancel story/task, requeue task, active session resource bars
 
@@ -8454,7 +8454,7 @@ These fixes complete the enforcement hardening started in v8.25.10, which fixed 
 - **`cmd/datawatch-stats/main.go`** — tegrastats probe started first (Jetson/Tegra priority), falls back to nvidia-smi on discrete-GPU hosts; logged at startup.
 
 ### Notes
-- On NVIDIA Thor (GB10) unified-memory SoCs, `tegrastats` reports system RAM as the GPU memory pool (no discrete VRAM), GPU temperature from `gpu@T.TC`, power from `VDD_GPU XmW`, and GPU util% = 0 (GR3D_FREQ absent in Thor format).
+- On NVIDIA Thor (GB10) unified-memory SoCs, `tegrastats` reports system RAM as the GPU memory pool (no discrete VRAM), GPU temperature from `gpu temp field (T dot TC, tegrastats)`, power from `VDD_GPU XmW`, and GPU util% = 0 (GR3D_FREQ absent in Thor format).
 - CAP_BPF must be re-granted on any manually deployed binary (`sudo setcap cap_bpf+eip ~/.local/bin/datawatch-stats`); CI goreleaser builds are unaffected.
 
 ## v8.25.2 — fix(ci): add datawatch-stats to goreleaser for linux/darwin arm64+amd64
@@ -8854,7 +8854,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 ### Added
 
-- **`docker/dockerfiles/Dockerfile.agent-goose`** — pre-creates `/home/datawatch/.config/goose/` so the sessions directory exists before the first `goose session` call (avoids a race on container cold-start); adds `ENV GOOSE_CLI_THEME=plain` to prevent escape-sequence bleed in tmux pipe-pane captures (was previously required only at launch-command level; now also a container default).
+- **`docker/dockerfiles/Dockerfile.agent-goose`** — pre-creates `/home/<user>/.config/goose/` so the sessions directory exists before the first `goose session` call (avoids a race on container cold-start); adds `ENV GOOSE_CLI_THEME=plain` to prevent escape-sequence bleed in tmux pipe-pane captures (was previously required only at launch-command level; now also a container default).
 
 ### Notes
 
@@ -9241,7 +9241,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   # Exact syntax from GH#128:
   datawatch schedule spawn \
     --cron "0 * * * *" \
-    --path /home/user/workspace/imap-mcp \
+    --path /home/<user>/workspace/imap-mcp \
     --schedule-name imap-hourly-rules \
     --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
   ```
@@ -9265,7 +9265,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
   session:
     extra_mcp_servers:
       - name: imap-mcp
-        command: /home/user/workspace/imap-mcp/imap-mcp
+        command: /home/<user>/workspace/imap-mcp/imap-mcp
         env:
           GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
   ```
@@ -9348,7 +9348,7 @@ Minor bump (8.13.39 → 8.14.0): new LLM backend (goose/goose-prompt) constitute
 
 - **Task-echo false positive eliminated** — The `\r`-split fix introduced in v8.12.4 inadvertently caused a false positive: if the task text itself contains the completion pattern (e.g. `"output a line starting with:\nDATAWATCH_COMPLETE: done"`), Claude Code's TUI re-renders the user input and a CR-segment starting with `  DATAWATCH_COMPLETE:` appears in the pipe-pane log within ~1 s of task delivery. `matchesCompletionPattern` fired on it, setting `StateComplete` before the LLM had run the Bash tool. Fix: `Manager` now records a `taskDeliveredAt` timestamp when `send_input` fires (`MarkTaskDelivered`); `processOutputLine` suppresses completion detection for 5 s after task delivery. Task echo appears at T+1 s; LLM API response arrives at T+10 s minimum, so 5 s safely covers the echo window without affecting real completions.
 
-  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/user | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
+  Verified end-to-end with a tool-using spawn (v8125-toolcall-reap-test2, ac1c): task `ls -la /home/<user> | wc -l` → Bash tool called → LLM emitted `⎿ DATAWATCH_COMPLETE: 54` → detected at ~55 s, tmux killed. 369-line log confirms full execution path (vs. 96 lines for the false-positive premature kill). Exactly one session spawned per tick.
 
 ---
 
@@ -10323,7 +10323,7 @@ Downstream-Review Rule.
 ### Fixed
 
 - **SRI version-pin timebomb.** `index.html` / `diagrams.html` / `api-docs.html` were loading CDN scripts with semver-range tags (`mermaid@10`, `marked@12`, `swagger-ui-dist@5`) alongside fixed sha384 integrity hashes. The CDN resolves the range to whatever is "latest in major"; the next CDN rotation would silently 404 the script with an SRI mismatch and the Diagrams + API Docs pages would render blank. Pinned to the currently-resolved exact versions (`mermaid@10.9.6`, `marked@12.0.2`, `swagger-ui-dist@5.32.6`); hashes match unchanged. `qrcodejs/1.0.0` was already exact.
-- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `10.0.0.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
+- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `192.0.2.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
 
 ---
 
@@ -10415,7 +10415,7 @@ Downstream-Review Rule.
 - **Cross-Origin-Embedder-Policy added** — `COEP: unsafe-none` on all responses. Resolves ZAP alert 90004 (COEP Missing).
 - **Cross-Origin-Resource-Policy added** — `CORP: same-origin` on all responses. Resolves ZAP alert 90004 (CORP Missing).
 - **Permissions-Policy added** — Restricts camera, microphone (self-only for Whisper voice), geolocation, payment, USB, motion sensors. Resolves ZAP alert 10063.
-- **Private IP Disclosure fixed** — Federation peer URL example changed from `10.0.0.2` (RFC 1918) to `198.51.100.2` (RFC 5737 documentation range). Resolves ZAP alert 2.
+- **Private IP Disclosure fixed** — Federation peer URL example changed from `192.0.2.2` (RFC 5737 documentation range, retained as a placeholder despite the ZAP false positive) to `198.51.100.2` (RFC 5737 TEST-NET-2). Resolves ZAP alert 2.
 - **Suspicious comments removed** — `// bug from v6.11.13` → `// workaround from v6.11.13`; `// Debug panel` → `// Diagnostic panel` in `app.js`. Resolves ZAP alert 10027.
 
 ---
@@ -12609,18 +12609,18 @@ Per `docs/plans/2026-05-08-v7.0.0-plan.md` § 5 S5.
 
 ```bash
 # CLI
-datawatch memory scope recall --persona alice --project /home/me/web --session sess1
-datawatch memory scope borrow --scope project-shared --project /home/me/web --top-k 5
-datawatch memory scope seed --from-scope project-shared --from-project /home/me/web \
-  --to-scope session-local --to-project /home/me/marketing --to-session marketing-sess \
+datawatch memory scope recall --persona alice --project /home/<user>/web --session sess1
+datawatch memory scope borrow --scope project-shared --project /home/<user>/web --top-k 5
+datawatch memory scope seed --from-scope project-shared --from-project /home/<user>/web \
+  --to-scope session-local --to-project /home/<user>/marketing --to-session marketing-sess \
   --content-substring "branding"
 datawatch memory scope promote --memory-id 42 \
-  --from-scope session-local --from-project /home/me/web --from-session sess1 \
-  --to-scope project-shared --to-project /home/me/web \
+  --from-scope session-local --from-project /home/<user>/web --from-session sess1 \
+  --to-scope project-shared --to-project /home/<user>/web \
   --persona alice --run run-99
 
 # REST
-curl -sk 'https://localhost:8443/api/memory/scopes/recall?persona=alice&project=/home/me/web'
+curl -sk 'https://localhost:8443/api/memory/scopes/recall?persona=alice&project=/home/<user>/web'
 curl -sk -X POST 'https://localhost:8443/api/memory/scopes/promote' \
   -H 'Content-Type: application/json' \
   -d '{"memory_id":42,"from":{"scope":"session-local",...},"to":{"scope":"project-shared",...}}'
@@ -13574,7 +13574,7 @@ Functional ✓ 1834 tests · Smoke ✓ exit 0 · Rule audit ✓ 31 rules walked 
 
 ### Summary — sessions.json corruption auto-recovery + atomic writes
 
-Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/user/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
+Operator post-mortem 2026-05-07: daemon crashed at startup with `Error: create session manager: open session store: parse store /home/<user>/.datawatch/sessions.json: unexpected end of JSON input`. Root cause: the previous version's `secfile.WriteFile` used non-atomic `os.WriteFile` — a daemon kill mid-flush left the file truncated at a 128 KB page boundary mid-string. Two fixes:
 
 ### Fixed (BL286)
 
@@ -17406,7 +17406,7 @@ Patch — loopback URL respects bind config + startup health probe.
 - **127.0.0.1 hardcoded everywhere**, breaking when the daemon binds
   to a specific non-loopback interface (operator-reported: "Loopback
   may not exist if someone changes the default interfaces, validate"
-  — when `cfg.Server.Host = 192.168.1.5`, the daemon listens at
+  — when `cfg.Server.Host = 192.0.2.35`, the daemon listens at
   192.x and DOESN'T accept on 127.0.0.1, so all 14 internal loopback
   HTTP calls — autonomous decompose, voice transcribe, channel
   bridge, orchestrator guardrails, etc. — silently fail).

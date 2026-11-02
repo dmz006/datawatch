@@ -106,7 +106,7 @@ func TestSendError(t *testing.T) {
 	defer srv.Close()
 
 	b := New(srv.URL, "", "", "")
-	err := b.Send("u@e.com", "hi")
+	err := b.Send("u@example.com", "hi")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -203,7 +203,7 @@ func TestHandleSSELine(t *testing.T) {
 	b := New("http://localhost:8765", "", "datawatch", "")
 
 	t.Run("valid inbound.command", func(t *testing.T) {
-		cmd := verifiedCommand{Account: "acct", From: "a@b.com"}
+		cmd := verifiedCommand{Account: "acct", From: "a@example.com"}
 		cmd.Command.Verb = "deploy"
 		cmd.Command.Args = `{"env":"prod"}`
 		cmd.Command.Nonce = "n1"
@@ -213,7 +213,7 @@ func TestHandleSSELine(t *testing.T) {
 
 		var got messaging.Message
 		b.handleSSELine(string(line), func(m messaging.Message) { got = m })
-		if got.Sender != "a@b.com" {
+		if got.Sender != "a@example.com" {
 			t.Errorf("sender = %q", got.Sender)
 		}
 		if !strings.HasPrefix(got.Text, "deploy") {
@@ -261,7 +261,7 @@ func TestSend_SendsAuthHeader(t *testing.T) {
 	defer srv.Close()
 
 	b := New(srv.URL, "", "", "")
-	if err := b.Send("u@e.com", "hi"); err != nil {
+	if err := b.Send("u@example.com", "hi"); err != nil {
 		t.Fatalf("Send() error: %v", err)
 	}
 	if gotAuth != "Bearer tok-abc123" {
@@ -323,7 +323,7 @@ func TestSend_NoTokenConfigured_NoAuthHeader(t *testing.T) {
 	defer srv.Close()
 
 	b := New(srv.URL, "", "", "")
-	if err := b.Send("u@e.com", "hi"); err != nil {
+	if err := b.Send("u@example.com", "hi"); err != nil {
 		t.Fatalf("Send() error: %v", err)
 	}
 	if sawHeader {
@@ -340,7 +340,7 @@ func TestSend_401IsReportedAsAuthError(t *testing.T) {
 	defer srv.Close()
 
 	b := New(srv.URL, "", "", "")
-	err := b.Send("u@e.com", "hi")
+	err := b.Send("u@example.com", "hi")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

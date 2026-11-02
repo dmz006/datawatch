@@ -38,7 +38,7 @@ func TestPutConfig_MCPPublicURLRejectsInvalid(t *testing.T) {
 	for _, v := range bad {
 		t.Run(v, func(t *testing.T) {
 			s, cfgPath := newMCPPublicURLServer(t)
-			const good = "https://host.tailnet.ts.net:8081"
+			const good = "https://host.tailnet.example.net:8081"
 			if rr := putMCPPublicURL(s, good); rr.Code != http.StatusOK {
 				t.Fatalf("PUT %q: want 200, got %d body=%s", good, rr.Code, rr.Body.String())
 			}

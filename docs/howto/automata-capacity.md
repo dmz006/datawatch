@@ -700,7 +700,7 @@ of the wait is known, the time it ends.
 | Budget window full | `budget window full: claude-code spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
 | Global cooldown | `global cooldown until 14:30 UTC (in 12m)` | The daemon-wide rate-limit cooldown is active. When its end is not known the text is `global cooldown active`. |
 | Awaiting external | `await_external: CI run on the branch` | The worker parked itself on an outside condition (see "Park on an external condition"). A bare `await_external` means it gave no condition. A long condition is cut at 400 characters. |
-| Tree lock | `tree lock: tree:/home/me/project held by task t-7c1d44 (PRD 4e2a9b10) since 2026-10-22T18:10:00Z` | Another task holds the write lock on the same project tree. If the lock record cannot be read: `tree lock: <key> held by unknown holder (record unreadable)`. |
+| Tree lock | `tree lock: tree:/home/<user>/project held by task t-7c1d44 (PRD 4e2a9b10) since 2026-10-22T18:10:00Z` | Another task holds the write lock on the same project tree. If the lock record cannot be read: `tree lock: <key> held by unknown holder (record unreadable)`. |
 
 Two more reasons are not capacity at all, but they show up in the same
 queue: a task whose dependencies are unfinished (`waiting for unfinished

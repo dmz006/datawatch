@@ -23,12 +23,12 @@ func TestParse_New(t *testing.T) {
 }
 
 func TestParse_NewWithProjectDir(t *testing.T) {
-	cmd := Parse("new: /home/user/myproject: add a login page")
+	cmd := Parse("new: /home/<user>/myproject: add a login page")
 	if cmd.Type != CmdNew {
 		t.Errorf("Type = %q, want %q", cmd.Type, CmdNew)
 	}
-	if cmd.ProjectDir != "/home/user/myproject" {
-		t.Errorf("ProjectDir = %q, want /home/user/myproject", cmd.ProjectDir)
+	if cmd.ProjectDir != "/home/<user>/myproject" {
+		t.Errorf("ProjectDir = %q, want /home/<user>/myproject", cmd.ProjectDir)
 	}
 	if cmd.Text != "add a login page" {
 		t.Errorf("Text = %q, want %q", cmd.Text, "add a login page")
@@ -398,9 +398,9 @@ func TestParseScheduleSpawnParams(t *testing.T) {
 			wantOneShot: true, // default
 		},
 		{
-			input:        "task=check logs dir=/home/user backend=openai llm-ref=gpt4o model=gpt-4o effort=thorough cron=0 * * * * name=hourly session-name=audit-sess",
+			input:        "task=check logs dir=/home/<user> backend=openai llm-ref=gpt4o model=gpt-4o effort=thorough cron=0 * * * * name=hourly session-name=audit-sess",
 			wantTask:     "check logs",
-			wantDir:      "/home/user",
+			wantDir:      "/home/<user>",
 			wantBackend:  "openai",
 			wantLLMRef:   "gpt4o",
 			wantModel:    "gpt-4o",
@@ -460,15 +460,15 @@ func TestParseScheduleSpawnParams(t *testing.T) {
 }
 
 func TestParse_ScheduleSpawn(t *testing.T) {
-	cmd := Parse("schedule spawn task=audit logs dir=/home/user cron=0 * * * *")
+	cmd := Parse("schedule spawn task=audit logs dir=/home/<user> cron=0 * * * *")
 	if cmd.Type != CmdScheduleSpawn {
 		t.Errorf("Type = %q, want %q", cmd.Type, CmdScheduleSpawn)
 	}
 	if cmd.SpawnTask != "audit logs" {
 		t.Errorf("SpawnTask = %q, want %q", cmd.SpawnTask, "audit logs")
 	}
-	if cmd.SpawnDir != "/home/user" {
-		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/user")
+	if cmd.SpawnDir != "/home/<user>" {
+		t.Errorf("SpawnDir = %q, want %q", cmd.SpawnDir, "/home/<user>")
 	}
 	if cmd.CronExpr != "0 * * * *" {
 		t.Errorf("CronExpr = %q, want %q", cmd.CronExpr, "0 * * * *")

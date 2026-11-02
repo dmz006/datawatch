@@ -17,7 +17,7 @@ func TestInjectTokenIntoHTTPS(t *testing.T) {
 		token string
 		want  string
 	}{
-		{"https + token", "https://github.com/o/r.git", "tok", "https://x-access-token:tok@github.com/o/r.git"},
+		{"https + token", "https://gitea.example.com/o/r.git", "tok", "https://x-access-token:tok@gitea.example.com/o/r.git"},
 		{"http + token", "http://gitea/o/r", "tok", "http://x-access-token:tok@gitea/o/r"},
 		{"empty token leaves untouched", "https://github.com/o/r", "", "https://github.com/o/r"},
 		{"non-http URL untouched", "git@github.com:o/r.git", "tok", "git@github.com:o/r.git"},

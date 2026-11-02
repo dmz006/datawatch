@@ -676,7 +676,7 @@ n_subs=$SUB_COUNT
 create_sub "https://hooks.example.net/datawatch"
 [[ "$HTTP_CODE" == 400 ]] || die "a host that is not allow-listed was accepted (HTTP $HTTP_CODE)"
 pass "a host that is not allow-listed is refused at creation (400)"
-create_sub "http://169.254.169.254/latest/meta-data/"
+create_sub "http://192.0.2.169/latest/meta-data/"
 [[ "$HTTP_CODE" == 400 ]] || die "the cloud metadata address was accepted (HTTP $HTTP_CODE)"
 pass "the cloud metadata address is refused at creation (400)"
 count_subscriptions

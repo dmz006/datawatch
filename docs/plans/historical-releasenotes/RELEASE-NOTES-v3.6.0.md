@@ -80,7 +80,7 @@ session:
 
 projects:                                # BL27
   fooapp:
-    dir: "/home/op/fooapp"
+    dir: "/home/<user>/fooapp"
     default_backend: "claude-code"
     description: "main project"
 

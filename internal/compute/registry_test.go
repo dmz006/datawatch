@@ -134,25 +134,25 @@ func TestRegistrySeed(t *testing.T) {
 
 func TestRegistryEnsureFromStatsPeer(t *testing.T) {
 	r := newTestRegistry(t)
-	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.5:9001", "B")
+	n, created, err := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
 	// v7.0.0-alpha.23: AutoCreatedFromStatsPeer now defaults to KindOllama
 	// (the operator's safe assumption for observed peers; they re-pick if wrong).
 	if err != nil || !created || n.Name != "gpu-remote" || n.Kind != KindOllama || !n.AutoCreated {
 		t.Fatalf("first peer: %v created=%v node=%+v", err, created, n)
 	}
 	// Second push from same peer should NOT re-create.
-	_, created2, _ := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.5:9001", "B")
+	_, created2, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.5:9001", "B")
 	if created2 {
 		t.Fatalf("second peer push should not auto-create")
 	}
 	// Address change should refresh (normalized to http:// on store).
-	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "10.0.0.6:9001", "B")
-	if n3.Address != "http://10.0.0.6:9001" {
+	n3, _, _ := r.EnsureFromStatsPeer("gpu-remote", "192.0.2.6:9001", "B")
+	if n3.Address != "http://192.0.2.6:9001" {
 		t.Fatalf("address refresh: %s", n3.Address)
 	}
 	// v7.0.0-alpha.23: Shape C now flagged via AutoTag "shape:cluster"
 	// (Kind defaults to KindOllama; operator re-picks if wrong).
-	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "10.42.0.1:9001", "C")
+	nk8s, created3, _ := r.EnsureFromStatsPeer("k8s-pod-1", "192.0.2.241:9001", "C")
 	if !created3 || nk8s.Kind != KindOllama {
 		t.Fatalf("shape C: created=%v kind=%s", created3, nk8s.Kind)
 	}
@@ -256,17 +256,17 @@ func TestRegistryAdd_NormalizesAddress(t *testing.T) {
 // strings from incoming stats-peer pushes are stored with http:// prefix.
 func TestEnsureFromStatsPeer_NormalizesAddress(t *testing.T) {
 	r := newTestRegistry(t)
-	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.5:9001", "B")
+	n, _, err := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.5:9001", "B")
 	if err != nil {
 		t.Fatalf("EnsureFromStatsPeer: %v", err)
 	}
-	if n.Address != "http://10.0.0.5:9001" {
-		t.Errorf("Address = %q, want http://10.0.0.5:9001", n.Address)
+	if n.Address != "http://192.0.2.5:9001" {
+		t.Errorf("Address = %q, want http://192.0.2.5:9001", n.Address)
 	}
 	// Update via second push — should also normalize.
-	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "10.0.0.6:9001", "B")
-	if n2.Address != "http://10.0.0.6:9001" {
-		t.Errorf("refreshed Address = %q, want http://10.0.0.6:9001", n2.Address)
+	n2, _, _ := r.EnsureFromStatsPeer("gpu-stats", "192.0.2.6:9001", "B")
+	if n2.Address != "http://192.0.2.6:9001" {
+		t.Errorf("refreshed Address = %q, want http://192.0.2.6:9001", n2.Address)
 	}
 }
 

@@ -28,8 +28,8 @@ import (
 const (
 	piNodeFirst   = "datawatch"
 	piNodeSecond  = "local-node"
-	piAddrFirst   = "http://10.0.0.1:11434"
-	piAddrSecond  = "http://10.0.0.2:11434"
+	piAddrFirst   = "http://192.0.2.1:11434"
+	piAddrSecond  = "http://192.0.2.2:11434"
 	piBackendName = "pi-prompt"
 )
 
@@ -124,13 +124,13 @@ func TestPiPromptRestartKeepsOneWorkerPerNode(t *testing.T) {
 			t.Run("endpoint equals the node address", func(t *testing.T) {
 				r, a, b := piRestart(t, servesBoth,
 					&session.Session{NodeAddress: piAddrFirst, OllamaURL: piAddrFirst},
-					&session.Session{NodeAddress: "HTTP://10.0.0.2:11434/", OllamaURL: piAddrSecond})
+					&session.Session{NodeAddress: "HTTP://192.0.2.2:11434/", OllamaURL: piAddrSecond})
 				assertOnePerNode(t, r, a, b)
 			})
 
 			t.Run("endpoint matches nothing never defaults to a node", func(t *testing.T) {
 				stray := func() *session.Session {
-					return &session.Session{NodeAddress: "http://10.9.9.9:11434", OllamaURL: "http://10.9.9.9:11434"}
+					return &session.Session{NodeAddress: "http://192.0.2.199:11434", OllamaURL: "http://192.0.2.199:11434"}
 				}
 				r, a, b := piRestart(t, servesBoth, stray(), stray())
 				st := r.led.Snapshot()
@@ -210,7 +210,7 @@ func strayEndpointSession(addr string) *session.Session {
 // guess from a host name, DNS or part of a node name is made, and that a
 // worker whose node is knowable in the same run still lands on it.
 func TestPiPromptRestartUnknownNodeHoldsNoNode(t *testing.T) {
-	const piNodeFirstPort = "http://10.0.0.1:9999"
+	const piNodeFirstPort = "http://192.0.2.1:9999"
 	const piNodeLookalike = "http://datawatch-gpu.example:11434"
 
 	t.Run("two workers on no known node", func(t *testing.T) {

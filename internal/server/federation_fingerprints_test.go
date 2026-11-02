@@ -26,7 +26,7 @@ func testFingerprintExporter() *fingerprint.Exporter {
 	return &fingerprint.Exporter{
 		Nodes: &fingerprint.IdentityResolver{
 			Nodes: func() []compute.Node {
-				return []compute.Node{{Name: "alpha", Kind: compute.KindLocal, Address: "http://10.0.0.5:11434"}}
+				return []compute.Node{{Name: "alpha", Kind: compute.KindLocal, Address: "http://192.0.2.5:11434"}}
 			},
 			Local: func() map[string]any {
 				return map[string]any{"gpu_uuids": []string{"uuid-1", "uuid-2"}}
@@ -155,7 +155,7 @@ func TestFingerprintEndpointOnlyHashes(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 	body := rr.Body.String()
-	for _, raw := range []string{"uuid-1,uuid-2", "uuid-1", "10.0.0.5", "shared-plan-a"} {
+	for _, raw := range []string{"uuid-1,uuid-2", "uuid-1", "192.0.2.5", "shared-plan-a"} {
 		if strings.Contains(body, raw) {
 			t.Errorf("response must not contain the raw value %q: %s", raw, body)
 		}

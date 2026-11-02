@@ -21,7 +21,7 @@ func TestSecurityFailureAssess(t *testing.T) {
 	t.Run("govulncheck GO identifier names the package", func(t *testing.T) {
 		log := strings.Join([]string{
 			"# go run github.com/julienschmidt/httprouter v1.3.2",
-			"scanned main in /home/runner/work/app/app",
+			"scanned main in /home/<user>/work/app/app",
 			"",
 			"main:",
 			"  * github.com/example/vulnlib is vulnerable to GO-2024-2407",

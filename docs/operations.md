@@ -601,7 +601,7 @@ configuration keeps blocking.
 
 **Placeholder and quoted patterns are never flagged.** In every mode the lint
 ignores template and glob syntax (`<name>`, `{x}`, `*`, `$NAME`, `~user`) and a
-path that sits inside a quoted search pattern, such as `grep '/home/x/.ssh'`.
+path that sits inside a quoted search pattern, such as `grep '/home/<user>/.ssh'`.
 A task that only mentions such text is not blocked.
 
 **Remedies.** A lint message names the token, the line and one of two fixes:
@@ -1430,7 +1430,9 @@ mcp:
   sse_port: 8081
   token: "mcp-auth-token"
   # Required when remote MCP clients reach SSE through the proxy:
-  public_url: "https://host.example.ts.net:8081"
+  # (example value only; your real proxy URL lives in your operator config
+  # and is not committed to this repository)
+  public_url: "https://proxy-host.example.net:8081"
 ```
 
 The MCP SSE transport tells each client where to POST messages (the
@@ -1448,11 +1450,11 @@ file is ignored with a warning at SSE start, so the bind address is advertised.
 
 | Access method | How to set `mcp.public_url` |
 |---|---|
-| YAML | `mcp.public_url: "https://host.example.ts.net:8081"` in `~/.datawatch/config.yaml` |
-| CLI | `datawatch config set mcp.public_url https://host.example.ts.net:8081` |
+| YAML | `mcp.public_url: "https://proxy-host.example.net:8081"` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set mcp.public_url https://proxy-host.example.net:8081` |
 | Web UI | Settings → Comms → MCP Server → "SSE public URL (reverse proxy)" |
-| REST API | `PUT /api/config` with `{"mcp.public_url": "https://host.example.ts.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
-| Comm channel | `configure mcp.public_url=https://host.example.ts.net:8081` |
+| REST API | `PUT /api/config` with `{"mcp.public_url": "https://proxy-host.example.net:8081"}`; read it from `GET /api/config` (`mcp.public_url`). MCP `config_set` uses the same path. |
+| Comm channel | `configure mcp.public_url=https://proxy-host.example.net:8081` |
 
 ### Unauthenticated listener startup warning
 
@@ -1607,7 +1609,7 @@ standalone mode (no browser address bar, full-screen app experience).
 4. Tap the browser menu (three dots) → "Add to Home Screen" or "Install app"
 5. The app will launch in standalone mode (no address bar)
 
-**If using Tailscale:** Access via `https://your-host.your-tailnet.ts.net:8080` —
+**If using Tailscale:** Access via `https://your-host.your-tailnet.example.net:8080` —
 Tailscale provides valid HTTPS certificates automatically.
 
 **Tab navigation in standalone mode:** Use the bottom navigation bar built into
@@ -1634,7 +1636,7 @@ Access via `https://your-host:8080` and accept the certificate warning once.
 
 If using Tailscale, access via the auto-HTTPS URL:
 ```
-https://your-host.your-tailnet.ts.net:8080
+https://your-host.your-tailnet.example.net:8080
 ```
 Tailscale provides valid certs automatically.
 

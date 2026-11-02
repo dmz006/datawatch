@@ -44,8 +44,8 @@ func TestOneShotStartWithLeasedNodeUsesNodeAddress(t *testing.T) {
 	if sess.ComputeNodeRef != "alpha" {
 		t.Fatalf("ComputeNodeRef = %q, want alpha", sess.ComputeNodeRef)
 	}
-	if sess.NodeAddress != "http://10.0.0.1:11434" {
-		t.Fatalf("NodeAddress = %q, want the leased node's address http://10.0.0.1:11434", sess.NodeAddress)
+	if sess.NodeAddress != "http://192.0.2.1:11434" {
+		t.Fatalf("NodeAddress = %q, want the leased node's address http://192.0.2.1:11434", sess.NodeAddress)
 	}
 	if sess.Model != "ollama/qwen3.8:27b" {
 		t.Fatalf("Model = %q, want the provider-qualified ollama/qwen3.8:27b", sess.Model)
@@ -72,8 +72,8 @@ func TestStartWithNoNodeNamedKeepsEntryRules(t *testing.T) {
 		if !ok || sess == nil {
 			t.Fatalf("session %q not found", id)
 		}
-		if sess.ComputeNodeRef != "alpha" || sess.NodeAddress != "http://10.0.0.1:11434" {
-			t.Fatalf("node = %q at %q, want alpha at http://10.0.0.1:11434", sess.ComputeNodeRef, sess.NodeAddress)
+		if sess.ComputeNodeRef != "alpha" || sess.NodeAddress != "http://192.0.2.1:11434" {
+			t.Fatalf("node = %q at %q, want alpha at http://192.0.2.1:11434", sess.ComputeNodeRef, sess.NodeAddress)
 		}
 	})
 

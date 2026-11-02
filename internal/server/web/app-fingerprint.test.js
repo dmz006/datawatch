@@ -178,7 +178,7 @@ test('editing an existing peer is a PUT to the peer path with fingerprint_sync a
     const { sandbox, byId, calls } = loadApp();
     byId['fedPeerFormWrap'] = { style: {} };
     byId['fedPeerFormName'] = inputEl(entry.name);          // readonly in edit mode
-    byId['fedPeerFormURL'] = inputEl('http://10.0.0.9:8083');
+    byId['fedPeerFormURL'] = inputEl('http://192.0.2.9:8083');
     byId['fedPeerFormToken'] = inputEl('');
     byId['fedPeerFormChannelIdentity'] = inputEl('');
     byId['fedPeerFormTLSSkipVerify'] = chkEl(false);
@@ -190,7 +190,7 @@ test('editing an existing peer is a PUT to the peer path with fingerprint_sync a
     assert.ok(sandbox._fedPeerFormEntry, 'edit mode tracks the entry');
     // Operator edits the URL and sets the toggle to its final state AFTER the
     // form pre-filled from the record (pre-fill is overwritten by the operator).
-    byId['fedPeerFormURL'].value = 'http://10.0.0.9:8083';
+    byId['fedPeerFormURL'].value = 'http://192.0.2.9:8083';
     byId['fedPeerFormFingerprintSync'].checked = checked;
 
     sandbox.submitFedPeerForm();
@@ -202,7 +202,7 @@ test('editing an existing peer is a PUT to the peer path with fingerprint_sync a
     const body = JSON.parse(put.opts.body);
     assert.ok('fingerprint_sync' in body, 'fingerprint_sync is always explicit in an edit');
     assert.equal(body.fingerprint_sync, expectFp);
-    assert.equal(body.url, 'http://10.0.0.9:8083');
+    assert.equal(body.url, 'http://192.0.2.9:8083');
     assert.ok(!('name' in body), 'the name is not part of the edit body');
     assert.equal(sandbox._fedPeerFormEntry, null, 'edit context cleared after submit');
   }
@@ -213,7 +213,7 @@ test('adding a new peer is still a POST and fingerprint_sync rides along only wh
     const { sandbox, byId, calls } = loadApp();
     byId['fedPeerFormWrap'] = { style: {} };
     byId['fedPeerFormName'] = inputEl('new-b');
-    byId['fedPeerFormURL'] = inputEl('http://10.0.0.9:8083');
+    byId['fedPeerFormURL'] = inputEl('http://192.0.2.9:8083');
     byId['fedPeerFormToken'] = inputEl('');
     byId['fedPeerFormChannelIdentity'] = inputEl('');
     byId['fedPeerFormTLSSkipVerify'] = chkEl(false);
@@ -224,7 +224,7 @@ test('adding a new peer is still a POST and fingerprint_sync rides along only wh
     await flushAsync(10);
     assert.equal(sandbox._fedPeerFormEntry, null, 'add mode has no tracked entry');
     // Operator types the URL and opts in/out AFTER the form reset the fields.
-    byId['fedPeerFormURL'].value = 'http://10.0.0.9:8083';
+    byId['fedPeerFormURL'].value = 'http://192.0.2.9:8083';
     byId['fedPeerFormFingerprintSync'].checked = checked;
 
     sandbox.submitFedPeerForm();

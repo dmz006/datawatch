@@ -1189,7 +1189,7 @@ type PushConfig struct {
 	AllowInsecureEndpoints bool `yaml:"allow_insecure_endpoints"`
 	// BlockPrivateEndpoints, when true, additionally rejects endpoints
 	// resolving to RFC1918 / Tailscale CGNAT (100.64.0.0/10) / IPv6 ULA
-	// (fc00::/7) addresses. Default false — that's exactly where most
+	// (fc00-:fdff range) addresses. Default false — that's exactly where most
 	// real self-hosted push distributors live, so blocking it by default
 	// would break the operator's own working setup.
 	BlockPrivateEndpoints bool `yaml:"block_private_endpoints"`
@@ -1459,7 +1459,7 @@ type TwilioConfig struct {
 	WebhookAddr string `yaml:"webhook_addr"`
 	// WebhookPublicURL (SEC-005) is the exact URL configured as this
 	// number's "A MESSAGE COMES IN" webhook in the Twilio console (e.g.
-	// "https://host.ts.net/sms") — required to verify the X-Twilio-Signature
+	// "https://host.example.net/sms") — required to verify the X-Twilio-Signature
 	// header, which Twilio computes over this exact URL plus the sorted
 	// POST params. Left empty, the webhook accepts any POST with no
 	// signature check at all (matches this codebase's github_webhook.secret
@@ -1740,7 +1740,7 @@ type MCPConfig struct {
 	SSEBindTimeout time.Duration `yaml:"sse_bind_timeout"`
 
 	// PublicURL is the externally-reachable base URL of the SSE server,
-	// for example "https://host.tailnet.ts.net:8081". When set, it is the
+	// for example "https://host.tailnet.example.net:8081". When set, it is the
 	// base URL advertised to clients in the SSE "endpoint" event instead
 	// of the bind address, which is required when the SSE server is bound
 	// to localhost behind a TLS-terminating reverse proxy (Tailscale

@@ -35,8 +35,8 @@ func TestSSEBaseURL(t *testing.T) {
 		},
 		{
 			name: "empty public_url uses first of comma-separated hosts, trimmed",
-			cfg:  config.MCPConfig{SSEHost: " 10.0.0.5 , 127.0.0.1", SSEPort: 8081},
-			want: "http://10.0.0.5:8081",
+			cfg:  config.MCPConfig{SSEHost: " 192.0.2.5 , 127.0.0.1", SSEPort: 8081},
+			want: "http://192.0.2.5:8081",
 		},
 		{
 			name: "whitespace-only public_url is treated as empty",
@@ -45,8 +45,8 @@ func TestSSEBaseURL(t *testing.T) {
 		},
 		{
 			name: "public_url overrides bind address",
-			cfg:  config.MCPConfig{SSEHost: "127.0.0.1", SSEPort: 8081, PublicURL: "https://host.tailnet.ts.net:8081"},
-			want: "https://host.tailnet.ts.net:8081",
+			cfg:  config.MCPConfig{SSEHost: "127.0.0.1", SSEPort: 8081, PublicURL: "https://host.tailnet.example.net:8081"},
+			want: "https://host.tailnet.example.net:8081",
 		},
 		{
 			name: "public_url trailing slashes and whitespace are trimmed",
@@ -102,10 +102,10 @@ func readEndpointEvent(t *testing.T, baseURL string) string {
 }
 
 func TestSSEEndpointEvent_AdvertisesPublicURL(t *testing.T) {
-	cfg := config.MCPConfig{SSEHost: "127.0.0.1", SSEPort: 8081, PublicURL: "https://host.tailnet.ts.net:8081/"}
+	cfg := config.MCPConfig{SSEHost: "127.0.0.1", SSEPort: 8081, PublicURL: "https://host.tailnet.example.net:8081/"}
 	got := readEndpointEvent(t, sseBaseURL(&cfg))
-	if !strings.HasPrefix(got, "https://host.tailnet.ts.net:8081/message?sessionId=") {
-		t.Errorf("endpoint event = %q, want prefix https://host.tailnet.ts.net:8081/message?sessionId=", got)
+	if !strings.HasPrefix(got, "https://host.tailnet.example.net:8081/message?sessionId=") {
+		t.Errorf("endpoint event = %q, want prefix https://host.tailnet.example.net:8081/message?sessionId=", got)
 	}
 }
 

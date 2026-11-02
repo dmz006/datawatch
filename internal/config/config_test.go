@@ -231,7 +231,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
 	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
-	cfg.MCP.PublicURL = "https://host.tailnet.ts.net:8081" // GH#207
+	cfg.MCP.PublicURL = "https://host.tailnet.example.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -650,9 +650,9 @@ func TestSessionConfig_ResolveProjectDir(t *testing.T) {
 	}{
 		{
 			name: "empty input falls back to default",
-			def:  "/home/u",
+			def:  "/home/<user>",
 			in:   "",
-			want: "/home/u",
+			want: "/home/<user>",
 		},
 		{
 			name: "empty input + no default returns empty (caller decides)",

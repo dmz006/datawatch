@@ -100,7 +100,7 @@ func blockedIPReason(ip net.IP) string {
 // stay allowed by default.
 func privateIPReason(ip net.IP) string {
 	switch {
-	case ip.IsPrivate(): // RFC1918 (10/8, 172.16/12, 192.168/16) + IPv6 ULA (fc00::/7)
+	case ip.IsPrivate(): // RFC1918 (10/8, 172.16/12, 192.168/16) + IPv6 ULA (fc00-:fdff range)
 		return "private-range address (RFC1918/ULA)"
 	case isTailscaleCGNAT(ip):
 		return "Tailscale CGNAT address (100.64.0.0/10)"

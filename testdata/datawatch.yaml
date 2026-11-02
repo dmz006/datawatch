@@ -88,7 +88,7 @@ whisper:
   enabled: false
   model: medium
   language: en
-  venv_path: /home/user/.datawatch/.venv
+  venv_path: /home/<user>/.datawatch/.venv
 
 # Vision backend — disabled by default; runner enables via PUT /api/config for TS-658+.
 # Points to the test ollama instance (port 21434 in docker-compose.test.yml;
@@ -149,7 +149,7 @@ web_search:
 
 goose:
   enabled: true
-  binary: /home/user/.local/bin/goose
+  binary: /home/<user>/.local/bin/goose
 
 opencode:
   enabled: false

@@ -4,7 +4,7 @@ docs:
   topics: [multi-server, federation, remote-servers, pwa, aggregation, proxy]
 exec_params:
   - {name: server_name, required: false, description: "Short name for the remote server (e.g. nas, prod)"}
-  - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.168.1.100:8080)"}
+  - {name: server_url, required: false, description: "Base URL of the remote datawatch instance (e.g. http://192.0.2.136:8080)"}
 exec_steps:
   - tool: mcp__datawatch__get_version
     description: Check local daemon version
@@ -62,7 +62,9 @@ configure it as a federated peer for push stats.
 1. Open **Settings → Comms → Servers**.
 2. Click **+ Add server**.
 3. Fill in **Name** (short slug, e.g. `nas`), **URL** (base URL including port,
-   e.g. `http://192.168.1.100:8080`), and **Bearer token**.
+   e.g. `http://192.0.2.136:8080`), and **Bearer token**.
+   The example URL is a placeholder; the real URL for a given server lives in
+   your operator config and is not committed to this repository.
 4. Click **Test** to verify connectivity — a green toast confirms the version.
 5. Click **Save**.
 
@@ -76,7 +78,7 @@ picker on all views.
 curl -X POST https://localhost:8443/api/servers \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"nas","url":"http://192.168.1.100:8080","token":"remote-token","enabled":true}'
+  -d '{"name":"nas","url":"http://192.0.2.136:8080","token":"remote-token","enabled":true}'
 
 # List
 curl https://localhost:8443/api/servers -H "Authorization: Bearer $TOKEN"
@@ -88,7 +90,7 @@ curl https://localhost:8443/api/servers/nas -H "Authorization: Bearer $TOKEN"
 curl -X PUT https://localhost:8443/api/servers/nas \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"nas","url":"http://192.168.1.100:8080","token":"new-token","enabled":true}'
+  -d '{"name":"nas","url":"http://192.0.2.136:8080","token":"new-token","enabled":true}'
 
 # Test connectivity
 curl -X POST https://localhost:8443/api/servers/nas/test \
@@ -112,7 +114,7 @@ server_delete name=nas
 
 ```bash
 datawatch server list
-datawatch server add --name nas --url http://192.168.1.100:8080 --token xxx
+datawatch server add --name nas --url http://192.0.2.136:8080 --token xxx
 datawatch server test nas
 datawatch server delete nas
 ```
@@ -125,7 +127,7 @@ them to seed servers at deploy time:
 ```yaml
 servers:
   - name: nas
-    url: http://192.168.1.100:8080
+    url: http://192.0.2.136:8080
     token: ${secret:nas-token}
     enabled: true
 ```

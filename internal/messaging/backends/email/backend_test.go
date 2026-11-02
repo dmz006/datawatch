@@ -42,9 +42,9 @@ func TestHasCRLF(t *testing.T) {
 	cases := map[string]bool{
 		"a@example.com":              false,
 		"":                           false,
-		"a\r\nBcc: evil@x.com":       true,
-		"a\nBcc: evil@x.com":         true,
-		"a\rBcc: evil@x.com":         true,
+		"a\r\nBcc: evil@example.com":       true,
+		"a\nBcc: evil@example.com":         true,
+		"a\rBcc: evil@example.com":         true,
 		"normal multi\nline is fine": true, // hasCRLF doesn't distinguish context -- callers decide what to check
 	}
 	for in, want := range cases {
@@ -57,7 +57,7 @@ func TestHasCRLF(t *testing.T) {
 func TestSend_RejectsCRLFInRecipient_BeforeDialing(t *testing.T) {
 	b := &Backend{host: "203.0.113.1", port: 25, from: "a@example.com"} // TEST-NET-3, non-routable
 	start := time.Now()
-	err := b.Send("evil\r\nBcc: attacker@evil.com", "a normal message")
+	err := b.Send("evil\r\nBcc: attacker@example.com", "a normal message")
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected an error for a CRLF-bearing recipient")
@@ -71,7 +71,7 @@ func TestSend_RejectsCRLFInRecipient_BeforeDialing(t *testing.T) {
 }
 
 func TestSend_RejectsCRLFInFromAddress_BeforeDialing(t *testing.T) {
-	b := &Backend{host: "203.0.113.1", port: 25, from: "a\r\nBcc: attacker@evil.com", to: "legit@example.com"}
+	b := &Backend{host: "203.0.113.1", port: 25, from: "a\r\nBcc: attacker@example.com", to: "legit@example.com"}
 	start := time.Now()
 	err := b.Send("", "a normal message")
 	elapsed := time.Since(start)
@@ -212,7 +212,7 @@ func TestSend_RealSendMail_AlsoRejectsCRLF_StdlibDoubleCheck(t *testing.T) {
 	// documents why alert #627 was not a live exploitable gap in this
 	// code as originally characterized (see the file header comment).
 	start := time.Now()
-	err := smtp.SendMail("203.0.113.1:25", nil, "a@example.com", []string{"evil\r\nBcc: x@y.com"}, []byte("body"))
+	err := smtp.SendMail("203.0.113.1:25", nil, "a@example.com", []string{"evil\r\nBcc: x@example.com"}, []byte("body"))
 	elapsed := time.Since(start)
 	if err == nil || !strings.Contains(err.Error(), "CR or LF") {
 		t.Fatalf("expected net/smtp's own validateLine error, got: %v", err)

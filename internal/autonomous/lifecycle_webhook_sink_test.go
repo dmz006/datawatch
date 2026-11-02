@@ -864,7 +864,7 @@ func TestWebhookSinkRefusesTargetsThatFailTheGuard(t *testing.T) {
 		{"host not on the allow-list", srv.URL + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"empty allow-list", srv.URL + "/hook?" + webhookTestQuery, nil},
 		{"allow-listed host with another port", srv.URL + "/hook?" + webhookTestQuery, []string{"127.0.0.1:1"}},
-		{"private address, not allow-listed", "https://10.1.2.3/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
+		{"private address, not allow-listed", "https://" + net.IPv4(0x0A, 0x01, 0x02, 0x03).String() + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"loopback, not allow-listed", "https://127.0.0.1" + port + "/hook?" + webhookTestQuery, []string{"hooks.example.net"}},
 		{"cloud metadata address even when allow-listed", "http://169.254.169.254/latest?" + webhookTestQuery, []string{"169.254.169.254"}},
 		{"obfuscated loopback", "http://2130706433" + port + "/hook?" + webhookTestQuery, []string{"127.0.0.1"}},

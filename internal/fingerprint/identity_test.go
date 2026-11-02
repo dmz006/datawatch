@@ -28,8 +28,8 @@ func localResolver(info map[string]any) *IdentityResolver {
 // identical Hash under one peer-pair key.
 func TestResolveSameNodeTwoAddresses(t *testing.T) {
 	r := localResolver(sameNodeInfo())
-	lan := compute.Node{Name: "gpu-lan", Kind: compute.KindLocal, Address: "http://192.168.1.10:11434"}
-	tailnet := compute.Node{Name: "gpu-tail", Kind: compute.KindLocal, Address: "https://gpu-box.tailnet.ts.net:11434"}
+	lan := compute.Node{Name: "gpu-lan", Kind: compute.KindLocal, Address: "http://192.0.2.40:11434"}
+	tailnet := compute.Node{Name: "gpu-tail", Kind: compute.KindLocal, Address: "https://gpu-box.tailnet.example.net:11434"}
 
 	vLan, err := r.Resolve(lan)
 	if err != nil {
@@ -171,8 +171,8 @@ func TestResolveNoSourceSkipped(t *testing.T) {
 func TestResolveIgnoresNameAndAddress(t *testing.T) {
 	r := localResolver(sameNodeInfo())
 	entries := []compute.Node{
-		{Name: "a", Kind: compute.KindLocal, Address: "http://10.0.0.1:11434"},
-		{Name: "b-c.d9", Kind: compute.KindLocal, Address: "https://100.64.0.9:11434"},
+		{Name: "a", Kind: compute.KindLocal, Address: "http://192.0.2.1:11434"},
+		{Name: "b-c.d9", Kind: compute.KindLocal, Address: "https://198.51.100.9:11434"},
 	}
 	first, err := r.Resolve(entries[0])
 	if err != nil {

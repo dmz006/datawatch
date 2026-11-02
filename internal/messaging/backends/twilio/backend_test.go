@@ -24,7 +24,7 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging"
 )
 
-const testURL = "https://example.ts.net/sms"
+const testURL = "https://sms-gateway.example.net/sms"
 
 func sign(authToken, fullURL string, form url.Values) string {
 	keys := make([]string, 0, len(form))

@@ -26,8 +26,8 @@ func heldNodeServer(t *testing.T) *Server {
 		t.Fatalf("NewRegistry: %v", err)
 	}
 	for _, n := range []*compute.Node{
-		{Name: "alpha", Kind: compute.KindOllama, Address: "10.0.0.1:11434"},
-		{Name: "beta", Kind: compute.KindOllama, Address: "10.0.0.2:11434"},
+		{Name: "alpha", Kind: compute.KindOllama, Address: "192.0.2.1:11434"},
+		{Name: "beta", Kind: compute.KindOllama, Address: "192.0.2.2:11434"},
 	} {
 		if err := reg.Add(n); err != nil {
 			t.Fatalf("Add %s: %v", n.Name, err)
@@ -88,8 +88,8 @@ func TestStartResolvesHeldNodeAddress(t *testing.T) {
 	if sess.ComputeNodeRef != "beta" {
 		t.Fatalf("ComputeNodeRef = %q, want beta", sess.ComputeNodeRef)
 	}
-	if sess.NodeAddress != "http://10.0.0.2:11434" {
-		t.Fatalf("NodeAddress = %q, want http://10.0.0.2:11434", sess.NodeAddress)
+	if sess.NodeAddress != "http://192.0.2.2:11434" {
+		t.Fatalf("NodeAddress = %q, want http://192.0.2.2:11434", sess.NodeAddress)
 	}
 	if sess.LLMRef != "pi-gpu" {
 		t.Fatalf("LLMRef = %q, want pi-gpu", sess.LLMRef)
@@ -122,8 +122,8 @@ func TestInteractiveStartUsesHeldNode(t *testing.T) {
 	if sess.ComputeNodeRef != "beta" {
 		t.Fatalf("ComputeNodeRef = %q, want the granted node beta", sess.ComputeNodeRef)
 	}
-	if sess.NodeAddress != "http://10.0.0.2:11434" {
-		t.Fatalf("NodeAddress = %q, want http://10.0.0.2:11434", sess.NodeAddress)
+	if sess.NodeAddress != "http://192.0.2.2:11434" {
+		t.Fatalf("NodeAddress = %q, want http://192.0.2.2:11434", sess.NodeAddress)
 	}
 }
 
@@ -149,8 +149,8 @@ func TestStartWithoutHeldNodeUnchanged(t *testing.T) {
 		if sess.ComputeNodeRef != "alpha" {
 			t.Fatalf("ComputeNodeRef = %q, want the first entry node alpha", sess.ComputeNodeRef)
 		}
-		if sess.NodeAddress != "http://10.0.0.1:11434" {
-			t.Fatalf("NodeAddress = %q, want http://10.0.0.1:11434", sess.NodeAddress)
+		if sess.NodeAddress != "http://192.0.2.1:11434" {
+			t.Fatalf("NodeAddress = %q, want http://192.0.2.1:11434", sess.NodeAddress)
 		}
 		if sess.OllamaURL != "" {
 			t.Fatalf("OllamaURL = %q, want empty for a pi-prompt session", sess.OllamaURL)

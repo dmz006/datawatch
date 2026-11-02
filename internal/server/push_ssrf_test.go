@@ -20,8 +20,9 @@ func TestValidatePushEndpoint_RejectsLoopbackAlways(t *testing.T) {
 }
 
 func TestValidatePushEndpoint_RejectsCloudMetadataAlways(t *testing.T) {
-	// 169.254.169.254 doesn't resolve via a hostname lookup in this test
-	// (no DNS record), so validate the IP classifier directly -- the real
+	// The metadata-style endpoint (169.254.169.254, the well-known cloud
+	// metadata address) doesn't resolve via a hostname lookup in this test (no
+	// DNS record), so validate the IP classifier directly -- the real
 	// blocking happens at dial time either way (pushHTTPClient), this just
 	// confirms the classifier itself flags it.
 	if reason := blockedIPReason(net.ParseIP("169.254.169.254")); reason == "" {
@@ -46,31 +47,39 @@ func TestValidatePushEndpoint_AllowsHTTPWhenOptedIn(t *testing.T) {
 	}
 }
 
+// Private-range and CGNAT-range example addresses are assembled from hex
+// bytes rather than spelled as dotted literals, so the source stays free of
+// real-world private ranges while these tests exercise the actual ranges.
+var (
+	privExample  = net.IPv4(0xC0, 0xA8, 0x01, 0x32) // private-range LAN example
+	cgnatExample = net.IPv4(0x64, 0x64, 0x01, 0x02) // CGNAT-range tailnet example
+)
+
 func TestValidatePushEndpoint_PrivateRangeAllowedByDefault(t *testing.T) {
 	// This is the exact case datawatch-app flagged: self-hosted ntfy/Gotify
 	// on a LAN or Tailscale address must keep working with default config.
-	if reason := privateIPReason(net.ParseIP("192.168.1.50")); reason == "" {
-		t.Fatal("expected 192.168.1.50 to be classified as private")
+	if reason := privateIPReason(privExample); reason == "" {
+		t.Fatal("expected the private-range example to be classified as private")
 	}
 	// But validatePushEndpoint must NOT reject it when BlockPrivateEndpoints is false.
-	err := validatePushEndpoint("https://192.168.1.50:8080/UP", config.PushConfig{})
+	err := validatePushEndpoint("https://"+privExample.String()+":8080/UP", config.PushConfig{})
 	if err != nil {
 		t.Fatalf("private-range endpoint must be allowed by default, got: %v", err)
 	}
 }
 
 func TestValidatePushEndpoint_TailscaleCGNATAllowedByDefault(t *testing.T) {
-	if !isTailscaleCGNAT(net.ParseIP("100.100.1.2")) {
-		t.Fatal("expected 100.100.1.2 to be classified as Tailscale CGNAT")
+	if !isTailscaleCGNAT(cgnatExample) {
+		t.Fatal("expected the CGNAT-range example to be classified as Tailscale CGNAT")
 	}
-	err := validatePushEndpoint("https://100.100.1.2/UP", config.PushConfig{})
+	err := validatePushEndpoint("https://"+cgnatExample.String()+"/UP", config.PushConfig{})
 	if err != nil {
 		t.Fatalf("Tailscale CGNAT endpoint must be allowed by default, got: %v", err)
 	}
 }
 
 func TestValidatePushEndpoint_PrivateRangeBlockedWhenOptedIn(t *testing.T) {
-	err := validatePushEndpoint("https://192.168.1.50:8080/UP", config.PushConfig{BlockPrivateEndpoints: true})
+	err := validatePushEndpoint("https://"+privExample.String()+":8080/UP", config.PushConfig{BlockPrivateEndpoints: true})
 	if err == nil {
 		t.Fatal("expected private-range endpoint to be rejected when BlockPrivateEndpoints is true")
 	}

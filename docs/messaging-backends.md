@@ -534,10 +534,10 @@ email:
   enabled: true
   host: smtp.gmail.com
   port: 587                          # 587 for STARTTLS, 465 for SSL, 25 for plain
-  username: me@gmail.com
+  username: me@example.com
   password: "app-password"           # use App Password for Gmail
-  from: datawatch@gmail.com
-  to: me@gmail.com
+  from: datawatch@example.com
+  to: me@example.com
 ```
 
 ### Notification Events
@@ -945,10 +945,10 @@ email:
   enabled: true
   host: smtp.gmail.com
   port: 587
-  username: me@gmail.com
+  username: me@example.com
   password: "app-password"
-  from: me@gmail.com
-  to: me@gmail.com
+  from: me@example.com
+  to: me@example.com
 ```
 
 Commands are accepted via Signal; notifications go to Signal, ntfy, and email.

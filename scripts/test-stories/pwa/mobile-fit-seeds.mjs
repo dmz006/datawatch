@@ -148,8 +148,8 @@ export const makeEnvelope = (kind, id, label, overrides = {}) => ({
 
 export const makeCrossHostEnvelope = (id, label, peerName, overrides = {}) => ({
   id, kind: 'session', label,
-  listen_addrs: [{ ip: '10.0.0.5', port: 49152 }],
-  outbound_edges: [{ target_ip: '10.0.1.20', target_port: 8080 }],
+  listen_addrs: [{ ip: '192.0.2.5', port: 49152 }],
+  outbound_edges: [{ target_ip: '192.0.2.220', target_port: 8080 }],
   callers: [
     { caller: `session:2001:${peerName}-c1`, caller_kind: 'session', conns: 1 },
     { caller: 'local:9000', caller_kind: 'backend', conns: 2 },
@@ -316,7 +316,7 @@ function baseSeed({ peers = [], local = {}, clusterNames = null } = {}) {
   responses['/api/channel/info'] = responseOk({
     kind: 'js',
     ready: true,
-    path: '/home/ops/.datawatch/channel/channel.js',
+    path: '/home/<user>/.datawatch/channel/channel.js',
     hint: '',
     node_path: '/usr/bin/node',
     stdio_enabled: true,
@@ -377,7 +377,7 @@ function baseSeed({ peers = [], local = {}, clusterNames = null } = {}) {
   });
   responses['/api/observer/envelope'] = responseOk({
     processes: [
-      makeProcess(101, 'node', '/usr/bin/node /home/ops/.datawatch/channel/channel.js'),
+      makeProcess(101, 'node', '/usr/bin/node /home/<user>/.datawatch/channel/channel.js'),
       makeProcess(202, 'claude', '/usr/local/bin/claude --model seed-model'),
     ],
   });

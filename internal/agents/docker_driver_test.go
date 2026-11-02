@@ -149,7 +149,7 @@ func TestDockerDriver_Spawn_InvocationContents(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "output.run"), []byte("fake-cid-123\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	inspectOut := `{"bridge":{"IPAddress":"172.17.0.5"}}`
+	inspectOut := `{"bridge":{"IPAddress":"192.0.3.250"}}`
 	if err := os.WriteFile(filepath.Join(dir, "output.inspect"), []byte(inspectOut), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -165,8 +165,8 @@ func TestDockerDriver_Spawn_InvocationContents(t *testing.T) {
 	if a.DriverInstance != "fake-cid-123" {
 		t.Errorf("DriverInstance=%q want fake-cid-123", a.DriverInstance)
 	}
-	if a.ContainerAddr != "172.17.0.5:8080" {
-		t.Errorf("ContainerAddr=%q want 172.17.0.5:8080", a.ContainerAddr)
+	if a.ContainerAddr != "192.0.3.250:8080" {
+		t.Errorf("ContainerAddr=%q want 192.0.3.250:8080", a.ContainerAddr)
 	}
 
 	// Inspect the invocation log: first line should be the `run`,

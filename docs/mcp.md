@@ -849,13 +849,13 @@ Sessions on my-server:
 ID:      a3f2
 State:   running
 Task:    write unit tests for the auth package
-Dir:     /home/me/myproject
+Dir:     /home/<user>/myproject
 Updated: 2026-03-26T14:32:01Z
 
 ID:      b7c1
 State:   waiting_input
 Task:    add Docker support
-Dir:     /home/me/myproject
+Dir:     /home/<user>/myproject
 Updated: 2026-03-26T14:45:22Z
 Prompt:  Overwrite existing Dockerfile? [y/N]
 ```
@@ -885,7 +885,7 @@ Start a new AI coding session.
 Session started.
 ID:      a3f2
 Task:    write unit tests for the auth package
-Dir:     /home/me/myproject
+Dir:     /home/<user>/myproject
 Tmux:    cs-myserver-a3f2
 
 Use session_output(id="a3f2") to follow progress.
@@ -1941,9 +1941,9 @@ Once configured, you can ask Claude in Cursor:
 
 **Start a task:**
 ```
-Start a datawatch session to write unit tests for the auth package in /home/me/myproject
+Start a datawatch session to write unit tests for the auth package in /home/<user>/myproject
 ```
-→ Claude calls `start_session(task="write unit tests...", project_dir="/home/me/myproject")`
+→ Claude calls `start_session(task="write unit tests...", project_dir="/home/<user>/myproject")`
 
 **Check progress:**
 ```

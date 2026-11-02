@@ -113,12 +113,15 @@ observer:
   peers:
     push_to:
       - name: primary-kona
-        url: https://100.64.0.1:8443    # primary's tailnet IP
+        url: https://198.51.100.1:8443    # primary's tailnet IP
         token: ${secret:PRIMARY_TOKEN}
         shape: B                        # or A / C
 ```
 
 `datawatch reload` on each.
+
+> The peer URLs in this guide are placeholders; each node's real URL lives in
+> its operator config and is not committed to this repository.
 
 ## Two happy paths
 
@@ -137,14 +140,14 @@ datawatch observer peer-token-mint --name lab-east-peer
 # 2. Register.
 datawatch secrets set PRIMARY_TOKEN "ops_..."
 datawatch observer peer-register \
-  --primary-url https://100.64.0.1:8443 \
+  --primary-url https://198.51.100.1:8443 \
   --name lab-east-peer \
   --shape B
 #  → registered; pushing every 5s
 
 # On the PEER — start datawatch-stats pushing to multiple primaries:
 datawatch-stats \
-  --datawatch https://100.64.0.1:8443,https://100.64.0.2:8443 \
+  --datawatch https://198.51.100.1:8443,https://198.51.100.2:8443 \
   --insecure-tls
 
 # Back on the PRIMARY:
@@ -152,7 +155,7 @@ datawatch-stats \
 # 3. Confirm peers are pushing (includes is_self:true entry for local daemon).
 datawatch observer peers
 #  → (self)           shape:A   is_self:true  ip:local
-#    lab-east-peer    shape:B   last_push:3s ago   ip:100.64.0.42
+#    lab-east-peer    shape:B   last_push:3s ago   ip:198.51.100.142
 #                                compute_node:datawatch-ollama
 
 # 4. View free peers (not yet bound to a Compute Node).
@@ -230,7 +233,7 @@ curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
 # Register (called by the peer).
 curl -sk -X POST -H "Authorization: Bearer $PRIMARY_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"name":"lab-east-peer","shape":"B","url":"https://100.64.0.42:8443"}' \
+  -d '{"name":"lab-east-peer","shape":"B","url":"https://198.51.100.142:8443"}' \
   $PRIMARY_BASE/api/observer/peers
 
 # Remove.
@@ -300,7 +303,7 @@ observer:
     push_interval: 5s
     push_to:                          # peer-side: where to push
       - name: primary-kona
-        url: https://100.64.0.1:8443
+        url: https://198.51.100.1:8443
         token: ${secret:PRIMARY_TOKEN}
         shape: B
         push_memory_summaries: true   # opt-in: forward memory snippets
