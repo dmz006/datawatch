@@ -68,6 +68,13 @@ func qstep2New(t *testing.T, enabled bool) *qstep2Fix {
 		Kinds: []string{autonomous.KindQuestionAnswered, autonomous.KindQuestionWithdrawn},
 	}, queue.push)
 	t.Cleanup(cancel)
+	// t.Cleanup runs last-in-first-out: registered here, after the
+	// t.TempDir() calls above, so it runs BEFORE those temp directories
+	// are removed. A raise fan-out goroutine still in flight would
+	// otherwise read/write the store and alerts files after they are
+	// deleted — waiting for every notify goroutine first keeps the
+	// cleanup order safe.
+	t.Cleanup(s.WaitQuestionNotifies)
 	applyEvents := func(on bool) { st.ApplyEventSwitch(on, mgr.EmitQuestionEvent, t.Logf) }
 	applyEvents(enabled)
 	s.SetQuestionEventsSwitch(applyEvents)
