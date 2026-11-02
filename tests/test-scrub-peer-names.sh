@@ -28,10 +28,14 @@
 #      re-run
 #   3. case-insensitivity of replacement
 #   4. same name -> same placeholder across two files
-#   5. areas split correctly (--list membership, per area)
+#   5. areas split correctly (--list membership, per area, including
+#      non-testdata assets that sit beside Go code: those must stay in
+#      docs, not go)
 #   6. --list: one file per line, exact sets including the `all` union
 #   7. find fallback for a non-git root
-#   8. no fixture name in any output of any case
+#   8. placeholder table keeps going past the first five entries
+#      (peer-c .. peer-z, then peer-c1, ...) without broken characters
+#   9. no fixture name in any output of any case (scans every capture)
 #
 # Usage:
 #   bash tests/test-scrub-peer-names.sh
@@ -124,6 +128,17 @@ new_tree() {
     git -C "$d" config user.email t@example.invalid
     git -C "$d" add -A
     git -C "$d" commit -qm init
+}
+
+# list_area DIR PATFILE AREA — run the scrub script with --list in the
+# CURRENT shell (never inside a command substitution, so run_scrub's
+# NCAP counter and its capture-file write land in the main process);
+# the sorted line list ends up in AREA_LIST.
+list_area() {
+    local dir="$1" pf="$2" area="$3"
+    run_scrub "$dir" "$pf" "$area" --list
+    printf '%s\n' "$RUN_OUT" | LC_ALL=C sort > "$W/sorted-area"
+    AREA_LIST="$(cat "$W/sorted-area")"
 }
 
 # names_grep TEXTFILE NAME — true when the file contains NAME
@@ -231,10 +246,22 @@ fi
 # Areas split: exact --list membership per area.
 T5="$W/t5"
 mkdir -p "$T5/internal/pkg/testdata" \
+    "$T5/internal/mcp" \
+    "$T5/internal/server/web" \
+    "$T5/internal/channel/embed" \
     "$T5/docs/plans/reports" \
     "$T5/docs/howto" "$T5/scripts" "$T5/tests"
 printf 'a\n' >"$T5/internal/pkg/a.go"
 printf 'b\n' >"$T5/internal/pkg/testdata/case.txt"
+# Non-testdata assets that live inside directories that also hold Go
+# code: they belong to the docs area, not the go area.
+printf 'g1\n' >"$T5/internal/mcp/mcp.go"
+printf 'g2\n' >"$T5/internal/mcp/README.md"
+printf 'g3\n' >"$T5/internal/server/web/web.go"
+printf 'g4\n' >"$T5/internal/server/web/app.js"
+printf 'g5\n' >"$T5/internal/server/web/index.html"
+printf 'g6\n' >"$T5/internal/channel/embed/embed.go"
+printf 'g7\n' >"$T5/internal/channel/embed/channel.js"
 printf 'c\n' >"$T5/docs/plans/2026-11-01-p.md"
 printf 'd\n' >"$T5/docs/plans/2026-09-30-q.md"
 printf 'e\n' >"$T5/docs/plans/README.md"
@@ -257,31 +284,35 @@ exp() {
 }
 
 D_OK=1
-list_of() {
-    local area="$1"
-    run_scrub "$T5" "$P5F" "$area" --list
-    LC_ALL=C sort <<<"$RUN_OUT"
-}
-[ "$(list_of go)" = "$(exp \
-    internal/pkg/a.go internal/pkg/testdata/case.txt)" ] || D_OK=0
-[ "$(list_of plans)" = "$(exp \
+list_area "$T5" "$P5F" go
+[ "$AREA_LIST" = "$(exp \
+    internal/channel/embed/embed.go internal/mcp/mcp.go internal/pkg/a.go \
+    internal/pkg/testdata/case.txt internal/server/web/web.go)" ] || D_OK=0
+list_area "$T5" "$P5F" plans
+[ "$AREA_LIST" = "$(exp \
     docs/plans/2026-11-01-p.md docs/plans/README.md)" ] || D_OK=0
-[ "$(list_of historical)" = "$(exp \
+list_area "$T5" "$P5F" historical
+[ "$AREA_LIST" = "$(exp \
     docs/plans/2026-09-30-q.md docs/plans/notes.md \
     docs/plans/reports/2026-11-01-r.md docs/plans/reports/report.md)" ] || D_OK=0
-[ "$(list_of docs)" = "$(exp \
-    README.md docs/howto/x.md scripts/other.sh)" ] || D_OK=0
+list_area "$T5" "$P5F" docs
+[ "$AREA_LIST" = "$(exp \
+    README.md docs/howto/x.md \
+    internal/channel/embed/channel.js internal/mcp/README.md \
+    internal/server/web/app.js internal/server/web/index.html \
+    scripts/other.sh)" ] || D_OK=0
 if [ "$D_OK" = "1" ]; then
     ok "areas split go/plans/historical/docs by tracked path"
 else
     fail "areas split go/plans/historical/docs by tracked path" \
-        "a --list output differs from its expected set"
+        "a --list output differs from its expected set (non-testdata assets beside Go code belong to docs)"
 fi
 
 # -------------------------------------------------------------- case 6
 E_OK=1
-ALL_OUT="$(list_of all)"
-[ "$(printf '%s\n' "$ALL_OUT" | grep -c .)" = "11" ] || E_OK=0
+list_area "$T5" "$P5F" all
+ALL_OUT="$AREA_LIST"
+[ "$(printf '%s\n' "$ALL_OUT" | grep -c .)" = "18" ] || E_OK=0
 for f in scripts/leak-patterns.local.template scripts/scrub-peer-names.sh \
          tests/test-scrub-x.sh tests/test-seed-y.sh .leak-patterns.local; do
     case "$ALL_OUT" in
@@ -289,10 +320,14 @@ for f in scripts/leak-patterns.local.template scripts/scrub-peer-names.sh \
     esac
 done
 for f in internal/pkg/a.go internal/pkg/testdata/case.txt \
+         internal/mcp/mcp.go internal/server/web/web.go \
+         internal/channel/embed/embed.go \
          docs/plans/2026-11-01-p.md docs/plans/README.md \
          docs/plans/2026-09-30-q.md docs/plans/notes.md \
          docs/plans/reports/report.md docs/plans/reports/2026-11-01-r.md \
-         README.md docs/howto/x.md scripts/other.sh; do
+         README.md docs/howto/x.md scripts/other.sh \
+         internal/mcp/README.md internal/server/web/app.js \
+         internal/server/web/index.html internal/channel/embed/channel.js; do
     case "$ALL_OUT" in
         *"$f"*) ;;
         *) E_OK=0 ;;
@@ -321,7 +356,59 @@ else
 fi
 
 # -------------------------------------------------------------- case 8
+# Placeholder continuation: pattern indexes 4..27 map onto peer-c ..
+# peer-z, index 28 onto peer-c1 — no broken characters, stable wrap.
+T8="$W/t8"
+mkdir -p "$T8"
+NM8=()
+for k in 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 \
+         20 21 22 23 24 25 26 27 28; do
+    NM8+=("$(printf '%s%s%s' "$FP1" "$FP2" "node-$k")")
+done
+{
+    for nm in "${NM8[@]}"; do
+        printf 'line for %s\n' "$nm"
+    done
+} >"$T8/README.md"
+P8F="$W/patterns8"
+{
+    for nm in "${NM8[@]}"; do
+        printf '%s\n' "$nm"
+    done
+} >"$P8F"
+new_tree "$T8"
+run_scrub "$T8" "$P8F" docs --apply
+H_OK=1
+[ "$RUN_RC" = "0" ] || H_OK=0
+[ "$RUN_OUT" = "$(printf '%s\n' 'README.md: 29' 'remaining: 0')" ] || H_OK=0
+# Sorted order: index i below, placeholder above.
+cnt8() { grep -cxF -- "$1" "$T8/README.md" 2>/dev/null; }
+[ "$(cnt8 'line for remote-node')" = "1" ] || H_OK=0   # index 0
+[ "$(cnt8 'line for peer-a')" = "1" ] || H_OK=0        # index 1
+[ "$(cnt8 'line for peer-b')" = "1" ] || H_OK=0        # index 2
+[ "$(cnt8 'line for gpu-node')" = "1" ] || H_OK=0      # index 3
+[ "$(cnt8 'line for peer-c')" = "1" ] || H_OK=0        # index 4
+[ "$(cnt8 'line for peer-w')" = "1" ] || H_OK=0        # index 24
+[ "$(cnt8 'line for peer-z')" = "1" ] || H_OK=0        # index 27
+[ "$(cnt8 'line for peer-c1')" = "1" ] || H_OK=0       # index 28
+[ "$(grep -c . "$T8/README.md")" = "29" ] || H_OK=0
+for nm in "${NM8[@]}"; do
+    names_grep "$T8/README.md" "$nm" && H_OK=0
+done
+if [ "$H_OK" = "1" ]; then
+    ok "placeholder table continues past the first five entries without broken characters"
+else
+    fail "placeholder table continues past the first five entries without broken characters" \
+        "index-to-placeholder mapping or re-run output differs"
+fi
+
+# -------------------------------------------------------------- case 9
+# Every scrub invocation above ran in the main shell, so the capture
+# counter and the capture files are consistent; this case scans them
+# all for fixture names.
 F_OK=1
+[ "$NCAP" = "12" ] || F_OK=0   # one invocation per listed call site
+[ "$(find "$CAPS" -type f -name 'c*.out' | grep -c .)" = "12" ] || F_OK=0
 while IFS= read -r cap; do
     [ -s "$cap" ] || continue
     for n in "$N1" "$N1U" "$N2" "$N2U" "$N3"; do

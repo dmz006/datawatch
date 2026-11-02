@@ -24,8 +24,11 @@
 #     --apply; without it this script is a pure dry run.
 #
 # Areas (by tracked path, relative to the root):
-#   go         *.go files plus files in the same or a parent directory as
-#              Go code (e.g. testdata next to the package)
+#   go         *.go files plus testdata files that sit next to Go code
+#              (files under a testdata/ directory belonging to a package
+#              directory that holds, or sits within, Go code) — other
+#              non-Go assets under Go package directories (web assets,
+#              READMEs, embed scripts) stay in the docs area
 #   plans      docs/plans (not docs/plans/reports) whose basename starts
 #              with a date on or after 2026-10-01, plus docs/plans/README.md
 #   historical other files under docs/plans (including docs/plans/reports,
@@ -130,24 +133,24 @@ mapfile -t PATS < "$PATLIST"
 
 # placeholder_for INDEX -> the fixed placeholder at that index of the
 # case-insensitively sorted, deduplicated pattern list.
+# Index 0..3: remote-node, peer-a, peer-b, gpu-node; index 4..27:
+# peer-c .. peer-z; index 28 and up: peer-c1, peer-d1, ..., peer-z1,
+# then peer-c2, ....
 placeholder_for() {
     local i="$1"
+    local LET='cdefghijklmnopqrstuvwxyz' j
     case "$i" in
         0) printf 'remote-node' ;;
         1) printf 'peer-a' ;;
         2) printf 'peer-b' ;;
         3) printf 'gpu-node' ;;
         *)
-            local idx=$((i - 4)) base=0 L
-            while [ "$idx" -ge 26 ]; do
-                idx=$((idx - 26))
-                base=$((base + 1))
-            done
-            L="$(printf "\\x$(printf '%x' $((99 + idx)))")"
-            if [ "$base" -gt 0 ]; then
-                printf 'peer-%s%s' "$L" "$base"
+            j=$((i - 4))
+            if [ "$j" -lt 24 ]; then
+                printf 'peer-%s' "${LET:j:1}"
             else
-                printf 'peer-%s' "$L"
+                j=$((j - 24))
+                printf 'peer-%s%s' "${LET:j % 24:1}" "$((j / 24 + 1))"
             fi
             ;;
     esac
@@ -200,18 +203,38 @@ get_files() {
 }
 get_files
 
-in_go_dir() {
-    # The file's directory, or any parent directory above it, holds Go
-    # code (e.g. a testdata tree next to its package).
-    local d="${1%/*}"
-    [ "$d" != "$1" ] || return 1
-    while :; do
-        [ -n "${GO_DIR[$d]:-}" ] && return 0
+# go_tree_near DIR — true when DIR holds Go code itself, a directory
+# holding Go code inside it, or lives under one.
+go_tree_near() {
+    local d="$1" k
+    for k in "${!GO_DIR[@]}"; do
+        case "$k" in
+            "$d"|"$d"/*) return 0 ;;
+        esac
         case "$d" in
-            */*) d="${d%/*}" ;;
-            *) return 1 ;;
+            "$k"/*) return 0 ;;
         esac
     done
+    return 1
+}
+
+in_go_assets() {
+    # *.go files always belong to the go area. Any other file belongs
+    # only if it sits under a testdata/ directory that sits next to Go
+    # code (the package's testdata tree). Other non-Go assets under
+    # package directories (web assets, READMEs, embed files) do NOT
+    # belong here — they stay in the docs area.
+    local f="$1" prefix
+    case "$f" in
+        *.go) return 0 ;;
+        */testdata/*) ;;
+        *) return 1 ;;
+    esac
+    prefix="${f%%/testdata/*}"
+    case "$prefix" in
+        */*) go_tree_near "$prefix" ;;
+        *) return 1 ;;
+    esac
 }
 
 in_plans() {
@@ -256,7 +279,7 @@ in_docs() {
     case "$f" in
         *.go) return 1 ;;
     esac
-    in_go_dir "$f" && return 1
+    in_go_assets "$f" && return 1
     case "$f" in
         docs/plans/*) return 1 ;;
         scripts/leak-patterns.local.template) return 1 ;;
@@ -274,15 +297,13 @@ in_area() {
     local f="$1"
     case "$AREA" in
         go)
-            case "$f" in *.go) return 0 ;; esac
-            in_go_dir "$f"
+            in_go_assets "$f"
             ;;
         plans) in_plans "$f" ;;
         historical) in_historical "$f" ;;
         docs) in_docs "$f" ;;
         all)
-            case "$f" in *.go) return 0 ;; esac
-            in_go_dir "$f" && return 0
+            in_go_assets "$f" && return 0
             in_plans "$f" && return 0
             case "$f" in docs/plans/*) return 0 ;; esac
             in_docs "$f"
