@@ -125,3 +125,25 @@ func TestVerifyScriptStore_RemoveDeletesSavedFolder(t *testing.T) {
 		t.Fatalf("saved folder still present: %v", err)
 	}
 }
+
+func TestRemoveSavedVerifyScriptsRefusesUnsafeIDs(t *testing.T) {
+	root := t.TempDir()
+	keep := filepath.Join(root, ".verify-scripts", "keep0001")
+	if err := os.MkdirAll(keep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"", ".", "..", "../x", "../../etc"} {
+		if err := removeSavedVerifyScripts(root, id); err == nil {
+			t.Errorf("id %q: want an error", id)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("saved folder of another Automaton was touched: %v", err)
+	}
+	if err := removeSavedVerifyScripts(root, "keep0001"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keep); !os.IsNotExist(err) {
+		t.Fatalf("saved folder should be gone, got %v", err)
+	}
+}

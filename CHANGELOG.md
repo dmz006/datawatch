@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.61.5 — Saved script removal refuses unsafe ids
+
+### Security
+
+- **Deleting an Automaton can no longer remove a folder outside the saved verification scripts.** The removal checks that the cleaned path stays strictly inside the saved-scripts folder and refuses an id that would leave it (an empty id, `..` or a path that climbs out). This closes the path-injection alert on the code that shipped in the previous release. A test covers the refused ids and shows another Automaton's saved folder untouched.
+
 ## v9.61.4 — Supervisor watch counts pi transcripts
 
 ### Fixed

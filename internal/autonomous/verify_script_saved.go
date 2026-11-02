@@ -12,11 +12,17 @@ import (
 // worktree base, outside every worktree; the leading dot keeps it apart from
 // the PRD id folders.
 func savedVerifyScriptsDir(worktreeDir, prdID string) string {
+	return filepath.Join(savedVerifyScriptsBase(worktreeDir), prdID)
+}
+
+// savedVerifyScriptsBase is the folder that holds the saved folders of every
+// Automaton.
+func savedVerifyScriptsBase(worktreeDir string) string {
 	d := strings.TrimSpace(worktreeDir)
 	if d == "" {
 		d = defaultWorktreeDir()
 	}
-	return filepath.Join(d, ".verify-scripts", prdID)
+	return filepath.Join(d, ".verify-scripts")
 }
 
 // copyVerifyFile copies one regular file to dst, replacing any existing copy.
@@ -139,5 +145,12 @@ func restoreVerifyScripts(srcDirs []string, dstWorktree string, only []string) (
 // removeSavedVerifyScripts deletes the saved folder of one Automaton; an
 // absent folder is not an error.
 func removeSavedVerifyScripts(worktreeDir, prdID string) error {
-	return os.RemoveAll(savedVerifyScriptsDir(worktreeDir, prdID))
+	// The id arrives from the REST path; the cleaned target must stay
+	// strictly inside the saved-scripts base, so the removal can never leave it.
+	full := savedVerifyScriptsDir(worktreeDir, prdID)
+	base := savedVerifyScriptsBase(worktreeDir)
+	if prdID == "" || !strings.HasPrefix(full, base+string(filepath.Separator)) {
+		return fmt.Errorf("saved verification scripts: refusing unsafe Automaton id %q", prdID)
+	}
+	return os.RemoveAll(full)
 }
