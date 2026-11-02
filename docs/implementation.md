@@ -2116,3 +2116,140 @@ global default. Web surface: settings card *Pi (worker backend)*
 - `internal/server/loop_detect_thinking_test.go` — REST round-trips: `pi.thinking_level` and `autonomous.loop_detect_turns` accepted/validated through `PUT /api/config` (invalid levels rejected, wrong types rejected, `""` re-enables the pi default).
 - `internal/server/web/app-autonomous-settings-fields.test.js` — asserts `autonomous.loop_detect_turns` renders as a number with its label key, `pi.thinking_level` renders as a select offering `""/off/minimal/low/medium/high`, and both `settings_loop_detect_turns` / `settings_pi_thinking_level` labels are non-empty in en, de, es, fr, ja.
 - `internal/server/web/app-pi-progress.test.js` — the PWA progress block: the progress keys it renders and the poll-stacking guard.
+
+## Shipped state (autonomous.shipped)
+
+How datawatch records and displays the shipped state of Automata (PRDs)
+and Automations, and where the five operator knobs live. Operator-facing
+behavior: [`docs/howto/automata-shipped-status.md`](howto/automata-shipped-status.md)
+and the "Shipped state" entry in
+[`docs/datawatch-definitions.md`](datawatch-definitions.md).
+
+Shipped state is orthogonal to the stored lifecycle status. A record
+carries four fields — `merged_in_release` (the release version the work
+landed in), `merged_at` (RFC 3339 merge time), `merge_commit` (the
+main-branch merge commit that proves it — the idempotency key) and
+`shipped_source` (`merge_step` or `backfill`) — or it carries none. A
+record *is shipped* exactly when `merge_commit` is non-empty. Recording
+shipped state never writes the status: a cancelled PRD whose work landed
+stays cancelled and carries shipped state, and a merged-and-cancelled
+Automation still reads `cancelled`. The `cancelled` and `shipped` buckets
+are therefore different answers to different questions: "did you stop it?"
+vs. "did the work land?". While the surface is enabled
+(`autonomous.shipped`, below), a shipped record additionally *displays* as
+`shipped` in effective-status views and counts under its own `shipped`
+bucket while `count_separately` holds; `shipped` is a display/count
+bucket, not a stored status value.
+
+### Components
+
+- **`internal/autonomous/shipped.go`** — the state itself: the four fields
+  on the PRD and Automation records, `IsShipped()` (non-empty
+  `MergeCommit`), the source constants (`ShippedSourceMergeStep`,
+  `ShippedSourceBackfill`) and `RecordPRDShipped` /
+  `RecordAutomationShipped` setters, which validate the source, accept the
+  three facts (release, time, commit) and never touch `Status`.
+- **`internal/autonomous/shipped_counts.go`** — display and count
+  derivation: `PRDEffectiveDisplayStatus` /
+  `AutomationEffectiveDisplayStatus` (`shipped` while enabled and the
+  record is shipped, else the stored status), `PRDShippedMatch` /
+  `AutomationShippedMatch` (the `shipped=true|false` list filter) and
+  `BuildShippedCounts` (one bucket per displayed status; shipped records
+  group under `shipped` only while `enabled` and `count_separately` are
+  both set).
+- **`internal/autonomous/shipped_backfill.go`** — the one-pass backfill:
+  over the base repository's main branch, list merge commits whose subject
+  names an `automaton/<8-hex PRD id>` branch (newest first); for each,
+  find the first release at or after the merge (the next version-bump
+  commit's subject, else the first CHANGELOG `## vN.N.N` heading after it);
+  record the four fields on the matching PRDs (source `backfill`); an
+  Automation is recorded once every non-skipped member is shipped, using
+  its latest member merge. Idempotent per recorded `merge_commit`.
+- **`internal/autonomous/manager.go`** — entry points:
+  `ShippedBackfillOnce(dryRun)` (the single pass used by every surface)
+  and `StartShippedBackfill(enabled)` (daemon start, non-blocking
+  goroutine when `autonomous.shipped.backfill_on_start` is on).
+- **Surfaces**
+  - REST (registered in `internal/server/server.go`):
+    `POST /api/autonomous/prds/{id}/shipped` body
+    `{merged_in_release, merged_at, merge_commit, source}`, audit action
+    `record_shipped`; the Automation equivalent
+    `POST /api/automations/{id}/shipped`;
+    `GET /api/autonomous/shipped/counts`;
+    `POST /api/autonomous/shipped/backfill` (`?dry_run=true` for the
+    report without writing). The `shipped=true|false` filter on
+    `GET /api/autonomous/prds` and `GET /api/automations` with the
+    `filter_default` fallback (see `shippedSelectionFromQuery` in
+    `internal/server/autonomous.go`).
+  - MCP (`internal/mcp/autonomous.go`, `internal/mcp/automation_tools.go`):
+    `autonomous_shipped_record`, `autonomous_shipped_backfill`,
+    `autonomous_shipped_counts`; `shipped` filter on
+    `autonomous_prd_list` and `automation_list`.
+  - CLI: `cmd/datawatch/cli_autonomous_shipped.go` —
+    `datawatch autonomous shipped record|backfill|counts`
+    (`--release --commit --at --source --automation --dry-run`);
+    `--shipped true|false` on the PRD/Automation list commands;
+    `datawatch automation shipped <id>`.
+  - Comm channel (`internal/router/sx2_parity.go`): `shipped <id>
+    --commit <sha>` (aliases `shipped-record`, `shipped_record`,
+    `record-shipped`, `record_shipped`), `shipped-backfill` and
+    `shipped-counts`.
+  - Web app: the shipped state is served to the client on the same
+    shapes the PWA already reads — the PRD/Automation list entries carry
+    the four shipped fields plus the effective display status, the
+    `shipped` query selection and the `status=shipped` axis work on the
+    list endpoints, and the dashboard card registry carries the system
+    card id `shipped` with its live
+    per-status-count payload (`internal/server/api_dashboard_cards.go`).
+    The PWA itself renders none of it yet — no card definition, no
+    shipped selection, no chip, no locale keys — that client-side work
+    is the companion-app parity item in
+    `plans/2026-11-01-shipped-status-parity-issue.md`.
+  - Dashboard: the shipped-vs-cancelled separation is reported by the
+    per-status count pair from `BuildShippedCounts`.
+
+### Knobs
+
+- **`autonomous.shipped.enabled`** (default true) — the shipped display
+  and count surface; off folds every record back to its stored status.
+- **`autonomous.shipped.show_chip`** (default true) — whether the
+  shipped chip renders on shipped items in the list views.
+- **`autonomous.shipped.filter_default`** (default `all`) — the
+  shipped-state view the lists open on: `all`, `shipped` or
+  `unshipped`, applied when a list read carries no explicit `shipped`
+  parameter.
+- **`autonomous.shipped.count_separately`** (default true) — shipped
+  records count under their own `shipped` bucket instead of their stored
+  status (requires `enabled`).
+- **`autonomous.shipped.backfill_on_start`** (default false) — run one
+  backfill pass in the background at daemon start; failures are logged and
+  never block startup.
+
+### Tests
+
+- `internal/autonomous/shipped_test.go` — record semantics: the fields,
+  the source validation, and that recording never changes the stored
+  status (cancelled stays cancelled; shipped and cancelled compose).
+- `internal/autonomous/shipped_counts_test.go` — effective-status and
+  count-bucket derivations, including the `enabled` × `count_separately`
+  matrix and the shipped / unshipped / all selections.
+- `internal/autonomous/shipped_backfill_test.go` — merge-commit parsing,
+  release lookup (version-bump subject and CHANGELOG heading), idempotent
+  apply, and the Automation all-members-shipped rule.
+- `internal/server/shipped_rest_test.go`, `shipped_counts_rest_test.go`,
+  `autonomous_shipped_backfill_test.go` — REST round-trips: record (200 / 404 /
+  source validation), counts, backfill (`dry_run` reports without writing),
+  and the `shipped` filter with the `filter_default` fallback.
+- `internal/autonomous/shipped_start_test.go` — the daemon-start backfill
+  gate (`backfill_on_start` on runs one pass, off runs none).
+- `internal/config/shipped_config_test.go` — the five keys' defaults, the
+  `filter_default` vocabulary and its refused values on write.
+- `internal/mcp/shipped_record_test.go`, `shipped_counts_test.go`,
+  `autonomous_shipped_backfill_test.go` — the shipped MCP tools and filters.
+- `cmd/datawatch/shipped_cli_test.go`, `shipped_list_cli_test.go`,
+  `cmd/datawatch/cli_autonomous_shipped_test.go` — CLI flag parsing and
+  subcommand wiring (`shipped record|backfill|counts`, `--shipped`,
+  `datawatch automation shipped`).
+- `internal/router/shipped_comm_test.go`,
+  `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
+  backfill/counts verbs.

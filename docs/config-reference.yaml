@@ -2719,6 +2719,50 @@ autonomous:
   # .../set_git / PWA PRD Settings' Git section.
   default_auto_pr: false
 
+  # ── Shipped state (shipped-status feature, 2026-11-01) ──
+  # Controls the shipped-state surface for Automata (PRDs) and Automations:
+  # a record can carry *shipped state* (release version the work landed in,
+  # merge time, main-branch merge commit that proved it), which is orthogonal
+  # to the stored status — a cancelled PRD whose work landed stays cancelled
+  # AND carries shipped state. While `enabled` is on, a record with shipped
+  # state displays as "shipped" in effective-status views and, while
+  # `count_separately` is on, counts in its own "shipped" bucket instead of
+  # its stored status. Every key below is settable on every configuration
+  # channel: PUT /api/config, CLI `datawatch config set`, MCP `config_set`,
+  # comm `configure`, and Settings → Automate in the web app. See
+  # docs/howto/automata-shipped-status.md and docs/implementation.md
+  # ("Shipped state").
+  shipped:
+    # Master switch for the shipped-state surface. Default true. When false,
+    # the display status "shipped" is no longer reported and records count
+    # under their stored status everywhere; the stored fields and the recording
+    # endpoints are not affected (recording never changes the stored status).
+    enabled: true
+    # Render the shipped chip on shipped items in the list views. Default
+    # true. The PWA does not render a shipped chip or offer a shipped
+    # selection today (companion-app parity item); the setting reserves the
+    # knob and the server reports the effective value on the shipped-counts
+    # surface (the shipped query parameter still works everywhere).
+    show_chip: true
+    # The list view's shipped selection when the client sends none. One of
+    # `all` (default), `shipped` (only records that carry shipped state),
+    # `unshipped` (only records that do not). Applies to GET /api/autonomous/prds,
+    # GET /api/automations, the MCP list tools and any other client that
+    # reads a list. (An invalid `shipped` query value is a 400 regardless.)
+    filter_default: all
+    # Count shipped records under their own "shipped" bucket instead of their
+    # stored status (GET /api/autonomous/shipped/counts, status-bucket views).
+    # Default true. When false every record counts under its stored status.
+    # Requires `enabled` to have any effect.
+    count_separately: true
+    # Run one shipped-state backfill pass at daemon start (walks the base
+    # repository's main branch for `automaton/<id>` merge commits and records
+    # release/merge time/commit on the matching records). Default false: the
+    # pass is idempotent and is normally run deliberately (see howto) or via
+    # the release verification script. When true the daemon runs it once per
+    # start, in the background; failures are logged and never block startup.
+    backfill_on_start: false
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured

@@ -16,7 +16,7 @@ Disabled by default — opt in by setting `autonomous.enabled: true`.
 |---|---|
 | YAML  | `autonomous:` block in `~/.datawatch/config.yaml` |
 | REST  | `/api/autonomous/*` (bearer-authenticated) |
-| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete` |
+| MCP   | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_*`, `autonomous_learnings`, `autonomous_lane_fill_status`, `autonomous_triage`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record` / `autonomous_shipped_backfill` / `autonomous_shipped_counts` |
 | CLI   | `datawatch autonomous <subcmd>` |
 | Comm  | `rest GET /api/autonomous/status` etc. via the comm `rest` passthrough (Signal/Slack/Telegram/Matrix/etc.) |
 
@@ -30,7 +30,7 @@ GET    /api/autonomous/config              read current config
 PUT    /api/autonomous/config              replace config (full body)
 
 POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort], [kind]}
-GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records (see "Automata list" below)
+GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records; ?shipped=true|false for the shipped selection (see "The shipped state")
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
@@ -78,6 +78,13 @@ GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queue
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions; read-only, never runs git
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 
+# The shipped state — orthogonal to status; see "The shipped state"
+POST   /api/autonomous/prds/{id}/shipped   record the Automaton's shipped state; body: {merged_in_release?, merged_at?, merge_commit (required), source: merge_step|backfill (required)}
+POST   /api/automations/{id}/shipped       record the Automation's shipped state (same body)
+GET    /api/autonomous/shipped/counts      per-status shipped counts (PRD + Automation buckets) plus the in-force autonomous.shipped settings
+POST   /api/autonomous/shipped/backfill[?dry_run=true]  one backfill pass over the base repository's default-branch merge history; dry_run scans and reports without writing
+GET    /api/dashboard/cards/shipped        live payload for the dashboard Shipped card (system card in the factory layout); the companion app renders it through the parity item below
+
 # Guardrail Library + Profiles
 GET    /api/autonomous/guardrails                  list guardrail library (built-ins + skill-contributed)
 GET    /api/autonomous/guardrail_profiles          list profiles
@@ -88,7 +95,7 @@ DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
 
 # Automations — orchestration records (see the Automations section below)
-GET    /api/automations              list Automations (each carries a computed tags array: the member Automata's tag IDs)
+GET    /api/automations              list Automations (each carries a computed tags array: the member Automata's tag IDs; ?shipped=true|false for the shipped selection)
 POST   /api/automations              create (returns draft, version 1); body: {name, entry_member_id?, members[], budget_policy?, project_dir?, actor, reason}
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
@@ -751,7 +758,8 @@ Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
 |---|---|
 | `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
 | `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
-| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. May include `shipped`, which selects the shipped bucket on the *status* axis. |
+| `shipped=<true|false>` | The shipped selection: `true` keeps only records that carry shipped state (a non-empty `merge_commit`), `false` only records that do not. Absent, the server's `autonomous.shipped.filter_default` view applies. Orthogonal to `status` — set either, both, or neither. |
 | `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
 | `q=<text>` | Case-insensitive match against title and id. |
 | `tag=<id>` | Keep Automata carrying that tag. `tag_id` is the same parameter. |
@@ -1862,6 +1870,119 @@ The create route, `POST /api/autonomous/prds`, runs the same finder after it sto
 
 Surfaces: the REST route above; the MCP tool `autonomous_overlap_search` (`title`, `spec`, `limit`, proxying the route); the CLI `datawatch autonomous overlap [spec] [--title T] [--spec S] [--json]`; and the comm verb `autonomous overlap <text>`, where the text is the spec. The CLI and the comm verb render the warnings with the same text; the REST route and the MCP tool return the JSON object.
 
+---
+
+## The shipped state (`autonomous.shipped`)
+
+A finished Automaton (PRD) can carry a **shipped** record: the fact that its work landed on the default branch, and the details of how. Shipped is **orthogonal to status**: recording it never touches the stored status, and the stored status never implies it. A PRD that is `cancelled` whose branch was merged is `cancelled` in the store and **shipped** in the shipped views; a PRD cancelled before anything merged is only cancelled. A record **is shipped** exactly when its `merge_commit` is non-empty — that field is the whole test.
+
+Every shipped record keeps four fields:
+
+| Field | Meaning |
+|---|---|
+| `merged_in_release` | the release the work landed in, e.g. `v1.2.0` |
+| `merged_at` | when it merged (RFC 3339; omitted when the time is unknown) |
+| `merge_commit` | the default-branch merge commit — non-empty is what makes the record shipped |
+| `shipped_source` | where the record came from: `merge_step` or `backfill` |
+
+**Idempotent per commit.** Re-recording with the same `merge_commit` answers 200 and changes nothing (stored fields, revision and updated-time alone); re-recording with a different commit overwrites all four. `shipped_source` is a stored field of the record, not a query parameter.
+
+### Recording
+
+```
+POST /api/autonomous/prds/{id}/shipped      # an Automaton
+POST /api/automations/{id}/shipped          # an Automation (same body)
+```
+
+Request body:
+
+| Field | Rule |
+|---|---|
+| `merge_commit` | required, non-empty string |
+| `merged_in_release` | optional string |
+| `merged_at` | optional, RFC 3339 — an unparseable time is a 400 |
+| `source` | `merge_step` or `backfill`; the server refuses an empty or unknown value with 400 |
+
+The 200 reply is the record as stored. Each record writes an audit entry (`record_shipped` for PRDs, `automation_shipped_record` for Automations).
+
+### The shipped selection and the `shipped` status axis
+
+- `GET /api/autonomous/prds` and `GET /api/automations` accept `shipped=true` (only the records that carry shipped state) or `shipped=false` (only the ones that do not). Absent, the server's `autonomous.shipped.filter_default` view applies (`all`, `shipped` or `unshipped`).
+- `status=…` on either list may include `shipped` as one of the statuses; that selects the shipped bucket on the *status* axis.
+- The two axes are independent: set either, both, or neither.
+- The MCP list tools take the same parameter, strictly `"true"` or `"false"` (`autonomous_prd_list` and `automation_list`) — omit it for the default view.
+
+While `autonomous.shipped.enabled` and `count_separately` hold, a shipped record is drawn out of its status bucket and counted in a **shipped** bucket of its own across the lists and the per-status counts; switch `count_separately` off and it folds back into its stored status. Either way the record's stored status and shipped fields are untouched.
+
+### Counts
+
+```
+GET /api/autonomous/shipped/counts
+→ {
+    "prds":        {"completed": 4, "cancelled": 1, "shipped": 3},
+    "automations": {"completed": 1, "shipped": 2},
+    "settings":    {"enabled": true, "show_chip": true,
+                    "filter_default": "all", "count_separately": true}
+  }
+```
+
+Computed under the in-force settings, with those settings riding along. The same read is MCP `autonomous_shipped_counts`, the CLI `datawatch autonomous shipped counts`, and the comm verb `autonomous shipped-counts`.
+
+### Backfill
+
+```
+POST /api/autonomous/shipped/backfill            # writes
+POST /api/autonomous/shipped/backfill?dry_run=true   # scans and reports without writing
+```
+
+One pass over the base repository's default branch (the `MAIN_BRANCH` env var, or `main` when unset):
+
+- every merge commit naming an `automaton/<id>` branch records the shipped state (`source=backfill`) on the matching Automaton, with the release name (a version number, or the release heading) and the merge time recovered from the history;
+- an Automation is marked when it has at least one non-skipped member whose non-skipped members are **all** shipped; the latest member merge supplies the time, commit and release;
+- it never touches any status; records that already carry shipped state are counted, not re-recorded;
+- one bad record lands in the report's `errors` and the pass carries on.
+
+The reply is the same in both modes:
+
+```
+{
+  "prds_scanned": 42, "prds_marked": 3, "prds_already_marked": 2,
+  "automations_marked": 1, "left_cancelled": 1,
+  "unmatched_ids": ["9d8e7f6a"], "errors": []
+}
+```
+
+400 when the repository is absent on the serving machine, or while `autonomous.shipped.enabled` is off (the reply names the key). The same pass is MCP `autonomous_shipped_backfill` (`dry_run` optional; the federation write cap applies), the CLI `datawatch autonomous shipped backfill [--dry-run]`, and the comm verb `autonomous shipped-backfill [dry_run=true]`. `backfill_on_start` runs it once at every daemon start.
+
+### Settings
+
+Five keys, one block, daemon-wide (there is no per-record override): every one is refused on write when it is not a legal value, and settable from YAML, `PUT /api/config` / `PUT /api/autonomous/config`, MCP `autonomous_config_set`, the CLI (`datawatch config set autonomous.shipped.<key>=…`) and comm (`configure`).
+
+| Key | Default | Effect |
+|---|---|---|
+| `autonomous.shipped.enabled` | `true` | master gate: shipped-state recording, display, selection, counts and backfill |
+| `autonomous.shipped.show_chip` | `true` | the shipped chip is rendered on shipped items by the client surface |
+| `autonomous.shipped.filter_default` | `all` | the shipped views open on: `all` \| `shipped` \| `unshipped` (a blank value reads as `all`) |
+| `autonomous.shipped.count_separately` | `true` | shipped records count in their own bucket instead of their stored status |
+| `autonomous.shipped.backfill_on_start` | `false` | run the backfill pass at daemon startup |
+
+### The dashboard card
+
+The dashboard carries a **Shipped** system card — it is in the factory layout and is re-added if removed, not deletable. `GET /api/dashboard/cards/shipped` (and the `data` field of the `shipped` entry in `GET /api/dashboard/cards`) returns the live per-status count plus the in-force settings, computed at read time. The PWA renders no shipped card, selection or chip yet; that client-side gap, and the Android/iOS build, are the parity item in [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+
+### The merge step
+
+`scripts/merge-branches-bump-version.sh` sources `scripts/merge-shipped-record.sh`: after the release-bump commit it records the shipped state best-effort for every merged `automaton/<id>` branch (`source=merge_step`), and records the matching Automation when one has all its non-skipped members shipped. A failed record never fails a successful merge, and the recording honours `autonomous.shipped.enabled`.
+
+### What shipped never does
+
+- It never changes a stored status, in either direction.
+- It never pushes, merges or moves any branch — it records facts about merges that happened.
+- It is not a per-record override; the settings are daemon-wide.
+- It never fails a merge; the merge step's record is best-effort.
+
+See also: the operator walk-through [howto/automata-shipped-status.md](../howto/automata-shipped-status.md), the [Shipped section of implementation.md](../implementation.md#shipped-state-autonomousshipped), the [Shipped entry of datawatch-definitions.md](../datawatch-definitions.md#shipped), the plan [plans/2026-11-01-shipped-status.md](plans/2026-11-01-shipped-status.md), and the companion-app parity issue [plans/2026-11-01-shipped-status-parity-issue.md](plans/2026-11-01-shipped-status-parity-issue.md).
+
 ## Configuration
 
 Per the no-hard-coded-config rule, every knob is reachable from
@@ -1898,6 +2019,12 @@ autonomous:
   judge_policy:           []          # ordered judge backends, one attempt each; empty = follow the verifier routing policy
   judge_timeout_seconds:  1800        # time limit for one judge run; the capacity-slot wait does not count
   judge_size_threshold_lines: 400     # changed lines above which claude-code is tried first; 0 = size rule off
+  shipped:                            # the shipped state, orthogonal to status (see "The shipped state")
+    enabled:        true               # master switch for shipped-state recording and display
+    show_chip:       true              # render the shipped chip on shipped items
+    filter_default:  all               # the shipped views open on: all | shipped | unshipped
+    count_separately: true             # shipped items count in a shipped bucket of their own
+    backfill_on_start: false           # run the backfill pass at daemon startup
   automation:
     create_search_mode:   shadow      # off | shadow | on: search-before-create over the existing Automata, registry rows and branches
     create_search_threshold: 0.5      # score at or above which an existing Automaton counts as an overlap; above 0, at most 1

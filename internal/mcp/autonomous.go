@@ -696,8 +696,10 @@ func (s *Server) handleAutonomousShippedRecord(_ context.Context, req mcpsdk.Cal
 	if v := req.GetString("merged_at", ""); v != "" {
 		body["merged_at"] = v
 	}
-	if src := req.GetString("source", ""); src != "" { 
+	if src := req.GetString("source", ""); src != "" {
 		body["source"] = src
+	} else {
+		body["source"] = "backfill" // the daemon demands one of the two; same default as the CLI and comm verbs
 	}
 	path := "/api/autonomous/prds/" + url.PathEscape(id) + "/shipped"
 	if req.GetBool("automation", false) {

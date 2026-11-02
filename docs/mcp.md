@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `autonomous_uncommitted_work`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `autonomous_uncommitted_work`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -487,6 +487,40 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Answers a tool error when Automata are disabled or no `worktree_base_repo` is set (the daemon's `503`) or the branches cannot be listed (`500`). Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_shipped_record`** — record the shipped state of an Automaton (PRD) or an Automation: `id`, `merge_commit` (required), `merged_in_release`, `merged_at` (RFC 3339), `source` and `automation` (= `true` to address an Automation instead of a PRD, default off). Recording never changes the record's status and is idempotent per merge commit; a different commit overwrites all four shipped fields. `source` must be `merge_step` or `backfill` — the daemon refuses to record with neither (see the note in [autonomous.md](api/autonomous.md#the-shipped-state-autonomousshipped)). Proxies `POST /api/autonomous/prds/{id}/shipped` or `POST /api/automations/{id}/shipped`; needs the autonomous write capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton (PRD) ID, or Automation ID when `automation=true` |
+  | `merge_commit` | yes | The merge commit on the default branch — non-empty is what makes the record shipped |
+  | `merged_in_release` | no | The release the work landed in, e.g. `v1.2.0` |
+  | `merged_at` | no | The merge time, RFC 3339 |
+  | `source` | no* | `merge_step` or `backfill` (*the daemon demands one of the two) |
+  | `automation` | no | `true` records an Automation instead of a PRD |
+
+  ```
+  autonomous_shipped_record(id="a1b2c3d4", merge_commit="9d8e7f6a", merged_in_release="v1.2.0", source="merge_step")
+  autonomous_shipped_record(id="auto77", merge_commit="bead1", merged_in_release="v1.2.0", source="backfill", automation=true)
+  ```
+- **`autonomous_shipped_backfill`** — one shipped-state backfill pass over the base repository's main branch (`MAIN_BRANCH` when set): it finds merge commits naming an `automaton/<8-hex id>` branch and records shipped state (`source=backfill`) on the matching PRDs, and on every Automation whose non-skipped member PRDs are all shipped; it attributes each one to the first release at or after its merge; and it never touches any status. `dry_run=true` scans and computes the report without writing; false or absent (the default) writes. Returns the report — `prds_scanned`, `prds_marked`, `prds_already_marked`, `automations_marked`, `left_cancelled`, `unmatched_ids`, `errors`. Idempotent per merge commit. Proxies `POST /api/autonomous/shipped/backfill`; needs the autonomous write capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `dry_run` | no | `true`: scan and report without writing anything; false or absent: the pass writes (default) |
+
+  ```
+  autonomous_shipped_backfill(dry_run=true)   # see what would be recorded
+  autonomous_shipped_backfill()               # run the pass
+  ```
+- **`autonomous_shipped_counts`** — read the per-status shipped counts, the PRD and Automation buckets, computed under the in-force `autonomous.shipped` settings: one count per displayed status, with the shipped bucket separated from cancelled while `enabled` + `count_separately` hold (a PRD cancelled without its work landing counts as cancelled; one whose work landed counts as shipped, while the stored status stays cancelled). The reply also carries the settings it was computed under. Read-only — it never writes a record and touches no status; the same numbers are on the dashboard's shipped card. Proxies `GET /api/autonomous/shipped/counts`; needs the autonomous read capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | — | — | The tool takes no parameters |
+
+  ```
+  autonomous_shipped_counts()
+  ```
 - **`autonomous_prd_set_lane_preference`** — set which lane an Automaton may take: `gpu`, `claude` or `any`. Takes `id` and `lane_preference`; an empty `lane_preference` clears the setting, which means `any`. An unknown value is refused. Proxies `POST /api/autonomous/prds/{id}/set_lane_preference`. Needs the autonomous write capability when called by a federated peer.
 
   | Parameter | Required | Description |
