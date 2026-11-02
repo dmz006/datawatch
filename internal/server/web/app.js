@@ -37552,15 +37552,15 @@ const DASH_DEFAULT_LAYOUT = [
   { id: 'ekg',          cs: 6,  rs: 2 },
 ];
 
-// 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-
-audit.md): the feature-tied subsystem tiles (guardrails, smoke run
-progress, web-search usage, memory-scope) were dropped from the *default*
-layout, matching the Go defaults (internal/server/api_dashboard_cards.go
-DefaultDashCards). They stay available in Edit → Add Card, and
-`dashboard.hide_inactive_cards` (default true) keeps them out of the grid
-and of the Add-Card picker until their feature actually has data on this
-install; with it off they render in a single line saying why they are
-empty, with a link to the related setting's help page.
+// 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-audit.md):
+// the feature-tied subsystem tiles (guardrails, smoke run progress,
+// web-search usage, memory-scope) were dropped from the *default* layout,
+// matching the Go defaults (internal/server/api_dashboard_cards.go
+// DefaultDashCards). They stay available in Edit → Add Card, and
+// `dashboard.hide_inactive_cards` (default true) keeps them out of the grid
+// and of the Add-Card picker until their feature actually has data on this
+// install; with it off they render in a single line saying why they are
+// empty, with a link to the related setting's help page.
 const DASH_CARD_FEATURES = {
   'integration-status': {
     docsKey: 'dash_card_integration_status',
@@ -37634,7 +37634,7 @@ function _dashCardOffBody(feat) {
   const linkText = escHtml(t(feat.linkKey) || feat.linkDefault);
   const path = DOCS_LINKS_BY_KEY[feat.docsKey] || '';
   let out = `<div style="padding:10px 4px;font-size:11px;color:var(--text2);line-height:1.6;">${reason}`;
-  if (path && !(state.showDocsLinks !== undefined && !state.showDocsLinks)) {
+  if (path) {
     out += ` &middot; <a href="/diagrams.html#docs/${encodeURIComponent(path)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">↗ ${linkText}</a>`;
   }
   out += `</div>`;
@@ -37648,6 +37648,38 @@ function _dashCardBodySafe(def) {
   const feat = _dashCardFeature(def.id);
   if (feat && !feat.active()) return _dashCardOffBody(feat);
   return def.body();
+}
+
+// 2026-11-02 dashboard card audit: while a feature card is hidden by
+// `dashboard.hide_inactive_cards` its own renderer never fires (it only
+// paints when the card element exists in the DOM), so nothing would
+// re-fetch its source and the card could never come back on its own.
+// Called from the ~12-frame gate in _dashLoop: re-kicks the fetchers of
+// still-inactive feature cards on a slow 30s cadence and, when a source
+// finally reports data, rebuilds the grid so the card appears as soon as
+// its feature actually has data.
+function _dashPumpFeatureData() {
+  const now = Date.now();
+  if (now - (_dash._featPumpAt || 0) < 30000) return;
+  _dash._featPumpAt = now;
+  const jobs = [];
+  const kick = (feat, fetcher) => {
+    if (feat && !feat.active() && typeof fetcher === 'function') {
+      try { jobs.push(Promise.resolve(fetcher())); } catch (_) { /* fetcher guard tripped; skip */ }
+    }
+  };
+  kick(_dashCardFeature('integration-status'), _dashFetchIntegStatus);
+  kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
+  kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
+  // smoke keeps polling unconditionally in _dashLoop and guardrail
+  // verdicts arrive with the board sync — nothing extra to pump there.
+  if (!jobs.length) return;
+  Promise.all(jobs).then(() => {
+    for (const id of Object.keys(DASH_CARD_FEATURES)) {
+      const f = _dashCardFeature(id);
+      if (f && f.active()) { _dashBuildGrid(_dash._layout || []); break; }
+    }
+  }).catch(() => {});
 }
 
 function _dashLoadLayout() {
