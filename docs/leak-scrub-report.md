@@ -322,3 +322,50 @@ GitHub login appears in remote references (remote repo URLs, Go module
 paths, container image registry paths); those are remote identifiers, not
 local home paths or email addresses, and rewriting them would break
 builds — they were left as-is.
+
+## Final gate
+
+Run: `Mon Nov  2 07:16:27 AM EST 2026` (output of `date` in this worktree).
+Every gate was executed under `env -u TMUX -u TMUX_TMPDIR` with the
+repository root as the scanned root.
+
+- Whole-tree leak check (`scripts/check-no-local-leaks.sh`, all classes):
+  PASS — 0 findings in all four classes, exit 0.
+- Per-class runs (`LEAK_CHECK_CLASSES` set to one class at a time):
+  - address: PASS (0 findings)
+  - home: PASS (0 findings)
+  - email: PASS (0 findings)
+  - local: PASS (0 findings); the local-patterns set was **skipped**, not
+    passed by pattern — `.leak-patterns.local` is absent in this worktree,
+    and an absent patterns file only emits a "local patterns: skipped"
+    notice (never an error).
+- `make check-leaks`: PASS — exit 0, 0 findings in all four classes.
+- Leak-check tests (`tests/test-check-no-local-leaks.sh`): PASS — 17 of
+  17 cases passed, 0 failed, exit 0.
+- `make lint`: PASS — all static audit scripts OK and the lint run
+  finished with 0 issues; `check-leaks` is one of the lint steps, so the
+  above classes were re-verified as part of it.
+- Release-smoke leak step (`scripts/release-smoke.sh`, the static
+  pre-daemon lint block that invokes the same whole-tree check on the
+  repository root): only its leak step was run, directly, and it passed
+  (exit 0). The full smoke was not run here because it needs a live test
+  daemon and network endpoints, which are unavailable offline.
+
+Reporting guarantee observed: the leak check's report output is
+`path:line: class` per finding plus a per-class count summary, and with
+zero findings it printed only the count summary; no identifier,
+matched text or rest of any matched line was printed by any gate
+command in this run.
+
+Out of scope, deliberately untouched: the commit history (including
+commit messages that name the operator's local hostname) and any public
+issues and comments were **not** modified in this feature. Rewriting
+history or public records is a separate decision with its own blast
+radius.
+
+Follow-ups:
+- Decide whether to rewrite or accept the historical commit messages and
+  public issue/comment text that name the operator's hostname.
+- Optional: create `.leak-patterns.local` (see `make leak-patterns-init`)
+  if operator-specific tokens beyond the four generic classes should be
+  swept by the local class.
