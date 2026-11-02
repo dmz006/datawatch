@@ -593,6 +593,110 @@ type Config struct {
 	// how many latest posted results each schedule name retains before
 	// the oldest ones are evicted.
 	Results ResultsConfig `yaml:"results,omitempty" json:"results,omitempty"`
+
+	// CostReport — knobs for the cost report (internal/costreport), the
+	// one view over recorded spend grouped by automaton, automation,
+	// backend or week. Every key is a pointer so an absent key reads
+	// its default while an explicit value sticks through saves and YAML
+	// round trips. See the cost_report block in docs/config-reference.yaml.
+	CostReport CostReportConfig `yaml:"cost_report,omitempty" json:"cost_report,omitempty"`
+}
+
+// CostReport defaults. Every one of them is read from the config struct:
+// the report logic (internal/costreport) hard-codes none of them.
+const (
+	// DefaultCostReportGroupBy is the default group_by for the cost
+	// report: automaton.
+	DefaultCostReportGroupBy = "automaton"
+	// DefaultCostReportWindowDays is the default cost report window in
+	// days when a request does not carry its own since bound: 7.
+	DefaultCostReportWindowDays = 7
+	// DefaultCostReportWeekStart is the week start day for week-
+	// grouped cost reports: monday.
+	DefaultCostReportWeekStart = "monday"
+)
+
+// CostReportConfig is the cost_report block: how the cost report
+// (internal/costreport) behaves when a request does not override a knob.
+//
+//	cost_report:
+//	  default_group_by: automaton
+//	  default_window_days: 7
+//	  show_usd_estimates: true
+//	  week_start: monday
+//	  include_peer_spend: false
+type CostReportConfig struct {
+	// DefaultGroupBy — the grouping a request is missing its own
+	// group_by under: automaton, automation, backend or week. Default
+	// "automaton" (DefaultCostReportGroupBy); an absent key or a value
+	// outside that vocabulary reads the default.
+	DefaultGroupBy *string `yaml:"default_group_by,omitempty" json:"default_group_by,omitempty"`
+	// DefaultWindowDays — the window, in days, the report falls back to
+	// when a request has no since bound: until minus this many days.
+	// Default 7 (DefaultCostReportWindowDays); a value below 1 reads
+	// the default.
+	DefaultWindowDays *int `yaml:"default_window_days,omitempty" json:"default_window_days,omitempty"`
+	// ShowUSDEstimates — whether rows carry a usd_estimate at all (on
+	// top of a rate being configured for the row's backends). Default
+	// true; when false, USD never appears even where rates exist.
+	ShowUSDEstimates *bool `yaml:"show_usd_estimates,omitempty" json:"show_usd_estimates,omitempty"`
+	// WeekStart — the day that starts a week for week-grouped reports:
+	// monday or sunday. Default "monday" (DefaultCostReportWeekStart);
+	// an absent key or any other value reads the default.
+	WeekStart *string `yaml:"week_start,omitempty" json:"week_start,omitempty"`
+	// IncludePeerSpend — whether rows include spend recorded by
+	// federation peers that opted into reporting to this daemon. Default
+	// false: peer spend is excluded.
+	IncludePeerSpend *bool `yaml:"include_peer_spend,omitempty" json:"include_peer_spend,omitempty"`
+}
+
+// EffectiveGroupBy returns the valid default grouping: automaton,
+// automation, backend or week. An unset key, or a set key outside that
+// vocabulary, reads the default "automaton"
+// (DefaultCostReportGroupBy).
+func (c CostReportConfig) EffectiveGroupBy() string {
+	if c.DefaultGroupBy != nil {
+		switch strings.ToLower(strings.TrimSpace(*c.DefaultGroupBy)) {
+		case "automaton", "automation", "backend", "week":
+			return strings.ToLower(strings.TrimSpace(*c.DefaultGroupBy))
+		}
+	}
+	return DefaultCostReportGroupBy
+}
+
+// EffectiveWindowDays returns the default report window in days: the
+// configured value when it is at least 1, otherwise the default 7
+// (DefaultCostReportWindowDays).
+func (c CostReportConfig) EffectiveWindowDays() int {
+	if c.DefaultWindowDays != nil && *c.DefaultWindowDays >= 1 {
+		return *c.DefaultWindowDays
+	}
+	return DefaultCostReportWindowDays
+}
+
+// EffectiveShowUSDEstimates returns whether the report may carry USD
+// estimates: true while the key is absent or unset to true.
+func (c CostReportConfig) EffectiveShowUSDEstimates() bool {
+	return boolOrDefault(c.ShowUSDEstimates, true)
+}
+
+// EffectiveWeekStart returns the week start day for week-grouped
+// reports: monday or sunday. An unset key, or a set key with any other
+// value, reads the default "monday" (DefaultCostReportWeekStart).
+func (c CostReportConfig) EffectiveWeekStart() string {
+	if c.WeekStart != nil {
+		switch strings.ToLower(strings.TrimSpace(*c.WeekStart)) {
+		case "monday", "sunday":
+			return strings.ToLower(strings.TrimSpace(*c.WeekStart))
+		}
+	}
+	return DefaultCostReportWeekStart
+}
+
+// EffectiveIncludePeerSpend returns whether the report includes peer
+// spend: false while the key is absent (default false).
+func (c CostReportConfig) EffectiveIncludePeerSpend() bool {
+	return boolOrDefault(c.IncludePeerSpend, false)
 }
 
 // DashboardConfig is the dashboard block.
