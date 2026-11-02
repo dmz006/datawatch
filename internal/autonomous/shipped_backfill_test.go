@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -477,6 +478,7 @@ func TestShippedBackfillDryRunCountsWritesNothing(t *testing.T) {
 	if rep.Errors != nil {
 		t.Fatalf("rep.Errors = %v, want empty", rep.Errors)
 	}
+	t.Log(backfillReportLine("dry run", rep))
 	if rep.PrdsMarked < 1 || rep.PrdsWouldMarkCancelled < 1 {
 		t.Fatalf("dry run report thin: %+v, want at least one marked and one cancelled-marked", rep)
 	}
@@ -515,6 +517,7 @@ func TestShippedBackfillDryRunCountsWritesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BackfillShipped: %v", err)
 	}
+	t.Log(backfillReportLine("real run", real))
 	if real.PrdsMarked != rep.PrdsMarked {
 		t.Errorf("prds_marked: dry=%d real=%d, want equal", rep.PrdsMarked, real.PrdsMarked)
 	}
@@ -568,6 +571,14 @@ func TestShippedBackfillSecondRunMarksNothing(t *testing.T) {
 		t.Errorf("second run LeftCancelled=%d Unmatched=%v, want 1/[deadbeef]",
 			second.LeftCancelled, second.UnmatchedIDs)
 	}
+}
+
+// backfillReportLine renders the dry-run/real-run report as plain
+// labelled counts (with the report's UnmatchedIDs reduced to a count) so
+// the -v test log is a quotable source for the gate report.
+func backfillReportLine(kind string, r ShippedBackfillReport) string {
+	return fmt.Sprintf("%s: prds_scanned=%d prds_marked=%d prds_would_mark_cancelled=%d prds_already_marked=%d automations_marked=%d left_cancelled=%d unmatched_ids=%d",
+		kind, r.PrdsScanned, r.PrdsMarked, r.PrdsWouldMarkCancelled, r.PrdsAlreadyMarked, r.AutomationsMarked, r.LeftCancelled, len(r.UnmatchedIDs))
 }
 
 type backfillFixture struct {
