@@ -1430,6 +1430,8 @@ mcp:
   sse_port: 8081
   token: "mcp-auth-token"
   # Required when remote MCP clients reach SSE through the proxy:
+  # (example value only; your real proxy URL lives in your operator config
+  # and is not committed to this repository)
   public_url: "https://proxy-host.example.net:8081"
 ```
 

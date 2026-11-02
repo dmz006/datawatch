@@ -148,6 +148,10 @@ datawatch llm add my-ollama \
 datawatch llm test my-ollama
 ```
 
+(Example URL only; the real node URL lives in your operator config and is
+not committed to this repository.)
+
+
 ### Add a cloud inference LLM (Anthropic)
 
 ```sh

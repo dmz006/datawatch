@@ -120,6 +120,9 @@ observer:
 
 `datawatch reload` on each.
 
+> The peer URLs in this guide are placeholders; each node's real URL lives in
+> its operator config and is not committed to this repository.
+
 ## Two happy paths
 
 ### 4a. Happy path — CLI

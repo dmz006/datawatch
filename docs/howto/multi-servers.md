@@ -63,6 +63,8 @@ configure it as a federated peer for push stats.
 2. Click **+ Add server**.
 3. Fill in **Name** (short slug, e.g. `nas`), **URL** (base URL including port,
    e.g. `http://192.0.2.136:8080`), and **Bearer token**.
+   The example URL is a placeholder; the real URL for a given server lives in
+   your operator config and is not committed to this repository.
 4. Click **Test** to verify connectivity — a green toast confirms the version.
 5. Click **Save**.
 

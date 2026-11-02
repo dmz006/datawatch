@@ -59,6 +59,9 @@ compute_nodes:
     # routing: direct   ← implicit default
 ```
 
+(Example address only; the real node URL lives in your operator config and
+is not committed to this repository.)
+
 Or via CLI:
 
 ```

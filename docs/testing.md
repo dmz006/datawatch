@@ -587,7 +587,7 @@ daemons already on the host), and it reported nothing new.
 | Field | Value |
 |-------|-------|
 | Version | v0.18.0 |
-| Steps | Set `server.host` to `198.51.100.7,127.0.0.1` via API, restart. Check `ss -tlnp`. |
+| Steps | Set `server.host` to `198.51.100.7,127.0.0.1` via API, restart. Check `ss -tlnp`. (Example value; the real listen address lives in the operator's config and is not committed.) |
 | Expected | Two listeners: tailscale IP and localhost. LAN IP refused. |
 | Result | **PASS** — `ss` shows `198.51.100.7:8080` + `127.0.0.1:8080`. LAN connection refused. |
 

@@ -47,6 +47,9 @@ You can also use the Tailscale MagicDNS hostname if enabled:
 http://hostname.your-tailnet.example.net:8080
 ```
 
+(Example values; your real tailnet IP/hostname lives in your operator
+config and is not committed to this repository.)
+
 ---
 
 ## Accessing the PWA

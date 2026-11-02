@@ -193,6 +193,9 @@ assistant instead of running the equivalent CLI command yourself:
 | "Register my home server at https://homelab.local:8443 as a federation peer, and skip TLS verification since it's self-signed" | `federation_peer_add` (`tls_skip_verify: true`) |
 | "Enable the Telegram channel with this bot token" | `config_set` + `reload` |
 
+(The addresses and example URLs in these prompts are placeholders; the real
+values live in your operator config and are not committed to this repository.)
+
 **Example prompts — day-2 management.** The same connection keeps
 working after setup, for ongoing operation:
 

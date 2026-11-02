@@ -10377,7 +10377,7 @@ Downstream-Review Rule.
 - **Cross-Origin-Embedder-Policy added** — `COEP: unsafe-none` on all responses. Resolves ZAP alert 90004 (COEP Missing).
 - **Cross-Origin-Resource-Policy added** — `CORP: same-origin` on all responses. Resolves ZAP alert 90004 (CORP Missing).
 - **Permissions-Policy added** — Restricts camera, microphone (self-only for Whisper voice), geolocation, payment, USB, motion sensors. Resolves ZAP alert 10063.
-- **Private IP Disclosure fixed** — Federation peer URL example changed from `192.0.2.2` (RFC 1918) to `198.51.100.2` (RFC 5737 documentation range). Resolves ZAP alert 2.
+- **Private IP Disclosure fixed** — Federation peer URL example changed from `192.0.2.2` (RFC 5737 documentation range, retained as a placeholder despite the ZAP false positive) to `198.51.100.2` (RFC 5737 TEST-NET-2). Resolves ZAP alert 2.
 - **Suspicious comments removed** — `// bug from v6.11.13` → `// workaround from v6.11.13`; `// Debug panel` → `// Diagnostic panel` in `app.js`. Resolves ZAP alert 10027.
 
 ---

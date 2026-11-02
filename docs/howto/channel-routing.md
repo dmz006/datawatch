@@ -268,6 +268,10 @@ curl -sk \
   | jq '.[] | select(.owner_peer != null) | {id, owner_peer}'
 ```
 
+(Example URL only; the real peer URL and token live in your operator config
+and are not committed to this repository.)
+
+
 ---
 
 ## 5 — owner_peer on sessions and PRDs

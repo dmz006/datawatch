@@ -105,6 +105,12 @@ SID=$(datawatch sessions start \
 sleep 15
 datawatch agents list
 #  → dw-agent-7a3c   session=ralfthewise-7a3c   cluster=lab-east   ts_ip=198.51.100.142   status=running
+```
+
+(Example values; the real node layout and tailnet addresses live in your
+operator config and are not committed to this repository.)
+
+```sh
 
 # 4. Stream output back from the agent through the mesh.
 datawatch sessions tail $SID -f

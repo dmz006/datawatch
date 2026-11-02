@@ -104,6 +104,13 @@ sleep 10
 datawatch tailscale nodes
 #  → dw-host-kona       198.51.100.1   self
 #    dw-agent-abcd      198.51.100.142  online (1m ago)
+```
+
+> The node names and addresses shown are examples; the real node layout and
+> tailnet addresses live in the operator config/Tailscale control plane and
+> are not committed to this repository.
+
+```sh
 
 # 4. Generate + push an ACL that locks down the fleet.
 datawatch tailscale acl-generate > /tmp/acl-preview.json
