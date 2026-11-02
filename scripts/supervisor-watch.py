@@ -378,7 +378,7 @@ def main(argv=None):
         if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
             why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
             findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
-    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:remote-node", "node:verdict")]
+    idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in ("node:datawatch-openai", "node:verdict")]
     node_waiters = [w for w in waiting if "waiting for node" in str(w.get("reason", ""))]
     if idle_nodes and node_waiters:
         findings.append("PLACEMENT idle %s while %d request(s) wait for a busy node" % (",".join(idle_nodes), len(node_waiters)))
