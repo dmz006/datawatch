@@ -287,7 +287,19 @@ type PRD struct {
 	// config. Resolution order: task -> story -> PRD -> config.
 	ThinkingLevel string    `json:"thinking_level,omitempty"`
 	Status        PRDStatus `json:"status"`
-	// BlockedReason is a plain sentence saying why the automaton is blocked:
+	// Shipped state — set when this PRD's work lands in a release: the
+	// release name it merged into, when the merge happened, the merge
+	// commit, and where the record came from (ShippedSourceMergeStep when
+	// the merge step recorded it, ShippedSourceBackfill for a release-notes
+	// backfill). Recording shipped state never touches Status (a cancelled
+	// PRD is still shipped-carrying and still cancelled). IsShipped reports
+	// whether MergeCommit is non-empty; record it via
+	// Manager.RecordPRDShipped.
+	MergedInRelease string     `json:"merged_in_release,omitempty"`
+	MergedAt        *time.Time `json:"merged_at,omitempty"`
+	MergeCommit     string     `json:"merge_commit,omitempty"`
+	ShippedSource   string     `json:"shipped_source,omitempty"`
+	// BlockedReason — a plain sentence saying why the automaton is blocked:
 	// which guardrail verdict blocked it and which judge produced it, or (B165)
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.

@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	automationUsage = "usage: automation activate <id> | list | get <id> | status <id> | pause <id> [reason] | resume <id> [reason] | " +
+	automationUsage = "usage: automation activate <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
 		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
@@ -64,7 +64,7 @@ const (
 // AutomationCommVerbs lists the verbs handled by the switch in
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
-	return []string{"activate", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
+	return []string{"activate", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
 		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
 }
 
@@ -87,6 +87,8 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			return
 		}
 		r.send(resp)
+	case "shipped":
+		r.automationShipped(args)
 	case "list":
 		resp, err := r.commJSON(http.MethodGet, "/api/automations", "")
 		if err != nil {
@@ -433,6 +435,65 @@ func (r *Router) automationControl(verb, id, op, did string, body map[string]any
 		return
 	}
 	r.send(fmt.Sprintf("automation %s: %s (status %s, version %d)", a.ID, did, a.Status, a.Version))
+}
+
+// automationShippedUsage is the usage line for "automation shipped".
+const automationShippedUsage = "usage: automation shipped <id> commit=<merge-commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>]"
+
+// automationShipped serves "automation shipped <id> commit=...": it records the
+// Automation's shipped state (release, merge commit, merge time, source) through
+// POST /api/automations/{id}/shipped. Recording never changes the Automation's
+// status and is idempotent per merge commit.
+func (r *Router) automationShipped(args []string) {
+	if len(args) < 2 {
+		r.send(automationShippedUsage)
+		return
+	}
+	id := args[1]
+	body := map[string]any{"actor": "comm", "source": "backfill"}
+	for _, kv := range args[2:] {
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 {
+			r.send(automationShippedUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(kv[:i]))
+		v := strings.TrimSpace(kv[i+1:])
+		switch k {
+		case "commit", "merge_commit":
+			body["merge_commit"] = v
+		case "release", "merged_in_release":
+			body["merged_in_release"] = v
+		case "source":
+			body["source"] = v
+		case "merged_at", "at":
+			body["merged_at"] = v
+		default:
+			r.send(automationShippedUsage)
+			return
+		}
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		r.send("automation shipped error: " + err.Error())
+		return
+	}
+	resp, err := r.commJSON(http.MethodPost, "/api/automations/"+url.PathEscape(id)+"/shipped", string(b))
+	if err != nil {
+		r.send("automation shipped error: " + err.Error())
+		return
+	}
+	var a struct {
+		ID          string `json:"id"`
+		Status      string `json:"status"`
+		Version     int64  `json:"version"`
+		MergeCommit string `json:"merge_commit"`
+	}
+	if json.Unmarshal([]byte(resp), &a) != nil || a.ID == "" {
+		r.send(resp)
+		return
+	}
+	r.send(fmt.Sprintf("automation %s shipped: merge_commit %s (status %s, version %d)", a.ID, a.MergeCommit, a.Status, a.Version))
 }
 
 // automationBudgetReply is the part of an Automation REST record that the

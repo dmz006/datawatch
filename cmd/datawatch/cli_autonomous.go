@@ -115,6 +115,7 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
+  shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
   tag-list [--counts]             List the tag tree (--counts adds the Automata and session totals per tag)
@@ -215,6 +216,7 @@ Subcommands:
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetKindCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
+		newAutonomousShippedCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
 		newAutonomousTagRenameCmd(),
@@ -711,11 +713,67 @@ func printDeprecatedFields(resp []byte) {
 }
 
 func newAutonomousPRDListCmd() *cobra.Command {
-	return &cobra.Command{
+	var status, shipped string
+	cmd := &cobra.Command{
 		Use:   "prd-list",
-		Short: "List all PRDs (newest first)",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/prds?full=1") },
+		Short: "List all PRDs (newest first); --status (may include shipped) or --shipped true|false narrows",
+		Long: `List all PRDs (newest first).
+
+By default this prints the full list. With --status or --shipped it
+switches to the summary list and narrows: --status takes comma-separated
+statuses and may include "shipped" (the shipped-state bucket, selected by
+the record's merge commit — not the stored status); --shipped true keeps
+only PRDs that carry shipped state, --shipped false only ones that do
+not; with neither set the server's autonomous.shipped.filter_default
+view applies (all / shipped / unshipped).`,
+		RunE: func(*cobra.Command, []string) error {
+			q, err := prdListQuery(status, shipped)
+			if err != nil {
+				return err
+			}
+			if len(q) == 0 {
+				return daemonGet("/api/autonomous/prds")
+			}
+			return daemonGet("/api/autonomous/prds?" + q.Encode())
+		},
 	}
+	cmd.Flags().StringVarP(&status, "status", "s", "", "Comma-separated statuses to keep (may include shipped)")
+	cmd.Flags().StringVar(&shipped, "shipped", "", "true|false: keep only shipped / only unshipped PRDs (default: the server's autonomous.shipped.filter_default view)")
+	return cmd
+}
+
+// prdListQuery builds the PRD list query from the --status / --shipped
+// flags. Neither set = the full list (no query, the original full=1 call
+// shape). One or the other = the server-side filtered summary list: status
+// takes comma-separated statuses and may include shipped (the shipped-state
+// bucket, selected by the record's merge commit — not the stored status);
+// shipped true keeps only PRDs that carry shipped state, false only ones
+// that do not. Status and shipped are ANDed; shipped=true remains gated by
+// autonomous.shipped enabled on the daemon.
+func prdListQuery(status, shipped string) (url.Values, error) {
+	status = strings.Trim(strings.TrimSpace(status), ",")
+	switch v := strings.ToLower(strings.TrimSpace(shipped)); v {
+	case "", "all":
+		// empty: no shipped narrowing; all: the daemon default view.
+	case "true", "false":
+		// carried below
+	default:
+		return nil, fmt.Errorf("shipped: must be true or false (got %q); shipped means the PRD's work has landed (its merge commit is recorded), and it is independent of status", shipped)
+	}
+	q := url.Values{}
+	if status == "" && strings.ToLower(strings.TrimSpace(shipped)) == "" {
+		q.Set("full", "1")
+		return q, nil
+	}
+	if status != "" {
+		q.Set("status", status)
+	}
+	switch strings.ToLower(strings.TrimSpace(shipped)) {
+	case "", "all":
+	default:
+		q.Set("shipped", strings.ToLower(strings.TrimSpace(shipped)))
+	}
+	return q, nil
 }
 
 func newAutonomousPRDCreateCmd() *cobra.Command {

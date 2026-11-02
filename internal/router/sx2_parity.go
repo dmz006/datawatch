@@ -435,6 +435,160 @@ func prettyJSON(body string) string {
 //	autonomous create <spec…>
 //
 // `prd` is accepted as a shorter alias for `autonomous`.
+// shippedRecordUsage is the comm-channel usage line for recording shipped state.
+const shippedRecordUsage = "usage: autonomous shipped-record <id> commit=<commit> [release=<release>] [source=merge_step|backfill] [merged_at=<RFC3339>] [automation=true]"
+
+// shippedBackfillUsage is the comm-channel usage line for the shipped backfill.
+const shippedBackfillUsage = "usage: autonomous shipped-backfill [dry_run=true]   (one shipped-state backfill pass from the base repository's main-branch history)"
+
+// shippedCountsUsage is the comm-channel usage line for the per-status shipped
+// counts read.
+const shippedCountsUsage = "usage: autonomous shipped-counts   (per-status shipped counts: the PRD and Automation buckets, under the in-force autonomous.shipped settings)"
+
+// autonomousListUsage is the comm-channel usage line for the narrowable PRD
+// list.
+const autonomousListUsage = "usage: autonomous list [shipped=true|false] [status=<s1,s2,...>]   (no filter = the full list; shipped may appear in status)"
+
+// handleAutonomousShippedVerb serves the shipped-record comm verb for both
+// surfaces: it records the shipped state of a PRD (default) or an Automation
+// (when automation=true) through their own POST /.../shipped endpoints. Status
+// is never touched.
+func (r *Router) handleAutonomousShippedVerb(args []string) {
+	if len(args) < 2 {
+		r.reply("autonomous shipped-record failed", shippedRecordUsage)
+		return
+	}
+	id := args[1]
+	body := map[string]any{"source": "backfill"}
+	automation := false
+	for _, kv := range args[2:] {
+		i := strings.IndexByte(kv, '=')
+		if i <= 0 {
+			r.reply("autonomous shipped-record failed", shippedRecordUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(kv[:i]))
+		v := strings.TrimSpace(kv[i+1:])
+		switch k {
+		case "commit", "merge_commit":
+			body["merge_commit"] = v
+		case "release", "merged_in_release":
+			body["merged_in_release"] = v
+		case "source":
+			body["source"] = v
+		case "merged_at", "at":
+			body["merged_at"] = v
+		case "automation":
+			automation = strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on")
+		default:
+			r.reply("autonomous shipped-record failed", shippedRecordUsage)
+			return
+		}
+	}
+	path := "/api/autonomous/prds/" + url.PathEscape(id) + "/shipped"
+	if automation {
+		path = "/api/automations/" + url.PathEscape(id) + "/shipped"
+	}
+	b, _ := json.Marshal(body)
+	out, err := r.commJSON(http.MethodPost, path, string(b))
+	if err != nil {
+		r.reply("autonomous shipped-record failed", err.Error())
+		return
+	}
+	r.reply("autonomous shipped-record", prettyJSON(out))
+}
+
+// handleAutonomousShippedBackfillVerb serves the shipped-backfill comm
+// verb: one shipped-state backfill pass over the base repository's
+// main-branch history via POST /api/autonomous/shipped/backfill, replying
+// with the report. dry_run=true scans and computes the report without
+// writing any shipped record; absent (the default, like every other
+// surface) the pass writes.
+func (r *Router) handleAutonomousShippedBackfillVerb(args []string) {
+	path := "/api/autonomous/shipped/backfill"
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply("autonomous shipped-backfill failed", shippedBackfillUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		if k != "dry_run" {
+			r.reply("autonomous shipped-backfill failed", shippedBackfillUsage)
+			return
+		}
+		if strings.EqualFold(v, "true") || v == "1" || strings.EqualFold(v, "on") {
+			path += "?dry_run=true"
+		}
+		// false / 0 / off = the default: the pass writes.
+	}
+	out, err := r.commJSON(http.MethodPost, path, "")
+	if err != nil {
+		r.reply("autonomous shipped-backfill failed", err.Error())
+		return
+	}
+	r.reply("autonomous shipped-backfill", prettyJSON(out))
+}
+
+// handleAutonomousShippedCountsVerb serves the shipped-counts comm verb:
+// GET /api/autonomous/shipped/counts — the per-status PRD and Automation
+// count buckets computed under the in-force autonomous.shipped settings
+// (shipped separated from cancelled while enabled + count_separately hold),
+// with the effective settings echoed. Read-only.
+func (r *Router) handleAutonomousShippedCountsVerb(args []string) {
+	out, err := r.commGet("/api/autonomous/shipped/counts", nil)
+	if err != nil {
+		r.reply("autonomous shipped-counts failed", err.Error())
+		return
+	}
+	r.reply("autonomous shipped-counts", prettyJSON(out))
+}
+
+// handleAutonomousListVerb serves "autonomous list" with optional filters:
+// shipped=true|false keeps only PRDs with / without shipped state (a
+// non-empty merge commit); status takes comma-separated statuses and may
+// include shipped. No filter = the full list (full=1, the original shape).
+// Shipped is status-like and orthogonal: it selects on the record's merge
+// commit and never changes the stored status.
+func (r *Router) handleAutonomousListVerb(args []string) {
+	q := url.Values{}
+	sawFilter := false
+	for _, tok := range args[1:] {
+		i := strings.IndexByte(tok, '=')
+		if i <= 0 {
+			r.reply("autonomous list failed", autonomousListUsage)
+			return
+		}
+		k := strings.ToLower(strings.TrimSpace(tok[:i]))
+		v := strings.TrimSpace(tok[i+1:])
+		switch k {
+		case "shipped":
+			if !strings.EqualFold(v, "true") && !strings.EqualFold(v, "false") {
+				r.reply("autonomous list failed", autonomousListUsage)
+				return
+			}
+			q.Set("shipped", strings.ToLower(v))
+			sawFilter = true
+		case "status":
+			q.Set("status", v)
+			sawFilter = true
+		default:
+			r.reply("autonomous list failed", autonomousListUsage)
+			return
+		}
+	}
+	if !sawFilter {
+		q.Set("full", "1")
+	}
+	out, err := r.commGet("/api/autonomous/prds", q)
+	if err != nil {
+		r.reply("autonomous list failed", err.Error())
+		return
+	}
+	r.reply("autonomous list", prettyJSON(out))
+}
+
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|judge-policy|judge-policy-set key=value|get <id>|decompose <id>|approve <id>|plan-review <id> [note]|plan-coverage <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> [read_only=true|false] [<new-spec>]|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-notify-events <prd> <kinds|inherit>|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|verifier-policy|verifier-policy-set key=value [k2=v2 ...]|set-verifier-policy <prd> [mode=X] [backends=a,b]|set-task-verifier-policy <prd> <task> [mode=X] [backends=a,b]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]|set-failure-escalation <automaton> [task] clear|[enabled=bool] [max_failures=N] [steps=backend:model@N,...]|reset-to-draft <id>|resume <id> [note]|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool] [scope=full|touched-plus-smoke|touched] [smoke_packages=a,b]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|set-kind <id> <feature|bug|other>|lane-fill [limit]|set-lane-preference <prd-id> <gpu|claude|any>|infra-retries [automaton-id] [limit]|onboarding-report [text|json]|merge-pipeline [show|set-record|clear-record|validate]|triage [automation-id]|decisions [automaton-id]|repo-ci-watch|supervisor-watch|merge|safe-to-delete|cleanup|uncommitted-work [automaton-id]|request-watch [session <id>|automaton <id>]|merged-members [automation-id]|overlap <text>|security-failure [run-id]|tags [counts]|tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]|tag-rename <id> <new-name>|tag-move <id> <parent-id|root>|tag-color <id> <color>|tag-delete <id>|set-tags <prd-id> [tag-id1,tag-id2]|set-primary <prd-id> <tag-id|none>|session-tags <session-id> [tag-id1,tag-id2]|attention|tag-registry|tag-registry-dismiss <note-id>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]|events [queue=<name>] [since=<cursor>]|subscribe <kinds|short-names> [prd=<id>] [task=<id>] [sink=comm|webhook|peer] [target=<t>] [secret_ref=<ref>]|unsubscribe <id>|subscription-update <id> key=value...|subscription-test <id>|subscriptions}"
@@ -527,12 +681,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous config-set", prettyJSON(out))
 	case "list":
-		out, err := r.commGet("/api/autonomous/prds", url.Values{"full": {"1"}})
-		if err != nil {
-			r.reply("autonomous list failed", err.Error())
-			return
-		}
-		r.reply("autonomous list", prettyJSON(out))
+		r.handleAutonomousListVerb(args)
 	case "get", "show":
 		if len(args) < 2 {
 			r.reply("autonomous get failed", "usage: autonomous get <prd-id>")
@@ -1195,6 +1344,12 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-kind", prettyJSON(out))
+	case "shipped", "shipped-record", "shipped_record", "record-shipped", "record_shipped":
+		r.handleAutonomousShippedVerb(args)
+	case "shipped-counts", "shipped_counts":
+		r.handleAutonomousShippedCountsVerb(args)
+	case "shipped-backfill", "shipped_backfill":
+		r.handleAutonomousShippedBackfillVerb(args)
 	case "lane-fill", "lane_fill", "set-lane-preference", "set_lane_preference":
 		r.handleLaneFillVerb(verb, args)
 	case "infra-retries", "infra_retries":

@@ -42,6 +42,7 @@ Subcommands:
   delete <id>         Delete an Automation
   status              Show the Automation rows of the loop status (current member, idle time, spend)
   activate <id>       Start a draft Automation
+  shipped <id>        Record the shipped state (--release R --commit C; --at TIME, --source merge_step|backfill optional)
   pause <id>          Pause a running Automation
   resume <id>         Resume a paused Automation
   cancel <id>         Cancel an Automation (--cancel-in-flight true|false is required)
@@ -73,6 +74,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationDeleteCmd())
 	cmd.AddCommand(newAutomationStatusCmd())
 	cmd.AddCommand(newAutomationActivateCmd())
+	cmd.AddCommand(newAutomationShippedCmd())
 	cmd.AddCommand(newAutomationPauseCmd())
 	cmd.AddCommand(newAutomationResumeCmd())
 	cmd.AddCommand(newAutomationCancelCmd())
@@ -93,12 +95,26 @@ version is refused with HTTP 409.`,
 
 func newAutomationListCmd() *cobra.Command {
 	var asJSON bool
+	var shippedSel string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List Automations",
-		Args:  cobra.NoArgs,
+		Short:  "List Automations (narrow with --shipped true|false on the shipped state)",
+		Long:   `List Automations.
+
+--shipped true keeps only Automations that carry shipped state (a
+non-empty merge commit — their non-skipped member PRs all landed); --shipped
+false only ones that do not. With neither set, the server's
+autonomous.shipped.filter_default view applies (all / shipped / unshipped).
+Shipped state never changes the stored status, which stays as recorded
+(a cancelled Automation whose work landed is "cancelled" here and shipped
+in the shipped view).`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			raw, err := automationAPI(http.MethodGet, "/api/automations", nil)
+			path, err := automationListPath(shippedSel)
+			if err != nil {
+				return err
+			}
+			raw, err := automationAPI(http.MethodGet, path, nil)
 			if err != nil {
 				return err
 			}
@@ -114,7 +130,24 @@ func newAutomationListCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the raw REST response")
+	cmd.Flags().StringVar(&shippedSel, "shipped", "", "true|false: keep only Automations with / without shipped state (default: the server's autonomous.shipped.filter_default view)")
 	return cmd
+}
+
+// automationListPath builds the automation list endpoint path from the
+// --shipped flag: empty / all = the daemon's default view (autonomous.
+// shipped.filter_default); true / false = shipped state only / everything
+// else. Shipped is the Automation's own merge commit — orthogonal to the
+// stored status.
+func automationListPath(shipped string) (string, error) {
+	switch v := strings.ToLower(strings.TrimSpace(shipped)); v {
+	case "", "all":
+		return "/api/automations", nil
+	case "true", "false":
+		return "/api/automations?shipped=" + v, nil
+	default:
+		return "", fmt.Errorf("--shipped must be true or false, got %q (shipped means the Automation's work has landed; it is independent of status)", shipped)
+	}
 }
 
 func newAutomationGetCmd() *cobra.Command {
@@ -375,6 +408,28 @@ func newAutomationActivateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&actor, "actor", "", "Who is activating (default operator)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason, recorded in the audit trail")
+	return cmd
+}
+
+// newAutomationShippedCmd is the `automation shipped <id>` parity sibling of
+// `autonomous shipped record <id> --automation`: it records the shipped state
+// of one Automation (release, merge commit, merge time, source) through
+// POST /api/automations/{id}/shipped. Status is never touched.
+func newAutomationShippedCmd() *cobra.Command {
+	rec := &shippedRecordArgs{automation: true}
+	cmd := &cobra.Command{
+		Use:   "shipped <id>",
+		Short: "Record the Automation's shipped state (release, merge commit, time, source)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			rec.id = args[0]
+			return rec.run()
+		},
+	}
+	cmd.Flags().StringVar(&rec.release, "release", "", "Release the work was merged into, e.g. v1.2.0")
+	cmd.Flags().StringVar(&rec.commit, "commit", "", "Merge commit (required)")
+	cmd.Flags().StringVar(&rec.at, "at", "", "Merge time, RFC 3339 (default now)")
+	cmd.Flags().StringVar(&rec.source, "source", "", "merge_step or backfill (default backfill)")
 	return cmd
 }
 
@@ -940,6 +995,10 @@ type automationView struct {
 	PendingInserts []autonomous.PendingInsert `json:"pending_inserts"`
 	// DecisionAssistant is the Automation-level decision assistant; absent when off.
 	DecisionAssistant *autonomous.DecisionAssistant `json:"decision_assistant"`
+	// MergeCommit is the Automation's shipped-state merge commit (empty =
+	// not shipped). The stored status is independent of it: shipped state
+	// never changes Status.
+	MergeCommit string `json:"merge_commit,omitempty"`
 }
 
 // automationMemberView is one member of an Automation. The kind fields
@@ -960,10 +1019,24 @@ type automationMemberView struct {
 }
 
 func printAutomationList(w io.Writer, list []automationView) error {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tMEMBERS\tACTIVE")
+	titled := false
 	for _, a := range list {
-		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.ID, a.Name, a.Status, len(a.Members), activeCursorsText(a.ActiveCursors))
+		if strings.TrimSpace(a.MergeCommit) != "" {
+			titled = true
+			break
+		}
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if titled {
+		_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tMEMBERS\tACTIVE\tSHIPPED")
+		for _, a := range list {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\t%s\n", a.ID, a.Name, a.Status, len(a.Members), activeCursorsText(a.ActiveCursors), dashIfEmpty(a.MergeCommit))
+		}
+	} else {
+		_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tMEMBERS\tACTIVE")
+		for _, a := range list {
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.ID, a.Name, a.Status, len(a.Members), activeCursorsText(a.ActiveCursors))
+		}
 	}
 	return tw.Flush()
 }

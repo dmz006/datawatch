@@ -56,10 +56,20 @@ const (
 // Automation is a graph of member Automations (PRDs) advanced by a single
 // cursor, with per-outcome edges and an optional budget policy.
 type Automation struct {
-	ID              string             `json:"id"` // 8-hex, like PRD.ID
-	Name            string             `json:"name"`
-	Description     string             `json:"description,omitempty"`
-	Status          AutomationStatus   `json:"status"`
+	ID          string           `json:"id"` // 8-hex, like PRD.ID
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	Status      AutomationStatus `json:"status"`
+	// Shipped state — set when this Automation's work lands in a release,
+	// same four fields and rules as PRD's shipped block: the release name,
+	// the merge time, the merge commit, and the record source
+	// (ShippedSourceMergeStep or ShippedSourceBackfill). Recording shipped
+	// state never touches Status. IsShipped reports MergeCommit != ""; record
+	// it via Manager.RecordAutomationShipped.
+	MergedInRelease string             `json:"merged_in_release,omitempty"`
+	MergedAt        *time.Time         `json:"merged_at,omitempty"`
+	MergeCommit     string             `json:"merge_commit,omitempty"`
+	ShippedSource   string             `json:"shipped_source,omitempty"`
 	EntryMemberID   string             `json:"entry_member_id"`
 	CurrentMemberID string             `json:"current_member_id,omitempty"` // deprecated: the single cursor of a linear Automation
 	ActiveCursors   []string           `json:"active_cursors,omitempty"`    // member IDs in flight, sorted and unique

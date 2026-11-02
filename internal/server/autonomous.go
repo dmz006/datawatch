@@ -17,6 +17,8 @@
 //   GET    /api/autonomous/prds/{id}/plan_coverage
 //                                                 read the stored plan coverage record + the filters in effect now
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
+//   POST   /api/autonomous/shipped/backfill [?dry_run=true]
+//                                                 shipped-state backfill pass over the base repo's main branch
 
 package server
 
@@ -31,6 +33,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
@@ -2359,6 +2362,42 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_kind", "automaton", id, map[string]any{"kind": req.Kind})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
+	// Record the Automaton's shipped state: release, merged time, merge commit
+	// and source. Status is never touched; the record is idempotent per commit.
+	case "shipped":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			MergedInRelease string   `json:"merged_in_release"`
+			MergedAt        time.Time `json:"merged_at"`
+			MergeCommit     string   `json:"merge_commit"`
+			Source          string   `json:"source"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.RecordPRDShipped(id, req.MergedInRelease, req.MergedAt, req.MergeCommit, req.Source)
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "record_shipped", "automaton", id, map[string]any{
+			"merged_in_release": req.MergedInRelease,
+			"merge_commit":      req.MergeCommit,
+			"source":            req.Source,
+		})
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
 	// Per-Automaton lane preference: gpu, claude or any (empty clears it).
 	case "set_lane_preference":
 		if r.Method != http.MethodPost {
@@ -3657,12 +3696,18 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if shipID, ok := strings.CutSuffix(rest, "/shipped"); ok && shipID != "" && !strings.Contains(shipID, "/") {
+		s.handleAutomationShipped(w, r, shipID)
+		return
+	}
+
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
-			list := s.autonomousMgr.ListAutomations()
-			if list == nil {
-				list = []any{}
+			list, err := s.filterShippedAutomations(r)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
 			writeJSONETag(w, r, list)
 		case http.MethodPost:
@@ -3767,6 +3812,203 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	}
 	s.audit(r.Context(), "automation_activate", "automation", id,
 		map[string]any{"actor": req.Actor, "reason": req.Reason})
+	writeJSONOK(w, a)
+}
+
+// shippedSettings is the in-force autonomous.shipped view (with defaults
+// already applied) for the shipped read surfaces: counts, filters and the
+// views' display state. A server without config falls back to the package
+// default (enabled, chip on, filter_default all, count_separately on).
+func (s *Server) shippedSettings() config.ShippedConfig {
+	if s.cfg != nil {
+		return s.cfg.Autonomous.Shipped
+	}
+	// Zero ShippedConfig reads the package defaults (enabled, chip on,
+	// filter all, count separately on).
+	return config.ShippedConfig{}
+}
+
+// shippedSelectionFromQuery resolves the shipped-state selection for a list
+// read (shipped.go): an explicit shipped=true|false query value always
+// wins; absent it, the autonomous.shipped.filter_default view
+// (all/shipped/unshipped) decides. It reports (wanted, set):
+// set is false only for "all", which applies no shipped selection.
+func shippedSelectionFromQuery(r *http.Request, def string) (wanted bool, set bool, err error) {
+	if v := r.URL.Query().Get("shipped"); v != "" {
+		b, perr := strconv.ParseBool(v)
+		if perr != nil {
+			return false, false, fmt.Errorf("shipped must be true or false, got %q", v)
+		}
+		return b, true, nil
+	}
+	switch def {
+	case config.ShippedFilterShipped:
+		return true, true, nil
+	case config.ShippedFilterUnshipped:
+		return false, true, nil
+	}
+	return false, false, nil
+}
+
+// rawAutomationOf decodes one raw Automation list entry into an Automation
+// (map or already-typed); a nil or undecodable entry decodes to nil.
+func rawAutomationOf(raw any) *autonomous.Automation {
+	if raw == nil {
+		return nil
+	}
+	if a, ok := raw.(*autonomous.Automation); ok {
+		return a
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var a autonomous.Automation
+	if json.Unmarshal(b, &a) != nil {
+		return nil
+	}
+	return &a
+}
+
+// filterShippedAutomations applies the current request's shipped-state read
+// selection (shipped=true|false, or the autonomous.shipped.filter_default
+// view) to the Automation list (shipped.go): "shipped" keeps only
+// Automations that carry shipped state — including ones whose stored status
+// is cancelled but whose work landed — and excludes everything else;
+// "unshipped" does the opposite. With no selection (the default "all") the
+// list comes back unchanged. With the surface disabled the selection never
+// runs, so the whole list comes back.
+func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
+	ship := s.shippedSettings()
+	list := s.autonomousMgr.ListAutomations()
+	if list == nil {
+		list = []any{}
+	}
+	wanted, set, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
+	if err != nil {
+		return nil, err
+	}
+	if !set || !ship.EffectiveEnabled() {
+		return list, nil
+	}
+	kept := make([]any, 0, len(list))
+	for _, x := range list {
+		if autonomous.AutomationShippedMatch(rawAutomationOf(x), true, wanted) {
+			kept = append(kept, x)
+		}
+	}
+	return kept, nil
+}
+
+// handleAutonomousShippedCounts serves GET /api/autonomous/shipped/counts:
+// the per-state count pair across the whole stored PRD list and Automation
+// list under the in-force autonomous.shipped surface (shipped.go): one
+// count per displayed status. A PRD cancelled without its work landing
+// counts as "cancelled"; a PRD whose work landed counts as "shipped", the
+// two separated while enabled + count_separately hold. Read-only.
+func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	ship := s.shippedSettings()
+	sep := ship.EffectiveEnabled() && ship.EffectiveCountSeparately()
+	prds := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListPRDs() {
+		p, err := toPRD(raw)
+		if err != nil || p == nil {
+			continue
+		}
+		prds[autonomous.PRDEffectiveDisplayStatus(p, sep)]++
+	}
+	autos := map[string]int{}
+	for _, raw := range s.autonomousMgr.ListAutomations() {
+		a := rawAutomationOf(raw)
+		autos[autonomous.AutomationEffectiveDisplayStatus(a, sep)]++
+	}
+	pay := map[string]any{
+		"prds":        prds,
+		"automations": autos,
+		"settings": map[string]any{
+			"enabled":          ship.EffectiveEnabled(),
+			"show_chip":        ship.EffectiveShowChip(),
+			"filter_default":   ship.EffectiveFilterDefault(),
+			"count_separately": ship.EffectiveCountSeparately(),
+		},
+	}
+	writeJSONETag(w, r, pay)
+}
+
+// handleAutonomousShippedBackfill serves POST
+// /api/autonomous/shipped/backfill. One shipped-state backfill pass over the
+// base repository's main branch: merge commits naming automaton branches
+// record shipped state (source backfill) on the matching PRDs, and on each
+// Automation whose non-skipped members are all shipped. dry_run=true scans
+// and computes the report without writing any record; absent defaults to
+// writing. No Status is ever touched, so a cancelled PRD stays cancelled
+// and unmarked. The response is the manager's ShippedBackfillReport.
+func (s *Server) handleAutonomousShippedBackfill(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	dryRun := false
+	if v := r.URL.Query().Get("dry_run"); v != "" {
+		d, err := strconv.ParseBool(v)
+		if err != nil {
+			http.Error(w, "dry_run must be a boolean ('true' or 'false')", http.StatusBadRequest)
+			return
+		}
+		dryRun = d
+	}
+	report, err := s.autonomousMgr.ShippedBackfillOnce(dryRun)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.audit(r.Context(), "shipped_backfill", "autonomous", "",
+		map[string]any{"dry_run": dryRun, "report": report})
+	writeJSONOK(w, report)
+}
+
+// handleAutomationShipped serves POST /api/automations/{id}/shipped.
+// Body {merged_in_release, merged_at, merge_commit, source}. It records the
+// Automation's shipped state via the single manager write path and never
+// touches the Automation's status. The record is idempotent per merge commit.
+func (s *Server) handleAutomationShipped(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		MergedInRelease string    `json:"merged_in_release"`
+		MergedAt        time.Time `json:"merged_at"`
+		MergeCommit     string    `json:"merge_commit"`
+		Source          string    `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	a, err := s.autonomousMgr.RecordAutomationShipped(id, req.MergedInRelease, req.MergedAt, req.MergeCommit, req.Source)
+	if err != nil {
+		code, msg := automationErrStatus(err)
+		http.Error(w, msg, code)
+		return
+	}
+	shippedID, _ := automationIdentity(a)
+	s.audit(r.Context(), "automation_shipped_record", "automation", shippedID,
+		map[string]any{"merged_in_release": req.MergedInRelease, "merge_commit": req.MergeCommit, "source": req.Source})
 	writeJSONOK(w, a)
 }
 

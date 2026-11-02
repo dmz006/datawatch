@@ -28,12 +28,20 @@ import (
 
 func (s *Server) toolAutomationList() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_list",
-		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Each row carries its budget view (spend against the ceiling, window, reset time and whether it resumes by itself) when a budget policy is in play. Activate a draft with automation_activate."),
+		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Each row carries its budget view (spend against the ceiling, window, reset time and whether it resumes by itself) when a budget policy is in play. shipped true keeps only Automations that carry shipped state (a non-empty merge commit), shipped false only ones that do not; default is the server's autonomous.shipped.filter_default view (all / shipped / unshipped). Shipped state never changes the stored status. Activate a draft with automation_activate."),
+		mcpsdk.WithString("shipped", mcpsdk.Enum("true", "false"), mcpsdk.Description("true: only Automations that carry shipped state (non-empty merge commit); false: only ones that do not. Default: the autonomous.shipped.filter_default view (all / shipped / unshipped).")),
 	)
 }
 
-func (s *Server) handleAutomationList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	data, err := s.proxyJSON(http.MethodGet, "/api/automations", nil)
+func (s *Server) handleAutomationList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/automations"
+	if shipped := strings.ToLower(strings.TrimSpace(req.GetString("shipped", ""))); shipped != "" && shipped != "all" {
+		if shipped != "true" && shipped != "false" {
+			return mcpsdk.NewToolResultText("error: shipped must be \"true\" or \"false\""), nil
+		}
+		path += "?shipped=" + url.QueryEscape(shipped)
+	}
+	data, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
@@ -746,6 +754,8 @@ func AutomationToolNames() []string {
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
 		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetEffortCeiling(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
+		// autonomous_shipped_record records the shipped state of a PRD (or an Automation).
+		s.toolAutonomousShippedRecord(),
 		// The automations[] array on the status response.
 		s.toolAutonomousStatus(),
 	}
