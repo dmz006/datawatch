@@ -64,13 +64,32 @@ type Syncer struct {
 
 	mu      sync.Mutex
 	failing map[string]bool // peers in a failure episode, so each is logged once
+	clients map[string]syncClient
 }
 
-func (s *Syncer) client() *http.Client {
+// clientFor returns the client for one peer pull. An injected Client wins;
+// otherwise one client per peer is built from the entry's tls_skip_verify
+// and reused until that setting changes.
+func (s *Syncer) clientFor(e multiserver.Entry) *http.Client {
 	if s.Client != nil {
 		return s.Client
 	}
-	return &http.Client{Timeout: syncTimeout}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if c, ok := s.clients[e.Name]; ok && c.skipVerify == e.TLSSkipVerify {
+		return c.client
+	}
+	if s.clients == nil {
+		s.clients = map[string]syncClient{}
+	}
+	c := multiserver.PeerHTTPClient(e.TLSSkipVerify, "", syncTimeout)
+	s.clients[e.Name] = syncClient{skipVerify: e.TLSSkipVerify, client: c}
+	return c
+}
+
+type syncClient struct {
+	skipVerify bool
+	client     *http.Client
 }
 
 // interval returns the effective exchange cadence.
@@ -171,7 +190,7 @@ func (s *Syncer) fetchPeer(ctx context.Context, e multiserver.Entry, key []byte)
 		return nil, "unreachable: " + err.Error()
 	}
 	req.Header.Set("Authorization", "Bearer "+e.Token)
-	resp, err := s.client().Do(req)
+	resp, err := s.clientFor(e).Do(req)
 	if err != nil {
 		return nil, "unreachable: " + err.Error()
 	}

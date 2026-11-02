@@ -21,7 +21,10 @@ import (
 // for command routing and session discovery.
 type RemoteDispatcher struct {
 	servers []config.RemoteServerConfig
-	client  *http.Client
+	// clients holds one HTTP client per server name, rebuilt only when that
+	// entry's tls_skip_verify changes.
+	clientMu sync.Mutex
+	clients  map[string]peerClient
 
 	// BL316 S2 — store holds the live, runtime-mutable server registry
 	// (YAML-seeded + dynamically-added peers, e.g. via `federation peer
@@ -42,10 +45,33 @@ type RemoteDispatcher struct {
 func NewRemoteDispatcher(servers []config.RemoteServerConfig) *RemoteDispatcher {
 	return &RemoteDispatcher{
 		servers:  servers,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		clients:  make(map[string]peerClient),
 		cache:    make(map[string]string),
 		cacheTTL: 30 * time.Second,
 	}
+}
+
+type peerClient struct {
+	skipVerify bool
+	client     *http.Client
+}
+
+const remoteRequestTimeout = 10 * time.Second
+
+// clientFor returns the reusable client for one server, honouring that
+// entry's tls_skip_verify.
+func (d *RemoteDispatcher) clientFor(sv *config.RemoteServerConfig) *http.Client {
+	d.clientMu.Lock()
+	defer d.clientMu.Unlock()
+	if c, ok := d.clients[sv.Name]; ok && c.skipVerify == sv.TLSSkipVerify {
+		return c.client
+	}
+	if d.clients == nil {
+		d.clients = make(map[string]peerClient)
+	}
+	c := multiserver.PeerHTTPClient(sv.TLSSkipVerify, "", remoteRequestTimeout)
+	d.clients[sv.Name] = peerClient{skipVerify: sv.TLSSkipVerify, client: c}
+	return c
 }
 
 // SetStore wires the live multiserver registry into the dispatcher. Call
@@ -70,13 +96,14 @@ func (d *RemoteDispatcher) effectiveServers() []config.RemoteServerConfig {
 	out := make([]config.RemoteServerConfig, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, config.RemoteServerConfig{
-			Name:         e.Name,
-			URL:          e.URL,
-			Token:        e.Token,
-			Enabled:      e.Enabled,
-			Federated:    e.Federated,
-			AuthType:     e.AuthType,
-			Capabilities: e.Capabilities,
+			Name:          e.Name,
+			URL:           e.URL,
+			Token:         e.Token,
+			Enabled:       e.Enabled,
+			Federated:     e.Federated,
+			AuthType:      e.AuthType,
+			Capabilities:  e.Capabilities,
+			TLSSkipVerify: e.TLSSkipVerify,
 		})
 	}
 	return out
@@ -151,7 +178,7 @@ func (d *RemoteDispatcher) fetchSessions(sv config.RemoteServerConfig) []*sessio
 	if sv.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+sv.Token)
 	}
-	resp, err := d.client.Do(req)
+	resp, err := d.clientFor(&sv).Do(req)
 	if err != nil {
 		log.Printf("[proxy] %s: fetch sessions: %v", sv.Name, err)
 		return nil
@@ -189,7 +216,7 @@ func (d *RemoteDispatcher) ForwardCommand(serverName, text string) ([]string, er
 		req.Header.Set("Authorization", "Bearer "+sv.Token)
 	}
 
-	resp, err := d.client.Do(req)
+	resp, err := d.clientFor(sv).Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("proxy to %s: %w", serverName, err)
 	}
@@ -228,7 +255,7 @@ func (d *RemoteDispatcher) ForwardHTTP(serverName, method, path string, body io.
 		req.Header.Set("Authorization", "Bearer "+sv.Token)
 	}
 
-	resp, err := d.client.Do(req)
+	resp, err := d.clientFor(sv).Do(req)
 	if err != nil {
 		return nil, 0, err
 	}

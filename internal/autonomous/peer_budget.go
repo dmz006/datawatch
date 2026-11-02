@@ -124,6 +124,9 @@ func (p *PeerBudget) client() *http.Client {
 	if p.Client != nil {
 		return p.Client
 	}
+	// Follow-up: this fallback ignores the peer's tls_skip_verify. Lookup
+	// returns only url and token, so honouring it needs a new per-peer
+	// client hook (and wiring), which is outside this fix.
 	return &http.Client{Timeout: peerFetchTimeout}
 }
 
