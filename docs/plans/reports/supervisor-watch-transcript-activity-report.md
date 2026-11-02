@@ -35,3 +35,7 @@ the worktree looked idle past the threshold.
 - No version bump is needed: `scripts/supervisor-watch.py` is exempt in
   `scripts/check-version-bump.sh`.
 - The 60 minute SILENT threshold is unchanged.
+
+## Gate re-run
+
+Re-run on 2026-11-02 at 06:44: all three gate commands above passed again (py_compile rc 0; 7 tests OK; unscoped tmux audit OK).
