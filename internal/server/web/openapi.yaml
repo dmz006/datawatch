@@ -3566,12 +3566,17 @@ paths:
         `automaton/<id>` branch records shipped state (`source` `backfill`) on
         the matching Automaton — where one exists — and on each Automation that
         has a non-skipped member whose non-skipped members are all shipped. It
-        never touches any status: cancelled Automata stay cancelled and
-        unmarked, and a record that already carries shipped state is left
+        never touches any status: a cancelled Automaton whose merge commit
+        is on the branch is marked shipped while staying cancelled, and one
+        with no merge stays plain cancelled (what `left_cancelled`
+        counts). A record that already carries shipped state is left
         alone (counted, not re-recorded). `?dry_run=true` scans and computes
         the report without writing any record; absent, the default is to
-        write. One bad record lands in the report's `errors` and the pass
-        carries on. Audited as `shipped_backfill`.
+        write. `prds_marked` and `prds_would_mark_cancelled` are the same
+        in both modes — the dry run counts what it would mark, so it and
+        the real run agree on them. One bad record lands in the
+        report's `errors` and the pass carries on. Audited as
+        `shipped_backfill`.
       operationId: autonomousShippedBackfill
       tags: [Autonomous]
       parameters:
@@ -10021,13 +10026,14 @@ components:
         /api/autonomous/shipped/backfill and of `datawatch autonomous shipped
         backfill` (with `--json`).
       type: object
-      required: [prds_scanned, prds_marked, prds_already_marked, automations_marked, left_cancelled]
+      required: [prds_scanned, prds_marked, prds_would_mark_cancelled, prds_already_marked, automations_marked, left_cancelled]
       properties:
         prds_scanned: {type: integer, description: "The Automata in the store the pass looked at"}
-        prds_marked: {type: integer, description: "Automata that carried no shipped state and now do"}
+        prds_marked: {type: integer, description: "Automata that carried no shipped state and are marked by the pass — the dry run counts what it would mark, so it and the real run report the same number"}
+        prds_would_mark_cancelled: {type: integer, description: "Those marked (or, in a dry run, that would be marked) whose stored status is cancelled: a cancelled Automaton whose merge commit is on the branch is marked shipped while staying cancelled. The dry run and the real run report the same number"}
         prds_already_marked: {type: integer, description: "Automata that already carried shipped state and were left alone"}
         automations_marked: {type: integer, description: "Automations the pass marked shipped"}
-        left_cancelled: {type: integer, description: "Cancelled Automata in the store — none of them is ever marked; they stay cancelled and unmarked"}
+        left_cancelled: {type: integer, description: "Cancelled Automata whose work never merged — neither already shipped before, nor marked in this pass; they stay plain cancelled"}
         unmatched_ids:
           type: array
           items: {type: string}

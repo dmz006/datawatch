@@ -140,13 +140,16 @@ for real.`,
 branch: merge commits naming automaton branches (automaton/<8-hex id>)
 record shipped state on the matching PRDs, and on each Automation whose
 non-skipped member PRDs are all shipped. The release attribution is the
-first release at or after each merge. Status is never touched, so a
-cancelled PRD stays cancelled and unmarked.
+first release at or after each merge. Status is never touched: a
+cancelled PRD whose merge commit is on main is marked shipped while
+staying cancelled; one with no merge stays plain cancelled (what
+left_cancelled reports).
 
 Use --dry-run to scan and report without writing any shipped record;
-without it the pass writes. The report counts what was scanned, marked
-and left alone, plus the ids the history names that the store does not
-hold.`,
+without it the pass writes. The report is the same in both modes for
+prds_marked and prds_would_mark_cancelled. It also counts what was
+scanned, already marked and left plain cancelled, plus the ids the
+history names that the store does not hold.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			return backfill.run()
