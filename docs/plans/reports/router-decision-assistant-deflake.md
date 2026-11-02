@@ -29,3 +29,81 @@ busy loops: 48, GOMAXPROCS=1, runs: 60, race: yes
 failures: 0 of 60
 data race reports: 0
 notes: Run on the fixed code with one busy loop per CPU started by PID and killed by a trap on exactly those PIDs; the go test run took 133.7 s and exited 0. All 48 busy loop PIDs were confirmed gone afterwards.
+
+## Unlocked readers
+
+- internal/router/audit_query_filters_test.go:62 TestAuditQuery_CommFilters: handler sets captured query and hits++ with no lock; test reads *got and *hits after HandleTestMessage
+- internal/router/automation_budget_cmd_test.go:60 TestAutomationSetBudgetComm: handler appends to captured calls unlocked; test does len(calls) and calls[0] after HandleTestMessage
+- internal/router/automation_budget_cmd_test.go:134 TestAutomationSetBudgetCommRejectsBadInput: handler does calls++ unlocked; test compares calls to before after HandleTestMessage
+- internal/router/automation_cmd_test.go:35 TestAutomationActivateHitsParent: handler does calls++ unlocked; test reads calls after HandleTestMessage
+- internal/router/automation_control_cmd_test.go:67 TestAutomationCommControl: handler appends to captured calls unlocked; test reads len(calls) and calls[0] (also lines 94 and 113)
+- internal/router/automation_forkjoin_cmd_test.go:40 TestAutomationCmdListAndGetVerbs: handler appends to captured calls unlocked; test joins calls after HandleTestMessage
+- internal/router/autonomous_events_test.go:85 TestPendingEventsCommReadsOwnQueue: handler appends through *reqs unlocked; test reads len(reqs) and reqs[i]
+- internal/router/autonomous_events_test.go:107 TestPendingEventsCommDefaultsToChannelQueue: handler appends through *reqs unlocked; test reads len(reqs) and reqs[1]
+- internal/router/autonomous_events_test.go:121 TestPendingEventsCommCannotReadAnotherChannelsQueue: handler appends through *reqs unlocked; test ranges over reqs
+- internal/router/autonomous_plan_review_test.go:62 TestAutonomousPlanReview_PostsPlanReviewEndpoint: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_plan_review_test.go:119 TestAutonomousConfigSet_PlanReviewAndSmokeKeys: handler appends through *reqs unlocked; test ranges over reqs
+- internal/router/autonomous_plan_review_test.go:158 TestAutonomousResume_PostsResumeEndpoint: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_subscription_update_test.go:179 TestSubscriptionSurface_CommUpdateMergesAndPuts: handler appends to d.reqs unlocked; test reads len(d.reqs) and d.reqs[i]
+- internal/router/autonomous_subscription_update_test.go:228 TestSubscriptionSurface_CommUpdateExpiresZeroClears: handler appends to d.reqs unlocked; test reads len(d.reqs) and d.reqs[1]
+- internal/router/autonomous_subscription_update_test.go:254 TestSubscriptionSurface_CommUpdateOwnerScoping: handler appends to d.reqs unlocked; test ranges over d.reqs
+- internal/router/autonomous_subscription_update_test.go:299 TestSubscriptionSurface_CommTestPostsAfterOwnerCheck: handler appends to d.reqs unlocked; test reads len(d.reqs) and d.reqs[i]
+- internal/router/autonomous_subscription_update_test.go:335 TestSubscriptionSurface_CommTestOwnerScoping: handler appends to d.reqs unlocked; test ranges over d.reqs
+- internal/router/autonomous_subscriptions_sink_test.go:102 TestCommSubscribeWebhookSendsSinkAndReference: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_subscriptions_sink_test.go:127 TestCommSubscribePeerSendsNoReference: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_subscriptions_sink_test.go:161 TestCommSubscribeRefusesBeforeSending: handler appends through *reqs unlocked; test reads len(reqs)
+- internal/router/autonomous_subscriptions_sink_test.go:174 TestCommUpdateKeepsWebhookSinkAndReference: handler appends through *reqs unlocked; test reads len(reqs) and reqs[1]
+- internal/router/autonomous_subscriptions_sink_test.go:192 TestCommUpdateSwitchesSinkAndDropsReference: handler appends through *reqs unlocked; test reads len(reqs) and reqs[1]
+- internal/router/autonomous_subscriptions_sink_test.go:210 TestCommUpdateBackToCommPinsChannel: handler appends through *reqs unlocked; test reads len(reqs) and reqs[1]
+- internal/router/autonomous_subscriptions_sink_test.go:242 TestCommUpdateSinkRulesRefuseBeforeSending: handler appends through *reqs unlocked; test ranges over reqs
+- internal/router/autonomous_subscriptions_sink_test.go:260 TestCommUpdateRefusesAnotherChannelsWebhook: handler appends through *reqs unlocked; test ranges over reqs
+- internal/router/autonomous_subscriptions_test.go:349 TestAutonomousSubs_SubscribeRoundTrip: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_subscriptions_test.go:412 TestAutonomousSubs_ListIsOwnerScoped: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/autonomous_subscriptions_test.go:442 TestAutonomousSubs_ListEmptyForOtherChannel: handler appends through *reqs unlocked; test reads reqs[len(reqs)-1]
+- internal/router/autonomous_subscriptions_test.go:458 TestAutonomousSubs_UnsubscribeOwnSubscription: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0], reqs[1]
+- internal/router/autonomous_subscriptions_test.go:481 TestAutonomousSubs_UnsubscribeRefusesForeignSubscription: handler appends through *reqs unlocked; test ranges over reqs and reads len(reqs)
+- internal/router/autonomous_tags_registry_test.go:118 TestTagRegistryCommDispatch: handler appends to captured got unlocked; test reads len(got) and got[0]
+- internal/router/autonomous_tags_surface_test.go:94 TestTagSurfaceDispatch: handler appends to captured got unlocked; test reads len(got) and got[0]
+- internal/router/budget_test.go:140 TestBudgetCommRoundTrip: handler appends to statusQueries, llmBodies and llmMethods unlocked; test reads them after HandleTestMessage
+- internal/router/failure_escalation_comm_test.go:101 TestFailureEscalationCommRefusesBadSettings: handler does rec.hits++ unlocked; test reads rec.hits (also line 149 in TestFailureEscalationCommReviewTaskRefusals)
+- internal/router/held_questions_comm_test.go:136 TestQuestionHeldList: handler appends to h.reqs unlocked; test reads len(h.reqs) and h.reqs[0]
+- internal/router/held_questions_comm_test.go:180 TestQuestionHeldFilters: handler appends to h.reqs unlocked; test reads len(h.reqs) and h.reqs[i]
+- internal/router/held_questions_comm_test.go:253 TestQuestionHeldIsReadOnly: handler appends to h.reqs unlocked; test ranges over h.reqs
+- internal/router/identity_test.go:46 TestIdentityComm_Backups: handler appends to captured seen unlocked; test reads len(*seen) and (*seen)[0]
+- internal/router/identity_test.go:72 TestIdentityComm_Restore: handler appends to captured seen unlocked; test reads len(*seen) and (*seen)[0] (also lines 83, 103 for the no-call subtests and TestIdentityComm_ResetIsNotAChatVerb)
+- internal/router/infra_retry_comm_test.go:282 TestInfraRetryComm_ConfigureRoundTripSendsKeysUnchanged: handler appends to bodies unlocked; test reads len(*bodies) and (*bodies)[before]
+- internal/router/infra_retry_comm_test.go:291 TestInfraRetryComm_ConfigureRefusalIsShown: handler appends to bodies unlocked; test reads len(*bodies)
+- internal/router/lane_fill_comm_test.go:91 TestLaneFillComm_BadLimitShowsUsageAndSendsNothing: handler does log.calls++ unlocked; test reads log.calls (also line 130 in TestLaneFillComm_UnknownPreferenceShowsUsageAndSendsNothing)
+- internal/router/merge_pipeline_comm_test.go:124 TestMergePipelineComm_BadInputShowsUsageAndSendsNothing: handler does rec.calls++ unlocked; test reads rec.calls
+- internal/router/peers_test.go:97 TestPeers_List_HitsParent: handler does calls++ unlocked; test reads calls after HandleTestMessage
+- internal/router/peers_test.go:173 TestPeers_Delete_HitsParent: handler does calls++ unlocked; test reads calls after HandleTestMessage
+- internal/router/plan_coverage_filters_comm_test.go:95 TestPlanCoverageFilters_CommHitsReadPath: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/plan_coverage_filters_comm_test.go:120 TestPlanCoverageFilters_CommAliasReachesPath: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/progress_kind_comm_test.go:36 TestProgressKindComm_BadKindShowsUsageAndSendsNothing: handler does calls++ unlocked; test reads calls
+- internal/router/questions_clarity_test.go:65 TestQuestionQuality_Comm: handler appends through *paths unlocked; test reads len(paths) and paths[0]
+- internal/router/questions_comm_test.go:267 TestQuestionList: handler appends to f.reqs unlocked; test reads len(f.reqs) and f.reqs[0]
+- internal/router/questions_comm_test.go:302 TestQuestionShow: handler appends to f.reqs unlocked; test reads len(f.reqs) and f.reqs[0]; line 316 also appends to f.answers from the test goroutine while the handler reads it
+- internal/router/questions_comm_test.go:342 TestQuestionAnswerByNumber: handler appends to f.reqs and f.answers unlocked; test reads both after HandleTestMessage
+- internal/router/questions_comm_test.go:382 TestQuestionAnswerByOptionID: handler appends to f.answers unlocked; test reads len(f.answers) and f.answers[0]
+- internal/router/questions_comm_test.go:401 TestQuestionAnswerQuoteVerbatim: handler appends to f.answers unlocked; test reads len(f.answers) and f.answers[0]
+- internal/router/questions_comm_test.go:421 TestQuestionAnswerUnknownOption: handler appends to f.answers unlocked; test reads len(f.answers)
+- internal/router/retry_profiles_test.go:62 TestRetry_ProfileList_HitsParent: handler does calls++ unlocked; test reads calls after HandleTestMessage
+- internal/router/retry_profiles_test.go:130 TestRetry_ProfileDelete_HitsParent: handler does calls++ unlocked; test reads calls after HandleTestMessage
+- internal/router/roles_test.go:40 TestRoleParityCommAddUpdateAndList: handler appends to bodies unlocked in two mux handlers; test reads len(bodies) and bodies[i]
+- internal/router/scope_lint_comm_test.go:47 TestScopeLintComm_ConfigSetAcceptsEachMode: handler appends to d.puts unlocked; test reads len(d.puts) and d.puts[0]
+- internal/router/scope_lint_comm_test.go:73 TestScopeLintComm_ConfigSetAcceptsConfigureSpelling: handler appends to d.puts unlocked; test reads len(d.puts) and d.puts[0]
+- internal/router/scope_lint_comm_test.go:90 TestScopeLintComm_ConfigSetRejectsBadValue: handler appends to d.puts unlocked; test reads len(d.puts)
+- internal/router/security_failure_comm_test.go:92 TestSecurityFailureCommListsOpenReports: handler writes calls.path under calls.mu but the test reads calls.path directly without the lock (counts() is locked)
+- internal/router/shipped_comm_test.go:34 TestShippedComm_PrdAndAutomation: handler appends to captured calls unlocked; test reads len(calls) and calls[0], and resets calls = nil
+- internal/router/shipped_comm_test.go:86 TestShippedComm_UsageWithoutNetwork: handler appends to captured calls unlocked; test reads len(calls)
+- internal/router/shipped_comm_test.go:115 TestShippedComm_ShippedCounts: handler appends to captured calls unlocked; test reads len(calls) and calls[0]
+- internal/router/shipped_comm_test.go:154 TestShippedComm_ListShippedSelection: handler appends to captured uris unlocked; test reads len(uris) and uris[i]
+- internal/router/sx2_parity_shipped_backfill_test.go:33 TestShippedBackfillComm_DefaultWrites: handler appends to captured calls unlocked; test reads len(calls) and calls[0]
+- internal/router/sx2_parity_shipped_backfill_test.go:62 TestShippedBackfillComm_DryRunAndRefusals: handler appends to captured calls unlocked; test reads len(calls) and calls[0], and resets calls = nil
+- internal/router/sx2_parity_test.go:276 TestNotifyEvents_Set: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/sx2_parity_test.go:309 TestNotifyEvents_SetWarningKinds: handler appends through *reqs unlocked; test reads len(reqs) and reqs[0]
+- internal/router/usage_calculator_test.go:245 TestUsageCalcAdviceHandler: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
+- internal/router/usage_calculator_test.go:265 TestUsageCalcAdviceOverrides: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
+- internal/router/usage_calculator_test.go:292 TestUsageCalcReadingHandler: handler appends to recs unlocked; test reads len(*recs) and (*recs)[i]
+- internal/router/usage_calculator_test.go:331 TestUsageCalcReadingLanesParsedNotSent: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
+- internal/router/usage_calculator_test.go:350 TestUsageCalcAdviceLanesWhatIfIncludingZero: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
