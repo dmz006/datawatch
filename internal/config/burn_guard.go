@@ -201,3 +201,14 @@ func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...inte
 	}
 	return out
 }
+
+// BurnGuardRungs returns the allowed ladder rung names, in default order.
+func BurnGuardRungs() []string { return append([]string(nil), burnGuardRungs...) }
+
+// ValidateBurnGuardRung reports an error for a name that is not a ladder rung.
+func ValidateBurnGuardRung(name string) error {
+	if _, ok := usageChoice(name, burnGuardRungs); !ok {
+		return fmt.Errorf("usage.burn_guard.ladder: %q is not a rung (allowed: %s)", name, strings.Join(burnGuardRungs, ", "))
+	}
+	return nil
+}

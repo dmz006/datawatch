@@ -82,8 +82,13 @@ type BurnGuardStatus struct {
 	Enabled bool `json:"enabled"`
 	// State is "off", "idle" (no rung in force), "guarding" (one or more rungs in force) or
 	// "waiting" (enabled, no usable projection yet).
-	State          string                 `json:"state"`
-	Level          int                    `json:"level"`
+	State string `json:"state"`
+	Level int    `json:"level"`
+	// Rung is the newest rung in force ("" when none); Line and Margin are the pace
+	// line and margin of the last projection (nil before there is one).
+	Rung           string                 `json:"rung,omitempty"`
+	Line           *float64               `json:"line,omitempty"`
+	Margin         *float64               `json:"margin,omitempty"`
 	Applied        []string               `json:"applied,omitempty"`
 	LastTickAt     *time.Time             `json:"last_tick_at,omitempty"`
 	LastChangeAt   *time.Time             `json:"last_change_at,omitempty"`
@@ -192,6 +197,15 @@ func (g *BurnGuard) Status() BurnGuardStatus {
 	st := g.ladder.State()
 	s.Applied = st.Applied
 	s.Level = len(st.Applied)
+	s.Rung = ""
+	if n := len(st.Applied); n > 0 {
+		s.Rung = st.Applied[n-1]
+	}
+	s.Line, s.Margin = nil, nil
+	if p := s.LastProjection; p != nil && p.Needs == "" {
+		line, margin := p.Line, p.Margin
+		s.Line, s.Margin = &line, &margin
+	}
 	if !st.LastChange.IsZero() {
 		t := st.LastChange
 		s.LastChangeAt = &t

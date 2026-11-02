@@ -566,3 +566,43 @@ func TestUsageCalcConfigureThroughRouter(t *testing.T) {
 		t.Fatalf("reply = %q, wants the key acknowledged", out[0])
 	}
 }
+
+func TestUsageCalcParseBurnGuard(t *testing.T) {
+	for _, in := range []string{"usage burn-guard", "usage burnguard"} {
+		cmd := router.Parse(in)
+		if cmd.Type != router.CmdUsage || cmd.UsageVerb != "burn-guard" {
+			t.Errorf("%q parsed as %+v", in, cmd)
+		}
+	}
+	if cmd := router.Parse("usage burn-guard now"); cmd.UsageVerb != "invalid" {
+		t.Errorf("extra argument parsed as %q, want invalid", cmd.UsageVerb)
+	}
+}
+
+func TestUsageCalcBurnGuardMirrorsStatus(t *testing.T) {
+	var path, method string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		path, method = req.URL.Path, req.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"enabled":true,"state":"guarding","level":1,"rung":"lower_inflight","applied":["lower_inflight"],
+"line":62.5,"margin":2,"last_projection":{"projected":66.25,"points_per_hour":0.4,"over":true,"over_by":1.75},
+"last_decision":{"direction":"climb","rung":"lower_inflight"}}`))
+	}))
+	t.Cleanup(srv.Close)
+	port, _ := strconv.Atoi(srv.URL[strings.LastIndexByte(srv.URL, ':')+1:])
+	r := router.NewRouter("calc", "g1", nil, nil, 10, nil)
+	r.SetWebPort(port)
+
+	out := r.HandleTestMessage("usage burn-guard")
+	if method != "GET" || path != "/api/usage/burn-guard" {
+		t.Fatalf("proxied %s %s", method, path)
+	}
+	if len(out) == 0 {
+		t.Fatal("no reply")
+	}
+	for _, want := range []string{"guarding", "lower_inflight", "62.5", "margin: 2", "66.25", "1.75 pts over target", "climb"} {
+		if !strings.Contains(out[0], want) {
+			t.Errorf("reply lacks %q:\n%s", want, out[0])
+		}
+	}
+}

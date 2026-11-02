@@ -550,6 +550,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolUsageReadingDelete(), tracked(s.handleUsageReadingDelete))       // usage calculator
 	mcpSrv.AddTool(s.toolUsageExtraCreditSet(), tracked(s.handleUsageExtraCreditSet))     // usage calculator
 	mcpSrv.AddTool(s.toolUsageRemainingWorkSet(), tracked(s.handleUsageRemainingWorkSet)) // usage calculator
+	mcpSrv.AddTool(s.toolBurnGuardStatus(), tracked(s.handleBurnGuardStatus))             // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardRun(), tracked(s.handleBurnGuardRun))                   // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardConfigGet(), tracked(s.handleBurnGuardConfigGet))       // burn guard
+	mcpSrv.AddTool(s.toolBurnGuardConfigSet(), tracked(s.handleBurnGuardConfigSet))       // burn guard
 	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))                 // BL40
 	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))                     // BL6
 	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                         // BL6

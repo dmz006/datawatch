@@ -50,6 +50,7 @@ run-flat-out policy.`,
 	cmd.AddCommand(newUsageReadingCmd())
 	cmd.AddCommand(newUsageExtraCreditCmd())
 	cmd.AddCommand(newUsageRemainingWorkCmd())
+	cmd.AddCommand(newUsageBurnGuardCmd())
 	return cmd
 }
 
