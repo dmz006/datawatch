@@ -44,7 +44,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.56.4 — Two more flaky tests made deterministic
 
+### Fixed
 
+- **Two tests that failed now and then under load no longer depend on timing.** The live-flip fan-out test now waits for the router send count to reach its expected value instead of reading it right after the second raise (the send is asynchronous), and the resume monitors needs-input test no longer relies on a fixed delay. Both report what they saw when they fail. No product behaviour changed.
 
 ## v9.56.3 — Test code alerts closed
 
