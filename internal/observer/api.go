@@ -66,7 +66,7 @@ func (a *API) EnvelopeSummary(id string) (cpuPct float64, rssBytes uint64, ok bo
 }
 
 // EnvelopeTree returns the process sub-tree filtered to one
-// envelope ID (e.g. "session:ralfthewise-787e"). Returns nil when
+// envelope ID (e.g. "session:peer-d-787e"). Returns nil when
 // the envelope isn't present in the current snapshot.
 func (a *API) EnvelopeTree(id string) any {
 	snap := a.C.Latest()

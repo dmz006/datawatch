@@ -4696,7 +4696,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 			// When rawBackend was a registry LLM name (not a bare kind string),
 			// send it as "llm" so /api/ask uses the v7 dispatcher path which
-			// resolves the correct compute node (e.g. datawatch-openai with
+			// resolves the correct compute node (e.g. remote-node with
 			// address http://datawatch:3000). Without this, the dispatcher maps
 			// the bare kind "openwebui" back to a legacy LLM named "openwebui"
 			// which doesn't exist, falls through to s.cfg.OpenWebUI.URL
@@ -10018,7 +10018,7 @@ func downloadChannelBinary(dataDir, targetVersion string) (string, error) {
 	// with its own archive id, both named "datawatch-channel") for some
 	// time now -- the main archive never contained it, so both this and
 	// the legacy bare-binary fallback below 404'd on every real release,
-	// confirmed live against v9.0.5 on ralfthewise.
+	// confirmed live against v9.0.5 on peer-d.
 	var archiveName, chanBin string
 	if goos == "windows" {
 		archiveName = fmt.Sprintf("datawatch-channel_%s_%s_%s.zip", targetVersion, goos, goarch)

@@ -163,6 +163,60 @@ else
     fail "re-running seeds nothing new and keeps one marker" "second run out=[$out2]"
 fi
 
+# --------------------------------------------------------------- case 7
+# A candidate name shorter than 5 characters is refused: it is not
+# seeded, the normal name alongside it is, and the skip is reported as
+# a count only ('skipped 1 generic names', no name anywhere in output).
+D="$W/c7"
+mkdir -p "$D"
+K7_HOOK='printf "%s\\n" "kb" "delta-5"'
+out="$(LEAK_SEED_NAMES_CMD="$K7_HOOK" run_seeded "$D" t)"
+if [ "$out" = "$(printf '%s\n' 'seeded 1 names' 'skipped 1 generic names')" ] \
+    && [ "$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")" = "1" ] \
+    && [ "$(grep -c 'delta-5' "$D/t")" = "1" ] \
+    && ! grep -vE '^[[:space:]]*(#|$)' "$D/t" | grep -q 'kb'; then
+    ok "2-character name is skipped with 'skipped 1 generic names'; normal name seeded"
+else
+    fail "2-character name is skipped with 'skipped 1 generic names'; normal name seeded" \
+        "out=[$(tr '\n' '|' <<<"$out")] non-comment-lines=$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")"
+fi
+
+# --------------------------------------------------------------- case 8
+# A candidate name equal to a whole word in scripts/leak-patterns.skip
+# is refused the same way: not seeded, normal name seeded, count-only
+# skip notice. The stoplist word used here is the literal word on line 19
+# of that tracked file ('server') — an ordinary English word, safe to
+# write in this test.
+D="$W/c8"
+mkdir -p "$D"
+K8_HOOK='printf "%s\\n" "server" "omega-6"'
+out="$(LEAK_SEED_NAMES_CMD="$K8_HOOK" run_seeded "$D" t)"
+if [ "$out" = "$(printf '%s\n' 'seeded 1 names' 'skipped 1 generic names')" ] \
+    && [ "$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")" = "1" ] \
+    && grep -q 'omega-6' "$D/t" \
+    && ! grep -vE '^[[:space:]]*(#|$)' "$D/t" | grep -qi 'server'; then
+    ok "stoplist name is skipped with 'skipped 1 generic names'; normal name seeded"
+else
+    fail "stoplist name is skipped with 'skipped 1 generic names'; normal name seeded" \
+        "out=[$(tr '\n' '|' <<<"$out")] non-comment-lines=$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")"
+fi
+
+# --------------------------------------------------------------- case 9
+# Both refusals in one run: one short name plus one stoplist word are
+# both skipped (count 2) while the normal name is the sole seeded line.
+D="$W/c9"
+mkdir -p "$D"
+K9_HOOK='printf "%s\\n" "jq" "cluster" "theta-7"'
+out="$(LEAK_SEED_NAMES_CMD="$K9_HOOK" run_seeded "$D" t)"
+if [ "$out" = "$(printf '%s\n' 'seeded 1 names' 'skipped 2 generic names')" ] \
+    && [ "$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")" = "1" ] \
+    && grep -q 'theta-7' "$D/t"; then
+    ok "short and stoplist names both skipped in one run ('skipped 2 generic names')"
+else
+    fail "short and stoplist names both skipped in one run ('skipped 2 generic names')" \
+        "out=[$(tr '\n' '|' <<<"$out")] non-comment-lines=$(grep -cvE '^[[:space:]]*(#|$)' "$D/t")"
+fi
+
 # --------------------------------------------------------------- case 5
 D="$W/c5"
 mkdir -p "$D"

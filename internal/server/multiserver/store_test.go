@@ -242,7 +242,7 @@ func TestStore_Test_FalsePositiveOnBadToken(t *testing.T) {
 	}
 }
 
-// Operator-reported 2026-10-08 (ralfthewise): Test() against a peer with a
+// Operator-reported 2026-10-08 (peer-d): Test() against a peer with a
 // self-signed certificate used to fail with "x509: certificate signed by
 // unknown authority" for every caller, with no way to opt a specific,
 // trusted peer out of verification. TLSSkipVerify fixes this per-entry
