@@ -102,8 +102,8 @@ GET /api/autonomous/lane-fill
  "decisions":[],"alerts":[]}
 
 GET /api/config — autonomous.lane_fill
-{"claude_backend":"claude-code","claude_lanes":3,"count_verifier_wait":true,
- "decompose_ahead_min":2,"gpu_backend":"pi-prompt","gpu_lanes":2,"gpu_model":"",
+{"claude_backend":"remote-node","claude_lanes":3,"count_verifier_wait":true,
+ "decompose_ahead_min":2,"gpu_backend":"peer-e","gpu_lanes":2,"gpu_model":"",
  "idle_alert_minutes":30,"mode":"shadow","poll_seconds":60}
 ```
 

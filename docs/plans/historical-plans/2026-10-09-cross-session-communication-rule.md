@@ -31,7 +31,7 @@ already does exactly this for two other concerns:
   `GuardrailsOptions.RTKEnabled`.
 
 Both are appended into an **existing** project's `CLAUDE.md`/
-`AGENT.md` only if not already present, on every claude-code session
+`AGENT.md` only if not already present, on every remote-node session
 spawn into that project directory. A fresh project gets the full
 template (including a once-per-write refresh of the `# Session
 Guardrails` header block — a separately-fixed bug, see
@@ -72,7 +72,7 @@ exact line being extended:
   (task-to-task handoff within a story). Explicitly not an absolute
   ban — ephemeral same-host coordination nobody needs to audit is
   called out as still fine without going through datawatch.
-- Applies to **claude-code sessions only** — same scope as the Memory
+- Applies to **remote-node sessions only** — same scope as the Memory
   Use Rule and RTK instructions; other backends write `AGENT.md` with
   no native cross-session-messaging concept to steer away from.
 
@@ -93,7 +93,7 @@ exact line being extended:
   (`GENERAL_CONFIG_FIELDS` in `app.js`), 1 toggle, 1 new locale key
   (`settings_cross_session_enabled`) × 5 bundles.
 - **Android/iPhone**: excluded — this governs text injected into a
-  claude-code session's own project files on the daemon's host
+  remote-node session's own project files on the daemon's host
   filesystem; neither mobile app has an equivalent surface.
 
 ## Verification

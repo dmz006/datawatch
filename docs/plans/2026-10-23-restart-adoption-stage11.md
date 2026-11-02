@@ -4,7 +4,7 @@ Restart onto the build with the per-session commit guard, the hermetic server te
 
 | PRD | Task | Session before | Session after |
 |---|---|---|---|
-| 61130001 (claude-code) | verifying | 7f3e | 7f3e |
+| 61130001 (remote-node) | verifying | 7f3e | 7f3e |
 
 - Result: the in-flight session was kept, with no duplicate session and no task reset.
 - The tmux server was untouched (NRestarts 3).

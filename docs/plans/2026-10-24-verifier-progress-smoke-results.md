@@ -18,7 +18,7 @@ daemon — the production daemon (port 19200) was never touched.
   live runner under `sessionIdleRunnerNames`); any other model sleeps in an
   infinite loop (comm stays `pi`, i.e. a live but silent runner — the
   "legitimately silent print run" this proposal exists for).
-  `/tmp/dw-sandbox/bin/pi-prompt` handles planner/worker prompts only.
+  `/tmp/dw-sandbox/bin/peer-e` handles planner/worker prompts only.
 - LLM configs: `smokslow`/`smokdead` (each `max_inflight=1`) on the sandbox
   daemon; worker backend `smokefast` (unlimited).
 - Config used for the smoke: `autonomous.verifier_no_progress_timeout_seconds: 30`

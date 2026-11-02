@@ -69,7 +69,7 @@ edit path silently no-ops. Worth its own small fix; out of scope here.
 
 1. **Token mechanism**: reuse the existing Design-A3
    `SessionTokenStore.Mint()` infrastructure (already used for the
-   claude-code channel bridge) rather than building a second, parallel
+   remote-node channel bridge) rather than building a second, parallel
    token system. Extend session launch to mint one for subprocess-mode
    sessions too (today only the `claudeChannelEnabled` tmux path mints
    one). Scoped to a new, narrow capability — not the broad

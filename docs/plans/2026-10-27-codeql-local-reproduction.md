@@ -14,7 +14,7 @@ source, steps and sink for each of the 21 alerts), `baseline/*.sarif`, `out/*.sa
 | # | Phase | Status |
 |---|-------|--------|
 | 1 | Reproduce the 21 open alerts with the local CodeQL scan (rule, file and line match) | Done |
-| 2 | go/path-injection: the checked value is the one handed to the filesystem (gitguard, session manager, session git helpers, claude-code backend, pipeline quality) | Done |
+| 2 | go/path-injection: the checked value is the one handed to the filesystem (gitguard, session manager, session git helpers, remote-node backend, pipeline quality) | Done |
 | 3 | go/command-injection: commit and tag messages go to git on standard input, not into its argument list | Done |
 | 4 | go/reflected-xss: `nosniff` and escaping of untyped markup bodies in the gzip middleware and the MCP debug transport | Done |
 | 5 | js/xss and js/unvalidated-dynamic-method-call in `app.js`: escape dynamic values, look wait causes up with a `switch` | Done |

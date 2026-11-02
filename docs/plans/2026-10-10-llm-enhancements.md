@@ -81,12 +81,12 @@ and is also not part of this plan.
 - **Pools are concurrency-slot-based only.**
   `cmd/datawatch/capacity_wiring.go:184`: `led.SetLimit("llm:"+l.Name,
   l.MaxInflight)` — a concurrent-call-count cap, same mechanism for every
-  backend. A cloud LLM registry entry (e.g. `claude-code`) has no
+  backend. A cloud LLM registry entry (e.g. `remote-node`) has no
   `ComputeNodes`, so `keys()` (capacity_wiring.go:84-94) only gives it
   `["host", "llm:<name>"]` — no `node:` pool. There is no token/request-rate
   pool type anywhere, cloud or local.
 - **Cloud rate-limit handling is 100% reactive.** `rateLimitPatterns`
-  (`internal/session/manager.go:131`) regex-matches claude-code's own CLI
+  (`internal/session/manager.go:131`) regex-matches remote-node's own CLI
   dialog text (*"5-hour limit reached"*, *"weekly usage limit"*, etc.)
   *after* the limit is hit, and triggers the existing `StateRateLimited`
   auto-resume flow. Nothing proactively prevents a call from being admitted
@@ -181,11 +181,11 @@ re-derived from the source doc.
    One pool type, applied uniformly to cloud and local/open backends — not
    a cloud-only special case. Rationale (operator): useful for local
    models too, and positions the system for when cloud access moves from
-   today's subscription/TUI-only `claude-code` backend to real API-key
+   today's subscription/TUI-only `remote-node` backend to real API-key
    usage, where token economics matter.
 3. **Node selection / failover ordering** (Proposal 4/7): reuse compute
    node `scheduling_priority` (already exists; confirmed live:
-   `datawatch`/`datawatch-openai` = 90, `local-node` = 70) as the
+   `datawatch`/`peer-a` = 90, `local-node` = 70) as the
    ordering signal among same-role-tagged LLM entries. No new priority
    concept invented.
 4. **Priority, preemption, resume** (new cross-cutting scope): "interrupt"

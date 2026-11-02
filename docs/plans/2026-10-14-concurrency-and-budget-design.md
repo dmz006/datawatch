@@ -232,7 +232,7 @@ cap.
   every `capRetryPause` (15s) by `capacityRetrySpawn`. `ErrWorkerStalled`
   (capacity.go:25) keeps a stall inside the retry budget.
   `EnsureClaudeCode` (`internal/inference/store.go:173`) guarantees a
-  `claude-code` registry entry, so **an `llm:claude-code` pool already
+  `remote-node` registry entry, so **an `llm:remote-node` pool already
   exists and already applies across all PRDs**. It is unlimited only because
   `max_inflight` defaults to 0.
 - **The ledger cannot host a tree lock as-is.** Its pools are counters (N
@@ -338,7 +338,7 @@ exist:**
 - **Per backend:** `llm:<name>` with the existing registry field
   `max_inflight`. It is already enforced by the ledger across all PRDs and
   already has registry surfaces. The missing piece is a **default**: today
-  it is 0, meaning unlimited, for `claude-code` too. Section 4d proposes
+  it is 0, meaning unlimited, for `remote-node` too. Section 4d proposes
   deriving the default from a plan tier.
 - **Per compute node:** `node:<name>` with the existing
   `max_concurrent_sessions` plus `capacity_gpu_util_pct` backpressure. These
@@ -362,7 +362,7 @@ dimension** for later per-model pools. The ledger request already carries
 
 Real evidence, read live 2026-10-14 from this host's own registries:
 
-- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `datawatch-openai`
+- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `peer-a`
   (openai-compat, 1× B200 GPU), `local-node` (ollama, 1× 32 GB GPU), and
   `verdict` (ollama, `127.0.0.1:11435`, `tags: ["docker", "verdict-model",
   "imap-mcp", "shared-gpu-with-local-node"]`).
@@ -373,7 +373,7 @@ Real evidence, read live 2026-10-14 from this host's own registries:
   operator's own tag says they are the same physical GPU. Two tasks each
   admitted "within limit" on their own node can still collide on hardware
   that cannot run both.
-- `federation_peer_list` returns one peer (`ralfthewise`, `capabilities:
+- `federation_peer_list` returns one peer (`peer-f`, `capabilities:
   ["full-control"]`). Peer config has no field for "this peer's compute node
   X is the same hardware as my compute node Y." Each daemon's `ComputeNode`
   registry is local and opaque to every peer.
@@ -415,7 +415,7 @@ confirms a *discovered* pairing instead of composing one from scratch.
 Confirmed pairs are recorded as a structured field (replacing today's
 free-text tag), e.g. `ComputeNode.SharesHardwareWith []string`, entries being
 bare node names for an intra-daemon pairing (`"local-node"`) or
-`peer:<node>` for a cross-federation one (`"ralfthewise:gpu-box-1"`). Once
+`peer:<node>` for a cross-federation one (`"peer-f:gpu-box-1"`). Once
 confirmed, the ledger computes `node:<name>` admission over the merged set,
 not each name independently.
 
@@ -454,7 +454,7 @@ choice is an explicit trade-off, not a hidden default (see Open questions).
 
 Self-imposed day/week/month ceilings **are computable**:
 
-- Per-session `EstCostUSD` is live and accurate for claude-code. B98 changed
+- Per-session `EstCostUSD` is live and accurate for remote-node. B98 changed
   it to scrape the real transcript, and `internal/session/cost.go` sums it at
   ~77-82.
 - Rates come from `session.cost_rates` (BL6) via the
@@ -514,7 +514,7 @@ check and the backoff. BL431 scopes them to a named batch of work.
 ### 4d. Proactive and reactive mechanisms
 
 **Proactive: account-tier configuration.** Add a registry field on the LLM
-entry: `plan_tier: unset | pro | max_5x | max_20x | api` on `claude-code`,
+entry: `plan_tier: unset | pro | max_5x | max_20x | api` on `remote-node`,
 and on any future subscription-type backend. When `max_inflight` is unset,
 the tier supplies its default, plus an optional suggested model tier for
 autonomous work (feeding BL422's results via the BL430 per-unit verification
@@ -573,7 +573,7 @@ the code actually surfaces today:
   `RateLimited` sits there holding its capacity lease. The one-shot wait
   loop's stall check keys on `waiting_input`, not `rate_limited`
   (main.go ~4592). Every **other** PRD's goroutine keeps spawning new
-  claude-code tasks onto the same exhausted account. Each of those hits the
+  remote-node tasks onto the same exhausted account. Each of those hits the
   same wall, and each costs a spawn and a wasted attempt. If an operator had
   set the cooldown by hand with the pause flag on, `Start` would return
   `ErrGlobalCooldown`. Because `IsCapacityError` only matches "max sessions"
@@ -585,9 +585,9 @@ the code actually surfaces today:
   outside datawatch on the same account.
 
 **Reactive design.** On the first `StateRateLimited` transition of any
-session whose backend family is `claude-code`:
+session whose backend family is `remote-node`:
 
-1. Mark `backoff:claude-code` with `until = RateLimitResetAt`, or a
+1. Mark `backoff:remote-node` with `until = RateLimitResetAt`, or a
    configured fallback when the reset time cannot be parsed.
 2. Make the autonomous dispatch gate (in `admit`, before spawn) treat that
    as a **wait** (`TaskWaitingCapacity`, reason "usage limit — resets at
@@ -635,10 +635,10 @@ open question 3.
 The subscription-allocation meter in 4a is **account-scoped, not
 daemon-scoped**: a Claude Pro/Max plan or an API key belongs to a person or
 org, not to one `datawatch` process. Two federated daemons (this host and
-`ralfthewise`, per `federation_peer_list`) can be configured with the
-**same** `claude-code` credentials — logged into the same account, or
-holding the same API key — in which case each daemon's own `backoff:claude-code`
-flag (4d) and `llm:claude-code` pool (3b) each track only their own half of
+`peer-f`, per `federation_peer_list`) can be configured with the
+**same** `remote-node` credentials — logged into the same account, or
+holding the same API key — in which case each daemon's own `backoff:remote-node`
+flag (4d) and `llm:remote-node` pool (3b) each track only their own half of
 a quota the two are actually splitting. A daemon well under its own
 `max_inflight` can still be the one that tips a shared 5-hour window over,
 because the other daemon's usage is invisible to it.
@@ -664,7 +664,7 @@ in this mechanism where getting it wrong has a real security cost, unlike
 As in 3c, a hash match is a **detected candidate surfaced for operator
 confirmation**, not a silent merge — a confirmed pairing is recorded as a
 `billing_group` string (operator-chosen label) on the LLM registry entry
-(`llm_list`'s `claude-code` record today; any future subscription-backed
+(`llm_list`'s `remote-node` record today; any future subscription-backed
 entry later), shared by every LLM entry — on this daemon or a confirmed peer
 — that the fingerprint exchange matched. Two entries sharing a non-empty
 `billing_group` are treated by 4d's reactive back-off as **one shared
@@ -720,7 +720,7 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
-decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
+decompose, run, verify and smoke used peer-e with ollama/qwen3.8-64k:27b
 only. The window runs until Sunday 2026-10-18.
 
 ### 4c. Other consumers of tracked models (calculator input)
@@ -776,7 +776,7 @@ a simplification.
 ## 5. Scope boundary
 
 - **Claude only for now.** The reactive back-off, the tier defaults and the
-  allocation meter are designed and built for `claude-code` only.
+  allocation meter are designed and built for `remote-node` only.
 - **The backend/model pair is a first-class key dimension everywhere.**
   This applies to `llm:<name>`, `node:<name>` and `backoff:<backend>`, and to
   budget pools keyed `budget:<backend>[:<model>]`. BL422's forward pointer
@@ -829,7 +829,7 @@ a simplification.
    correct per PRD, and it never consults any other PRD.
 3. `max_parallel_tasks: 1` was read by nothing. It is dead config.
 4. Each `executeOne` → `admit` acquired `host`, limit 9, holding about 3,
-   and `llm:claude-code`, whose `max_inflight` is 0 (unlimited). All were
+   and `llm:remote-node`, whose `max_inflight` is 0 (unlimited). All were
    granted instantly.
 5. No tree lock exists, so nothing considered that the three shared
    `/home/<user>/workspace/datawatch`.
@@ -861,7 +861,7 @@ writer per tree", and the one setting that sounds like it is dead.
   stalled", wrapping `ErrWorkerStalled`.
 - Its own checkpoint read "Now: waiting for run 38503350068 (90 min bound…)".
 
-**Mechanism:** for `claude-code` one-shots, the wait loop kills a session
+**Mechanism:** for `remote-node` one-shots, the wait loop kills a session
 that sits in `waiting_input` for about 3 ticks, roughly 9 seconds
 (`waitingInputTick`, main.go ~4592). A worker that ends its turn to wait on
 CI looks exactly like that. Both attempts died within about a minute, long
@@ -870,7 +870,7 @@ before the planned 90-minute wait.
 The structural problem is not that the stall detector is too strict. **An
 LLM session is the wrong vehicle for a long external wait:**
 
-- While waiting it held a task lease on `host` and `llm:claude-code` (the
+- While waiting it held a task lease on `host` and `llm:remote-node` (the
   deferred release at executor.go ~779), consuming an ACTIVE-INFERENCE
   slot.
 - If its loop had kept generating tokens, it would also have drawn USAGE
@@ -1543,7 +1543,7 @@ thing example (iii) could not see.
   - two PRDs on different trees run in parallel;
   - a worktree PRD alongside a direct PRD;
   - an injected `DATAWATCH_RATE_LIMITED:` line from one worker pauses
-    dispatch for every PRD on `claude-code` and resumes at the reset time;
+    dispatch for every PRD on `remote-node` and resumes at the reset time;
   - a CI-await task releasing its inference slot while keeping the tree lock
     over unpushed work.
 
@@ -1580,7 +1580,7 @@ thing example (iii) could not see.
    enough, or should the self-test be required?
    **Decided by the operator 2026-10-22: recheck cadence plus a version-change staleness flag.** The fixture self-test stays a stretch item, not required for 10.0.0.
 4. **Tier defaults.** What `max_inflight` value should each `plan_tier` map
-   to for `claude-code` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
+   to for `remote-node` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
    right conservative default for `unset`? — **Resolved (Phase 3,
    2026-10-22):** the table is documented as operator policy, overridable
    in one place (`autonomous.plan_tier_max_inflight`, default
@@ -1594,10 +1594,10 @@ thing example (iii) could not see.
    visible-but-non-blocking shared lock wanted, or should worktree PRDs be
    fully independent of the main checkout?
 7. **Back-off reach.** Should the reactive back-off also refuse *interactive*
-   claude-code session starts (which effectively turns on BL30's
+   remote-node session starts (which effectively turns on BL30's
    `rate_limit_global_pause` automatically), or gate autonomous dispatch
    only?
-   **Decided by the operator 2026-10-22: automatic work only.** Reactive back-off gates autonomous dispatch; interactive claude-code session starts are never blocked by it.
+   **Decided by the operator 2026-10-22: automatic work only.** Reactive back-off gates autonomous dispatch; interactive remote-node session starts are never blocked by it.
 8. **Sequencing with BL431.** Should this doc's follow-up implementation PRD
    land before BL431's Automation-coordinator implementation PRD? BL431's
    BudgetPolicy and its per-member execution depend on these mechanics
@@ -1612,7 +1612,7 @@ thing example (iii) could not see.
 10. **Federation fingerprint-sync scope (3c/4e).** Should resource-fingerprint
     exchange be on by default for every federated peer, or opt-in per peer
     (this doc recommends opt-in — a peer with only `full-control` capability
-    today, like `ralfthewise`, is not automatically the right trust level for
+    today, like `peer-f`, is not automatically the right trust level for
     resource fingerprinting, which is a separate decision from control
     capability)?
     **Decided 2026-10-22, as recommended and as built:** opt-in per peer,
@@ -1710,13 +1710,13 @@ verification is not yet measured; BL479's cost is recorded at the next usage rea
 **Tick 22:57 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 38% at 2.6 days since reset. Claude lane 1 runs df790001 (Sonnet); decomposes running for 4cbc0001, 9db60001, 81b70001. GPU lanes idle by the BL529 hold. Operator to report the next weekly % reading.
 **Tick 23:15 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 39% at 2.6 days since reset. Claude lanes run df790001 (Sonnet), 9db60001 (Haiku) and 4cbc0001 (Sonnet), each with a Sonnet verifier. GPU lanes idle by the hold. Operator to report the next weekly % reading.
 **Tick 00:00 (2026-10-21):** no new weekly % since 16:40 (19%); pace allows about 40% at 2.7 days since reset. Claude lanes: 4cbc0001, 9db60001, 60270001. GPU lanes: 215f0001 and the verifies of the Claude PRDs. 2f1b0001 paused for the two-engine limit. Operator to report the next weekly % reading.
-**Reading 14:40 (2026-10-21), operator-reported:** weekly 30%. Days since reset (Sun 2026-10-18 08:00): 3.27, so the pace rule allows 46.7%; headroom about 16 points. Supervisor error recorded: from 2026-10-21 about 11:40 the free Claude lanes were held back waiting for a reading, and the GPU lanes were left idle by defaulting new PRDs to Claude workers; both cost throughput while pace had room. Rule: a stale reading is asked for once, then work continues at the last pace-safe rate; free lanes are filled from the roadmap (rows 10, 11, 12 of docs/plans/README.md) and GPU lanes take mechanical PRDs on pi-prompt.
+**Reading 14:40 (2026-10-21), operator-reported:** weekly 30%. Days since reset (Sun 2026-10-18 08:00): 3.27, so the pace rule allows 46.7%; headroom about 16 points. Supervisor error recorded: from 2026-10-21 about 11:40 the free Claude lanes were held back waiting for a reading, and the GPU lanes were left idle by defaulting new PRDs to Claude workers; both cost throughput while pace had room. Rule: a stale reading is asked for once, then work continues at the last pace-safe rate; free lanes are filled from the roadmap (rows 10, 11, 12 of docs/plans/README.md) and GPU lanes take mechanical PRDs on peer-e.
 **Reading 18:30 (2026-10-21), operator-reported:** weekly 33%. Days since reset 3.44, so the pace rule allows 49.2%; headroom about 16 points. The supervisor's earlier projection (about 40% at 18:16) was 7 points high: the +4 per 24 hours and +2 per Claude PRD coefficients overestimate. Calibration so far: 30% at 14:40 to 33% at 18:30 is +3 points over 3.8 hours with three full Claude PRDs, three decomposes and several merges, about +1 per full Claude PRD. Tick projection from this reading: +3 per 24 hours elapsed, +1 per full Claude PRD started, +0.5 per decompose or merge session.
 **Reading 19:40 (2026-10-21), operator-reported:** weekly 34% (reset Sunday 08:00 EST, unchanged), session 34% (the hourly session window; resets 20:10 daily). Weekly pace allows 49.9% at 3.49 days; headroom about 15 points. The session window is the short-term limit: at 34% there is room, and it resets at 20:10. Operator allowed one extra Claude BUILD lane (workers only; no extra decompose or validate lane).
 
 ## Inflight caps set to match the lane model (2026-10-22 00:25)
 
-After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted onto it, the `claude-code` LLM entry fell to the kind default of one inflight task, so a second Claude PRD, and every Claude-backed decompose, waited in `waiting_capacity` ("pool llm:claude-code full (1/1)"). The explicit per-LLM cap wins over the plan-tier table, so the supervisor set `max_inflight` to match the operator's lane model: `claude-code` = 3 (three Claude lanes), `pi-prompt` = 2 (two GPU lanes; the per-node pool still limits each compute node to one engine). The plan-tier table (`pro` 1, `max_5x` 2, `max_20x` 4) is untouched. If the operator wants a fourth build lane, raise `claude-code` to 4.
+After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted onto it, the `remote-node` LLM entry fell to the kind default of one inflight task, so a second Claude PRD, and every Claude-backed decompose, waited in `waiting_capacity` ("pool llm:remote-node full (1/1)"). The explicit per-LLM cap wins over the plan-tier table, so the supervisor set `max_inflight` to match the operator's lane model: `remote-node` = 3 (three Claude lanes), `peer-e` = 2 (two GPU lanes; the per-node pool still limits each compute node to one engine). The plan-tier table (`pro` 1, `max_5x` 2, `max_20x` 4) is untouched. If the operator wants a fourth build lane, raise `remote-node` to 4.
 
 **Reading 12:36 (2026-10-22), operator-reported:** weekly 45%. Days since the 10-18 08:00 reset: 4.19, so the pace rule allows 59.8%; headroom about 15 points. Compared with the 19:40 reading on 10-21 (34%) this is +11 points in 16.9 hours, about 15.6 points per 24 hours, against the earlier planning figure of +3 per 24 hours. The cause is the 10-21 evening to 10-22 midday run: three to four Claude PRDs at once, twelve merges and many decompose sessions. The allowance itself accrues at 14.3 points per 24 hours, so the recent burn is about equal to the allowance, not above it. Recalibrated projection coefficients (replace the old ones): about +1.5 points per full Claude PRD started, +0.3 per decompose or merge session, +4 per 24 hours of idle baseline. The earlier projections (55 to 58%) were too high because they used the old per-PRD figure and had no reading since yesterday. With 45% and 2.8 days left, a steady three-lane Claude load (about 15 points per day) ends the week near 87%, inside the allowance.
 
@@ -1730,31 +1730,31 @@ After the Phase 3 capacity admission shipped (9.5.68) and the daemon restarted o
 
 **Operator decision, 2026-10-23: the usage policy is the operator's choice, never a standing supervisor hold.** The running calculator must offer the policy as an option, because operators differ: run until the allowance is used up; pace the work to last until the end of the week; or run flat out because the work will finish before the allowance does. On every usage reading the supervisor advises whether the current burn is within or over budget for the week and lets the operator choose how many lanes to run (for example one, two or three Claude lanes). The supervisor never stops all Claude lanes on its own projection. The 02:40 to 17:09 hold on 2026-10-23 broke this: it left Claude lanes idle for about 14 hours and was recorded as the wrong call.
 
-**Reading 23:40 (2026-10-23), operator-reported:** weekly 76%. Days since the 10-18 08:00 reset: 5.65, so the pace line is 80.7% and the headroom is about 4.7 points. Since the 22:08 reading (72%) that is +4 points in 1.5 hours, a burst of about 63 points per 24 hours, far above the week-to-date average of 13.4 per 24 hours (the burst was three Claude lanes plus many decomposes and merges). The reset is 10-25 08:00, 1.35 days away. Projections to the reset: about 94% at the week-to-date average, and over 100% if the burst rate continued (the cap would be reached early Saturday morning). Reported to the operator as over budget at the current burn. **Operator decision:** drop to 2 Claude lanes now (`llm update claude-code --max-inflight 2`), so the Saturday morning switch to 2 is already done; the return to 3 at Sunday 08:00 stands.
+**Reading 23:40 (2026-10-23), operator-reported:** weekly 76%. Days since the 10-18 08:00 reset: 5.65, so the pace line is 80.7% and the headroom is about 4.7 points. Since the 22:08 reading (72%) that is +4 points in 1.5 hours, a burst of about 63 points per 24 hours, far above the week-to-date average of 13.4 per 24 hours (the burst was three Claude lanes plus many decomposes and merges). The reset is 10-25 08:00, 1.35 days away. Projections to the reset: about 94% at the week-to-date average, and over 100% if the burst rate continued (the cap would be reached early Saturday morning). Reported to the operator as over budget at the current burn. **Operator decision:** drop to 2 Claude lanes now (`llm update remote-node --max-inflight 2`), so the Saturday morning switch to 2 is already done; the return to 3 at Sunday 08:00 stands.
 
-**Reading about 14:17 (2026-10-24), operator-reported:** weekly 86%. Days since the 10-18 08:00 reset: 6.26, so the pace line is 89.4% and the headroom is about 3.4 points: within the pace line. The 06:45 reading was 79%, so the burn is +7 points in 7.5 hours, about 0.93 points per hour with two Claude lanes. At that burn the weekly allowance reaches 100% at about 05:30 on Sunday 2026-10-25, about 2.5 hours before the 08:00 reset (projected 102.5% at reset): over budget at the current burn. The operator chooses the lane count; a one-lane setting for the last 17 hours would land near 94%. Verifier routing was changed at 14:13 to prefer-free (pi-prompt first, a Claude verifier when no GPU slot is free), which adds Claude sessions; no cap is set on it.
+**Reading about 14:17 (2026-10-24), operator-reported:** weekly 86%. Days since the 10-18 08:00 reset: 6.26, so the pace line is 89.4% and the headroom is about 3.4 points: within the pace line. The 06:45 reading was 79%, so the burn is +7 points in 7.5 hours, about 0.93 points per hour with two Claude lanes. At that burn the weekly allowance reaches 100% at about 05:30 on Sunday 2026-10-25, about 2.5 hours before the 08:00 reset (projected 102.5% at reset): over budget at the current burn. The operator chooses the lane count; a one-lane setting for the last 17 hours would land near 94%. Verifier routing was changed at 14:13 to prefer-free (peer-e first, a Claude verifier when no GPU slot is free), which adds Claude sessions; no cap is set on it.
 
 **Reading about 07:25 (2026-10-25), operator-reported:** weekly 87%. Days since the 10-18 08:00 reset: 6.98, so the pace line is 99.7% and the headroom is about 12.7 points: within the pace line and within budget. Since the 14:17 reading (86%) that is +1 point in 17 hours, because the lanes were idle for most of that time (see the lesson of 2026-10-24 in the supervisor rules). The allowance resets at 08:00, 35 minutes from now, so there is no budget reason to hold the 3-lane setting planned for 08:00.
 
 **Reading 08:00 (2026-10-25), operator-reported, new week:** weekly 0% after the reset. Days since the reset: 0.0, so the pace line starts at 0% and rises 14.3 points a day. The previous week used 87% over 6.98 days, an average of 12.5 points a day with two to three Claude lanes, which is under the 14.3 points a day pace line: within budget at the current burn with 3 lanes. The lane count stays the operator's choice; 3 lanes are set.
 
-**Reading about 19:45 (2026-10-25), operator-reported:** weekly 15%. Days since the 08:00 reset: 0.49 (11.7 hours, not 24), so the pace line is 6.9% and the reading is about 8 points over it: **over budget at the current burn**. The burn is about 1.3 points an hour (about 31 a day, against a pace line of 14.3 and last week's 12.5), so the allowance would run out in about 66 hours (Wednesday afternoon). Operator, quoted: "Claude is at 15%, might have to stick with 2 lanes and decompose and validate, we aren't 24 hours in are we?" Applied the same tick as `datawatch llm update claude-code --max-inflight 2` (running tasks finish; new admissions are capped at 2). Claude is kept for decompose, validate and design-heavy work; mechanical execution goes to the GPU lanes once the pi-prompt idle-detector fix (BL614) ships. Lane count stays the operator's call.
+**Reading about 19:45 (2026-10-25), operator-reported:** weekly 15%. Days since the 08:00 reset: 0.49 (11.7 hours, not 24), so the pace line is 6.9% and the reading is about 8 points over it: **over budget at the current burn**. The burn is about 1.3 points an hour (about 31 a day, against a pace line of 14.3 and last week's 12.5), so the allowance would run out in about 66 hours (Wednesday afternoon). Operator, quoted: "Claude is at 15%, might have to stick with 2 lanes and decompose and validate, we aren't 24 hours in are we?" Applied the same tick as `datawatch llm update remote-node --max-inflight 2` (running tasks finish; new admissions are capped at 2). Claude is kept for decompose, validate and design-heavy work; mechanical execution goes to the GPU lanes once the peer-e idle-detector fix (BL614) ships. Lane count stays the operator's call.
 
 **Operator clarification, 2026-10-25 about 19:50:** lanes stay at 2, not 3 ("No, 2 claude lanes"; "Not 3. We were at 3 right, 15% is more than 14 we need to stick to on 24 hr"). The operator reads the budget as about 14 points per 24 hours, so 15% after 11.7 hours is already past the whole first day's allowance (14.3), not only past the prorated pace line (6.9%). At 2 lanes the burn would still be roughly 20 points a day by the 31-a-day, 3-lane rate, so 2 lanes alone does not bring the week back to 14 a day; the next lane-count step is the operator's call. Both supervisor crons were recreated with the 2-lane cap (the old ones removed).
 
-**Operator decision, 2026-10-25 about 20:00 (lane count question 1):** option 2, one Claude lane until 08:00 Monday 2026-10-26, then re-evaluate. Operator, quoted: "Option 2 for now". Applied as `datawatch llm update claude-code --max-inflight 1` (running tasks finish; new admissions capped at 1). Claude covers decompose, validate and the pi-prompt idle-detector fix (BL614); GPU lanes take mechanical execution once BL614 ships.
+**Operator decision, 2026-10-25 about 20:00 (lane count question 1):** option 2, one Claude lane until 08:00 Monday 2026-10-26, then re-evaluate. Operator, quoted: "Option 2 for now". Applied as `datawatch llm update remote-node --max-inflight 1` (running tasks finish; new admissions capped at 1). Claude covers decompose, validate and the peer-e idle-detector fix (BL614); GPU lanes take mechanical execution once BL614 ships.
 
 **Reading about 06:25 (2026-10-26), operator-reported:** weekly 22%. Days since the 2026-10-25 08:00 reset: 0.93, so the pace line is 13.3% and the reading is about 8.7 points over it: **over budget at the current burn**. Since the 19:45 reading (15%) that is +7 points in 10.7 hours, about 0.65 points an hour or 15.7 a day, against the 14.3 a day pace line. At that rate the remaining 78 points last about 120 hours, so the allowance runs out around Saturday 06:30, about 26 hours before the next reset. Operator decision, quoted: "22%, keep one lane". The Claude cap stays at `max-inflight 1` after 08:00. Note: that burn is higher than one worker lane alone would explain; the supervisor session itself (a tick every 30 minutes plus an hourly backstop, each with a long prompt) is a large part of it, and the lane count does not change that.
 
 **Reading about 13:35 (2026-10-26), operator-reported:** weekly 24%. Operator, quoted: "claude at 24%". Days since the 2026-10-25 08:00 reset: 1.23, so the pace line is 17.6% and the reading is about 6.4 points over it, but the burn has fallen sharply: +2 points in 7.2 hours since the 06:25 reading (22%), about 0.28 points an hour or 6.7 a day, against 15.7 a day before it. The change that preceded it is the move to a 20 minute cheap watch plus an hourly full tick (supervisor schedule of 2026-10-26, rules doc section 11a) with the Claude cap at one lane. At 6.7 a day the week would end near 63% at the reset (5.76 days away): **within budget at the current burn**. The remaining allowance is about 13.2 points a day, so there is room for roughly double the current Claude draw. The lane count is the operator's choice; the cap stays at one lane until the operator answers.
 
-**Operator decision, 2026-10-26 about 13:40 (lane count question 2):** two Claude lanes. Operator, quoted: "Lays go with 2 lanes, I'll keep an eye on it". Applied as `datawatch llm update claude-code --max-inflight 2`. The projection at two lanes is roughly 10 to 13 points a day, ending near 85 to 100% at the reset, so the operator watches the usage and the supervisor asks for a reading at each hourly tick. The headroom goes first to the CodeQL alert triage (BL625) and to the live debugging of the GPU node placement (BL624 follow-up).
+**Operator decision, 2026-10-26 about 13:40 (lane count question 2):** two Claude lanes. Operator, quoted: "Lays go with 2 lanes, I'll keep an eye on it". Applied as `datawatch llm update remote-node --max-inflight 2`. The projection at two lanes is roughly 10 to 13 points a day, ending near 85 to 100% at the reset, so the operator watches the usage and the supervisor asks for a reading at each hourly tick. The headroom goes first to the CodeQL alert triage (BL625) and to the live debugging of the GPU node placement (BL624 follow-up).
 
-**Operator correction, 2026-10-26 about 13:45 (lane count question 2):** option 3, not two lanes. Operator, quoted: "Actual 3 2ad a better option" (read as: option 3 is the better option). Option 3 is one Claude lane with the headroom spent on specific items. Reverted to `datawatch llm update claude-code --max-inflight 1`, replacing the two-lane decision recorded a few minutes earlier. The headroom goes to the CodeQL alert triage (BL625, PRD 5a390001) and to the live debugging of the GPU node placement. The 24% reading stands: burn about 6.7 points a day on one lane, projected near 63% at the reset.
+**Operator correction, 2026-10-26 about 13:45 (lane count question 2):** option 3, not two lanes. Operator, quoted: "Actual 3 2ad a better option" (read as: option 3 is the better option). Option 3 is one Claude lane with the headroom spent on specific items. Reverted to `datawatch llm update remote-node --max-inflight 1`, replacing the two-lane decision recorded a few minutes earlier. The headroom goes to the CodeQL alert triage (BL625, PRD 5a390001) and to the live debugging of the GPU node placement. The 24% reading stands: burn about 6.7 points a day on one lane, projected near 63% at the reset.
 
 **Operator refinement, 2026-10-26 about 13:50:** operator, quoted: "Stay at 1 but use 2nd for special". The standing Claude cap stays at 1 (`max-inflight 1`). The supervisor may raise it to 2 for a special item and returns it to 1 when that item's Claude work is done. Special means: a defect that blocks other work or throughput (for example the GPU node placement), a security finding that needs triage (BL625), or a merge that cannot wait. Every use of the second lane is stated in the next report with its reason and the time it was opened and closed. Ordinary feature work stays on the one lane.
 
-**Incident, 2026-10-26 about 14:00: three pi workers ran on node datawatch at once.** Operator, quoted: "3 gwen on datawatch at once, it was suppose to be 1 pi on each gpu, how did this get broken again". Causes, in order: (1) from the node balancing release (2026-10-25 18:41) a worker's own lease carried no node pool, so nothing held a node's one engine for it (noted that evening as a gap to watch, not fixed); (2) every daemon restart re-adopted the surviving workers with only a pool lease, so the ledger showed the node as free and admitted more work onto it (about eight restarts on 2026-10-26: deploys and re-placement experiments); (3) the supervisor raised the pi pool cap from 2 to 3 and 4 several times to put the idle local GPU to work, but placement always chose datawatch, so each extra session landed there; (4) the root cause: placement resolves the node through the provider-kind (ollama) LLM entries, which are single-node, so the pi-prompt entry's two-node list was never consulted (BL626, PRD fe9c0001). The earlier placement fixes passed their unit tests with fake registries that did not have this live shape. Action: pi cap returned to 2 (the one-pi-per-GPU lane model) so nothing more is admitted until BL626 ships; no further cap raises as a workaround.
+**Incident, 2026-10-26 about 14:00: three pi workers ran on node datawatch at once.** Operator, quoted: "3 gwen on datawatch at once, it was suppose to be 1 pi on each gpu, how did this get broken again". Causes, in order: (1) from the node balancing release (2026-10-25 18:41) a worker's own lease carried no node pool, so nothing held a node's one engine for it (noted that evening as a gap to watch, not fixed); (2) every daemon restart re-adopted the surviving workers with only a pool lease, so the ledger showed the node as free and admitted more work onto it (about eight restarts on 2026-10-26: deploys and re-placement experiments); (3) the supervisor raised the pi pool cap from 2 to 3 and 4 several times to put the idle local GPU to work, but placement always chose datawatch, so each extra session landed there; (4) the root cause: placement resolves the node through the provider-kind (ollama) LLM entries, which are single-node, so the peer-e entry's two-node list was never consulted (BL626, PRD fe9c0001). The earlier placement fixes passed their unit tests with fake registries that did not have this live shape. Action: pi cap returned to 2 (the one-pi-per-GPU lane model) so nothing more is admitted until BL626 ships; no further cap raises as a workaround.
 
 **Reading about 19:30 (2026-10-26), operator-reported:** weekly 26%. Operator, quoted: "26% used". Days since the 2026-10-25 08:00 reset: 1.48, so the pace line is 21.1% and the reading is about 4.9 points over it. Since the 13:35 reading (24%) that is +2 points in 5.9 hours, about 8.1 points a day (6.7 before it). That window included the second Claude lane from 13:43 to 15:33 for the GPU placement fix (BL626), the CodeQL triage (BL625) and the BL616 retry. The remaining 5.52 days at 8.1 a day end near 71% at the reset: **within budget at the current burn**. The standing cap stays at one Claude lane; the second lane is opened for special items only.
 
@@ -1834,15 +1834,15 @@ Operator answer, 2026-10-30, quoted: "2 lanes, go ahead". Two Claude lanes run u
 
 ## Reading 2026-11-01 14:04 EST: 0%, two lanes for the next day, 10.0 work only
 
-Operator, 2026-11-01, quoted: "Claude at 0, no matrix or other basic testing, only work on prd and automation for 10.0. 2 claude lanes is ok for the next day to catch up and we will monitor it". The calculator records 0% at Sun 14:04 EST after the 08:00 reset (6.75 days left, pace line 3.6 points, headroom 3.6). The Claude cap goes back to 2 for about a day to catch up on the 26 hours lost to the early limit (the cap had been returned to 1 at 14:00 because the earlier two-lane approval ended at the reset). Claude work is limited to the PRDs and Automations for 10.0; no eval matrix runs and no other basic testing use Claude. Monitoring is the computed burn on every hourly tick (`python3 scripts/claude-burn.py --since <reading time>`), reported first, with the cap back to 1 and new work moved to pi-prompt in the same tick if the projection passes the pace line. Background: the Friday-night analysis in the supervisor rules document.
+Operator, 2026-11-01, quoted: "Claude at 0, no matrix or other basic testing, only work on prd and automation for 10.0. 2 claude lanes is ok for the next day to catch up and we will monitor it". The calculator records 0% at Sun 14:04 EST after the 08:00 reset (6.75 days left, pace line 3.6 points, headroom 3.6). The Claude cap goes back to 2 for about a day to catch up on the 26 hours lost to the early limit (the cap had been returned to 1 at 14:00 because the earlier two-lane approval ended at the reset). Claude work is limited to the PRDs and Automations for 10.0; no eval matrix runs and no other basic testing use Claude. Monitoring is the computed burn on every hourly tick (`python3 scripts/claude-burn.py --since <reading time>`), reported first, with the cap back to 1 and new work moved to peer-e in the same tick if the projection passes the pace line. Background: the Friday-night analysis in the supervisor rules document.
 
 ## Reading 2026-11-01 19:10 EST: 10%, back to one lane and optimise
 
 Operator, 2026-11-01, quoted: "Claude at 10%, let's go to one lane or find ways to optimize claude usage". The calculator records 10% at Sun 19:10 (6.53 days left, pace line 6.7, 3.3 points ahead). Recent burn is 47 points per 24 hours; at that rate the allowance runs out Tue 17:02, 111 hours before the reset. The token tally (`scripts/claude-burn.py`) for the same period estimated 9.5 points, so its fit is within about half a point of the reading.
 
-Done the same minute: the Claude cap is back to 1; two Claude tasks that were already running finish on their own and nothing new is admitted until the lane count is under the cap. The Automations for the shipped status work and the parallel tasks work now run their remaining tasks on pi-prompt (the GPU lanes cost no Claude allowance). The four Claude PRDs blocked since the Saturday limit stay blocked, and no eval or matrix runs use Claude.
+Done the same minute: the Claude cap is back to 1; two Claude tasks that were already running finish on their own and nothing new is admitted until the lane count is under the cap. The Automations for the shipped status work and the parallel tasks work now run their remaining tasks on peer-e (the GPU lanes cost no Claude allowance). The four Claude PRDs blocked since the Saturday limit stay blocked, and no eval or matrix runs use Claude.
 
-The arithmetic for what is left: 90 points over 156 hours is 0.58 points an hour. A Claude worker lane costs about 0.53 points an hour in cache-write tokens and the supervisor session about 0.25, so one lane plus the supervisor is about 0.8 and ends the week near 120%; moving about half of the Claude worker tasks to pi-prompt brings it to about 0.55 and the week to about 100%. The lever is cache-write tokens (new context created per worker turn), not effort or output tokens. Further levers are the burn guard PRD (an automatic ladder for cap, routing and retries) and shorter supervisor reports.
+The arithmetic for what is left: 90 points over 156 hours is 0.58 points an hour. A Claude worker lane costs about 0.53 points an hour in cache-write tokens and the supervisor session about 0.25, so one lane plus the supervisor is about 0.8 and ends the week near 120%; moving about half of the Claude worker tasks to peer-e brings it to about 0.55 and the week to about 100%. The lever is cache-write tokens (new context created per worker turn), not effort or output tokens. Further levers are the burn guard PRD (an automatic ladder for cap, routing and retries) and shorter supervisor reports.
 
 ## Reading 2026-11-02 06:49 EST: 16%, stay at one lane
 

@@ -46,7 +46,7 @@ No code change.
 - **D65**: hand-rolled 3-touch swipe-up detector (`touchstart`/`touchmove`/
   `touchend`, net upward delta ≥64px-equivalent, 500ms debounce) wired to
   the existing server/profile picker open function.
-- **D67**: three sub-items — hooks-installed one-time toast (claude-code
+- **D67**: three sub-items — hooks-installed one-time toast (remote-node
   sessions), rate-limit inline notice (dismissible, amber, retry-at) in
   session detail, Terminal/Chat mode preference persisted to localStorage
   instead of resetting on every render.

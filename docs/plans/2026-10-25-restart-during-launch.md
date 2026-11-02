@@ -18,7 +18,7 @@ The restart-during-launch state checks the second behaviour. The matrix holds th
 In scope:
 
 - Boot adoption of a live session only once its agent has started, and ending a live bare shell at boot (including a task that was `verifying` on one).
-- The start-confirm bound (`autonomous.session_start_confirm_seconds`, default 120 s) applied to an adopted claude-code session.
+- The start-confirm bound (`autonomous.session_start_confirm_seconds`, default 120 s) applied to an adopted remote-node session.
 - Tracking launches in flight and draining them on shutdown with a fixed 15 s grace.
 - The restart-matrix state, its held-pane lookup, and the unit tests for all of the above.
 - Operator documentation: `docs/operations.md` (Restart safety), `docs/howto/autonomous-recovery.md`, `docs/testing-tracker.md`, `docs/plans/restart-matrix-findings.md`.
@@ -34,7 +34,7 @@ Out of scope, unchanged, and still open in the findings document:
 1. At boot, a live session is adopted only once its agent has started. A live bare shell is ended, and its launch process with it.
 2. The task keeps its retry count. A bare shell found at boot is requeued with the reason `session never started`, and no retry is counted.
 3. The task is relaunched once and runs unheld.
-4. An adopted claude-code session that never reaches its first assistant turn is ended after the start-confirm bound and counted against the start-failure budget.
+4. An adopted remote-node session that never reaches its first assistant turn is ended after the start-confirm bound and counted against the start-failure budget.
 5. No duplicate session is created, no output is lost, and the PRD completes without operator action.
 
 ## Phases
@@ -43,7 +43,7 @@ Out of scope, unchanged, and still open in the findings document:
 |---|---|---|---|
 | 1. Agent-started predicate | `Manager.AgentStarted`: the agent process in the pane, channel-ready, a delivered task, or a first assistant turn; a short session id resolves | cba24a1d | Done. Unit tests `TestAgentStarted*` pass. |
 | 2. Boot adoption gate | Live sessions are adopted only once the agent has started; a live bare shell is ended and the task reset with the start-failure reason; the check is sampled three times | d7cb4f96, 379f896c | Done. Unit tests `TestBootAdoptionGate*` pass. |
-| 3. Start-confirm bound for adopted sessions | An adopted claude-code session in `waiting_input` with no assistant turn past the limit is ended and counted as a start failure | cb9c2c71 | Done. Unit tests `TestAdoptedSession*` and `TestAdoptedStartFailure*` pass. |
+| 3. Start-confirm bound for adopted sessions | An adopted remote-node session in `waiting_input` with no assistant turn past the limit is ended and counted as a start failure | cb9c2c71 | Done. Unit tests `TestAdoptedSession*` and `TestAdoptedStartFailure*` pass. |
 | 4. Launch registry and shutdown drain | Launches in flight are tracked; shutdown refuses new launches and rolls back those still running after 15 s | 27892a93, 06262306 | Done. Unit tests `TestLaunchRegistry*` and `TestShutdownLaunch*` pass. |
 | 5. Restart-matrix state and fake-backed cases | The `restart-during-launch` state with a launch-hold control; five fake-backed cases | aa644777, 3aedeb57 | Done. `TestRestartLaunchCases` passes. |
 | 6. Live check, before the fix | `--strict --keep --only restart-during-launch`, sandbox daemon v9.11.0, 2026-10-25 10:48 | bb1f0bf6 | Done as a record: FAIL, 7 pass, 3 fail. The held shell was kept as live. |
