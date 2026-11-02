@@ -107,3 +107,17 @@ notes: Run on the fixed code with one busy loop per CPU started by PID and kille
 - internal/router/usage_calculator_test.go:292 TestUsageCalcReadingHandler: handler appends to recs unlocked; test reads len(*recs) and (*recs)[i]
 - internal/router/usage_calculator_test.go:331 TestUsageCalcReadingLanesParsedNotSent: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
 - internal/router/usage_calculator_test.go:350 TestUsageCalcAdviceLanesWhatIfIncludingZero: handler appends to recs unlocked; test reads len(*recs) and (*recs)[0]
+- internal/router/autonomous_create_project_dir_test.go:85 TestAutonomousCreate_PostsSpecOnly_NoProjectDir: handler writes cap.method, cap.path and cap.body unlocked (lines 32-34); test reads them at lines 85-91 after HandleTestMessage
+- internal/router/autonomous_create_project_dir_test.go:110 TestPRDAlias_Create_PostsSpecOnly_NoProjectDir: handler writes cap.method, cap.path and cap.body unlocked (lines 32-34); test reads them at lines 110-116 after HandleTestMessage
+- internal/router/failure_escalation_surfaces_test.go:128 TestFailureEscalationCommReviewRetryChangesWorkerAndScope: handler writes d.resolved unlocked (line 51); test reads d.resolved at lines 128-133 after HandleTestMessage
+- internal/router/fingerprint_args_test.go:25 TestRouterFederationPeerFingerprintSync: handler writes method and path unlocked (line 18); test reads them after HandleTestMessage (same pattern at line 44 in the off subtest)
+- internal/router/fingerprint_args_test.go:57 TestRouterFederationPeerFingerprintSync: handler does calls++ unlocked (line 54); test reads calls after HandleTestMessage
+- internal/router/fingerprint_args_test.go:66 TestRouterLLMBillingGroupKey: method, path and body come from commLLMBody, whose handler writes them unlocked; test reads the returned values
+- internal/router/fingerprint_cmd_test.go:53 TestRouterFingerprintList: matchReplier handler writes *call unlocked (line 25); test reads call after HandleTestMessage (same at line 63)
+- internal/router/fingerprint_cmd_test.go:75 TestRouterFingerprintList: handler does count++ unlocked (line 72); test reads count after HandleTestMessage
+- internal/router/fingerprint_cmd_test.go:88 TestRouterFingerprintConfirmReject: matchReplier handler writes *call unlocked; test reads call after HandleTestMessage (same at line 99)
+- internal/router/fingerprint_cmd_test.go:117 TestRouterFingerprintUnknownID: handler writes call unlocked; test reads call after HandleTestMessage
+- internal/router/guardrail_set_llm_test.go:25 TestCommSetLLM_LegacyUnchanged: commSetLLMBody handler writes path unlocked (line 18) and returns it after HandleTestMessage; every caller (lines 29-71) reads the unlocked value
+- internal/router/plan_tier_comm_test.go:26 TestCommLLMUpdate_PlanTierAndMaxInflight: commLLMBody handler writes method and path unlocked (lines 18-19) and returns them after HandleTestMessage; every caller (lines 30, 46 and later) reads the unlocked values
+- internal/router/usage_backoff_test.go:129 TestUsageBackoffComm_RoundTrip: handler appends to fake.methods and fake.bodies under f.mu, but the test reads len(fake.bodies), fake.methods and fake.bodies without taking f.mu (also lines 132, 146, 151, 159)
+- internal/router/usage_backoff_test.go:234 TestUsageBackoffComm_Recheck: handler writes method and path unlocked (line 225); test reads them after HandleTestMessage
