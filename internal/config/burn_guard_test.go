@@ -153,6 +153,30 @@ func TestBurnGuardYAMLRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBurnGuardAskOnChangeDefaultAndRoundTrip(t *testing.T) {
+	if d := DefaultBurnGuard(); d.AskOnChange {
+		t.Fatal("AskOnChange default = true, want false")
+	}
+	for _, v := range []bool{true, false} {
+		in := DefaultBurnGuard()
+		in.AskOnChange = v
+		data, err := yaml.Marshal(UsageConfig{BurnGuard: in})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		if !strings.Contains(string(data), "ask_on_change:") {
+			t.Errorf("yaml lacks explicit ask_on_change key:\n%s", data)
+		}
+		var back UsageConfig
+		if err := yaml.Unmarshal(data, &back); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if got := normalizeBurnGuard(back.BurnGuard, nil); got.AskOnChange != v {
+			t.Errorf("AskOnChange round trip = %v, want %v", got.AskOnChange, v)
+		}
+	}
+}
+
 func TestBurnGuardYAMLPartialKeepsDefaults(t *testing.T) {
 	cfg := DefaultConfig()
 	if err := yaml.Unmarshal([]byte("usage:\n  burn_guard:\n    interval_minutes: 15\n"), cfg); err != nil {
