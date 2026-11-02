@@ -1,0 +1,1802 @@
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.53s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.05s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.54s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.60s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.54s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.08s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.54s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.53s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.56s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.60s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.54s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.08s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.53s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.56s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+=== RUN   TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal
+--- PASS: TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal (0.07s)
+=== RUN   TestUIPromptDismiss_AuditObservedAfterDelayedHook
+--- PASS: TestUIPromptDismiss_AuditObservedAfterDelayedHook (0.27s)
+=== RUN   TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared
+--- PASS: TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared (0.59s)
+=== RUN   TestUIPromptDismiss_ClearedDuringDelayNeverSends
+--- PASS: TestUIPromptDismiss_ClearedDuringDelayNeverSends (0.55s)
+=== RUN   TestUIPromptDismiss_DelayHonored
+--- PASS: TestUIPromptDismiss_DelayHonored (0.55s)
+=== RUN   TestUIPromptDismiss_SettingOffNeverSends
+--- PASS: TestUIPromptDismiss_SettingOffNeverSends (0.53s)
+=== RUN   TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce
+--- PASS: TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce (0.07s)
+=== RUN   TestUIPromptDismiss_GuardRejectsDangerousKeys
+--- PASS: TestUIPromptDismiss_GuardRejectsDangerousKeys (0.00s)
+=== RUN   TestUIPromptDismiss_EscIsTheOnlyLiteralSends
+--- PASS: TestUIPromptDismiss_EscIsTheOnlyLiteralSends (0.00s)
+PASS
+ok  	github.com/dmz006/datawatch/internal/session	265.126s
