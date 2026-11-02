@@ -3,9 +3,10 @@
 // (automaton/<8-hex prd id>), finds the first release at or after each
 // merge, and records the four shipped-state fields on the matching PRDs
 // (and on Automations whose non-skipped members are all shipped) with
-// source backfill — without ever touching a PRD's or Automation's Status,
-// so a cancelled PRD stays cancelled and a cancelled-and-unmerged one
-// stays unmarked.
+// source backfill — without ever touching a PRD's or Automation's
+// Status. A cancelled PRD named by a merge commit is recorded just like
+// any other (it stays cancelled, now also shipped); a PRD no merge names
+// is never marked, so a cancelled one with no merge stays unmarked.
 package autonomous
 
 import (
@@ -48,14 +49,21 @@ type ShippedBackfillOpts struct {
 type ShippedBackfillReport struct {
 	// PrdsScanned is the number of PRDs in the store the pass looked at.
 	PrdsScanned int `json:"prds_scanned"`
-	// PrdsMarked are PRDs that did not carry shipped state and now do.
+	// PrdsMarked are PRDs that did not carry shipped state and are marked
+	// by this pass — a dry run increments it for each PRD it would mark,
+	// so a dry run and the real run report the same number.
 	PrdsMarked int `json:"prds_marked"`
+	// PrdsWouldMarkCancelled counts the PRDs marked (or that would be
+	// marked) in this pass whose stored status is cancelled; the real run
+	// and a dry run report the same number.
+	PrdsWouldMarkCancelled int `json:"prds_would_mark_cancelled"`
 	// PrdsAlreadyMarked already carried shipped state and were left alone.
 	PrdsAlreadyMarked int `json:"prds_already_marked"`
 	// AutomationsMarked are Automations marked shipped by this pass.
 	AutomationsMarked int `json:"automations_marked"`
-	// LeftCancelled are the store's cancelled PRDs: none of them is ever
-	// marked, so they stay cancelled and unmarked.
+	// LeftCancelled is the count of cancelled PRDs still unmarked after the
+	// pass: the cancelled PRDs with no merge (neither already shipped
+	// before, nor newly marked in this pass).
 	LeftCancelled int `json:"left_cancelled"`
 	// UnmatchedIDs are 8-hex ids the history names but the store does not
 	// hold (deduplicated, sorted).
@@ -102,11 +110,6 @@ func (m *Manager) BackfillShipped(ctx context.Context, opts ShippedBackfillOpts)
 
 	var rep ShippedBackfillReport
 	rep.PrdsScanned = len(m.store.ListPRDs())
-	for _, p := range m.store.ListPRDs() {
-		if p != nil && p.Status == PRDCancelled {
-			rep.LeftCancelled++
-		}
-	}
 
 	merges, err := listShippedBackfillMerges(ctx, repo, main)
 	if err != nil {
@@ -146,20 +149,33 @@ func (m *Manager) BackfillShipped(ctx context.Context, opts ShippedBackfillOpts)
 			rep.PrdsAlreadyMarked++
 			continue
 		}
-		// A cancelled PRD is operator-cancelled: it stays cancelled and
-		// unmarked (already counted in LeftCancelled).
-		if p.Status == PRDCancelled {
-			continue
-		}
 		release := shippedBackfillReleaseForMerge(ctx, repo, main, mg.commit)
 		if !opts.DryRun {
 			if _, err := m.RecordPRDShipped(mg.prdID, release, mg.mergedAt, mg.commit, ShippedSourceBackfill); err != nil {
 				rep.Errors = append(rep.Errors, fmt.Sprintf("record prd %s: %v", mg.prdID, err))
 				continue
 			}
-			rep.PrdsMarked++
+		}
+		// A cancelled PRD named by a merge is recorded too — it stays
+		// cancelled, and is counted separately so the report names it.
+		rep.PrdsMarked++
+		if p.Status == PRDCancelled {
+			rep.PrdsWouldMarkCancelled++
 		}
 		newlyShipped[mg.prdID] = true
+	}
+
+	// LeftCancelled: the cancelled PRDs still unmarked after the pass —
+	// the cancelled PRDs with no merge (neither already shipped, nor newly
+	// marked in this pass).
+	for _, p := range m.store.ListPRDs() {
+		if p == nil || p.Status != PRDCancelled {
+			continue
+		}
+		if p.IsShipped() || newlyShipped[p.ID] {
+			continue
+		}
+		rep.LeftCancelled++
 	}
 
 	m.backfillAutomationsShipped(opts, &rep, newlyShipped, mergeOrder)
