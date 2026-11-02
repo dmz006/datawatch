@@ -103,7 +103,7 @@ GET /api/autonomous/lane-fill
 
 GET /api/config — autonomous.lane_fill
 {"claude_backend":"claude-code","claude_lanes":3,"count_verifier_wait":true,
- "decompose_ahead_min":2,"gpu_backend":"peer-d","gpu_lanes":2,"gpu_model":"",
+ "decompose_ahead_min":2,"gpu_backend":"peer-e","gpu_lanes":2,"gpu_model":"",
  "idle_alert_minutes":30,"mode":"shadow","poll_seconds":60}
 ```
 

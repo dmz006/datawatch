@@ -8,4 +8,4 @@ Daemon restarted onto 9.5.76 (all of BL557, BL558 and BL561 included) with Autom
 | Automaton `de774e82` | running | parked by the boot-resume age gate ("last activity 7989 s ago"), although the worker was alive | **failed** |
 | Explicit resume (`prd-resume`) | parked | running, adopted session 7307 | works |
 
-Cause: the gate counts a live worker only for `in_progress` tasks; this task was labelled `verifying`. Filed P0 BL564. The peer-d case was not re-run; it passed in stages 1 and 2.
+Cause: the gate counts a live worker only for `in_progress` tasks; this task was labelled `verifying`. Filed P0 BL564. The peer-e case was not re-run; it passed in stages 1 and 2.

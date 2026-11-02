@@ -1,9 +1,9 @@
-# peer-d descendant-only stall bound (autonomous.descendant_stall_seconds)
+# peer-e descendant-only stall bound (autonomous.descendant_stall_seconds)
 
 **Date:** 2026-10-28
 **Version:** 9.30.1 (the changelog entry is under v9.30.1).
-**Scope:** a new daemon-side stall detector for the `peer-d` backend family, driven by one config key. Files: `internal/autonomous/descendant_stall.go` and `_test.go`, `internal/config/descendant_stall.go` and `_test.go`, `internal/config/config.go`, `internal/server/api.go` and `descendant_stall_config_test.go`, `internal/mcp/autonomous.go`, `cmd/datawatch/main.go`, `descendant_processes.go`, `descendant_stall_wait.go`, `end_attribution.go`, their tests, `internal/server/web/app.js` plus the settings field tests and the five locale bundles (en, de, es, fr, ja). Docs: `CHANGELOG.md`, `docs/config-reference.yaml`, `docs/implementation.md`, `docs/operations.md`, `docs/howto/autonomous-recovery.md`, `docs/api/autonomous.md`, `docs/mcp.md`, `docs/testing-tracker.md`, this file.
-**Status:** code Done and documented on this branch; the live fire (a real peer-d worker parked behind a living child being reaped) is not yet exercised against a running daemon, so `Validated=No` in the tracker section.
+**Scope:** a new daemon-side stall detector for the `peer-e` backend family, driven by one config key. Files: `internal/autonomous/descendant_stall.go` and `_test.go`, `internal/config/descendant_stall.go` and `_test.go`, `internal/config/config.go`, `internal/server/api.go` and `descendant_stall_config_test.go`, `internal/mcp/autonomous.go`, `cmd/datawatch/main.go`, `descendant_processes.go`, `descendant_stall_wait.go`, `end_attribution.go`, their tests, `internal/server/web/app.js` plus the settings field tests and the five locale bundles (en, de, es, fr, ja). Docs: `CHANGELOG.md`, `docs/config-reference.yaml`, `docs/implementation.md`, `docs/operations.md`, `docs/howto/autonomous-recovery.md`, `docs/api/autonomous.md`, `docs/mcp.md`, `docs/testing-tracker.md`, this file.
+**Status:** code Done and documented on this branch; the live fire (a real peer-e worker parked behind a living child being reaped) is not yet exercised against a running daemon, so `Validated=No` in the tracker section.
 
 ## What it does
 
@@ -11,7 +11,7 @@ A one-shot `pi --print` run writes nothing to its session log until it finishes,
 stall check excludes that family, and the exit-silence check does not cover the case where the
 runner has exited but a child it started (a build, a test, a long command) is still alive. This
 unit adds one bound, `autonomous.descendant_stall_seconds` (default `2700`), that fires only for
-the `peer-d` family and only while a live work descendant is present and there is no other
+the `peer-e` family and only while a live work descendant is present and there is no other
 evidence of life.
 
 - **Clock:** the latest of the tracker start, the previous observation, the session-log mtime and
@@ -36,7 +36,7 @@ evidence of life.
 | 3 | Surfaces: config YAML, REST `GET`/`PUT`, MCP `autonomous_config_set`, CLI `config set`, comm `configure`, PWA settings card (5 locales) | Done |
 | 4 | Tests: 41 Go test functions in 5 test files across 4 packages (`cmd/datawatch`, `internal/autonomous`, `internal/server`, `internal/config`) + 3 PWA settings field tests | Done |
 | 5 | Documentation: CHANGELOG, config reference, implementation, operations, howto, API docs, MCP docs, testing tracker, this plan | Done |
-| 6 | Live validation on a real daemon (peer-d worker left with a live descendant) | Pending |
+| 6 | Live validation on a real daemon (peer-e worker left with a live descendant) | Pending |
 
 Shipped in: 9.30.1; the entry is in `CHANGELOG.md` under v9.30.1. Phase 6 (live fire on a running daemon) was not exercised before the release and stays open.
 
@@ -77,7 +77,7 @@ node --test internal/server/web/app-autonomous-settings-fields.test.js
 - Tests: 41 Go test functions in 5 test files across `cmd/datawatch`, `internal/autonomous`,
   `internal/server`, `internal/config` (`internal/mcp` gained no test) — all pass; the PWA settings field tests pass. Details and the
   pending items (MCP schema-declaration test, live daemon fire) are in the testing-tracker section
-  "peer-d descendant-only stall bound (autonomous.descendant_stall_seconds)": **Tested=Yes,
+  "peer-e descendant-only stall bound (autonomous.descendant_stall_seconds)": **Tested=Yes,
   Validated=No**.
 - Documentation checklist: `CHANGELOG.md` `[Unreleased]` entry added (no version number);
   `docs/config-reference.yaml` key documented; `docs/implementation.md` "Descendant-only stall

@@ -4,11 +4,11 @@ Restart onto the build that adds per-record session and PRD stores, with two PRD
 
 | PRD | Task | Session before | Session after | Worker process before | Worker process after |
 |---|---|---|---|---|---|
-| dbd5000a (peer-d) | verifying | 7ca3 | 7ca3 | pi 578572 | pi 578572 |
-| 5a330001 (peer-d) | verifying | cd33 | cd33 | pi 991802 | pi 991802 |
+| dbd5000a (peer-e) | verifying | 7ca3 | 7ca3 | pi 578572 | pi 578572 |
+| 5a330001 (peer-e) | verifying | cd33 | cd33 | pi 991802 | pi 991802 |
 
 - Result: both in-flight sessions kept, no duplicate session, no task reset, no worker process restarted.
 - The first start on the new build migrated the 34 MB `sessions.json` into `sessions.d/` (3,921 records) and `prds.jsonl` (354 MB) into `autonomous/prds/`. The originals stay as `sessions.json.pre-records.bak` and `prds.jsonl.pre-records.bak`.
 - The capacity API answered in about 4 ms after the restart, against 130 ms to 6 s before the store change.
 - The tmux server was untouched (NRestarts 3).
-- Side finding: while preparing the run, an explicit `--model qwen3.8-64k:27b` on a PRD made pi fail with "ambiguous across providers". Leave the PRD model empty on peer-d PRDs.
+- Side finding: while preparing the run, an explicit `--model qwen3.8-64k:27b` on a PRD made pi fail with "ambiguous across providers". Leave the PRD model empty on peer-e PRDs.
