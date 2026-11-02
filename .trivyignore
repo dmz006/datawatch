@@ -238,32 +238,6 @@ CVE-2026-53615
 # CVE description read
 CVE-2026-55453
 
-# git-lfs -- CVE-2025-26625
-# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
-# CVE-2025-26625: git-lfs can be made to write or read outside the repo through
-# a crafted symlink/pointer when it checks out LFS objects from a hostile
-# repository or LFS server. Dockerfile.agent-base line 146 installs git-lfs, so
-# all four images carry it. Running the built image shows /etc/gitconfig already
-# contains filter.lfs.clean, filter.lfs.smudge, filter.lfs.process and
-# filter.lfs.required=true, so git invokes git-lfs automatically on any checkout
-# of a repo whose .gitattributes marks files filter=lfs, without anyone typing
-# git lfs. internal/agents/worker_clone.go runs git clone (optionally --branch)
-# and git pull --ff-only into the worker workspace, and the agent sessions run
-# git themselves, so the vulnerable code path is reachable. No datawatch Go
-# source, script or entrypoint calls git lfs explicitly (grep for lfs in
-# cmd/internal/scripts/docker found only the Dockerfile install line). Exposure
-# is limited: the clone URL is the operator-configured project remote
-# (resp.Git.URL), so exploitation needs an operator to point a project at an
-# attacker-controlled LFS-enabled remote. Reachable but low likelihood; keep the
-# suppression until Debian ships a bookworm fix.
-# No fix available in Debian bookworm as of this migration; re-check each
-# release cycle (BL398 Phase 1's live rescan baseline).
-# TRACED: grep of Dockerfiles, entrypoint and Go sources for lfs and git
-# clone/pull; docker run --network none on the built agent-base image to read
-# /etc/gitconfig and git-lfs dpkg contents; internal/agents/worker_clone.go
-# read; CVE description read
-CVE-2025-26625
-
 # python3.11, libpython3.11-* -- CVE-2026-7210
 # severity: critical; images: agent-aider, agent-gemini
 # CVE-2026-7210 is a use-after-free in Python 3.11's expat bindings

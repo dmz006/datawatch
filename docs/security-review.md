@@ -123,14 +123,13 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**81 suppressed container CVEs across 8 images, 18 independently traced.**
+**80 suppressed container CVEs across 8 images, 17 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
 | CVE-2023-25193 | `libharfbuzz0b` | high | parent-full | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2023-2953 | `libldap-2.5-0` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2023-45853 | `zlib1g` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2025-26625 | `git-lfs` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69534 | `python3.11, libpython3.11-*` | high | agent-gemini, agent-aider | no | 2026-06-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-69720 | `ncurses (libncursesw6, libtinfo6, ncurses-base)` | high | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2025-7458 | `libsqlite3-0` | critical | agent-base, agent-gemini, agent-aider, parent-full | yes | 2026-06-18 | No fix available in Debian bookworm as of this migration; re-check each release ... |

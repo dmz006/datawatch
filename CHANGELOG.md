@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.61.3 — git-lfs suppression removed, Debian ships the fix
+
+### Security
+
+- **The accepted-risk entry for the git-lfs finding is removed.** Debian bookworm now ships the fixed git-lfs (3.3.0-1+deb12u2), so a fresh image build has it and the suppression is no longer needed. The generated ignore file and the security review page are regenerated. Python 3.11's XML finding stays on the registry because Debian has no fix for it yet.
+
 ## v9.61.2 — Verification scripts survive cancel and recreate
 
 ### Fixed
