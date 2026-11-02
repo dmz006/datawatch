@@ -8435,7 +8435,7 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
 			// Validated in handlePutConfig; stored normalized.
 			applyUsageCalculatorPatchKey(&cfg.Usage.Calculator, k, v)
-		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude":
+		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)
 		case "autonomous.backoff_max_wait_minutes":

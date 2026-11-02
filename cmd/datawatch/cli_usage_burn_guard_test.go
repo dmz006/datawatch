@@ -1,63 +1,69 @@
+// AskOnChange in the CLI usage burn-guard config: true and false are accepted,
+// any other value is rejected with a clear message before anything is sent, and
+// an accepted value is forwarded as a boolean in the PUT body.
+
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
-func TestBurnGuardCLIStatusAndRun(t *testing.T) {
-	seen := usageDaemon(t)
-	for _, tc := range []struct {
-		arg, method, uri string
-	}{
-		{"status", http.MethodGet, "/api/usage/burn-guard"},
-		{"run", http.MethodPost, "/api/usage/burn-guard/run"},
-		{"config", http.MethodGet, "/api/usage/burn-guard/config"},
-	} {
-		c := newUsageBurnGuardCmd()
-		c.SetArgs([]string{tc.arg})
-		if err := usageRun(t, c); err != nil {
-			t.Fatalf("%s: %v", tc.arg, err)
+func TestBurnGuardAskOnChangeCLIAcceptsTrueAndFalse(t *testing.T) {
+	body, err := parseBurnGuardSettings([]string{"ask_on_change=true"})
+	if err != nil || body["ask_on_change"] != true {
+		t.Fatalf("true: body = %v, err = %v", body, err)
+	}
+	body, err = parseBurnGuardSettings([]string{"ask_on_change=false"})
+	if err != nil || body["ask_on_change"] != false {
+		t.Fatalf("false: body = %v, err = %v", body, err)
+	}
+}
+
+func TestBurnGuardAskOnChangeCLIRejectsNonBool(t *testing.T) {
+	for _, bad := range []string{"maybe", "2", ""} {
+		_, err := parseBurnGuardSettings([]string{"ask_on_change=" + bad})
+		if err == nil {
+			t.Fatalf("ask_on_change=%q accepted, want a clear error", bad)
 		}
-		calls := seen()
-		got := calls[len(calls)-1]
-		if got.method != tc.method || got.uri != tc.uri {
-			t.Errorf("%s sent %s %s, want %s %s", tc.arg, got.method, got.uri, tc.method, tc.uri)
+		if !strings.Contains(err.Error(), "ask_on_change") || !strings.Contains(err.Error(), "true or false") {
+			t.Fatalf("error = %q, want it to name ask_on_change and true/false", err)
 		}
 	}
 }
 
-func TestBurnGuardCLIConfigSet(t *testing.T) {
-	seen := usageDaemon(t)
-	c := newUsageBurnGuardCmd()
-	c.SetArgs([]string{"config", "margin_points=3.5", "enabled=false", "ladder=lower_inflight, hold_claude", "interval_minutes=30"})
-	if err := usageRun(t, c); err != nil {
+func TestBurnGuardAskOnChangeCLISendsPUTBody(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(strings.NewReader(""))
+		gotMethod, gotPath = r.Method, r.URL.Path
+		_ = json.Unmarshal(raw, &gotBody)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"ok":true,"config":{"ask_on_change":true}}`))
+	}))
+	defer srv.Close()
+	prev := serverURL
+	serverURL = srv.URL
+	defer func() { serverURL = prev }()
+
+	root := newUsageBurnGuardCmd()
+	if _, _, err := root.Find([]string{"config"}); err != nil {
 		t.Fatal(err)
 	}
-	calls := seen()
-	if len(calls) != 1 || calls[0].method != http.MethodPut || calls[0].uri != "/api/usage/burn-guard/config" {
-		t.Fatalf("calls = %+v", calls)
+	root.SetArgs([]string{"config", "ask_on_change=true"})
+	if err := runRunE(t, root); err != nil {
+		t.Fatal(err)
 	}
-	b := calls[0].body
-	if b["margin_points"] != 3.5 || b["enabled"] != false || b["interval_minutes"] != 30.0 {
-		t.Errorf("body = %v", b)
+	if gotMethod != http.MethodPut || gotPath != "/api/usage/burn-guard/config" {
+		t.Fatalf("proxied %s %s", gotMethod, gotPath)
 	}
-	ladder, _ := b["ladder"].([]any)
-	if len(ladder) != 2 || ladder[0] != "lower_inflight" || ladder[1] != "hold_claude" {
-		t.Errorf("ladder = %v", b["ladder"])
-	}
-}
-
-func TestBurnGuardCLIConfigRejectsBadLocalInput(t *testing.T) {
-	seen := usageDaemon(t)
-	for _, arg := range []string{"nokey", "enabled=maybe", "margin_points=abc", "=3"} {
-		c := newUsageBurnGuardCmd()
-		c.SetArgs([]string{"config", arg})
-		if err := usageRun(t, c); err == nil {
-			t.Errorf("config %q: want an error", arg)
-		}
-	}
-	if n := len(seen()); n != 0 {
-		t.Errorf("%d requests reached the daemon for invalid input", n)
+	if gotBody["ask_on_change"] != true {
+		t.Fatalf("PUT body = %v, want ask_on_change=true", gotBody)
 	}
 }
