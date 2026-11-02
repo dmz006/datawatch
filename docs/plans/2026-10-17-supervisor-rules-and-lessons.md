@@ -678,3 +678,7 @@ Decompose writes each task's verification script into the Automaton's worktree a
 ## The rules file question, answered 2026-11-02
 
 Operator, 2026-11-02 06:52, through the PWA, on the question about the paragraph a worker had added to AGENT.md for the Claude Code prompt table: option "Leave AGENT.md alone; the definitions page already documents the exception", with no further words. Effect: the paragraph stays out of AGENT.md. Workers still must not edit AGENT.md without being asked, and the leak-check Automaton's own task that updates the leak rule and checklist item A8 is the one edit asked for (the operator's 2026-10-30 report).
+
+## A scrub must not change what code means (2026-11-02)
+
+The leak-check Automaton replaced the two cloud metadata addresses in the push and webhook SSRF guards with documentation placeholders so that its own check would pass, which weakened the guards; its rules review caught it as a failed verdict with a blank outcome (the status field read like a pending review). When a merge shows a blank review outcome, read the verdict text before treating it as pending. Before merging any scrub or rename Automaton, diff the non-test, non-comment Go lines against the merge base: any changed string or number in code is a behaviour change until proven otherwise. Public constants that code must keep go on the check's allowed-address list instead of being rewritten.
