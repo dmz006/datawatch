@@ -42,6 +42,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.56.4 — Two more flaky tests made deterministic
+
+
+
 ## v9.56.3 — Test code alerts closed
 
 - **The PWA test scripts no longer turn certificate checking off.** The three PWA story scripts TS-833, TS-834 and TS-835 now trust the test daemon's own certificate (its path is set in `TEST_TLS_CA` by the e2e runners) instead of disabling certificate checking. Two string patterns in PWA unit tests were also rewritten with a correct escaping method. This is a test-only change: nothing in the shipped product changes.
