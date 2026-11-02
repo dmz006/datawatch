@@ -249,10 +249,10 @@ func newMergePipelineValidateCmd() *cobra.Command {
 				req["yaml"] = text
 			} else {
 				name := strings.TrimSpace(repoFile)
-				switch {
-				case name == "":
+				switch name {
+				case "":
 					return fmt.Errorf("--repo-file is empty; leave it bare for the configured file or name a file inside the project")
-				case name == "true":
+				case "true":
 					req["file"] = true
 				default:
 					req["file"] = name

@@ -97,14 +97,14 @@ func TestResolve_RecordFirstOrder(t *testing.T) {
 	f.writeFile(t, validFileBody(t))
 	d := DefaultDefinition()
 	d.Steps = d.Steps[:2]
-	f.rs.Set("p", d)
+	_, _ = f.rs.Set("p", d)
 	f.set.SourceOrder = []string{"record", "file"}
 	res, err := f.resolver().Resolve("p")
 	if err != nil || res.Source != SourceRecord {
 		t.Fatalf("got %+v, %v", res, err)
 	}
 	// With the record absent the file is used.
-	f.rs.Delete("p")
+	_ = f.rs.Delete("p")
 	res, _ = f.resolver().Resolve("p")
 	if res.Source != SourceFile {
 		t.Fatalf("got %+v", res)
@@ -113,7 +113,7 @@ func TestResolve_RecordFirstOrder(t *testing.T) {
 
 func TestResolve_FileOnlyOrderIgnoresRecord(t *testing.T) {
 	f := newFixture(t)
-	f.rs.Set("p", customDef())
+	_, _ = f.rs.Set("p", customDef())
 	f.set.SourceOrder = []string{"file"}
 	res, _ := f.resolver().Resolve("p")
 	if res.Source != SourceDefault {
@@ -139,7 +139,7 @@ func TestResolve_BadFile(t *testing.T) {
 			f := newFixture(t)
 			f.writeFile(t, "steps: [unterminated")
 			if tc.record {
-				f.rs.Set("p", customDef())
+				_, _ = f.rs.Set("p", customDef())
 			}
 			f.set.FallbackOnBadFile = tc.fallback
 			res, err := f.resolver().Resolve("p")

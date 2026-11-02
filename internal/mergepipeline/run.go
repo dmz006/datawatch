@@ -505,7 +505,7 @@ func nextPatch(v string) (string, error) {
 		return "", fmt.Errorf("%q is not an X.Y.Z version", v)
 	}
 	var patch int
-	fmt.Sscanf(m[3], "%d", &patch)
+	_, _ = fmt.Sscanf(m[3], "%d", &patch)
 	return fmt.Sprintf("%s.%s.%d", m[1], m[2], patch+1), nil
 }
 

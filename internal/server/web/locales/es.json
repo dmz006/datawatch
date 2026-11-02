@@ -3204,7 +3204,7 @@
   "onboarding_report_next_none": "No hay nada más que probar.",
   "settings_onboarding_report_group": "Informe de configuración inicial",
   "settings_onboarding_report_enabled": "Informe de configuración inicial (activado por defecto)",
-  "settings_onboarding_report_enabled_hint": "Muestra para la automatización qué está configurado, qué falta y qué probar a continuación. Solo lee; nunca cambia un ajuste.",
+  "settings_onboarding_report_enabled_hint": "Muestra para los Autómatas qué está configurado, qué falta y qué probar a continuación. Solo lee; nunca cambia un ajuste.",
   "settings_onboarding_report_include_next_steps": "El informe sugiere qué probar a continuación (activado por defecto)",
   "settings_onboarding_report_include_next_steps_hint": "Añade una lista ordenada de sugerencias, cada una con un enlace a su guía, por cada comprobación sin configurar.",
   "settings_onboarding_report_disabled_checks": "Comprobaciones omitidas del informe (ids separados por comas; ninguna por defecto)",

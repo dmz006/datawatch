@@ -3204,7 +3204,7 @@
   "onboarding_report_next_none": "Rien d'autre à essayer.",
   "settings_onboarding_report_group": "Rapport de prise en main",
   "settings_onboarding_report_enabled": "Rapport de prise en main (activé par défaut)",
-  "settings_onboarding_report_enabled_hint": "Montre pour l'automatisation ce qui est configuré, ce qui manque et ce qu'il faut essayer ensuite. Il ne fait que lire ; il ne change jamais un paramètre.",
+  "settings_onboarding_report_enabled_hint": "Montre pour les Automates ce qui est configuré, ce qui manque et ce qu'il faut essayer ensuite. Il ne fait que lire ; il ne change jamais un paramètre.",
   "settings_onboarding_report_include_next_steps": "Le rapport suggère quoi essayer ensuite (activé par défaut)",
   "settings_onboarding_report_include_next_steps_hint": "Ajoute une liste ordonnée de suggestions, chacune avec un lien vers son guide, pour chaque vérification non configurée.",
   "settings_onboarding_report_disabled_checks": "Vérifications exclues du rapport (identifiants séparés par des virgules ; aucune par défaut)",

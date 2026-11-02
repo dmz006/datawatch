@@ -101,7 +101,6 @@ func (r *Resolver) Resolve(project string) (Resolution, error) {
 				notes = append(notes, fmt.Sprintf("no file %s in the project", set.FileName))
 				continue
 			}
-			fileErr = err
 			return r.badFile(project, set, err)
 		case SourceRecord:
 			if res, ok := r.fromRecord(project, notes, fileErr); ok {

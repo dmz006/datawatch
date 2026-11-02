@@ -63,7 +63,7 @@ func LoadFile(projectDir, fileName string, maxBytes int64) (Definition, error) {
 		}
 		return Definition{}, &ErrMalformed{Path: full, Err: err}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 	if err != nil {
 		return Definition{}, &ErrMalformed{Path: full, Err: err}
