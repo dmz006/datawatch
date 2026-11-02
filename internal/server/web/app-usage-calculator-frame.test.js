@@ -25,7 +25,7 @@ function loadApp() {
   const sandbox = buildSandbox();
   sandbox.fetchCalls = [];
   sandbox.fetch = (url, init) => {
-    sandbox.fetchCalls.push({ url, init: init || {} });
+    if (!String(url).includes('/burn-guard')) sandbox.fetchCalls.push({ url, init: init || {} }); // the burn guard card has its own fetches
     return Promise.resolve({ ok: false, status: 500, text() { return Promise.resolve('no reply'); } });
   };
   vm.createContext(sandbox);
@@ -163,7 +163,7 @@ test('refresh is one GET of the advice endpoint, and a policy change refetches w
   const s = loadApp();
   const body = workedExampleBody({ policy: 'use-all' });
   s.fetch = (url, init) => {
-    s.fetchCalls.push({ url, init: init || {} });
+    if (!String(url).includes('/burn-guard')) s.fetchCalls.push({ url, init: init || {} });
     return Promise.resolve({ ok: true, status: 200, json() { return Promise.resolve(JSON.parse(JSON.stringify(body))); } });
   };
 

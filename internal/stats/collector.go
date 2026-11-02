@@ -156,6 +156,20 @@ type SystemStats struct {
 	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
 	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
 
+	// Burn guard (usage.burn_guard): ladder state, projection and counters.
+	BurnGuardState         string  `json:"burn_guard_state,omitempty"`
+	BurnGuardLevel         int     `json:"burn_guard_level,omitempty"`
+	BurnGuardProjected     float64 `json:"burn_guard_projected_percent,omitempty"`
+	BurnGuardTarget        float64 `json:"burn_guard_target_percent,omitempty"`
+	BurnGuardOverBy        float64 `json:"burn_guard_over_by_points,omitempty"`
+	BurnGuardPointsPerHour float64 `json:"burn_guard_points_per_hour,omitempty"`
+	BurnGuardLastTickAge   int64   `json:"burn_guard_last_tick_age_seconds,omitempty"`
+	BurnGuardTicks         int64   `json:"burn_guard_ticks,omitempty"`
+	BurnGuardClimbs        int64   `json:"burn_guard_climbs,omitempty"`
+	BurnGuardStepBacks     int64   `json:"burn_guard_step_backs,omitempty"`
+	BurnGuardRefits        int64   `json:"burn_guard_refits,omitempty"`
+	BurnGuardErrors        int64   `json:"burn_guard_errors,omitempty"`
+
 	// BL372 — web search MCP injection stats.
 	WebSearchEnabled      bool      `json:"web_search_enabled,omitempty"`
 	WebSearchProvider     string    `json:"web_search_provider,omitempty"`
@@ -287,6 +301,9 @@ type Collector struct {
 	// memoryStatsFn populates episodic memory metrics
 	memoryStatsFn func(*SystemStats)
 
+	// burnGuardStatsFn populates the burn guard fields.
+	burnGuardStatsFn func(*SystemStats)
+
 	// accessLogStatsFn (GH#201) populates HTTP access / WS lifecycle /
 	// auth-failure log fields.
 	accessLogStatsFn func(*SystemStats)
@@ -398,6 +415,11 @@ func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
 // access-log fields on each stats snapshot.
 func (c *Collector) SetAccessLogStatsFunc(fn func(*SystemStats)) {
 	c.accessLogStatsFn = fn
+}
+
+// SetBurnGuardStatsFunc sets a callback that populates the burn guard fields on each snapshot.
+func (c *Collector) SetBurnGuardStatsFunc(fn func(*SystemStats)) {
+	c.burnGuardStatsFn = fn
 }
 
 // SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
@@ -547,6 +569,9 @@ func (c *Collector) collect() {
 	}
 
 	// Episodic memory stats
+	if c.burnGuardStatsFn != nil {
+		c.burnGuardStatsFn(&s)
+	}
 	if c.memoryStatsFn != nil {
 		c.memoryStatsFn(&s)
 	}

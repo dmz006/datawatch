@@ -31,6 +31,7 @@ var parityMap = map[string]parityNames{
 	"set_llm":                {"automation_set_llm", "set-llm", "set-llm"},
 	"set_verification_llm":   {"automation_set_verification_llm", "set-verification-llm", "set-verification-llm"},
 	"set_budget":             {"automation_set_budget", "set-budget", "set-budget"},
+	"set_effort_ceiling":     {"automation_set_effort_ceiling", "set-effort-ceiling", "set-effort-ceiling"},
 	"set_decision_assistant": {"automation_set_decision_assistant", "set-decision-assistant", "set-decision-assistant"},
 	"status":                 {"autonomous_status", "status", "status"},
 	"import-graph":           {"automation_import_graph", "import-graph", "import-graph"},

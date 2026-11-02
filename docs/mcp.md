@@ -251,6 +251,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `onboarding_report`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
+| Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Search before create | `autonomous_overlap_search` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
@@ -1793,6 +1794,23 @@ the keeper could not be reached carries the stale markers (`stale`,
 Variant and policy are independent: the variant picks the answer shape, the
 policy picks the spend target. Where both are stored and passed, the tool
 argument overrides the stored setting for this one call only.
+
+### Burn guard tools
+
+The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_pi_prompt`, `hold_claude`) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.
+
+| Tool | Arguments | Result |
+|---|---|---|
+| `burn_guard_status` | none | State, `rung`, `applied`, last projection (with `line` and `margin`), last decision, coefficients, last error, counters |
+| `burn_guard_run` | none | Evaluates now; the `decision` and the refreshed `status`. An error when the guard is not running |
+| `burn_guard_config_get` | none | The `usage.burn_guard` settings |
+| `burn_guard_config_set` | any of `enabled`, `interval_minutes` (1–1440), `margin_points` (0–50), `ladder`, `step_back`, `cache_write_points_per_million`, `cache_read_points_per_million`, `refit_on_reading`, `retry_limit_claude` (0–20) | The stored settings. One invalid value rejects the call and stores nothing; give at least one setting |
+
+```
+burn_guard_status()
+burn_guard_run()
+burn_guard_config_set(margin_points=3, ladder=["lower_inflight","hold_claude"])
+```
 
 ### `usage_advice`
 

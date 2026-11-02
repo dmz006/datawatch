@@ -228,6 +228,7 @@ func (s *Server) handleUsageReadingAdd(w http.ResponseWriter, r *http.Request) {
 	}
 	switch {
 	case err == nil:
+		s.burnGuard.OnReading()
 		w.Header().Set("Content-Type", "application/json")
 		if stored != nil {
 			s.auditUsageReadingAdded(r, *stored)

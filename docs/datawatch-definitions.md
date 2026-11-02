@@ -1442,6 +1442,8 @@ Key terms used across the docs, API, and hook payloads.
 
 **Usage calculator** — the advisor that reads the weekly allowance readings you type and says whether you are within or over budget for the week and what each lane count costs against the rest of it. It follows one of three policies (use it all, pace to the week, run flat out), which the operator chooses. It only advises and never stops or slows a lane. See [`howto/usage-calculator.md`](howto/usage-calculator.md).
 
+**Burn guard** — the guard that compares the projected weekly burn of the Claude sessions with the pace line of the usage calculator and, when the projection runs over the line plus a margin, steps down a ladder of admission changes: lower the Claude inflight cap, route new Claude work to `pi-prompt`, hold new Claude work. It steps back up, one rung per interval, when the projection is back under the line. It changes admission only and never ends a running session. Its settings are under `usage.burn_guard`, including the per-kind effort ceiling and the Claude retry limit. See [`howto/burn-guard.md`](howto/burn-guard.md).
+
 **review-needed (task status)** — a task held after its failed attempts reached the escalation limit. The status is `review_needed` in the API and reads "Held for review" in the web UI. It is not a failure and not finished: the task keeps its attempts and a report, the Automaton shows as blocked, and one error alert is raised. The operator retries it (optionally with a changed spec, worker or file list) or cancels it, from the web UI, the CLI, the REST API, MCP or the comm channel.
 
 **SessionTelemetry** — structured telemetry accumulated from hook

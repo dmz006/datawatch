@@ -3109,6 +3109,48 @@ usage:
     # allowance belongs to the account, not to one daemon). Empty means this
     # daemon keeps them.
     keeper: ""
+  # Burn guard: compares the projected weekly burn with the usage calculator's
+  # pace line each interval and steps down a ladder of responses when the
+  # projection runs over. Every key is optional and settable at runtime.
+  #   REST API      PUT /api/config with {"usage.burn_guard.<key>": value}, or
+  #                 PUT /api/usage/burn-guard/config with bare keys; GET /api/config
+  #                 returns the live values under usage.burn_guard.
+  #   Comm channel  `configure usage.burn_guard.<key>=<value>`
+  #   MCP           burn_guard_config_set (or the generic config_set tool)
+  #   CLI           `datawatch usage burn-guard config <key>=<value>`
+  #   Web UI        Settings > Usage burn guard, and the burn guard card
+  # An invalid value is a 400 and changes nothing.
+  burn_guard:
+    # Turn the guard on. Default true.
+    enabled: true
+    # How often the guard evaluates, in minutes. 1 to 1440, default 60.
+    interval_minutes: 60
+    # Points the projection may run over the pace line before the guard acts.
+    # 0 to 50, default 2.
+    margin_points: 2
+    # Ordered rungs applied while over the line. Allowed: lower_inflight,
+    # route_pi_prompt, hold_claude. Default is all three in that order.
+    ladder: [lower_inflight, route_pi_prompt, hold_claude]
+    # Undo rungs in reverse once the projection is back under the line.
+    # Default true.
+    step_back: true
+    # Cache token prices in weekly points per million tokens. Above 0 and at
+    # most 1000. Defaults 0.373 (write) and 0.0069 (read).
+    cache_write_points_per_million: 0.373
+    cache_read_points_per_million: 0.0069
+    # Refit the cost model whenever a new usage reading arrives. Default true.
+    refit_on_reading: true
+    # Task kind to ceiling: low | medium | high | cheaper_backend. Set per
+    # Automation with automation_set_effort_ceiling / `datawatch automation
+    # set-effort-ceiling`; the default caps docs, parity, live_check and
+    # final_gate at low.
+    effort_ceiling:
+      docs: low
+      parity: low
+      live_check: low
+      final_gate: low
+    # Most retries of one task on Claude. 0 to 20, default 2.
+    retry_limit_claude: 2
 
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with

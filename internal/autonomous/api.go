@@ -1358,6 +1358,20 @@ func (a *API) SetTaskThinkingLevel(prdID, taskID, level, actor string) (any, err
 	return out, err
 }
 
+// SetAutomationEffortCeiling — per-Automaton effort ceiling by task kind.
+func (a *API) SetAutomationEffortCeiling(id string, ceiling map[string]string, actor string, expectedVersion int64) (any, error) {
+	return a.M.SetAutomationEffortCeiling(id, ceiling, actor, expectedVersion)
+}
+
+// SetTaskEffortCeiling — per-task effort ceiling.
+func (a *API) SetTaskEffortCeiling(prdID, taskID, ceiling, actor string) (any, error) {
+	out, err := a.M.SetTaskEffortCeiling(prdID, taskID, ceiling, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 func (a *API) ListLearnings() []any {
 	src := a.M.Store().ListLearnings()
 	out := make([]any, len(src))

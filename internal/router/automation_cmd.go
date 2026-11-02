@@ -34,6 +34,7 @@ const (
 		"set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] [hooks=<a,b>] [threshold.<hook>=<n>] [member=<id>] | " +
 		"set-decision-assistant <id> clear=true [member=<id>] | " +
 		"set-budget <id> key=value... (ceiling_type, ceiling_value, window, pacing, on_breach, ...; clear=true removes the policy) | " +
+		"set-effort-ceiling <id> kind=low|medium|high|cheaper_backend ... | set-effort-ceiling <id> clear=true | " +
 		"import-graph <graph-id> [dry-run] (turn an orchestrator graph into a draft Automation; dry-run previews it)"
 	automationCancelUsage = "usage: automation cancel <id> in-flight=true|false. The choice is required: " +
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
@@ -63,7 +64,7 @@ const (
 // AutomationCommVerbs lists the verbs handled by the switch in
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
-	return []string{"activate", "list", "get", "status", "set-budget", "pause", "resume", "cancel",
+	return []string{"activate", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
 		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
 }
 
@@ -112,6 +113,8 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		r.automationStatus(args[1])
 	case "set-budget":
 		r.automationSetBudget(args)
+	case "set-effort-ceiling":
+		r.automationSetEffortCeiling(args)
 	case "import-graph":
 		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "dry-run") {
 			r.send(automationImportGraphUsage)

@@ -562,7 +562,7 @@ usage:
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
-See [howto/usage-calculator.md](howto/usage-calculator.md).
+See [howto/usage-calculator.md](howto/usage-calculator.md). The burn guard settings (`usage.burn_guard.*`: `enabled`, `interval_minutes`, `margin_points`, `ladder`, `step_back`, the two cache prices, `refit_on_reading`, `retry_limit_claude`) are set the same way, from the Burn guard card in the Web UI, `datawatch usage burn-guard config`, `PUT /api/usage/burn-guard/config`, the `burn_guard_config_set` MCP tool or `configure usage.burn_guard.<key>=<value>`; see [howto/burn-guard.md](howto/burn-guard.md).
 
 ## Troubleshooting
 

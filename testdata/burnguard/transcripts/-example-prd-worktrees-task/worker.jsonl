@@ -1,0 +1,10 @@
+{"type":"assistant","timestamp":"2026-10-30T17:10:00.000Z","requestId":"req_w1","message":{"id":"msg_req_w1","usage":{"input_tokens":10,"output_tokens":200,"cache_creation_input_tokens":1000000,"cache_read_input_tokens":50000000}}}
+{"type":"assistant","timestamp":"2026-10-30T17:10:00.000Z","requestId":"req_w1","message":{"id":"msg_req_w1","usage":{"input_tokens":10,"output_tokens":200,"cache_creation_input_tokens":1000000,"cache_read_input_tokens":50000000}}}
+this is not json
+{"type":"user","timestamp":"2026-10-30T17:11:00Z","message":{"content":"hi"}}
+{"type":"assistant","timestamp":"2026-10-30T17:12:00Z","requestId":"req_nousage","message":{"id":"m"}}
+{"type":"assistant","timestamp":"yesterday","requestId":"req_badts","message":{"usage":{"input_tokens":1}}}
+{"type":"assistant","timestamp":"2026-10-30T18:05:00Z","requestId":"req_w2","message":{"id":"msg_req_w2","usage":{"input_tokens":5,"output_tokens":100,"cache_creation_input_tokens":500000,"cache_read_input_tokens":20000000}}}
+{"type":"assistant","timestamp":"2026-10-30T18:06:00Z","message":{"id":"msg_only","usage":{"input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4}}}
+{"type":"assistant","timestamp":"2026-10-30T18:07:00Z","message":{"id":"msg_only","usage":{"input_tokens":1,"output_tokens":2,"cache_creation_input_tokens":3,"cache_read_input_tokens":4}}}
+{"type":"assistant","timestamp":"2026-10-30T18:08:00Z","requestId":"req_trunc","mess

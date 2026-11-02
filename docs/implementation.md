@@ -225,6 +225,19 @@ retired `variant` falls back to `all` with one log line. All keys are settable a
 value), comm `configure usage.calculator.<key>=<value>`, the generic `config_set` tool and
 CLI `datawatch config set`. The PWA Settings fields are a later change.
 
+Burn guard settings (`internal/config/burn_guard.go`): the `usage.burn_guard` block. An invalid
+saved value falls back to its default with a logged warning, as `normalizeUsageCalculator` does.
+- `enabled` — guard on or off (default `true`).
+- `interval_minutes` — minutes between evaluations, 1 to 1440 (default `60`).
+- `margin_points` — how far the projection may run over the pace line before the guard acts, 0 to 50 (default `2.0`).
+- `ladder` — ordered rungs applied while over the line: `lower_inflight`, `route_pi_prompt`, `hold_claude` (default all three in that order; unknown or repeated rungs are dropped).
+- `step_back` — undo rungs in reverse once back under the line (default `true`).
+- `cache_write_points_per_million` — weekly points per million cache-write tokens, above 0 (default `0.373`).
+- `cache_read_points_per_million` — weekly points per million cache-read tokens, above 0 (default `0.0069`).
+- `refit_on_reading` — refit the cost model when a new usage reading arrives (default `true`).
+- `effort_ceiling` — map of task kind to ceiling `low` | `medium` | `high` | `cheaper_backend` (default `docs`, `parity`, `live_check`, `final_gate` all `low`; an unknown ceiling becomes `low`).
+- `retry_limit_claude` — most retries of one task on Claude, 0 to 20 (default `2`).
+
 Shared readings federation (`internal/usagecalc/shared.go`,
 `internal/server/usage_readings.go`): `usage.calc.SharedSeries` wires one daemon's local
 store to the federation — with an empty `keeper` the daemon keeps the series; otherwise

@@ -699,7 +699,7 @@ federation peer fingerprint beta on
 
 ---
 
-### `usage` / `usage advice` / `usage reading` / `usage extra` / `usage work`
+### `usage` / `usage advice` / `usage reading` / `usage extra` / `usage work` / `usage burn-guard`
 
 The account **usage calculator** — the account's usage verdict, lane count, pace, policy and typed figures — the same data the REST, MCP and PWA surfaces show (design: `docs/plans/2026-10-23-usage-calculator-design.md`). Every reply stays within 50 columns and closes with the forms the operator can send back.
 
@@ -710,6 +710,7 @@ The account **usage calculator** — the account's usage verdict, lane count, pa
 | `usage reading <percent> [lanes=N] [session=N]` | Store a typed weekly percent (optionally a lane count and a second session's percent), then show the refreshed advice. |
 | `usage extra <points>` | Set the bought extra-credit points, then show the refreshed advice. |
 | `usage work <points\|clear>` | Set (or clear) the typed remaining-work figure, then show the refreshed advice. When cleared, the per-task estimate stands in. |
+| `usage burn-guard` | The burn guard's status, read-only: state, rung in force, projected percent against the pace line and margin, burn per hour, over or under target, and the last decision. Same data as `GET /api/usage/burn-guard`; run it or change its settings from the CLI, REST or MCP (`datawatch usage burn-guard run`, `config`). |
 
 The `variant` / `policy` / `lanes` / `session` keys are case-insensitive; values pass through verbatim and the daemon validates them.
 
@@ -723,6 +724,7 @@ usage advice variant=lane-planner lanes=3
     usage reading <pct> [lanes=N] [session=N]
     usage extra <pts>
     usage work <pts|clear>
+    usage burn-guard
 
 usage reading 72.5 lanes=3 session=41
 [myserver] usage reading

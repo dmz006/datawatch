@@ -7018,6 +7018,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if err := httpServer.AttachUsageCalculator(usagecalcQueue{m: amgr}); err != nil {
 				log.Printf("[usage] wire calculator advice service: %v", err)
 			}
+			// Burn guard: projects the weekly burn against the pace line and steps the
+			// admission ladder; it never ends a running session.
+			wireBurnGuard(ctx, cfg, httpServer, mgr, capLedger)
 			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
 			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
 			go func() {
@@ -8409,6 +8412,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SupervisorWatchAgreedDays = sw.AgreedDays
 			})
 		}
+		// Burn guard stats in the WS broadcast and the Prometheus collector.
+		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
+			fillBurnGuardStats(s, httpServer.BurnGuardStats())
+		})
 		// BL372 — wire web search stats into the collector.
 		statsCollector.SetWebSearchStatsFunc(func(s *statspkg.SystemStats) {
 			s.WebSearchEnabled = cfg.WebSearch.Enabled
@@ -8450,6 +8457,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("would_alert").Set(float64(s.SupervisorWatchFindingsWouldAlert))
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
+			updateBurnGuardMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

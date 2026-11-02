@@ -82,6 +82,7 @@ type UsageCalculatorConfig struct {
 // UsageConfig is the top-level usage block.
 type UsageConfig struct {
 	Calculator UsageCalculatorConfig `yaml:"calculator,omitempty" json:"calculator,omitempty"`
+	BurnGuard  BurnGuardConfig       `yaml:"burn_guard,omitempty" json:"burn_guard,omitempty"`
 }
 
 // DefaultUsageCalculator returns the calculator settings applied when none

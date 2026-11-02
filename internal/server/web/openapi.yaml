@@ -4859,6 +4859,47 @@ paths:
         "409": {description: "expected_version is stale, the Automation is completed or cancelled, or the member has already finished"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
+  /api/automations/{id}/set_effort_ceiling:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set or clear an Automation's effort ceiling
+      description: |
+        Sets the effort ceiling of the Automation: a map of task kind (`docs`,
+        `parity`, `live_check`, `final_gate`) to `low`, `medium`, `high` or
+        `cheaper_backend`. A ceiling only lowers a task's effort or moves it to
+        the cheaper backend; it never raises one. An empty or absent
+        `effort_ceiling` clears it. Send the last `version` you saw as
+        `expected_version`. `actor` and `reason` are recorded in the audit log
+        as `automation_set_effort_ceiling`.
+      operationId: automationsSetEffortCeiling
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                effort_ceiling:
+                  type: object
+                  additionalProperties: {type: string, enum: [low, medium, high, cheaper_backend]}
+                expected_version: {type: integer}
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Unknown task kind or ceiling"}
+        "404": {description: "Automation not found"}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "501": {description: "effort ceiling is not available"}
+        "503": {description: "autonomous disabled"}
   /api/automations/{id}/set_decision_assistant:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
@@ -6572,6 +6613,64 @@ paths:
                   what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
+  /api/usage/burn-guard:
+    get:
+      summary: Burn guard status — state, the current rung, the projection against the pace line and the last decision
+      operationId: burnGuardStatus
+      tags: [Singletons]
+      responses:
+        "200":
+          description: The status; state is off when the guard is not running on this daemon
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  state: {type: string, enum: [off, idle, guarding, waiting]}
+                  rung: {type: string, description: The rung currently in force; empty when none}
+                  level: {type: integer, description: How many rungs of the ladder are applied}
+                  applied: {type: array, items: {type: string}, description: The rungs applied now}
+                  line: {type: number, description: The pace line in weekly points}
+                  margin: {type: number}
+                  last_projection: {type: object, description: "Projected weekly burn (projected), the pace line (line), the margin and how far it is over (over_by)"}
+                  last_decision: {type: object, description: "The last evaluation: direction (hold, climb, step_back, disabled), rung, level, previous and reason"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/usage/burn-guard/run:
+    post:
+      summary: Evaluate the burn guard now and return the decision with the refreshed status
+      operationId: burnGuardRun
+      tags: [Singletons]
+      responses:
+        "200": {description: The decision and the refreshed status}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: The burn guard is not running on this daemon}
+  /api/usage/burn-guard/config:
+    get:
+      summary: The live usage.burn_guard settings
+      operationId: burnGuardConfigGet
+      tags: [Singletons]
+      responses:
+        "200": {description: "The settings: enabled, interval_minutes, margin_points, ladder, step_back, cache_write_points_per_million, cache_read_points_per_million, refit_on_reading, effort_ceiling, retry_limit_claude"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    put:
+      summary: Change burn guard settings; one invalid value rejects the whole body and nothing is stored
+      description: |
+        The body is a flat map of bare keys, for example
+        `{"margin_points": 3, "ladder": ["lower_inflight"]}`. The values go through
+        the same validation and save as `PUT /api/config` with
+        `usage.burn_guard.<key>`. The effort ceiling is set per Automation, not here.
+      operationId: burnGuardConfigPut
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "{ok: true, config: the stored settings}"}
+        "400": {description: A body that is empty, an unknown key or an invalid value}
+        "401": {$ref: "#/components/responses/Unauthorized"}
   /api/budget:
     get:
       summary: Dollar budget state of every LLM that has a budget, or one LLM with ?llm=

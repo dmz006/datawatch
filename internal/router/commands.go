@@ -1985,6 +1985,7 @@ func usageNumber(tok string) (float64, bool) {
 //	usage reading <percent> [lanes=N] [session=N]
 //	usage extra <points>
 //	usage work <points|clear>
+//	usage burn-guard
 //
 // An unrecognized verb or a malformed figure keeps the verb "invalid" so the
 // handler can answer with the usage lines instead of guessing.
@@ -2047,6 +2048,13 @@ func parseUsage(rest string) Command {
 			cmd.UsageSession = &s
 		}
 		cmd.UsageVerb = "reading"
+		return cmd
+	case "burn-guard", "burnguard":
+		// Mirrors the guard's status; takes no arguments.
+		cmd.UsageVerb = "burn-guard"
+		if len(fields) > 1 {
+			cmd.UsageVerb = "invalid"
+		}
 		return cmd
 	case "extra", "work":
 		cmd.UsageVerb = strings.ToLower(fields[0])

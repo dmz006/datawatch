@@ -745,7 +745,7 @@ func AutomationToolNames() []string {
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
-		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
+		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetEffortCeiling(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
 		// The automations[] array on the status response.
 		s.toolAutonomousStatus(),
 	}

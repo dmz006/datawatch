@@ -6391,6 +6391,65 @@ for dec in d.get("decisions") or []:
 fi
 
 # ---------------------------------------------------------------------------
+H "Burn guard (usage.burn_guard)"
+# GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config and POST
+# /api/usage/burn-guard/run. The config round trip is skipped on an external daemon.
+BG_STATE=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["state"])' 2>/dev/null || echo "")
+if [[ "$BG_STATE" =~ ^(off|idle|guarding|waiting)$ ]]; then
+  ok "burn guard: status answers with state '$BG_STATE'"
+else
+  ko "burn guard: GET /api/usage/burn-guard did not return a known state (got '$BG_STATE')"
+fi
+
+BG_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/usage/burn-guard" 2>/dev/null || echo "000")
+if [[ "$BG_POST" == "405" ]]; then
+  ok "burn guard: the status route is read only (DELETE answers 405)"
+else
+  ko "burn guard: DELETE answered HTTP $BG_POST, expected 405"
+fi
+
+BG_CFG=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "margin_points" in d and "ladder" in d;print(d["margin_points"])' 2>/dev/null || echo "")
+if [[ -n "$BG_CFG" ]]; then
+  ok "burn guard: config answers (margin_points=$BG_CFG)"
+else
+  ko "burn guard: GET /api/usage/burn-guard/config did not return the settings"
+fi
+
+BG_CFG_API=$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;print("margin_points" in json.load(sys.stdin).get("usage",{}).get("burn_guard",{}))' 2>/dev/null || echo "")
+if [[ "$BG_CFG_API" == "True" ]]; then
+  ok "burn guard: GET /api/config carries usage.burn_guard"
+else
+  ko "burn guard: GET /api/config has no usage.burn_guard block"
+fi
+
+BG_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"margin_points":-1}' "$BASE/api/usage/burn-guard/config" 2>/dev/null || echo "000")
+if [[ "$BG_BAD" == "400" ]]; then
+  ok "burn guard: an invalid margin is refused with HTTP 400"
+else
+  ko "burn guard: an invalid margin answered HTTP $BG_BAD, expected 400"
+fi
+
+if [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "burn guard: external daemon (DW_BASE set); the config round trip and run now are not run"
+else
+  BG_ORIG=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["margin_points"])' 2>/dev/null || echo "2")
+  BG_SET=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" -d '{"margin_points":3.5}' "$BASE/api/usage/burn-guard/config" 2>/dev/null || echo "000")
+  BG_READ=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["margin_points"])' 2>/dev/null || echo "?")
+  if [[ "$BG_SET" == "200" && "$BG_READ" == "3.5" ]]; then
+    ok "burn guard: margin_points set to 3.5 reads back"
+  else
+    ko "burn guard: margin_points PUT answered HTTP $BG_SET and reads '$BG_READ' (expected 200 and 3.5)"
+  fi
+  curl "${curl_args[@]}" -o /dev/null -X PUT -H "Content-Type: application/json" -d "{\"margin_points\":$BG_ORIG}" "$BASE/api/usage/burn-guard/config" 2>/dev/null || true
+  BG_RUN=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/usage/burn-guard/run" 2>/dev/null || echo "000")
+  if [[ "$BG_RUN" == "200" || "$BG_RUN" == "503" ]]; then
+    ok "burn guard: run now answered HTTP $BG_RUN (503 only when the guard is not running)"
+  else
+    ko "burn guard: run now answered HTTP $BG_RUN, expected 200 or 503"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

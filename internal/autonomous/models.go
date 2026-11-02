@@ -960,14 +960,20 @@ type Task struct {
 	// (independent deliverable; this task only adds the field): "smoke" |
 	// "final_gate" | "" (ordinary). Empty = ordinary task; readers must
 	// tolerate unknown values.
-	Kind         string              `json:"kind,omitempty"`
-	CreatedAt    time.Time           `json:"created_at"`
-	UpdatedAt    time.Time           `json:"updated_at"`
-	StartedAt    *time.Time          `json:"started_at,omitempty"`
-	CompletedAt  *time.Time          `json:"completed_at,omitempty"`
-	Error        string              `json:"error,omitempty"`
-	Verification *VerificationResult `json:"verification,omitempty"`
-	RetryCount   int                 `json:"retry_count,omitempty"`
+	Kind string `json:"kind,omitempty"`
+	// EffortCeiling caps this task's effort (low|medium|high|cheaper_backend);
+	// it only lowers an explicit setting. Empty = the Automaton and daemon maps.
+	EffortCeiling string `json:"effort_ceiling,omitempty"`
+	// ClaudeRetries counts retries of this task that ran on Claude, for
+	// usage.burn_guard.retry_limit_claude.
+	ClaudeRetries int                 `json:"claude_retries,omitempty"`
+	CreatedAt     time.Time           `json:"created_at"`
+	UpdatedAt     time.Time           `json:"updated_at"`
+	StartedAt     *time.Time          `json:"started_at,omitempty"`
+	CompletedAt   *time.Time          `json:"completed_at,omitempty"`
+	Error         string              `json:"error,omitempty"`
+	Verification  *VerificationResult `json:"verification,omitempty"`
+	RetryCount    int                 `json:"retry_count,omitempty"`
 	// PriorAttemptCount (v9.2.1) — how many times this task has been reset
 	// and re-queued (ResetTask) for a fresh attempt. Unlike RetryCount
 	// (which ResetTask zeroes to start the next attempt's auto-retry budget

@@ -455,7 +455,12 @@ func withNodeChoices(req capacity.Request, choices []capacity.NodeChoice) capaci
 // 10s syncPools ticker re-runs it on registry change.
 func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Ledger) {
 	for _, l := range reg.List() {
-		led.SetLimit("llm:"+l.Name, inference.EffectiveMaxInflight(*l, cfg.Autonomous.PlanTierMaxInflight))
+		limit := inference.EffectiveMaxInflight(*l, cfg.Autonomous.PlanTierMaxInflight)
+		// The burn guard's lowered cap wins while its rung is in force.
+		if v, ok := burnGuardInflight.get(l.Name); ok {
+			limit = v
+		}
+		led.SetLimit("llm:"+l.Name, limit)
 	}
 }
 
