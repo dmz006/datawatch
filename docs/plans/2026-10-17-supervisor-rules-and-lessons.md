@@ -666,3 +666,7 @@ Rules:
 1. **Read the verdicts before a merge.** Merge only when the latest completion rules review is pass or warn. A block with the daemon's auto-fix running is waited out; the corrective commits are merged afterwards as their own release. The watch script now reports `JUDGE BLOCKED` and `MERGE WAIT` instead of `MERGE READY` for those cases.
 2. **Generated reports leak operator identifiers.** PRD workers write the host name and home paths into plan documents; scrub tracked files for them at every merge until the leak check PRD (`5fab0001`) exists. Done at 16:05 for the 10 files this merge brought.
 3. What remains open on `a5db0001`: the daemon's corrective task, the wording fix in the lane fill text, the missing coverage and a new parity issue; the PRD is left running and will be merged again.
+
+## A silent pi worker is not a hung pi worker (2026-11-02)
+
+The watch's SILENT line looks at file changes and logs in the worktree. A pi worker started with `--print` writes its output file only when it finishes, and while it reads a large file or compacts its context it changes nothing in the tree. Before ending any pi worker, read its transcript: the newest `*.jsonl` under `~/.pi/agent/sessions/<worktree path with slashes as dashes>/`. If its modification time is recent (minutes), the worker is working; leave it. End a pi worker only when the transcript has not changed for 30 minutes and the model server shows no request from it. On 2026-11-02 a working worker was ended on an empty output file and lost about 20 minutes of work.
