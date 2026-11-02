@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.64.0 — Operator console dashboard
+
+### Added
+
+- **The dashboard opens on an operator console: one number, one line and one link per card for what needs your attention.** Cards show open operator questions, held and blocked Automata, the lanes, the usage position and CI and release state, each with a link that takes you to the place to act, and a card whose source is unavailable shows the reason instead of an empty box. It is read from the web app, `datawatch dashboard console`, the MCP tool `dashboard_console_get`, `GET /api/dashboard/console` and the chat verb `dashboard console`. Seven switches under `dashboard.console` (`enabled` and one per section) choose what it shows, with your answers as the defaults; they are reachable from every surface and the web settings, and the how-to is the operator console guide.
+- **Dashboard cards are audited and cleaned up.** Every card's data source and the reason it can be empty are recorded in a plan page; the duplicate Automata card in the stored layout is removed; a card whose feature is switched off is hidden; and an empty card says why in one line and links to the setting that fills it. Observer cards are reused on the console where they fit.
+
 ## v9.63.2 — Python XML finding accepted for 30 days
 
 ### Security
