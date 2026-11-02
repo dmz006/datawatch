@@ -101,7 +101,7 @@ Operator console (2026-11-02T10:15:00Z)
 $ datawatch dashboard console --json    # the raw endpoint JSON
 
 $ datawatch dashboard console set dashboard.console.enabled false   # the same PUT /api/config the chat channel uses
-$ datawatch dashboard console set console.show_lanes true
+$ datawatch dashboard console set dashboard.console.show_lanes true
 ```
 
 ## Web UI (PWA)
