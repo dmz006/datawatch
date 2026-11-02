@@ -266,3 +266,7 @@ Where lanes show up on each method:
 - [Automata capacity](automata-capacity.md)
 - [Configuration reference](../config-reference.yaml) (`usage.calculator`)
 - [Parity status](../parity-status.md)
+
+## Burn guard
+
+The usage calculator view ends with a Burn guard card. It shows the guard's state and the rung in force, the projection at the reset against the pace line and margin, and the last decision. The settings below it control whether the guard is on, the margin, the ladder order, step back, and the Claude retry limit. The effort ceiling is shown read-only: set it per Automaton with the effort-ceiling tools. **Run now** evaluates the guard once.

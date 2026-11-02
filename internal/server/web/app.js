@@ -24987,6 +24987,7 @@ window.usageCalcFrameHtml = function (body, opts) {
   parts.push(_usageCalcPolicyForm(res, opts));
   parts.push(_usageCalcExtraForm(res));
   parts.push(_usageCalcRemainingForm(res));
+  parts.push(`<div id="burnGuardCard">${window.burnGuardCardHtml(window._burnGuard && window._burnGuard.status, window._burnGuard && window._burnGuard.config, { error: window._burnGuard && window._burnGuard.error, message: window._burnGuard && window._burnGuard.message })}</div>`);
   parts.push(_usageCalcCounterHtml(res, active));
   return `<div class="usage-calc-frame" style="display:flex;flex-direction:column;gap:12px;min-width:0;max-width:100%;overflow-wrap:anywhere;">${parts.join('')}</div>`;
 };
@@ -25646,6 +25647,195 @@ function usageCalcRerender() {
   if (ctl) ctl.paint();
 }
 
+// ── Burn guard card ─────────────────────────────────────────────────────────
+// The burn guard (GET /api/usage/burn-guard, GET/PUT /api/usage/burn-guard/config,
+// POST /api/usage/burn-guard/run) watches the weekly burn against the pace line and
+// climbs or steps back a ladder of rungs. This card draws what the status body says
+// and writes settings back through the config endpoint; it computes nothing itself.
+// The effort ceiling is read-only here: it is set per Automaton with the effort-ceiling
+// tools. Auto-refresh uses a window-level interval variable, never a DOM-held timer.
+const BURN_GUARD_RUNGS = ['lower_inflight', 'route_pi_prompt', 'hold_claude'];
+const BURN_GUARD_RUNG_KEYS = { lower_inflight: 'burn_guard_rung_lower_inflight', route_pi_prompt: 'burn_guard_rung_route_pi_prompt', hold_claude: 'burn_guard_rung_hold_claude' };
+const BURN_GUARD_STATE_KEYS = { off: 'burn_guard_state_off', idle: 'burn_guard_state_idle', guarding: 'burn_guard_state_guarding', waiting: 'burn_guard_state_waiting' };
+const BURN_GUARD_DIRECTION_KEYS = { hold: 'burn_guard_dir_hold', climb: 'burn_guard_dir_climb', step_back: 'burn_guard_dir_step_back', disabled: 'burn_guard_dir_disabled' };
+const BURN_GUARD_REFRESH_MS = 60000;
+window._burnGuard = window._burnGuard || { status: null, config: null, error: '', message: '' };
+window._burnGuardInterval = window._burnGuardInterval || null;
+
+function _burnGuardN(v, digits) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(digits === undefined ? 1 : digits) : '—';
+}
+
+// burnGuardCardHtml(status, config, opts) draws the card. Every value is escaped.
+window.burnGuardCardHtml = function (status, config, opts) {
+  opts = opts || {};
+  const st = status || null;
+  const cfg = config || {};
+  const head = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
+    `<div style="font-weight:600;">${escHtml(t('burn_guard_title'))}${docsLink('howto/usage-calculator.md#burn-guard', t('burn_guard_help'))}</div>` +
+    `<button type="button" class="btn-secondary" data-burn-guard="run" style="font-size:12px;padding:4px 10px;" onclick="burnGuardRunNow()">${escHtml(t('burn_guard_run_now'))}</button></div>`;
+  const parts = [head];
+  if (opts.error) parts.push(`<div role="alert" data-burn-guard="error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('burn_guard_error', [opts.error]))}</div>`);
+  if (opts.message) parts.push(`<div role="status" data-burn-guard="message" style="font-size:12px;">${escHtml(opts.message)}</div>`);
+  if (!st) {
+    if (!opts.error) parts.push(`<div data-burn-guard="loading" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_loading'))}</div>`);
+  } else {
+    const stateKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_STATE_KEYS, st.state) ? BURN_GUARD_STATE_KEYS[st.state] : '';
+    const stateText = stateKey ? t(stateKey) : String(st.state || '');
+    const rungKey = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, st.rung) ? BURN_GUARD_RUNG_KEYS[st.rung] : '';
+    const rungText = st.rung ? (rungKey ? t(rungKey) : String(st.rung)) : t('burn_guard_no_rung');
+    parts.push(`<div data-burn-guard="state" data-state="${escHtml(String(st.state || ''))}" style="font-size:12px;">` +
+      `${escHtml(t('burn_guard_state_line', [stateText, rungText, String(st.level || 0)]))}</div>`);
+    const p = st.last_projection;
+    if (p && !p.needs) {
+      parts.push(`<div data-burn-guard="projection" style="font-size:12px;">` +
+        `${escHtml(t('burn_guard_projection_line', [_burnGuardN(p.projected), _burnGuardN(p.line), _burnGuardN(p.margin !== undefined ? p.margin : st.margin), _burnGuardN(p.over_by)]))}</div>`);
+    } else if (st.line !== undefined && st.line !== null) {
+      parts.push(`<div data-burn-guard="projection" style="font-size:12px;">` +
+        `${escHtml(t('burn_guard_line_only', [_burnGuardN(st.line), _burnGuardN(st.margin)]))}</div>`);
+    } else {
+      parts.push(`<div data-burn-guard="projection" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_no_projection'))}</div>`);
+    }
+    const d = st.last_decision;
+    if (d) {
+      const dk = Object.prototype.hasOwnProperty.call(BURN_GUARD_DIRECTION_KEYS, d.direction) ? BURN_GUARD_DIRECTION_KEYS[d.direction] : '';
+      const dText = dk ? t(dk) : String(d.direction || '');
+      const rung = d.rung ? (Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, d.rung) ? t(BURN_GUARD_RUNG_KEYS[d.rung]) : String(d.rung)) : '';
+      parts.push(`<div data-burn-guard="decision" style="font-size:12px;">` +
+        `${escHtml(t('burn_guard_decision_line', [dText, rung || t('burn_guard_no_rung'), d.reason || '']))}</div>`);
+    } else {
+      parts.push(`<div data-burn-guard="decision" style="font-size:12px;color:var(--text2);">${escHtml(t('burn_guard_no_decision'))}</div>`);
+    }
+    if (st.last_error) parts.push(`<div data-burn-guard="last-error" style="font-size:12px;color:var(--error,#ef4444);">${escHtml(st.last_error)}</div>`);
+  }
+  parts.push(window.burnGuardSettingsHtml(cfg));
+  return `<div class="usage-calc-section burn-guard-card" data-burn-guard="card" style="border-top:1px solid var(--border,#333);padding-top:10px;display:flex;flex-direction:column;gap:6px;">${parts.join('')}</div>`;
+};
+
+window.burnGuardSettingsHtml = function (cfg) {
+  cfg = cfg || {};
+  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder : BURN_GUARD_RUNGS;
+  const order = ladder.concat(BURN_GUARD_RUNGS.filter(r => !ladder.includes(r)));
+  const rows = order.map((r, i) => {
+    const on = ladder.includes(r);
+    const label = Object.prototype.hasOwnProperty.call(BURN_GUARD_RUNG_KEYS, r) ? t(BURN_GUARD_RUNG_KEYS[r]) : String(r);
+    return `<div data-rung="${escHtml(r)}" style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;">` +
+      `<label style="display:flex;align-items:center;gap:6px;flex:1;"><input type="checkbox" data-rung-on="${escHtml(r)}"${on ? ' checked' : ''} onchange="burnGuardSaveLadder()"><span>${escHtml(label)}</span></label>` +
+      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_up'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',-1)"${i === 0 ? ' disabled' : ''}>↑</button>` +
+      `<button type="button" aria-label="${escHtml(t('burn_guard_rung_down'))}" style="padding:2px 8px;" onclick="burnGuardMoveRung('${escHtml(r)}',1)"${i === order.length - 1 ? ' disabled' : ''}>↓</button></div>`;
+  }).join('');
+  const ceil = cfg.effort_ceiling && typeof cfg.effort_ceiling === 'object' ? cfg.effort_ceiling : {};
+  const ceilRows = Object.keys(ceil).sort().map(k => `<span data-ceiling-kind="${escHtml(k)}" style="margin-right:10px;">${escHtml(k)}: ${escHtml(String(ceil[k]))}</span>`).join('');
+  const retry = cfg.retry_limit_claude === undefined || cfg.retry_limit_claude === null ? '' : String(cfg.retry_limit_claude);
+  const margin = cfg.margin_points === undefined || cfg.margin_points === null ? '' : String(cfg.margin_points);
+  return `<div class="burn-guard-settings" style="display:flex;flex-direction:column;gap:6px;margin-top:4px;">` +
+    `<div style="font-weight:600;font-size:12px;">${escHtml(t('burn_guard_settings_title'))}</div>` +
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardEnabled"${cfg.enabled ? ' checked' : ''} onchange="burnGuardSaveField('enabled')"><span>${escHtml(t('burn_guard_enabled'))}</span></label>` +
+    `<label style="font-size:12px;">${escHtml(t('burn_guard_margin'))} <input id="burnGuardMargin" type="number" min="0" step="any" value="${escHtml(margin)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('margin_points')"></label>` +
+    `<div style="font-size:12px;">${escHtml(t('burn_guard_ladder'))}</div><div id="burnGuardLadder">${rows}</div>` +
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardStepBack"${cfg.step_back ? ' checked' : ''} onchange="burnGuardSaveField('step_back')"><span>${escHtml(t('burn_guard_step_back'))}</span></label>` +
+    `<label style="font-size:12px;">${escHtml(t('burn_guard_retry_limit'))} <input id="burnGuardRetryLimit" type="number" min="0" max="20" step="1" value="${escHtml(retry)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('retry_limit_claude')"></label>` +
+    `<div data-burn-guard="effort-ceiling" style="font-size:12px;"><span>${escHtml(t('burn_guard_effort_ceiling'))}</span> ${ceilRows || escHtml(t('burn_guard_ceiling_none'))}</div>` +
+    `<div style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_ceiling_hint'))}</div>` +
+    `</div>`;
+};
+
+function _burnGuardPaint() {
+  const el = document.getElementById('burnGuardCard');
+  if (el) {
+    el.innerHTML = window.burnGuardCardHtml(_burnGuard.status, _burnGuard.config, { error: _burnGuard.error, message: _burnGuard.message });
+  } else if (typeof usageCalcRerender === 'function') {
+    usageCalcRerender();
+  }
+}
+
+window.burnGuardRefresh = function () {
+  return Promise.all([apiFetch('/api/usage/burn-guard'), apiFetch('/api/usage/burn-guard/config')]).then(r => {
+    _burnGuard.status = r[0]; _burnGuard.config = r[1]; _burnGuard.error = '';
+    _burnGuardPaint();
+  }).catch(err => {
+    _burnGuard.error = err && err.message ? err.message : String(err);
+    _burnGuardPaint();
+  });
+};
+
+// Writes go to the config endpoint, then the card refetches both bodies.
+function _burnGuardPut(body) {
+  return apiFetch('/api/usage/burn-guard/config', { method: 'PUT', body: JSON.stringify(body) })
+    .then(() => { _burnGuard.message = t('burn_guard_saved'); return window.burnGuardRefresh(); })
+    .catch(err => { _burnGuard.error = err && err.message ? err.message : String(err); _burnGuardPaint(); });
+}
+
+window.burnGuardSaveField = function (key) {
+  const num = id => { const e = document.getElementById(id); return e ? Number(e.value) : NaN; };
+  const chk = id => { const e = document.getElementById(id); return !!(e && e.checked); };
+  let body;
+  if (key === 'enabled') body = { enabled: chk('burnGuardEnabled') };
+  else if (key === 'step_back') body = { step_back: chk('burnGuardStepBack') };
+  else if (key === 'margin_points') body = { margin_points: num('burnGuardMargin') };
+  else if (key === 'retry_limit_claude') body = { retry_limit_claude: num('burnGuardRetryLimit') };
+  else return;
+  if (key === 'margin_points' || key === 'retry_limit_claude') {
+    const v = body[key];
+    if (!Number.isFinite(v) || v < 0 || (key === 'retry_limit_claude' && (v > 20 || !Number.isInteger(v)))) {
+      _burnGuard.error = t('burn_guard_invalid_number');
+      _burnGuardPaint();
+      return;
+    }
+  }
+  return _burnGuardPut(body);
+};
+
+function _burnGuardLadderFromDom() {
+  const host = document.getElementById('burnGuardLadder');
+  if (!host) return [];
+  return Array.from(host.querySelectorAll('[data-rung]')).filter(row => {
+    const cb = row.querySelector('input[type=checkbox]');
+    return cb && cb.checked;
+  }).map(row => row.getAttribute('data-rung'));
+}
+
+window.burnGuardSaveLadder = function () {
+  const ladder = _burnGuardLadderFromDom();
+  if (!ladder.length) { _burnGuard.error = t('burn_guard_ladder_empty'); _burnGuardPaint(); return; }
+  return _burnGuardPut({ ladder });
+};
+
+window.burnGuardMoveRung = function (rung, delta) {
+  const cfg = _burnGuard.config || {};
+  const ladder = Array.isArray(cfg.ladder) && cfg.ladder.length ? cfg.ladder.slice() : BURN_GUARD_RUNGS.slice();
+  const i = ladder.indexOf(rung);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= ladder.length) return;
+  const tmp = ladder[i]; ladder[i] = ladder[j]; ladder[j] = tmp;
+  return _burnGuardPut({ ladder });
+};
+
+window.burnGuardRunNow = function () {
+  return apiFetch('/api/usage/burn-guard/run', { method: 'POST' }).then(res => {
+    if (res && res.status) _burnGuard.status = res.status;
+    _burnGuard.error = ''; _burnGuard.message = t('burn_guard_ran');
+    return window.burnGuardRefresh();
+  }).catch(err => {
+    _burnGuard.error = err && err.message ? err.message : String(err);
+    _burnGuardPaint();
+  });
+};
+
+// Auto refresh: one window-level interval, started when the card is on screen and
+// cleared as soon as it is not. No timer is stored on a DOM element.
+window.burnGuardStartPolling = function () {
+  if (window._burnGuardInterval) return;
+  window._burnGuardInterval = setInterval(() => {
+    if (!document.getElementById('burnGuardCard')) { window.burnGuardStopPolling(); return; }
+    window.burnGuardRefresh();
+  }, BURN_GUARD_REFRESH_MS);
+};
+window.burnGuardStopPolling = function () {
+  if (window._burnGuardInterval) { clearInterval(window._burnGuardInterval); window._burnGuardInterval = null; }
+};
+
 // The usage card's loader, registered like the capacity card's: a skeleton on
 // the first load, the daemon's error plainly with Retry, and the last good body
 // kept beneath it. It does not poll; the card refreshes when the operator asks
@@ -25660,6 +25850,8 @@ function _automationUsageLoader() {
       if (_usageCalc.whatIf !== null && _usageCalc.whatIf !== undefined) params.push('lanes=' + encodeURIComponent(String(_usageCalc.whatIf)));
       const q = params.length ? '?' + params.join('&') : '';
       _usageCalc.error = '';
+      if (typeof window.burnGuardRefresh === 'function') window.burnGuardRefresh();
+      if (typeof window.burnGuardStartPolling === 'function') window.burnGuardStartPolling();
       return apiFetch(url + q, init).then(body => { _usageCalc.body = body; return body; });
     },
     failedText: msg => t('usage_calc_error', [msg]),
