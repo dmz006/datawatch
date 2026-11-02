@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.60.0 — Parallel tasks in one Automaton
+
+### Added
+
+- **The tasks of one Automaton can run at the same time, safely.** A task flagged read only skips the tree lock and runs beside other tasks. Every other task that runs alongside others gets its own worktree and branch off the Automaton branch, and when it is verified its work is merged back into the Automaton branch in dependency order. A branch that does not merge cleanly follows a conflict policy: `additive_then_model` (keep both sides when the changes only add lines, and ask the merge conflict model for anything else), `block` (hold the task and leave the conflict for you) or `triage` (raise the conflict as a question). Four settings under `autonomous.parallel` control it, with the operator's answers as defaults: `read_only_tasks` (`true`), `worktree_per_task` (`true`), `merge_conflict_policy` (`additive_then_model`) and `merge_conflict_model` (empty, which uses the strongest configured planning model). An explicit `false` is kept; only an absent key reads the default. They are reachable from the PWA Settings Automata section, YAML, `PUT /api/config`, `datawatch config set`, the chat `configure` verb and the MCP `autonomous_config_set` tool. A task is flagged read only with the `read_only` field on `autonomous_prd_add_task` and `autonomous_prd_edit_task`, the REST task routes, the CLI and the task edit in the web app. Each task shows its merge state, and a completed Automaton records its parallel execution numbers (speedup against running the tasks one after another) on the Automaton card, in `datawatch autonomous get`, in chat and over MCP. A "?" entry for each new card and setting is in the definitions page, and the how-to is Running the tasks of one Automaton in parallel.
+
 ## v9.59.0 — Maintainer upstream monitoring
 
 Maintainer-only upstream monitoring (not part of the product).
