@@ -3283,6 +3283,10 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .state-badge-complete { background: rgba(148,163,184,0.1); color: var(--text2); }
 .state-badge-failed { background: rgba(239,68,68,0.15); color: var(--error); }
 .state-badge-killed { background: rgba(148,163,184,0.1); color: var(--text2); }
+/* Shipped chip (autonomous.shipped): the work landed in a release. Distinct
+   from the status badges — cancelled-but-merged still shows this. */
+.state-badge-shipped { background: rgba(16,185,129,0.15); color: var(--success, #10b981); font-weight: 600; }
+.shipped-chip { cursor: help; }
 
 /* v6.11.24 (BL266) — stale-comms early indicator. Amber dot adjacent to
    the state badge after >2 s with no channel events (running sessions

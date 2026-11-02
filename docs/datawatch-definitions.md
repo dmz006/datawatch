@@ -648,6 +648,21 @@ Two subscription sinks send Automaton lifecycle events out of the daemon. **Both
 
 ---
 
+### Shipped
+
+> **Version: v8.8.0+**
+
+"Shipped" is what **happened to the work** after a PRD or Automation finished, not a status of the PRD or Automation itself. When the daemon merges the work into a release, it stamps the record with the release name (`merged_in_release`), the merge time (`merged_at`) and the merge commit (`merge_commit`). The record keeps the status it had when the work landed (a cancelled PRD can still be shipped — its cancellation is historical, the work still reached the release), and the card's border color and action buttons still follow that stored status.
+
+The shipped-state surfaces in the PWA everywhere a status is shown:
+
+- **Shipped chip.** Wherever the status pill is rendered (the Automata list, the PRD detail header, the Automations list and detail), a shipped record instead shows the green chip: **"Shipped in \u003crelease>"** when a release name is recorded, plain **"Shipped"** when not. The chip takes precedence over the status pill — a cancelled-but-merged record shows **Shipped**, not Cancelled. The chip tooltip carries the merge time and merge commit.
+- **Detail views.** The PRD and Automation detail views show the shipped line: the ship label plus `merged_at` and the merge commit hash.
+- **Filter badge.** The Automata and Automations filter bars carry a **Shipped** status badge (in addition to "all" and the usual statuses). Selecting it shows only the records that carry the shipped-state — decided by the merged commit, never by the stored status, so a cancelled-and-merged record shows under it and the "unshipped" view never matches it. The badge counts honor the count rule below.
+- **Counts.** When `autonomous.shipped.count_separately` is on (the default), the shipped records pull their count out of their stored status (so "cancelled" no longer includes shipped ones) and group under the separate **shipped** badge, keeping shipped and cancelled side by side. The dashboard also shows the total shipped record count when it is greater than zero.
+
+Behavior is server-configured under `autonomous.shipped` — `enabled` (toggle the whole surface, default on), `show_chip` (the chip visibility, default on), `filter_default` (the starting filter selection — `all`, `shipped` or `unshipped` — default `all`), and `count_separately` (the separate-counts rule, default on) — and is reported with the shipped record counts at `/api/autonomous/shipped/counts`; the list endpoints take the selection as `shipped=true|false` and honor `filter_default` when it is absent.
+
 ## Automation
 
 An **Automation** is a named chain of Automata: it decides which Automaton runs next when the current one completes, is blocked, or fails. An **Automaton** is one unit of work. The Automation is the chain; the Automaton is a link in it. The Automation tab sits to the left of the Automata tab, and a chain can include forks (members that run side by side), joins (where the branches meet again) and other Automations nested as a single member.
