@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.62.2 — Repository tidy and a plain-English README
+
+### Changed
+
+- **The project README is rewritten in plain English and is a quarter of its former length.** The introduction, the summary and each feature area are short bullets, the release history moved to `docs/release-highlights.md`, and the Android and community sections moved below the product content.
+- **Stray files are gone from the repository root.** A leftover verifier verdict, an empty copy of the leak check script and a gate report were removed or moved, the test evidence folder moved under `docs/testing/runs/`, and a CI test now fails when an unknown file or folder is tracked at the top level.
+
 ## v9.62.1 — Container images build again
 
 ### Fixed
