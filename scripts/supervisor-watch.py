@@ -122,10 +122,41 @@ def newest_transcript_mtime(worktree_path):
     return best
 
 
-def newest_activity(prd_id):
-    """Seconds since the newest file change in the worktree, the newest pi log or the newest Claude transcript."""
-    best = 0
+def task_worktrees(prd_id):
+    """Task worktree paths of an Automaton, from git worktree list run in the Automaton worktree.
+
+    A path belongs to the Automaton when it sits under WT and its first component below WT starts with
+    the Automaton id (the Automaton worktree itself is WT/<id>, its tasks live in WT/<id>-tasks/<name>).
+    """
+    root = os.path.join(WT, prd_id)
+    if not os.path.isdir(root):
+        return []
+    try:
+        out = subprocess.run(["env", "-u", "TMUX", "-u", "TMUX_TMPDIR", "git", "worktree", "list", "--porcelain"],
+                             cwd=root, capture_output=True, text=True, timeout=20).stdout
+    except Exception:
+        return []
+    found = []
+    for line in out.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        path = os.path.abspath(line[len("worktree "):].strip())
+        rel = os.path.relpath(path, WT)
+        if rel.startswith("..") or path == os.path.abspath(root):
+            continue
+        if rel.split(os.sep)[0].startswith(prd_id):
+            found.append(path)
+    return found
+
+
+def newest_activity_measure(prd_id):
+    """(seconds since the newest activity, measure name) or (None, None).
+
+    The name is one of "transcript", "worktree file" or "log".
+    """
+    cands = []  # (mtime, label)
     d = os.path.join(WT, prd_id)
+    best = 0
     for root, dirs, files in os.walk(d):
         dirs[:] = [x for x in dirs if x != ".git"]
         for f in files:
@@ -133,17 +164,31 @@ def newest_activity(prd_id):
                 best = max(best, os.path.getmtime(os.path.join(root, f)))
             except OSError:
                 pass
+    if best:
+        cands.append((best, "worktree file"))
+    for path in [d] + task_worktrees(prd_id):
+        m = newest_transcript_mtime(path)
+        if m:
+            cands.append((m, "transcript"))
     for f in glob.glob(os.path.expanduser("~/.pi/agent/sessions/--home-user-.datawatch-prd-worktrees-%s--/*.jsonl" % prd_id)):
         try:
-            best = max(best, os.path.getmtime(f))
+            cands.append((os.path.getmtime(f), "log"))
         except OSError:
             pass
     for f in glob.glob(os.path.expanduser("~/.claude/projects/-home-user--datawatch-prd-worktrees-%s/*.jsonl" % prd_id)):
         try:
-            best = max(best, os.path.getmtime(f))
+            cands.append((os.path.getmtime(f), "transcript"))
         except OSError:
             pass
-    return None if best == 0 else time.time() - best
+    if not cands:
+        return None, None
+    m, label = max(cands, key=lambda c: c[0])
+    return time.time() - m, label
+
+
+def newest_activity(prd_id):
+    """Seconds since the newest activity (see newest_activity_measure), or None when no measure exists."""
+    return newest_activity_measure(prd_id)[0]
 
 
 def liveness(prd_id):
@@ -308,9 +353,9 @@ def main(argv=None):
                 findings.append("WORKTREE %s has no go.mod (broken project directory)" % p["id"])
             live = [k for k in tasks if k.get("status") in ("in_progress", "verifying")]
             if live:
-                age = newest_activity(p["id"])
+                age, measure = newest_activity_measure(p["id"])
                 if age is not None and age > SILENT_MIN * 60:
-                    findings.append("SILENT %s: no file or log activity for %d min while %s is running; %s" % (p["id"], age // 60, live[0]["id"], liveness(p["id"])))
+                    findings.append("SILENT %s: no activity for %d min while %s is running (newest measure: %s); %s" % (p["id"], age // 60, live[0]["id"], measure, liveness(p["id"])))
 
     # capacity and lanes
     cap = get_json("https://localhost:8443/api/capacity", insecure=True) or {}
