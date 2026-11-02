@@ -95,3 +95,8 @@ __pycache__/
 # sandbox live-check working dirs (daemon state, personas, session data) — never commit
 tmp-held-verify/
 tmp-sandbox/
+
+# Operator's machine-specific leak patterns are never committed (see
+# scripts/leak-patterns.local.template); the checked-in class definitions
+# live in scripts/leak-check.patterns.
+.leak-patterns.local

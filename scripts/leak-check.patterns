@@ -1,0 +1,60 @@
+# scripts/leak-check.patterns
+#
+# Class definitions for scripts/check-no-local-leaks.sh.
+# One rule per line:  <class>  <extended-regex>
+# Blank lines and lines starting with '#' are ignored.
+#
+# Classes:
+#   address  private / internal / link-local IPv4, unique-local and
+#            tailnet IPv6, MagicDNS hostnames. Reserved documentation
+#            ranges (the three IANA documentation blocks) and loopback
+#            pass.
+#   home     absolute home-directory paths for any user (Linux, macOS,
+#            Windows). Placeholders (<user>, $HOME, ~/) pass.
+#   email    generic address match; each candidate is then filtered
+#            against scripts/leak-check.allowed-emails.
+#   local    (not defined here; fixed strings come from
+#            .leak-patterns.local, see scripts/leak-patterns.local.template)
+#
+# Digit boundaries (a neighbouring dot, digit, slash or dash forbids a
+# match) keep version strings and longer dotted numbers clean, and CIDR
+# notation (a block written with a trailing slash) is documentation, not
+# a host address, so a neighbouring slash forbids a match there too.
+#
+# NOTE about this file's own text: the IPv4 addresses below are written
+# with bracketed dots ("10[.]") and the IPv6 rules are written with
+# bracketed hex so that this configuration file does not match its own
+# patterns. Prefer such self-clean patterns over exclusions, and keep
+# free-text examples in comments CIDR-style or slash-separated so they
+# stay clean too.
+
+# --- class address ------------------------------------------------------
+# RFC 1918 private IPv4: 10.0.0.0/8
+address (^|[^0-9./-])10[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}([^0-9./-]|$)
+# RFC 1918 private IPv4: 172.16.0.0/12
+address (^|[^0-9./-])172[.](1[6-9]|2[0-9]|3[01])[.][0-9]{1,3}[.][0-9]{1,3}([^0-9./-]|$)
+# RFC 1918 private IPv4: 192.168.0.0/16
+address (^|[^0-9./-])192[.]168[.][0-9]{1,3}[.][0-9]{1,3}([^0-9./-]|$)
+# RFC 6598 carrier-grade NAT (tailnet addresses live in this block): 100.64.0.0/10
+address (^|[^0-9./-])100[.](6[4-9]|[7-9][0-9]|1[012][0-7])[.][0-9]{1,3}[.][0-9]{1,3}([^0-9./-]|$)
+# link-local IPv4: 169.254.0.0/16
+address (^|[^0-9./-])169[.]254[.][0-9]{1,3}[.][0-9]{1,3}([^0-9./-]|$)
+# IPv6 unique-local, the fc00 to fdff range
+address (^|[^0-9a-fA-F:])(fc|fd)[0-9a-fA-F]{2}:[0-9a-fA-F:]*
+# tailnet IPv6, the 2606 tailnet allocation space
+address (^|[^0-9a-fA-F:])2606[:][0-9a-fA-F:]*
+# MagicDNS hostnames on the ts.net suffix
+address (^|[^A-Za-z0-9.-])[A-Za-z0-9][A-Za-z0-9-]*[.]ts[.]net([^A-Za-z0-9-]|$)
+
+# --- class home ----------------------------------------------------------
+# Linux home prefix, any real user name
+home (^|[^A-Za-z0-9_.$/-])/home/[A-Za-z0-9._-]{1,32}([^A-Za-z0-9._-]|$)
+# macOS Users prefix, any real user name
+home (^|[^A-Za-z0-9_.$/-])/Users/[A-Za-z0-9._-]{1,32}([^A-Za-z0-9._-]|$)
+# Windows drive Users prefix, any real user name (an angle-bracket
+# placeholder is not in the name class, so it passes)
+home [A-Za-z]:[\\/]Users[\\/][A-Za-z0-9._-]{1,32}([^\\:*?"<>|/]|$)
+
+# --- class email ---------------------------------------------------------
+# Generic address; the allowed list decides what passes.
+email [A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}

@@ -1,0 +1,12 @@
+# scripts/leak-check.exclude
+#
+# Glob list of relative paths (relative to the scanned root) that the
+# leak check must skip. One glob per line; comments and blank lines are
+# ignored.
+#
+# Keep this minimal. Prefer writing self-clean patterns (see the note in
+# scripts/leak-check.patterns) and cleaning the offending value, and only
+# exclude a path when it genuinely cannot be made clean — with a comment
+# below saying why.
+
+# (none)
