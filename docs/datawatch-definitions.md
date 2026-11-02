@@ -224,11 +224,11 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron â€
 
 **Creating a spawn schedule:**
 
-- **MCP:** `schedule_spawn(task="run audit", dir="/home/user/project", cron_expr="0 * * * *", name="hourly-audit", one_shot=true, ephemeral=true)`
-- **REST:** `POST /api/schedules` body: `{"type": "spawn", "task": "run audit", "project_dir": "/home/user/project", "cron_expr": "0 * * * *", "schedule_name": "hourly-audit", "one_shot": true, "ephemeral": true}`
-- **CLI:** `datawatch schedule spawn --task "run audit" --dir /home/user/project --cron "0 * * * *" --schedule-name hourly-audit --ephemeral`
-- **CLI (shell mode):** `datawatch schedule spawn --shell "run-rules --config ~/cfg.yaml" --path /home/user/project --cron "0 * * * *" --schedule-name hourly`
-- **Channel:** `schedule spawn task=run audit dir=/home/user/project cron=0 * * * * name=hourly-audit ephemeral=true`
+- **MCP:** `schedule_spawn(task="run audit", dir="/home/<user>/project", cron_expr="0 * * * *", name="hourly-audit", one_shot=true, ephemeral=true)`
+- **REST:** `POST /api/schedules` body: `{"type": "spawn", "task": "run audit", "project_dir": "/home/<user>/project", "cron_expr": "0 * * * *", "schedule_name": "hourly-audit", "one_shot": true, "ephemeral": true}`
+- **CLI:** `datawatch schedule spawn --task "run audit" --dir /home/<user>/project --cron "0 * * * *" --schedule-name hourly-audit --ephemeral`
+- **CLI (shell mode):** `datawatch schedule spawn --shell "run-rules --config ~/cfg.yaml" --path /home/<user>/project --cron "0 * * * *" --schedule-name hourly`
+- **Channel:** `schedule spawn task=run audit dir=/home/<user>/project cron=0 * * * * name=hourly-audit ephemeral=true`
 
 **Key parameters:**
 
@@ -258,7 +258,7 @@ Spawn a fresh, independent session at a scheduled time or on a recurring cron â€
 ```bash
 datawatch schedule spawn \
   --cron "0 * * * *" \
-  --path /home/user/workspace/imap-mcp \
+  --path /home/<user>/workspace/imap-mcp \
   --schedule-name imap-hourly-rules \
   --shell "imap-mcp run-rules --config ~/workspace/cfg.yaml"
 ```
@@ -350,7 +350,7 @@ Inject additional MCP servers into every spawned session's `.mcp.json` alongside
 session:
   extra_mcp_servers:
     - name: imap-mcp                         # Key in .mcp.json mcpServers block
-      command: /home/user/imap-mcp/imap-mcp  # Executable (absolute path)
+      command: /home/<user>/imap-mcp/imap-mcp  # Executable (absolute path)
       args: []                               # Optional CLI args
       env:                                   # Optional env vars (${VAR} expansion supported)
         GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"

@@ -180,7 +180,7 @@ Selected core tools:
 Once configured, you can ask Claude in Cursor:
 
 ```
-Start a session to write unit tests for my auth package at /home/me/myproject
+Start a session to write unit tests for my auth package at /home/<user>/myproject
 ```
 
 Claude will call `start_session` with your task, then use `session_output` to

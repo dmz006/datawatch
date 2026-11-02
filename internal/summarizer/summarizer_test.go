@@ -778,7 +778,7 @@ func TestIsNoiseLine(t *testing.T) {
 		"DATAWATCH_RATE_LIMITED: resets at 12:00",
 		"DATAWATCH_NEEDS_INPUT: which branch?",
 		"Co-Authored-By: Claude Sonnet <noreply@anthropic.com>",
-		"Co-authored-by: Someone <foo@bar.com>",
+		"Co-authored-by: Someone <foo@example.com>",
 		"33b22143 fix(opencode): lint fix",
 		"97e29199 docs: update README",
 		"abcdef1 some commit message here",

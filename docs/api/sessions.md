@@ -262,7 +262,7 @@ when the summary cap omitted sessions.
 ### CLI
 
 ```bash
-datawatch session start --task "fix the auth tests" --project /home/me/work/auth
+datawatch session start --task "fix the auth tests" --project /home/<user>/work/auth
 datawatch session list
 datawatch session list --summary --states active      # compact JSON, running/waiting only
 datawatch session list --since 2026-10-14T12:00:00Z    # sessions updated since a time
@@ -301,8 +301,8 @@ session:
   input_idle_timeout: 30
   tail_lines: 100
   alert_context_lines: 10
-  default_project_dir: /home/me/work
-  root_path: /home/me        # file-browser clamp
+  default_project_dir: /home/<user>/work
+  root_path: /home/<user>        # file-browser clamp
   console_cols: 80
   console_rows: 24
   skip_permissions: true     # claude-code --dangerously-skip-permissions

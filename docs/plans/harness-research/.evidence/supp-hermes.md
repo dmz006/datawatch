@@ -33,7 +33,7 @@ from hermes import Hermes, configure
 
 configure(
     llm_provider="anthropic",
-    sec_user_agent="MyApp/1.0 (me@company.com)",  # required by SEC
+    sec_user_agent="MyApp/1.0 (me@example.com)",  # required by SEC
 )
 
 h = Hermes()
@@ -105,7 +105,7 @@ from hermes import Hermes, configure
 configure(
     llm_provider="anthropic",                  # or openai, google, ollama, ...
     llm_model="claude-sonnet-4-6",
-    sec_user_agent="MyApp/1.0 (me@company.com)",
+    sec_user_agent="MyApp/1.0 (me@example.com)",
     fred_api_key="...",
     verbose=True,
 )

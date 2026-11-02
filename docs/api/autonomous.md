@@ -1713,11 +1713,11 @@ GET /api/autonomous/safe-to-delete
 
 200: {
   "safe": [
-    { "branch": "automaton/a1b2c3d4e5f6", "worktree": "/home/me/.datawatch/prd-worktrees/a1b2c3d4e5f6", "reason": "all commits on main", "commits": 4 }
+    { "branch": "automaton/a1b2c3d4e5f6", "worktree": "/home/<user>/.datawatch/prd-worktrees/a1b2c3d4e5f6", "reason": "all commits on main", "commits": 4 }
   ],
   "held": [
     { "branch": "automaton/d0442737d38c", "worktree": "", "state": "pending" },
-    { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/me/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
+    { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/<user>/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
   ],
   "held_dirty": 1
 }

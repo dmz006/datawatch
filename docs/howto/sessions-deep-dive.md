@@ -94,7 +94,7 @@ a link that points outside the roots is refused.
 A directory outside every root is refused with an error such as:
 
 ```
-project dir refused: project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/me/.datawatch/prd-worktrees, /home/me/workspace; add a root with server.allowed_project_roots)
+project dir refused: project directory is outside the allowed project roots: "/srv/app" (allowed roots: /home/<user>/.datawatch/prd-worktrees, /home/<user>/workspace; add a root with server.allowed_project_roots)
 ```
 
 REST answers with a bad-request error. To widen the set, list the folder (or a parent of several
@@ -252,7 +252,7 @@ optional.
 # Start — v7 LLM registry path.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"llm":"claude-code","task":"...","project_dir":"/home/me/workspace/myproject"}' \
+  -d '{"llm":"claude-code","task":"...","project_dir":"/home/<user>/workspace/myproject"}' \
   $BASE/api/sessions/start
 
 # Start — with explicit compute node.

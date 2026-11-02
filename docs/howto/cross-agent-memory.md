@@ -306,13 +306,13 @@ memory_recall query="rate limit retry patterns" project=<project_dir>
 # Write to any scope directly (REST):
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123","text":"...","role":"learning"}' \
+  -d '{"scope":"prd-shared","project_dir":"/home/<user>/web","prd_id":"abc123","text":"...","role":"learning"}' \
   $BASE/api/memory/scopes/save
 
 # Bulk-delete a scope (e.g. on PRD cleanup):
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123"}' \
+  -d '{"scope":"prd-shared","project_dir":"/home/<user>/web","prd_id":"abc123"}' \
   $BASE/api/memory/scopes/delete
 ```
 
@@ -449,27 +449,27 @@ memories at instantiation. No config needed — it happens at spawn time.
 # Recall — walk layers from persona-global down to session-local.
 datawatch memory scope recall \
   --persona alice \
-  --project /home/me/web \
+  --project /home/<user>/web \
   --session sess1
 
 # Borrow — read another scope as read-only context (doesn't mutate it).
 datawatch memory scope borrow \
   --scope project-shared \
-  --project /home/me/web \
+  --project /home/<user>/web \
   --top-k 5
 
 # Seed — copy N entries from a higher scope into a lower one.
 datawatch memory scope seed \
-  --from-scope project-shared --from-project /home/me/web \
-  --to-scope session-local --to-project /home/me/marketing \
+  --from-scope project-shared --from-project /home/<user>/web \
+  --to-scope session-local --to-project /home/<user>/marketing \
   --to-session marketing-sess \
   --content-substring "branding"
 
 # Promote — move a session discovery into a shared scope.
 datawatch memory scope promote \
   --memory-id 42 \
-  --from-scope session-local --from-project /home/me/web --from-session sess1 \
-  --to-scope project-shared --to-project /home/me/web \
+  --from-scope session-local --from-project /home/<user>/web --from-session sess1 \
+  --to-scope project-shared --to-project /home/<user>/web \
   --persona alice
 ```
 
@@ -480,41 +480,41 @@ BASE=https://localhost:8443; TOKEN=$(cat ~/.datawatch/token)
 
 # Recall
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/memory/scopes/recall?persona=alice&project=/home/me/web&session=sess1"
+  "$BASE/api/memory/scopes/recall?persona=alice&project=/home/<user>/web&session=sess1"
 
 # Borrow
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/memory/scopes/borrow?scope=project-shared&project=/home/me/web&top_k=5"
+  "$BASE/api/memory/scopes/borrow?scope=project-shared&project=/home/<user>/web&top_k=5"
 
 # Seed
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"from":{"scope":"project-shared","project":"/home/me/web"},"to":{"scope":"session-local","project":"/home/me/mkt","session":"mkt-1"},"content_substring":"branding"}' \
+  -d '{"from":{"scope":"project-shared","project":"/home/<user>/web"},"to":{"scope":"session-local","project":"/home/<user>/mkt","session":"mkt-1"},"content_substring":"branding"}' \
   $BASE/api/memory/scopes/seed
 
 # Promote
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"memory_id":42,"from":{"scope":"session-local","project":"/home/me/web","session":"sess1"},"to":{"scope":"project-shared","project":"/home/me/web"},"persona":"alice"}' \
+  -d '{"memory_id":42,"from":{"scope":"session-local","project":"/home/<user>/web","session":"sess1"},"to":{"scope":"project-shared","project":"/home/<user>/web"},"persona":"alice"}' \
   $BASE/api/memory/scopes/promote
 ```
 
 ### 5c. MCP
 
 ```json
-{ "tool": "memory_scope_recall", "args": { "persona": "alice", "project": "/home/me/web", "session": "sess1" } }
-{ "tool": "memory_scope_borrow", "args": { "scope": "project-shared", "project": "/home/me/web", "top_k": 5 } }
-{ "tool": "memory_scope_seed",   "args": { "from_scope": "project-shared", "from_project": "/home/me/web", "to_scope": "session-local", "to_project": "/home/me/mkt", "to_session": "mkt-1" } }
-{ "tool": "memory_scope_promote","args": { "memory_id": 42, "from_scope": "session-local", "from_project": "/home/me/web", "from_session": "sess1", "to_scope": "project-shared", "to_project": "/home/me/web" } }
+{ "tool": "memory_scope_recall", "args": { "persona": "alice", "project": "/home/<user>/web", "session": "sess1" } }
+{ "tool": "memory_scope_borrow", "args": { "scope": "project-shared", "project": "/home/<user>/web", "top_k": 5 } }
+{ "tool": "memory_scope_seed",   "args": { "from_scope": "project-shared", "from_project": "/home/<user>/web", "to_scope": "session-local", "to_project": "/home/<user>/mkt", "to_session": "mkt-1" } }
+{ "tool": "memory_scope_promote","args": { "memory_id": 42, "from_scope": "session-local", "from_project": "/home/<user>/web", "from_session": "sess1", "to_scope": "project-shared", "to_project": "/home/<user>/web" } }
 ```
 
 ### 5d. Comm
 
 ```
-memory scope recall persona=alice project=/home/me/web session=sess1
-memory scope borrow scope=project-shared project=/home/me/web
-memory scope seed from-scope=project-shared from-project=/home/me/web to-scope=session-local to-project=/home/me/mkt to-session=mkt-1
-memory scope promote memory-id=42 from-scope=session-local from-project=/home/me/web from-session=sess1 to-scope=project-shared to-project=/home/me/web
+memory scope recall persona=alice project=/home/<user>/web session=sess1
+memory scope borrow scope=project-shared project=/home/<user>/web
+memory scope seed from-scope=project-shared from-project=/home/<user>/web to-scope=session-local to-project=/home/<user>/mkt to-session=mkt-1
+memory scope promote memory-id=42 from-scope=session-local from-project=/home/<user>/web from-session=sess1 to-scope=project-shared to-project=/home/<user>/web
 ```
 
 ### New scope commands (v8.29.0+)
@@ -524,29 +524,29 @@ memory scope promote memory-id=42 from-scope=session-local from-project=/home/me
 ```sh
 # Write directly to a named scope:
 datawatch memory scope save \
-  --scope prd-shared --project /home/me/web --prd-id abc123 \
+  --scope prd-shared --project /home/<user>/web --prd-id abc123 \
   --text "Found that X approach works" --role learning
 
 # Delete an entire scope (e.g. after PRD archived):
 datawatch memory scope delete \
-  --scope prd-shared --project /home/me/web --prd-id abc123
+  --scope prd-shared --project /home/<user>/web --prd-id abc123
 
 # Inventory: list all scopes with data:
-datawatch memory scope inventory --project /home/me/web
+datawatch memory scope inventory --project /home/<user>/web
 
 # Archive import: seed new PRD from archived memories of prior PRD:
 datawatch memory archive-import \
-  --project /home/me/web --source-prd old123 --target-prd new456 \
+  --project /home/<user>/web --source-prd old123 --target-prd new456 \
   --role-filter learning --dry-run
 
 # Harvest: promote session learnings to story-shared:
 datawatch memory harvest \
-  --session sess1 --project /home/me/web \
+  --session sess1 --project /home/<user>/web \
   --promote-to story-shared --story-id story1 \
   --role-filter learning,decision --dry-run
 
 # PRD learning report:
-datawatch memory prd-report --prd-id abc123 --project /home/me/web --format markdown
+datawatch memory prd-report --prd-id abc123 --project /home/<user>/web --format markdown
 ```
 
 #### REST
@@ -554,22 +554,22 @@ datawatch memory prd-report --prd-id abc123 --project /home/me/web --format mark
 ```sh
 # Save to scope
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123","text":"...","role":"learning"}' \
+  -d '{"scope":"prd-shared","project_dir":"/home/<user>/web","prd_id":"abc123","text":"...","role":"learning"}' \
   $BASE/api/memory/scopes/save
 
 # Delete scope
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"scope":"prd-shared","project_dir":"/home/me/web","prd_id":"abc123"}' \
+  -d '{"scope":"prd-shared","project_dir":"/home/<user>/web","prd_id":"abc123"}' \
   $BASE/api/memory/scopes/delete
 
 # Archive import
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
-  -d '{"project_dir":"/home/me/web","source_prd_id":"old123","target_prd_id":"new456","role_filter":["learning"],"dry_run":true}' \
+  -d '{"project_dir":"/home/<user>/web","source_prd_id":"old123","target_prd_id":"new456","role_filter":["learning"],"dry_run":true}' \
   $BASE/api/memory/scopes/archive-import
 
 # Scope inventory
 curl -sk -H "Authorization: Bearer $TOKEN" \
-  "$BASE/api/memory/scopes/inventory?project=/home/me/web"
+  "$BASE/api/memory/scopes/inventory?project=/home/<user>/web"
 
 # PRD report
 curl -sk -H "Authorization: Bearer $TOKEN" \
@@ -579,13 +579,13 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 #### MCP
 
 ```json
-{ "tool": "memory_scope_save",      "args": { "scope": "prd-shared", "project": "/home/me/web", "prd_id": "abc123", "text": "...", "role": "learning" } }
-{ "tool": "memory_scope_delete",    "args": { "scope": "prd-shared", "project": "/home/me/web", "prd_id": "abc123" } }
-{ "tool": "memory_scope_inventory", "args": { "project": "/home/me/web" } }
-{ "tool": "memory_archive_import",  "args": { "project": "/home/me/web", "source_prd_id": "old123", "target_prd_id": "new456", "role_filter": ["learning"], "dry_run": true } }
-{ "tool": "memory_harvest",         "args": { "session_id": "sess1", "project": "/home/me/web", "promote_to": "story-shared", "story_id": "story1", "role_filter": ["learning"] } }
+{ "tool": "memory_scope_save",      "args": { "scope": "prd-shared", "project": "/home/<user>/web", "prd_id": "abc123", "text": "...", "role": "learning" } }
+{ "tool": "memory_scope_delete",    "args": { "scope": "prd-shared", "project": "/home/<user>/web", "prd_id": "abc123" } }
+{ "tool": "memory_scope_inventory", "args": { "project": "/home/<user>/web" } }
+{ "tool": "memory_archive_import",  "args": { "project": "/home/<user>/web", "source_prd_id": "old123", "target_prd_id": "new456", "role_filter": ["learning"], "dry_run": true } }
+{ "tool": "memory_harvest",         "args": { "session_id": "sess1", "project": "/home/<user>/web", "promote_to": "story-shared", "story_id": "story1", "role_filter": ["learning"] } }
 { "tool": "memory_handoff",         "args": { "summary": "Found X works; Y fails", "scope": "story-shared", "role": "handoff" } }
-{ "tool": "memory_prd_report",      "args": { "prd_id": "abc123", "project": "/home/me/web", "format": "markdown" } }
+{ "tool": "memory_prd_report",      "args": { "prd_id": "abc123", "project": "/home/<user>/web", "format": "markdown" } }
 ```
 
 #### Comm channel
@@ -604,7 +604,7 @@ memory prd-report prd_id=<id> project=<dir> format=markdown
 
 Both `seed` and `promote` append a breadcrumb to the destination entry:
 ```
-_(seeded from project-shared:/home/me/web at 2026-05-09T14:32:00Z)_
+_(seeded from project-shared:/home/<user>/web at 2026-05-09T14:32:00Z)_
 _(promoted session-local → project-shared at 2026-05-09T14:32:00Z by alice)_
 ```
 

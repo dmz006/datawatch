@@ -171,7 +171,7 @@ func isBinaryMention(p, pre string) bool {
 }
 
 // patternVerbRe matches the words that mark a quoted span as a search pattern
-// (e.g. grep for '/home/x/.ssh') rather than a path the worker must touch.
+// (e.g. grep for '/home/<user>/.ssh') rather than a path the worker must touch.
 var patternVerbRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z])(?:grep|pattern|patterns|scan|search|match|matches|forbidden)(?:$|[^A-Za-z])`)
 
 // patternWindowWords is how many words before an opening quote are checked for a pattern verb.
@@ -253,7 +253,7 @@ func firstSegment(p string) string {
 // skipped, unless a write verb in the few words before it makes it a write
 // target (BL421). Placeholder or glob syntax (/home/<user>, /home/{x}, $NAME,
 // ~name, *) and paths inside a quoted pattern after a search verb (grep for
-// '/home/x') are not access claims either.
+// '/home/<user>') are not access claims either.
 func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 	return lintScope(prd.ProjectDir, EffectiveReadDirs(prd), EffectiveWriteDirs(prd), label, spec, files)
 }

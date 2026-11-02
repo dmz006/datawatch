@@ -2,7 +2,7 @@
 
 Date: 2026-10-31
 
-Branch `prd/2026-10-30-bl488-plan-coverage-filter` (worktree `/home/user/.datawatch/prd-worktrees/e58f6807`), merge base `a187351cf748c242d6876d40b79a360ada26e784`. Every command below was run from the repository root with `env -u TMUX -u TMUX_TMPDIR` in front.
+Branch `prd/2026-10-30-bl488-plan-coverage-filter` (worktree `/home/<user>/.datawatch/prd-worktrees/e58f6807`), merge base `a187351cf748c242d6876d40b79a360ada26e784`. Every command below was run from the repository root with `env -u TMUX -u TMUX_TMPDIR` in front.
 
 ## Commands (final results)
 

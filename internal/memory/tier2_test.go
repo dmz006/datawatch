@@ -12,12 +12,12 @@ func TestSaveWithMeta_AutoDeriveWing(t *testing.T) {
 	s, _ := tempDB(t)
 	defer s.Close() //nolint:errcheck
 
-	id, err := s.SaveWithMeta("/home/user/projects/myapp", "test content", "", "manual", "", "", "", "", nil)
+	id, err := s.SaveWithMeta("/home/<user>/projects/myapp", "test content", "", "manual", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("SaveWithMeta: %v", err)
 	}
 
-	memories, _ := s.ListRecent("/home/user/projects/myapp", 1)
+	memories, _ := s.ListRecent("/home/<user>/projects/myapp", 1)
 	if len(memories) == 0 {
 		t.Fatal("no memories found")
 	}

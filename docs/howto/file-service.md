@@ -70,7 +70,7 @@ datawatch reload
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/meta | jq .root
-# "/home/operator/.datawatch/files"
+# "/home/<user>/.datawatch/files"
 
 # CLI
 datawatch files list
@@ -157,7 +157,7 @@ curl -sk \
 curl -sk \
   -H "Authorization: Bearer $TOKEN" \
   https://datawatch.local:8443/api/files/meta | jq .
-# {"root":"/home/operator/.datawatch/files","peer_count":2,"discussion_count":1,"disk_bytes":8192}
+# {"root":"/home/<user>/.datawatch/files","peer_count":2,"discussion_count":1,"disk_bytes":8192}
 ```
 
 ### CLI

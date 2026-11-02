@@ -601,7 +601,7 @@ configuration keeps blocking.
 
 **Placeholder and quoted patterns are never flagged.** In every mode the lint
 ignores template and glob syntax (`<name>`, `{x}`, `*`, `$NAME`, `~user`) and a
-path that sits inside a quoted search pattern, such as `grep '/home/x/.ssh'`.
+path that sits inside a quoted search pattern, such as `grep '/home/<user>/.ssh'`.
 A task that only mentions such text is not blocked.
 
 **Remedies.** A lint message names the token, the line and one of two fixes:

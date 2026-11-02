@@ -36,7 +36,7 @@ Cloning uses whatever auth the daemon's user has locally:
 
 - SSH URLs (`git@host:owner/repo.git`) — uses the daemon user's SSH agent or `~/.ssh/`.
 - HTTPS public — works without auth.
-- HTTPS with embedded token (`https://x-token:GH_TOKEN@github.com/...`) — works.
+- HTTPS with embedded token (`https://x-token:GH_TOKEN@example.com/...`) — works.
 - HTTPS with git credential helper — works if the credential is in scope for the daemon's user.
 
 F10 BL113 token-broker integration (which mints short-lived per-spawn tokens) lands as the v5.26.22 follow-up. For now operators with private repos on tokens-only providers should embed the token in the profile's git URL.

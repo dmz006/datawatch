@@ -11,7 +11,7 @@ import (
 // outOfScopeSpec references an absolute path outside the PRD's project dir
 // and outside any read/write dir, so LintTaskScope blocks it before spawn
 // under both the current and any stricter future scope-linter rules.
-const outOfScopeSpec = "Measure peak RSS with /home/other/elsewhere/tool --flag"
+const outOfScopeSpec = "Measure peak RSS with /root/elsewhere/tool --flag"
 
 // spawnRecorder is a stub SpawnFn that records every SpawnRequest it sees.
 type spawnRecorder struct {
@@ -178,7 +178,7 @@ func TestBlockedTaskEdit_EditThenResetRecoversWithoutRerunningCompleted(t *testi
 	if len(bReqs) == 0 {
 		t.Fatalf("task B was not spawned after edit+reset; PRD %s, B error %q", got.Status, lookupTask(got, b).Error)
 	}
-	if !strings.Contains(bReqs[0].Spec, fixed) || strings.Contains(bReqs[0].Spec, "/home/other/elsewhere/tool") {
+	if !strings.Contains(bReqs[0].Spec, fixed) || strings.Contains(bReqs[0].Spec, "/root/elsewhere/tool") {
 		t.Fatalf("spawn for B must carry the edited spec, got %q", bReqs[0].Spec)
 	}
 	if bt := lookupTask(got, b); bt.Status != TaskCompleted || strings.Contains(bt.Error, "scope:") {

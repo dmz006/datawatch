@@ -449,7 +449,7 @@ func TestLeftoverDaemonGuard(t *testing.T) {
 	// test daemon and must never be flagged. A shared host may legitimately
 	// run other test daemons (they land in the baseline), so this section
 	// only asserts about the daemon it starts itself.
-	otherCfg := "/home/operator/datawatch/config.yaml"
+	otherCfg := "/home/<user>/datawatch/config.yaml"
 	otherPid := dcFakeDaemon(t, bash, otherCfg)
 	otherSnap := filepath.Join(fix, "baseline-other.txt")
 	out, code = dcRun(t, root, env, bash, guard, "snapshot", otherSnap)

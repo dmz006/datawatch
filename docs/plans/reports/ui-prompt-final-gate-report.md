@@ -151,7 +151,7 @@ Keys: `session.dismiss_ui_prompts`, `session.ui_prompt_dismiss_delay_seconds`,
   `interstitial_prompt_test.go` calls `tmux` directly, spawns a daemon on the
   live data directory, or touches `~/.datawatch` (grep for `UserHomeDir`,
   `exec.Command.*tmux`, `TmuxManager{` across these files: no hits; the single
-  `/home/user/work/app` string is a literal label inside a test event struct in
+  `/home/<user>/work/app` string is a literal label inside a test event struct in
   `internal/autonomous/ui_prompt_escalate_test.go:29`, never used as a path).
   Question-store tests use `t.TempDir()` exclusively.
 - Repo audits passed in the gate: `check-no-unscoped-tmux.sh` (OK),

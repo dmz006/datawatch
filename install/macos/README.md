@@ -87,7 +87,7 @@ Create `~/Library/LaunchAgents/com.dmz006.datawatch.plist`:
   <string>com.dmz006.datawatch</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/YOUR_USERNAME/.local/bin/datawatch</string>
+    <string>/Users/<user>/.local/bin/datawatch</string>
     <string>start</string>
   </array>
   <key>RunAtLoad</key>
@@ -101,9 +101,9 @@ Create `~/Library/LaunchAgents/com.dmz006.datawatch.plist`:
   <key>EnvironmentVariables</key>
   <dict>
     <key>HOME</key>
-    <string>/Users/YOUR_USERNAME</string>
+    <string>/Users/<user></string>
     <key>PATH</key>
-    <string>/Users/YOUR_USERNAME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>/Users/<user>/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
 </dict>
 </plist>

@@ -1139,7 +1139,7 @@ pgrep -u "$USER" bash | grep -v -E "^($$|PPID_OF_INTERACTIVE_SHELLS)$" | xargs k
 Practical steps:
 1. After reading the last background task result, run `pgrep -a -u "$USER" bash` to see what's alive.
 2. Kill every bash process that is a Claude Code `until`-loop watcher (identifiable by the
-   `/home/.../.claude/shell-snapshots/snapshot-bash-` prefix in its command line).
+   `/home/<user>/.claude/shell-snapshots/snapshot-bash-` prefix in its command line).
 3. Keep only interactive login shells (`-bash` or `bash` without a snapshot source line).
 4. Run the cleanup as a single `xargs kill` — do not loop or sleep.
 

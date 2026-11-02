@@ -141,7 +141,7 @@ with peer and discussion subdirectories accessible across federation.
 
 ```sh
 # Prerequisites — set file_service_root in datawatch.yaml, or rely on default
-# file_service_root: /home/operator/.datawatch/files
+# file_service_root: /home/<user>/.datawatch/files
 
 FILES="$DW_HOST/api/files"
 
@@ -175,7 +175,7 @@ echo "hello from e2e" > /tmp/e2e-test.txt
 ```sh
 # TS-701 — storage overview
 dw $FILES/meta | jq .
-# {"root":"/home/operator/.datawatch/files","peer_count":0,"discussion_count":0,"disk_bytes":0}
+# {"root":"/home/<user>/.datawatch/files","peer_count":0,"discussion_count":0,"disk_bytes":0}
 
 # TS-702 — upload a file
 curl -sk \

@@ -48,7 +48,7 @@ func TestCreatePRD_EmptyProjectDir_AllowedWhenWorktreeModeConfigured(t *testing.
 	s := &Server{
 		autonomousMgr: spy,
 		cfg: &config.Config{
-			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/op/myrepo"},
+			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/<user>/myrepo"},
 		},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds", strings.NewReader(`{"spec":"do something"}`))
@@ -71,7 +71,7 @@ func TestCreatePRD_EmptyProjectDir_ClusterProfileAloneStillRejected(t *testing.T
 	s := &Server{
 		autonomousMgr: spy,
 		cfg: &config.Config{
-			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/op/myrepo"},
+			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/<user>/myrepo"},
 		},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds", strings.NewReader(`{"spec":"do something","cluster_profile":"k8s-default"}`))
@@ -91,7 +91,7 @@ func TestCreatePRD_ExplicitProjectDir_UnaffectedByWorktreeConfig(t *testing.T) {
 	s := &Server{
 		autonomousMgr: spy,
 		cfg: &config.Config{
-			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/op/myrepo"},
+			Autonomous: config.AutonomousConfig{WorktreeBaseRepo: "/home/<user>/myrepo"},
 		},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds", strings.NewReader(`{"spec":"do something","project_dir":"/explicit/dir"}`))

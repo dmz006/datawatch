@@ -6,7 +6,7 @@
 
 ## Setup (all outside the repo)
 
-- Scratchpad: `/home/user/workspace/.smoke-3ebd/` — driver script, built binary, config, throwaway target repo (`run/projects/throwaway`, git init'd with README + .gitignore), planner HTTP stub (python3), and binary stand-ins for the tmux client and the worker/verifier CLI (`aider`).
+- Scratchpad: `/home/<user>/workspace/.smoke-3ebd/` — driver script, built binary, config, throwaway target repo (`run/projects/throwaway`, git init'd with README + .gitignore), planner HTTP stub (python3), and binary stand-ins for the tmux client and the worker/verifier CLI (`aider`).
 - Config: from `testdata/datawatch.yaml`, rewritten to free local ports and scratchpad paths; `autonomous.max_concurrent_tasks: 2`, `capacity_enabled: false`, `worktree_base_repo: <scratch>/run/projects/throwaway`, `worktree_dir: <scratch>/run/wt`. No operator-supplied `project_dir` on the PRD (that is what switches the PRD into worktree mode: daemon created `run/wt/<prdid>` for branch `automaton/<prdid>` per PRD, verified via API after decompose: `{"git":{"branch":"automaton/d4540001"},"project_dir":"…/run/wt/d4540001"}`).
 - Task graph (both cases): two read-only tasks with no dependencies, `R1 sleep=25s`, `R2 sleep=35s`; two writing tasks `W1 sleep=8s` (depends on R1+R2), `W2 sleep=8s` (depends on W1). `concurrent_tasks: 2` throughout.
 - Case 1 (`per_task=on`): `autonomous.parallel.worktree_per_task = true` (default). PRD `d4540001`.

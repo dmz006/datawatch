@@ -67,12 +67,12 @@ func TestAllowedProjectRootsNoHomeAddsNoDefaultWorkspace(t *testing.T) {
 }
 
 func TestAllowedProjectRootsOrderAndHomeExpansion(t *testing.T) {
-	t.Setenv("HOME", "/home/op")
+	t.Setenv("HOME", "/home/<user>")
 	c := DefaultConfig()
 	c.Autonomous.WorktreeDir = "~/wt"
 	c.Session.WorkspaceRoot = " /workspace "
 	c.Server.AllowedProjectRoots = []string{"~/projects", "", "/srv/x"}
-	want := "/home/op/wt,/workspace,/home/op/projects,/srv/x"
+	want := "/home/<user>/wt,/workspace,/home/<user>/projects,/srv/x"
 	if got := strings.Join(c.AllowedProjectRoots(), ","); got != want {
 		t.Fatalf("roots = %s, want %s", got, want)
 	}
@@ -90,7 +90,7 @@ func TestAllowedProjectRootsAlwaysEnforcedRegardlessOfToken(t *testing.T) {
 }
 
 func TestValidateAllowedProjectRoots(t *testing.T) {
-	t.Setenv("HOME", "/home/op")
+	t.Setenv("HOME", "/home/<user>")
 	ok := [][]string{nil, {}, {"/srv/a"}, {"~/work", "/srv/b/../c"}}
 	for _, roots := range ok {
 		if err := ValidateAllowedProjectRoots(roots); err != nil {
@@ -113,8 +113,8 @@ func TestValidateAllowedProjectRoots(t *testing.T) {
 }
 
 func TestDefaultPRDWorktreeDirMatchesDocumentedPath(t *testing.T) {
-	t.Setenv("HOME", "/home/op")
-	if got, want := DefaultPRDWorktreeDir(), filepath.Join("/home/op", ".datawatch", "prd-worktrees"); got != want {
+	t.Setenv("HOME", "/home/<user>")
+	if got, want := DefaultPRDWorktreeDir(), filepath.Join("/home/<user>", ".datawatch", "prd-worktrees"); got != want {
 		t.Fatalf("got %s want %s", got, want)
 	}
 }

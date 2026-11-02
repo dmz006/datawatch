@@ -132,14 +132,14 @@ func TestApplyConfigPatch_BL406ProjectRulesFields(t *testing.T) {
 func TestApplyConfigPatch_BL407WorktreeFields(t *testing.T) {
 	cfg := &config.Config{}
 
-	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_base_repo": "/home/op/myrepo"})
-	if cfg.Autonomous.WorktreeBaseRepo != "/home/op/myrepo" {
-		t.Fatalf("worktree_base_repo: got %q, want /home/op/myrepo", cfg.Autonomous.WorktreeBaseRepo)
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_base_repo": "/home/<user>/myrepo"})
+	if cfg.Autonomous.WorktreeBaseRepo != "/home/<user>/myrepo" {
+		t.Fatalf("worktree_base_repo: got %q, want /home/<user>/myrepo", cfg.Autonomous.WorktreeBaseRepo)
 	}
 
-	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_dir": "/home/op/.datawatch/wt"})
-	if cfg.Autonomous.WorktreeDir != "/home/op/.datawatch/wt" {
-		t.Fatalf("worktree_dir: got %q, want /home/op/.datawatch/wt", cfg.Autonomous.WorktreeDir)
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_dir": "/home/<user>/.datawatch/wt"})
+	if cfg.Autonomous.WorktreeDir != "/home/<user>/.datawatch/wt" {
+		t.Fatalf("worktree_dir: got %q, want /home/<user>/.datawatch/wt", cfg.Autonomous.WorktreeDir)
 	}
 }
 
