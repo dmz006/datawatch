@@ -632,6 +632,9 @@ function _loadUiConfig() {
     state._recentMinutes = cfg.server?.recent_session_minutes || 5;
     state._maxSessions = cfg.session?.max_sessions || 10;
     state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
+    // 2026-11-02 dashboard card audit: default true; missing key behaves
+    // as if the operator never touched the toggle (hide the empty cards).
+    state._dashHideInactiveCards = cfg.dashboard?.hide_inactive_cards !== false;
   }).catch(() => {});
 }
 
@@ -9069,6 +9072,13 @@ const DOCS_LINKS_BY_KEY = {
   memscopes: 'memory.md',
   memmaint: 'memory.md#advanced-features',
   schedules: DOCS_DEFINITIONS + '#recurring-named-schedules',
+  // Dashboard feature cards — the related-setting help link shown on the
+  // "feature off" one-line state (2026-11-02 dashboard card audit):
+  dash_card_integration_status: DOCS_DEFINITIONS + '#recurring-named-schedules',
+  dash_card_websearch_usage: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  dash_card_memory_scope: 'memory.md',
+  dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
   audit: DOCS_DEFINITIONS + '#audit-log',
@@ -22344,6 +22354,7 @@ const _dash = {
   _smokeData: null,        // last /api/smoke/progress payload
   _smokeFetching: false,
   _smokePollMs: 2500,      // fast poll during active run
+  _featPumpAt: 0,          // 2026-11-02 dashboard card audit: last pump time
   // BL403 Phase 4 — plugin widget cards
   _pluginWidgets: {},      // 'server|cardId' → {view, fetchedAt, err, inFlight}
   _pluginList: null,       // {server, plugins, fetchedAt, err} from /api/plugins
@@ -37113,6 +37124,11 @@ function _dashLoop(ts) {
     _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
     _dashRenderSmoke();
+    // 2026-11-02 dashboard card audit: keep fetching data for feature cards
+    // that are hidden because their feature is off, so hidden cards surface
+    // the moment their data lands (guardrails come from boards, smoke is
+    // already polled unconditionally, guardrail/scope state is cheap local).
+    _dashPumpFeatureData();
   }
 
   // Node reconcile at ~2fps
@@ -37533,12 +37549,106 @@ const DASH_DEFAULT_LAYOUT = [
   { id: 'sparklines',   cs: 2,  rs: 1 },
   { id: 'gantt',        cs: 12, rs: 1 },
   { id: 'heatmap',      cs: 3,  rs: 1 },
-  { id: 'guardrails',   cs: 3,  rs: 1 },
-  { id: 'memory-scope', cs: 3,  rs: 1 },
-  { id: 'websearch-usage', cs: 3, rs: 1 },
   { id: 'ekg',          cs: 6,  rs: 2 },
-  { id: 'smoke',        cs: 6,  rs: 2 },
 ];
+
+// 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-
+audit.md): the feature-tied subsystem tiles (guardrails, smoke run
+progress, web-search usage, memory-scope) were dropped from the *default*
+layout, matching the Go defaults (internal/server/api_dashboard_cards.go
+DefaultDashCards). They stay available in Edit → Add Card, and
+`dashboard.hide_inactive_cards` (default true) keeps them out of the grid
+and of the Add-Card picker until their feature actually has data on this
+install; with it off they render in a single line saying why they are
+empty, with a link to the related setting's help page.
+const DASH_CARD_FEATURES = {
+  'integration-status': {
+    docsKey: 'dash_card_integration_status',
+    reasonKey: 'dash_card_off_integration_reason',
+    reasonDefault: 'No scheduled jobs on this install — create one to fill this card.',
+    linkKey: 'dash_card_off_integration_link',
+    linkDefault: 'Schedules settings',
+    active() { return Array.isArray(_dash._integResults) && _dash._integResults.length > 0; },
+  },
+  'guardrails': {
+    docsKey: 'dash_card_guardrails',
+    reasonKey: 'dash_card_off_guardrails_reason',
+    reasonDefault: 'No guardrail verdicts yet — nothing to show until a gate runs.',
+    linkKey: 'dash_card_off_guardrails_link',
+    linkDefault: 'Quality gate settings',
+    active() {
+      let n = 0;
+      for (const b of Object.values(_dash._boards || {})) n += ((b.telemetry && b.telemetry.guardrail_verdicts) || []).length;
+      return n > 0;
+    },
+  },
+  'smoke': {
+    docsKey: 'dash_card_smoke',
+    reasonKey: 'dash_card_off_smoke_reason',
+    reasonDefault: 'No smoke runs recorded on this machine.',
+    linkKey: 'dash_card_off_smoke_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return Array.isArray(_dash._smokeEnvelopes) && _dash._smokeEnvelopes.length > 0; },
+  },
+  'memory-scope': {
+    docsKey: 'dash_card_memory_scope',
+    reasonKey: 'dash_card_off_memory_reason',
+    reasonDefault: 'No memory entries on this install yet.',
+    linkKey: 'dash_card_off_memory_link',
+    linkDefault: 'Memory settings',
+    active() {
+      const d = _dash._memStats;
+      if (!d) return false;
+      if ((d.total_entries || 0) > 0) return true;
+      return Object.keys(d.scopes || {}).length > 0;
+    },
+  },
+  'websearch-usage': {
+    docsKey: 'dash_card_websearch_usage',
+    reasonKey: 'dash_card_off_websearch_reason',
+    reasonDefault: 'Web search is off or no providers are configured.',
+    linkKey: 'dash_card_off_websearch_link',
+    linkDefault: 'Web search settings',
+    active() {
+      const d = _dash._webSearchStats;
+      return !!(d && d.enabled && (((d.summary || {}).providers) || []).length > 0);
+    },
+  },
+};
+
+function _dashCardFeature(id) {
+  return DASH_CARD_FEATURES[id] || null;
+}
+
+// Default true: a missing config key behaves as if the operator never
+// touched the toggle.
+function _dashHideInactive() {
+  return !(state && state._dashHideInactiveCards === false);
+}
+
+// One-line "feature is off" body for a feature card that has no data yet:
+// the reason, plus a link to the related setting's help page (via the
+// DOCS_LINKS_BY_KEY map, the same link the settings view uses).
+function _dashCardOffBody(feat) {
+  const reason = escHtml(t(feat.reasonKey) || feat.reasonDefault);
+  const linkText = escHtml(t(feat.linkKey) || feat.linkDefault);
+  const path = DOCS_LINKS_BY_KEY[feat.docsKey] || '';
+  let out = `<div style="padding:10px 4px;font-size:11px;color:var(--text2);line-height:1.6;">${reason}`;
+  if (path && !(state.showDocsLinks !== undefined && !state.showDocsLinks)) {
+    out += ` &middot; <a href="/diagrams.html#docs/${encodeURIComponent(path)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">↗ ${linkText}</a>`;
+  }
+  out += `</div>`;
+  return out;
+}
+
+// Body for a card definition: a feature card with no data renders the
+// one-line related-setting state instead of an empty render; every other
+// card renders normally.
+function _dashCardBodySafe(def) {
+  const feat = _dashCardFeature(def.id);
+  if (feat && !feat.active()) return _dashCardOffBody(feat);
+  return def.body();
+}
 
 function _dashLoadLayout() {
   if (_dash._layoutLoading) return;
@@ -37607,7 +37717,7 @@ function _dashCardHTML(entry) {
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
     </div>
-    <div class="dboard-card-body">${def.body()}</div>
+    <div class="dboard-card-body">${_dashCardBodySafe(def)}</div>
   </div>`;
 }
 
@@ -37632,11 +37742,30 @@ window._dashCycleRows = function(cardId) {
 function _dashBuildGrid(layout) {
   const grid = document.getElementById('dashCardGrid');
   if (!grid) return;
+  // 2026-11-02 dashboard card audit:
+  //  - dedupe card ids defensively (the server already dedupes stored
+  //    layouts; keeping the first occurrence guards against any duplicate
+  //    that still slips in);
+  //  - `dashboard.hide_inactive_cards` (default true) drops feature cards
+  //    whose subsystem has no data yet; the background pump keeps fetching
+  //    so they reappear here the moment their data arrives (the Add-Card
+  //    picker still offers them — "remains addable").
+  const hideInactive = _dashHideInactive();
+  const seen = new Set();
+  const kept = (layout || []).filter(entry => {
+    if (!entry || entry.id === undefined || entry.id === null) return false;
+    const id = String(entry.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    const feat = _dashCardFeature(id);
+    if (hideInactive && feat && !feat.active()) return false;
+    return true;
+  });
   // Issue #98 — at narrow viewports (<600px), override all cards to full width
   const narrowViewport = window.innerWidth < 600;
   const effectiveLayout = narrowViewport
-    ? (layout || []).map(entry => Object.assign({}, entry, { cs: 12 }))
-    : (layout || []);
+    ? kept.map(entry => Object.assign({}, entry, { cs: 12 }))
+    : kept;
   grid.innerHTML = effectiveLayout.map(_dashCardHTML).join('');
   _dashUpdateStatBar();
   _dashRenderTree();
@@ -37683,11 +37812,20 @@ window._dashShowAddPanel = function() {
   const existing = (_dash._layout || []).map(c => c.id);
   let html = `<div class="dboard-add-panel" id="dashAddPanel">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-      <span style="font-weight:700;font-size:13px;color:var(--text);">Add Card</span>
+      <span style="font-weight:700;font-size:13px;color:var(--text);">Add Card 3c/span>
       <button onclick="document.getElementById('dashAddPanel').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;line-height:1;">×</button>
     </div>
     <div class="dboard-add-grid">`;
+  // 2026-11-02 dashboard card audit: with `dashboard.hide_inactive_cards`
+  // on (default) the picker omits feature cards whose subsystem has no
+  // data yet; they stay in the definitions, so "remains addable" holds
+  // the moment the feature has data.
+  const hideInactive = _dashHideInactive();
   for (const def of DASH_CARD_DEFS) {
+    if (hideInactive) {
+      const feat = _dashCardFeature(def.id);
+      if (feat && !feat.active()) continue;
+    }
     const used = existing.includes(def.id);
     html += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${def.id}');document.getElementById('dashAddPanel').remove();"`}>
       <span>${def.icon}</span><span>${escHtml(_dashDefLabel(def))}</span>
