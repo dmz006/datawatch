@@ -148,8 +148,8 @@ export const makeEnvelope = (kind, id, label, overrides = {}) => ({
 
 export const makeCrossHostEnvelope = (id, label, peerName, overrides = {}) => ({
   id, kind: 'session', label,
-  listen_addrs: [{ ip: '10.0.0.5', port: 49152 }],
-  outbound_edges: [{ target_ip: '10.0.1.20', target_port: 8080 }],
+  listen_addrs: [{ ip: '192.0.2.5', port: 49152 }],
+  outbound_edges: [{ target_ip: '192.0.2.220', target_port: 8080 }],
   callers: [
     { caller: `session:2001:${peerName}-c1`, caller_kind: 'session', conns: 1 },
     { caller: 'local:9000', caller_kind: 'backend', conns: 2 },

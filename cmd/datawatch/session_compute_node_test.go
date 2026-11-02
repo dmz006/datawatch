@@ -14,16 +14,16 @@ func TestSessionComputeNodePrefersExplicitRefOverEndpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, n := range []*compute.Node{
-		{Name: "gpu-a", Kind: compute.KindOllama, Address: "http://10.0.0.1:11434"},
-		{Name: "gpu-b", Kind: compute.KindOllama, Address: "http://10.0.0.2:11434"},
+		{Name: "gpu-a", Kind: compute.KindOllama, Address: "http://192.0.2.1:11434"},
+		{Name: "gpu-b", Kind: compute.KindOllama, Address: "http://192.0.2.2:11434"},
 	} {
 		if err := reg.Add(n); err != nil {
 			t.Fatal(err)
 		}
 	}
 	sessions := map[string]*session.Session{
-		"ref":  {ComputeNodeRef: "gpu-a", NodeAddress: "http://10.0.0.2:11434"},
-		"addr": {NodeAddress: "HTTP://10.0.0.2:11434/"},
+		"ref":  {ComputeNodeRef: "gpu-a", NodeAddress: "http://192.0.2.2:11434"},
+		"addr": {NodeAddress: "HTTP://192.0.2.2:11434/"},
 		"none": {},
 	}
 	fn := sessionComputeNode(func(id string) (*session.Session, bool) { s, ok := sessions[id]; return s, ok }, func() *compute.Registry { return reg })

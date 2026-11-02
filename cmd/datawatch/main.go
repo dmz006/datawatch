@@ -10192,7 +10192,7 @@ func coalesceHost(h string) string {
 // v5.26.17 — operator-reported: "loopback may not exist if someone
 // changes the default interfaces, validate". Hardcoding 127.0.0.1
 // breaks when the daemon binds to a specific non-loopback interface
-// (cfg.Server.Host = "192.168.1.5") — the daemon listens at 192.x
+// (cfg.Server.Host = "192.0.2.35") — the daemon listens at 192.x
 // but DOESN'T accept on 127.0.0.1, so loopback POSTs fail.
 //
 // Resolution:
@@ -15387,7 +15387,7 @@ func runSetupTwilio(_ *cobra.Command, _ []string) error {
 	// verify X-Twilio-Signature; without it the webhook accepts any POST
 	// unsigned (see twilio.New's own warning if left blank).
 	cfg.Twilio.WebhookPublicURL = cliPrompt(reader,
-		"Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.ts.net/sms — blank disables signature verification)",
+		"Public webhook URL (exact URL you'll set in Twilio console, e.g. https://host.example.net/sms — blank disables signature verification)",
 		cfg.Twilio.WebhookPublicURL)
 	cfg.Twilio.Enabled = true
 

@@ -57,8 +57,8 @@ func TestRedirectToTLSHandler_LoopbackChannelBypass(t *testing.T) {
 		// Negative cases — non-allowlisted paths still redirect.
 		{"loopback + /api/stats redirects (not in allowlist)", "127.0.0.1:51234", "/api/stats", http.StatusTemporaryRedirect, false},
 		{"loopback + /api/asksomething redirects (exact-match deny overshoot)", "127.0.0.1:51234", "/api/asksomething", http.StatusTemporaryRedirect, false},
-		{"non-loopback + channel path redirects (the safety case)", "10.0.0.42:51234", "/api/channel/ready", http.StatusTemporaryRedirect, false},
-		{"non-loopback + autonomous path redirects", "10.0.0.42:51234", "/api/autonomous/prds", http.StatusTemporaryRedirect, false},
+		{"non-loopback + channel path redirects (the safety case)", "192.0.2.142:51234", "/api/channel/ready", http.StatusTemporaryRedirect, false},
+		{"non-loopback + autonomous path redirects", "192.0.2.142:51234", "/api/autonomous/prds", http.StatusTemporaryRedirect, false},
 	}
 
 	for _, tc := range cases {

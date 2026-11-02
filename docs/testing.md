@@ -587,9 +587,9 @@ daemons already on the host), and it reported nothing new.
 | Field | Value |
 |-------|-------|
 | Version | v0.18.0 |
-| Steps | Set `server.host` to `100.64.0.7,127.0.0.1` via API, restart. Check `ss -tlnp`. |
+| Steps | Set `server.host` to `198.51.100.7,127.0.0.1` via API, restart. Check `ss -tlnp`. |
 | Expected | Two listeners: tailscale IP and localhost. LAN IP refused. |
-| Result | **PASS** — `ss` shows `100.64.0.7:8080` + `127.0.0.1:8080`. LAN connection refused. |
+| Result | **PASS** — `ss` shows `198.51.100.7:8080` + `127.0.0.1:8080`. LAN connection refused. |
 
 ## 36. Interface Binding — Localhost Forced On
 
@@ -944,7 +944,7 @@ Discovery probe (`K8sDriver.ListLabelled` shape):
   "project_profile": "bl115-test",
   "cluster_profile": "bl115-cluster",
   "branch": "main",
-  "pod_ip": "10.200.2.16",
+  "pod_ip": "192.0.2.216",
   "phase": "Succeeded"
 }
 ```

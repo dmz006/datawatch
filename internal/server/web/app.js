@@ -16420,7 +16420,7 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'mcp.sse_enabled', label: 'SSE enabled (HTTP)', type: 'toggle' },
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
-    { key: 'mcp.public_url', label: 'SSE public URL (reverse proxy)', labelKey: 'settings_mcp_public_url', type: 'text', placeholder: 'https://host.example.ts.net:8081' },
+    { key: 'mcp.public_url', label: 'SSE public URL (reverse proxy)', labelKey: 'settings_mcp_public_url', type: 'text', placeholder: 'https://proxy-host.example.net:8081' },
     { key: 'mcp.tls_enabled', label: 'TLS enabled', type: 'toggle' },
     { key: 'mcp.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },

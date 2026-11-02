@@ -14,8 +14,8 @@ func TestIsLoopbackRemote(t *testing.T) {
 		{"127.0.0.1", true},  // no port (some test paths)
 		{"[::1]:8080", true}, // IPv6 loopback with port
 		{"::1", true},
-		{"10.0.0.42:8080", false},
-		{"192.168.1.5:443", false},
+		{"192.0.2.142:8080", false},
+		{"192.0.2.35:443", false},
 		{"[2001:db8::1]:443", false},
 		{"", false},
 		{"garbage", false},

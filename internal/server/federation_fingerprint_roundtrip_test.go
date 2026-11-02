@@ -311,10 +311,10 @@ func TestFingerprintRoundTripPendingThenConfirm(t *testing.T) {
 	soloA := "GPU-0aa11bb2-2222-3333-4444-555566667777"
 	soloB := "GPU-9dd88ee7-7777-6666-5555-444433332222"
 	const (
-		addrSharedA = "http://10.20.30.40:8000"
-		addrSharedB = "http://10.20.31.40:8000"
-		addrSoloA   = "http://10.20.30.42:8000"
-		addrSoloB   = "http://10.20.31.42:8000"
+		addrSharedA = "http://198.51.100.40:8000"
+		addrSharedB = "http://198.51.100.42:8000"
+		addrSoloA   = "http://198.51.100.41:8000"
+		addrSoloB   = "http://198.51.100.43:8000"
 	)
 	pairTok := "fp-rt1-pair-ab-S3cr3t"
 
@@ -426,8 +426,8 @@ func TestFingerprintRoundTripBillingGroup(t *testing.T) {
 	const (
 		uuidA = "GPU-b111aa22-aaaa-bbbb-cccc-dddd00000001"
 		uuidB = "GPU-b111aa22-aaaa-bbbb-cccc-dddd00000002"
-		addrA = "http://192.168.7.11:11434"
-		addrB = "http://192.168.7.12:11434"
+		addrA = "http://198.51.100.61:11434"
+		addrB = "http://198.51.100.62:11434"
 	)
 	const billingLabel = "team-x-billing"
 	pairTok := "fp-rt2-pair-ab-S3cr3t"
@@ -483,8 +483,8 @@ func TestFingerprintRoundTripBillingGroup(t *testing.T) {
 func TestFingerprintRoundTripOptOutDefault(t *testing.T) {
 	const (
 		sharedUUID = "GPU-cc00dd11-eeee-ffff-0000-111122223333"
-		addrA      = "http://172.18.0.21:8000"
-		addrB      = "http://172.18.0.22:8000"
+		addrA      = "http://192.0.3.261:8000"
+		addrB      = "http://192.0.3.262:8000"
 	)
 	pairTok := "fp-rt3-pair-ab-S3cr3t"
 
@@ -542,8 +542,8 @@ func TestFingerprintRoundTripOptOutDefault(t *testing.T) {
 func TestFingerprintRoundTripPeerDownFailsOpen(t *testing.T) {
 	const (
 		sharedUUID = "GPU-ee22ff33-9999-8888-7777-666655554444"
-		addrA      = "http://10.9.9.21:8000"
-		addrB      = "http://10.9.9.22:8000"
+		addrA      = "http://192.0.2.221:8000"
+		addrB      = "http://192.0.2.222:8000"
 	)
 	pairTok := "fp-rt4-pair-ab-S3cr3t"
 

@@ -136,7 +136,7 @@ for the full migration table and verification steps.
 
 ```sh
 # Register the Compute Node first (if not already present).
-datawatch compute add gpu-box --url http://192.168.1.50:11434
+datawatch compute add gpu-box --url http://192.0.2.36:11434
 
 # Add the LLM, pointing at that node.
 datawatch llm add my-ollama \

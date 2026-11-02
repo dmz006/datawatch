@@ -73,7 +73,7 @@ func triageSystemAlert(t *testing.T) *alerts.Alert {
 		AutomationID: "auto-7", AutomationName: "Nightly pipeline",
 		PRDID: "prd-77", PRDTitle: "Add paging to the ingestion path", Status: "failed",
 		TaskID: "task-3", TaskTitle: "Wire the page broker into the dispatcher",
-		Error: "broker.Connect timed out after 30s (dial tcp 10.0.4.17:5672: i/o timeout)",
+		Error: "broker.Connect timed out after 30s (dial tcp 192.0.2.217:5672: i/o timeout)",
 		RetryBudget: autonomous.TriageRetryBudget{
 			Infra:        autonomous.TriageRetryCategory{Limit: 2, Used: 1, Left: 1},
 			Content:      autonomous.TriageRetryCategory{Limit: 1, Used: 0, Left: 1},

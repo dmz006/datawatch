@@ -237,7 +237,7 @@ curl -sk -X POST \
   -H "Content-Type: application/json" \
   -d '{
     "name": "nas-builds",
-    "url": "https://192.168.1.50:8443",
+    "url": "https://192.0.2.36:8443",
     "token": "nas-secret-token",
     "capabilities": "comms-channel-agent",
     "channel_identity": ["telegram:group:-1009876543210"]

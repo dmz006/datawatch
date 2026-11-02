@@ -96,7 +96,7 @@ func TestExportItemsCarryNoRawValues(t *testing.T) {
 	exp := Exporter{
 		Nodes: &IdentityResolver{
 			Nodes: func() []compute.Node {
-				return []compute.Node{{Name: "alpha", Kind: compute.KindLocal, Address: "http://10.0.0.5:11434"}}
+				return []compute.Node{{Name: "alpha", Kind: compute.KindLocal, Address: "http://192.0.2.5:11434"}}
 			},
 			Local: func() map[string]any {
 				return map[string]any{"gpu_uuids": []string{"uuid-1", "uuid-2"}}
@@ -111,7 +111,7 @@ func TestExportItemsCarryNoRawValues(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	bodyStr := string(body)
-	for _, raw := range []string{"uuid-1,uuid-2", "uuid-1", "10.0.0.5", "shared-plan-a", "sk-raw-credential"} {
+	for _, raw := range []string{"uuid-1,uuid-2", "uuid-1", "192.0.2.5", "shared-plan-a", "sk-raw-credential"} {
 		if strings.Contains(bodyStr, raw) {
 			t.Errorf("exported JSON must not contain the raw value %q: %s", raw, bodyStr)
 		}

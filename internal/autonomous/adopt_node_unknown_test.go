@@ -25,7 +25,7 @@ func TestAdoptCapacityFlagsUnknownNodeOnMultiNodeEntry(t *testing.T) {
 	m.SetEntryNodes(func(string, string) int { return 2 })
 	m.SetSessionEndpoint(func(id string) string {
 		if id == "live-sess" {
-			return "http://10.9.9.9:11434"
+			return "http://192.0.2.199:11434"
 		}
 		return ""
 	})
@@ -41,7 +41,7 @@ func TestAdoptCapacityFlagsUnknownNodeOnMultiNodeEntry(t *testing.T) {
 		t.Fatalf("lease = %+v, want no node and node_unknown", ls)
 	}
 	out := buf.String()
-	for _, want := range []string{task.ID, "live-sess", "http://10.9.9.9:11434"} {
+	for _, want := range []string{task.ID, "live-sess", "http://192.0.2.199:11434"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("log %q should name %q", out, want)
 		}

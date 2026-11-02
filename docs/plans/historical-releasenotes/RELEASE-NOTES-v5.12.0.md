@@ -16,16 +16,16 @@ a separate cycle (was backed out cleanly in v5.6.0; will resume with
 Before v5.12.0:
 
 ```
-host A: session opencode-x1y2 ──[outbound TCP to 10.0.0.7:11434]──> ???
-host B: backend ollama on 10.0.0.7:11434                           Caller=""
+host A: session opencode-x1y2 ──[outbound TCP to 192.0.2.7:11434]──> ???
+host B: backend ollama on 192.0.2.7:11434                           Caller=""
 ```
 
 After v5.12.0:
 
 ```
-host A: session opencode-x1y2 ──[outbound TCP to 10.0.0.7:11434]──┐
+host A: session opencode-x1y2 ──[outbound TCP to 192.0.2.7:11434]──┐
                                                                    │
-host B: backend ollama on 10.0.0.7:11434                           ├─> federation
+host B: backend ollama on 192.0.2.7:11434                           ├─> federation
         Callers: [{caller: "workstation-2:session:opencode-x1y2",  │   aggregator joins
                    conns: 3, kind: session}]                       ┘   listen ↔ outbound
 ```

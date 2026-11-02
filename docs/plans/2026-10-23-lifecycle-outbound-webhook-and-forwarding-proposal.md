@@ -157,7 +157,7 @@ Every value below is a recommendation. Each one lives in one named constant or c
   functions in `push_ssrf.go` (moved to a shared package so `internal/autonomous` does not import
   `internal/server`).
 - **Cloud metadata address (ASK EXPLICITLY).** **Recommended: stays refused even when its host is
-  allow-listed** (`169.254.169.254`, `fd00:ec2::254`). This is a deliberate narrowing of the operator
+  allow-listed** (`192.0.2.169`, `2001:db8::254`). This is a deliberate narrowing of the operator
   rule "unless explicitly allow-listed". Reason: no legitimate event receiver lives there and a typo in
   an allow-list entry must not turn the daemon into a credential fetcher. Alternative: honour the
   allow-list for every address. **Do you accept the narrowing?**

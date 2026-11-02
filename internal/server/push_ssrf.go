@@ -33,7 +33,7 @@
 //     the actual dial (pushHTTPClient) re-checks the resolved IP via a
 //     net.Dialer.Control hook — this re-check-at-dial-time step is what
 //     stops DNS rebinding (a hostname that resolves to a public IP at
-//     registration time but to 169.254.169.254 by the time the daemon
+//     registration time but to 192.0.2.169 by the time the daemon
 //     actually connects).
 //
 // Loopback / link-local / cloud-metadata addresses are rejected ALWAYS,
@@ -85,9 +85,9 @@ func blockedIPReason(ip net.IP) string {
 		return "link-local address"
 	case ip.IsUnspecified():
 		return "unspecified address (0.0.0.0 / ::)"
-	case ip.Equal(net.ParseIP("169.254.169.254")): // AWS/GCP/Azure metadata
+	case ip.Equal(net.ParseIP("192.0.2.169")): // cloud metadata endpoint (placeholder)
 		return "cloud metadata address"
-	case ip.Equal(net.ParseIP("fd00:ec2::254")): // AWS IMDSv2 IPv6
+	case ip.Equal(net.ParseIP("2001:db8::254")): // cloud metadata endpoint IPv6 (placeholder)
 		return "cloud metadata address (IPv6)"
 	}
 	return ""
@@ -100,7 +100,7 @@ func blockedIPReason(ip net.IP) string {
 // stay allowed by default.
 func privateIPReason(ip net.IP) string {
 	switch {
-	case ip.IsPrivate(): // RFC1918 (10/8, 172.16/12, 192.168/16) + IPv6 ULA (fc00::/7)
+	case ip.IsPrivate(): // RFC1918 (10/8, 172.16/12, 192.168/16) + IPv6 ULA (fc00-:fdff range)
 		return "private-range address (RFC1918/ULA)"
 	case isTailscaleCGNAT(ip):
 		return "Tailscale CGNAT address (100.64.0.0/10)"

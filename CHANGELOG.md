@@ -10285,7 +10285,7 @@ Downstream-Review Rule.
 ### Fixed
 
 - **SRI version-pin timebomb.** `index.html` / `diagrams.html` / `api-docs.html` were loading CDN scripts with semver-range tags (`mermaid@10`, `marked@12`, `swagger-ui-dist@5`) alongside fixed sha384 integrity hashes. The CDN resolves the range to whatever is "latest in major"; the next CDN rotation would silently 404 the script with an SRI mismatch and the Diagrams + API Docs pages would render blank. Pinned to the currently-resolved exact versions (`mermaid@10.9.6`, `marked@12.0.2`, `swagger-ui-dist@5.32.6`); hashes match unchanged. `qrcodejs/1.0.0` was already exact.
-- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `10.0.0.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
+- **RFC 5737 private-IP sweep — finished what v8.8.4 started.** `docs/howto/federation-cbac.md` retained `192.0.2.2` in three places (curl example, comm-channel example, YAML config sample) after v8.8.4 replaced the same address in `app.js`. Since the docs are served by the embedded docs viewer, ZAP would re-flag the same alert 2 on the docs path. Replaced with `198.51.100.2` (RFC 5737 documentation range); `make sync-docs` mirrors to the embedded copy.
 
 ---
 
@@ -10377,7 +10377,7 @@ Downstream-Review Rule.
 - **Cross-Origin-Embedder-Policy added** — `COEP: unsafe-none` on all responses. Resolves ZAP alert 90004 (COEP Missing).
 - **Cross-Origin-Resource-Policy added** — `CORP: same-origin` on all responses. Resolves ZAP alert 90004 (CORP Missing).
 - **Permissions-Policy added** — Restricts camera, microphone (self-only for Whisper voice), geolocation, payment, USB, motion sensors. Resolves ZAP alert 10063.
-- **Private IP Disclosure fixed** — Federation peer URL example changed from `10.0.0.2` (RFC 1918) to `198.51.100.2` (RFC 5737 documentation range). Resolves ZAP alert 2.
+- **Private IP Disclosure fixed** — Federation peer URL example changed from `192.0.2.2` (RFC 1918) to `198.51.100.2` (RFC 5737 documentation range). Resolves ZAP alert 2.
 - **Suspicious comments removed** — `// bug from v6.11.13` → `// workaround from v6.11.13`; `// Debug panel` → `// Diagnostic panel` in `app.js`. Resolves ZAP alert 10027.
 
 ---
@@ -17368,7 +17368,7 @@ Patch — loopback URL respects bind config + startup health probe.
 - **127.0.0.1 hardcoded everywhere**, breaking when the daemon binds
   to a specific non-loopback interface (operator-reported: "Loopback
   may not exist if someone changes the default interfaces, validate"
-  — when `cfg.Server.Host = 192.168.1.5`, the daemon listens at
+  — when `cfg.Server.Host = 192.0.2.35`, the daemon listens at
   192.x and DOESN'T accept on 127.0.0.1, so all 14 internal loopback
   HTTP calls — autonomous decompose, voice transcribe, channel
   bridge, orchestrator guardrails, etc. — silently fail).

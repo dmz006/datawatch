@@ -313,9 +313,9 @@ func TestWebhookSubscriptionCreateValidation(t *testing.T) {
 		{
 			name: "cloud metadata address refused even when listed",
 			mutate: func(s *Subscription) {
-				s.Sink.Target = "https://169.254.169.254/latest"
+				s.Sink.Target = "https://192.0.2.169/latest"
 			},
-			set:     func(s *WebhookSettings) { s.AllowHosts = []string{"169.254.169.254"} },
+			set:     func(s *WebhookSettings) { s.AllowHosts = []string{"192.0.2.169"} },
 			wantErr: "webhook target",
 		},
 		{

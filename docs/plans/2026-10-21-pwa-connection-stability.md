@@ -12,7 +12,7 @@ Sources: `internal/server/web/app.js`, `internal/server/web/sw.js`, `internal/se
 - There is no connection ID, so connect/disconnect pairing is by order only.
 - Close codes could not be recorded from this data. The Go read loop breaks on any `ReadMessage` error without logging it.
 
-**Data obtained.** 300 events of each kind, covering 2026-10-20 17:22 to 2026-10-21 14:52 (local time, about 21.5 h). Restricted to the overlap of both windows, that is 595 events. 594 of the 600 events came from `100.64.0.1` (Tailscale), a single Android Chrome user agent. One `ws_disconnect` was from `127.0.0.1`, and the 100.x filter dropped it.
+**Data obtained.** 300 events of each kind, covering 2026-10-20 17:22 to 2026-10-21 14:52 (local time, about 21.5 h). Restricted to the overlap of both windows, that is 595 events. 594 of the 600 events came from `198.51.100.1` (Tailscale), a single Android Chrome user agent. One `ws_disconnect` was from `127.0.0.1`, and the 100.x filter dropped it.
 - Concurrency reached up to 6 simultaneous sockets from that IP (several tabs or PWA instances, or leaked sockets). Pairing is therefore approximate: connects and disconnects were matched first-in-first-out.
 - Both queries hit the `limit=300` cap. Older history exists but was not examined.
 

@@ -67,8 +67,8 @@ func TestTailscaleStatus_OK(t *testing.T) {
 			Backend:   "headscale",
 			NodeCount: 2,
 			Nodes: []tailscale.NodeInfo{
-				{ID: "1", Name: "agent-01", IP: "100.64.0.1", Online: true, Tags: []string{"tag:dw-agent"}},
-				{ID: "2", Name: "agent-02", IP: "100.64.0.2", Online: false},
+				{ID: "1", Name: "agent-01", IP: "198.51.100.1", Online: true, Tags: []string{"tag:dw-agent"}},
+				{ID: "2", Name: "agent-02", IP: "198.51.100.2", Online: false},
 			},
 		},
 	}
@@ -104,7 +104,7 @@ func TestTailscaleStatus_MethodNotAllowed(t *testing.T) {
 func TestTailscaleNodes_OK(t *testing.T) {
 	mock := &mockTailscaleClient{
 		nodes: []tailscale.NodeInfo{
-			{ID: "n1", Name: "node-a", IP: "100.64.0.10", Online: true},
+			{ID: "n1", Name: "node-a", IP: "198.51.100.10", Online: true},
 		},
 	}
 	s := newTailscaleTestServer(mock)

@@ -21,7 +21,7 @@ Pre-v5.26.17 the daemon hardcoded `http://127.0.0.1:<port>` for ~14 internal HTT
 - Config CLI commands (subprocess)
 - Stats / alerts CLI commands
 
-If the daemon binds to a specific non-loopback IP (e.g. `cfg.Server.Host = "192.168.1.5"`), the listener accepts at `192.168.1.5:8080` but **NOT** at `127.0.0.1:8080`. All loopback POSTs return `connection refused`. The bug was invisible because the default bind is `0.0.0.0` — operators with non-default bind configs hit silent failure across autonomous + orchestrator + voice features.
+If the daemon binds to a specific non-loopback IP (e.g. `cfg.Server.Host = "192.0.2.35"`), the listener accepts at `192.0.2.35:8080` but **NOT** at `127.0.0.1:8080`. All loopback POSTs return `connection refused`. The bug was invisible because the default bind is `0.0.0.0` — operators with non-default bind configs hit silent failure across autonomous + orchestrator + voice features.
 
 v5.26.17 introduces `loopbackBaseURL(cfg)` that returns the right base URL given the bind config:
 
@@ -30,7 +30,7 @@ v5.26.17 introduces `loopbackBaseURL(cfg)` that returns the right base URL given
 | `""` (default) | `http://127.0.0.1:port` |
 | `"0.0.0.0"` | `http://127.0.0.1:port` |
 | `"::"` (IPv6 all) | `http://[::1]:port` |
-| `"192.168.1.5"` | `http://192.168.1.5:port` |
+| `"192.0.2.35"` | `http://192.0.2.35:port` |
 | `"fe80::1"` (IPv6 specific) | `http://[fe80::1]:port` |
 | `nil cfg` | `http://127.0.0.1:8080` |
 
@@ -50,7 +50,7 @@ The remaining 8 hardcoded sites (CLI subprocess + ad-hoc helpers) are lower prio
 On failure (bind broken, firewall blocking 127.0.0.1, etc.):
 
 ```
-[hostname] WARNING: loopback unreachable at http://192.168.1.5:8080: dial tcp 192.168.1.5:8080: connect: connection refused
+[hostname] WARNING: loopback unreachable at http://192.0.2.35:8080: dial tcp 192.0.2.35:8080: connect: connection refused
 [hostname] WARNING: autonomous decompose, voice transcribe, channel bridge, and orchestrator guardrails will fail.
 [hostname] WARNING: set server.host = 0.0.0.0 (binds all interfaces) or fix the bind so loopback works.
 ```

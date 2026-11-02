@@ -811,17 +811,17 @@ New-NetFirewallRule -DisplayName "Ollama" -Direction Inbound -LocalPort 11434 -P
 ```bash
 # Find your Windows host IP from WSL
 ip route show default | awk '{print $3}'
-# Example output: 172.29.0.1
+# Example output: 192.0.2.291
 ```
 
 ```bash
 # Add to .env in Quorum
-OLLAMA_BASE_URL=http://172.29.0.1:11434  # Use YOUR gateway IP
+OLLAMA_BASE_URL=http://192.0.2.291:11434  # Use YOUR gateway IP
 ```
 
 **Verify it works:**
 ```bash
-curl http://172.29.0.1:11434/api/tags  # Should return JSON with your models
+curl http://192.0.2.291:11434/api/tags  # Should return JSON with your models
 ```
 
 **Note:** The gateway IP is stable within WSL. Do NOT use the IP from `/etc/resolv.conf` — it often doesn't work.

@@ -7,13 +7,13 @@ sequenceDiagram
     actor User as User (Signal)
     participant Group as Signal Group
 
-    box hal9000 (203.0.113.10 / 100.100.1.10)
+    box hal9000 (203.0.113.10 / 198.51.100.110)
         participant CLI_H as signal-cli
         participant Agent_H as datawatch
         participant Store_H as sessions.json (hal9000)
     end
 
-    box nas (203.0.113.20 / 100.100.1.20)
+    box nas (203.0.113.20 / 198.51.100.120)
         participant CLI_N as signal-cli
         participant Agent_N as datawatch
         participant Store_N as sessions.json (nas)

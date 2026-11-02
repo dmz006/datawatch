@@ -95,8 +95,8 @@ func TestValidateWebhookAllowHostAccepts(t *testing.T) {
 		"hooks.example.net",
 		"hooks.example.net:8443",
 		"HOOKS.example.net",
-		"10.0.0.5",
-		"10.0.0.5:9000",
+		"192.0.2.5",
+		"192.0.2.5:9000",
 		"[2001:db8::1]:443",
 		"  hooks.example.net  ",
 	} {
