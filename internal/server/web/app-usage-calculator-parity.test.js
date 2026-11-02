@@ -45,7 +45,9 @@ function view(sandbox, variant, body) {
 
 // textOf strips the markup from a fragment, decodes the entities escHtml writes and collapses white space.
 function textOf(fragment) {
-  return fragment.replace(/<[^>]+>/g, ' ')
+  let out = fragment;
+  for (let prev; out !== prev; prev = out) out = out.replace(/<[^>]+>/g, ' ');
+  return out
     .replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ').trim();
 }

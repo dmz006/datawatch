@@ -38,7 +38,7 @@ function rowsOf(html) {
     lanes: Number(m[1]),
     marks: m[2],
     cells: [...m[3].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
-      .map(c => c[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()),
+      .map(c => { let cell = c[1]; for (let prev; cell !== prev; prev = cell) cell = cell.replace(/<[^>]+>/g, ' '); return cell.replace(/\s+/g, ' ').trim(); }),
   }));
 }
 

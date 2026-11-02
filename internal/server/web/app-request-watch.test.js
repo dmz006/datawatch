@@ -56,8 +56,17 @@ function status(list) {
   return { enabled: true, poll_seconds: 30, no_progress_minutes: 30, observations: list };
 }
 
+function stripAll(s, re) {
+  let prev;
+  do {
+    prev = s;
+    s = s.replace(re, '');
+  } while (s !== prev);
+  return s;
+}
+
 function text(html) {
-  return html.replace(/<[^>]*>/g, '').replace(/&#\d+;|&#x[0-9a-f]+;/gi, '').trim();
+  return stripAll(stripAll(html, /<[^>]*>/g), /&#\d+;|&#x[0-9a-f]+;/gi).trim();
 }
 
 // ── the card ─────────────────────────────────────────────────────────────────

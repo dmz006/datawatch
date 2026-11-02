@@ -162,7 +162,8 @@ test('the Tags menu rows match the rows the Automata facets draw', () => {
   const row = html => html.match(/<label class="tag-multi-row"[\s\S]*?<\/label>/)[0].replace(/'session'|'automata'/g, "'S'");
   const menu = h.sb._tagMultiRowsHTML('session');
   const facets = h.sb._tagFacetsHTML('automata', false);
-  assert.equal(row(menu).replace(/<span class="tag-facet-count">\d+<\/span>/, ''), row(facets).replace(/<span class="tag-facet-count">\d+<\/span>/, ''));
+  const stripCount = (s) => { let out = s; for (let prev; out !== prev; prev = out) out = out.replace(/<span class="tag-facet-count">\d+<\/span>/, ''); return out; };
+  assert.equal(stripCount(row(menu)), stripCount(row(facets)));
   assert.ok(facets.includes('class="tag-facet-count"'), 'facets keep their counts');
 });
 

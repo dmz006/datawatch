@@ -45,7 +45,9 @@ function barsOf(html) {
 
 // textOf strips the markup from a fragment and collapses its white space.
 function textOf(fragment) {
-  return fragment.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  let out = fragment;
+  for (let prev; out !== prev; prev = out) out = out.replace(/<[^>]+>/g, ' ');
+  return out.replace(/\s+/g, ' ').trim();
 }
 
 // dataText reads the text of the element that carries data-<attr>="<value>".
