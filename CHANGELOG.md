@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.65.0 — Peer machine names out of tracked files
+
+### Added
+
+- **Peer machine names are kept out of tracked files, and the check now learns them from the daemon.** `make leak-patterns-init` (`scripts/seed-leak-patterns.sh`) fills your gitignored `.leak-patterns.local` with the names of the federation peers, compute nodes and node pools the local daemon knows, reading them at run time, so the whole-tree leak check catches them as `local` findings without printing the match. Names shorter than five characters and the words in `scripts/leak-patterns.skip` (product vocabulary such as backend names) are skipped and counted, and LLM pool names are never seeded. `scripts/scrub-peer-names.sh` replaces the names in tracked files with neutral role names (dry run by default, `--apply` to write) and refuses a pattern that matches more than 500 lines in the code. The tree was scrubbed with it: the code, tests, how-to pages, plans and the historical plans no longer name any peer machine. The supervisor watch script now reads the pool names it skips from `SUPERVISOR_WATCH_SKIP_NODES` or a gitignored `.supervisor-watch-skip` file instead of carrying them in its source.
+
 ## v9.64.3 — The coordinator Stop waits for its idle loop
 
 ### Fixed

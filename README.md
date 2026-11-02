@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.64.3 (2026-11-02).** Stopping the automation coordinator waits for its idle loop to exit, which fixes a flaky test and a shutdown race. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.65.0 (2026-11-02).** The leak check learns peer machine names from the daemon, a scrub script replaces them, and the tree was scrubbed. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
