@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,6 +105,24 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 		base = defaultBranchOf(baseRepo)
 	}
 
+	// A plain folder (no .git) at the worktree path would make git
+	// worktree add fail; move it aside into the saved-scripts folder.
+	savedDir := savedVerifyScriptsDir(worktreeDir, prd.ID)
+	srcDirs := []string{savedDir}
+	if _, lerr := os.Lstat(path); lerr == nil {
+		if _, gerr := os.Lstat(filepath.Join(path, ".git")); os.IsNotExist(gerr) {
+			if merr := os.MkdirAll(savedDir, 0o755); merr != nil { // #nosec G301
+				return "", "", fmt.Errorf("worktree: mkdir %s: %w", savedDir, merr)
+			}
+			moved := filepath.Join(savedDir, "stray-"+strconv.FormatInt(time.Now().UnixNano(), 10))
+			if rerr := os.Rename(path, moved); rerr != nil {
+				return "", "", fmt.Errorf("worktree: move stray folder %s aside: %w", path, rerr)
+			}
+			log.Printf("[autonomous] worktree: moved stray folder %s aside to %s: not a git worktree", path, moved)
+			srcDirs = append(srcDirs, filepath.Join(moved, ".datawatch", "verify"))
+		}
+	}
+
 	if out, werr := runGitIn(baseRepo, "worktree", "add", "-b", branch, path, base); werr != nil {
 		// The branch may already exist from a prior attempt that got
 		// this far and then crashed before SavePRD persisted
@@ -119,6 +138,11 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 			}
 			return "", "", fmt.Errorf("%s: %w", msg, werr2)
 		}
+	}
+	if n, rerr := restoreVerifyScripts(srcDirs, path, nil); rerr != nil {
+		log.Printf("[autonomous] worktree: restore verification scripts into %s failed (non-fatal): %v", path, rerr)
+	} else if n > 0 {
+		log.Printf("[autonomous] worktree: restored %d verification script(s) into %s", n, path)
 	}
 	// Fresh worktree: drop the git-ignored go:embed placeholder in so
 	// the first build doesn't fail on internal/docsindex.
