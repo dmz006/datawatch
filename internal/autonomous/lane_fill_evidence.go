@@ -170,7 +170,12 @@ func (s *poolEvidenceSource) read(ctx context.Context, gpuBackend string, now ti
 	} else {
 		sessions, sessFaults := s.sessions.RunningSessions(ctx)
 		for _, f := range sessFaults {
-			faults = append(faults, hostFault(f.Host, "session list", f.Err))
+			// Only faults on the local host or a pool host can hide GPU
+			// work; an unrelated federation peer failing says nothing
+			// about this pool.
+			if f.Host == "" || f.Host == "local" || poolNodes[f.Host] {
+				faults = append(faults, hostFault(f.Host, "session list", f.Err))
+			}
 		}
 		for _, sess := range sessions {
 			if (gpuBackend != "" && sess.Backend == gpuBackend) || (sess.Node != "" && poolNodes[sess.Node]) {

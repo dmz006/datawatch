@@ -181,7 +181,7 @@ func TestLaneFillEvidenceUnreadableHostGivesErrorAndPartialData(t *testing.T) {
 		sessions: []PoolSession{{ID: "a", Backend: "pi-prompt"}},
 		faults:   []PoolHostFault{{Host: "peer2", Err: context.DeadlineExceeded}},
 	}
-	hosts := &fakeHostLister{hosts: []PoolHost{{Name: "local", Endpoint: "http://l"}, {Name: "gpu-box", Endpoint: "http://g"}}}
+	hosts := &fakeHostLister{hosts: []PoolHost{{Name: "local", Endpoint: "http://l"}, {Name: "gpu-box", Endpoint: "http://g"}, {Name: "peer2", Endpoint: "http://p2"}}}
 	fetch := &fakeModelFetcher{
 		models: map[string][]string{"http://l": {"m1"}},
 		errs:   map[string]error{"http://g": context.DeadlineExceeded},
@@ -301,6 +301,42 @@ func TestLaneFillPoolUnreadableHostBlocksIdleGPULanes(t *testing.T) {
 	for _, d := range st.Decisions {
 		if d.LaneType == LaneTypeGPU && d.Action == LaneFillActionStartPRD {
 			t.Errorf("a GPU lane was started on an unreadable pool: %+v", d)
+		}
+	}
+}
+
+func poolEvidenceFaultSource(host string) *poolEvidenceSource {
+	sessions := &fakeSessionLister{
+		sessions: []PoolSession{{ID: "a", Backend: "pi-prompt"}},
+		faults:   []PoolHostFault{{Host: host, Err: context.DeadlineExceeded}},
+	}
+	hosts := &fakeHostLister{hosts: []PoolHost{{Name: "gpu-box", Endpoint: "http://g"}}}
+	fetch := &fakeModelFetcher{models: map[string][]string{"http://g": {"m1"}}}
+	return NewPoolEvidenceSource(sessions, hosts, fetch).(*poolEvidenceSource)
+}
+
+func TestPoolEvidenceUnrelatedPeerFaultIsDropped(t *testing.T) {
+	ev, err := poolEvidenceFaultSource("peer.example.com").Check(context.Background())
+	if err != nil {
+		t.Fatalf("unrelated peer fault gave error: %v", err)
+	}
+	if ev.ActiveGPUSessions != 1 || len(ev.LoadedModels) != 1 {
+		t.Errorf("evidence = %+v, want readable evidence", ev)
+	}
+}
+
+func TestPoolEvidenceUnrelatedPeerFaultKeepsPoolHostFault(t *testing.T) {
+	_, err := poolEvidenceFaultSource("gpu-box").Check(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "gpu-box") {
+		t.Fatalf("pool host fault err = %v, want error naming gpu-box", err)
+	}
+}
+
+func TestPoolEvidenceUnrelatedPeerFaultKeepsLocalFault(t *testing.T) {
+	for _, host := range []string{"", "local"} {
+		_, err := poolEvidenceFaultSource(host).Check(context.Background())
+		if err == nil || !strings.Contains(err.Error(), "local") {
+			t.Errorf("local fault (host %q) err = %v, want error", host, err)
 		}
 	}
 }
