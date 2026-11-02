@@ -35,7 +35,9 @@ func (s *Server) handleDashboardLayout(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-		// Merge system cards back in so a bulk PUT can never wipe them.
+		// Dedupe incoming cards by id (first occurrence and its cs/rs win),
+		// then merge system cards back in so a bulk PUT can never wipe them.
+		incoming.Cards = dedupeDashCards(incoming.Cards)
 		incoming.Cards = mergeSystemCards(incoming.Cards)
 		if err := s.writeDashLayout(incoming); err != nil {
 			http.Error(w, "write failed", http.StatusInternalServerError)

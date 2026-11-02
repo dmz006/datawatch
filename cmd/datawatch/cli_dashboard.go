@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -28,6 +29,7 @@ func newDashboardCmd() *cobra.Command {
 	cmd.AddCommand(newDashboardLsCmd())
 	cmd.AddCommand(newDashboardCardCmd())
 	cmd.AddCommand(newDashboardLayoutCmd())
+	cmd.AddCommand(newDashboardConsoleCmd())
 	return cmd
 }
 
@@ -137,4 +139,86 @@ func newDashboardLayoutCmd() *cobra.Command {
 		},
 	})
 	return cmd
+}
+
+// newDashboardConsoleCmd is the operator console summary over chat-config
+// parity: the same GET the PWA console uses, plus a set subcommand that
+// reuses the daemon config API path (PUT /api/config) — the exact same
+// path the chat `configure dashboard.console.enabled=false` command takes.
+//
+//	datawatch dashboard console             — operator console summary (GET /api/dashboard/console)
+//	datawatch dashboard console --json      — the raw endpoint JSON
+//	datawatch dashboard console set <key> <value> — set a console key
+func newDashboardConsoleCmd() *cobra.Command {
+	var rawJSON bool
+	console := &cobra.Command{
+		Use:   "console",
+		Short: "Operator console summary (GET /api/dashboard/console)",
+		RunE: func(*cobra.Command, []string) error {
+			body, err := daemonJSONBody(http.MethodGet, "/api/dashboard/console", nil)
+			if err != nil {
+				return err
+			}
+			if rawJSON {
+				prettyPrint(body)
+				return nil
+			}
+			fmt.Println(renderDashboardConsole(body))
+			return nil
+		},
+	}
+	console.Flags().BoolVar(&rawJSON, "json", false, "print the raw endpoint JSON")
+	console.AddCommand(&cobra.Command{
+		Use:   "set <key> <value>",
+		Short: "Set a console key via the daemon config API (dashboard.console.enabled=false, dashboard.console.show_lanes=true, …)",
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) != 2 {
+				return fmt.Errorf("usage: dashboard console set <key> <value>")
+			}
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			return runConfigSet(cfg, args[0], args[1])
+		},
+	})
+	return console
+}
+
+// dashboardConsoleSection mirrors one section of the console endpoint response.
+// Available=false means the console (or that section) is switched off in config.
+type dashboardConsoleSection struct {
+	Available bool   `json:"available"`
+	Count     int    `json:"count"`
+	Summary   string `json:"summary"`
+	Link      string `json:"link"`
+}
+
+// dashboardConsoleSectionIDs is the endpoint's canonical section order.
+var dashboardConsoleSectionIDs = []string{"questions_waiting", "held_blocked", "lanes", "usage", "ci_release"}
+
+// renderDashboardConsole is the human view of the endpoint JSON: one line per
+// section in the endpoint's order — the same five sections the PWA console
+// shows, from the identical data.
+func renderDashboardConsole(body []byte) string {
+	var c struct {
+		GeneratedAt string                             `json:"generated_at"`
+		Sections    map[string]dashboardConsoleSection `json:"sections"`
+	}
+	if err := json.Unmarshal(body, &c); err != nil {
+		return fmt.Sprintf("dashboard console: unparseable response: %v", err)
+	}
+	var b strings.Builder
+	if c.GeneratedAt != "" {
+		fmt.Fprintf(&b, "Operator console (%s)\n", c.GeneratedAt)
+	}
+	for _, id := range dashboardConsoleSectionIDs {
+		s := c.Sections[id]
+		if !s.Available {
+			fmt.Fprintf(&b, "  %-18s off   %s\n", id, s.Summary)
+			continue
+		}
+		fmt.Fprintf(&b, "  %-18s %d    %s\n", id, s.Count, s.Summary)
+	}
+	return strings.TrimSpace(b.String())
 }

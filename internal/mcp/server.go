@@ -981,6 +981,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDashboardCardUpdate(), tracked(s.handleDashboardCardUpdateMCP))
 	mcpSrv.AddTool(s.toolDashboardCardAdd(), tracked(s.handleDashboardCardAddMCP))
 	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
+	// Operator console one-glance summary (same data as GET /api/dashboard/console).
+	mcpSrv.AddTool(s.toolDashboardConsoleGet(), tracked(s.handleDashboardConsoleGetMCP))
 	// BL349 — self-session discovery.
 	mcpSrv.AddTool(s.toolGetMySessionID(), tracked(s.handleGetMySessionID))
 	// BL463 — self-scope + isolation surface (superset of BL349).

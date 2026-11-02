@@ -5848,6 +5848,19 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"retention_days":     s.cfg.Audit.RetentionDaysOrDefault(),
 			"cef_mirror_enabled": s.cfg.Audit.CEFMirrorEnabled,
 		},
+		// dashboard.hide_inactive_cards + the operator console switches
+		// (dashboard.console.*); an absent key reads its default, true.
+		"dashboard": map[string]interface{}{
+			"hide_inactive_cards": s.cfg.Dashboard.EffectiveHideInactiveCards(),
+			"console": map[string]interface{}{
+				"enabled":           s.cfg.Dashboard.Console.EffectiveEnabled(),
+				"show_questions":    s.cfg.Dashboard.Console.EffectiveShowQuestions(),
+				"show_held_blocked": s.cfg.Dashboard.Console.EffectiveShowHeld(),
+				"show_lanes":        s.cfg.Dashboard.Console.EffectiveShowLanes(),
+				"show_usage":        s.cfg.Dashboard.Console.EffectiveShowUsage(),
+				"show_ci_release":   s.cfg.Dashboard.Console.EffectiveShowCIRelease(),
+			},
+		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
 			"account_number": s.cfg.Signal.AccountNumber,
@@ -7362,6 +7375,32 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.NotifyExclude = splitCSV(s)
 			}
+		// dashboard.hide_inactive_cards — explicit true/false both stick;
+		// an absent key (never PUT) reads the default, true.
+		case "dashboard.hide_inactive_cards":
+			b := toBool(v)
+			cfg.Dashboard.HideInactiveCards = &b
+		// dashboard.console.* — the operator console switches behind
+		// GET /api/dashboard/console: same pattern, explicit true/false both
+		// stick, an absent subkey (never PUT) reads the default, true.
+		case "dashboard.console.enabled":
+			b := toBool(v)
+			cfg.Dashboard.Console.Enabled = &b
+		case "dashboard.console.show_questions":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowQuestions = &b
+		case "dashboard.console.show_held_blocked":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowHeld = &b
+		case "dashboard.console.show_lanes":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowLanes = &b
+		case "dashboard.console.show_usage":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowUsage = &b
+		case "dashboard.console.show_ci_release":
+			b := toBool(v)
+			cfg.Dashboard.Console.ShowCIRelease = &b
 		case "telegram.enabled":
 			cfg.Telegram.Enabled = toBool(v)
 		case "discord.enabled":

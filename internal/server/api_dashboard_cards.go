@@ -67,10 +67,32 @@ func defaultDashCards() []dashCard {
 	}
 }
 
+// dedupeDashCards drops later duplicates by id, keeping the first
+// occurrence and its cs/rs values. This is the id-uniqueness invariant
+// for the stored layout: the merge normaliser alone only *adds* missing
+// cards, so without this a second `tree` admitted through an unguarded
+// append (or a client-side duplicate) would survive every read and PUT.
+func dedupeDashCards(cards []dashCard) []dashCard {
+	seen := make(map[string]bool, len(cards))
+	deduped := cards[:0]
+	for _, c := range cards {
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		deduped = append(deduped, c)
+	}
+	return deduped
+}
+
 // mergeSystemCards ensures all default system cards are present, re-adding
 // any that were removed (inserted at the front in their original order).
 // Also stamps System=true on any existing card whose ID is a system card ID.
+// Runs dedupeDashCards first, so system cards (tree, orbital, events,
+// sparklines, gantt, heatmap, guardrails, ekg, smoke, memory-scope) are
+// always present exactly once and non-system ids never duplicate.
 func mergeSystemCards(cards []dashCard) []dashCard {
+	cards = dedupeDashCards(cards)
 	defaults := defaultDashCards()
 	systemIDs := make(map[string]bool, len(defaults))
 	for _, d := range defaults {
@@ -108,10 +130,13 @@ func (s *Server) readDashLayout() (dashLayout, error) {
 	}
 	_ = json.Unmarshal(data, &layout)
 	// Re-merge system cards so they survive a PUT wipe or manual edit.
+	// mergeSystemCards also drops duplicate ids (first occurrence wins);
+	// when the merged list differs from the file's we persist the healed
+	// layout so the duplicate does not come back on the next read.
 	merged := mergeSystemCards(layout.Cards)
 	if len(merged) != len(layout.Cards) {
 		layout.Cards = merged
-		_ = s.writeDashLayout(layout) // persist restored cards
+		_ = s.writeDashLayout(layout) // persist restored/deduped cards
 	} else {
 		layout.Cards = merged
 	}
@@ -119,6 +144,9 @@ func (s *Server) readDashLayout() (dashLayout, error) {
 }
 
 func (s *Server) writeDashLayout(layout dashLayout) error {
+	// The stored layout holds each card id exactly once, whatever the
+	// caller's card list looks like (first occurrence wins).
+	layout.Cards = dedupeDashCards(layout.Cards)
 	path := s.dashLayoutPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

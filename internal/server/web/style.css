@@ -7240,6 +7240,17 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   }
 }
 
+/* ── Operator console cards (GET /api/dashboard/console) ─────────────────
+   One number + one line + one acting link per card; a reason line replaces
+   the number when the daemon reports the section unavailable. Only the
+   theme tokens are referenced here — the dark/light switch comes for free. */
+.dash-console-card { display:flex; flex-direction:column; height:100%; min-height:0; overflow:hidden; text-align:center; justify-content:center; gap:4px; }
+.dash-console-num { font-size:30px; font-weight:700; line-height:1.1; color:var(--accent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dash-console-line { font-size:11px; color:var(--text2); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.dash-console-reason { color:var(--text); }
+.dash-console-link { align-self:center; font-size:11px; color:var(--accent); text-decoration:none; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
+.dash-console-link:hover { text-decoration:underline; }
+
 /* Observer sections below System Statistics: fluid rows, wrapping text and
    40px tap targets at phone widths. The classes carry no rule above the
    breakpoint except the flex-row defaults, so 768px and wider is unchanged. */

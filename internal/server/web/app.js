@@ -632,6 +632,14 @@ function _loadUiConfig() {
     state._recentMinutes = cfg.server?.recent_session_minutes || 5;
     state._maxSessions = cfg.session?.max_sessions || 10;
     state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
+    // 2026-11-02 dashboard card audit: default true; missing key behaves
+    // as if the operator never touched the toggle (hide the empty cards).
+    state._dashHideInactiveCards = cfg.dashboard?.hide_inactive_cards !== false;
+    // Operator console (GET /api/dashboard/console): the
+    // dashboard.console.enabled switch defaults true daemon-side (an unset
+    // pointer reads enabled), so a missing key keeps the console cards on
+    // rather than hiding them.
+    state._dashConsoleEnabled = cfg.dashboard?.console?.enabled !== false;
   }).catch(() => {});
 }
 
@@ -8917,6 +8925,12 @@ const DOCS_LINKS_BY_KEY = {
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
+  // Operator console cards on the dashboard (DASH_CONSOLE_CARDS linkKeys)
+  dash_console_questions_link: 'howto/dashboard-operator-console.md',
+  dash_console_held_link: 'howto/dashboard-operator-console.md',
+  dash_console_lanes_link: 'howto/dashboard-operator-console.md',
+  dash_console_usage_link: 'howto/dashboard-operator-console.md',
+  dash_console_ci_release_link: 'howto/dashboard-operator-console.md',
   view_settings: DOCS_DEFINITIONS + '#settings',
   view_settings_general: DOCS_DEFINITIONS + '#settings-general',
   view_settings_plugins: DOCS_DEFINITIONS + '#settings-plugins',
@@ -9073,6 +9087,13 @@ const DOCS_LINKS_BY_KEY = {
   memscopes: 'memory.md',
   memmaint: 'memory.md#advanced-features',
   schedules: DOCS_DEFINITIONS + '#recurring-named-schedules',
+  // Dashboard feature cards — the related-setting help link shown on the
+  // "feature off" one-line state (2026-11-02 dashboard card audit):
+  dash_card_integration_status: DOCS_DEFINITIONS + '#recurring-named-schedules',
+  dash_card_websearch_usage: DOCS_DEFINITIONS + '#web-search-multi-provider-registry',
+  dash_card_memory_scope: 'memory.md',
+  dash_card_smoke: DOCS_DEFINITIONS + '#dashboard',
+  dash_card_guardrails: DOCS_DEFINITIONS + '#dashboard',
   cooldown: DOCS_DEFINITIONS + '#global-cooldown',
   analytics: DOCS_DEFINITIONS + '#session-analytics',
   audit: DOCS_DEFINITIONS + '#audit-log',
@@ -22529,7 +22550,10 @@ const _dash = {
   _computeNodesFetching: false,
   _smokeData: null,        // last /api/smoke/progress payload
   _smokeFetching: false,
+  _console: null,           // cached GET /api/dashboard/console payload (operator console cards)
+  _consoleFetching: false,  // guard against concurrent console fetches
   _smokePollMs: 2500,      // fast poll during active run
+  _featPumpAt: 0,          // 2026-11-02 dashboard card audit: last pump time
   // BL403 Phase 4 — plugin widget cards
   _pluginWidgets: {},      // 'server|cardId' → {view, fetchedAt, err, inFlight}
   _pluginList: null,       // {server, plugins, fetchedAt, err} from /api/plugins
@@ -37322,9 +37346,15 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderConsole();
     _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
     _dashRenderSmoke();
+    // 2026-11-02 dashboard card audit: keep fetching data for feature cards
+    // that are hidden because their feature is off, so hidden cards surface
+    // the moment their data lands (guardrails come from boards, smoke is
+    // already polled unconditionally, guardrail/scope state is cheap local).
+    _dashPumpFeatureData();
   }
 
   // Node reconcile at ~2fps
@@ -37342,6 +37372,12 @@ function _dashLoop(ts) {
   if (_dash._frameCount % 900 === 0 && !_dash._costFetching) {
     _dash._costFetching = true;
     _dashFetchCost().then(() => _dashClearFedError('cost')).catch(e => _dashSetFedError('cost', e)).finally(() => { _dash._costFetching = false; });
+  }
+
+  // Operator console: one shared GET /api/dashboard/console per ~30s tick;
+  // all five console cards render from the cached _dash._console payload.
+  if (_dashConsoleEnabled() && _dash._frameCount % 900 === 0 && !_dash._consoleFetching) {
+    _dashFetchConsole();
   }
 
   // Fetch heatmap data every ~60s
@@ -37701,7 +37737,149 @@ function _dashDefLabel(def) {
   return def.label || '';
 }
 
+// ── Operator console cards (GET /api/dashboard/console) ─────────────────
+// 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-audit.md):
+// the console question "do I need to do anything and is anything stuck?"
+// maps to these five at-a-glance cards. Two existing OBSERVER cards are
+// REUSED as the higher-level source for two of them instead of rebuilding
+// the observer views:
+//   • lanes — `orbital` (the Network card, _drawConstellation) already
+//     shows the session/automaton network; console-lanes distills the same
+//     picture into one number + the #lanes link and stays on the default
+//     board;
+//   • usage — `ekg` (the Multi-EKG card, _drawMultiEKG plus its burn-rate
+//     side panel) already plots token throughput; console-usage promotes
+//     the audit's "Claude usage against the pace line" question to its own
+//     number + the #usage link and stays on the default board.
+// One shared fetch feeds the whole group — GET /api/dashboard/console is
+// called once per dashboard tick (see _dashLoop), the payload is cached in
+// _dash._console, and each card renders from its own section. The enabled
+// / show_* toggles (dashboard.console.*) are enforced server-side; this
+// side only shows what came back (available sections, or a section's
+// reason + link).
+const DASH_CONSOLE_CARDS = [
+  { id: 'console-questions',  icon: '❓', anchor: 'questions_waiting', label: 'Questions waiting', labelKey: 'dash_console_questions',    linkKey: 'dash_console_questions_link' },
+  { id: 'console-held',       icon: '⛔', anchor: 'held_blocked',      label: 'Held & blocked',    labelKey: 'dash_console_held',         linkKey: 'dash_console_held_link' },
+  { id: 'console-lanes',      icon: '⇉',  anchor: 'lanes',             label: 'Lanes',             labelKey: 'dash_console_lanes',        linkKey: 'dash_console_lanes_link' },
+  { id: 'console-usage',      icon: '📈', anchor: 'usage',             label: 'Usage',             labelKey: 'dash_console_usage',        linkKey: 'dash_console_usage_link' },
+  { id: 'console-ci-release', icon: '🚀', anchor: 'ci_release',        label: 'CI & release',      labelKey: 'dash_console_ci_release',   linkKey: 'dash_console_ci_release_link' },
+];
+const DASH_CONSOLE_IDS = new Set(DASH_CONSOLE_CARDS.map(c => c.id));
+
+// _dashConsoleEnabled: mirrors the server's dashboard.console.enabled
+// switch. Unset state (before /api/config lands) counts as enabled — the
+// daemon's default for the switch is true.
+function _dashConsoleEnabled() {
+  return !state || state._dashConsoleEnabled !== false;
+}
+
+// _dashLayoutWithConsoleCards: a STORED layout is never rewritten for an
+// existing install — where it is missing the console cards they are appended
+// once (the operator's ordering is otherwise preserved); a layout that
+// already carries them passes through unchanged. With the console disabled
+// the layout is returned untouched (the grid/picker filters drop the cards
+// instead).
+function _dashLayoutWithConsoleCards(cards) {
+  const base = Array.isArray(cards) ? cards.slice() : [];
+  if (!_dashConsoleEnabled()) return base;
+  const have = new Set(base.map(c => c && c.id));
+  const missing = DASH_CONSOLE_CARDS.filter(c => !have.has(c.id));
+  if (!missing.length) return base;
+  // Top the TOP: the console cards open the board (matching the default
+  // layout), and the operator's stored order is preserved behind them.
+  return missing.map(c => ({ id: c.id, cs: 3, rs: 1 })).concat(base);
+}
+
+// _dashDefaultLayout: the board where there is no stored layout — the five
+// console cards FIRST (while dashboard.console.enabled is on), then the
+// existing defaults. With the console disabled this is exactly the
+// pre-console default.
+function _dashDefaultLayout() {
+  const head = _dashConsoleEnabled()
+    ? DASH_CONSOLE_CARDS.map(c => ({ id: c.id, cs: 3, rs: 1 }))
+    : [];
+  return head.concat(DASH_DEFAULT_LAYOUT.map(c => ({ id: c.id, cs: c.cs })));
+}
+
+// _dashConsoleSafeHref: section links are in-app anchors minted by the
+// daemon ("#questions", "#settings", …). Only that shape is passed through;
+// anything else degrades to "#" so a corrupted response cannot redirect the
+// card off-app — the card stays informative, just non-clickable.
+function _dashConsoleSafeHref(link) {
+  return typeof link === 'string' && /^#[A-Za-z0-9_-]*$/.test(link) ? link : '#';
+}
+
+// _dashConsoleCardHTML: one console card body from its cached section — one
+// big number, one short line, one acting link. A section with
+// available=false renders its reason (naming the related settings switch)
+// plus the link the daemon pointed the operator at instead.
+function _dashConsoleCardHTML(spec) {
+  const sec = _dash && _dash._console ? _dash._console[spec.anchor] : null;
+  if (!sec) {
+    const msg = escHtml(t('dash_console_loading') || 'Loading the console summary…');
+    return `<div class="dash-console-card"><span class="dash-console-line">${msg}</span></div>`;
+  }
+  const href = _dashConsoleSafeHref(sec.link);
+  const linkText = escHtml(t(spec.linkKey) || spec.label);
+  const linkEl = `<a class="dash-console-link" href="${href}">↗ ${linkText}</a>`;
+  if (sec.available) {
+    const n = Number(sec.count);
+    const num = Number.isFinite(n) ? n : 0;
+    return `<div class="dash-console-card">
+      <div class="dash-console-num">${num}</div>
+      <div class="dash-console-line">${escHtml(sec.summary || '')}</div>
+      ${linkEl}
+    </div>`;
+  }
+  const reason = escHtml(sec.reason || (t('dash_console_unavailable') || 'Unavailable'));
+  return `<div class="dash-console-card">
+    <div class="dash-console-line dash-console-reason">${reason}</div>
+    ${linkEl}
+  </div>`;
+}
+
+function _dashRenderConsole() {
+  if (!_dash || !_dash._console) return;
+  for (const spec of DASH_CONSOLE_CARDS) {
+    const el = document.getElementById('dashConsoleCard_' + spec.id);
+    if (el) el.innerHTML = _dashConsoleCardHTML(spec);
+  }
+}
+
+// _dashFetchConsole: the one shared GET /api/dashboard/console. Fetched once
+// per dashboard tick (see _dashLoop) and on board build; concurrent calls
+// share the in-flight request and all five cards read the cached payload.
+function _dashFetchConsole() {
+  if (_dash._consoleFetching) return Promise.resolve(_dash._console || null);
+  if (!_dashConsoleEnabled()) return Promise.resolve(null);
+  _dash._consoleFetching = true;
+  return apiFetch('/api/dashboard/console')
+    .then(d => {
+      _dash._console = d || null;
+      if (_dash._console) _dashRenderConsole();
+      return _dash._console;
+    })
+    .catch(() => null)
+    .finally(() => { _dash._consoleFetching = false; });
+}
+
+function _dashConsoleDef(spec) {
+  return {
+    id: spec.id,
+    label: spec.label,
+    labelKey: spec.labelKey,
+    icon: spec.icon,
+    defaultCs: 3,
+    body: () => `<div id="dashConsoleCard_${spec.id}" style="height:100%;overflow-y:auto;padding:2px 0;">${_dashConsoleCardHTML(spec)}</div>`,
+  };
+}
+
 const DASH_CARD_DEFS = [
+  // Operator console cards first (they open the default board, not buried):
+  // one number + one line + one acting link each, fed together by the single
+  // shared /api/dashboard/console fetch above. Present in the grid and in
+  // the Add-Card picker only while dashboard.console.enabled is on.
+  ...DASH_CONSOLE_CARDS.map(_dashConsoleDef),
   // GH#204 phase 4 — opt-in "Integration status" card: latest posted
   // scheduled-job results, one row per schedule. Listed FIRST in
   // DASH_CARD_DEFS so it sits at the very top of the Add-Card picker
@@ -37739,31 +37917,163 @@ const DASH_CARD_DEFS = [
 ];
 
 const DASH_DEFAULT_LAYOUT = [
+  // Operator console cards layered on top of this list (they come FIRST)
+  // by _dashDefaultLayout while dashboard.console.enabled is on; this stays
+  // the canonical "existing defaults" order.
   { id: 'tree',         cs: 2,  rs: 2 },
   { id: 'orbital',      cs: 6,  rs: 2 },
   { id: 'events',       cs: 2,  rs: 2 },
   { id: 'sparklines',   cs: 2,  rs: 1 },
   { id: 'gantt',        cs: 12, rs: 1 },
   { id: 'heatmap',      cs: 3,  rs: 1 },
-  { id: 'guardrails',   cs: 3,  rs: 1 },
-  { id: 'memory-scope', cs: 3,  rs: 1 },
-  { id: 'websearch-usage', cs: 3, rs: 1 },
   { id: 'ekg',          cs: 6,  rs: 2 },
-  { id: 'smoke',        cs: 6,  rs: 2 },
 ];
+
+// 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-audit.md):
+// the feature-tied subsystem tiles (guardrails, smoke run progress,
+// web-search usage, memory-scope) were dropped from the *default* layout,
+// matching the Go defaults (internal/server/api_dashboard_cards.go
+// DefaultDashCards). They stay available in Edit → Add Card, and
+// `dashboard.hide_inactive_cards` (default true) keeps them out of the grid
+// and of the Add-Card picker until their feature actually has data on this
+// install; with it off they render in a single line saying why they are
+// empty, with a link to the related setting's help page.
+const DASH_CARD_FEATURES = {
+  'integration-status': {
+    docsKey: 'dash_card_integration_status',
+    reasonKey: 'dash_card_off_integration_reason',
+    reasonDefault: 'No scheduled jobs on this install — create one to fill this card.',
+    linkKey: 'dash_card_off_integration_link',
+    linkDefault: 'Schedules settings',
+    active() { return Array.isArray(_dash._integResults) && _dash._integResults.length > 0; },
+  },
+  'guardrails': {
+    docsKey: 'dash_card_guardrails',
+    reasonKey: 'dash_card_off_guardrails_reason',
+    reasonDefault: 'No guardrail verdicts yet — nothing to show until a gate runs.',
+    linkKey: 'dash_card_off_guardrails_link',
+    linkDefault: 'Quality gate settings',
+    active() {
+      let n = 0;
+      for (const b of Object.values(_dash._boards || {})) n += ((b.telemetry && b.telemetry.guardrail_verdicts) || []).length;
+      return n > 0;
+    },
+  },
+  'smoke': {
+    docsKey: 'dash_card_smoke',
+    reasonKey: 'dash_card_off_smoke_reason',
+    reasonDefault: 'No smoke runs recorded on this machine.',
+    linkKey: 'dash_card_off_smoke_link',
+    linkDefault: 'Dashboard card reference',
+    active() { return Array.isArray(_dash._smokeEnvelopes) && _dash._smokeEnvelopes.length > 0; },
+  },
+  'memory-scope': {
+    docsKey: 'dash_card_memory_scope',
+    reasonKey: 'dash_card_off_memory_reason',
+    reasonDefault: 'No memory entries on this install yet.',
+    linkKey: 'dash_card_off_memory_link',
+    linkDefault: 'Memory settings',
+    active() {
+      const d = _dash._memStats;
+      if (!d) return false;
+      if ((d.total_entries || 0) > 0) return true;
+      return Object.keys(d.scopes || {}).length > 0;
+    },
+  },
+  'websearch-usage': {
+    docsKey: 'dash_card_websearch_usage',
+    reasonKey: 'dash_card_off_websearch_reason',
+    reasonDefault: 'Web search is off or no providers are configured.',
+    linkKey: 'dash_card_off_websearch_link',
+    linkDefault: 'Web search settings',
+    active() {
+      const d = _dash._webSearchStats;
+      return !!(d && d.enabled && (((d.summary || {}).providers) || []).length > 0);
+    },
+  },
+};
+
+function _dashCardFeature(id) {
+  return DASH_CARD_FEATURES[id] || null;
+}
+
+// Default true: a missing config key behaves as if the operator never
+// touched the toggle.
+function _dashHideInactive() {
+  return !(state && state._dashHideInactiveCards === false);
+}
+
+// One-line "feature is off" body for a feature card that has no data yet:
+// the reason, plus a link to the related setting's help page (via the
+// DOCS_LINKS_BY_KEY map, the same link the settings view uses).
+function _dashCardOffBody(feat) {
+  const reason = escHtml(t(feat.reasonKey) || feat.reasonDefault);
+  const linkText = escHtml(t(feat.linkKey) || feat.linkDefault);
+  const path = DOCS_LINKS_BY_KEY[feat.docsKey] || '';
+  let out = `<div style="padding:10px 4px;font-size:11px;color:var(--text2);line-height:1.6;">${reason}`;
+  if (path) {
+    out += ` &middot; <a href="/diagrams.html#docs/${encodeURIComponent(path)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;">↗ ${linkText}</a>`;
+  }
+  out += `</div>`;
+  return out;
+}
+
+// Body for a card definition: a feature card with no data renders the
+// one-line related-setting state instead of an empty render; every other
+// card renders normally.
+function _dashCardBodySafe(def) {
+  const feat = _dashCardFeature(def.id);
+  if (feat && !feat.active()) return _dashCardOffBody(feat);
+  return def.body();
+}
+
+// 2026-11-02 dashboard card audit: while a feature card is hidden by
+// `dashboard.hide_inactive_cards` its own renderer never fires (it only
+// paints when the card element exists in the DOM), so nothing would
+// re-fetch its source and the card could never come back on its own.
+// Called from the ~12-frame gate in _dashLoop: re-kicks the fetchers of
+// still-inactive feature cards on a slow 30s cadence and, when a source
+// finally reports data, rebuilds the grid so the card appears as soon as
+// its feature actually has data.
+function _dashPumpFeatureData() {
+  const now = Date.now();
+  if (now - (_dash._featPumpAt || 0) < 30000) return;
+  _dash._featPumpAt = now;
+  const jobs = [];
+  const kick = (feat, fetcher) => {
+    if (feat && !feat.active() && typeof fetcher === 'function') {
+      try { jobs.push(Promise.resolve(fetcher())); } catch (_) { /* fetcher guard tripped; skip */ }
+    }
+  };
+  kick(_dashCardFeature('integration-status'), _dashFetchIntegStatus);
+  kick(_dashCardFeature('memory-scope'), _dashFetchMemoryStats);
+  kick(_dashCardFeature('websearch-usage'), _dashFetchWebSearchStats);
+  // smoke keeps polling unconditionally in _dashLoop and guardrail
+  // verdicts arrive with the board sync — nothing extra to pump there.
+  if (!jobs.length) return;
+  Promise.all(jobs).then(() => {
+    for (const id of Object.keys(DASH_CARD_FEATURES)) {
+      const f = _dashCardFeature(id);
+      if (f && f.active()) { _dashBuildGrid(_dash._layout || []); break; }
+    }
+  }).catch(() => {});
+}
 
 function _dashLoadLayout() {
   if (_dash._layoutLoading) return;
   _dash._layoutLoading = true;
   apiFetch('/api/dashboard/layout').then(d => {
     if (d && Array.isArray(d.cards) && d.cards.length > 0) {
-      _dash._layout = d.cards;
+      // An existing install's stored layout is never rewritten: operator
+      // ordering preserved, console cards toped up once (see
+      // _dashLayoutWithConsoleCards).
+      _dash._layout = _dashLayoutWithConsoleCards(d.cards);
     } else {
-      _dash._layout = DASH_DEFAULT_LAYOUT.map(c => ({ id: c.id, cs: c.cs }));
+      _dash._layout = _dashLayoutWithConsoleCards(_dashDefaultLayout());
     }
     _dashBuildGrid(_dash._layout);
   }).catch(() => {
-    _dash._layout = DASH_DEFAULT_LAYOUT.map(c => ({ id: c.id, cs: c.cs }));
+    _dash._layout = _dashLayoutWithConsoleCards(_dashDefaultLayout());
     _dashBuildGrid(_dash._layout);
   }).finally(() => { _dash._layoutLoading = false; });
 }
@@ -37819,7 +38129,7 @@ function _dashCardHTML(entry) {
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
     </div>
-    <div class="dboard-card-body">${def.body()}</div>
+    <div class="dboard-card-body">${_dashCardBodySafe(def)}</div>
   </div>`;
 }
 
@@ -37844,11 +38154,33 @@ window._dashCycleRows = function(cardId) {
 function _dashBuildGrid(layout) {
   const grid = document.getElementById('dashCardGrid');
   if (!grid) return;
+  // 2026-11-02 dashboard card audit:
+  //  - dedupe card ids defensively (the server already dedupes stored
+  //    layouts; keeping the first occurrence guards against any duplicate
+  //    that still slips in);
+  //  - `dashboard.hide_inactive_cards` (default true) drops feature cards
+  //    whose subsystem has no data yet; the background pump keeps fetching
+  //    so they reappear here the moment their data arrives (the Add-Card
+  //    picker still offers them — "remains addable").
+  const hideInactive = _dashHideInactive();
+  const seen = new Set();
+  const kept = (layout || []).filter(entry => {
+    if (!entry || entry.id === undefined || entry.id === null) return false;
+    const id = String(entry.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    // Operator console: with dashboard.console.enabled off the five cards
+    // are ABSENT — out of the grid even when a stored layout carried them.
+    if (DASH_CONSOLE_IDS.has(id) && !_dashConsoleEnabled()) return false;
+    const feat = _dashCardFeature(id);
+    if (hideInactive && feat && !feat.active()) return false;
+    return true;
+  });
   // Issue #98 — at narrow viewports (<600px), override all cards to full width
   const narrowViewport = window.innerWidth < 600;
   const effectiveLayout = narrowViewport
-    ? (layout || []).map(entry => Object.assign({}, entry, { cs: 12 }))
-    : (layout || []);
+    ? kept.map(entry => Object.assign({}, entry, { cs: 12 }))
+    : kept;
   grid.innerHTML = effectiveLayout.map(_dashCardHTML).join('');
   _dashUpdateStatBar();
   _dashRenderTree();
@@ -37857,6 +38189,11 @@ function _dashBuildGrid(layout) {
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
+  _dashRenderConsole();
+  // Operator console: prime/refresh the one shared summary payload whenever
+  // the board carries at least one console card; per-tick refresh then
+  // happens in _dashLoop.
+  if (kept.some(e => DASH_CONSOLE_IDS.has(e.id))) _dashFetchConsole().catch(() => {});
   _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();
@@ -37899,7 +38236,19 @@ window._dashShowAddPanel = function() {
       <button onclick="document.getElementById('dashAddPanel').remove()" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;line-height:1;">×</button>
     </div>
     <div class="dboard-add-grid">`;
+  // 2026-11-02 dashboard card audit: with `dashboard.hide_inactive_cards`
+  // on (default) the picker omits feature cards whose subsystem has no
+  // data yet; they stay in the definitions, so "remains addable" holds
+  // the moment the feature has data.
+  const hideInactive = _dashHideInactive();
   for (const def of DASH_CARD_DEFS) {
+    // Operator console cards are not offered at all while
+    // dashboard.console.enabled is off, mirroring the grid filter.
+    if (DASH_CONSOLE_IDS.has(def.id) && !_dashConsoleEnabled()) continue;
+    if (hideInactive) {
+      const feat = _dashCardFeature(def.id);
+      if (feat && !feat.active()) continue;
+    }
     const used = existing.includes(def.id);
     html += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${def.id}');document.getElementById('dashAddPanel').remove();"`}>
       <span>${def.icon}</span><span>${escHtml(_dashDefLabel(def))}</span>
