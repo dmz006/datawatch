@@ -7,25 +7,58 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // controlLog is a mutex-guarded record of the requests the fake daemon saw.
 // The daemon's handler runs on its own goroutine, so every access goes
-// through the lock.
+// through the lock. It also counts requests that have reached the handler but
+// are not yet recorded, so reset can wait for them instead of relying on a
+// fixed sleep to separate one input's window from the next.
 type controlLog struct {
-	mu    sync.Mutex
-	calls []controlCall
+	mu       sync.Mutex
+	cond     *sync.Cond
+	calls    []controlCall
+	inflight int
 }
 
+func newControlLog() *controlLog {
+	l := &controlLog{}
+	l.cond = sync.NewCond(&l.mu)
+	return l
+}
+
+// begin marks a request as having reached the handler.
+func (l *controlLog) begin() {
+	l.mu.Lock()
+	l.inflight++
+	l.mu.Unlock()
+}
+
+// add records the request and marks it as no longer in flight.
 func (l *controlLog) add(c controlCall) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.calls = append(l.calls, c)
+	l.inflight--
+	l.cond.Broadcast()
 }
 
+// reset waits until every request that reached the handler has been recorded
+// (bounded, so a wedged handler cannot hang the test), then clears the log.
 func (l *controlLog) reset() {
+	deadline := time.AfterFunc(5*time.Second, func() {
+		l.mu.Lock()
+		l.inflight = 0
+		l.cond.Broadcast()
+		l.mu.Unlock()
+	})
+	defer deadline.Stop()
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	for l.inflight > 0 {
+		l.cond.Wait()
+	}
 	l.calls = nil
 }
 
@@ -40,8 +73,9 @@ func (l *controlLog) snapshot() []controlCall {
 // a router wired to it.
 func setLLMFixture(t *testing.T) (*Router, *controlLog) {
 	t.Helper()
-	calls := &controlLog{}
+	calls := newControlLog()
 	_, port := newFakePeerParent(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.begin()
 		raw, _ := io.ReadAll(r.Body)
 		c := controlCall{method: r.Method, path: r.URL.Path}
 		if len(raw) > 0 {
