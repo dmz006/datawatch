@@ -8906,6 +8906,10 @@ const DOCS_LINKS_BY_KEY = {
   view_automata: DOCS_DEFINITIONS + '#automata',
   view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
   view_automata_wizard: DOCS_DEFINITIONS + '#launch-automaton-form',
+  // Shipped surface: the chip label + merged metadata, the shipped filter
+  // selection and the separate shipped/cancelled counts — all defined in
+  // one glossary entry (datawatch-definitions.md#shipped).
+  shipped_chip: DOCS_DEFINITIONS + '#shipped',
   merged_member_policy: DOCS_DEFINITIONS + '#merged-member-policy',
   plan_coverage_filters: DOCS_DEFINITIONS + '#plan-coverage-filters',
   view_observer: DOCS_DEFINITIONS + '#observer',
@@ -13477,6 +13481,188 @@ function renderPrdPushState(prd) {
   return '';
 }
 
+// ── Shipped state (autonomous.shipped surface) ────────────────────────────────
+// Shipped is a fact about the *work*, not a lifecycle stage of the PRD:
+// when the daemon merges it into a release it stamps merged_in_release /
+// merged_at / merge_commit — but the record keeps the status it had at the
+// moment the work landed (a cancelled one stays cancelled AND shows the
+// Shipped chip), and the card's border/action buttons still follow the
+// stored status. The chip therefore takes precedence over the status pill
+// (a cancelled-but-merged record shows "Shipped" instead of "Cancelled"),
+// and the "shipped" filter badge is a selection over the shipped-state,
+// distinct from the status badges, both honoring the autonomous.shipped
+// settings.
+//
+// Settings (enabled, show_chip, filter_default "all"|"shipped"|
+// "unshipped", count_separately) arrive from GET
+// /api/autonomous/shipped/counts, which also returns the shipped record
+// counts (prds, automations). Everything down to loadShippedCounts is
+// pure so the node tests can drive it without a DOM.
+const _shippedState = {
+  enabled: true,
+  show_chip: true,
+  filter_default: 'all',
+  count_separately: true,
+  counts: null // { prds, automations } once the endpoint has answered
+};
+window._shippedState = _shippedState;
+
+// shippedCarriesState — the shipped-state predicate. A record carries the
+// shipped-state when it has a merge commit (a non-empty merge_commit is
+// what the daemon treats as shipped); the explicit shipped=true flag is an
+// accepted alias for other payloads.
+function shippedCarriesState(rec) {
+  if (!rec || typeof rec !== 'object') return false;
+  if (rec.shipped === true) return true;
+  return String(rec.merge_commit || '').trim() !== '';
+}
+window.shippedCarriesState = shippedCarriesState;
+
+// shippedChipLabel — "Shipped in <merged_in_release>", plain "Shipped" when
+// no release name is recorded.
+function shippedChipLabel(rec) {
+  const release = String((rec && rec.merged_in_release) || '').trim();
+  return release ? t('shipped_in_release', [release]) : t('shipped_chip');
+}
+window.shippedChipLabel = shippedChipLabel;
+
+// shippedChipHtml — the chip itself. Honors show_chip and enabled; carries
+// the release + merge metadata in the tooltip and the shipped_chip docs
+// link. Returns '' for non-shipped records.
+function shippedChipHtml(rec) {
+  if (!_shippedState.enabled || !_shippedState.show_chip) return '';
+  if (!shippedCarriesState(rec)) return '';
+  const tip = [shippedChipLabel(rec)];
+  if (rec.merged_at) tip.push(t('shipped_merged_at') + ': ' + rec.merged_at);
+  const commit = String(rec.merge_commit || '').trim();
+  if (commit) tip.push(t('shipped_merge_commit') + ': ' + commit);
+  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
+  return `<span class="shipped-chip state state-badge-shipped" title="${escHtml(tip.join(' — '))}">${escHtml(shippedChipLabel(rec))}${docs}</span>`;
+}
+window.shippedChipHtml = shippedChipHtml;
+
+// shippedDetailLineHtml — the detail-view line: the shipped label plus
+// merged_at and the merge commit hash (shortened).
+function shippedDetailLineHtml(rec) {
+  if (!shippedCarriesState(rec)) return '';
+  const bits = [escHtml(shippedChipLabel(rec))];
+  if (rec.merged_at) bits.push(escHtml(t('shipped_merged_at') + ': ' + rec.merged_at));
+  const commit = String(rec.merge_commit || '').trim();
+  if (commit) bits.push(escHtml(t('shipped_merge_commit') + ': ' + commit.slice(0, 12)));
+  const docs = (typeof defsLink === 'function') ? defsLink('shipped_chip', 'Shipped') : '';
+  return `<div class="shipped-detail-line p" style="color:var(--text2)">${bits.join(' · ')}${docs}</div>`;
+}
+window.shippedDetailLineHtml = shippedDetailLineHtml;
+
+// shippedFilterSelection — reads a statusFilter Set/array for the shipped
+// selection: "shipped", "unshipped" or "all".
+function shippedFilterSelection(statusFilter) {
+  const f = statusFilter;
+  if (!f) return 'all';
+  const has = (typeof f.has === 'function') ? (s => f.has(s))
+    : (s => Array.isArray(f) ? f.includes(s) : f === s);
+  if (has('shipped')) return 'shipped';
+  if (has('unshipped')) return 'unshipped';
+  return 'all';
+}
+window.shippedFilterSelection = shippedFilterSelection;
+
+// shippedRecordMatches — the per-record shipped selection predicate. With
+// the surface disabled the selection applies to nothing; with it on, the
+// record's shipped-state (its merged commit / flag, never its cancelled
+// status) is what decides. "all" matches everything.
+function shippedRecordMatches(rec, selection, enabled) {
+  if (enabled === false) return true;
+  const s = String(selection || 'all').toLowerCase();
+  if (s !== 'shipped' && s !== 'unshipped') return true;
+  if (!rec) return false;
+  return shippedCarriesState(rec) === (s === 'shipped');
+}
+window.shippedRecordMatches = shippedRecordMatches;
+
+// shippedCountStates — mirrors the Go shipped state-counts rule: when the
+// surface is enabled and count_separately is set, shipped records group
+// under "shipped" and the rest under their own statuses, so shipped and
+// cancelled stay separate in the badge counts.
+function shippedCountStates(records, enabled, countSeparately) {
+  const out = {};
+  const list = Array.isArray(records) ? records : [];
+  const sep = (enabled !== false) && !!countSeparately;
+  for (const rec of list) {
+    if (!rec) continue;
+    let s = rec.status || 'draft';
+    if (sep && shippedCarriesState(rec)) s = 'shipped';
+    out[s] = (out[s] || 0) + 1;
+  }
+  return out;
+}
+window.shippedCountStates = shippedCountStates;
+
+// loadShippedCounts — populates _shippedState from GET
+// /api/autonomous/shipped/counts (settings + shipped counts). Idempotent;
+// a missing endpoint (e.g. a too-old daemon) leaves the shipped defaults
+// in place, exactly like the Go-side defaults (enabled, chip on, counts
+// separate, filter default "all").
+function loadShippedCounts() {
+  const cfg = _shippedState;
+  if (cfg.loaded) return Promise.resolve(cfg);
+  if (cfg.loading && cfg.promise) return cfg.promise;
+  if (typeof apiFetch !== 'function') {
+    cfg.loaded = true;
+    cfg.promise = Promise.resolve(cfg);
+    return cfg.promise;
+  }
+  cfg.loading = true;
+  cfg.promise = apiFetch('/api/autonomous/shipped/counts').then(d => {
+    const s = (d && d.settings) || {};
+    cfg.enabled = s.enabled !== false;
+    cfg.show_chip = s.show_chip !== false;
+    cfg.filter_default = (s.filter_default === 'shipped' || s.filter_default === 'unshipped') ? s.filter_default : 'all';
+    cfg.count_separately = s.count_separately !== false;
+    // prds/automations are per-display-status count maps; keep the maps
+    // (for the per-status surfaces) and their sums (for the dashboard).
+    const sum = m => (m && typeof m === 'object') ? Object.values(m).reduce((x, y) => x + (typeof y === 'number' ? y : 0), 0) : 0;
+    cfg.counts = {
+      prds: sum(d && d.prds),
+      automations: sum(d && d.automations),
+      by_prd: (d && d.prds) || {},
+      by_automation: (d && d.automations) || {},
+    };
+    cfg.loaded = true;
+    return cfg;
+  }).catch(() => { cfg.loaded = true; return cfg; }).finally(() => { cfg.loading = false; });
+  return cfg.promise;
+}
+window.loadShippedCounts = loadShippedCounts;
+
+// _shippedKick — loads the shipped settings once and, when filter_default
+// picks a side, seeds an empty status filter with it (the default is only
+// a starting selection — toggling the badge off clears it as usual). Called
+// from the tab entry points; best-effort redraw afterwards so a first
+// render that raced the fetch still ends up on the defaulted selection.
+function _shippedKick() {
+  return loadShippedCounts().then(cfg => {
+    if (cfg.filter_default === 'all') return;
+    let changed = false;
+    try {
+      const seed = f => {
+        if (f && f.size === 0 && typeof f.add === 'function') { f.add(cfg.filter_default); changed = true; }
+      };
+      seed(_automataState.statusFilter);
+      seed(_automationState && _automationState.statusFilter);
+    } catch (_) { return; }
+    if (!changed) return;
+    try {
+      if (state && _automataState.tab === 'automata' && typeof _automataRedraw === 'function') _automataRedraw();
+      if (typeof _automationState !== 'undefined' && _automationState && _automationState.statusFilter.size > 0) {
+        if (_automationState.detailId && typeof renderAutomationDetail === 'function') renderAutomationDetail(_automationState.detailId, { quiet: true });
+        else if (typeof _automationRenderCards === 'function') _automationRenderCards();
+      }
+    } catch (_) { /* best-effort redraw */ }
+  }).catch(() => {});
+}
+window._shippedKick = _shippedKick;
+
 // Persistent read-only line for the last failed decompose. The server clears
 // last_decompose_failure on a successful retry, so the line disappears with it.
 // The detail is free text from the LLM/validator, so it goes through escHtml.
@@ -13621,14 +13807,14 @@ function renderPRDRow(prd, opts) {
               : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
           );
           const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
-          return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+          return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${shippedChipHtml(c) || statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
         }).join('');
         return `<details style="margin-top:6px;" open><summary style="cursor:pointer;font-size:11px;color:var(--accent2);">Children (${kids.length})</summary><div style="font-size:10px;color:var(--text2);padding:2px 0;">${rows}</div></details>`;
       })()}`;
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -13675,7 +13861,7 @@ window.loadPRDChildren = function(prdID) {
           : `<span style="font-size:9px;color:var(--text2);background:rgba(255,255,255,0.06);padding:1px 5px;border-radius:6px;margin-left:6px;">${verdictCount} verdict${verdictCount===1?'':'s'}</span>`
       );
       const idClick = `scrollToPRD(${JSON.stringify(c.id)})`;
-      return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
+      return `<div style="padding:3px 0;border-top:1px solid var(--border);">↳ <code style="cursor:pointer;color:var(--accent);text-decoration:underline;" onclick="${escHtml(idClick)}" title="Scroll to this automaton's row">${escHtml(c.id)}</code> ${shippedChipHtml(c) || statusPill(c.status)} <strong>${escHtml(c.title || '(no title)')}</strong> <span style="opacity:0.7;">depth ${c.depth || 0} · ${stories.length}s/${taskCount}t</span>${verdictBadge}</div>`;
     }).join('');
     return target.innerHTML;
   }).catch(err => {
@@ -22579,7 +22765,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     rootId: 'prd-' + id,
     onOpen: `renderPRDDetailView(${escId})`,
     statusClass,
-    statusHtml: statusPill(status) + renderPrdPushState(prd),
+    statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
     badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${parentLink}${pinMark}${watchMark}`,
@@ -22750,8 +22936,16 @@ function _automataQuery(cursor) {
   const st = _automataState;
   const q = ['limit=' + st.pageSize];
   if (cursor) q.push('cursor=' + encodeURIComponent(cursor));
-  if (st.statusFilter.size) q.push('status=' + encodeURIComponent([...st.statusFilter].join(',')));
-  else if (!st.historyOn) q.push('active=1');
+  // "shipped"/"unshipped" are a selection over the shipped-state, not a
+  // stored PRD status, so they travel as the server's shipped=true|false
+  // parameter (server side: shippedSelectionFromQuery) instead of riding
+  // on the comma-joined status= list; the remaining tokens stay statuses.
+  const shippedSelection = shippedFilterSelection(st.statusFilter);
+  const statuses = [...st.statusFilter].filter(s => s !== 'shipped' && s !== 'unshipped');
+  if (statuses.length) q.push('status=' + encodeURIComponent(statuses.join(',')));
+  else if (shippedSelection === 'all' && !st.historyOn) q.push('active=1');
+  if (shippedSelection === 'shipped') q.push('shipped=true');
+  else if (shippedSelection === 'unshipped') q.push('shipped=false');
   if (st.search) q.push('q=' + encodeURIComponent(st.search));
   return '/api/autonomous/prds?' + q.join('&');
 }
@@ -27499,12 +27693,13 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div class="prd-detail-row1" style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
         ${typeBadge}${tplBadge}
         <span style="flex:1;min-width:0;"></span>
-        <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>${renderPrdPushState(prd)}
+        <span style="margin-left:auto;flex-shrink:0;">${shippedChipHtml(prd) || statusPill(status)}</span>${renderPrdPushState(prd)}
       </div>
       <div class="prd-detail-row2" style="display:flex;justify-content:flex-end;gap:10px;font-size:11px;color:var(--text2);font-family:var(--mono,monospace);margin-bottom:6px;">
         <code>${escHtml(id)}</code>
         ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
       </div>
+      ${shippedDetailLineHtml(prd)}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
         <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
         ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}
@@ -28613,6 +28808,10 @@ function renderAutonomousView() {
   const view = document.getElementById('view');
   if (!view) return;
   const st = _automataState;
+  // Load the autonomous.shipped settings (chip on, filter default, count
+  // separately + the shipped record counts) once, and seed the filter
+  // default onto an empty selection; best-effort redraw afterwards.
+  if (typeof _shippedKick === 'function') _shippedKick();
   _automataNormalizeTab();
   const isAutomation = st.tab === 'automation';
   // The status chips (active, then the terminal-failure and archived ones that
@@ -30075,9 +30274,22 @@ function automationListVisible(list, st) {
   };
   return (Array.isArray(list) ? list : []).filter(a => {
     if (!a) return false;
-    const status = a.status || 'draft';
-    const show = status === 'cancelled' ? !!(st && st.historyOn) || inFilter(status) : inFilter(status);
-    if (!show) return false;
+    // Shipped selection (Go's shipped.go read semantics): decided by the
+    // record's shipped-state (its merged commit), never by its stored
+    // status — so a cancelled Automation whose work landed is "shipped",
+    // and "unshipped" never matches it even with the history on. With the
+    // surface disabled the selection itself is disabled (Go behavior).
+    const sel = _shippedState.enabled ? shippedFilterSelection(f) : 'all';
+    if (sel === 'shipped') {
+      if (!shippedCarriesState(a)) return false;
+    } else {
+      const status = a.status || 'draft';
+      const show = status === 'cancelled'
+        ? shippedCarriesState(a) || !!(st && st.historyOn) || inFilter(status)
+        : inFilter(status);
+      if (!show) return false;
+      if (sel === 'unshipped' && shippedCarriesState(a)) return false;
+    }
     if (!q) return true;
     return String(a.name || '').toLowerCase().includes(q) || String(a.id || '').toLowerCase().includes(q);
   }).sort((a, b) => {
@@ -30189,7 +30401,7 @@ function buildAutomationCardHTML(automation, ctx) {
     extraClass: 'automation-card',
     onOpen: open,
     statusClass,
-    statusHtml: `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
+    statusHtml: shippedChipHtml(a) || `<span class="automation-card-status">${escHtml(t('automation_status_' + status))}</span>`,
     badgesHtml: window.mergeBadgeHtml(window.mergeBadgeForAutomation(a, c.mergeById)),
     title: a.name,
     titleClass: 'automation-card-title',
@@ -30887,9 +31099,9 @@ function buildAutomationDetailHTML(automation, ctx) {
   return `<div class="automation-detail-header">
       <button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button>
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
-      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(statusLabel)}</span>
+      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${shippedChipHtml(a) || escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
-    </div>${desc}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
+    </div>${desc}${shippedDetailLineHtml(a)}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
@@ -37889,12 +38101,14 @@ function _dashUpdateStatBar() {
     }
     const runningCount = running.length;
     const automataCount = (_dash._prds || []).length;
-    const hasData = brTot > 0 || runningCount > 0 || automataCount > 0;
+    const shippedTotal = (_shippedState.enabled && _shippedState.counts) ? ((_shippedState.counts.prds || 0) + (_shippedState.counts.automations || 0)) : 0;
+    const hasData = brTot > 0 || runningCount > 0 || automataCount > 0 || shippedTotal > 0;
     if (hasData) {
       let parts = [];
       if (brTot > 0) parts.push(`<span style="color:var(--success,#10b981);font-weight:700;">$${brTot.toFixed(2)} today</span>`);
       parts.push(`<span style="color:var(--accent);">${runningCount} running</span>`);
       if (automataCount > 0) parts.push(`<span style="color:var(--text2);">${automataCount} automata</span>`);
+      if (shippedTotal > 0) parts.push(`<span style="color:var(--shipped, #34d399);font-weight:600;">${shippedTotal} ${escHtml(t('shipped_chip'))}</span>`);
       elBR.innerHTML = parts.join(' · ');
       elBR.style.display = '';
     } else {
@@ -41228,14 +41442,20 @@ function _tagFacetsHTML(scope, tagsOpen) {
   const all = _tagFacetBase(scope);
   const statusSel = scope === 'automata' ? [..._automataState.statusFilter] : [..._automationState.statusFilter];
   const mode = _tagBrowseMode(scope);
-  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(all, { backends: [...sc.backends], statuses: statusSel }, tree), tree);
+  // "shipped"/"unshipped" are the shipped-state selection, not stored
+  // statuses, so they gate the item lists here (never ride on a statuses
+  // value-count) and the remaining tokens stay real statuses.
+  const shipSel = _shippedState.enabled ? shippedFilterSelection(statusSel) : 'all';
+  const stOnly = statusSel.filter(s => s !== 'shipped' && s !== 'unshipped');
+  const gated = all.filter(it => shippedRecordMatches(it, shipSel, true));
+  const tagCounts = _tagBrowseCounts(_tagBrowseFilter(gated, { backends: [...sc.backends], statuses: stOnly }, tree), tree);
   const rows = _tagMultiRowsHTML(scope, tagCounts);
   const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
   const tagGroup = `<div class="tag-facet-group"><details class="tag-multi"${tagsOpen ? ' open' : ''}><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${rows || `<div class="tag-multi-empty">${escHtml(t('tag_picker_empty'))}</div>`}</div></details><button type="button" class="tag-mode-btn" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${escJsAttr(scope)}')">${escHtml(modeLabel)}</button></div>`;
   let backendGroup = '';
   if (scope === 'automata') {
     const names = [...new Set(all.map(p => p.backend || '').filter(Boolean))].sort();
-    const counts = _tagBrowseValueCounts(_tagBrowseFilter(all, { tagIds: sc.sel, mode, statuses: statusSel }, tree), 'backend');
+    const counts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, statuses: stOnly }, tree), 'backend');
     if (names.length) {
       backendGroup = `<div class="automata-badge-group tag-facet-backends">${names.map(n => {
         const on = sc.backends.has(n);
@@ -41243,7 +41463,29 @@ function _tagFacetsHTML(scope, tagsOpen) {
       }).join('')}</div>`;
     }
   }
-  const statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(all, { tagIds: sc.sel, mode, backends: [...sc.backends] }, tree), 'status');
+  let statusCounts = _tagBrowseValueCounts(_tagBrowseFilter(gated, { tagIds: sc.sel, mode, backends: [...sc.backends] }, tree), 'status');
+  // count_separately: shipped records pull out of their stored-status
+  // counts and group under the "shipped" badge, so shipped and cancelled
+  // stay side by side (the Go state-counts rule).
+  if (_shippedState.enabled) {
+    let shippedN = 0;
+    const shippedByStatus = {};
+    for (const it of gated) {
+      if (!it || !shippedCarriesState(it)) continue;
+      shippedN++;
+      if (_shippedState.count_separately) {
+        const s = it.status || 'draft';
+        shippedByStatus[s] = (shippedByStatus[s] || 0) + 1;
+      }
+    }
+    if (_shippedState.count_separately) {
+      for (const s in shippedByStatus) {
+        statusCounts[s] = Math.max(0, (statusCounts[s] || 0) - shippedByStatus[s]);
+        if (statusCounts[s] === 0) delete statusCounts[s];
+      }
+    }
+    statusCounts['shipped'] = (statusCounts['shipped'] || 0) + shippedN;
+  }
   const badge = (s, label, onclick, extra) => {
     const on = statusSel.includes(s);
     return `<button type="button" class="automata-filter-badge status-${s}${on ? ' active' : ''}"${extra || ''} onclick="${onclick}('${s}')">${escHtml(label)} <span class="tag-facet-count">${statusCounts[s] || 0}</span></button>`;
@@ -41252,9 +41494,11 @@ function _tagFacetsHTML(scope, tagsOpen) {
   if (scope === 'automata') {
     const act = _TAG_AUTOMATA_STATUS_BADGES.active.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter')).join('');
     const hist = _TAG_AUTOMATA_STATUS_BADGES.history.map(s => badge(s, t('automata_status_' + s) || s, 'toggleAutomataStatusFilter', ' style="opacity:0.7;"')).join('');
-    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
+    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomataStatusFilter') : '';
+    statusBadges = act + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + shippedBadge + `<span style="display:inline-block;width:1px;background:var(--border);height:16px;margin:0 4px;vertical-align:middle;"></span>` + hist;
   } else {
-    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('');
+    const shippedBadge = _shippedState.enabled ? badge('shipped', t('shipped_chip'), 'toggleAutomationStatusFilter') : '';
+    statusBadges = _AUTOMATION_STATUSES.map(s => badge(s, t('automation_status_' + s), 'toggleAutomationStatusFilter')).join('') + shippedBadge;
   }
   return tagGroup + backendGroup + `<div class="automata-badge-group tag-facet-statuses">${statusBadges}</div>`;
 }
