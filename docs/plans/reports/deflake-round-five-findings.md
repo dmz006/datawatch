@@ -1,6 +1,6 @@
 # Deflake round five — findings (unawaited raise-notify alert write)
 
-- Date: 2026-11-03
+- Date: 2026-11-02
 - Package: `internal/server` (plus `cmd/datawatch` wiring)
 - Tests covered: `TestQuestionStep2Restarts_AnsweredEventExactlyOnce`, `TestQuestionStep2HappyPath_FullFlow`, `TestQuestionNotifyWaitsForAlertWrite` (new regression test)
 - CI signature hunted: `TempDir RemoveAll cleanup: … directory not empty` on the step-2 suite
