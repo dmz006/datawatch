@@ -168,7 +168,7 @@ You (Telegram → @datawatch_bot):
    start: Help me draft a one-paragraph commit message
 
 Datawatch (replies):
-   started session ralfthewise-7a3c (ollama llama3.1:8b)
+   started session peer-d-7a3c (ollama llama3.1:8b)
    <LLM's first response, streamed back>
 
 You:

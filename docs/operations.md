@@ -2023,7 +2023,7 @@ on the installation token — the attach step will then complete normally.
 ### Alert Format
 
 Alert titles follow the format `hostname: name [id]: event` (e.g.
-`ralfthewise: myproject [a1b2]: running → waiting_input`). Toast notifications in the
+`peer-d: myproject [a1b2]: running → waiting_input`). Toast notifications in the
 web UI show a truncated title only (no body text); the full alert with prompt context
 is available in the Alerts tab.
 

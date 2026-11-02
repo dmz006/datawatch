@@ -60,7 +60,7 @@ test('_fedFetchError: 403 surfaces the server\'s real capability-denial text ver
 
 test('_fedFetchError: 502 surfaces the real dial-failure text verbatim, not a bare "HTTP 502"', async () => {
   const sandbox = loadAppJS();
-  sandbox.__r = fakeResponse(502, 'proxy error: Get "https://ralfthewise:8443/api/health": dial tcp: connect: connection refused');
+  sandbox.__r = fakeResponse(502, 'proxy error: Get "https://peer-d:8443/api/health": dial tcp: connect: connection refused');
   const err = await vm.runInContext('_fedFetchError(__r)', sandbox).catch(e => e);
   assert.match(err.message, /connection refused/);
 });

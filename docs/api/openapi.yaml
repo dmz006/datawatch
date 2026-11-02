@@ -5115,7 +5115,7 @@ paths:
       tags: [Observer]
       parameters:
         - {name: id, in: query, required: true, schema: {type: string},
-           description: "envelope id, e.g. session:ralfthewise-787e or backend:ollama"}
+           description: "envelope id, e.g. session:peer-d-787e or backend:ollama"}
       responses: {"200": {description: OK}, "404": {description: envelope not found}, "503": {description: observer disabled}}
   /api/observer/config:
     get:

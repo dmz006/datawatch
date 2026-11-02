@@ -97,7 +97,7 @@ datawatch sessions start \
   --agent k8s \
   --cluster lab-east \
   --task "Run integration tests"
-#  → spawned session ralfthewise-abcd; agent dw-agent-abcd joining mesh ...
+#  → spawned session peer-d-abcd; agent dw-agent-abcd joining mesh ...
 
 # 3. List peers.
 sleep 10

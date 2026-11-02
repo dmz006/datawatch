@@ -106,8 +106,8 @@ datawatch pipelines approve $PID --step review
 
 # 6. Inspect a specific step's session.
 datawatch pipelines step-session $PID --step tests
-#  → ralfthewise-abcd
-datawatch sessions tail ralfthewise-abcd | head -50
+#  → peer-d-abcd
+datawatch sessions tail peer-d-abcd | head -50
 
 # 7. Cancel.
 datawatch pipelines cancel $PID
@@ -200,7 +200,7 @@ steps:
     status: completed
     started_at: ...
     completed_at: ...
-    session_id: ralfthewise-...
+    session_id: peer-d-...
   - id: tests
     task: "..."
     after: [changelog]

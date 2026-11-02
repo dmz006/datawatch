@@ -104,7 +104,7 @@ SID=$(datawatch sessions start \
 # 3. Wait for the agent to boot + join the mesh.
 sleep 15
 datawatch agents list
-#  → dw-agent-7a3c   session=ralfthewise-7a3c   cluster=lab-east   ts_ip=198.51.100.142   status=running
+#  → dw-agent-7a3c   session=peer-d-7a3c   cluster=lab-east   ts_ip=198.51.100.142   status=running
 ```
 
 (Example values; the real node layout and tailnet addresses live in your
