@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.61.6 — Federation peers honour their certificate settings
+
+### Fixed
+
+- **A federation peer's certificate setting is now honoured everywhere the daemon reads that peer.** The federation sessions view used the default HTTP client and ignored the peer's `tls_skip_verify` and pinned fingerprint, so a peer set to skip certificate checks was still reported with a certificate error, and that error reached the lane fill evidence and the sessions list. One shared peer client now carries the peer's settings (skip verify or a pinned fingerprint; a peer without the opt-in keeps normal verification) and is used by the sessions fetch and the other peer call sites the audit found (the proxy, fingerprint sync and peer usage calls). Separately, a session-list fault on a peer that hosts none of a lane's compute nodes no longer makes that lane unreadable in the lane fill evidence.
+
 ## v9.61.5 — Saved script removal refuses unsafe ids
 
 ### Security
