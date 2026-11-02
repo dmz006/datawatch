@@ -99,7 +99,7 @@ differently:
   small models are the better fit when the constraint is "many independent
   GPU-resident instances," not "one smart model split across RAM/VRAM."
 
-Given `node:datawatch`'s confirmed `max_concurrent_sessions: 1` and
+Given `peer-b`'s confirmed `max_concurrent_sessions: 1` and
 `local-node`'s `max_concurrent_models: 10`, the *local* 32 GB GPU host is
 actually where dense-small packing has room to matter today; the MoE/CPU-
 split trade is more about giving `datawatch` (currently one session at a

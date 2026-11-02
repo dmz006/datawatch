@@ -310,7 +310,7 @@ Live registry state (`compute_node_list`/`health`/`llm_list`, 2026-09-30):
 | `test-node` | `ollama` | 50 | stale duplicate of `datawatch`'s address |
 
 Capacity ledger (live): pool `host` limit 9 (external 3), pool
-`node:datawatch` limit **1**. That single-lease limit bottlenecks any
+`peer-b` limit **1**. That single-lease limit bottlenecks any
 attempt to run parallel council personas or PRD workers on `datawatch`
 regardless of §e's VRAM headroom — raising it (or routing more to
 `local-node`, priority 70 but not capacity-constrained the same way) is a
@@ -329,7 +329,7 @@ behind another datawatch instance rather than being registered directly.
 default 2/round, `council.llm_ref` empty → default backend (all confirmed
 live). Round-robining across `datawatch` (capacity-limited to 1 lease today)
 and `local-node` (real headroom per Plans 2/3) would bottleneck almost
-entirely on the `node:datawatch` pool limit, not GPU memory — raising
+entirely on the `peer-b` pool limit, not GPU memory — raising
 `council.max_parallel` without first raising that pool limit just produces
 queued/rejected leases. A CPU-only endpoint (`llama-server` on
 `local-node`'s spare threads, §c's small-model personas) registered as a
@@ -370,7 +370,7 @@ described in words per scope (not executed here):
 
 ## Summary: getting to 8+ balanced concurrent calls
 
-1. Raise the `node:datawatch` capacity pool limit (currently 1) — the single
+1. Raise the `peer-b` capacity pool limit (currently 1) — the single
    biggest blocker to real concurrency on the highest-priority node.
 2. Start with Plan 2/3 (§e) on `local-node`: 6–8 `qwen3:8b` slots @ 16k
    ctx, q8_0 KV, comfortably fits the 32 GB GPU alongside vision/embedding tenants.
