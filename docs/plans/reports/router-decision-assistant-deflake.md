@@ -15,3 +15,9 @@ notes: Instrumentation was reverted with git checkout and git status was clean; 
 fix: the fake daemon's log now counts requests that reached its handler and reset() waits until each is recorded, so the fixed 200 ms sleep no longer alone separates one input's window from the next.
 cause class: not-determined
 notes: No stray request was observed, so this closes the fixture-side window (a request still being handled when the next input resets the log). The router's own HandleTestMessage is unchanged, and no production file or version was touched.
+
+## Regression test
+
+test: TestAutomationCommFixtureDrainsLateRequests
+fails without the fix: yes
+notes: A request held in the fake daemon handler for 300 ms (longer than HandleTestMessage's 200 ms wait) is in flight when the next input starts. With the controlLog.reset wait removed the late request lands in the next window and the test fails; with the guard restored it passes (-race -count=3). The fixture file diff is empty.
