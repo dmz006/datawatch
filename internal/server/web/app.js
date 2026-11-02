@@ -10037,6 +10037,129 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
+          <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
+          <div style="text-align:center;padding:16px 0 8px;">
+            <canvas id="aboutSplashCanvas" style="width:100%;max-width:320px;height:180px;border-radius:8px;display:block;margin:0 auto 8px;"></canvas>
+            <div style="font-size:18px;font-weight:700;color:var(--accent2);letter-spacing:1px;">datawatch</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Orchestration</div>
+            <!-- GH#172 D59 — "Replay splash" (Android already has this).
+                 Clears the 24h/version gating and reloads so the real
+                 full-screen launch splash (not just this inline canvas
+                 decoration) shows exactly as it does on a fresh visit. -->
+            <button class="btn-secondary" style="font-size:11px;margin-top:8px;" onclick="replaySplash()">${escHtml(t('settings_replay_splash')||'↻ Replay splash')}</button>
+          </div>
+          <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
+               top of the datawatch identity card (Settings → About), not
+               buried under General. Same dropdown options as Settings →
+               General → Language (kept there too for discoverability). -->
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_language')||'Language'}</div>
+            <div class="settings-value">
+              <select id="localePickerAbout" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
+                <option value="auto">${t('settings_lang_auto')||'Auto (browser default)'}</option>
+                <option value="en">English</option>
+                <option value="de">Deutsch</option>
+                <option value="es">Español</option>
+                <option value="fr">Français</option>
+                <option value="ja">日本語</option>
+              </select>
+            </div>
+          </div>
+          <!-- v6.13.14 (BL278 follow-up round 2) — operator: "Or better yet,
+               move it to about under language selector". Theme dropdown
+               relocated here from Settings → General → Notifications.
+               Same shape as the language picker for visual consistency. -->
+          <div class="settings-row">
+            <div class="settings-label">${escHtml(t('theme_mode_label')||'Theme')}</div>
+            <div class="settings-value">
+              <select id="themePickerAbout" onchange="setThemeMode(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
+                <option value="dark"   ${(_themeMode()==='dark')   ? 'selected' : ''}>${escHtml(t('theme_dark')   || 'Dark')}</option>
+                <option value="light"  ${(_themeMode()==='light')  ? 'selected' : ''}>${escHtml(t('theme_light')  || 'Light')}</option>
+                <option value="system" ${(_themeMode()==='system') ? 'selected' : ''}>${escHtml(t('theme_system') || 'System')}</option>
+              </select>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_version')||'Version'}</div>
+            <div class="settings-value" id="aboutVersion">—</div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_update')||'Update'}</div>
+            <div class="settings-value" id="aboutUpdate">
+              <button class="btn-secondary" style="font-size:12px;" onclick="checkForUpdate()">${t('settings_check_now')||'Check now'}</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_daemon')||'Daemon'}</div>
+            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="confirmRestartDaemon()">${t('settings_restart')||'Restart'}</button></div>
+          </div>
+          <!-- GH#172 D80 — subsystem hot-reload (POST /api/reload?subsystem=…,
+               previously reachable only via SIGHUP/MCP/CLI, never the PWA).
+               Distinct from the full-process Restart above: this re-reads
+               config and re-applies what can change without a restart. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">${t('settings_subsystem_reload')||'Subsystem reload'}</div>
+            <div style="display:flex;gap:6px;width:100%;">
+              <select id="aboutReloadSubsystem" class="form-select" style="font-size:11px;flex:1;">
+                <option value="">${t('settings_reload_all')||'All (hot-reloadable config)'}</option>
+                <option value="config">config</option>
+                <option value="filters">filters</option>
+                <option value="memory">memory</option>
+              </select>
+              <button class="btn-secondary" style="font-size:11px;" onclick="reloadSubsystem()">${t('settings_reload_btn')||'Reload'}</button>
+            </div>
+            <div id="aboutReloadResult" style="width:100%;font-size:11px;color:var(--text2);"></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_sessions')||'Sessions'}</div>
+            <div class="settings-value">
+              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">${state.sessions.length} ${t('settings_sessions_in_store')||'in store'}</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_project')||'Project'}</div>
+            <div class="settings-value"><a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">${t('settings_mobile_app')||'Mobile app'}</div>
+            <div class="settings-value" style="font-size:12px;">
+              <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
+              <div style="margin-top:6px;">
+                <a href="https://groups.google.com/g/datawatch-testers" target="_blank" rel="noopener"
+                  style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
+                  Join Beta on Google Play
+                </a>
+                <a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener"
+                  style="display:inline-flex;align-items:center;gap:6px;background:#0d84ff;color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;margin-left:6px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c.38 2.1-1.2 4-3.3 4C8.4 3.9 10 2 12 2zm3.3 6c-1.8 0-2.6 1-3.9 1-1.3 0-2.4-1-4-1-2 0-4.1 1.6-4.1 5 0 3.2 2.5 8 4.3 8 1 0 1.5-.7 2.8-.7 1.3 0 1.7.7 2.9.7 1.9 0 4.4-5 4.4-8.1 0-2.9-1.8-4.9-2.4-4.9z"/></svg>
+                  Join TestFlight Beta
+                </a>
+                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing, pending Google review — the opt-in/install links below may not load the app yet until it clears. Join the tester group above, then {opt_in}, then {install} (the listing appears after you opt in, once review clears) and stay opted in for 14 days (need 12 testers). iOS: {testflight} — install TestFlight from the App Store, open the link, tap Accept, then Install.')
+                  .replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')
+                  .replace('{install}', '<a href="https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_install')||'install from Google Play')+'</a>')
+                  .replace('{testflight}', '<a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_testflight')||'join the public TestFlight beta')+'</a>')}</div>
+              </div>
+            </div>
+          </div>
+          <!-- v6.12.0 — operator 2026-05-05: removed "Branding / Splash"
+               card. The logo is the app identity, not a configuration knob. -->
+          <!-- Orphaned tmux sessions — operator/maintenance affordance,
+               moved here from Settings → Monitor (operator 2026-04-26). -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">${t('settings_orphaned_tmux')||'Orphaned tmux sessions'}</div>
+            <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
+          </div>
+          <!-- Finished one-shot sessions — ad-hoc one-shots whose command has
+               ended but that never reached complete. Clean-up closes them
+               through the same completion path, so the validation gate still
+               decides whether anything is committed. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">${t('settings_finished_oneshots')||'Finished one-shot sessions'}</div>
+            <div class="settings-value" id="aboutFinishedOneShots" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
+          </div>
+        </div>
+        <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
           ${settingsSectionHeader('api', 'API')}
           <div id="settings-sec-api" style="${secContent('api')}">
             <div class="settings-row">
@@ -10215,129 +10338,6 @@ function renderSettingsView() {
           </div>
         </div>
 
-        <div class="settings-section" data-group="about" style="${stab!=='about'?'display:none':''}">
-          <div class="settings-section-title">${t('settings_about_title')||'About'}</div>
-          <div style="text-align:center;padding:16px 0 8px;">
-            <canvas id="aboutSplashCanvas" style="width:100%;max-width:320px;height:180px;border-radius:8px;display:block;margin:0 auto 8px;"></canvas>
-            <div style="font-size:18px;font-weight:700;color:var(--accent2);letter-spacing:1px;">datawatch</div>
-            <div style="font-size:11px;color:var(--text2);margin-top:2px;">AI Orchestration</div>
-            <!-- GH#172 D59 — "Replay splash" (Android already has this).
-                 Clears the 24h/version gating and reloads so the real
-                 full-screen launch splash (not just this inline canvas
-                 decoration) shows exactly as it does on a fresh visit. -->
-            <button class="btn-secondary" style="font-size:11px;margin-top:8px;" onclick="replaySplash()">${escHtml(t('settings_replay_splash')||'↻ Replay splash')}</button>
-          </div>
-          <!-- v5.28.3 — operator-asked: PWA language picker belongs at the
-               top of the datawatch identity card (Settings → About), not
-               buried under General. Same dropdown options as Settings →
-               General → Language (kept there too for discoverability). -->
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_language')||'Language'}</div>
-            <div class="settings-value">
-              <select id="localePickerAbout" onchange="setLocaleOverride(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
-                <option value="auto">${t('settings_lang_auto')||'Auto (browser default)'}</option>
-                <option value="en">English</option>
-                <option value="de">Deutsch</option>
-                <option value="es">Español</option>
-                <option value="fr">Français</option>
-                <option value="ja">日本語</option>
-              </select>
-            </div>
-          </div>
-          <!-- v6.13.14 (BL278 follow-up round 2) — operator: "Or better yet,
-               move it to about under language selector". Theme dropdown
-               relocated here from Settings → General → Notifications.
-               Same shape as the language picker for visual consistency. -->
-          <div class="settings-row">
-            <div class="settings-label">${escHtml(t('theme_mode_label')||'Theme')}</div>
-            <div class="settings-value">
-              <select id="themePickerAbout" onchange="setThemeMode(this.value)" style="background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;">
-                <option value="dark"   ${(_themeMode()==='dark')   ? 'selected' : ''}>${escHtml(t('theme_dark')   || 'Dark')}</option>
-                <option value="light"  ${(_themeMode()==='light')  ? 'selected' : ''}>${escHtml(t('theme_light')  || 'Light')}</option>
-                <option value="system" ${(_themeMode()==='system') ? 'selected' : ''}>${escHtml(t('theme_system') || 'System')}</option>
-              </select>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_version')||'Version'}</div>
-            <div class="settings-value" id="aboutVersion">—</div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_update')||'Update'}</div>
-            <div class="settings-value" id="aboutUpdate">
-              <button class="btn-secondary" style="font-size:12px;" onclick="checkForUpdate()">${t('settings_check_now')||'Check now'}</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_daemon')||'Daemon'}</div>
-            <div class="settings-value"><button class="btn-secondary" style="font-size:12px;" onclick="confirmRestartDaemon()">${t('settings_restart')||'Restart'}</button></div>
-          </div>
-          <!-- GH#172 D80 — subsystem hot-reload (POST /api/reload?subsystem=…,
-               previously reachable only via SIGHUP/MCP/CLI, never the PWA).
-               Distinct from the full-process Restart above: this re-reads
-               config and re-applies what can change without a restart. -->
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
-            <div class="settings-label" style="width:100%;">${t('settings_subsystem_reload')||'Subsystem reload'}</div>
-            <div style="display:flex;gap:6px;width:100%;">
-              <select id="aboutReloadSubsystem" class="form-select" style="font-size:11px;flex:1;">
-                <option value="">${t('settings_reload_all')||'All (hot-reloadable config)'}</option>
-                <option value="config">config</option>
-                <option value="filters">filters</option>
-                <option value="memory">memory</option>
-              </select>
-              <button class="btn-secondary" style="font-size:11px;" onclick="reloadSubsystem()">${t('settings_reload_btn')||'Reload'}</button>
-            </div>
-            <div id="aboutReloadResult" style="width:100%;font-size:11px;color:var(--text2);"></div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_sessions')||'Sessions'}</div>
-            <div class="settings-value">
-              <button class="btn-link" onclick="navigate('sessions');state.showHistory=true;renderSessionsView();">${state.sessions.length} ${t('settings_sessions_in_store')||'in store'}</button>
-            </div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_project')||'Project'}</div>
-            <div class="settings-value"><a href="https://github.com/dmz006/datawatch" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch</a></div>
-          </div>
-          <div class="settings-row">
-            <div class="settings-label">${t('settings_mobile_app')||'Mobile app'}</div>
-            <div class="settings-value" style="font-size:12px;">
-              <a href="https://github.com/dmz006/datawatch-app" target="_blank" rel="noopener" style="color:var(--accent);">github.com/dmz006/datawatch-app</a>
-              <div style="margin-top:6px;">
-                <a href="https://groups.google.com/g/datawatch-testers" target="_blank" rel="noopener"
-                  style="display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
-                  Join Beta on Google Play
-                </a>
-                <a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener"
-                  style="display:inline-flex;align-items:center;gap:6px;background:#0d84ff;color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;margin-left:6px;">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c.38 2.1-1.2 4-3.3 4C8.4 3.9 10 2 12 2zm3.3 6c-1.8 0-2.6 1-3.9 1-1.3 0-2.4-1-4-1-2 0-4.1 1.6-4.1 5 0 3.2 2.5 8 4.3 8 1 0 1.5-.7 2.8-.7 1.3 0 1.7.7 2.9.7 1.9 0 4.4-5 4.4-8.1 0-2.9-1.8-4.9-2.4-4.9z"/></svg>
-                  Join TestFlight Beta
-                </a>
-                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing, pending Google review — the opt-in/install links below may not load the app yet until it clears. Join the tester group above, then {opt_in}, then {install} (the listing appears after you opt in, once review clears) and stay opted in for 14 days (need 12 testers). iOS: {testflight} — install TestFlight from the App Store, open the link, tap Accept, then Install.')
-                  .replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')
-                  .replace('{install}', '<a href="https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_install')||'install from Google Play')+'</a>')
-                  .replace('{testflight}', '<a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_testflight')||'join the public TestFlight beta')+'</a>')}</div>
-              </div>
-            </div>
-          </div>
-          <!-- v6.12.0 — operator 2026-05-05: removed "Branding / Splash"
-               card. The logo is the app identity, not a configuration knob. -->
-          <!-- Orphaned tmux sessions — operator/maintenance affordance,
-               moved here from Settings → Monitor (operator 2026-04-26). -->
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
-            <div class="settings-label" style="width:100%;">${t('settings_orphaned_tmux')||'Orphaned tmux sessions'}</div>
-            <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
-          </div>
-          <!-- Finished one-shot sessions — ad-hoc one-shots whose command has
-               ended but that never reached complete. Clean-up closes them
-               through the same completion path, so the validation gate still
-               decides whether anything is committed. -->
-          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
-            <div class="settings-label" style="width:100%;">${t('settings_finished_oneshots')||'Finished one-shot sessions'}</div>
-            <div class="settings-value" id="aboutFinishedOneShots" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
-          </div>
-        </div>
 
         <!-- BL238 — Plugins sub-tab -->
         <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">

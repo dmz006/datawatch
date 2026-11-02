@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v9.63.0-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.63.1-success)](CHANGELOG.md)
 
 datawatch is a program you run on your own computer or server. It starts AI assistants such as Claude Code to do work, watches them, and tells you when they need you, in a web page, on your phone, or in Signal, Telegram, Slack and other chat apps.
 
@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.63.0 (2026-11-02).** Finished work now shows where it shipped: a Shipped chip, a filter and counts. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.63.1 (2026-11-02).** The About card is first on the web app's About page. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

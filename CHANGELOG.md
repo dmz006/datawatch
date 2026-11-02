@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.63.1 — The About card comes first
+
+### Fixed
+
+- **In the web app, the About card is now the first thing on Settings → About.** It holds the logo, language, theme, version, update check and daemon controls, and used to sit below the API and Config Viewer sections. A test checks that it stays first.
+
 ## v9.63.0 — Shipped state for Automata and Automations
 
 ### Added
