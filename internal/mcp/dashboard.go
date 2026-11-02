@@ -5,6 +5,7 @@
 //   dashboard_card_update    — set cs/rs for a card (upserts if not present)
 //   dashboard_card_add       — append a card
 //   dashboard_card_delete    — remove a card
+//   dashboard_console_get    — operator console one-glance summary (GET /api/dashboard/console)
 
 package mcp
 
@@ -51,6 +52,12 @@ func (s *Server) toolDashboardCardDelete() mcpsdk.Tool {
 	return mcpsdk.NewTool("dashboard_card_delete",
 		mcpsdk.WithDescription("#57 — remove a card from the dashboard layout."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("card type id")),
+	)
+}
+
+func (s *Server) toolDashboardConsoleGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("dashboard_console_get",
+		mcpsdk.WithDescription("Operator console one-glance summary — the same data as GET /api/dashboard/console. One section each for open questions, held/blocked sessions, lanes, usage, and CI/release; each section is flagged available with a count, a one-line summary, and the PWA link."),
 	)
 }
 
@@ -103,6 +110,17 @@ func (s *Server) handleDashboardCardAddMCP(_ context.Context, req mcpsdk.CallToo
 func (s *Server) handleDashboardCardDeleteMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	body, err := s.proxyJSON("DELETE", fmt.Sprintf("/api/dashboard/cards/%s", id), nil)
+	if err != nil {
+		return nil, err
+	}
+	return mcpsdk.NewToolResultText(string(body)), nil
+}
+
+// handleDashboardConsoleGetMCP proxies the operator console endpoint
+// (GET /api/dashboard/console) and returns it verbatim — the same shape
+// and data as the REST surface the PWA console renders from.
+func (s *Server) handleDashboardConsoleGetMCP(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body, err := s.proxyGet("/api/dashboard/console", nil)
 	if err != nil {
 		return nil, err
 	}
