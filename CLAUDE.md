@@ -157,3 +157,20 @@ A session acting as PRD supervisor must read `docs/plans/2026-10-17-supervisor-r
 before its first action. It holds the full operator and supervisor rules and the lessons learned,
 including who decides what, how to validate a decompose, how to triage a failed task, and when a PRD
 is ready to advance.
+
+## Checkpoints
+
+### 2026-11-01 21:41 — COMPLETED (task cc920001: bounded audit wait)
+- Scope: only `internal/session/ui_prompt_dismiss_test.go` (git status: only that file modified; production `ui_prompt_dismiss.go` untouched).
+- Converted positive-outcome audit assertions to the existing `waitForDismissAudit(t, h, outcome, 1, 10*time.Second)` helper:
+  - `TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared` (not_cleared booking).
+  - `TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce` (refused → not_cleared).
+- Absence-check tests keep a single snapshot read after the bounded state-wait (a positive-wait helper can't assert "zero events"):
+  - `TestUIPromptDismiss_ClearedDuringDelayNeverSends`, `TestUIPromptDismiss_SettingOffNeverSends`.
+- Fixed a pre-existing -race flake in this test file (surfaced by `-count=5 -race`), test-only, no assertion/semantic changes:
+  - `clockMu` + `h.advance(d)` guard `*h.clockNow` against the capture loop's `mgr.clock` reads (replaces 9 raw pointer writes).
+  - `h.running()` reads session state via the store-locked `liveSnap` snapshot (same path as `parkedLocked`) instead of raw `h.sess.State` field reads (4 sites).
+- Gates (all green): `gofmt -l` on the file → clean; `go vet ./internal/session` → clean; `go build ./internal/session` → clean; `env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run 'TestUIPromptDismiss_' -count=5 -race` → 45 passed, 0 data races, exit 0.
+- `git add internal/session/ui_prompt_dismiss_test.go` staged on branch `automaton/cc920001--tasks-apply-the-bounded-audit-wait-to-every-si-354f0005`.
+- Note: `gofmt -l ./internal/session/` also flags pre-existing `store_leak_guard.go` (not in scope, unmodified).
+- DATAWATCH_COMPLETE emitted.
