@@ -49,9 +49,9 @@ func TestAutomationCommDecisionAssistantUsage(t *testing.T) {
 		"automation set-decision-assistant ab12 threshold.empty_edge=high backend=b model=m",
 		"automation set-decision-assistant ab12 clear=maybe",
 	} {
-		*calls = nil
+		calls.reset()
 		resp := r.HandleTestMessage(in)
-		if len(*calls) != 0 {
+		if len(calls.snapshot()) != 0 {
 			t.Errorf("%q reached the daemon", in)
 		}
 		if len(resp) == 0 || !strings.Contains(resp[0], decisionAssistantUsagePrefix) {
