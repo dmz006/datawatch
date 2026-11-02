@@ -21,7 +21,7 @@ exec_steps:
     description: Worked example, a state-changing call. Allow 2 retries of one task on Claude before the task is held for you (0 to 20)
     args: {retry_limit_claude: 2}
   - tool: burn_guard_config_set
-    description: Worked example, a state-changing call. Turn on ask mode so the guard keeps at most one open question per change instead of sending one alert
+    description: Worked example, a state-changing call. Turn on ask mode so the guard also raises a question per change alongside the alert, keeping at most one open
     args: {ask_on_change: true}
 ---
 
@@ -92,7 +92,7 @@ evaluation with no restart, and one invalid value rejects the whole change.
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_pi_prompt, hold_claude` |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
-| `ask_on_change` | When false (default) one alert per change and no question; when true at most one open question per change | `false` |
+| `ask_on_change` | When false (default) one alert per change and no question; when true the per-change alert still goes out and at most one open question per change is kept | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
 | `cache_read_points_per_million` | Weekly points per million cache-read tokens, above 0 and at most 1000 | `0.0069` |
 | `refit_on_reading` | Refit the two prices when a new reading arrives | `true` |
@@ -107,7 +107,7 @@ the daemon log; the daemon still starts.
 keeps at most one open question per change until you answer it, alongside
 the per-change alert.
 
-### Asking instead of alerting (`ask_on_change`)
+### The question on top of the alert (`ask_on_change`)
 
 An alert goes out every time the guard applies or releases a rung; this
 setting decides whether a question then asks you to keep or release the
@@ -131,17 +131,17 @@ change.
   changes leaves you with one question, not a pile of them.
 
 A step raises a question only when it changed a setting. A hold (changed
-nothing), a `lower_inflight` rung whose cap was already at one, a release
-that would restore a cap that was never lowered, and turning the guard off
-all alert but ask nothing. Two more withdrawals keep you from ever answering
+nothing), a `lower_inflight` rung whose cap was already at one, a release that
+would restore a cap that was never lowered, a step that only releases the
+hold (a `hold_claude` release), and turning the guard off all alert but ask
+nothing. Two more withdrawals keep you from ever answering
 a question that no longer stands: if you turn `ask_on_change` off again, the
 next change withdraws the last open question (reason: *ask_on_change is off,
 so the burn guard alerts only*), and when the daemon starts, any guard
 question a previous run left open that the current ladder state no longer
 supports is withdrawn as stale (reason: *at start the burn guard no longer
-applies the rung this question refers to*). You can set `ask_on_change`
-from any table below, without a restart — the guard reads the current value
-every interval.
+applies the rung this question refers to*). You can set `ask_on_change` from any row of the *Where to change them* table
+below, without a restart — the guard reads the current value every interval.
 
 ### Where to change them
 
