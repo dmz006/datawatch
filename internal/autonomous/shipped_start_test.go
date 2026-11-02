@@ -82,8 +82,10 @@ func TestShippedStartBackfillOnceWrapsDryRun(t *testing.T) {
 	if !ok {
 		t.Fatalf("ShippedBackfillOnce = %T, want ShippedBackfillReport", rep)
 	}
-	if dry.PrdsMarked != 0 || dry.AutomationsMarked != 0 {
-		t.Errorf("dry run marked %d prds, %d automations, want 0/0", dry.PrdsMarked, dry.AutomationsMarked)
+	// The dry run reports what the writing pass would mark for PRDs (3 here)
+	// and writes nothing; Automations are only counted when written.
+	if dry.PrdsMarked != 3 || dry.AutomationsMarked != 0 {
+		t.Errorf("dry run counted %d prds, %d automations, want 3/0", dry.PrdsMarked, dry.AutomationsMarked)
 	}
 	if dry.PrdsScanned != 4 || len(dry.UnmatchedIDs) != 1 || dry.UnmatchedIDs[0] != "deadbeef" {
 		t.Errorf("dry run report = %+v, want 4 scanned, [deadbeef] unmatched", dry)
