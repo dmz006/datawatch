@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Cancelling an Automaton now keeps its verification scripts.** The scripts are saved in a folder outside the worktree before the worktree is removed, and they are copied back when the Automaton or a task worktree is created or recreated. A stray folder that is not a worktree at the worktree path is moved aside instead of blocking setup. A verification script that is missing everywhere still produces the existing setup fault.
+
 ## v9.61.0 — Claude burn guard
 
 Claude burn guard: keeps the weekly burn under the pace line without ending a running session.
