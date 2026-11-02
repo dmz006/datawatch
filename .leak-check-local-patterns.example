@@ -1,0 +1,22 @@
+# Template for .leak-check-local-patterns — copy it to that name (no
+# ".example") and add your own entries.
+#
+# The real file holds site-specific strings the generic patterns in
+# scripts/leak-check.conf cannot know: your hostnames, usernames, domain
+# names, machine names and similar.
+#
+# Format:
+#   - One pattern per line. Blank lines and lines starting with # are ignored.
+#   - Each pattern is a fixed string, not a regex; characters such as . and *
+#     match themselves.
+#   - Matching is case-insensitive.
+#
+# The real file is never committed: it is listed in .gitignore. If it is
+# absent, the leak check skips only this local-patterns part and still runs
+# every generic pattern.
+#
+# This template holds no real identifiers. Replace the placeholders below.
+#
+# my-workstation
+# my-build-server.internal
+# example-username

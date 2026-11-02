@@ -90,3 +90,7 @@ __pycache__/
 # Build and generated artifacts that tasks have committed by mistake
 /datawatch-channel
 /internal/server/web/assets/docs-bm25-index.json
+
+# Whole-tree leak check: site-specific patterns and scratch output never get committed
+.leak-check-local-patterns
+.leak-check-tmp/
