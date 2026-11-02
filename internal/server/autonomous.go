@@ -2686,6 +2686,44 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_story_thinking_level", "automaton", id, map[string]any{"story_id": req.StoryID, "thinking_level": req.ThinkingLevel})
 		s.writeAutonomousResult(w, r, updated, "", req.StoryID, "")
 
+	case "set_task_effort_ceiling":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID  string `json:"task_id"`
+			Ceiling string `json:"ceiling"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		ec, ok := s.autonomousMgr.(effortCeilingAPI)
+		if !ok {
+			http.Error(w, "effort ceiling is not available", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ec.SetTaskEffortCeiling(id, req.TaskID, req.Ceiling, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_task_effort_ceiling", "automaton", id, map[string]any{"task_id": req.TaskID, "ceiling": req.Ceiling})
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+
 	case "set_task_thinking_level":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3788,6 +3826,10 @@ type automationControlReq struct {
 	ResetWeekday       string   `json:"reset_weekday"`
 	ResetDay           int      `json:"reset_day"`
 	ResetZone          string   `json:"reset_zone"`
+
+	// set_effort_ceiling: task kind -> low|medium|high|cheaper_backend. An
+	// empty or absent map clears the Automation's ceiling.
+	EffortCeiling map[string]string `json:"effort_ceiling"`
 	EstimatedCostUSD   *float64 `json:"estimated_cost_usd"`
 	Clear              bool     `json:"clear"`
 }
@@ -4005,6 +4047,15 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			details["estimated_cost_usd"] = *bs.EstimatedCostUSD
 		}
 		a, err = ctl.SetAutomationBudgetPolicy(id, bs, req.Actor, req.ExpectedVersion)
+	case "set_effort_ceiling":
+		action = "automation_set_effort_ceiling"
+		ec, ok := s.autonomousMgr.(effortCeilingAPI)
+		if !ok {
+			http.Error(w, "effort ceiling is not available", http.StatusNotImplemented)
+			return
+		}
+		details["effort_ceiling"] = req.EffortCeiling
+		a, err = ec.SetAutomationEffortCeiling(id, req.EffortCeiling, req.Actor, req.ExpectedVersion)
 	default:
 		http.NotFound(w, r)
 		return

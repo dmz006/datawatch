@@ -1516,6 +1516,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
+					m.raiseClaudeRetryHoldQuestion(prd, t, currentBurnGuardLimits().RetryLimitClaude)
 					return held
 				}
 				if routed != backend {

@@ -205,6 +205,10 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	defer g.tickMu.Unlock()
 	now := g.in.Now()
 	cfg := g.in.Config()
+	// Publish the effort ceiling and the Claude retry limit to the executor.
+	autonomous.SetBurnGuardLimits(&autonomous.BurnGuardLimits{
+		Enabled: cfg.Enabled, EffortCeiling: cfg.EffortCeiling, RetryLimitClaude: cfg.RetryLimitClaude,
+	})
 	set := burnguard.LadderSettings{Enabled: cfg.Enabled, Ladder: cfg.Ladder, StepBack: cfg.StepBack, MarginPoints: cfg.MarginPoints}
 
 	var proj burnguard.Projection

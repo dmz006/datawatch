@@ -125,21 +125,23 @@ func effortRank(e string) int {
 		return 2
 	case "high", "thorough":
 		return 3
-	case "max":
+	case "xhigh":
 		return 4
+	case "max":
+		return 5
 	}
 	return 0
 }
 
 // LowerEffort applies a ceiling to an effort: an effort above the ceiling comes
-// down to it, an effort at or under it stays, an empty effort takes the ceiling.
+// down to it, an effort at or under it stays, an empty (unset) effort stays unset.
 // It never raises. cheaper_backend is not an effort and returns cur unchanged.
 func LowerEffort(cur Effort, ceiling string) Effort {
 	if ceiling != CeilingLow && ceiling != CeilingMedium && ceiling != CeilingHigh {
 		return cur
 	}
 	if cur == "" {
-		return Effort(ceiling)
+		return cur
 	}
 	if r := effortRank(string(cur)); r > effortRank(ceiling) {
 		return Effort(ceiling)

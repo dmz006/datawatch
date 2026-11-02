@@ -154,3 +154,17 @@ func TestClaudeRetry_DisabledIsNoop(t *testing.T) {
 		t.Fatalf("disabled changed: %q %v %d", be, err, task.ClaudeRetries)
 	}
 }
+
+func TestEffortCeiling_XHighLoweredAndUnsetStaysUnset(t *testing.T) {
+	for _, c := range []string{CeilingLow, CeilingMedium, CeilingHigh} {
+		if got := LowerThinkingLevel("xhigh", c); got != c {
+			t.Errorf("xhigh under %s = %q, want %q", c, got, c)
+		}
+	}
+	if got := LowerThinkingLevel("", CeilingHigh); got != "" {
+		t.Errorf("unset thinking = %q, want it left unset", got)
+	}
+	if got := LowerEffort("", CeilingLow); got != "" {
+		t.Errorf("unset effort = %q, want it left unset", got)
+	}
+}

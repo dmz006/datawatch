@@ -51,6 +51,8 @@ var MCPToolCap = map[string]string{
 	"automation_set_llm":                           CapAutonomousWrite,
 	"automation_set_verification_llm":              CapAutonomousWrite,
 	"automation_set_budget":                        CapAutonomousWrite,
+	"automation_set_effort_ceiling":                CapAutonomousWrite,
+	"autonomous_prd_set_task_effort_ceiling":       CapAutonomousWrite,
 	"automation_set_decision_assistant":            CapAutonomousWrite,
 	"automation_create":                            CapAutonomousWrite,
 	"automation_delete":                            CapAutonomousWrite,

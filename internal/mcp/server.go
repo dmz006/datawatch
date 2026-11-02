@@ -599,6 +599,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelStory(), tracked(s.handleAutonomousPRDCancelStory))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelTask(), tracked(s.handleAutonomousPRDCancelTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetFailureEscalation(), tracked(s.handleAutonomousPRDSetFailureEscalation))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskEffortCeiling(), tracked(s.handleAutonomousPRDSetTaskEffortCeiling))
 	mcpSrv.AddTool(s.toolAutonomousPRDResolveTaskReview(), tracked(s.handleAutonomousPRDResolveTaskReview))
 	mcpSrv.AddTool(s.toolAutonomousPRDApproveTask(), tracked(s.handleAutonomousPRDApproveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDInstantiate(), tracked(s.handleAutonomousPRDInstantiate))
@@ -727,6 +728,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationSetLLM(), tracked(s.handleAutomationSetLLM))
 	mcpSrv.AddTool(s.toolAutomationSetVerificationLLM(), tracked(s.handleAutomationSetVerificationLLM))
 	mcpSrv.AddTool(s.toolAutomationSetBudget(), tracked(s.handleAutomationSetBudget))
+	mcpSrv.AddTool(s.toolAutomationSetEffortCeiling(), tracked(s.handleAutomationSetEffortCeiling))
 	mcpSrv.AddTool(s.toolAutomationSetDecisionAssistant(), tracked(s.handleAutomationSetDecisionAssistant))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
@@ -1434,6 +1436,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationSetLLM, "automation_set_llm"},
 		{s.toolAutomationSetVerificationLLM, "automation_set_verification_llm"},
 		{s.toolAutomationSetBudget, "automation_set_budget"},
+		{s.toolAutomationSetEffortCeiling, "automation_set_effort_ceiling"},
 		{s.toolAutomationSetDecisionAssistant, "automation_set_decision_assistant"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
