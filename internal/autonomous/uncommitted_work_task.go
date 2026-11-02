@@ -58,6 +58,15 @@ func uncommittedCommitCause(err error) string {
 	return UncommittedCauseCommitFailed + ": " + msg
 }
 
+// skippedMissingPathsNote names the in-scope paths the commit skipped because
+// they exist nowhere (worktree, index, HEAD). Empty when none were skipped.
+func skippedMissingPathsNote(skipped []string) string {
+	if len(skipped) == 0 {
+		return ""
+	}
+	return "skipped because it no longer exists: " + boundedFileList(skipped, uncommittedQuestionFiles)
+}
+
 // checkUncommittedWork refuses to let a task complete while its work is
 // uncommitted. It returns held=true when the task was parked in TaskBlocked
 // (the caller persists nothing further and returns nil, as for the setup-fault
@@ -105,7 +114,12 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	}
 
 	var cause string
+	var skippedNote string
 	if paths := InScopeUncommitted(remaining); len(paths) > 0 {
+		// Classified before the commit so a deletion the commit itself
+		// records is not mistaken for a path that was already gone.
+		_, _, skipped := classifyTaskCommitPaths(ctx, dir, paths)
+		skippedNote = skippedMissingPathsNote(skipped)
 		sha, cerr := m.taskCommitFn()(ctx, dir, paths, uncommittedTaskCommitMessage(prd, t))
 		if cerr != nil {
 			cause = uncommittedCommitCause(cerr)
@@ -131,6 +145,9 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	}
 	if cause == "" {
 		cause = UncommittedCauseStillDirty
+	}
+	if skippedNote != "" {
+		cause += "; " + skippedNote
 	}
 
 	if policy == config.UncommittedWorkPolicyWarn {
