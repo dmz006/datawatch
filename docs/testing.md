@@ -2359,3 +2359,17 @@ Results for the lane fill eligibility work. The row-by-row list is the "Lane fil
 | Browser story TS-842 (`scripts/test-stories/pwa/lane-fill-card.mjs`) | Not run | `node --check` and `bash -n` pass; the Playwright package is outside this worktree, so the story still needs a run where the PWA stories run |
 
 Still owed, and not claimed as done: the one-day shadow comparison on the operator's own daemon, and a run of TS-842 in a browser.
+
+---
+
+## Router decision assistant test flake (2026-11-02)
+
+### BUG: decision assistant comm tests read the shared call log while a late request still wrote to it
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestAutomationCommDecisionAssistantUsage` and the shared comm fixture could read the fake daemon's call log while a late request from an earlier command was still writing to it, so the test failed intermittently and was flagged under the race detector. The fixture now drains late requests, and the log is read under its lock. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: run `gofmt -l` on the changed Go files and `go vet ./internal/router/`; run `golangci-lint run ./internal/router/`; run `go test -race -count=1 -v -run '^(TestAutomationCommDecisionAssistant\|TestAutomationCommDecisionAssistantUsage\|TestAutomationCommDecisionAssistantVerbListed\|TestAutomationCommFixtureDrainsLateRequests)$' ./internal/router/`. |
+| **Expected** | `gofmt -l` prints nothing, vet and lint report nothing, and all four tests, including `TestAutomationCommDecisionAssistantUsage` and `TestAutomationCommFixtureDrainsLateRequests`, pass under `-race` with no data race report. |
+| **Actual** | `gofmt -l` printed nothing, vet was clean, lint reported 0 issues, and all four tests passed under `-race`. |
+| **Result** | PASS |
