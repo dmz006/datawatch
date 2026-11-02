@@ -13,6 +13,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,8 +138,45 @@ func parkSession(t *testing.T, mgr *Manager, sess *Session, cb *uiPromptCallback
 	if cb == nil {
 		return
 	}
-	if needs, _ := cb.snapshot(); needs != 0 {
-		t.Fatalf("onNeedsInput fired %d time(s) while the session was parked on a recognised prompt; want 0", needs)
+	if needs, old := cb.snapshot(); needs != 0 {
+		t.Fatalf("onNeedsInput fired %d time(s) while the session was parked on a recognised prompt; want 0 (state transition(s) recorded: %v)", needs, old)
+	}
+}
+
+// waitParked polls, with a generous bound, until the whole parked condition
+// is visible in every consumer view at once: the state-change callback has
+// recorded exactly one transition (the old state [running]), the session
+// record carries the prompt (snap.UIPrompt != nil) and it stays on
+// waiting_input, and UIPromptFor exposes the snapshot. The capture goroutine
+// emits these in order — save, then the onStateChange callback, then the
+// timeline line — after making the state change itself visible, so a
+// fixed-order read right after parkSession is a race: the state can be
+// waiting_input while the callback and (on an in-flight tick) the prompt
+// exposure have not yet landed. All zero assertions (needs-input count, key
+// sends) stay OUTSIDE the wait and are asserted after the positive
+// condition is reached.
+func waitParked(t *testing.T, mgr *Manager, sess *Session, cb *uiPromptCallbacks, fake *FakeTmux) {
+	t.Helper()
+	const timeout = 20 * time.Second
+	deadline := time.Now().Add(timeout)
+	last := "(not read yet)"
+	for {
+		snap, ok := liveSnap(t, mgr, sess)
+		needs, old := cb.snapshot()
+		keys := keySends(fake, sess.TmuxSession)
+		last = fmt.Sprintf("state=%q UIPrompt set=%v UIPromptFor set=%v needsInput=%d oldStates=%v keySends=%d",
+			snap.State, snap.UIPrompt != nil, mgr.UIPromptFor(sess.FullID) != nil, needs, old, keys)
+		if ok && snap.State == StateWaitingInput && snap.UIPrompt != nil &&
+			mgr.UIPromptFor(sess.FullID) != nil &&
+			len(old) == 1 && old[0] == StateRunning {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting %s for the parked condition (exactly one state-change transition recorded from [running], state still waiting_input, snapshot UIPrompt set, UIPromptFor non-nil); last seen: %s",
+				timeout, last)
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -157,16 +195,17 @@ func TestUIPromptBlocked_RunningParksSuppressesAndExposes(t *testing.T) {
 
 	stop := startCapture(t, mgr, sess)
 	parkSession(t, mgr, sess, cb)
+	waitParked(t, mgr, sess, cb, fake)
 
 	cur, ok := liveSnap(t, mgr, sess)
 	if !ok {
-		t.Fatal("session missing")
+		t.Fatalf("session %s missing from the store after parking", sess.FullID)
 	}
 	if cur.State != StateWaitingInput {
-		t.Fatalf("state = %q, want waiting_input", cur.State)
+		t.Fatalf("state = %q, want waiting_input (UIPrompt set=%v)", cur.State, cur.UIPrompt != nil)
 	}
 	if cur.UIPrompt == nil {
-		t.Fatalf("session.UIPrompt = nil, want the recognised prompt exposed")
+		t.Fatalf("session.UIPrompt = nil, want the recognised prompt exposed (state=%q)", cur.State)
 	}
 	if cur.UIPrompt.Kind != InterstitialAutocompactThreshold {
 		t.Errorf("UIPrompt.Kind = %q, want %q", cur.UIPrompt.Kind, InterstitialAutocompactThreshold)
@@ -181,15 +220,19 @@ func TestUIPromptBlocked_RunningParksSuppressesAndExposes(t *testing.T) {
 	// UIPromptFor exposes the snapshot for REST / MCP / server consumers.
 	snapInfo := mgr.UIPromptFor(sess.FullID)
 	if snapInfo == nil {
-		t.Fatal("UIPromptFor = nil while blocked; want the prompt snapshot")
+		t.Fatalf("UIPromptFor(%s) = nil while blocked; want the prompt snapshot (state=%q, record UIPrompt set=%v)",
+			sess.FullID, cur.State, cur.UIPrompt != nil)
 	}
 	if snapInfo.Kind != InterstitialAutocompactThreshold || !strings.Contains(snapInfo.SelectedOption, "Autocompact at 400k") {
 		t.Errorf("UIPromptFor() = %+v, want kind autocompact-threshold with the 400k option", snapInfo)
 	}
-	if mgr.UIPromptFor("testhost-unknown") != nil {
-		t.Error("UIPromptFor(unknown) = non-nil, want nil for a session with no tracked prompt")
+	if got := mgr.UIPromptFor("testhost-unknown"); got != nil {
+		t.Errorf("UIPromptFor(unknown) = %+v, want nil for a session with no tracked prompt", got)
 	}
 
+	// Zero / exact-once checks, asserted now that the parked condition is
+	// fully visible (waitParked returned), so they can not race the
+	// callbacks behind the fixed-order read.
 	if needs, old := cb.snapshot(); needs != 0 || len(old) != 1 || old[0] != StateRunning {
 		t.Fatalf("side effects while blocked: needsInput=%d oldStates=%v; want 0 and exactly [running]", needs, old)
 	}
@@ -211,15 +254,20 @@ func TestUIPromptBlocked_StaticPaneTicksKeepParked(t *testing.T) {
 
 	stop := startCapture(t, mgr, sess)
 	parkSession(t, mgr, sess, cb)
+	waitParked(t, mgr, sess, cb, fake)
 
 	base := paneCaptures(fake, sess.TmuxSession)
 	pollUntil(t, 10*time.Second, func() bool { return paneCaptures(fake, sess.TmuxSession) >= base+4 },
 		"capture loop stopped ticking on the static pane")
-	if mgr.UIPromptFor(sess.FullID) == nil {
-		t.Fatal("UIPromptFor = nil after static ticks; the park must persist while the prompt is on the pane")
+	if got := mgr.UIPromptFor(sess.FullID); got == nil {
+		t.Fatalf("UIPromptFor(%s) = nil after static ticks; the park must persist while the prompt is on the pane",
+			sess.FullID)
 	}
-	if needs, old := cb.snapshot(); needs != 0 || len(old) != 1 {
-		t.Fatalf("static ticks re-fired side effects: needsInput=%d oldStates=%v; want 0 and exactly 1 transition", needs, old)
+	if needs, old := cb.snapshot(); needs != 0 || len(old) != 1 || old[0] != StateRunning {
+		t.Fatalf("static ticks re-fired side effects: needsInput=%d oldStates=%v; want 0 and exactly 1 transition from [running]", needs, old)
+	}
+	if got := keySends(fake, sess.TmuxSession); got != 0 {
+		t.Fatalf("loop sent %d key(s) while the static pane stayed parked; detection only, want 0: %+v", got, fake.Calls)
 	}
 	stop()
 	snap, ok := liveSnap(t, mgr, sess)
@@ -241,8 +289,9 @@ func TestUIPromptBlocked_PaneClearsRestoresOriginalState(t *testing.T) {
 
 	stop := startCapture(t, mgr, sess)
 	parkSession(t, mgr, sess, cb)
-	if need, old := cb.snapshot(); len(old) != 1 || old[0] != StateRunning {
-		t.Fatalf("park transitions = %v (needs=%d), want exactly [running]", old, need)
+	waitParked(t, mgr, sess, cb, fake)
+	if needs, old := cb.snapshot(); needs != 0 {
+		t.Fatalf("onNeedsInput fired %d time(s) while parked before the clear; want 0 (state transition(s): %v)", needs, old)
 	}
 
 	// The prompt is dismissed (by whatever agent the later phase is) and
