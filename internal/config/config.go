@@ -585,10 +585,33 @@ type Config struct {
 	// have a `web_search` tool backed by the configured SearXNG instance.
 	WebSearch WebSearchConfig `yaml:"web_search,omitempty" json:"web_search,omitempty"`
 
+	// Dashboard holds the dashboard block (dashboard.*) — card rendering
+	// switches. An unset key reads its default; see DashboardConfig.
+	Dashboard DashboardConfig `yaml:"dashboard,omitempty" json:"dashboard,omitempty"`
+
 	// Results — per-schedule result history store (scheduled jobs):
 	// how many latest posted results each schedule name retains before
 	// the oldest ones are evicted.
 	Results ResultsConfig `yaml:"results,omitempty" json:"results,omitempty"`
+}
+
+// DashboardConfig is the dashboard block.
+//
+//	dashboard:
+//	  hide_inactive_cards: false
+//
+// An absent dashboard key, or an absent hide_inactive_cards key,
+// reads the default, true.
+type DashboardConfig struct {
+	// HideInactiveCards controls whether the dashboard hides inactive
+	// cards. A nil pointer (key absent) reads as the default, true.
+	HideInactiveCards *bool `yaml:"hide_inactive_cards,omitempty" json:"hide_inactive_cards,omitempty"`
+}
+
+// EffectiveHideInactiveCards returns the effective dashboard.hide_inactive_cards
+// value (true when the key is absent).
+func (c DashboardConfig) EffectiveHideInactiveCards() bool {
+	return boolOrDefault(c.HideInactiveCards, true)
 }
 
 // SmokeConfig controls smoke-run cross-instance reporting (#54).
