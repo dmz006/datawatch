@@ -44,6 +44,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.58.2 — Pipeline file opened through a root handle
+
+### Security
+
+- **The merge pipeline file is opened through a root handle on the project directory.** A pipeline file name that is a symlink, an absolute path or a `..` path leaving the project is now refused by the operating system and not only by the name check, which closes a code scanning path injection finding in the file loader.
+
+### Fixed
+
+- **Two string cleaning patterns in a PWA test stub are gone.** The result panel test used a regular expression sanitizer stub that code scanning flagged; it now removes fixed strings.
+
 ## v9.58.1 — Accepted risk for a new SQLite finding
 
 ### Security
