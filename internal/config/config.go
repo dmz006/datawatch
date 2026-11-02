@@ -5367,7 +5367,7 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
-		Usage: UsageConfig{Calculator: DefaultUsageCalculator()},
+		Usage: UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:          1,
 			MaxConcurrentTasks:      1,
@@ -5830,6 +5830,7 @@ func applyDefaults(cfg *Config) {
 	cfg.Autonomous.UsageBackoff = normalizeUsageBackoff(cfg.Autonomous.UsageBackoff)
 	cfg.Autonomous.BackoffMaxWaitMinutes = normalizeBackoffMaxWaitMinutes(cfg.Autonomous.BackoffMaxWaitMinutes)
 	cfg.Usage.Calculator = normalizeUsageCalculator(cfg.Usage.Calculator, usageCalculatorLogf)
+	cfg.Usage.BurnGuard = normalizeBurnGuard(cfg.Usage.BurnGuard, burnGuardLogf)
 	if cfg.Autonomous.RoleScanIntervalSeconds < 1 {
 		cfg.Autonomous.RoleScanIntervalSeconds = RoleScanIntervalDefaultSeconds
 	}
