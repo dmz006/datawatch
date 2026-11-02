@@ -66,13 +66,18 @@ func (s *HTTPServer) NotifyQuestionRaised(q autonomous.Question) {
 // notify toggles live (absent keys count as on). The parts run in one
 // goroutine, and a panic inside any of them is recovered — the raise
 // itself already succeeded, and the operator still has the return path
-// (the 201 response + the polled GET).
+// (the 201 response + the polled GET). The goroutine counts itself on
+// the Server's questionNotifies WaitGroup so WaitQuestionNotifies can
+// block until this raise's fan-out (including the alert-store write)
+// has run to completion.
 func (s *Server) notifyQuestionRaised(q autonomous.Question) {
 	if s.cfg != nil && !s.cfg.Autonomous.Questions.Enabled {
 		return // switch off: none of this work fires
 	}
+	s.questionNotifies.Add(1)
 	go func() {
 		defer func() { _ = recover() }()
+		defer s.questionNotifies.Done()
 
 		// (1) WebSocket — the return-path event, always part of the
 		// switch (event plus polled GET is the default return path).
@@ -125,4 +130,30 @@ func (s *Server) notifyQuestionRaised(q autonomous.Question) {
 			}
 		}
 	}()
+}
+
+// WaitQuestionNotifies blocks until every raise fan-out goroutine that
+// was in flight at the time of the call has finished. It exists so a
+// caller that must be certain no fan-out leg is still running — notably
+// the high-priority alert store's Add, which rewrites the alerts JSON
+// file — can block before shutting down or reading that state; nothing
+// else in the raise path waits for the goroutine, so without this a
+// process exit or file read could race the write. Nil-safe: calling on
+// a nil Server is a no-op.
+func (s *Server) WaitQuestionNotifies() {
+	if s == nil {
+		return
+	}
+	s.questionNotifies.Wait()
+}
+
+// HTTPServer delegate for WaitQuestionNotifies, so main.go and the
+// daemon can wait through the same variable they wire the rest of the
+// question channel on. Same nil-check pattern as the other delegates in
+// this file.
+func (s *HTTPServer) WaitQuestionNotifies() {
+	if s == nil || s.api == nil {
+		return
+	}
+	s.api.WaitQuestionNotifies()
 }

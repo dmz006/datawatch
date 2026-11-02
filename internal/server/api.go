@@ -528,6 +528,10 @@ type Server struct {
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).
 	questionRaiseNotifier QuestionRaiseNotifier
+	// questionNotifies — counts the raise fan-out goroutines in flight
+	// (see WaitQuestionNotifies) so a caller can block until the latest
+	// raise's alert-write side effect has completed.
+	questionNotifies sync.WaitGroup
 	// questionAnswerReturnPath — the per-question opt-in session line on
 	// answer (one line of DATAWATCH_ANSWER: into the asking session); wired
 	// by main.go via SetQuestionAnswerReturnPath; nil (default) = no
