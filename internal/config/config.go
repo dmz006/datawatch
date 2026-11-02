@@ -599,19 +599,86 @@ type Config struct {
 //
 //	dashboard:
 //	  hide_inactive_cards: false
+//	  console:
+//	    enabled: false
 //
-// An absent dashboard key, or an absent hide_inactive_cards key,
-// reads the default, true.
+// An absent dashboard key, or an absent hide_inactive_cards key, or an
+// absent console subkey, each reads its default, true.
 type DashboardConfig struct {
 	// HideInactiveCards controls whether the dashboard hides inactive
 	// cards. A nil pointer (key absent) reads as the default, true.
 	HideInactiveCards *bool `yaml:"hide_inactive_cards,omitempty" json:"hide_inactive_cards,omitempty"`
+	// Console carries the operator console block (dashboard.console.*):
+	// the switches gating the GET /api/dashboard/console one-glance
+	// summary. Every subkey defaults to true (nil = key absent).
+	Console DashboardConsoleConfig `yaml:"console,omitempty" json:"console,omitempty"`
+}
+
+// DashboardConsoleConfig is the operator console block under dashboard.*.
+// enabled gates the whole endpoint; the show_* keys gate one section each.
+// Each field is a pointer so that "key absent" reads the default, true,
+// while an explicit false sticks through saves and YAML round trips.
+type DashboardConsoleConfig struct {
+	// Enabled gates the endpoint as a whole; when false every section
+	// reports itself unavailable regardless of data.
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// ShowQuestions gates the questions_waiting section (open operator
+	// questions: the question channel, held questions and worker markers).
+	ShowQuestions *bool `yaml:"show_questions,omitempty" json:"show_questions,omitempty"`
+	// ShowHeldBlocked gates the held_blocked section (automata stuck in
+	// failed/blocked triage states and uncommitted-work holds).
+	ShowHeld *bool `yaml:"show_held_blocked,omitempty" json:"show_held_blocked,omitempty"`
+	// ShowLanes gates the lanes section (lane fill status and the
+	// capacity admission wait queue).
+	ShowLanes *bool `yaml:"show_lanes,omitempty" json:"show_lanes,omitempty"`
+	// ShowUsage gates the usage section (burn guard state and the usage
+	// advice projection).
+	ShowUsage *bool `yaml:"show_usage,omitempty" json:"show_usage,omitempty"`
+	// ShowCIRelease gates the ci_release section (repo CI watch records
+	// and the latest-release check).
+	ShowCIRelease *bool `yaml:"show_ci_release,omitempty" json:"show_ci_release,omitempty"`
 }
 
 // EffectiveHideInactiveCards returns the effective dashboard.hide_inactive_cards
 // value (true when the key is absent).
 func (c DashboardConfig) EffectiveHideInactiveCards() bool {
 	return boolOrDefault(c.HideInactiveCards, true)
+}
+
+// EffectiveEnabled returns the effective dashboard.console.enabled value
+// (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveEnabled() bool {
+	return boolOrDefault(c.Enabled, true)
+}
+
+// EffectiveShowQuestions returns the effective dashboard.console.show_questions
+// value (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveShowQuestions() bool {
+	return boolOrDefault(c.ShowQuestions, true)
+}
+
+// EffectiveShowHeld returns the effective dashboard.console.show_held_blocked
+// value (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveShowHeld() bool {
+	return boolOrDefault(c.ShowHeld, true)
+}
+
+// EffectiveShowLanes returns the effective dashboard.console.show_lanes
+// value (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveShowLanes() bool {
+	return boolOrDefault(c.ShowLanes, true)
+}
+
+// EffectiveShowUsage returns the effective dashboard.console.show_usage
+// value (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveShowUsage() bool {
+	return boolOrDefault(c.ShowUsage, true)
+}
+
+// EffectiveShowCIRelease returns the effective dashboard.console.show_ci_release
+// value (true when the key is absent).
+func (c DashboardConsoleConfig) EffectiveShowCIRelease() bool {
+	return boolOrDefault(c.ShowCIRelease, true)
 }
 
 // SmokeConfig controls smoke-run cross-instance reporting (#54).
