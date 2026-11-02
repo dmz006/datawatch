@@ -44,6 +44,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 **Reuse audit (new primitives):** nothing new was built where a primitive existed. The notification legs reuse the hub's broadcast, the router's per-group send with the same `notify_exclude` rules as the lifecycle comm sink, and the alert store; the two new event kinds ride the existing lifecycle dispatcher and per-subscriber queue (the task.looping path) rather than a second queue; the session line goes through the daemon's own session input send; the live enable reuses the PUT config apply path (the same place the tag registry and store settings apply live). Only the append-only emit marker in the question store and the `DATAWATCH_ANSWER:` line shape are new.
 
+## v9.58.1 — Accepted risk for a new SQLite finding
+
+### Security
+
+- **A new HIGH finding on the SQLite library in the agent images is accepted for 30 days.** The container scan of the 9.58.0 release listed CVE-2026-119373 (a denial of service in `libsqlite3-0`, no fixed Debian bookworm version) and blocked the image build. The library's reachability was already traced for the earlier SQLite finding: only gpg links it, nothing runs gpg at runtime, and datawatch uses a pure Go SQLite driver. The entry is in `security/accepted-risks.yml` as reasoning from that trace (not a new trace), so it expires on 2026-12-01.
+
 ## v9.58.0 — Merge pipeline as configuration
 
 - **Each project can now define its own merge pipeline, and say how a merge conflict is handled.** The pipeline comes from a file in the project's repository, else a record the daemon keeps, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` says what happens when the file is unusable. A conflict follows `conflict_policy` (stop and ask, resolve additive hunks mechanically, or mechanical then a model) and a model's proposal is kept only if the pipeline's test step passes on it in a scratch tree. Read it, check a pipeline and keep a record from the PWA card, `datawatch autonomous merge-pipeline`, the `autonomous_merge_pipeline_*` MCP tools and the chat verb. See `docs/howto/merge-pipeline.md`.
