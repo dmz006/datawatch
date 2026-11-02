@@ -134,14 +134,16 @@ func effortRank(e string) int {
 }
 
 // LowerEffort applies a ceiling to an effort: an effort above the ceiling comes
-// down to it, an effort at or under it stays, an empty (unset) effort stays unset.
+// down to it, an effort at or under it stays, an empty (unset) effort takes the ceiling.
 // It never raises. cheaper_backend is not an effort and returns cur unchanged.
 func LowerEffort(cur Effort, ceiling string) Effort {
 	if ceiling != CeilingLow && ceiling != CeilingMedium && ceiling != CeilingHigh {
 		return cur
 	}
 	if cur == "" {
-		return cur
+		// Unset means the backend default, which is the case the ceiling
+		// targets: the task runs at the ceiling.
+		return Effort(ceiling)
 	}
 	if r := effortRank(string(cur)); r > effortRank(ceiling) {
 		return Effort(ceiling)
