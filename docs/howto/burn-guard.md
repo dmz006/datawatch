@@ -20,6 +20,9 @@ exec_steps:
   - tool: burn_guard_config_set
     description: Worked example, a state-changing call. Allow 2 retries of one task on Claude before the task is held for you (0 to 20)
     args: {retry_limit_claude: 2}
+  - tool: burn_guard_config_set
+    description: Worked example, a state-changing call. Turn on ask mode so the guard keeps at most one open question per change instead of sending one alert
+    args: {ask_on_change: true}
 ---
 
 # Burn guard
@@ -89,6 +92,7 @@ evaluation with no restart, and one invalid value rejects the whole change.
 | `margin_points` | How far the projection may run over the pace line before the guard acts, 0 to 50 | `2.0` |
 | `ladder` | Ordered rungs applied while over the line | `lower_inflight, route_pi_prompt, hold_claude` |
 | `step_back` | Release rungs in reverse once back under the line | `true` |
+| `ask_on_change` | When false (default) one alert per change and no question; when true at most one open question per change | `false` |
 | `cache_write_points_per_million` | Weekly points per million cache-write tokens, above 0 and at most 1000 | `0.373` |
 | `cache_read_points_per_million` | Weekly points per million cache-read tokens, above 0 and at most 1000 | `0.0069` |
 | `refit_on_reading` | Refit the two prices when a new reading arrives | `true` |
@@ -97,6 +101,11 @@ evaluation with no restart, and one invalid value rejects the whole change.
 
 An invalid value in a saved config falls back to its default with a warning in
 the daemon log; the daemon still starts.
+
+`ask_on_change` picks how the guard reaches out about a change. When false
+(the default) it sends one alert per change and no question. When true it
+keeps at most one open question per change until you answer it, instead of
+alerting.
 
 ### Where to change them
 

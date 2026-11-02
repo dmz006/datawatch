@@ -16754,6 +16754,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.interval_minutes', label: 'Burn guard check interval (minutes)', labelKey: 'settings_usage_burn_guard_interval_minutes', type: 'number', placeholder: '60', min: 1, max: 1440, step: 1, default: '60' },
     { key: 'usage.burn_guard.margin_points', label: 'Burn guard margin (points)', labelKey: 'settings_usage_burn_guard_margin_points', type: 'number', placeholder: '2', min: 0, max: 50, step: 0.5, default: '2' },
     { key: 'usage.burn_guard.step_back', label: 'Burn guard steps back under the line', labelKey: 'settings_usage_burn_guard_step_back', type: 'toggle', default: true },
+    { key: 'usage.burn_guard.ask_on_change', label: 'Burn guard asks instead of alerting', labelKey: 'settings_usage_burn_guard_ask_on_change', type: 'toggle', default: false },
     { key: 'usage.burn_guard.cache_write_points_per_million', label: 'Burn guard cache write price', labelKey: 'settings_usage_burn_guard_cache_write_points_per_million', type: 'number', placeholder: '0.373', min: 0.0001, step: 0.001, default: '0.373' },
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
@@ -25979,6 +25980,7 @@ window.burnGuardSettingsHtml = function (cfg) {
     `<label style="font-size:12px;">${escHtml(t('burn_guard_margin'))} <input id="burnGuardMargin" type="number" min="0" step="any" value="${escHtml(margin)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('margin_points')"></label>` +
     `<div style="font-size:12px;">${escHtml(t('burn_guard_ladder'))}</div><div id="burnGuardLadder">${rows}</div>` +
     `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardStepBack"${cfg.step_back ? ' checked' : ''} onchange="burnGuardSaveField('step_back')"><span>${escHtml(t('burn_guard_step_back'))}</span></label>` +
+    `<label style="display:flex;align-items:center;gap:6px;font-size:12px;min-height:28px;"><input type="checkbox" id="burnGuardAskOnChange"${cfg.ask_on_change ? ' checked' : ''} onchange="burnGuardSaveField('ask_on_change')"><span>${escHtml(t('burn_guard_ask_on_change'))}</span></label>` +
     `<label style="font-size:12px;">${escHtml(t('burn_guard_retry_limit'))} <input id="burnGuardRetryLimit" type="number" min="0" max="20" step="1" value="${escHtml(retry)}" style="width:100%;max-width:120px;" onchange="burnGuardSaveField('retry_limit_claude')"></label>` +
     `<div data-burn-guard="effort-ceiling" style="font-size:12px;"><span>${escHtml(t('burn_guard_effort_ceiling'))}</span> ${ceilRows || escHtml(t('burn_guard_ceiling_none'))}</div>` +
     `<div style="font-size:11px;color:var(--text2);">${escHtml(t('burn_guard_ceiling_hint'))}</div>` +
@@ -26017,6 +26019,7 @@ window.burnGuardSaveField = function (key) {
   let body;
   if (key === 'enabled') body = { enabled: chk('burnGuardEnabled') };
   else if (key === 'step_back') body = { step_back: chk('burnGuardStepBack') };
+  else if (key === 'ask_on_change') body = { ask_on_change: chk('burnGuardAskOnChange') };
   else if (key === 'margin_points') body = { margin_points: num('burnGuardMargin') };
   else if (key === 'retry_limit_claude') body = { retry_limit_claude: num('burnGuardRetryLimit') };
   else return;
