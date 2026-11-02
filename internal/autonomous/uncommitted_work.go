@@ -287,35 +287,89 @@ type TaskCommitFn func(ctx context.Context, dir string, files []string, message 
 // listed files with explicit pathspecs (never -A and never "."), then commits
 // without --no-verify, so a failing commit hook is a failed commit and its
 // error is returned. When nothing ends up staged it makes no commit and
-// returns the current HEAD with a nil error.
+// returns the current HEAD with a nil error. A listed path that was deleted
+// is recorded as a deletion, whether or not the deletion was already staged,
+// and a path that exists nowhere (worktree, index, HEAD) is skipped.
 func DefaultTaskCommit(ctx context.Context, dir string, files []string, message string) (string, error) {
 	if dir == "" {
 		return "", errors.New("task commit: empty directory")
 	}
-	for start := 0; start < len(files); start += snapshotAddChunk {
-		end := min(start+snapshotAddChunk, len(files))
-		args := append([]string{"add", "--"}, files[start:end]...)
+	add, pathspec, _ := classifyTaskCommitPaths(ctx, dir, files)
+	for start := 0; start < len(add); start += snapshotAddChunk {
+		end := min(start+snapshotAddChunk, len(add))
+		args := append([]string{"add", "--"}, add[start:end]...)
 		if out, err := runGitInCtx(ctx, dir, args...); err != nil {
 			return "", fmt.Errorf("task commit: git add in %s: %w: %s", dir, err, strings.TrimSpace(out))
 		}
 	}
-	if len(files) > 0 {
-		// Limit the staged check to the listed files, so changes someone
-		// else staged earlier cannot turn into this commit.
-		args := append([]string{"diff", "--cached", "--quiet", "--"}, files...)
-		if _, err := runGitInCtx(ctx, dir, args...); err == nil {
-			return taskHeadSHA(ctx, dir)
-		}
-	} else {
+	if len(pathspec) == 0 {
+		return taskHeadSHA(ctx, dir)
+	}
+	// Limit the staged check to the listed files, so changes someone
+	// else staged earlier cannot turn into this commit.
+	checkArgs := append([]string{"diff", "--cached", "--quiet", "--"}, pathspec...)
+	if _, err := runGitInCtx(ctx, dir, checkArgs...); err == nil {
 		return taskHeadSHA(ctx, dir)
 	}
 	// An explicit pathspec on commit records only the listed files, whatever
 	// else sits in the index.
-	args := append([]string{"commit", "-m", message, "--"}, files...)
+	args := append([]string{"commit", "-m", message, "--"}, pathspec...)
 	if out, err := runGitInCtx(ctx, dir, args...); err != nil {
 		return "", fmt.Errorf("task commit: git commit in %s: %w: %s", dir, err, strings.TrimSpace(out))
 	}
 	return taskHeadSHA(ctx, dir)
+}
+
+// classifyTaskCommitPaths sorts the listed paths into what git add receives
+// (add), what the commit pathspec receives (pathspec) and what is dropped
+// (skipped). Per path:
+//  1. A path that lexically escapes the repository (absolute, or starting
+//     with "..") is never skipped: it goes to add and pathspec so git fails
+//     with its own error.
+//  2. A path that exists in the worktree (Lstat succeeds) goes to add and
+//     pathspec.
+//  3. A path missing from the worktree but present in the index is a tracked
+//     file deleted on disk: add (git add stages the deletion) and pathspec.
+//  4. A path missing from the worktree and index but present in HEAD is a
+//     deletion that is already staged: pathspec only, because git add would
+//     fail with "pathspec did not match".
+//  5. A path found nowhere is skipped and appears in neither list.
+//
+// A git error while probing (anything other than the probe's normal "not
+// found" result) never skips a path; it goes to add and pathspec so the real
+// git error surfaces.
+func classifyTaskCommitPaths(ctx context.Context, dir string, files []string) (add, pathspec, skipped []string) {
+	for _, p := range files {
+		clean := filepath.Clean(p)
+		if filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		if _, err := os.Lstat(filepath.Join(dir, p)); err == nil {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		out, err := runGitInCtx(ctx, dir, "ls-files", "--cached", "--", p)
+		if err != nil || strings.TrimSpace(out) != "" {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		out, err = runGitInCtx(ctx, dir, "ls-tree", "-r", "--name-only", "HEAD", "--", p)
+		if err != nil {
+			add = append(add, p)
+			pathspec = append(pathspec, p)
+			continue
+		}
+		if strings.TrimSpace(out) != "" {
+			pathspec = append(pathspec, p)
+			continue
+		}
+		skipped = append(skipped, p)
+	}
+	return add, pathspec, skipped
 }
 
 // taskHeadSHA returns the current HEAD commit of dir.
