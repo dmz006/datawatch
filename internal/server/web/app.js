@@ -25673,7 +25673,7 @@ window.burnGuardCardHtml = function (status, config, opts) {
   const st = status || null;
   const cfg = config || {};
   const head = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">` +
-    `<div style="font-weight:600;">${escHtml(t('burn_guard_title'))}${docsLink('howto/usage-calculator.md#burn-guard', t('burn_guard_help'))}</div>` +
+    `<div style="font-weight:600;">${escHtml(t('burn_guard_title'))}${docsLink('howto/burn-guard.md', t('burn_guard_help'))}</div>` +
     `<button type="button" class="btn-secondary" data-burn-guard="run" style="font-size:12px;padding:4px 10px;" onclick="burnGuardRunNow()">${escHtml(t('burn_guard_run_now'))}</button></div>`;
   const parts = [head];
   if (opts.error) parts.push(`<div role="alert" data-burn-guard="error" style="color:var(--error,#ef4444);font-size:12px;">${escHtml(t('burn_guard_error', [opts.error]))}</div>`);

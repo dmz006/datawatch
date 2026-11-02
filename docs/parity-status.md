@@ -51,6 +51,7 @@ Legend:
 | Orchestrator graphs | ✅ | ✅ | ✅ (app CHANGELOG 2026-10-04: "orchestrator graphs" in the three-way parity Automata list) |
 | Capacity admission (pools, wait queue, priority, per-node/LLM limits) | ✅ | ✅ (app v1.23.83, 2026-09-29: "Capacity card showing pools, limits and the wait queue") | ✅ |
 | Account usage calculator (readings, advice, three policies, three PWA variants, federation keeper) | ✅ MCP, REST, CLI, comm; PWA 🔶 not yet shipped | ❌ pending: [app#286](https://github.com/dmz006/datawatch-app/issues/286) (contract: `plans/2026-10-25-usage-calculator-mobile-contract.md`); locale keys: [app#287](https://github.com/dmz006/datawatch-app/issues/287) | ❌ pending: [app#286](https://github.com/dmz006/datawatch-app/issues/286), same scope and locale keys [app#287](https://github.com/dmz006/datawatch-app/issues/287) |
+| Burn guard (status, run now, settings, alerts; ladder of admission changes, effort ceiling, Claude retry limit) | ✅ Web UI Burn guard card on the usage calculator view with help link and five locale bundles; MCP (`burn_guard_*`), REST (`/api/usage/burn-guard`), CLI (`datawatch usage burn-guard`), comm (`usage burn-guard`) | ⏳ file a `dmz006/datawatch-app` issue on merge — text in [`plans/burn-guard-app-parity-issue.md`](plans/burn-guard-app-parity-issue.md): status, settings, alerts | ⏳ same as Android |
 | Usage back-off (capacity panel wait-reason chip + `autonomous.usage_backoff` / `autonomous.backoff_max_wait_minutes` settings fields + status display) | ✅ | ❌ — datawatch-app item: mirror the capacity-panel back-off display and the two settings fields | ❌ — datawatch-app item, same scope |
 | Capacity visibility (task wait cause chip, reason, reset time and Holds line; capacity card back-off reset label, budget spend bars with the estimate label; audit query `subject` filter and `action` prefix) | ✅ | ❌ — pending the datawatch-app issue written up in `plans/2026-10-22-datawatch-app-capacity-visibility-note.md` (not filed yet) | ❌ — same issue, same scope |
 | Capacity card — compute node usage rows (per node: loaded model with memory size and expiry or stays-loaded, slots held of limit, GPU utilization and memory from the observer; `usage` object on REST, `capacity_status` MCP, CLI, comm) | ✅ | ❌ pending the datawatch-app issue written up in `plans/2026-10-24-datawatch-app-capacity-node-usage-note.md` (not filed) | ❌ — same issue, same scope (five-locale key set specified in that note) |
@@ -126,6 +127,26 @@ Legend:
 - **GH#182** — one item remains: `datawatch://alert/<id>` deep-link route handling, blocked on an operator URL-shape decision.
 - **GH#172 D65/D67** — three-finger swipe-up gesture + other under-specified Android session-detail extras. Deferred pending clarification of exact behavior, not a parity gap PWA is positioned to close blind.
 - **BL396 approved-but-unshipped**: #17 (alert badge watched-only count), #18 (per-automaton memory stats on Automaton detail), #19 (server info card), #20 (add-memory dialog tags field), 2 cosmetic items (skeleton shimmer timing, splash status granularity).
+
+## Parity surface — burn guard
+
+| Channel | Surface | Status |
+|---------|---------|--------|
+| REST | `GET /api/usage/burn-guard`, `POST /api/usage/burn-guard/run`, `GET`/`PUT /api/usage/burn-guard/config`; effort ceiling through the Automaton and task routes | ✅ |
+| MCP | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set`, `automation_set_effort_ceiling`, `autonomous_prd_set_task_effort_ceiling` | ✅ |
+| CLI | `datawatch usage burn-guard status`, `run`, `config [key=value ...]` | ✅ |
+| Comm channel | `usage burn-guard` (status), `automation set-effort-ceiling`, `configure usage.burn_guard.<key>=<value>` | ✅ |
+| Web UI | Burn guard card on the usage calculator view: state, rung, projection against line and margin, last decision, settings, effort ceiling read-only, **Run now**, help link to the howto; five locale bundles | ✅ |
+| YAML | `usage.burn_guard` block | ✅ |
+| Android | status, settings and alerts | ⏳ issue text in [`plans/burn-guard-app-parity-issue.md`](plans/burn-guard-app-parity-issue.md), filed at merge |
+| iOS | status, settings and alerts | ⏳ same issue |
+
+Per-surface notes:
+
+- **Alerts** are ordinary system alerts and queue questions, so every client that lists alerts and questions already receives them; the app work is to read the new status and settings.
+- **Effort ceiling** is shown read-only in the Web UI card; it is set through the Automaton and task tools, not the settings call.
+- **Comm channel** shows status only; it has no run verb, run it from the CLI, REST, MCP or Web UI.
+- **Running sessions** are never touched by the guard on any surface.
 
 ## Plan/Proposal parity gate
 

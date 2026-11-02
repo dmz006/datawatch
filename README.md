@@ -214,6 +214,7 @@ operator accepts a risk through the registry. See
 [automation-security-failure.md](docs/howto/automation-security-failure.md).
 
 - **Usage calculator** — type a reading of your weekly provider allowance and get advice on whether you are within budget and what each lane count costs; it only advises and never stops a lane. See [usage-calculator.md](docs/howto/usage-calculator.md).
+- **Burn guard** — compares the projected weekly burn of your Claude sessions with the pace line and, when it runs over, steps down a ladder (lower the inflight cap, route new work to `pi-prompt`, hold new Claude work), then steps back. It never ends a running session. Also sets an effort ceiling per task kind and a Claude retry limit. See [burn-guard.md](docs/howto/burn-guard.md).
 
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:
