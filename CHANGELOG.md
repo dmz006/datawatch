@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.63.0 — Shipped state for Automata and Automations
+
+
 ## v9.62.2 — Repository tidy and a plain-English README
 
 ### Changed
