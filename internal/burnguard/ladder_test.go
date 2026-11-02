@@ -1,0 +1,293 @@
+package burnguard
+
+import (
+	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+)
+
+type memStore struct {
+	s     LadderState
+	saves int
+	err   error
+}
+
+func (m *memStore) Load() (LadderState, error) { return m.s, nil }
+func (m *memStore) Save(s LadderState) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.s, m.saves = s, m.saves+1
+	return nil
+}
+
+func settings() LadderSettings {
+	return LadderSettings{Enabled: true, StepBack: true, MarginPoints: 2}
+}
+
+func proj(overBy float64) Projection {
+	return Projection{Projected: 98 + overBy, Target: 98, Ceiling: 100, Margin: 2, OverBy: overBy,
+		Over: overBy > 0, PointsPerHour: 1.7, AllowedPerHour: 0.6}
+}
+
+func tick(t *testing.T, l *Ladder, p Projection, s LadderSettings, at time.Time) Decision {
+	t.Helper()
+	d, err := l.Tick(TickInput{Projection: p, Settings: s, Now: at, InflightCap: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func TestActionKindsAreAdmissionOnly(t *testing.T) {
+	got := ActionKinds()
+	want := []ActionKind{"set_inflight", "route_backend", "hold_new_work"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("kinds = %v, want %v", got, want)
+	}
+	// No ActionKind constant outside the three may be declared in the package source.
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "ladder.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	ast.Inspect(f, func(node ast.Node) bool {
+		vs, ok := node.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+		if id, ok := vs.Type.(*ast.Ident); ok && id.Name == "ActionKind" {
+			n += len(vs.Names)
+		}
+		return true
+	})
+	if n != 3 {
+		t.Fatalf("%d ActionKind constants declared, want 3", n)
+	}
+	for _, k := range got {
+		if s := string(k); strings.Contains(s, "kill") || strings.HasPrefix(s, "end") || strings.Contains(s, "stop") {
+			t.Fatalf("kind %q acts on running sessions", s)
+		}
+	}
+}
+
+func TestClimbsOneRungPerTickThenHolds(t *testing.T) {
+	st := &memStore{}
+	l, _ := NewLadder(st)
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	d := tick(t, l, proj(20), settings(), at)
+	if d.Direction != DirectionClimb || d.Rung != RungLowerInflight || d.Level != 1 {
+		t.Fatalf("tick 1: %+v", d)
+	}
+	if a := d.Actions[0]; a.Kind != ActionSetInflight || a.Value != 2 || a.Release {
+		t.Fatalf("action %+v", a)
+	}
+	if !strings.Contains(d.AlertText, "from 3 to 2") || !strings.Contains(d.QuestionText, "I did this") {
+		t.Fatalf("texts: %q / %q", d.AlertText, d.QuestionText)
+	}
+	d = tick(t, l, proj(20), settings(), at.Add(time.Hour))
+	if d.Rung != RungRoutePiPrompt || d.Actions[0].Kind != ActionRouteBackend || d.Actions[0].To != PiBackend {
+		t.Fatalf("tick 2: %+v", d)
+	}
+	d = tick(t, l, proj(20), settings(), at.Add(2*time.Hour))
+	if d.Rung != RungHoldClaude || d.Actions[0].Kind != ActionHoldNewWork {
+		t.Fatalf("tick 3: %+v", d)
+	}
+	d = tick(t, l, proj(20), settings(), at.Add(3*time.Hour))
+	if d.Changed || d.Level != 3 || d.Direction != DirectionHold || d.AlertText != "" {
+		t.Fatalf("tick 4 should hold: %+v", d)
+	}
+	if st.saves != 3 || st.s.OriginalInflight != 3 || !st.s.LastChange.Equal(at.Add(2*time.Hour)) {
+		t.Fatalf("saved %d times, state %+v", st.saves, st.s)
+	}
+}
+
+func TestMarginHolds(t *testing.T) {
+	l, _ := NewLadder(nil)
+	at := time.Now()
+	for _, o := range []float64{2, 1, 0, -1, -2} {
+		if d := tick(t, l, proj(o), settings(), at); d.Changed || d.Reason != "within the margin" {
+			t.Fatalf("overBy %v: %+v", o, d)
+		}
+	}
+	tick(t, l, proj(5), settings(), at)
+	for _, o := range []float64{2, 0, -2} {
+		if d := tick(t, l, proj(o), settings(), at); d.Changed {
+			t.Fatalf("overBy %v changed: %+v", o, d)
+		}
+	}
+}
+
+func TestStepsBackOneRungPerTick(t *testing.T) {
+	l, _ := NewLadder(nil)
+	at := time.Now()
+	for i := 0; i < 3; i++ {
+		tick(t, l, proj(20), settings(), at)
+	}
+	want := []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight}
+	for i, r := range want {
+		d := tick(t, l, proj(-10), settings(), at)
+		if d.Direction != DirectionStepBack || d.Rung != r || d.Level != 2-i || !d.Actions[0].Release {
+			t.Fatalf("step %d: %+v", i, d)
+		}
+	}
+	// the last release restores the original inflight cap
+	if l.State().OriginalInflight != 0 || len(l.State().Applied) != 0 {
+		t.Fatalf("state %+v", l.State())
+	}
+	if d := tick(t, l, proj(-10), settings(), at); d.Changed {
+		t.Fatalf("empty ladder changed: %+v", d)
+	}
+}
+
+func TestInflightRestoreValue(t *testing.T) {
+	l, _ := NewLadder(nil)
+	tick(t, l, proj(20), settings(), time.Now())
+	d := tick(t, l, proj(-10), settings(), time.Now())
+	if a := d.Actions[0]; a.Kind != ActionSetInflight || !a.Release || a.Value != 3 {
+		t.Fatalf("%+v", a)
+	}
+}
+
+func TestStepBackOff(t *testing.T) {
+	l, _ := NewLadder(nil)
+	s := settings()
+	s.StepBack = false
+	tick(t, l, proj(20), s, time.Now())
+	d := tick(t, l, proj(-20), s, time.Now())
+	if d.Changed || d.Level != 1 {
+		t.Fatalf("%+v", d)
+	}
+}
+
+func TestDisabledLadder(t *testing.T) {
+	l, _ := NewLadder(nil)
+	s := settings()
+	s.Enabled = false
+	if d := tick(t, l, proj(50), s, time.Now()); d.Changed || d.Direction != DirectionDisabled || d.Level != 0 {
+		t.Fatalf("%+v", d)
+	}
+	// turned off while rungs are in force: they are all released
+	l, _ = NewLadder(nil)
+	tick(t, l, proj(20), settings(), time.Now())
+	tick(t, l, proj(20), settings(), time.Now())
+	d := tick(t, l, proj(50), s, time.Now())
+	if !d.Changed || d.Level != 0 || len(d.Actions) != 2 || !d.Actions[0].Release || !d.Actions[1].Release {
+		t.Fatalf("%+v", d)
+	}
+	if d.Actions[0].Kind != ActionRouteBackend || d.Actions[1].Value != 3 {
+		t.Fatalf("release order: %+v", d.Actions)
+	}
+}
+
+func TestOneRungLadder(t *testing.T) {
+	l, _ := NewLadder(nil)
+	s := settings()
+	s.Ladder = []string{RungHoldClaude}
+	d := tick(t, l, proj(30), s, time.Now())
+	if d.Rung != RungHoldClaude || d.Level != 1 {
+		t.Fatalf("%+v", d)
+	}
+	d = tick(t, l, proj(30), s, time.Now())
+	if d.Changed || d.Level != 1 || d.Reason == "" {
+		t.Fatalf("%+v", d)
+	}
+	d = tick(t, l, proj(-30), s, time.Now())
+	if d.Rung != RungHoldClaude || d.Level != 0 || !d.Actions[0].Release {
+		t.Fatalf("%+v", d)
+	}
+}
+
+func TestNeedsHolds(t *testing.T) {
+	l, _ := NewLadder(nil)
+	tick(t, l, proj(20), settings(), time.Now())
+	d := tick(t, l, Projection{Needs: "reading"}, settings(), time.Now())
+	if d.Changed || d.Level != 1 || !strings.Contains(d.Reason, "reading") {
+		t.Fatalf("%+v", d)
+	}
+}
+
+func TestRestartWithPersistedState(t *testing.T) {
+	st := &memStore{}
+	l, _ := NewLadder(st)
+	at := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
+	tick(t, l, proj(20), settings(), at)
+	tick(t, l, proj(20), settings(), at.Add(time.Hour))
+
+	// the daemon restarts: a new ladder over the same store, with a different current cap
+	l2, err := NewLadder(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l2.State(); len(got.Applied) != 2 || got.OriginalInflight != 3 {
+		t.Fatalf("loaded %+v", got)
+	}
+	d, _ := l2.Tick(TickInput{Projection: proj(20), Settings: settings(), Now: at.Add(2 * time.Hour), InflightCap: 2})
+	if d.Rung != RungHoldClaude || d.Previous != 2 {
+		t.Fatalf("%+v", d)
+	}
+	for i := 0; i < 2; i++ {
+		d, _ = l2.Tick(TickInput{Projection: proj(-10), Settings: settings(), Now: at, InflightCap: 2})
+	}
+	if a := d.Actions[0]; a.Kind != ActionRouteBackend && a.Kind != ActionSetInflight {
+		t.Fatalf("%+v", a)
+	}
+	d, _ = l2.Tick(TickInput{Projection: proj(-10), Settings: settings(), Now: at, InflightCap: 2})
+	if a := d.Actions[0]; a.Kind != ActionSetInflight || a.Value != 3 {
+		t.Fatalf("original cap not restored from persisted state: %+v", a)
+	}
+}
+
+func TestSaveErrorStillDecides(t *testing.T) {
+	st := &memStore{err: errors.New("disk full")}
+	l, _ := NewLadder(st)
+	d, err := l.Tick(TickInput{Projection: proj(20), Settings: settings(), Now: time.Now(), InflightCap: 3})
+	if err == nil || !d.Changed || d.Level != 1 {
+		t.Fatalf("err=%v d=%+v", err, d)
+	}
+}
+
+func TestFridayNightReplayThroughLadder(t *testing.T) {
+	f := loadFixture(t)
+	loc := ny(t)
+	limitHit := time.Date(2026, 10, 31, 5, 30, 0, 0, loc)
+	l, _ := NewLadder(&memStore{})
+
+	var climbs []time.Time
+	levelAtLimit := 0
+	for now := time.Date(2026, 10, 29, 10, 0, 0, 0, loc); now.Before(limitHit); now = now.Add(time.Hour) {
+		p := Project(ProjectInput{Readings: readingsUpTo(f.Readings, now), Reset: f.Reset, Now: now,
+			Buckets: f.Buckets, Coef: f.Coefficients})
+		d, _ := l.Tick(TickInput{Projection: p, Settings: settings(), Now: now, InflightCap: 3})
+		if d.Direction == DirectionClimb {
+			climbs = append(climbs, now)
+		}
+		levelAtLimit = d.Level
+	}
+	if len(climbs) < 3 || levelAtLimit != 3 {
+		t.Fatalf("climbs %v, level at the limit %d", climbs, levelAtLimit)
+	}
+	// the ladder reached its top rung well before the limit and was holding there at the end
+	if lead := limitHit.Sub(climbs[len(climbs)-1]); lead < 2*time.Hour {
+		t.Fatalf("the last climb came only %v before the limit", lead)
+	}
+
+	// The burn eases: the same replay's projection with the burn removed steps back, one a tick.
+	now := limitHit
+	under := Projection{Projected: 60, Target: 98, OverBy: -38, Ceiling: 100, Margin: 2}
+	for i, want := range []string{RungHoldClaude, RungRoutePiPrompt, RungLowerInflight} {
+		d, _ := l.Tick(TickInput{Projection: under, Settings: settings(), Now: now.Add(time.Duration(i) * time.Hour), InflightCap: 2})
+		if d.Direction != DirectionStepBack || d.Rung != want {
+			t.Fatalf("step back %d: %+v", i, d)
+		}
+	}
+	if len(l.State().Applied) != 0 {
+		t.Fatalf("state %+v", l.State())
+	}
+}
