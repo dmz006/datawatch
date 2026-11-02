@@ -10008,6 +10008,21 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		case <-time.After(shutdownHTTPWait):
 		}
 	}
+	// Flush the question notify fan-out goroutines before exit. A fan-out in
+	// flight can still be writing the alert store JSON file, so give it a
+	// bounded wait (same style as the HTTP shutdown wait above) so shutdown
+	// cannot hang if a leg never finishes.
+	if ctx.Err() != nil && httpServer != nil {
+		notifiesDone := make(chan struct{})
+		go func() {
+			httpServer.WaitQuestionNotifies()
+			close(notifiesDone)
+		}()
+		select {
+		case <-notifiesDone:
+		case <-time.After(shutdownHTTPWait):
+		}
+	}
 	drainLaunchesOnShutdown(mgr, os.Stdout)
 	return nil
 }
