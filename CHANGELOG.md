@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Coordinator Stop now finishes before the idle check loop can run again.** A stop previously returned while the loop was still running, so an idle check could run after shutdown or write into a directory while it was being cleaned up. It now returns only after the loop has exited, so nothing races the cleanup.
+
 ## v9.62.1 — Container images build again
 
 ### Fixed
