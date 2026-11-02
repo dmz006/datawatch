@@ -97,6 +97,31 @@ def recent(ts, hours=72):
         return False
 
 
+def pi_transcript_dir(worktree_path):
+    """The pi transcript folder for a worktree path.
+
+    Base is $PI_CODING_AGENT_DIR when set and non-empty, else ~/.pi/agent. The folder name is the
+    absolute worktree path with each path separator turned into a dash, wrapped in two dashes on each
+    side. Dots are kept: existing folders look like --home-dmz-.datawatch-prd-worktrees-<id>--.
+    """
+    base = os.environ.get("PI_CODING_AGENT_DIR") or os.path.expanduser("~/.pi/agent")
+    name = os.path.abspath(worktree_path).replace(os.sep, "-")
+    return os.path.join(base, "sessions", "-" + name + "--")
+
+
+def newest_transcript_mtime(worktree_path):
+    """Modification time of the newest *.jsonl in the worktree's pi transcript folder, or None."""
+    best = None
+    for f in glob.glob(os.path.join(glob.escape(pi_transcript_dir(worktree_path)), "*.jsonl")):
+        try:
+            m = os.path.getmtime(f)
+        except OSError:
+            continue
+        if best is None or m > best:
+            best = m
+    return best
+
+
 def newest_activity(prd_id):
     """Seconds since the newest file change in the worktree, the newest pi log or the newest Claude transcript."""
     best = 0
