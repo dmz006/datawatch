@@ -102,6 +102,7 @@ type uiPromptDismissHarness struct {
 	fake     *FakeTmux
 	hooks    *uiPromptDismissHooks
 	clockNow *time.Time
+	clockMu  sync.Mutex // guards *clockNow against the capture loop's clock reads
 	fixed    time.Time
 	stop     func()
 }
@@ -131,7 +132,11 @@ func newUIPromptDismissHarness(t *testing.T) *uiPromptDismissHarness {
 		clockNow: &fixed,
 		fixed:    fixed,
 	}
-	mgr.clock = func() time.Time { return *h.clockNow }
+	mgr.clock = func() time.Time {
+		h.clockMu.Lock()
+		defer h.clockMu.Unlock()
+		return *h.clockNow
+	}
 	mgr.SetUIPromptAuditHook(h.hooks.add)
 
 	setFakePane(fake, sess.TmuxSession, uiPromptDismissFixture(t, "autocompact-enter-would-pick.txt"))
@@ -150,6 +155,24 @@ func (h *uiPromptDismissHarness) tickUntil(timeout time.Duration, cond func() bo
 		mutatePane(h.fake, h.sess.TmuxSession)
 		return cond()
 	}, msg)
+}
+
+// advance moves the harness clock forward under clockMu so the write cannot
+// race the capture loop's locked read of *clockNow under -race.
+func (h *uiPromptDismissHarness) advance(d time.Duration) {
+	h.t.Helper()
+	h.clockMu.Lock()
+	*h.clockNow = (*h.clockNow).Add(d)
+	h.clockMu.Unlock()
+}
+
+// running reads the session state through the store-locked snapshot (the
+// same safe path parkedLocked uses) so the read cannot race the capture
+// loop's state write under -race.
+func (h *uiPromptDismissHarness) running() bool {
+	h.t.Helper()
+	snap, ok := liveSnap(h.t, h.mgr, h.sess)
+	return ok && snap.State == StateRunning
 }
 
 func (h *uiPromptDismissHarness) pollPlain(timeout time.Duration, cond func() bool, msg string) {
@@ -231,7 +254,7 @@ func TestUIPromptDismiss_400kAutocompactFixtureAutoDismissal(t *testing.T) {
 	}
 
 	// Pass the delay (firstSeen + 5 s + margin).
-	*h.clockNow = h.clockNow.Add(6 * time.Second)
+	h.advance(6 * time.Second)
 	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 1 },
 		"one dismiss key sent after the delay")
 	h.keySent()
@@ -298,7 +321,7 @@ func TestUIPromptDismiss_AuditObservedAfterDelayedHook(t *testing.T) {
 
 	// Pass the 5 s dismiss delay: exactly one key goes out, and it is the
 	// single ESC byte.
-	*h.clockNow = h.clockNow.Add(6 * time.Second)
+	h.advance(6 * time.Second)
 	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 1 },
 		"one dismiss key sent after the delay")
 
@@ -354,19 +377,18 @@ func TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared(t *testing.T) {
 	h.park()
 
 	// Attempt 1 clears the delay gate.
-	*h.clockNow = h.clockNow.Add(6 * time.Second)
+	h.advance(6 * time.Second)
 	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 1 },
 		"attempts: first key sent")
 
 	// Attempt 2 clears the 30 s clear-bound after the last key.
-	*h.clockNow = h.clockNow.Add(31 * time.Second)
+	h.advance(31 * time.Second)
 	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 2 },
 		"attempts: second key sent")
-	h.tickUntil(10*time.Second, func() bool { return h.hooks.count(UIPromptOutcomeNotCleared) == 1 },
-		"attempts cap exhausted: not_cleared booked")
+	waitForDismissAudit(t, h, UIPromptOutcomeNotCleared, 1, 10*time.Second)
 
 	// Parked, still exposed, and the record knows both attempts.
-	if h.sess.State == StateRunning {
+	if h.running() {
 		t.Fatal("session must stay parked (waiting_input) after the attempts cap — the prompt is still on screen")
 	}
 	if info := h.mgr.UIPromptFor(h.sess.FullID); info == nil || info.DismissAttempts != 2 {
@@ -375,7 +397,7 @@ func TestUIPromptDismiss_MaxAttemptsKeepsParkedThenNotCleared(t *testing.T) {
 
 	// Stable: more ticks (clock advances further) must add no sends, no
 	// new bookings.
-	*h.clockNow = h.clockNow.Add(60 * time.Second)
+	h.advance(60 * time.Second)
 	time.Sleep(500 * time.Millisecond)
 	if n, _ := h.keySends(); n != 2 {
 		t.Fatalf("sends after the cap = %d, want 2", n)
@@ -407,12 +429,12 @@ func TestUIPromptDismiss_ClearedDuringDelayNeverSends(t *testing.T) {
 	// prompt → clear path restores the session and drops the record.
 	setFakePane(h.fake, h.sess.TmuxSession, uiPromptDismissFixture(t, "idle-prompt.txt"))
 	h.tickUntil(10*time.Second, func() bool {
-		return h.sess.State == StateRunning && h.mgr.UIPromptFor(h.sess.FullID) == nil
+		return h.running() && h.mgr.UIPromptFor(h.sess.FullID) == nil
 	}, "session restored to running on the clear path")
 
 	// Far past the delay, clear bound and attempts cap: still nothing
 	// sent, nothing booked, the idle pane still classifies as nothing.
-	*h.clockNow = h.clockNow.Add(120 * time.Second)
+	h.advance(120 * time.Second)
 	time.Sleep(500 * time.Millisecond) // extra capture ticks
 
 	if n, literal := h.keySends(); n != 0 {
@@ -441,14 +463,14 @@ func TestUIPromptDismiss_DelayHonored(t *testing.T) {
 
 	// 3 s after firstSeen: inside the delay window — nothing sent, even
 	// over many ticks.
-	*h.clockNow = h.clockNow.Add(3 * time.Second)
+	h.advance(3 * time.Second)
 	time.Sleep(500 * time.Millisecond)
 	if n, _ := h.keySends(); n != 0 {
 		t.Fatalf("key sent %d s after firstSeen, want nothing before %d s", 3, st.DelaySeconds)
 	}
 
 	// 6 s after firstSeen: outside the delay — the first key goes.
-	*h.clockNow = h.clockNow.Add(3 * time.Second)
+	h.advance(3 * time.Second)
 	h.tickUntil(10*time.Second, func() bool { return h.fake.Count("send-keys-literal") == 1 },
 		"first key sent once the delay elapsed")
 	if n, _ := h.keySends(); n != 1 {
@@ -468,7 +490,7 @@ func TestUIPromptDismiss_SettingOffNeverSends(t *testing.T) {
 	h.park()
 
 	// Advance far past any delay/bound/cap.
-	*h.clockNow = h.clockNow.Add(120 * time.Second)
+	h.advance(120 * time.Second)
 	time.Sleep(500 * time.Millisecond)
 
 	if n, literal := h.keySends(); n != 0 {
@@ -479,7 +501,7 @@ func TestUIPromptDismiss_SettingOffNeverSends(t *testing.T) {
 			t.Fatalf("outcome %s booked with dismissal disabled: %+v", o, h.hooks.events)
 		}
 	}
-	if h.sess.State == StateRunning {
+	if h.running() {
 		t.Fatal("session should still be parked with dismissal off")
 	}
 	if h.mgr.UIPromptFor(h.sess.FullID) == nil {
@@ -518,9 +540,8 @@ func TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce(t *testing.T) {
 	h.mgr.SetUIPromptSettings(func() UIPromptSettings {
 		return UIPromptSettings{Enabled: true, DelaySeconds: 0, ClearBoundSeconds: 1, MaxAttempts: 1}
 	})
-	h.pollPlain(10*time.Second, func() bool {
-		return h.hooks.count(UIPromptOutcomeRefused) == 1 && h.hooks.count(UIPromptOutcomeNotCleared) == 1
-	}, "refused (once) then not_cleared booked")
+	waitForDismissAudit(t, h, UIPromptOutcomeRefused, 1, 10*time.Second)
+	waitForDismissAudit(t, h, UIPromptOutcomeNotCleared, 1, 10*time.Second)
 
 	if n, literal := h.keySends(); n != 0 {
 		t.Fatalf("guard-refused key was sent: %d sends (literal %q)", n, literal)
@@ -539,7 +560,7 @@ func TestUIPromptDismiss_UnsafeKeyRefusedCountsOnce(t *testing.T) {
 		t.Fatalf("refused booked %d times, want exactly 1 (no audit spam)", n)
 	}
 	// Still parked — the pane still shows the prompt and dismissal gave up.
-	if h.sess.State == StateRunning {
+	if h.running() {
 		t.Fatal("session must remain parked after refusal + cap")
 	}
 }
