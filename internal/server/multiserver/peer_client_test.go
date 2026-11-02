@@ -28,7 +28,7 @@ func TestPeerHTTPClient_SkipVerifyTrue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestPeerHTTPClient_SkipVerifyFalse(t *testing.T) {
@@ -50,7 +50,7 @@ func TestPeerHTTPClient_PinnedMatch(t *testing.T) {
 		if err != nil {
 			t.Fatalf("pin %q: expected success: %v", pin, err)
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
