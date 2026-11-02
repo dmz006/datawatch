@@ -1,13 +1,13 @@
 # Merge pipeline and onboarding report — live check
 
-Date: 2026-11-02
+Date: 2026-11-02 UTC (the run was at 2026-11-01 20:13 local time, UTC-5; the evidence timestamps such as 2026-11-02T01:13Z are UTC, so both name the same moment)
 
 Result: FAILED — see the checks marked FAIL below.
 
 ## Environment
 
 - A throwaway daemon built from this tree ran with its own HOME, data directory and config under <scratch>, started with TMUX and TMUX_TMPDIR unset.
-- 18443 was already held by another process on this host, so a free loopback port was used; the production daemon port 8443 was never used. All listeners were loopback only.
+- The spec asks for TLS port 18443. Port 18443 was already held by a process that is not a datawatch test daemon (it listens on all interfaces and was still listening when this report was finalised; scripts/check-no-leftover-test-daemons.sh reports none of ours). That process is not this task's to stop, so the deviation is not resolved: a free loopback port was used instead; the production daemon port 8443 was never used. All listeners were loopback only.
 - The repository for the checks was a temporary git repository at <scratch>/smokeproj with branch main and two branches (branch-a, branch-b) that each append a different line after the same base line (an additive conflict). It is registered as the project smokeproj and as the worktree base repository of the sandbox daemon.
 - The daemon lifecycle used scripts/test-daemon-lib.sh: the daemon pid was recorded and ended by that pid on every exit path.
 - Host names and home paths are replaced by placeholders: <scratch>, <repo>, <home>.
@@ -27,6 +27,12 @@ Result: FAILED — see the checks marked FAIL below.
 ## Finding from check 3
 
 POST /api/autonomous/merge/run answers 503 'Automaton merge unavailable' on the live daemon. The route (internal/server/merge_run.go) asserts that the server's autonomous handle implements MergeBaseRepo, MergeQuestionStore and RecordMergeRun. Those methods exist on the autonomous Manager (internal/autonomous/merge_pipeline_run.go), but the daemon hands the server the autonomous API wrapper (autonomous.NewAPI), which does not expose them, so the assertion fails at run time. Whether the route's own tests use a stand-in that does implement them was not checked here. Nothing was changed here; the conflict policies could not be exercised end to end through the daemon. The evidence log ends with the supplementary unit-test result for the policy logic, which is not a live check.
+
+## Closing steps
+
+- Test and daemon commands ran under env -u TMUX -u TMUX_TMPDIR (the daemon was also started with TMUX unset). The leftover-daemon check was run again at the end under the same prefix: scripts/check-no-leftover-test-daemons.sh printed 'OK: no leftover test daemons' and exited 0.
+- Check 4 line counts: the three plain-text forms hash to the same digest (f926ab21fc8b), and the text shown in the evidence below is 17 lines. The 18 reported for REST is a count taken from the saved response body, which carries one extra trailing newline; it is a counting difference in the smoke script, not a content difference. The script was not kept, so this explanation was checked against the evidence text only.
+- The supplementary unit-test line (ok, internal/mergepipeline, 0.236s) and the route assertion lines are the last lines of the evidence log and are shown in full below; they are not a live check.
 
 ## Limits
 
