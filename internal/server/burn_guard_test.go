@@ -2,7 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -17,19 +23,47 @@ import (
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
 
-// failingSessions is a fake session manager: it counts, and fails the test if any call that
-// would end a session is made.
+// failingSessions is a fake session manager. It counts RunningCount calls (so a test can
+// prove the runner really consulted it) and records every call that would end a session.
+// The runner is handed it as a BurnGuardSessions; TestBurnGuardCannotReachAnEndCall proves
+// by static analysis that no end call can be made through anything the runner holds, and
+// the behaviour tests assert endCalls stays zero.
 type failingSessions struct {
-	t       *testing.T
-	running int
+	mu       sync.Mutex
+	running  int
+	counted  int
+	endCalls []string
 }
 
-func (f *failingSessions) RunningCount() int { return f.running }
-func (f *failingSessions) Kill(string)       { f.t.Fatal("burn guard killed a session") }
-func (f *failingSessions) Stop(string)       { f.t.Fatal("burn guard stopped a session") }
-func (f *failingSessions) Restart(string)    { f.t.Fatal("burn guard restarted a session") }
-func (f *failingSessions) End(string)        { f.t.Fatal("burn guard ended a session") }
-func (f *failingSessions) KillAll()          { f.t.Fatal("burn guard killed all sessions") }
+func (f *failingSessions) RunningCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.counted++
+	return f.running
+}
+func (f *failingSessions) end(what string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.endCalls = append(f.endCalls, what)
+}
+func (f *failingSessions) Kill(string)    { f.end("kill") }
+func (f *failingSessions) Stop(string)    { f.end("stop") }
+func (f *failingSessions) Restart(string) { f.end("restart") }
+func (f *failingSessions) End(string)     { f.end("end") }
+func (f *failingSessions) KillAll()       { f.end("kill-all") }
+
+// assertNoEnd fails the test if any end call reached the fake, or the runner never asked it.
+func (f *failingSessions) assertNoEnd(t *testing.T) {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.endCalls) > 0 {
+		t.Fatalf("burn guard ended a session: %v", f.endCalls)
+	}
+	if f.counted == 0 {
+		t.Fatal("the runner never consulted the session view; the test proves nothing")
+	}
+}
 
 type fakeAdmission struct {
 	mu     sync.Mutex
@@ -104,7 +138,7 @@ func burnGuardRig(t *testing.T, cfg *config.BurnGuardConfig) (*BurnGuard, *fakeA
 	}
 	adm := newFakeAdmission(3)
 	nt := &fakeNotifier{}
-	ses := &failingSessions{t: t, running: 4}
+	ses := &failingSessions{running: 4}
 	in := BurnGuardInputs{
 		Config: func() config.BurnGuardConfig { return *cfg },
 		Readings: func(context.Context) ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error) {
@@ -165,7 +199,7 @@ func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
 	if g.Status().State != "off" {
 		t.Fatalf("state = %q, want off", g.Status().State)
 	}
-	_ = ses // any end call would have failed the test already
+	ses.assertNoEnd(t)
 }
 
 func TestBurnGuardDisabledDoesNothing(t *testing.T) {
@@ -212,5 +246,64 @@ func TestBurnGuardSeamsCannotEndSessions(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestBurnGuardCannotReachAnEndCall parses the runner's source and fails if it calls anything
+// that ends a session, and checks the session view it holds declares no such method.
+func TestBurnGuardCannotReachAnEndCall(t *testing.T) {
+	typ := reflect.TypeOf((*BurnGuardSessions)(nil)).Elem()
+	if typ.NumMethod() != 1 || typ.Method(0).Name != "RunningCount" {
+		t.Fatalf("BurnGuardSessions must be read-only (RunningCount only), has %d methods", typ.NumMethod())
+	}
+	banned := map[string]bool{"Kill": true, "KillAll": true, "Stop": true, "StopAll": true, "Restart": true,
+		"End": true, "Delete": true, "Terminate": true, "Cancel": true, "KillSession": true, "StopSession": true}
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "burn_guard.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ast.Inspect(f, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok {
+			if sel, ok := c.Fun.(*ast.SelectorExpr); ok && banned[sel.Sel.Name] {
+				if id, ok := sel.X.(*ast.Ident); ok && id.Name == "t" {
+					return true // the runner's own time.Timer
+				}
+				t.Errorf("burn_guard.go:%d calls %s, which could end a session", fset.Position(c.Pos()).Line, sel.Sel.Name)
+			}
+		}
+		return true
+	})
+}
+
+func TestBurnGuardStatusEndpoint(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	s.handleBurnGuardStatus(rec, httptest.NewRequest(http.MethodGet, "/api/usage/burn-guard", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unwired status = %d", rec.Code)
+	}
+	var st BurnGuardStatus
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil || st.State != "off" {
+		t.Fatalf("unwired body = %s (%v)", rec.Body.String(), err)
+	}
+
+	cfg := config.DefaultBurnGuard()
+	g, _, _, _ := burnGuardRig(t, &cfg)
+	g.Tick(context.Background())
+	s.burnGuard = g
+	rec = httptest.NewRecorder()
+	s.handleBurnGuardStatus(rec, httptest.NewRequest(http.MethodGet, "/api/usage/burn-guard", nil))
+	st = BurnGuardStatus{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.State != "guarding" || st.LastProjection == nil || st.LastDecision == nil {
+		t.Fatalf("status = %+v", st)
+	}
+	rec = httptest.NewRecorder()
+	s.handleBurnGuardStatus(rec, httptest.NewRequest(http.MethodPost, "/api/usage/burn-guard", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST = %d", rec.Code)
 	}
 }

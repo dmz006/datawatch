@@ -297,6 +297,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/usage/readings/", api.handleUsageReadingDelete)
 	apiMux.HandleFunc("/api/usage/extra-credit", api.handleUsageExtraCredit)
 	apiMux.HandleFunc("/api/usage/advice", api.handleUsageAdvice)
+	apiMux.HandleFunc("/api/usage/burn-guard", api.handleBurnGuardStatus)
 	apiMux.HandleFunc("/api/usage/remaining-work", api.handleUsageRemainingWork)
 
 	// F10 sprint 3 — agent lifecycle routes.

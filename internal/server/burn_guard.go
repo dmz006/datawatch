@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -486,6 +487,26 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 	}
 	s.burnGuard = g
 	return nil
+}
+
+// handleBurnGuardStatus serves GET /api/usage/burn-guard (usage:read): the guard's state, last
+// projection and last decision, for the PWA, the CLI and the other surfaces. When the guard
+// is not wired it answers {"enabled":false,"state":"off"}.
+func (s *Server) handleBurnGuardStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, usageCapabilityRead) {
+		return
+	}
+	st := BurnGuardStatus{State: "off"}
+	if g := s.burnGuard; g != nil {
+		st = g.Status()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(st)
 }
 
 // BurnGuard returns the runner, or nil until AttachBurnGuard has run.

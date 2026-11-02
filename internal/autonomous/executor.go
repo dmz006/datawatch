@@ -16,6 +16,7 @@ import (
 	"log"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
@@ -2955,7 +2956,41 @@ func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, 
 			model = auto.Model
 		}
 	}
+	if to, ok := routeBackend(backend); ok {
+		// The burn guard routes new work meant for this backend elsewhere. The
+		// model belongs to the backend it was set for, so it is dropped (empty =
+		// the target backend's default).
+		backend, model, source = to, "", ExecutorSourceBurnGuard
+	}
 	return backend, model, source
+}
+
+// ExecutorSourceBurnGuard marks a task whose backend the burn guard routed.
+const ExecutorSourceBurnGuard = "burn_guard"
+
+var backendRoute atomic.Pointer[func(backend string) (string, bool)]
+
+// SetBackendRoute wires the route lookup consulted when a task's backend is
+// resolved: it returns the backend new work meant for backend goes to, if any.
+// Nil clears it. It changes where new work is placed and never touches a session.
+func SetBackendRoute(fn func(backend string) (string, bool)) {
+	if fn == nil {
+		backendRoute.Store(nil)
+		return
+	}
+	backendRoute.Store(&fn)
+}
+
+func routeBackend(backend string) (string, bool) {
+	fn := backendRoute.Load()
+	if fn == nil || backend == "" {
+		return "", false
+	}
+	to, ok := (*fn)(backend)
+	if !ok || to == "" || to == backend {
+		return "", false
+	}
+	return to, true
 }
 
 // resolveTaskEffort resolves a task's execution effort: task → story → PRD →

@@ -193,6 +193,8 @@ func wireBurnGuard(ctx context.Context, cfg *config.Config, httpServer *server.H
 		fmt.Fprintf(os.Stderr, "[burn-guard] not wired: %v\n", err)
 		return
 	}
+	// Admission reads the route when it resolves a task's backend.
+	autonomouspkg.SetBackendRoute(burnGuardRoutes.RouteFor)
 	httpServer.StartBurnGuard(ctx)
 }
 
