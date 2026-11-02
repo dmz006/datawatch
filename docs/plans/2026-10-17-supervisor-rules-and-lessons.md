@@ -674,3 +674,7 @@ The watch's SILENT line looks at file changes and logs in the worktree. A pi wor
 ## Cancelling an Automaton removes its verification scripts (2026-11-02)
 
 Decompose writes each task's verification script into the Automaton's worktree as untracked files. Cancelling the Automaton removes that worktree, scripts included, and every task then fails with a missing-script setup fault. To change an Automaton's LLM after it started, do not cancel it: that costs a second decompose. Set the LLM while the Automaton is still in review, before the first run, because the settings are locked once it runs. On 2026-11-02 cancelling the leak-check Automaton to move it from Claude to the pi lane lost its 16 scripts and forced a second decompose.
+
+## The rules file question, answered 2026-11-02
+
+Operator, 2026-11-02 06:52, through the PWA, on the question about the paragraph a worker had added to AGENT.md for the Claude Code prompt table: option "Leave AGENT.md alone; the definitions page already documents the exception", with no further words. Effect: the paragraph stays out of AGENT.md. Workers still must not edit AGENT.md without being asked, and the leak-check Automaton's own task that updates the leak rule and checklist item A8 is the one edit asked for (the operator's 2026-10-30 report).

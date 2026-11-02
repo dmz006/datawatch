@@ -1847,3 +1847,7 @@ The arithmetic for what is left: 90 points over 156 hours is 0.58 points an hour
 ## Reading 2026-11-02 06:49 EST: 16%, stay at one lane
 
 Operator, 2026-11-02, quoted: "Claude at 16%". The calculator records 16% at Mon 06:49 (6.05 days left, pace line 13.6, 2.4 points ahead). The token tally estimated 15.0 for the same moment, so its fit was within one point of the reading. Recent burn is 12.4 points per 24 hours (projected end 90.8%, within budget); the week average is 16.8 points per 24 hours (projected end 117.7%, over budget), and at the week average the allowance would run out Sat 06:41, about 25 hours before the reset. After the reading the burn guard projects 65.9% at the recent rate. No instruction came with the reading, so the cap stays at one Claude lane, the second lane stays closed, and the idle hours are used for the supervisor's own defect Automata at medium effort. Since the 19:10 reading the burn has run at 0.48 points per hour, under the allowed 0.60, but the earlier burn put the total 2.4 points ahead of the line.
+
+## Burn guard decisions answered 2026-11-02
+
+Operator, 2026-11-02 06:50, through the PWA, on both burn guard decisions (the first rung taken when the weekly projection ran over the line, and its release when the projection fell): option "Leave it in place" (keep) on each, with no further words. Effect: the guard stays on and keeps its settings, and the one-lane cap is unchanged.
