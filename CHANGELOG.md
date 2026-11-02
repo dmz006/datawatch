@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Operator-machine identifiers were scrubbed from tracked files, and the leak check is now automated.** A whole-tree scan (`scripts/check-no-local-leaks.sh`, run as `make check-leaks`) fails on four classes of identifier: private and tailnet addresses, absolute home paths for any user, email addresses not on the allowed list, and every fixed string the operator lists in the gitignored `.leak-patterns.local` file (created from the checked-in template with `make leak-patterns-init`; its absence only skips that class). The generic class patterns and the allowed address list ship under `scripts/` as configuration (`scripts/leak-check.patterns`, `scripts/leak-check.allowed-emails`). Findings are reported as `path:line: class` and the matched value is never printed, so the output is safe in CI logs. The check runs inside `make lint` and in the release smoke script; a separate last-commit diff grep remains as the complementary check. All tracked files now use the prescribed placeholders — the IANA reserved documentation ranges for addresses, `example.com` names for hosts, neutral role names such as *local node* and *remote node* for machines and hardware models, and `/home/<user>` for home paths. The AGENT.md rule "No local-environment leaks in git" and its audit row (A8) describe the new check and the placeholders, and the PRD authoring checklist in `docs/plans/README.md` now requires that PRD specs, test fixtures and docs carry no operator-machine identifiers and that `make check-leaks` passes before a task is done.
+
 ## v9.61.0 — Claude burn guard
 
 Claude burn guard: keeps the weekly burn under the pace line without ending a running session.

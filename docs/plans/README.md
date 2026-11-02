@@ -25,6 +25,14 @@ current minor version line. Everything older auto-archives to
 needs tidying — run `scripts/tidy-plans.sh` (no flags) to do the moves,
 then commit before re-running smoke.
 
+**PRD authoring checklist — local-environment leaks:** a PRD's specs,
+test fixtures and docs must carry no operator-machine identifiers
+(private or tailnet addresses, absolute home paths, personal email, or
+any token from the gitignored local patterns file) — use the
+placeholders from the AGENT.md rule "No local-environment leaks in git"
+and say the real value lives in the operator config. `make check-leaks`
+(`scripts/check-no-local-leaks.sh`) must pass before a task is done.
+
 ## Active order
 
 Items run in this order, one at a time against this tree, until the write lock
