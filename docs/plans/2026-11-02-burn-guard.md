@@ -16,7 +16,7 @@
 
 ## What this delivers
 
-A guard that reads the Claude session transcripts, prices the tokens in points of the weekly allowance, projects them to the reset and, when the projection runs over the pace line plus a margin, steps down a ladder of admission changes (lower the Claude inflight cap, route new Claude work to `peer-e`, hold new Claude work) and steps back when the burn is under the line. It never ends a running session. It also adds a per-task-kind effort ceiling and a Claude retry limit.
+A guard that reads the Claude session transcripts, prices the tokens in points of the weekly allowance, projects them to the reset and, when the projection runs over the pace line plus a margin, steps down a ladder of admission changes (lower the Claude inflight cap, route new Claude work to `pi-prompt`, hold new Claude work) and steps back when the burn is under the line. It never ends a running session. It also adds a per-task-kind effort ceiling and a Claude retry limit.
 
 ## Phases and status
 

@@ -5,7 +5,7 @@ Snapshots: `/tmp/sv/restart-test/stage2-pre.json` (22:15:09), `stage2-post1.json
 
 | Case | Worker before | After the restart | Result |
 |---|---|---|---|
-| GPU Automaton `6eb30001` task 000a, peer-e | session a687 | same session a687, same pi process, task still verifying | kept |
+| GPU Automaton `6eb30001` task 000a, pi-prompt | session a687 | same session a687, same pi process, task still verifying | kept |
 | Claude Automaton `98e10001` task 0004 | session d43b | session ended 22:15:24 (summary saved, state killed); task put into waiting_capacity, no session | **failed** |
 | Claude Automaton `faac0001` task 0002 | session 1f86 | session ended 22:15:24; a new session 44e7 launched for the same task | **failed** |
 

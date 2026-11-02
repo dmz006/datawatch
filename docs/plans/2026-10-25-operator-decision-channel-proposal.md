@@ -384,7 +384,7 @@ Classes of backend, read from `internal/llm/backends` and the session manager:
 |---|---|---|---|
 | MCP-capable | claude-code, goose (MCP extension), opencode | calls a `question_ask` tool of the datawatch MCP server, with the session id, PRD and task ids it already receives | the tool result carries the answer when it is ready, or the session polls `question_get`; the session may keep working on other things meanwhile |
 | Text-only interactive | aider, gemini, ollama chat, openwebui, shell | prints the existing `DATAWATCH_NEEDS_INPUT: <text>` line; the daemon turns that detected line into a queue question automatically (same record, source = marker) | the daemon sends the answer back as text to the session input, as it does for needs-input today |
-| One-shot print mode | peer-e and the other `-prompt` backends | has no input once started; the run ends with the marker line | the daemon holds that task as "waiting for a decision" (not failed, no retry counted), and the answer is injected into the task's next prompt as context when it resumes |
+| One-shot print mode | pi-prompt and the other `-prompt` backends | has no input once started; the run ends with the marker line | the daemon holds that task as "waiting for a decision" (not failed, no retry counted), and the answer is injected into the task's next prompt as context when it resumes |
 
 Common rules for all classes:
 - One record and one queue. The source field says how it was raised (tool, marker, supervisor, system).

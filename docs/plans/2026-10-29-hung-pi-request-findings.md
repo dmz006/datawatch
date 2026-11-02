@@ -1,10 +1,10 @@
-# Hung peer-e request investigation — findings (PRD f3420001)
+# Hung pi-prompt request investigation — findings (PRD f3420001)
 
 **Date:** 2026-10-29
 **Version:** none (planning document; plan-document commits are exempt from the version bump)
 **Status:** Findings, complete
 
-Two hung peer-e sessions (ab4c, ef70) on Ollama node `<node-address>:11434`, model
+Two hung pi-prompt sessions (ab4c, ef70) on Ollama node `<node-address>:11434`, model
 `qwen3.8-64k:27b`, local time 2026-10-28. Everything below was gathered through the local
 datawatch daemon's own read-only interfaces: daemon REST `https://127.0.0.1:8443`
 (`/api/sessions?limit=300`, `/api/sessions/timeline` at internal/server/server.go:255,
@@ -32,7 +32,7 @@ hang that this PRD category targets. In scope:
 - **ef70** (`local-node-ef70`, same name): created 09:30:52 (-04:00), one second
   after ab4c's kill, terminal state 10:35:14 (-04:00) — the ~1 h 04 m hang.
 
-Both records show `one_shot=true`, `backend_family=peer-e`, `model=ollama/qwen3.8-64k:27b`,
+Both records show `one_shot=true`, `backend_family=pi-prompt`, `model=ollama/qwen3.8-64k:27b`,
 `node_address=<compute-node>`, `compute_node_ref=<compute-node>`. The per-session pane
 logs referenced by the records (`<home>/.datawatch/sessions/local-node-ab4c/output.log`,
 `.../local-node-ef70/output.log`) sit outside this worktree and were not read (rule 2).
@@ -67,9 +67,9 @@ bd730001):
   `dw_status` checks at internal/llm/backends/pi/backend.go:537. Exit **143 = 128 + 15 = the
   pi process died of SIGTERM while running**; it did not terminate on its own error path.
 - Daemon verdict for this window (quoted in the retry prompts of ef70 and 1f48 via
-  `session_output`; task bd730001): `Attempt 1 — Worker: peer-e/ollama/qwen3.8-64k:27b,
+  `session_output`; task bd730001): `Attempt 1 — Worker: pi-prompt/ollama/qwen3.8-64k:27b,
   Duration: 5958 s, Outcome: stalled (category infra), Failure: session idle without completion
-  (session=ab4c, backend=peer-e, model=ollama/qwen3.8-64k:27b, idle 1h38m56.999289012s >
+  (session=ab4c, backend=pi-prompt, model=ollama/qwen3.8-64k:27b, idle 1h38m56.999289012s >
   limit 15m0s, no nudge sent): worker stalled, Files changed: none recorded`.
 - Discrepancy (fact vs. operator recollection): the background says the operator manually
   killed ab4c at 09:30; the daemon record attributes the kill to
@@ -83,7 +83,7 @@ child process" clause is the **expected** reading for a bare `pi --print` blocke
 generation — `hasLiveChildProcess` (cmd/datawatch/session_idle_probe.go:36-53) reports live
 work only for runner *descendants* beyond its own MCP/channel servers, and the file's comment
 on `hasLiveRunnerProcess` says a generating runner "may have no child process at all" (which
-is why peer-e has the dedicated exit-silence detector, cmd/datawatch/exit_silence_wait.go).
+is why pi-prompt has the dedicated exit-silence detector, cmd/datawatch/exit_silence_wait.go).
 The clause alone does not prove the runner was dead or alive.
 
 ## Evidence: session ef70
@@ -113,7 +113,7 @@ bd730001):
   same two lines as ab4c: `DATAWATCH_PI_FAILED: pi exited with status 143 (model
   ollama/qwen3.8-64k:27b)` and `logout` — again a SIGTERM death of pi while running.
 - Daemon verdict for this window (quoted in the 1f48 prompt via `session_output`; task
-  bd730001): `Attempt 2 — Worker: peer-e/ollama/qwen3.8-64k:27b, Duration: 4497 s,
+  bd730001): `Attempt 2 — Worker: pi-prompt/ollama/qwen3.8-64k:27b, Duration: 4497 s,
   Outcome: failed, Verifier summary: The diff only adds an unwired, untested
   output-freshness helper (outputIsFresh has zero call sites) and leaves every one of the 11
   rules-review findings unfixed; build, vet, and 63 targeted tests pass but none of the
@@ -149,7 +149,7 @@ than a genuine question to the user; it predates the 120 s "session never starte
 
 Facts from the interfaces (node `<compute-node>`, PRD f3420001):
 
-- Runner: `peer-e` is one-shot, non-interactive (internal/llm/backends/pi/backend.go:15;
+- Runner: `pi-prompt` is one-shot, non-interactive (internal/llm/backends/pi/backend.go:15;
   internal/llm/backends/pi/backend_test.go:98 asserts `SupportsInteractiveInput()==false`).
   `Launch` (internal/llm/backends/pi/backend.go:472) runs a single blocking `pi --print`
   inside a tmux pane; the wrapper (template at internal/llm/backends/pi/backend.go:516-563)
@@ -225,7 +225,7 @@ logs or server-side request records were available through any sanctioned interf
    `autonomous.verifier.idle-detector` path (reason builder at cmd/datawatch/end_attribution.go:71-88;
    end-caller constant at cmd/datawatch/end_attribution.go:17). Given the probe semantics above
    (cmd/datawatch/session_idle_probe.go:36-53) that is consistent with a blocked bare pi, but the
-   interfaces do not record why the dedicated peer-e detectors (exit-silence,
+   interfaces do not record why the dedicated pi-prompt detectors (exit-silence,
    cmd/datawatch/exit_silence_wait.go; the descendant-only detector of PRD f3420001 in
    cmd/datawatch/descendant_stall_wait.go) did not fire earlier — the daemon log window is
    rotated (gap 1) and no other record of those decisions survives.
@@ -233,7 +233,7 @@ logs or server-side request records were available through any sanctioned interf
 
 ## Generation limit
 
-No generation limit is sent on the peer-e → node request path — no `num_predict`,
+No generation limit is sent on the pi-prompt → node request path — no `num_predict`,
 no `max_tokens`, no equivalent field, anywhere in the launch machinery. The complete
 launch the daemon builds is
 
@@ -278,7 +278,7 @@ detector, the signal and the condition under which it stays quiet:
 - **Session-idle detector** — `internal/autonomous/session_idle.go`
   (`SessionIdleObservation.Stalled`), evaluated from the wait loop in
   `cmd/datawatch/main.go` (the `idleFor > idleLimit` block). Signals: pane wait-state
-  (`waiting_input`/`idle`), `HasLiveChildProcess` — for peer-e that probe is
+  (`waiting_input`/`idle`), `HasLiveChildProcess` — for pi-prompt that probe is
   `hasLiveRunnerProcess`, per `idleLivenessProbe` in `cmd/datawatch/exit_silence_wait.go` —
   idle duration, pane-log age (`OutputAge`), and the pi session-log age.
   `Stalled()` returns false while the runner is alive; a live, wedged, output-less pi
@@ -292,7 +292,7 @@ detector, the signal and the condition under which it stays quiet:
   age simply grows (or it reads 0 if no log is found), and on its own it never ends
   anything. Guard: pi families only.
 - **Exit-silence** — `cmd/datawatch/exit_silence_wait.go` +
-  `internal/autonomous/exit_silence.go` (peer-e only, same limit budget as the
+  `internal/autonomous/exit_silence.go` (pi-prompt only, same limit budget as the
   idle limit, `main.go` idle setup). Signal: `hasLiveRunnerProcess` + tmux-log mtime.
   `Observe` returns "not stalled" on every tick while `runnerAlive` — a wedged pi is
   alive, so its clock is reset forever; by design this detector catches the opposite
@@ -306,14 +306,14 @@ detector, the signal and the condition under which it stays quiet:
   detector targets "runner exited with a hung child", the inverse of a live wedged
   runner.
 - **stale-worker log-mtime** — `staleWorkerCheck`, `cmd/datawatch/stale_worker.go`.
-  Signal: tmux log file mtime. `staleWorkerAppliesTo` excludes peer-e on purpose
+  Signal: tmux log file mtime. `staleWorkerAppliesTo` excludes pi-prompt on purpose
   because `pi --print` produces no tmux log before it completes, so the file is silent
   by construction. `main.go` still calls the check, but only to populate `OutputAge`
   for the idle observation — it cannot kill the session itself for this family.
 - **SSE stall** — `cmd/datawatch/sse_stall.go`. Signal: a fresh provider-error line in
   the pane (the `sseStallPatterns` list: `SSE Timeout`, `connection refused`, ...).
   Double-quiet: `sseStallAppliesTo` gates the detector to opencode* families (the
-  comment states peer-e is deliberately out), and a wedged pi emits no lines at
+  comment states pi-prompt is deliberately out), and a wedged pi emits no lines at
   all, so there is no candidate text to match either.
 - **One-shot no-output** — `internal/autonomous/one_shot_no_output.go`. Not a live
   detector: `OneShotNoOutputError` is the error type for one-shot decompose/verify
@@ -350,7 +350,7 @@ generation is refuted by the node-side window: ~0% CPU and ~0% utilization (per 
 Runner and model state section and gap 4 on metrics resolution), and by the pane
 record — across hours, no session in either log shows any model output during the
 wedged window, which a generating instance would stream through `tee` into the pane
-(the peer-e launch tees stdout, `buildLaunchCmdWithAgentDir` in
+(the pi-prompt launch tees stdout, `buildLaunchCmdWithAgentDir` in
 `internal/llm/backends/pi/backend.go`). A wedged-runner hypothesis — the pi process
 or its event loop itself broken, independent of the node — is not supported either:
 a fresh 5-token probe from a different client times out on the same pinned model

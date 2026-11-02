@@ -2473,7 +2473,7 @@ this build** (the build must not edit CHANGELOG.md).
 20. **A fourth `content` branch for Open Question 19's decision tree:
     scope-too-broad, auto-split instead of blind-retry (operator-raised
     2026-10-16, live incident on BL465's own pilot run).** Running BL465
-    itself through peer-e hit the exact failure shape this doc already
+    itself through pi-prompt hit the exact failure shape this doc already
     warns about: one task ("wire the deterministic commit into 9
     `StateComplete` call sites, delete the old mechanism, and write a
     final audit") produced a real but incomplete diff and a second task
@@ -2734,7 +2734,7 @@ Open for the operator: the default alert times and the retry count for items 1, 
 
 **Status of the interview, 2026-10-25:** all ten open points are answered and recorded above (items 1 to 17). The proposal PRD (BL610) turns them into the data model, the order of PRD-sized steps and the parity surface; anything it finds that these answers do not cover goes back to the operator as a question.
 
-18. **The question feature works with every LLM (operator, 2026-10-25: "also make sure question feature works with all llm").** Raising a question and receiving its answer must not depend on one backend's features. Every backend datawatch supports (claude-code, opencode, pi and peer-e, goose, gemini, aider, ollama, openwebui, shell, and any added later) can ask a question and get the answer back, by whichever route the backend supports. The proposal must give a route for each class of backend (those with MCP tools, those that only print text, and one-shot print-mode backends that have no input once started), and a conformance test with a fake backend of each class that raises a question, leaves it open while other work continues, and resumes with the answer.
+18. **The question feature works with every LLM (operator, 2026-10-25: "also make sure question feature works with all llm").** Raising a question and receiving its answer must not depend on one backend's features. Every backend datawatch supports (claude-code, opencode, pi and pi-prompt, goose, gemini, aider, ollama, openwebui, shell, and any added later) can ask a question and get the answer back, by whichever route the backend supports. The proposal must give a route for each class of backend (those with MCP tools, those that only print text, and one-shot print-mode backends that have no input once started), and a conformance test with a fake backend of each class that raises a question, leaves it open while other work continues, and resumes with the answer.
 
 19. **Marker route and one-shot backends (answers: "1 marker with options, 2 daemon asks on its behalf").** The text marker route carries options: a small structured block after the marker line gives the options, the recommendation and the risk label, with the same length caps and untrusted-text rules as free text. A one-shot print-mode backend never asks for itself: when its task ends needing a decision, the daemon raises the question on its behalf, with the task and the backend named as the asker, and holds the task until the answer arrives.
 

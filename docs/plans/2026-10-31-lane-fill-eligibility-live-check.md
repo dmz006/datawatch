@@ -74,7 +74,7 @@ refs/remotes/origin/trunk; main exists: no
   "claude_mode": "",
   "count_verifier_wait": true,
   "decompose_ahead_min": 2,
-  "gpu_backend": "peer-e",
+  "gpu_backend": "pi-prompt",
   "gpu_lanes": 2,
   "gpu_mode": "",
   "gpu_model": "",
@@ -123,7 +123,7 @@ refs/remotes/origin/trunk; main exists: no
 | `1f1100a7` | (g) worktree not registered | blocked | `worktree_invalid` | its recorded worktree is not usable: the directory <sandbox>/phantom-worktree is not in the registered worktree list of the repository |
 | `1f1100d2` | (i) Claude-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100d2: proposal docs/plans/pending-claude.md does not carry a Confirmed: yes line |
 | `1f1100a8` | (j) GPU-lane candidate, proposal confirmed in check 5 | blocked | `proposal_not_confirmed` | Automaton 1f1100a8: proposal docs/plans/pending-gpu.md does not carry a Confirmed: yes line |
-| `1f1100c0` | (h) control, fully eligible | start_prd | — | first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0); backend would change from shell to peer-e |
+| `1f1100c0` | (h) control, fully eligible | start_prd | — | first eligible work for idle gpu lane gpu-1 (gpu preference, priority 0); backend would change from shell to pi-prompt |
 
 - **PASS** — (a) stale draft: a blocked decision with eligibility_reason `stale`
   - `1f1100a1`: {"action":"blocked","eligibility_reason":"stale","mode":"shadow","executed":false}, reason "Automaton last updated 101 hours ago, older than the 72 hour stale limit"
