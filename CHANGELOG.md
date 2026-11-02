@@ -5,13 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **A task that finishes with a file removed no longer fails its automatic commit and is no longer held for review.** When a task deletes a file (with `git rm`, or by deleting it in the worktree), the deletion is now committed along with the rest of the task's work. A listed path that no longer exists anywhere is skipped instead of failing the commit; any other `git add` error still fails the commit. When a path was skipped because it no longer exists, the hold question now says so. This fix ships in the next patch above main.
-
 ## v9.61.1 — Task commit handles staged deletions
 
 A finished task that removed a file is committed instead of held for review.
+
+### Fixed
+
+- **A task that finishes with a file removed no longer fails its automatic commit and is no longer held for review.** When a task deletes a file (with `git rm`, or by deleting it in the worktree), the deletion is now committed along with the rest of the task's work. A listed path that no longer exists anywhere is skipped instead of failing the commit; any other `git add` error still fails the commit. When a path was skipped because it no longer exists, the hold question now says so. This fix ships in the next patch above main.
 
 ## v9.61.0 — Claude burn guard
 
