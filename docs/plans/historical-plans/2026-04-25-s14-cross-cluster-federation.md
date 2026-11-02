@@ -63,7 +63,7 @@ Wire shape additions:
     "v": 2,
     "host": {"name": "datawatch-prod-east", "shape": "primary", …},
     "envelopes": [
-      {"kind": "session", "id": "ralfthewise-787e", "source": "local",  "cpu_pct": 23, …},
+      {"kind": "session", "id": "peer-e-787e", "source": "local",  "cpu_pct": 23, …},
       {"kind": "session", "id": "agt_a1b2:session:x", "source": "agt_a1b2",  …},
       {"kind": "node",    "id": "node-3",   "source": "shape-c-1", …}
     ]

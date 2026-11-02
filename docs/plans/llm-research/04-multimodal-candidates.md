@@ -73,7 +73,7 @@ config dump; `memory` still shows `embedder_model:nomic-embed-text`,
 on `local-node` still reports the same 4 models / 7.8 GB with only
 `nomic-embed-text` (0.6 GB) loaded; `compute_node_list` still shows
 `datawatch` (priority 90, `max_concurrent_sessions:1`, no declared
-capacity), `datawatch-openai` (Blackwell B200, 128 GB, `max_concurrent_models:3`),
+capacity), `remote-node` (Blackwell B200, 128 GB, `max_concurrent_models:3`),
 `local-node` (32 GB GPU, 32 GB, priority 70, `max_concurrent_models:10`),
 and `test-node` (stale duplicate of `datawatch`'s address, priority 50).
 This is a genuine independent re-check, not a copy of the numbers already

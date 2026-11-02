@@ -362,7 +362,7 @@ dimension** for later per-model pools. The ledger request already carries
 
 Real evidence, read live 2026-10-14 from this host's own registries:
 
-- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `datawatch-openai`
+- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `remote-node`
   (openai-compat, 1× B200 GPU), `local-node` (ollama, 1× 32 GB GPU), and
   `verdict` (ollama, `127.0.0.1:11435`, `tags: ["docker", "verdict-model",
   "imap-mcp", "shared-gpu-with-local-node"]`).

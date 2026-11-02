@@ -75,7 +75,7 @@ func newTestBridge(t *testing.T, fp *fakeParent, sessionID, token string) *bridg
 
 func TestReplyTool_PostsToParentWithSessionID(t *testing.T) {
 	fp := newFakeParent(t)
-	b := newTestBridge(t, fp, "ralfthewise-cdbb", "sekret")
+	b := newTestBridge(t, fp, "peer-d-cdbb", "sekret")
 
 	req := mcpsdk.CallToolRequest{}
 	req.Params.Name = "reply"
@@ -97,8 +97,8 @@ func TestReplyTool_PostsToParentWithSessionID(t *testing.T) {
 	if got.Body["text"] != "hello from claude" {
 		t.Errorf("text = %v", got.Body["text"])
 	}
-	if got.Body["session_id"] != "ralfthewise-cdbb" {
-		t.Errorf("session_id = %v want ralfthewise-cdbb", got.Body["session_id"])
+	if got.Body["session_id"] != "peer-d-cdbb" {
+		t.Errorf("session_id = %v want peer-d-cdbb", got.Body["session_id"])
 	}
 	if got.Bearer != "sekret" {
 		t.Errorf("bearer = %q want sekret", got.Bearer)

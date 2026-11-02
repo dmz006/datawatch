@@ -17,6 +17,14 @@
 # prints "local patterns: skipped" and carries on — that is never an
 # error. The 'local' class is the only one fed by this file.
 #
-# To create the real file:
+# `make leak-patterns-init` (scripts/seed-leak-patterns.sh) creates the real
+# file from this template when it is absent and automatically appends the
+# names the local datawatch daemon knows — federation peers, compute nodes,
+# observer peers and pool hosts — one per line beneath a dedicated comment
+# marker, deduplicated against existing lines case-insensitively (remember
+# that matching itself is case-insensitive substring matching). An existing
+# file is never overwritten. Only a count is printed; names are not.
+#
+# To create the real file by hand:
 #   copy this file to ".leak-patterns.local" at the repository root and
 #   add your patterns there. Do not commit the result.

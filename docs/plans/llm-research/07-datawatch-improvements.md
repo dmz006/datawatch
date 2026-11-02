@@ -23,7 +23,7 @@ entry (`qwen3:1.7b`@`local-node`). A fresh `autonomous_config_get` this
 session shows `verification_backend: "ollama-datawatch"` and
 `verification_model: "qwen3.8:27b"` — **the verifier has since been pinned to
 the same node and a comparably large model as PRD planning**, not the small
-fallback 01/02 analyzed. Since `node:datawatch` has `max_concurrent_sessions:
+fallback 01/02 analyzed. Since `peer-b` has `max_concurrent_sessions:
 1`, the verifier and the worker/planner sessions it's supposed to check now
 contend for the same single-session slot on the same node. This is treated as
 current ground truth below, and it sharpens (not weakens) the case for
@@ -79,7 +79,7 @@ MCP connection):** `get_version` now reports **8.36.10** running with
 **8.36.11** available — six further point releases since the second pass's
 8.36.1, still not itself acted on for the same out-of-scope reason.
 `compute_node_list`, `council_config_get` (`llm_ref: ""`, `max_parallel: 0`),
-and `capacity_status` (`node:datawatch` limit still `1`, `test-node` still
+and `capacity_status` (`peer-b` limit still `1`, `test-node` still
 present since 2026-09-17) all reconfirm exactly, no new drift. One genuinely
 new finding this pass: `autonomous_config_get` now also returns a
 `verification_backends` field — `["ollama-local-node", "ollama-datawatch"]`
@@ -162,14 +162,14 @@ surface across the 5 parity layers.
 
 ### Proposal 2 — Capacity awareness for Ollama parallel slots and VRAM
 
-**Problem.** The capacity ledger's `node:datawatch` pool has a flat limit of
+**Problem.** The capacity ledger's `peer-b` pool has a flat limit of
 1, sourced directly from `max_concurrent_sessions: 1`. It has no notion of
 Ollama's own `OLLAMA_NUM_PARALLEL`, per-model VRAM footprint, or `num_ctx`.
 The compute-node edit form already auto-suggests a "Computed max"
 concurrent-requests figure from VRAM × GPU count (confirmed via `docs_read`),
 but that number isn't consumed by the admission ledger — it just informs a
 human filling in the form. Net effect: Council's 12 personas can never
-usefully spread across the two nodes' real headroom (`datawatch-openai`
+usefully spread across the two nodes' real headroom (`remote-node`
 declares `max_concurrent_models: 3`, `local-node` declares 10) because the
 ledger reasons in whole-session slots per node, not VRAM budget per model.
 
@@ -533,7 +533,7 @@ roughly 8–40x below claude-code's $0.003/$0.015. The commonly-cited $1,999
 launch MSRP was not independently re-verified this session — flag before
 using it for amortization.
 
-**Worked example — B200 (`datawatch-openai`), only partially sourced.**
+**Worked example — B200 (`remote-node`), only partially sourced.**
 Per-GPU TDP could not be confirmed from an official source this session:
 the DGX B200 datasheet PDF returned no readable body text via `WebFetch`,
 the HGX B200 page lists platform FLOPS/memory but no per-GPU wattage, and
@@ -589,7 +589,7 @@ concrete gap found this session is `ollama_stats`'s host-scoping.
 
 **Problem.** `alert_rule_list` confirms complete CRUD tooling with zero
 rules defined. Three conditions from the brief are all independently
-confirmed as real, current: saturation (`node:datawatch`'s
+confirmed as real, current: saturation (`peer-b`'s
 `max_concurrent_sessions: 1`, 01(e)'s binding constraint across four
 passes), driver failure (the local NVML mismatch, 01(a), which fails silently
 per-request rather than alerting), model-not-installed (01(c) drift item 1 —
@@ -639,7 +639,7 @@ be meaningfully tested until both exist.
 
 - *"Which model served council run X, and how long did each persona take?"*
   — B1 at the `(council_run_id, persona)` grain, via B3.
-- *"Is `node:datawatch` out of headroom, or just at its declared ceiling?"*
+- *"Is `peer-b` out of headroom, or just at its declared ceiling?"*
   — Part A Proposal 2's computed concurrency, via B3.
 - *"What did this PRD actually cost — Claude and local combined?"* — B1 +
   B2 together; impossible today (`cost_summary` is `$0` everywhere).

@@ -10,7 +10,7 @@ since 01/02): registry entries `claude-code`, `ollama-datawatch`
 the 4 actually installed locally per `ollama_stats`: `moondream:latest`,
 `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`), `opencode` (node
 `datawatch`), `openwebui-datawatch`; compute nodes `datawatch` (priority 90,
-`max_concurrent_sessions: 1`, no declared hardware), `datawatch-openai`
+`max_concurrent_sessions: 1`, no declared hardware), `remote-node`
 (Blackwell B200 128 GB, `max_concurrent_models: 3`), `local-node` (32 GB GPU
 32 GB, `max_concurrent_models: 10`, priority 70), `test-node` (duplicate
 address of `datawatch`, priority 50, stale).
@@ -99,7 +99,7 @@ differently:
   small models are the better fit when the constraint is "many independent
   GPU-resident instances," not "one smart model split across RAM/VRAM."
 
-Given `node:datawatch`'s confirmed `max_concurrent_sessions: 1` and
+Given `peer-b`'s confirmed `max_concurrent_sessions: 1` and
 `local-node`'s `max_concurrent_models: 10`, the *local* 32 GB GPU host is
 actually where dense-small packing has room to matter today; the MoE/CPU-
 split trade is more about giving `datawatch` (currently one session at a
@@ -277,7 +277,7 @@ value gap) before swapping the frontier tier to any unverified alternative.
   and the same 10-model list including `qwen3.8:27b` and `gpt-oss:120b`,
   `ollama-local-node` still carrying the same stale 7-model list,
   `opencode` on node `datawatch`, `openwebui-datawatch`); same 4 compute
-  nodes with identical priorities (`datawatch` 90, `datawatch-openai` 90,
+  nodes with identical priorities (`datawatch` 90, `remote-node` 90,
   `local-node` 70, `test-node` 50, stale duplicate address unchanged);
   local `local-node` Ollama still exactly 4 models (`moondream:latest`,
   `llmvision/glimpse-v1`, `qwen3:1.7b`, `nomic-embed-text`, 7.8 GB total).

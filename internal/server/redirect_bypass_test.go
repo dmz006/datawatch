@@ -166,7 +166,7 @@ func TestRedirectToTLSHandler_BodyForwarded(t *testing.T) {
 	s := newTestRedirectServer(t, main)
 	h := s.redirectToTLSHandler(8443)
 
-	body := `{"session_id":"ralfthewise-eac4","port":41117}`
+	body := `{"session_id":"peer-d-eac4","port":41117}`
 	req := httptest.NewRequest(http.MethodPost, "/api/channel/ready", strings.NewReader(body))
 	req.RemoteAddr = "127.0.0.1:51234"
 	req.Host = "h"

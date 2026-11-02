@@ -14,7 +14,7 @@ import (
 
 func TestDeriveSessionUUID_Deterministic(t *testing.T) {
 	// Same input must always produce the same UUID.
-	name := "ralfthewise-f7ec"
+	name := "peer-d-f7ec"
 	a := deriveSessionUUID(name)
 	b := deriveSessionUUID(name)
 	if a != b {
@@ -26,8 +26,8 @@ func TestDeriveSessionUUID_Deterministic(t *testing.T) {
 }
 
 func TestDeriveSessionUUID_DifferentInputs(t *testing.T) {
-	a := deriveSessionUUID("ralfthewise-f7ec")
-	b := deriveSessionUUID("ralfthewise-a1b2")
+	a := deriveSessionUUID("peer-d-f7ec")
+	b := deriveSessionUUID("peer-d-a1b2")
 	if a == b {
 		t.Fatalf("different inputs produced the same UUID: %q", a)
 	}
@@ -39,9 +39,9 @@ func TestDeriveSessionUUID_DifferentInputs(t *testing.T) {
 // stores at launch time must equal the ID we ask it to resume by.
 func TestLaunchAndResume_SameSessionID(t *testing.T) {
 	// Simulate the datawatch identifiers for a session:
-	//   fullID     = "ralfthewise-f7ec"
-	//   tmuxSession = "cs-ralfthewise-f7ec"
-	fullID := "ralfthewise-f7ec"
+	//   fullID     = "peer-d-f7ec"
+	//   tmuxSession = "cs-peer-d-f7ec"
+	fullID := "peer-d-f7ec"
 	tmuxSession := "cs-" + fullID
 
 	// Launch derives UUID from tmuxSession minus "cs-" prefix.
@@ -69,7 +69,7 @@ func TestIsUUID(t *testing.T) {
 		want  bool
 	}{
 		{"a1085917-b6b3-5fa9-b8a9-513c7ed4c8c3", true},
-		{"ralfthewise-f7ec", false},
+		{"peer-d-f7ec", false},
 		{"not-a-uuid", false},
 		{"", false},
 		{"00000000-0000-0000-0000-000000000000", true},

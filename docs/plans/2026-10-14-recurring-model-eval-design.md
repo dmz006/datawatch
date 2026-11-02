@@ -33,7 +33,7 @@
 | Node | Kind | Address | Declared capacity | Declared hardware | Notes |
 |---|---|---|---|---|---|
 | `datawatch` | ollama | `http://datawatch:11434` | `{}` | `{}` | **No hardware declared at all** — no GPU, no CPU, no RAM. `max_concurrent_sessions:1`, priority 90. |
-| `datawatch-openai` | openai-compat | `http://datawatch:3000` | gpus 1, 128 GB, max 3 models | nvidia `blackwell-b200`, count 1 | Served via OpenWebUI. |
+| `remote-node` | openai-compat | `http://datawatch:3000` | gpus 1, 128 GB, max 3 models | nvidia `blackwell-b200`, count 1 | Served via OpenWebUI. |
 | `local-node` | ollama | `http://local-node:11434` | gpus 1, **32 GB**, max 10 models | nvidia `gpu-32gb`, count 1 | **No CPU fields declared.** |
 | `verdict` | ollama | `http://127.0.0.1:11435` | gpu_mem 32 GB, max 2 models | `{}` | Free-text tag `shared-gpu-with-local-node`; capacity ledger does not read it (BL428 §3c, `2026-10-14-concurrency-and-budget-design.md:361-380`). Serves the imap-mcp verdict workload. |
 
@@ -42,9 +42,9 @@
 - `ollama-local-node` (node local-node): qwen3:1.7b, qwen3.5:35b, qwen3-coder:30b, qwen2.5:14b, Gemma3:12b, qwen3:8b, nomic-embed-text.
 - `ollama-datawatch` (node datawatch): the widest set, including gpt-oss:120b, qwen3-coder-next:q4_K_M, qwen3.8:27b. **These sizes are registered but the node has no declared hardware, so fit cannot be checked from the registry.**
 - `ollama-verdict` (node verdict): gemma4:26b, gpt-oss:20b, granite4.2:30b, granite4.2:8b.
-- `openwebui-datawatch` (node datawatch-openai): qwen3-coder-next, gpt-oss:120b, and the Qwen/Gemma set.
+- `openwebui-datawatch` (node remote-node): qwen3-coder-next, gpt-oss:120b, and the Qwen/Gemma set.
 
-**`capacity_status`** — pools: `host` (limit 9), `llm:claude-code` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:datawatch-openai` / `node:local-node` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:claude-code`. This confirms BL428 §3b's "unlimited by default" finding.
+**`capacity_status`** — pools: `host` (limit 9), `llm:claude-code` (**limit 0 = unlimited**), `node:datawatch` (limit 1), `node:remote-node` / `node:local-node` / `node:verdict` (limit 0 = unlimited). Two live leases, both on `llm:claude-code`. This confirms BL428 §3b's "unlimited by default" finding.
 
 **`ollama_stats`** — **not available.** The MCP call returned `404 unknown tool: ollama_stats` on this server. The tool appears in the listing but is not served. Live GPU/VRAM figures were therefore taken from the host directly (below).
 
@@ -137,7 +137,7 @@ Option (a) needs a service change on local-node. That is an operator action; thi
 |---|---|---|---|
 | **H0** `hosted` | Anthropic-hosted; no local hardware | `claude-code` | Claude cells. Not a local hardware class; excluded from hardware-conditioned local advice. |
 | **H1** `gpu-32g` | Single GPU, 32 GB VRAM | local-node (32 GB GPU, 32,607 MiB) | Main local GPU row. |
-| **H2** `gpu-128g` | Single GPU, 128 GB | datawatch-openai (B200, via OpenWebUI) | Large-model row. Only for models that do not fit H1 (gpt-oss:120b, qwen3-coder-next). |
+| **H2** `gpu-128g` | Single GPU, 128 GB | remote-node (B200, via OpenWebUI) | Large-model row. Only for models that do not fit H1 (gpt-oss:120b, qwen3-coder-next). |
 | **H3** `gpu-undeclared` | GPU present but undeclared | `datawatch` (`hardware:{}`) | Cannot be classified. Probe first (S2); cells are recorded as `class_unknown` until then. |
 | **H4** `cpu-only-24c` | **CPU-only, 24 physical cores / 48 threads, ≥ 64 GB RAM** | local-node's CPU, GPU hidden (`local-node-cpu` node, option (a)) | **First-class CPU row.** Distinct from H1 even on the same host. |
 | **H5** `cpu-only-undeclared` | CPU-only, cores/RAM not declared | `datawatch` (no GPU declared; cores unknown) | Measured by the probe (S2). Recorded as `cpu_class_unknown` until measured. |
