@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.64.0 (2026-11-02).** The dashboard opens on an operator console of what needs your attention, and its cards are audited and cleaned up. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.64.1 (2026-11-02).** The shipped-state backfill marks merged-then-cancelled records as shipped and the dry run counts them. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

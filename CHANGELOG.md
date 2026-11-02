@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.64.1 — Backfill marks merged work that was cancelled
+
+### Fixed
+
+- **The shipped-state backfill now marks cancelled PRDs whose work actually landed.** The pass previously skipped a PRD whose stored status is cancelled even when a main-branch merge commit names its id, so a merged-then-cancelled Automaton (and the Automations containing it) never read as shipped. The backfill now records shipped state on every PRD whose id is named by a main-branch merge commit — even when its stored status is cancelled. The status never changes: a cancelled PRD with a merge is cancelled *and* shipped, while a cancelled PRD with no merge stays plain cancelled. The dry run now counts `prds_marked` and reports a new `prds_would_mark_cancelled` count that matches the real run, so a preview shows exactly what the backfill will change. The release version is the next patch above main, assigned by the merge helper (`scripts/merge-branches-bump-version.sh`); this entry deliberately carries no version number.
+
 ## v9.64.0 — Operator console dashboard
 
 ### Added
