@@ -230,8 +230,10 @@ commits:
 - an Automation is marked when it has at least one non-skipped member whose
   non-skipped members are **all** shipped — the mark carries the latest of
   the members' merge facts;
-- it never touches any status — a cancelled Automaton is marked shipped
-  while staying `cancelled`;
+- it never touches any status — a cancelled Automaton whose merge commit
+  is on the branch is marked shipped while staying `cancelled`, and one
+  with no merge stays plain cancelled (it is what `left_cancelled`
+  counts);
 - a record that already carries shipped state is counted, not
   re-recorded (idempotent);
 - one bad record lands in the report's `errors` and the pass carries on.
@@ -247,12 +249,14 @@ POST /api/autonomous/shipped/backfill?dry_run=true
 ```
 
 A dry run scans and computes the report without writing a single record.
-The report is the same in both modes:
+The report is the same in both modes: `prds_marked` and
+`prds_would_mark_cancelled` both count what the pass would mark, so a dry
+run and the real run agree on them:
 
 ```
 {
-  "prds_scanned": 42, "prds_marked": 3, "prds_already_marked": 2,
-  "automations_marked": 1, "left_cancelled": 1,
+  "prds_scanned": 42, "prds_marked": 3, "prds_would_mark_cancelled": 1,
+  "prds_already_marked": 2, "automations_marked": 1, "left_cancelled": 1,
   "unmatched_ids": ["9d8e7f6a"],
   "errors": []
 }

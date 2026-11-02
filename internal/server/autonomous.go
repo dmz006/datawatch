@@ -2373,10 +2373,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			MergedInRelease string   `json:"merged_in_release"`
+			MergedInRelease string    `json:"merged_in_release"`
 			MergedAt        time.Time `json:"merged_at"`
-			MergeCommit     string   `json:"merge_commit"`
-			Source          string   `json:"source"`
+			MergeCommit     string    `json:"merge_commit"`
+			Source          string    `json:"source"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -3952,8 +3952,10 @@ func (s *Server) handleAutonomousShippedCounts(w http.ResponseWriter, r *http.Re
 // record shipped state (source backfill) on the matching PRDs, and on each
 // Automation whose non-skipped members are all shipped. dry_run=true scans
 // and computes the report without writing any record; absent defaults to
-// writing. No Status is ever touched, so a cancelled PRD stays cancelled
-// and unmarked. The response is the manager's ShippedBackfillReport.
+// writing. No Status is ever touched: a cancelled PRD whose merge commit
+// is on the branch is marked shipped while staying cancelled; one with no
+// merge stays plain cancelled (what left_cancelled counts). The response is
+// the manager's ShippedBackfillReport.
 func (s *Server) handleAutonomousShippedBackfill(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 		return
@@ -4073,9 +4075,9 @@ type automationControlReq struct {
 
 	// set_effort_ceiling: task kind -> low|medium|high|cheaper_backend. An
 	// empty or absent map clears the Automation's ceiling.
-	EffortCeiling map[string]string `json:"effort_ceiling"`
-	EstimatedCostUSD   *float64 `json:"estimated_cost_usd"`
-	Clear              bool     `json:"clear"`
+	EffortCeiling    map[string]string `json:"effort_ceiling"`
+	EstimatedCostUSD *float64          `json:"estimated_cost_usd"`
+	Clear            bool              `json:"clear"`
 }
 
 // budgetSetRequest is the set_budget request the body carries.
