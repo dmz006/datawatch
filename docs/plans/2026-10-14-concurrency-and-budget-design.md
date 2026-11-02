@@ -1859,3 +1859,7 @@ Operator, 2026-11-02, quoted: "Claude at 19%". The calculator records 19% at Mon
 ## Reading 2026-11-02 14:00 EST: 20%, stay at one lane
 
 Operator, 2026-11-02, quoted: "Claude at 20%". The calculator records 20% at Mon 14:00 (5.75 days left, pace line 17.9, 2.1 points ahead, down from 2.8 at the 11:12 reading). Recent burn is 8.6 points per 24 hours (projected end 69.2%, within budget); the week average is 16 points per 24 hours (112%, over budget). The token tally estimated 20.3 for the same moment, within a third of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
+
+## Reading 2026-11-02 18:21 EST: 22%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 22%". The calculator records 22% at Mon 18:21 (5.57 days left, pace line 20.4, 1.6 points ahead, down from 2.1 at the 14:00 reading). Recent burn is 11.1 points per 24 hours (projected end 83.6%, within budget); the week average is 15.4 points per 24 hours (107.6%, over budget), and at the week average the allowance would run out Sat 20:08, about 12 hours before the reset. The token tally estimated 22.2 for the same moment, within a quarter of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
