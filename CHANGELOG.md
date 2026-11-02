@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.61.2 — Verification scripts survive cancel and recreate
+
+### Fixed
+
+- **Cancelling an Automaton now keeps its verification scripts.** The scripts are saved in a folder outside the worktree before the worktree is removed, and they are copied back when the Automaton or a task worktree is created or recreated. A stray folder that is not a worktree at the worktree path is moved aside instead of blocking setup. A verification script that is missing everywhere still produces the existing setup fault.
+
 ## v9.61.1 — Task commit handles staged deletions
 
 A finished task that removed a file is committed instead of held for review.
