@@ -40,7 +40,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Quality bar | **Catastrophic**: invalid JSON blocks the PRD entirely; valid-but-incoherent output wastes every downstream worker built from it |
 | Tool calling | Yes — project exploration (file reads/listing); this call site has extra hardening: `<user_data>` wrapping + injection-guard scan (v8.18.0, confirmed) |
 | Structured output | Yes, strict JSON — hard requirement, consumed programmatically |
-| Parallelism | Low by design — `max_parallel_tasks: 3`, `node:datawatch` caps `max_concurrent_sessions: 1` (confirmed) → one decomposition runs at a time today |
+| Parallelism | Low by design — `max_parallel_tasks: 3`, `peer-b` caps `max_concurrent_sessions: 1` (confirmed) → one decomposition runs at a time today |
 | Observed cost/time | **Unknown.** `cost_summary` shows 0 tokens/cost on every backend (01(f)); no duration found via `memory_recall`. Highest-value gap to start measuring before any routing change. |
 
 ### 2. Coding worker sessions (opencode / claude-code)
@@ -53,7 +53,7 @@ cost/time (from `memory_recall`/`cost_summary`, else **unknown**).
 | Quality bar | **Catastrophic**: hallucinated file paths/APIs produce broken diffs the verifier (spec+diff only) may not catch |
 | Tool calling | Yes, extensively — defining trait of this workload; weak tool-calling is disqualifying here |
 | Structured output | No strict schema on model output; tool-call formatting must be reliable |
-| Parallelism | Same ceiling as decomposition — `max_parallel_tasks: 3`; live `capacity_status` shows exactly one active lease on `node:datawatch` |
+| Parallelism | Same ceiling as decomposition — `max_parallel_tasks: 3`; live `capacity_status` shows exactly one active lease on `peer-b` |
 | Observed cost/time | **Unknown.** 210 opencode + 139 claude-code sessions recorded, all with zero tokens/cost (`cost_summary`, confirmed). Most expensive workload to be missing cost data for. |
 
 ### 3. Verifier (`autonomousVerify`)
@@ -207,5 +207,5 @@ parallel across CPU+GPU" is less about finding new small models —
 (profile 9) — and more about (a) deciding whether the four fast/balanced
 call sites sharing one fallback model is fine or should be split out with
 explicit `*_backend`/`llm_ref` keys, and (b) raising `council.max_parallel`
-and `node:datawatch`'s `max_concurrent_sessions: 1`, both confirmed live as
+and `peer-b`'s `max_concurrent_sessions: 1`, both confirmed live as
 today's actual binding constraints rather than any model being too slow.

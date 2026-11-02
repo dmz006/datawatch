@@ -15,7 +15,7 @@ results themselves.
 available — daemon has moved five times since 05's 8.36.7 snapshot, same
 day), `eval_list_suites` (`[]`, unchanged), `llm_list`, `compute_node_list`,
 `ollama_stats`. No drift in registry/node facts since 03/05: same four
-compute nodes (`datawatch` priority 90 no declared capacity, `datawatch-openai`
+compute nodes (`datawatch` priority 90 no declared capacity, `remote-node`
 priority 90 with the declared B200, `local-node` priority 70 with the RTX
 32 GB GPU, `test-node` stale duplicate), same five LLM registry entries, same
 four models actually resident on local `local-node` Ollama (`moondream`,
@@ -225,7 +225,7 @@ session) was loading/using the node concurrently. **This is itself a
 finding, not just a methodology footnote:** `qwen3.8:27b`'s own
 `total_duration` (21.7s) is far larger than `prompt_eval_duration +
 eval_duration + load_duration` (≈4.0s) can account for — the ~17.7s gap is
-almost certainly queueing behind other traffic on `node:datawatch`'s
+almost certainly queueing behind other traffic on `peer-b`'s
 `max_concurrent_sessions: 1` (05(f), 08). **Any benchmark run against
 `datawatch` while it's serving live traffic will conflate queueing time with
 model speed** unless isolated — see the run-order note in §5.
@@ -309,7 +309,7 @@ guessing which axis matters more.
 - **Token/cost accounting is broken fleet-wide** (`cost_summary` all-zero,
   01(f)/07 Part B/08) — "cost per candidate" cannot be measured until that's
   fixed; throughput and quality are the only axes this plan can use today.
-- **`node:datawatch` contention is real and was directly observed** (§4) —
+- **`peer-b` contention is real and was directly observed** (§4) —
   any benchmark run against it should either request a maintenance window or
   explicitly report queueing-vs-compute time separately, or risk attributing
   shared-traffic slowdowns to a candidate model.

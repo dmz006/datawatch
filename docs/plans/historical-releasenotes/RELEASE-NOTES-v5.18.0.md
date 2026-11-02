@@ -68,7 +68,7 @@ $ DATAWATCH_API_URL=http://127.0.0.1:8080 datawatch-channel
 # (no more TLS verify error)
 
 $ tail ~/.datawatch/daemon.log
-[channel] ready for session ralfthewise-eac4 (channel_ready=true, port=41117)
+[channel] ready for session peer-e-eac4 (channel_ready=true, port=41117)
 ```
 
 ### Tests

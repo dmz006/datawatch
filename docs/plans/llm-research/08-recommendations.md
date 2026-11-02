@@ -40,13 +40,13 @@ by name instead of restating an ad hoc equivalent.
   ([01(c)](01-current-state.md#c-llm-registry-and-drift) items 4-6). One
   live exception: the verifier has since drifted onto
   `qwen3.8:27b`@`datawatch` (confirmed again this session), now contending
-  with planner/worker for `node:datawatch`'s single session slot — the
+  with planner/worker for `peer-b`'s single session slot — the
   sharpest open fork in this document (§7).
 - **The hardware for the "8+ parallel calls" goal already exists and is
   mostly idle.** `local-node`'s 32 GB GPU runs one 0.57 GB embedding
   model most of the time out of 32 GB declared
   ([02, profile 9](02-workload-profiles.md#9-memory-embedding-nomic-embed-text)).
-  The binding constraints are config, not silicon: `node:datawatch`'s
+  The binding constraints are config, not silicon: `peer-b`'s
   `max_concurrent_sessions: 1` and `council.max_parallel: 0` (→ default 2,
   or possibly serial — the two authoritative docs disagree, see §6).
 - **Cost/eval observability is not a minor gap, it's absent.**
@@ -74,7 +74,7 @@ effort argument from [07](07-datawatch-improvements.md) Part A.
 |---|---|---|---|---|---|---|
 | PRD planning | `qwen3.8:27b` via opencode | **Keep qwen3.8:27b** — no swap yet | Qwen3-30B-A3B (MoE) as a *benchmarked challenger only* | `datawatch` | None claimed — measure first | [02 profile 1](02-workload-profiles.md#1-prd-decomposition--planning-decomposefn), [03 Frontier tier](03-text-model-candidates.md#frontieragentic-tier-prd-decomposition-coding-worker-sessions) |
 | Coding worker sessions | `qwen3.8:27b` via opencode | **Keep qwen3.8:27b** | Same MoE challenger as above | `datawatch` | None claimed — measure first | [02 profile 2](02-workload-profiles.md#2-coding-worker-sessions-opencode--claude-code), 03 Frontier tier |
-| Verifier | **Live-drifted**: `qwen3.8:27b`@`ollama-datawatch` (was `qwen3:1.7b` per 01; changed since, confirmed again this session) | Qwen3-4B-Instruct-2507 (fast-small) | Phi-4-mini (MIT, no license review) | `local-node` | Frees `node:datawatch`'s 1-session slot from verifier contention — but see §7 fork 5 before applying | [07 live-drift note](07-datawatch-improvements.md), [03 Fast-small tier](03-text-model-candidates.md#fast-small-tier-verifier-guardrail-memory-embedding-fact-extractionsummarization) |
+| Verifier | **Live-drifted**: `qwen3.8:27b`@`ollama-datawatch` (was `qwen3:1.7b` per 01; changed since, confirmed again this session) | Qwen3-4B-Instruct-2507 (fast-small) | Phi-4-mini (MIT, no license review) | `local-node` | Frees `peer-b`'s 1-session slot from verifier contention — but see §7 fork 5 before applying | [07 live-drift note](07-datawatch-improvements.md), [03 Fast-small tier](03-text-model-candidates.md#fast-small-tier-verifier-guardrail-memory-embedding-fact-extractionsummarization) |
 | Guardrail | `qwen3:1.7b` (fallback; subsystem disabled) | Qwen3-4B-Instruct-2507 | Phi-4-mini | `local-node` | Ready-to-run once `orchestrator.enabled: true` | [02 profile 4](02-workload-profiles.md#4-guardrail-checks-autonomousguardrail), 03 Fast-small tier |
 | Council personas (×12) | `qwen3:1.7b` (fallback; `council.llm_ref` empty) | Qwen3-30B-A3B (MoE) | Gemma3:12b — already installed and loaded, zero-effort quick win | `local-node` | Better adversarial-persona quality (`hacker`/`app-hacker`/`security-skeptic` currently on the fleet's smallest model) without linear compute cost | [02 profile 5](02-workload-profiles.md#5-council-persona-proposals-12-personas), [03 Balanced tier](03-text-model-candidates.md#balanced-tier-council-personas-vision-voicestt-once-wired-up) |
 | Council synthesis | Same `qwen3:1.7b` fallback | `qwen3.5:35b` — already installed, 23.9 GB | None recommended — do not downsize this call | `datawatch` (already has the model) | Fair reconciliation of 12 viewpoints instead of the smallest model in the fleet doing it | [02 profile 6](02-workload-profiles.md#6-council-synthesis-consensus--dissent), [03 Strong tier](03-text-model-candidates.md#strong-tier-council-synthesis-interactive-chat-sessions) |
@@ -123,14 +123,14 @@ touching `datawatch` at all — matching 05's own Plan 2/3 conclusion that
 the 32 GB GPU is comfortably under budget for this shape.
 
 **`datawatch` (undeclared hardware — 05(a) flags it as likely the same
-physical box as the 128 GB B200 declared for `datawatch-openai`, not
+physical box as the 128 GB B200 declared for `remote-node`, not
 independently confirmed):** 05's Plan 1 (~47.8/128 GB: `qwen3.8:27b`×4
 slots@32k q8_0 + `gemma3:12b` + `nomic-embed-text`) shows real headroom
 exists on the B200 side; this fleet's actual placement is narrower today:
 
 | Model | Role | VRAM | Slots | Context |
 |---|---|---|---|---|
-| `qwen3.8:27b` | planner + worker | 15.5 GB | **1** — `node:datawatch`'s `max_concurrent_sessions: 1` is the binding constraint today (05(f), confirmed live again this pass: pool `node:datawatch` limit still `1`) | Large, sustained |
+| `qwen3.8:27b` | planner + worker | 15.5 GB | **1** — `peer-b`'s `max_concurrent_sessions: 1` is the binding constraint today (05(f), confirmed live again this pass: pool `peer-b` limit still `1`) | Large, sustained |
 | `qwen3.5:35b` | council synthesis | 23.9 GB | 1, sequential per round | Large (holds all 12 persona responses) |
 
 Combined footprint (~39 GB) is well under 05 Plan 1's demonstrated ~47.8 GB
@@ -145,7 +145,7 @@ limit at all — the two forks are independent levers, not sequenced steps.
 
 **Net (05's own finding, §3 restated for this fleet's role mix): 8+
 parallel calls is reachable today primarily by (a) resolving §7 fork 6
-(raising the `node:datawatch` capacity pool limit — 05(f)'s "single biggest
+(raising the `peer-b` capacity pool limit — 05(f)'s "single biggest
 blocker," but a real trade-off, not a free action) and/or fork 5 (verifier
 relocation), (b) raising `council.max_parallel` toward its natural 12-wide
 shape, and (c) fixing the `local-node` `nvidia-smi` mismatch (05(g))
@@ -158,13 +158,13 @@ Described in words first, illustrative snippets after. **None of this was
 applied — read-only tools only were used this session.**
 
 - **If §7 fork 6 is decided in favor of raising it: raise the
-  `node:datawatch` capacity pool limit** from `1`
+  `peer-b` capacity pool limit** from `1`
   ([05(f)](05-serving-and-hardware.md#f-multi-node-balancing)'s "single
   biggest blocker to real concurrency" finding, reconfirmed live this pass
   via `capacity_status`) — the prerequisite for §3's Plan-1-style
   `qwen3.8:27b` multi-slot fan-out on `datawatch`. This document does not
   decide fork 6 itself (trade-off: more simultaneous VRAM pressure on a GPU
-  whose sharing with `datawatch-openai` isn't fully confirmed, §6) — it only
+  whose sharing with `remote-node` isn't fully confirmed, §6) — it only
   shows what applying it would look like.
 - **Add a `roles:` block** ([07 Proposal 1](07-datawatch-improvements.md#proposal-1--workload-role-model-tiers-role--llm-mapping))
   mapping the nine workload roles to registry entries, with an explicit
@@ -207,7 +207,7 @@ council:
 # illustrative — not applied. Only if operator fork 6 (section 7) is
 # decided in favor of raising this limit.
 capacity_pools:
-  node:datawatch:
+  peer-b:
     limit: 4   # up from 1 — see 05(f); exact target should follow phase-1
                # benchmark data, not this illustrative number
 ```
@@ -269,7 +269,7 @@ real, non-blank quality *and* throughput number, not an estimate — closing
 tier.** Apply the `roles:` block (once built) or the individual
 `*_backend`/`llm_ref` keys directly, but **only** for candidates that
 passed [06 §6](06-benchmark-plan.md#6-decision-rule)'s decision rule in
-Phase 1; raise `council.max_parallel`, and raise the `node:datawatch` pool
+Phase 1; raise `council.max_parallel`, and raise the `peer-b` pool
 limit if §7 fork 6 has been decided in favor of it by this phase.
 *Success:* verifier and guardrail run on whichever candidate met both the
 ≥90%-quality and ≥2×-throughput bars in Phase 1, not the ad hoc fallback
@@ -320,7 +320,7 @@ reports computed-effective concurrency per node, not just a flat limit.
   system-level 8-GPU figure from NVIDIA's DGX B200 page
   ([07 Proposal B2](07-datawatch-improvements.md#proposal-b2--local-compute-cost-model)).
   Any B200 cost-per-token figure here is a bounded range, not a fact.
-- **`datawatch` and `datawatch-openai` may be the same physical box** —
+- **`datawatch` and `remote-node` may be the same physical box** —
   would mean the B200 is shared, not dedicated; not confirmed from this
   project's read-only scope ([01(a)](01-current-state.md#a-hardware-per-compute-node)).
   Matters for §3's layout if true.
@@ -338,7 +338,7 @@ Presented with trade-offs, not picked silently, per this document's brief.
    the frontier tier at concurrency 8-16 — one published benchmark shows
    ~2.8× per-request efficiency gain at concurrency 32 vs. 1
    ([05(b)](05-serving-and-hardware.md#b-alternatives-to-ollama)) — at the
-   cost of running two serving engines. `datawatch-openai`'s existing
+   cost of running two serving engines. `remote-node`'s existing
    `openai-compat` node ([05(f)](05-serving-and-hardware.md#f-multi-node-balancing))
    means this swap doesn't require touching any LLM registry call site.
 2. **Whether to add a dedicated voice pipeline change at all.** Whisper
@@ -363,10 +363,10 @@ Presented with trade-offs, not picked silently, per this document's brief.
    reverting to a fast-small model@`local-node` (relieves contention,
    costs verification quality). Needs Phase 1's benchmark data to answer
    with evidence, not a guess made here.
-6. **Whether to raise `node:datawatch`'s `max_concurrent_sessions` above
+6. **Whether to raise `peer-b`'s `max_concurrent_sessions` above
    1.** An alternative to fork 5 — lets planner/worker/verifier run
    concurrently without moving the verifier, at the cost of more
-   simultaneous VRAM pressure on a GPU whose sharing with `datawatch-openai`
+   simultaneous VRAM pressure on a GPU whose sharing with `remote-node`
    isn't fully confirmed (§6).
 7. **Target value for `council.max_parallel`.** Anywhere from 2 (documented
    default) to the full natural width of 12 — depends on Phase 1's real

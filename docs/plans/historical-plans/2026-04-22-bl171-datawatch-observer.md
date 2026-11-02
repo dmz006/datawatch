@@ -125,7 +125,7 @@ Lives at `GET /api/stats`. Live-streamed via the existing `MsgStats` WebSocket b
 
   "envelopes": [                     // ROLLED-UP per session + per backend
     {
-      "id": "session:ralfthewise-787e",
+      "id": "session:peer-e-787e",
       "kind": "session",
       "label": "Claude-dev",
       "root_pid": 4089,
