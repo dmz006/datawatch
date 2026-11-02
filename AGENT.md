@@ -1643,18 +1643,6 @@ When adding a new LLM backend:
   `docs/operations.md`). A new phrase needs a recorded line in `testdata/rate_limit_lines/`
   and goes in that table for the backend that prints it; an operator list in config still
   replaces the table with flat-substring matching.
-- **Exception: Claude Code interstitial prompt dismissal.** The known interstitial
-  prompt kinds (today: the “Want to autocompact at 400k tokens instead?” question) are
-  a built-in table in `internal/session/interstitial_prompt.go`, keyed by kind with the
-  safe dismissal key per kind — **Esc** (“not now”); Enter is never safe on a prompt
-  whose highlighted row changes a setting, and it is outside the closed safe-key
-  list. A new kind is only added with: its anchor phrases and hint-line words, its
-  safe dismissal key, the reason that key is safe for that prompt, and a recorded
-  fixture in `internal/session/testdata/interstitial/` naming the wording's source
-  (verbatim capture or official release-note wording) — a prompt whose wording is not
-  recorded gets no table entry. Operators tune the boundedness (delay, clear bound,
-  attempt budget, switch) via `session.dismiss_ui_prompts` and friends, never the
-  patterns. See `docs/datawatch-definitions.md` § Claude Code interstitial prompts.
 
 ## Decision Making
 

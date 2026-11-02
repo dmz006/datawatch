@@ -89,11 +89,12 @@ test('Sessions card renders the four UI prompt settings with values, help and do
   const html = panel.innerHTML;
   const docsHref = 'href="/diagrams.html#docs/datawatch-definitions.md#claude-code-interstitial-prompts"';
   const hits = html.split(docsHref).length - 1;
-  assert.equal(hits, 4, 'each of the four rows carries its docs help link');
+  // One docs link per row plus the card level docs link every settings card now carries.
+  assert.equal(hits, 5, 'each of the four rows and the card carry the docs help link');
 
   // The toggle: English label, help tooltip, saved boolean, value on.
   assert.match(html, /Dismiss Claude Code interstitial prompts/);
-  const toggleSeg = html.slice(html.indexOf("onchange=\"saveGeneralField('session.dismiss_ui_prompts', this.checked)\"") - 700);
+  const toggleSeg = html.slice(html.indexOf("onchange=\"saveGeneralField('session.dismiss_ui_prompts', this.checked)\"") - 1400);
   assert.match(toggleSeg, /title="datawatch detects known Claude Code interstitial prompts/);
   assert.match(toggleSeg, /type="checkbox" checked/);
 
