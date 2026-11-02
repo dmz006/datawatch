@@ -129,3 +129,11 @@ non-exhaustive survey: a best-effort list, not a complete audit. Survey grep: `g
 - internal/router/compute_tls_test.go:136 TestComputeNodeTLSAddAndUpdateSendKeys: handler writes d.method, d.path and d.body under d.mu but the test reads them without taking the lock (also line 139)
 - internal/router/compute_tls_test.go:155 TestComputeNodeTLSSkipVerifyIsBoolInBody: handler writes d.body under d.mu but the test reads d.body without the lock
 - internal/router/progress_cmd_test.go:102 TestProgressCommReplyIsTheRenderedText: fake daemon handler writes *query unlocked (line 40); test reads query after captureSends (also line 120 in TestProgressCommRejectsUnknownArgument and line 132 in TestProgressCommTrend)
+
+## Final gate
+
+- gofmt and vet: `gofmt -l` on the three changed Go files printed nothing; `go vet ./internal/router/` was clean: PASS
+- golangci-lint: `golangci-lint run ./internal/router/` reported 0 issues: PASS
+- race tests: `TestAutomationCommDecisionAssistant`, `TestAutomationCommDecisionAssistantUsage`, `TestAutomationCommDecisionAssistantVerbListed` and `TestAutomationCommFixtureDrainsLateRequests` all passed under `go test -race -count=1 -v`: PASS
+- testing entry: bug entry added to `docs/testing.md` naming `TestAutomationCommDecisionAssistantUsage` and `TestAutomationCommFixtureDrainsLateRequests`, marked PASS: PASS
+- result: PASS
