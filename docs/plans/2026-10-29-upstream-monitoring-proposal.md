@@ -6,6 +6,8 @@
 
 Confirmed: yes — operator answered 2026-11-01: option C, maintainer-only (Dependabot plus a small scheduled job)
 
+Delivered: option C was built by PRD `fb0a0001` as maintainer-only tooling — `.github/dependabot.yml` (Go modules, Docker tags, workflow actions), the scheduled `.github/workflows/upstream-watch.yaml` job running `scripts/upstream_watch.py` for the pinned tool ARGs, the Trivy pin and installer and the advisory-only feeds; human merge first for every PR. See the maintainer guide: [2026-11-01-upstream-monitoring-maintainer-guide.md](2026-11-01-upstream-monitoring-maintainer-guide.md).
+
 ## Problem
 
 On 2026-10-25 the operator withdrew the 72-hour wait rule for security patches: consume them as soon as they are published, until a better upstream monitor exists. Today that is a manual practice ("the supervisor and the release path consume patches as they find them"). The design is open on four points: sources, cadence, which updates may auto-merge, and how a malicious release is handled now that the waiting period is gone.
