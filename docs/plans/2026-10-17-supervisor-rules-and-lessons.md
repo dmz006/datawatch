@@ -670,3 +670,7 @@ Rules:
 ## A silent pi worker is not a hung pi worker (2026-11-02)
 
 The watch's SILENT line looks at file changes and logs in the worktree. A pi worker started with `--print` writes its output file only when it finishes, and while it reads a large file or compacts its context it changes nothing in the tree. Before ending any pi worker, read its transcript: the newest `*.jsonl` under `~/.pi/agent/sessions/<worktree path with slashes as dashes>/`. If its modification time is recent (minutes), the worker is working; leave it. End a pi worker only when the transcript has not changed for 30 minutes and the model server shows no request from it. On 2026-11-02 a working worker was ended on an empty output file and lost about 20 minutes of work.
+
+## Cancelling an Automaton removes its verification scripts (2026-11-02)
+
+Decompose writes each task's verification script into the Automaton's worktree as untracked files. Cancelling the Automaton removes that worktree, scripts included, and every task then fails with a missing-script setup fault. To change an Automaton's LLM after it started, do not cancel it: that costs a second decompose. Set the LLM while the Automaton is still in review, before the first run, because the settings are locked once it runs. On 2026-11-02 cancelling the leak-check Automaton to move it from Claude to the pi lane lost its 16 scripts and forced a second decompose.
