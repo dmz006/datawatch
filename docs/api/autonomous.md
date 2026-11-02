@@ -76,6 +76,7 @@ GET    /api/autonomous/progress[?automation_id=&tag_id=&since=&until=]  progress
 GET    /api/autonomous/progress/trend[?days=]  saved daily snapshots as {days, points[], direction}; days 1..365 (default 30), 400 outside that range
 GET    /api/autonomous/lane-fill[?limit=N]  lane fill status: mode, lanes, queued eligible counts, pool evidence, newest decisions and idle alerts; limit 1..1000 (default 50), 400 outside that range
 GET    /api/autonomous/request-watch[?session=&automaton=]  model request progress: the watch settings in effect and one observation per watched worker or verifier session (state, time without progress, summary); read-only, makes no model call
+POST   /api/autonomous/merge/run           run a merge through the resolved merge pipeline: body {project?, title, branches}; answers {run, error?}; each step is recorded in pipeline_runs of the merge state
 GET    /api/autonomous/merge               merge state of finished Automata work branches: mode, alert_minutes, automata, shadow_decisions; read-only, never runs git
 GET    /api/autonomous/safe-to-delete      read-only report of Automata branches and worktrees that are safe to delete and those held; never deletes anything
 
@@ -1626,7 +1627,23 @@ Both routes share one gate:
 | Federated peer without the autonomous read capability | `403` |
 | Otherwise | `200` with the JSON body below |
 
-Neither route takes a query parameter, and neither has a write sibling: nothing here merges, deletes or pushes.
+Neither of these two reads takes a query parameter or merges, deletes or pushes. Running a merge is the separate `POST /api/autonomous/merge/run` route below.
+
+### `POST /api/autonomous/merge/run`
+
+Runs a merge of `branches` (in order) in the configured worktree base repo through the pipeline in effect: the project's own file, else the daemon record, else the built-in pipeline, as `autonomous.merge_pipeline` sets. The built-in pipeline reproduces the merge helper script. A conflict is settled by `autonomous.merge_pipeline.conflict_policy`; the version files the release-version step edits come from `autonomous.merge_pipeline.version_files` (none by default). Tag, push, deploy and hook steps run only when the pipeline lists them. The run is synchronous and answers `200` with `{"run": {...}, "error": "..."}` — a failing step is in `run.steps`, not an HTTP error. Other answers: `405` (not POST, `Allow: POST`), `503` (Automata disabled, or no worktree base repo), `403` (federated peer without the autonomous write capability), `409` (a merge is already running). Every step (step, start, end, result) and the source in effect is listed under `pipeline_runs` of `GET /api/autonomous/merge`, newest run first; secrets are removed from the recorded text.
+
+### Merge pipeline in effect, records and checks
+
+`GET /api/autonomous/merge-pipeline?project=NAME` answers which pipeline a merge would run for the project: `definition` (the steps; null when the project's file is unusable and `fallback_on_bad_file` is `none`), `source` (`file`, `record` or `default`), `reason`, `file_error`, the `settings` in effect (file name, source order, bad-file fallback, version files), the configured `conflict_policy` and `conflict_model` with `conflict_policy_in_effect`, `conflict_model_in_effect` and `conflict_degraded_reason` (a policy that needs a model falls back to `stop_and_ask` when no model is set or available), and the project's `overrides`. `project` defaults to the base name of the worktree base repo. Answers: `400` (no project, too long or control characters), `403` (peer without the autonomous read capability), `405`, `500` (records unreadable), `503` (no config).
+
+`PUT /api/autonomous/merge-pipeline/record?project=NAME` stores the pipeline the daemon keeps for the project, from `{"definition": {"steps": [...]}}` or `{"yaml": "..."}` (not both; `project` may be in the body). An invalid pipeline is a `400` listing every problem and nothing is stored. `DELETE` on the same path (with `project`) removes the record, `404` when there is none. Both need the autonomous write capability (`403` otherwise).
+
+`POST /api/autonomous/merge-pipeline/validate` checks a pipeline without saving: a body (`definition` or `yaml`), or `{"project": "NAME", "file": true}` (the file name in effect) or `"file": "path/in/project.yaml"` for a repository file. The answer is `200` with `valid`, `errors` (every problem), and the `definition` read when valid; `400` for a request that cannot be read (both a body and a file, a file outside the project), `404` when the project has no directory. Needs the autonomous read capability.
+
+Settings: `autonomous.merge_pipeline.{file_name,source_order,fallback_on_bad_file,conflict_policy,conflict_model,version_files}` and the same six per project as `autonomous.merge_pipeline.projects.<project>.<key>` on `PUT /api/config`; a bad value or unknown key rejects the whole PUT, `null` clears a key.
+
+The same reads and writes are available from the other surfaces: MCP `autonomous_merge_pipeline_get`, `autonomous_merge_pipeline_set_record` (`clear=true` removes) and `autonomous_merge_pipeline_validate`, with the settings as `merge_pipeline_*` arguments of `autonomous_config_set`; the command line `datawatch autonomous merge-pipeline show|set-record|clear-record|validate` (`--project`, `--from-file`, `--repo-file`, `--json`); and the chat verb `autonomous merge-pipeline [show|set-record|clear-record|validate]` with the settings through `configure autonomous.merge_pipeline.<key>=<value>`. All print the same text.
 
 ### `GET /api/autonomous/merge`
 

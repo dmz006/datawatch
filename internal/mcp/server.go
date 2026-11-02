@@ -662,6 +662,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousProgressTrend(), tracked(s.handleAutonomousProgressTrend))
 	mcpSrv.AddTool(s.toolAutonomousLaneFillStatus(), tracked(s.handleAutonomousLaneFillStatus))
 	mcpSrv.AddTool(s.toolAutonomousInfraRetries(), tracked(s.handleAutonomousInfraRetries))
+	mcpSrv.AddTool(s.toolOnboardingReport(), tracked(s.handleOnboardingReport))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLanePreference(), tracked(s.handleAutonomousPRDSetLanePreference))
 	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
@@ -671,6 +672,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolQuestionQuality(), tracked(s.handleQuestionQuality))
 	mcpSrv.AddTool(s.toolAutonomousMerge(), tracked(s.handleAutonomousMerge))
 	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineGet(), tracked(s.handleAutonomousMergePipelineGet))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineSetRecord(), tracked(s.handleAutonomousMergePipelineSetRecord))
+	mcpSrv.AddTool(s.toolAutonomousMergePipelineValidate(), tracked(s.handleAutonomousMergePipelineValidate))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
 	mcpSrv.AddTool(s.toolAutonomousRequestWatch(), tracked(s.handleAutonomousRequestWatch))       // autonomous_request_watch: in-flight model request observations

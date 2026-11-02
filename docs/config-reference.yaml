@@ -1697,6 +1697,36 @@ autonomous:
   #   retry_dependents: true
   #   raise_question: true
 
+  # Merge pipeline (autonomous.merge_pipeline): where a project's merge pipeline
+  # comes from and how a merge conflict is handled. Every key can be overridden
+  # for one project under autonomous.merge_pipeline.projects.<project>.<key>;
+  # an unset key inherits the global value, then the default. Settable at
+  # runtime through YAML, PUT /api/config, `datawatch config set`, MCP
+  # autonomous_config_set (merge_pipeline_<key> arguments) or config_set, the
+  # comm `configure` verb and Settings -> Automation -> Merge pipeline.
+  # file_name: the pipeline file in a project, relative to it. Default
+  #   .datawatch/merge-pipeline.yaml. An absolute or escaping path is refused.
+  # source_order: sources tried first to last, from file, record. Default
+  #   [file, record]. The built-in pipeline always applies after them.
+  # fallback_on_bad_file: record | default | none. Default record. What is used
+  #   when the project file exists but cannot be used; the problem is reported.
+  # conflict_policy: stop_and_ask | mechanical | mechanical_and_model. Default
+  #   mechanical_and_model. A policy that needs a model degrades to
+  #   stop_and_ask when no model is set or none can be reached.
+  # conflict_model: a name in the LLM registry. Unset reads the built-in default
+  #   name (claude-opus-5-5); an explicit empty string means no model. Never adds
+  #   or changes a registry entry.
+  # version_files: project files, relative to the project, that carry the
+  #   `var Version = "X.Y.Z"` line the release-version step sets. Default none.
+  # merge_pipeline:
+  #   file_name: .datawatch/merge-pipeline.yaml
+  #   source_order: [file, record]
+  #   fallback_on_bad_file: record
+  #   conflict_policy: mechanical_and_model
+  #   conflict_model: claude-opus-5-5
+  #   version_files: []
+  #   projects: {}
+
   # Model request progress (the request watch): the daemon observes the
   # in-flight model request of a worker or verifier session whose model runs on
   # a registered compute node, so a hung request can be told from a slow one.
@@ -3124,6 +3154,21 @@ results:
   # Default: 20. Values below 1 are rejected; the effective limit is
   # always at least 1. Changing it applies from the next posted result.
   schedule_history_limit: 20
+
+# ── Onboarding report ──
+# The Automation onboarding report: what is configured, what is missing and
+# what to try next. Read from the PWA card, `datawatch automation
+# onboarding-report`, the onboarding_report MCP tool, the comm verb
+# onboarding-report and GET /api/automation/onboarding-report.
+onboarding_report:
+  # Turn the report on. Default true. When false every surface says the report
+  # is disabled and no check runs.
+  enabled: true
+  # Add the ordered "try next" suggestions. Default true.
+  include_next_steps: true
+  # Check ids left out of the report, from backends, models, projects,
+  # channels, memory, merge_pipeline. Default empty. An unknown id is ignored.
+  disabled_checks: []
 
 # ── Auto-Update ──
 # Automatic self-update configuration.

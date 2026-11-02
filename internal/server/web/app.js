@@ -9120,6 +9120,31 @@ function docsLinkForLlmBackend(name) {
 const DOCS_INFRA_RETRY_LINK = DOCS_DEFINITIONS + '#infrastructure-retry';
 const DOCS_INFRA_RETRY_PREFIXES = ['autonomous.infra_retry.', 'settings_infra_retry_', 'infra_retry_'];
 
+// The onboarding report settings and the Onboarding report card map to three
+// glossary sections: the report, its checks and its next-step suggestions. The
+// first matching prefix wins, so the specific ones come first.
+const DOCS_ONBOARDING_REPORT_LINKS = [
+  [['onboarding_report.disabled_checks', 'settings_onboarding_report_disabled_checks', 'onboarding_report_checks'],
+    DOCS_DEFINITIONS + '#onboarding-report-checks'],
+  [['onboarding_report.include_next_steps', 'settings_onboarding_report_include_next_steps', 'onboarding_report_next_steps'],
+    DOCS_DEFINITIONS + '#onboarding-report-next-steps'],
+  [['onboarding_report.', 'settings_onboarding_report_', 'onboarding_report_'], DOCS_DEFINITIONS + '#onboarding-report'],
+];
+
+// The merge pipeline settings and the Merge pipeline card map to four glossary
+// sections: the pipeline itself, where it comes from, and the conflict policy
+// and model. The first matching prefix wins, so the specific ones come first.
+const DOCS_MERGE_PIPELINE_LINKS = [
+  [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
+    'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
+    'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
+  [['autonomous.merge_pipeline.conflict_policy', 'settings_merge_pipeline_conflict_policy', 'merge_pipeline_conflict_policy'],
+    DOCS_DEFINITIONS + '#merge-conflict-policy'],
+  [['autonomous.merge_pipeline.conflict_model', 'settings_merge_pipeline_conflict_model', 'merge_pipeline_conflict_model'],
+    DOCS_DEFINITIONS + '#merge-conflict-model'],
+  [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
+];
+
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
 // dialogs, per-channel-type config, dashboard cards without their own
@@ -9131,6 +9156,12 @@ function docsLinkForKey(key) {
   if (key.startsWith('cc_global_')) return docsLinkForChannelType(key.slice('cc_global_'.length));
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
   if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
+  for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
   return null;
 }
 
@@ -16747,6 +16778,21 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.infra_retry.exhausted_action', label: 'Infrastructure retry when the tries are spent (hold or count, default hold)', labelKey: 'settings_infra_retry_exhausted_action', hintKey: 'settings_infra_retry_exhausted_action_hint', docsKey: 'autonomous.infra_retry.exhausted_action', type: 'select', options: ['hold', 'count'], optionLabelKeys: { hold: 'settings_infra_retry_exhausted_hold', count: 'settings_infra_retry_exhausted_count' }, default: 'hold' },
     { key: 'autonomous.infra_retry.retry_dependents', label: 'Infrastructure retry also retries blocked dependents (on by default)', labelKey: 'settings_infra_retry_retry_dependents', hintKey: 'settings_infra_retry_retry_dependents_hint', docsKey: 'autonomous.infra_retry.retry_dependents', type: 'toggle' },
     { key: 'autonomous.infra_retry.raise_question', label: 'Infrastructure retry raises a question when the tries are spent (on by default)', labelKey: 'settings_infra_retry_raise_question', hintKey: 'settings_infra_retry_raise_question_hint', docsKey: 'autonomous.infra_retry.raise_question', type: 'toggle' },
+    // Merge pipeline — where a project's merge pipeline comes from and how a merge conflict is
+    // handled. The lists are comma separated; the daemon validates every value.
+    { label: 'Merge pipeline', labelKey: 'settings_merge_pipeline_group', docsKey: 'merge_pipeline_card_title', type: 'group' },
+    { key: 'autonomous.merge_pipeline.file_name', label: 'Merge pipeline file (path in the project, default .datawatch/merge-pipeline.yaml)', labelKey: 'settings_merge_pipeline_file_name', hintKey: 'settings_merge_pipeline_file_name_hint', docsKey: 'autonomous.merge_pipeline.file_name', type: 'text', placeholder: '.datawatch/merge-pipeline.yaml' },
+    { key: 'autonomous.merge_pipeline.source_order', label: 'Merge pipeline sources in order (comma separated: file, record; default file, record)', labelKey: 'settings_merge_pipeline_source_order', hintKey: 'settings_merge_pipeline_source_order_hint', docsKey: 'autonomous.merge_pipeline.source_order', type: 'text', placeholder: 'file, record', csv: true },
+    { key: 'autonomous.merge_pipeline.fallback_on_bad_file', label: 'Merge pipeline when the project file is bad (record, default or none; default record)', labelKey: 'settings_merge_pipeline_fallback_on_bad_file', hintKey: 'settings_merge_pipeline_fallback_on_bad_file_hint', docsKey: 'autonomous.merge_pipeline.fallback_on_bad_file', type: 'select', options: ['record', 'default', 'none'], optionLabelKeys: { record: 'settings_merge_pipeline_fallback_record', default: 'settings_merge_pipeline_fallback_default', none: 'settings_merge_pipeline_fallback_none' }, default: 'record' },
+    { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
+    { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
+    { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    // Onboarding report — what is configured, what is missing and what to try next. The
+    // list is comma separated; an id that names no check is ignored.
+    { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
+    { key: 'onboarding_report.enabled', label: 'Onboarding report (on by default)', labelKey: 'settings_onboarding_report_enabled', hintKey: 'settings_onboarding_report_enabled_hint', docsKey: 'onboarding_report.enabled', type: 'toggle' },
+    { key: 'onboarding_report.include_next_steps', label: 'Onboarding report suggests what to try next (on by default)', labelKey: 'settings_onboarding_report_include_next_steps', hintKey: 'settings_onboarding_report_include_next_steps_hint', docsKey: 'onboarding_report.include_next_steps', type: 'toggle' },
+    { key: 'onboarding_report.disabled_checks', label: 'Onboarding report checks left out (comma separated check ids; none by default)', labelKey: 'settings_onboarding_report_disabled_checks', hintKey: 'settings_onboarding_report_disabled_checks_hint', docsKey: 'onboarding_report.disabled_checks', type: 'text', placeholder: '', csv: true },
     // Model request watch — observe the in-flight model request of a worker or verifier
     // session on a registered compute node. Observation only; the list is comma separated.
     { label: 'Model request watch', labelKey: 'settings_request_watch_group', docsKey: 'settings_request_watch', type: 'group' },
@@ -25888,6 +25934,159 @@ function _infraRetryLoadMax(prd) {
     .catch(() => {});
 }
 
+// ── Merge pipeline card ─────────────────────────────────────────────────────
+// mergePipelineCardHtml(view, opts) turns the decoded GET
+// /api/autonomous/merge-pipeline body into the Automation Overview card for one
+// project: where the pipeline in effect comes from (file, record or default)
+// with the reason, the steps in order, the conflict policy and the conflict
+// model. The operator can edit the record the daemon keeps, choose the policy
+// and choose the model from the registry list (opts.models, names). A missing
+// view renders the placeholder; the loader owns the failed state. Every value
+// is escaped. The key maps hold literal locale keys, so the key-coverage guard
+// can see them.
+const MERGE_PIPELINE_SOURCE_KEYS = {
+  file: 'merge_pipeline_source_file', record: 'merge_pipeline_source_record', default: 'merge_pipeline_source_default',
+};
+const MERGE_PIPELINE_POLICIES = [
+  ['stop_and_ask', 'merge_pipeline_policy_stop_and_ask'],
+  ['mechanical', 'merge_pipeline_policy_mechanical'],
+  ['mechanical_and_model', 'merge_pipeline_policy_mechanical_and_model'],
+];
+function _mergePipelineKey(map, v) {
+  return (typeof v === 'string' && Object.prototype.hasOwnProperty.call(map, v)) ? map[v] : '';
+}
+function _mergePipelineStepHtml(step, n) {
+  const what = step.action ? t('merge_pipeline_step_action', [step.action]) : (step.command ? t('merge_pipeline_step_command', [step.command]) : '');
+  const cont = step.on_failure === 'continue' ? `<span style="color:var(--text2);">${escHtml(t('merge_pipeline_step_continue'))}</span>` : '';
+  return `<li class="merge-pipeline-step" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">` +
+    `<span style="font-weight:600;">${escHtml(step.name || '')}</span> <span style="color:var(--text2);">${escHtml(step.kind || '')}</span> ${cont}` +
+    (what ? `<div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(what)}</div>` : '') + `</li>`;
+}
+function _mergePipelineSelect(id, onchange, options, selected) {
+  const opts = options.map(([v, label]) => `<option value="${escHtml(v)}"${v === selected ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<select id="${id}" class="form-input" style="max-width:100%;min-width:0;font-size:12px;" onchange="${onchange}(this.value)">${opts}</select>`;
+}
+window.mergePipelineCardHtml = function(view, opts) {
+  opts = opts || {};
+  const head = `<div class="cap-title">${escHtml(t('merge_pipeline_card_title'))}${defsLink('merge_pipeline_card_title')}</div>`;
+  if (!view || typeof view !== 'object') {
+    return `<div class="prd-capacity-card merge-pipeline-card">${head}<div style="color:var(--text2);">${escHtml(t('merge_pipeline_placeholder'))}</div></div>`;
+  }
+  const project = String(view.project || '');
+  const projects = (Array.isArray(opts.projects) ? opts.projects : []).filter(p => typeof p === 'string' && p);
+  const projectRow = `<div class="merge-pipeline-project" style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:4px;min-width:0;">` +
+    `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_project'))}</label>` +
+    `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="${escHtml(project)}" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
+    `<datalist id="mergePipelineProjects">${projects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>`;
+  const srcKey = _mergePipelineKey(MERGE_PIPELINE_SOURCE_KEYS, view.source);
+  const srcName = srcKey ? view.source : 'none';
+  const srcLabel = srcKey ? t(srcKey) : t('merge_pipeline_source_none');
+  const source = `<div class="merge-pipeline-source" style="margin-top:6px;min-width:0;">` +
+    `<span style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_source_label'))}${defsLink('merge_pipeline_source_label')}</span> ` +
+    `<span class="merge-pipeline-source-badge merge-pipeline-source-${srcName} prd-task-llm-badge">${escHtml(srcLabel)}</span>` +
+    (view.reason ? `<div class="merge-pipeline-reason" style="font-size:12px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_reason', [view.reason]))}</div>` : '') +
+    (view.file_error ? `<div class="merge-pipeline-file-error" style="font-size:12px;color:var(--error,#c00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_file_error', [view.file_error]))}</div>` : '') +
+    `</div>`;
+  const steps = (view.definition && Array.isArray(view.definition.steps)) ? view.definition.steps : [];
+  const stepsHtml = steps.length
+    ? `<ol class="merge-pipeline-steps" style="margin:4px 0 0;padding-left:20px;min-width:0;">${steps.map((st, i) => _mergePipelineStepHtml(st, i + 1)).join('')}</ol>`
+    : `<div class="merge-pipeline-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_empty'))}</div>`;
+  const stepsBlock = `<div style="margin-top:8px;font-weight:600;color:var(--text2);">${escHtml(t('merge_pipeline_steps_heading'))}</div>${stepsHtml}`;
+  const policyOptions = MERGE_PIPELINE_POLICIES.map(([v, k]) => [v, t(k)]);
+  const policy = `<div class="merge-pipeline-policy" style="margin-top:8px;min-width:0;">` +
+    `<label for="mergePipelineConflictPolicy" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_policy_label'))}${defsLink('merge_pipeline_conflict_policy_label')}</label> ` +
+    _mergePipelineSelect('mergePipelineConflictPolicy', 'window.mergePipelineSetPolicy', policyOptions, view.conflict_policy) +
+    (view.conflict_policy_in_effect && view.conflict_policy_in_effect !== view.conflict_policy
+      ? `<div class="merge-pipeline-degraded" style="font-size:12px;color:var(--warning,#a06b00);overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_policy_in_effect', [view.conflict_policy_in_effect]))}${view.conflict_degraded_reason ? ' ' + escHtml(view.conflict_degraded_reason) : ''}</div>` : '') +
+    `</div>`;
+  const names = (Array.isArray(opts.models) ? opts.models : []).filter(n => typeof n === 'string' && n);
+  const current = typeof view.conflict_model === 'string' ? view.conflict_model : '';
+  if (current && names.indexOf(current) < 0) names.unshift(current);
+  const modelOptions = [['', t('merge_pipeline_model_none')]].concat(names.map(n => [n, n]));
+  const model = `<div class="merge-pipeline-model" style="margin-top:8px;min-width:0;">` +
+    `<label for="mergePipelineConflictModel" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_conflict_model_label'))}${defsLink('merge_pipeline_conflict_model_label')}</label> ` +
+    _mergePipelineSelect('mergePipelineConflictModel', 'window.mergePipelineSetModel', modelOptions, current) + `</div>`;
+  const recordText = view.source === 'record' && view.definition ? JSON.stringify(view.definition, null, 2) : '';
+  const editor = `<details class="merge-pipeline-editor" style="margin-top:8px;min-width:0;"><summary style="cursor:pointer;font-size:12px;">${escHtml(t('merge_pipeline_edit_record'))}</summary>` +
+    `<div style="font-size:11px;color:var(--text2);margin:4px 0;">${escHtml(t('merge_pipeline_record_hint'))}</div>` +
+    `<textarea id="mergePipelineRecord" class="form-input" rows="8" spellcheck="false" style="width:100%;max-width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;">${escHtml(recordText)}</textarea>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;">` +
+    `<button type="button" class="btn-primary merge-pipeline-save" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineSaveRecord()">${escHtml(t('merge_pipeline_save_record'))}</button>` +
+    `<button type="button" class="btn-secondary merge-pipeline-clear" style="font-size:11px;padding:3px 10px;" onclick="window.mergePipelineClearRecord()">${escHtml(t('merge_pipeline_clear_record'))}</button></div>` +
+    `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
+  return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
+};
+// The card's state: the project shown (empty reads the daemon's default project),
+// the registry names and the project list. The loader reads it on every poll.
+window._mergePipelineProject = '';
+window._mergePipelineModels = [];
+window._mergePipelineProjects = [];
+function _mergePipelineUrl() {
+  const p = window._mergePipelineProject;
+  return '/api/autonomous/merge-pipeline' + (p ? '?project=' + encodeURIComponent(p) : '');
+}
+function _mergePipelineMessage(text, bad) {
+  const el = document.getElementById('mergePipelineMessage');
+  if (!el) return;
+  el.textContent = text;
+  el.style.color = bad ? 'var(--error,#c00)' : 'var(--text2)';
+}
+function _mergePipelineReload() {
+  const l = window._listLoaders && window._listLoaders.automation_merge_pipeline;
+  if (l && typeof l.retry === 'function') return l.retry();
+}
+window.mergePipelineSelectProject = function(name) {
+  window._mergePipelineProject = String(name || '').trim();
+  return _mergePipelineReload();
+};
+// _mergePipelineProjectKey is the per-project settings prefix; the value is the
+// card's project, or the project the daemon reports when the card follows the default.
+function _mergePipelineSetKey(field) {
+  const p = window._mergePipelineProject || window._mergePipelineShown || '';
+  return 'autonomous.merge_pipeline.projects.' + p + '.' + field;
+}
+function _mergePipelineSetting(field, value) {
+  const patch = {}; patch[_mergePipelineSetKey(field)] = value;
+  return Promise.resolve(apiFetch('/api/config', { method: 'PUT', body: JSON.stringify(patch) }))
+    .then(() => { _mergePipelineMessage(t('merge_pipeline_saved'), false); return _mergePipelineReload(); })
+    .catch(e => _mergePipelineMessage(t('merge_pipeline_save_failed', [e && e.message ? e.message : String(e)]), true));
+}
+window.mergePipelineSetPolicy = function(value) { return _mergePipelineSetting('conflict_policy', value); };
+window.mergePipelineSetModel = function(value) { return _mergePipelineSetting('conflict_model', value); };
+window.mergePipelineSaveRecord = function() {
+  const ta = document.getElementById('mergePipelineRecord');
+  if (!ta) return Promise.resolve();
+  let definition;
+  try { definition = JSON.parse(ta.value); } catch (e) {
+    _mergePipelineMessage(t('merge_pipeline_record_invalid', [e.message]), true);
+    return Promise.resolve();
+  }
+  const body = { definition };
+  const project = window._mergePipelineProject || window._mergePipelineShown || '';
+  if (project) body.project = project;
+  return Promise.resolve(apiFetch('/api/autonomous/merge-pipeline/record' + (project ? '?project=' + encodeURIComponent(project) : ''), { method: 'PUT', body: JSON.stringify(body) }))
+    .then(() => { _mergePipelineMessage(t('merge_pipeline_saved'), false); return _mergePipelineReload(); })
+    .catch(e => _mergePipelineMessage(t('merge_pipeline_save_failed', [e && e.message ? e.message : String(e)]), true));
+};
+window.mergePipelineClearRecord = function() {
+  const project = window._mergePipelineProject || window._mergePipelineShown || '';
+  return Promise.resolve(apiFetch('/api/autonomous/merge-pipeline/record?project=' + encodeURIComponent(project), { method: 'DELETE' }))
+    .then(() => { _mergePipelineMessage(t('merge_pipeline_cleared'), false); return _mergePipelineReload(); })
+    .catch(e => _mergePipelineMessage(t('merge_pipeline_save_failed', [e && e.message ? e.message : String(e)]), true));
+};
+// _mergePipelineLoadLists reads the registry names and the project list once;
+// a failed read leaves the list empty and the card still renders.
+function _mergePipelineLoadLists() {
+  if (window._mergePipelineListsLoaded) return;
+  window._mergePipelineListsLoaded = true;
+  Promise.resolve(apiFetch('/api/llms')).then(d => {
+    window._mergePipelineModels = ((d && d.llms) || []).map(l => l && l.name).filter(Boolean);
+  }).catch(() => {});
+  Promise.resolve(apiFetch('/api/projects')).then(d => {
+    window._mergePipelineProjects = (Array.isArray(d) ? d : []).map(p => (p && (p.name || p.alias)) || (typeof p === 'string' ? p : '')).filter(Boolean);
+  }).catch(() => {});
+}
+
 // ── Triage card ─────────────────────────────────────────────────────────────
 // triageCardHtml(record) turns one triage record — the single self-contained
 // record a failed or blocked Automaton carries while it waits for operator
@@ -28964,17 +29163,19 @@ const _AUTOMATION_SUBTABS = [
       <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationMergePipelineLoader(), _automationOnboardingReportLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
+    stop() { _automationStopLoaders(['automation_merge_pipeline', 'automation_onboarding_report', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -29065,7 +29266,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_held_questions'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions', 'automation_onboarding_report'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -29170,6 +29371,112 @@ function _automationInfraRetryLoader() {
     render: status => {
       if (status && Number(status.max_tries) > 0) window._infraRetryMax = status.max_tries;
       return window.infraRetryCardHtml(status);
+    },
+  });
+}
+
+// ── Onboarding report card ──────────────────────────────────────────────────
+// onboardingReportCardHtml(report) turns the decoded
+// GET /api/automation/onboarding-report body into the Automation Overview card
+// with three parts: what is configured, what is missing (each check with its
+// reason) and what to try next (each suggestion with its how-to link). A report
+// that is switched off shows one line. A refresh button reads the report again.
+// Every value is escaped. The key map holds literal locale keys.
+const ONBOARDING_REPORT_LOADER = 'automation_onboarding_report';
+const ONBOARDING_REPORT_STATUS_KEYS = { missing: 'onboarding_report_status_missing', optional: 'onboarding_report_status_optional' };
+function _onboardingReportList(items) {
+  const list = (Array.isArray(items) ? items : []).map(x => String(x)).filter(x => x !== '');
+  return list.length ? list.join(', ') : t('onboarding_report_none');
+}
+function _onboardingReportDocsHref(path) {
+  const p = String(path || '').replace(/^docs\//, '');
+  return p ? '/diagrams.html#docs/' + p : '';
+}
+function _onboardingReportLink(path, label) {
+  const href = _onboardingReportDocsHref(path);
+  if (!href) return '';
+  return `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer" class="docs-link onboarding-report-link">${escHtml(label)}</a>`;
+}
+function _onboardingReportConfiguredHtml(c) {
+  c = (c && typeof c === 'object') ? c : {};
+  const pipeline = (Array.isArray(c.merge_pipeline) ? c.merge_pipeline : []).map(p => `${p && p.project || ''}: ${p && p.source || ''}`);
+  const projects = (Array.isArray(c.projects) ? c.projects : []).map(p => p && p.name || '');
+  const rows = [
+    t('onboarding_report_backends', [_onboardingReportList(c.backends)]),
+    t('onboarding_report_models', [_onboardingReportList(c.models)]),
+    t('onboarding_report_projects', [_onboardingReportList(projects)]),
+    t('onboarding_report_channels', [_onboardingReportList(c.channels)]),
+    c.memory ? t('onboarding_report_memory_on') : t('onboarding_report_memory_off'),
+    t('onboarding_report_pipeline', [_onboardingReportList(pipeline)]),
+  ];
+  return rows.map(r => `<div class="onboarding-report-configured-row" style="overflow-wrap:anywhere;">${escHtml(r)}</div>`).join('');
+}
+function _onboardingReportMissingHtml(checks) {
+  const open = (Array.isArray(checks) ? checks : []).filter(c => c && c.status !== 'ok');
+  if (!open.length) return `<div class="onboarding-report-all-ok" style="color:var(--text2);">${escHtml(t('onboarding_report_all_ok'))}</div>`;
+  return open.map(c => {
+    const label = _laneFillKey(ONBOARDING_REPORT_STATUS_KEYS, c.status);
+    const badge = label ? `<span class="prd-task-review-badge">${escHtml(t(label))}</span> ` : '';
+    return `<div class="onboarding-report-check" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">` +
+      `<div style="font-weight:600;">${badge}${escHtml(c.title || c.id || '')}</div>` +
+      `<div class="onboarding-report-reason" style="font-size:12px;color:var(--text2);">${escHtml(c.reason || '')}</div></div>`;
+  }).join('');
+}
+function _onboardingReportStepHtml(s) {
+  const links = [_onboardingReportLink(s.howto, t('onboarding_report_howto')), _onboardingReportLink(s.anchor, t('onboarding_report_definitions'))].filter(Boolean).join(' ');
+  const where = [];
+  if (s.command) where.push(t('onboarding_report_command', [s.command]));
+  if (s.mcp_tool) where.push(t('onboarding_report_mcp_tool', [s.mcp_tool]));
+  if (s.pwa_place) where.push(t('onboarding_report_pwa_place', [s.pwa_place]));
+  return `<div class="onboarding-report-step" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">` +
+    `<div style="font-weight:600;">${escHtml(s.title || s.check_id || '')} ${links}</div>` +
+    (where.length ? `<div style="font-size:12px;color:var(--text2);">${escHtml(where.join(' · '))}</div>` : '') + `</div>`;
+}
+function _onboardingReportSection(titleKey, linkKey, body) {
+  return `<div class="onboarding-report-part" style="margin-top:8px;"><div style="font-weight:700;font-size:12px;">${escHtml(t(titleKey))}${defsLink(linkKey)}</div>${body}</div>`;
+}
+window.onboardingReportCardHtml = function(report) {
+  const refresh = `<button type="button" class="btn-secondary onboarding-report-refresh" style="font-size:11px;padding:3px 10px;margin-left:8px;" ` +
+    `onclick="window._listLoaders.${ONBOARDING_REPORT_LOADER}.load()">${escHtml(t('onboarding_report_refresh'))}</button>`;
+  const head = `<div class="cap-title">${escHtml(t('onboarding_report_card_title'))}${defsLink('onboarding_report_card_title')}${refresh}</div>`;
+  const wrap = body => `<div class="prd-capacity-card onboarding-report-card" style="min-width:0;">${head}${body}</div>`;
+  if (!report || typeof report !== 'object') return wrap(`<div style="color:var(--text2);">${escHtml(t('onboarding_report_placeholder'))}</div>`);
+  if (report.enabled === false) return wrap(`<div class="onboarding-report-disabled" style="color:var(--text2);">${escHtml(t('onboarding_report_disabled'))}</div>`);
+  const checks = Array.isArray(report.checks) ? report.checks : [];
+  const steps = Array.isArray(report.next_steps) ? report.next_steps : [];
+  const hasOpen = checks.some(c => c && c.status !== 'ok');
+  const nextBody = steps.length ? steps.map(_onboardingReportStepHtml).join('')
+    : `<div style="color:var(--text2);">${escHtml(t(hasOpen ? 'onboarding_report_next_off' : 'onboarding_report_next_none'))}</div>`;
+  return wrap(
+    _onboardingReportSection('onboarding_report_configured_heading', 'onboarding_report_card_title', _onboardingReportConfiguredHtml(report.configured)) +
+    _onboardingReportSection('onboarding_report_missing_heading', 'onboarding_report_checks', _onboardingReportMissingHtml(checks)) +
+    _onboardingReportSection('onboarding_report_next_heading', 'onboarding_report_next_steps', nextBody));
+};
+
+// _automationOnboardingReportLoader reads the onboarding report beside the
+// infrastructure retry card. It does not poll: the refresh button reads it
+// again. Its failed state is the list loader's banner.
+function _automationOnboardingReportLoader() {
+  return window._listLoaders[ONBOARDING_REPORT_LOADER] || listLoader({
+    key: ONBOARDING_REPORT_LOADER, el: 'automationOnboardingReportCard', url: '/api/automation/onboarding-report', pollMs: 0,
+    failedText: msg => t('onboarding_report_failed', [msg]),
+    active: () => !!document.getElementById('automationOnboardingReportCard'),
+    render: report => window.onboardingReportCardHtml(report),
+  });
+}
+
+// _automationMergePipelineLoader polls the merge pipeline of the project the
+// card shows beside the infrastructure retry card. Its url follows the chosen
+// project; its failed state is the list loader's banner.
+function _automationMergePipelineLoader() {
+  _mergePipelineLoadLists();
+  return window._listLoaders.automation_merge_pipeline || listLoader({
+    key: 'automation_merge_pipeline', el: 'automationMergePipelineCard', get url() { return _mergePipelineUrl(); }, pollMs: 0,
+    failedText: msg => t('merge_pipeline_failed', [msg]),
+    active: () => !!document.getElementById('automationMergePipelineCard'),
+    render: view => {
+      if (view && view.project) window._mergePipelineShown = view.project;
+      return window.mergePipelineCardHtml(view, { models: window._mergePipelineModels, projects: window._mergePipelineProjects });
     },
   });
 }

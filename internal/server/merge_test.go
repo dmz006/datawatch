@@ -239,7 +239,7 @@ func TestMergeRoute_JSONKeyNames(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	mergeWantKeys(t, "merge body", rec.Body.Bytes(), "mode", "alert_minutes", "automata", "shadow_decisions")
+	mergeWantKeys(t, "merge body", rec.Body.Bytes(), "mode", "alert_minutes", "automata", "shadow_decisions", "pipeline_runs")
 
 	var automata []json.RawMessage
 	if err := json.Unmarshal(status["automata"], &automata); err != nil || len(automata) != 2 {

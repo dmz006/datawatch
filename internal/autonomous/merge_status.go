@@ -47,6 +47,9 @@ type MergeStatus struct {
 	Automata []MergeStatusEntry `json:"automata"`
 	// ShadowDecisions is newest first; empty unless the mode is shadow.
 	ShadowDecisions []MergeShadowDecision `json:"shadow_decisions"`
+	// PipelineRuns lists the merge pipeline runs, newest first, each with the
+	// steps it ran. It is filled whatever the merge-pending mode is.
+	PipelineRuns []MergePipelineRun `json:"pipeline_runs"`
 }
 
 // mergeCached returns the cached comparison for branch, without running git.
@@ -78,6 +81,7 @@ func (m *Manager) MergeStatus() MergeStatus {
 		AlertMinutes:    cfg.Automation.EffectiveMergePendingAlertMinutes(),
 		Automata:        []MergeStatusEntry{},
 		ShadowDecisions: []MergeShadowDecision{},
+		PipelineRuns:    m.MergeRuns(0),
 	}
 	if mode != config.MergePendingModeShadow && mode != config.MergePendingModeOn {
 		return out

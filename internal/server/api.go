@@ -6372,6 +6372,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
+			// Effective, not raw: the merge pipeline values with defaults filled in.
+			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
 			// Effective, not raw: all eleven request watch values with the
 			// defaults filled in; remediation_options is the list in effect.
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
@@ -6911,6 +6913,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// The infrastructure retry block is checked as a whole too: one bad value
 	// among its seven keys refuses the whole PUT.
 	if err := validateInfraRetryPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The merge pipeline block is checked as a whole too: an unknown key, an
+	// absolute or escaping file name, an unknown source, fallback or policy
+	// refuses the whole PUT with a message naming the key.
+	if err := validateMergePipelinePatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9224,6 +9233,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// autonomous.infra_retry.*; the values were checked by
 			// validateInfraRetryPatch.
 			if applyInfraRetryPatch(cfg, k, v) {
+				continue
+			}
+			// autonomous.merge_pipeline.*; the values were checked by
+			// validateMergePipelinePatch. The merge run reads the live block,
+			// so the change applies with no restart.
+			if applyMergePipelinePatch(cfg, k, v) {
 				continue
 			}
 			// autonomous.request_watch.*; the values were checked by

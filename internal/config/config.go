@@ -469,6 +469,11 @@ type Config struct {
 	// the base backend config with custom env vars, binary, or model.
 	Profiles map[string]ProfileConfig `yaml:"profiles,omitempty"`
 
+	// OnboardingReport — switches for the Automation onboarding report
+	// (what is configured, what is missing, what to try next). An unset key
+	// reads its default. See OnboardingReportConfig.
+	OnboardingReport OnboardingReportConfig `yaml:"onboarding_report,omitempty" json:"onboarding_report,omitempty"`
+
 	// Projects (BL27) — operator-registered named project directories.
 	// Each entry is a quick alias for `new: @<project>: <task>` and the
 	// REST start handler. Optional default_backend overrides
@@ -2812,6 +2817,12 @@ type AutonomousConfig struct {
 	// many tries, the backoff between them, and what happens when they run
 	// out. An unset key reads its default. See InfraRetryConfig.
 	InfraRetry InfraRetryConfig `yaml:"infra_retry,omitempty" json:"infra_retry,omitempty"`
+	// MergePipeline — where a project's merge pipeline comes from (its own
+	// file, the daemon's record, or the built-in default), what happens when
+	// the file is bad, and how a merge conflict is handled; each key can be
+	// overridden per project. An unset key reads its default. See
+	// MergePipelineConfig.
+	MergePipeline MergePipelineConfig `yaml:"merge_pipeline,omitempty" json:"merge_pipeline,omitempty"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a

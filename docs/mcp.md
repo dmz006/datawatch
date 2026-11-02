@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `onboarding_report`, `autonomous_triage`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -350,6 +350,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
+- **`onboarding_report`** — read the onboarding report: what is configured (backends, models, projects, comm channels, memory, merge pipeline), what is missing, and what to try next with a how-to link for each step. `format` is `text` (the default, rendered by the same function as the REST route, the CLI and the comm verb) or `json` (the REST body). Read-only; says so when `onboarding_report.enabled` is off. Same data as `GET /api/automation/onboarding-report`.
 - **`autonomous_infra_retries`** — read the infrastructure retry state: the retry policy in effect (`enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents`, `raise_question`) and the tasks of Automata that were retried, or are held, because the machinery around them failed rather than their own work. Each task carries its Automaton, `retry_count`, `max_tries`, the `retries[]` history, and `held` with `held_cause` and `question_id` when it waits for the operator. The most recently retried task comes first. Read-only; returns the same object as `GET /api/autonomous/infra-retries`.
 
   | Parameter | Required | Description |
@@ -360,6 +361,14 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
   autonomous_infra_retries()
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
+  ```
+
+- **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
+
+  ```
+  autonomous_merge_pipeline_get(project="demo")
+  autonomous_merge_pipeline_validate(file="true")
+  autonomous_merge_pipeline_set_record(project="demo", yaml="steps:\n  - name: tests\n    kind: test\n    command: make test\n")
   ```
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer. The policy keys are set with `config_set` under `autonomous.infra_retry.*` (for example `config_set(key="autonomous.infra_retry.max_tries", value="5")`) or with the `infra_retry_*` arguments of `autonomous_config_set`, and read with `autonomous_config_get`, which returns the `infra_retry` block with the rest of the config. `autonomous_config_set` builds its request from a fixed list of arguments, so the block is reachable there only through these arguments:

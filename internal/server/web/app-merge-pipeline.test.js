@@ -1,0 +1,309 @@
+// Merge pipeline card — PWA side.
+//
+// window.mergePipelineCardHtml(view, opts) turns the decoded GET
+// /api/autonomous/merge-pipeline body into the Automation Overview card: the
+// source in effect with its reason, the steps in order, the conflict policy and
+// the conflict model. The Autonomous settings group carries the six
+// autonomous.merge_pipeline.* fields, docsLinkForKey maps them and the card to
+// the four glossary sections, and every merge_pipeline_ and
+// settings_merge_pipeline_ locale key is present in all five bundles.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('path');
+const fs = require('fs');
+const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+
+const APP_JS = path.join(__dirname, 'app.js');
+const LOCALES_DIR = path.join(__dirname, 'locales');
+const LANGS = ['en', 'de', 'es', 'fr', 'ja'];
+const HOSTILE = '<img src=x onerror=alert(1)>';
+const DEFS = 'datawatch-definitions.md#';
+const PREFIXES = ['merge_pipeline_', 'settings_merge_pipeline_'];
+
+function bundle(lang) {
+  return JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, lang + '.json'), 'utf8'));
+}
+
+function loadApp() {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(APP_JS, sandbox);
+  sandbox._i18n.bundle = bundle('en');
+  return sandbox;
+}
+
+function render(view, opts) {
+  const sandbox = loadApp();
+  sandbox._view = view;
+  sandbox._opts = opts;
+  return vm.runInContext('window.mergePipelineCardHtml(_view, _opts)', sandbox);
+}
+
+function docsLink(key) {
+  const sandbox = loadApp();
+  sandbox._key = key;
+  return vm.runInContext('docsLinkForKey(_key)', sandbox);
+}
+
+function steps() {
+  return [
+    { name: 'merge', kind: 'ship', action: 'merge_branches' },
+    { name: 'test', kind: 'test', command: 'make test', on_failure: 'continue' },
+  ];
+}
+
+function view(over) {
+  return {
+    project: 'demo', definition: { steps: steps() }, source: 'file', reason: 'the project file was found',
+    settings: { file_name: '.datawatch/merge-pipeline.yaml', source_order: ['file', 'record'], fallback_on_bad_file: 'record', version_files: [] },
+    conflict_policy: 'mechanical_and_model', conflict_policy_in_effect: 'mechanical_and_model',
+    conflict_model: 'claude-opus-5-5', conflict_model_in_effect: 'claude-opus-5-5', ...over,
+  };
+}
+
+function mergeFields() {
+  const sandbox = loadApp();
+  return JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.filter(f => (f.key || '').startsWith('autonomous.merge_pipeline.')))",
+    sandbox));
+}
+
+// ── source badge ────────────────────────────────────────────────────────────
+
+test('the source badge names the file, with the reason', () => {
+  const html = render(view());
+  assert.ok(html.includes('merge-pipeline-source-file'), html);
+  assert.ok(html.includes('>Project file<'), html);
+  assert.ok(html.includes('Why: the project file was found'), html);
+});
+
+test('the source badge names the daemon record', () => {
+  const html = render(view({ source: 'record', reason: 'no project file' }));
+  assert.ok(html.includes('merge-pipeline-source-record'), html);
+  assert.ok(html.includes('>Daemon record<'), html);
+});
+
+test('the source badge names the built-in default', () => {
+  const html = render(view({ source: 'default', reason: 'nothing else was set' }));
+  assert.ok(html.includes('merge-pipeline-source-default'), html);
+  assert.ok(html.includes('>Built-in default<'), html);
+});
+
+test('an unknown source reads as none chosen, and a bad file shows its problem', () => {
+  const html = render(view({ source: 'constructor', file_error: 'line 3: bad step' }));
+  assert.ok(html.includes('merge-pipeline-source-none'), html);
+  assert.ok(html.includes('None chosen'), html);
+  assert.ok(html.includes('Problem with the project file: line 3: bad step'), html);
+});
+
+// ── steps, empty state, placeholder ─────────────────────────────────────────
+
+test('the steps are listed in order with their action or command', () => {
+  const html = render(view());
+  assert.ok(html.indexOf('>merge<') > 0 && html.indexOf('>merge<') < html.indexOf('>test<'), 'steps out of order: ' + html);
+  assert.ok(html.includes('Built-in action: merge_branches'));
+  assert.ok(html.includes('Command: make test'));
+  assert.ok(html.includes('continues on failure'));
+  assert.equal(html.split('class="merge-pipeline-step"').length - 1, 2);
+});
+
+test('no definition shows the empty state', () => {
+  for (const v of [view({ definition: null, source: '' }), view({ definition: { steps: [] } })]) {
+    const html = render(v);
+    assert.ok(html.includes('No pipeline could be chosen, so a merge run would not start.'), html);
+    assert.ok(!html.includes('class="merge-pipeline-step"'));
+  }
+});
+
+test('a missing view shows the placeholder with the card title', () => {
+  for (const html of [render(null), render(undefined)]) {
+    assert.ok(html.includes('Merge pipeline'));
+    assert.ok(html.includes('The merge pipeline has not loaded yet.'));
+  }
+});
+
+test('every value from the API is escaped', () => {
+  const html = render(view({
+    project: HOSTILE, reason: HOSTILE, file_error: HOSTILE, conflict_model: HOSTILE,
+    definition: { steps: [{ name: HOSTILE, kind: HOSTILE, command: HOSTILE, action: '' }] },
+  }), { models: [HOSTILE], projects: [HOSTILE] });
+  assert.ok(!html.includes(HOSTILE), 'hostile markup rendered unescaped: ' + html);
+  assert.ok(!html.includes('<img'), 'an image element was injected');
+});
+
+// ── policy and model ────────────────────────────────────────────────────────
+
+test('policy selection offers the three policies and selects the configured one', () => {
+  const html = render(view({ conflict_policy: 'mechanical', conflict_policy_in_effect: 'mechanical' }));
+  const sel = html.slice(html.indexOf('id="mergePipelineConflictPolicy"'), html.indexOf('</select>', html.indexOf('id="mergePipelineConflictPolicy"')));
+  for (const v of ['stop_and_ask', 'mechanical', 'mechanical_and_model']) assert.ok(sel.includes('value="' + v + '"'), v + ' missing: ' + sel);
+  assert.ok(sel.includes('value="mechanical" selected'), 'configured policy not selected: ' + sel);
+  assert.equal((sel.match(/ selected/g) || []).length, 1);
+  assert.ok(sel.includes('window.mergePipelineSetPolicy(this.value)'));
+});
+
+test('a degraded policy shows what is in effect and why', () => {
+  const html = render(view({ conflict_policy_in_effect: 'stop_and_ask', conflict_degraded_reason: 'the conflict model "x" is not available' }));
+  assert.ok(html.includes('In effect: stop_and_ask.'), html);
+  assert.ok(html.includes('is not available'));
+  assert.ok(!render(view()).includes('merge-pipeline-degraded'));
+});
+
+test('the model list comes from the registry, with a no-model choice and the current model kept', () => {
+  const html = render(view({ conflict_model: 'old-model' }), { models: ['claude-opus-5-5', 'qwen'] });
+  const sel = html.slice(html.indexOf('id="mergePipelineConflictModel"'), html.indexOf('</select>', html.indexOf('id="mergePipelineConflictModel"')));
+  assert.ok(sel.includes('value="" '.trim()) && sel.includes('>No model<'), sel);
+  for (const n of ['claude-opus-5-5', 'qwen', 'old-model']) assert.ok(sel.includes('value="' + n + '"'), n + ' missing: ' + sel);
+  assert.ok(sel.includes('value="old-model" selected'), sel);
+});
+
+test('choosing a policy or a model writes the per-project setting', async () => {
+  const sandbox = loadApp();
+  sandbox._calls = [];
+  vm.runInContext("apiFetch = (url, o) => { _calls.push([url, o && o.method, o && o.body]); return Promise.resolve({}); };", sandbox);
+  vm.runInContext("window._mergePipelineProject = 'demo';", sandbox);
+  await vm.runInContext("window.mergePipelineSetPolicy('stop_and_ask')", sandbox);
+  await vm.runInContext("window.mergePipelineSetModel('')", sandbox);
+  assert.deepEqual(Array.from(sandbox._calls[0]), ['/api/config', 'PUT', JSON.stringify({ 'autonomous.merge_pipeline.projects.demo.conflict_policy': 'stop_and_ask' })]);
+  const model = sandbox._calls.find(c => c[0] === '/api/config' && c[2].includes('conflict_model'));
+  assert.equal(model[2], JSON.stringify({ 'autonomous.merge_pipeline.projects.demo.conflict_model': '' }));
+});
+
+test('the record editor rejects invalid JSON without calling the daemon', async () => {
+  const sandbox = loadApp();
+  sandbox._calls = [];
+  vm.runInContext("apiFetch = (url) => { _calls.push(url); return Promise.resolve({}); };", sandbox);
+  const html = render(view({ source: 'record' }));
+  assert.ok(html.includes('id="mergePipelineRecord"') && html.includes('window.mergePipelineSaveRecord()') && html.includes('window.mergePipelineClearRecord()'), html);
+  await vm.runInContext("document.getElementById = (id) => id === 'mergePipelineRecord' ? { value: '{nope' } : null; window.mergePipelineSaveRecord()", sandbox);
+  assert.deepEqual(sandbox._calls, []);
+});
+
+// ── help links ──────────────────────────────────────────────────────────────
+
+test('the card and its headings carry help links to the glossary sections', () => {
+  const html = render(view());
+  assert.ok(html.includes('class="docs-link"'), 'help link missing: ' + html);
+  for (const a of ['merge-pipeline', 'merge-pipeline-source', 'merge-conflict-policy', 'merge-conflict-model']) {
+    assert.ok(html.includes('/diagrams.html#docs/' + DEFS + a + '"'), a + ' link missing: ' + html);
+  }
+});
+
+test('docsLinkForKey maps the merge pipeline keys to the four sections', () => {
+  const want = {
+    'merge_pipeline_card_title': 'merge-pipeline',
+    'autonomous.merge_pipeline.version_files': 'merge-pipeline',
+    'autonomous.merge_pipeline.file_name': 'merge-pipeline-source',
+    'autonomous.merge_pipeline.source_order': 'merge-pipeline-source',
+    'autonomous.merge_pipeline.fallback_on_bad_file': 'merge-pipeline-source',
+    'merge_pipeline_source_label': 'merge-pipeline-source',
+    'autonomous.merge_pipeline.conflict_policy': 'merge-conflict-policy',
+    'merge_pipeline_conflict_policy_label': 'merge-conflict-policy',
+    'autonomous.merge_pipeline.conflict_model': 'merge-conflict-model',
+    'merge_pipeline_conflict_model_label': 'merge-conflict-model',
+  };
+  for (const [key, anchor] of Object.entries(want)) assert.equal(docsLink(key), DEFS + anchor, key);
+  assert.equal(docsLink('autonomous.infra_retry.enabled'), DEFS + 'infrastructure-retry', 'infra retry keeps its own link');
+});
+
+// ── settings fields ─────────────────────────────────────────────────────────
+
+test('the Autonomous settings group has the six merge_pipeline fields with the right types', () => {
+  const fields = mergeFields();
+  const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
+  const want = {
+    'autonomous.merge_pipeline.file_name': 'text',
+    'autonomous.merge_pipeline.source_order': 'text',
+    'autonomous.merge_pipeline.fallback_on_bad_file': 'select',
+    'autonomous.merge_pipeline.conflict_policy': 'select',
+    'autonomous.merge_pipeline.conflict_model': 'text',
+    'autonomous.merge_pipeline.version_files': 'text',
+  };
+  assert.equal(fields.length, 6, 'expected six fields: ' + fields.map(f => f.key).join(','));
+  for (const [key, type] of Object.entries(want)) {
+    assert.ok(byKey[key], key + ' missing');
+    assert.equal(byKey[key].type, type, key + ' has the wrong type');
+  }
+  assert.deepEqual(byKey['autonomous.merge_pipeline.conflict_policy'].options, ['stop_and_ask', 'mechanical', 'mechanical_and_model']);
+  assert.deepEqual(byKey['autonomous.merge_pipeline.fallback_on_bad_file'].options, ['record', 'default', 'none']);
+  assert.equal(byKey['autonomous.merge_pipeline.source_order'].csv, true);
+  assert.equal(byKey['autonomous.merge_pipeline.version_files'].csv, true);
+});
+
+test('every merge_pipeline field has a label key, an inline description key and a docs link', () => {
+  const en = bundle('en');
+  for (const f of mergeFields()) {
+    const name = f.key.slice('autonomous.merge_pipeline.'.length);
+    assert.equal(f.labelKey, 'settings_merge_pipeline_' + name, f.key + ' labelKey');
+    assert.equal(f.hintKey, 'settings_merge_pipeline_' + name + '_hint', f.key + ' hintKey');
+    assert.ok(en[f.labelKey] && en[f.hintKey], f.key + ' label or description missing in en');
+    assert.ok(f.docsKey, f.key + ' has no docs link');
+    assert.ok(docsLink(f.docsKey), f.key + ' docs link does not resolve');
+  }
+});
+
+// ── locale keys ─────────────────────────────────────────────────────────────
+
+function ownKeys(b) {
+  return Object.keys(b).filter(k => PREFIXES.some(p => k.startsWith(p))).sort();
+}
+
+test('the merge_pipeline and settings_merge_pipeline keys are identical in all five bundles', () => {
+  const en = ownKeys(bundle('en'));
+  assert.ok(en.length >= 40, 'too few keys in en: ' + en.length);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    assert.deepEqual(ownKeys(b), en, lang + ' key set differs from en');
+    for (const k of en) assert.ok(typeof b[k] === 'string' && b[k].length > 0, k + ' empty in ' + lang);
+  }
+});
+
+test('the non-English bundles carry real translations', () => {
+  const en = bundle('en');
+  for (const lang of LANGS.filter(l => l !== 'en')) {
+    const b = bundle(lang);
+    const same = ownKeys(en).filter(k => b[k] === en[k]);
+    assert.ok(same.length <= 3, lang + ' leaves English text in: ' + same.join(','));
+  }
+});
+
+test('placeholders match the English text in every bundle', () => {
+  const en = bundle('en');
+  const ph = s => (s.match(/%\d\$s/g) || []).sort().join();
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of ownKeys(en)) assert.equal(ph(b[k]), ph(en[k]), k + ' placeholders differ in ' + lang);
+  }
+});
+
+test('no merge pipeline string uses the word PRD', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of ownKeys(b)) assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
+  }
+});
+
+test('every merge_pipeline key the app references exists in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const referenced = new Set();
+  for (const m of src.matchAll(/['"`]((?:settings_)?merge_pipeline_[a-z_]+)['"`]/g)) referenced.add(m[1]);
+  assert.ok(referenced.size >= 30, 'too few references found: ' + referenced.size);
+  // A string that is only the start of other keys is a help-link prefix, not a key.
+  const enKeys = Object.keys(bundle('en'));
+  for (const k of [...referenced]) if (enKeys.some(e => e !== k && e.startsWith(k))) referenced.delete(k);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' missing in ' + lang);
+  }
+});
+
+// ── the stats-poll rule ─────────────────────────────────────────────────────
+
+test('the card stores no setInterval on a DOM element', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const start = src.indexOf('// ── Merge pipeline card');
+  const end = src.indexOf('// ── Triage card');
+  assert.ok(start > 0 && end > start);
+  assert.ok(!/setInterval/.test(src.slice(start, end)), 'the card must not start a timer of its own');
+});

@@ -1071,6 +1071,8 @@ type Manager struct {
 	tagEventFn func(TagEvent)
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
+	// mergeRunStore is the merge pipeline run history, opened on first use.
+	mergeRunStore *MergeRunRecords
 
 	// Cleanup status (cleanup_status.go) — the in-memory + persisted
 	// record of the two safety-net passes and their disk readings.
