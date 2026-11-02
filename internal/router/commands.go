@@ -93,10 +93,11 @@ const (
 	// the local loopback so every REST surface is reachable from chat.
 	// Convenience shortcuts (cost / cooldown / audit / stale) pipe
 	// through the same dispatcher with curated paths.
-	CmdRest     CommandType = "rest"
-	CmdCost     CommandType = "cost"
-	CmdCooldown CommandType = "cooldown"
-	CmdStale    CommandType = "stale"
+	CmdRest       CommandType = "rest"
+	CmdCost       CommandType = "cost"
+	CmdCostReport CommandType = "cost_report"
+	CmdCooldown   CommandType = "cooldown"
+	CmdStale      CommandType = "stale"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"
@@ -1313,6 +1314,13 @@ func Parse(text string) Command {
 		return Command{Type: CmdHelp}
 
 	// Sprint Sx2 — comm-channel parity for v3.5–v3.7 endpoints.
+	case lower == "cost report" || strings.HasPrefix(lower, "cost report "):
+		// "cost report" → /api/cost/report; "cost report group_by=backend
+		// since=2026-01-01 until=2026-01-08" → the same report with those
+		// query parameters. Matched before the bare `cost` case below so
+		// "report" is never read as a session id.
+		return Command{Type: CmdCostReport, Text: strings.TrimSpace(text[len("cost report"):])}
+
 	case lower == "cost" || strings.HasPrefix(lower, "cost "):
 		// "cost" → /api/cost; "cost <full_id>" → /api/cost?session=<id>
 		rest := strings.TrimSpace(text[len("cost"):])
@@ -1894,6 +1902,7 @@ help                            show this help
 
 — v3.7.x parity (Sx2) —
 cost [<full_id>]                 token+USD rollup (or per-session)
+cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|week)
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown

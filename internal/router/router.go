@@ -1157,6 +1157,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleRest(cmd)
 	case CmdCost:
 		r.handleCostCmd(cmd)
+	case CmdCostReport:
+		r.handleCostReportCmd(cmd)
 	case CmdCooldown:
 		r.handleCooldown(cmd)
 	case CmdUsageBackoff:
