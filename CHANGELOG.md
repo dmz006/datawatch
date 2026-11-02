@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.62.1 — Container images build again
+
+### Fixed
+
+- **The agent container images build again.** The identifier scrub in the previous release rewrote the container user's name in seven Dockerfiles as a build argument declared before the first `FROM`, which is empty inside a build stage, so the agent-base image failed at `groupadd: '' is not a valid group name` and the image refresh and any release that builds images stopped. Each Dockerfile now declares the argument again after its final `FROM`, and a CI test fails any Dockerfile that uses it without doing so.
+
 ## v9.62.0 — Whole-tree leak check and scrub
 
 ### Added

@@ -24,6 +24,8 @@ ARG ANDROID_CMDLINE_TOOLS_VERSION=11076708
 ARG GRADLE_VERSION=8.11.1
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG JDK_VERSION
 ARG KOTLIN_VERSION
 ARG ANDROID_CMDLINE_TOOLS_VERSION

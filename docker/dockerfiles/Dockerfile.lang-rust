@@ -11,6 +11,8 @@ ARG RUST_VERSION=1.85.0
 ARG CARGO_AUDIT_VERSION=0.21.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG RUST_VERSION
 ARG CARGO_AUDIT_VERSION
 

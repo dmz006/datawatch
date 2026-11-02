@@ -23,6 +23,8 @@ ARG DW_USER=datawatch
 ARG GOOSE_VERSION=1.43.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG GOOSE_VERSION
 ARG TARGETARCH
 

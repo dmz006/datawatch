@@ -132,6 +132,8 @@ RUN go version -m /out/gh > /out/gh.buildinfo && \
 
 # ── Stage 2: runtime ────────────────────────────────────────────────────
 FROM bitnami/minideb:${MINIDEB_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG RTK_VERSION
 ARG TARGETARCH
 

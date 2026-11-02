@@ -12,6 +12,8 @@ ARG DW_USER=datawatch
 ARG AIDER_VERSION=0.86.0
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG AIDER_VERSION
 
 USER root

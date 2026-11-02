@@ -24,6 +24,8 @@ ARG BRAKEMAN_VERSION=7.0.1
 ARG BUNDLER_AUDIT_VERSION=0.9.2
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG RUBY_PKG_VERSION
 ARG RUBOCOP_VERSION
 ARG RUBY_LSP_VERSION

@@ -16,6 +16,8 @@ ARG DELVE_VERSION=v1.26.1
 ARG GOVULNCHECK_VERSION=v1.1.4
 
 FROM ${REGISTRY}/agent-base:${BASE_TAG} AS runtime
+# Build arguments declared before FROM are empty inside a stage; declare it again here.
+ARG DW_USER=datawatch
 ARG GO_VERSION
 ARG GOPLS_VERSION
 ARG GOLANGCI_LINT_VERSION
