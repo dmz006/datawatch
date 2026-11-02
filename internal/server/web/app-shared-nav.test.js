@@ -29,7 +29,8 @@ function navButtons() {
   const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
   const start = html.indexOf('<nav class="nav"');
   const end = html.indexOf('</nav>', start);
-  const nav = html.slice(start, end).replace(/<!--[\s\S]*?-->/g, '');
+  let nav = html.slice(start, end);
+  for (let prev; nav !== prev; prev = nav) nav = nav.replace(/<!--[\s\S]*?-->/g, '');
   const buttons = [...nav.matchAll(/<button\b([^>]*\bclass="nav-btn[^"]*"[^>]*)>([\s\S]*?)<\/button>/g)];
   return buttons.map(m => {
     const open = m[1];

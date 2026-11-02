@@ -187,7 +187,9 @@ test('the report is read-only: no buttons, links or handlers, and it says so', (
   const html = report(safeReport());
   assert.ok(html.includes('Read-only report'), 'read-only note missing');
   assert.ok(!/<button|<a[\s>]|<input|<select|<form|onclick=|href=/i.test(html), 'report must carry no controls: ' + html);
-  assert.ok(!/>\s*(delete|push|merge|remove)\b/i.test(html.replace(/<[^>]*>/g, '>')), 'no delete, push, merge or remove action text');
+  let stripped = html;
+  for (let prev; stripped !== prev; prev = stripped) stripped = stripped.replace(/<[^>]*>/g, '>');
+  assert.ok(!/>\s*(delete|push|merge|remove)\b/i.test(stripped), 'no delete, push, merge or remove action text');
 });
 
 test('an empty, missing or malformed report renders both empty states, not a throw', () => {

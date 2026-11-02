@@ -128,7 +128,8 @@ test('there is no Questions sub-tab: not in the rendered row, not in the registr
   sb.renderAutonomousView();
   // The question queue is a card on Chains, not a sub-tab: drop that card's
   // markup (it ends at the list panel) before checking the view.
-  const viewNoCard = out.view.replace(/<div id="automationQuestionsCard"[\s\S]*?(?=<div id="automationPanel")/, '');
+  let viewNoCard = out.view;
+  for (let prev; viewNoCard !== prev; prev = viewNoCard) viewNoCard = viewNoCard.replace(/<div id="automationQuestionsCard"[\s\S]*?(?=<div id="automationPanel")/, '');
   assert.doesNotMatch(viewNoCard, /question/i, 'the rendered view names no Questions sub-tab');
   const bar = sb._automationSubtabsBarHTML();
   assert.doesNotMatch(bar, /question/i, 'the second-row bar names no Questions button');
