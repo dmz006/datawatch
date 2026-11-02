@@ -21,3 +21,11 @@ notes: No stray request was observed, so this closes the fixture-side window (a 
 test: TestAutomationCommFixtureDrainsLateRequests
 fails without the fix: yes
 notes: A request held in the fake daemon handler for 300 ms (longer than HandleTestMessage's 200 ms wait) is in flight when the next input starts. With the controlLog.reset wait removed the late request lands in the next window and the test fails; with the guard restored it passes (-race -count=3). The fixture file diff is empty.
+
+## Load run
+
+command: env -u TMUX -u TMUX_TMPDIR GOMAXPROCS=1 timeout 480 go test -race -count=60 -v -run '^TestAutomationCommDecisionAssistantUsage$' ./internal/router/
+busy loops: 48, GOMAXPROCS=1, runs: 60, race: yes
+failures: 0 of 60
+data race reports: 0
+notes: Run on the fixed code with one busy loop per CPU started by PID and killed by a trap on exactly those PIDs; the go test run took 133.7 s and exited 0. All 48 busy loop PIDs were confirmed gone afterwards.
