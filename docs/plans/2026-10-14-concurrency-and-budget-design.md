@@ -1855,3 +1855,7 @@ Operator, 2026-11-02 06:50, through the PWA, on both burn guard decisions (the f
 ## Reading 2026-11-02 11:12 EST: 19%, stay at one lane
 
 Operator, 2026-11-02, quoted: "Claude at 19%". The calculator records 19% at Mon 11:12 (5.87 days left, pace line 16.2, 2.8 points ahead). The token tally estimated 18.0 for the same moment, so its fit was about one point low. Recent burn is 16.5 points per 24 hours, which projects 115.7% at the reset (over budget); the week average is 16.8 points per 24 hours (117.3%), and at the recent rate the allowance would run out Sat 09:11, about 23 hours before the reset. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed, and the rest of the work stays on the pi lane where the burn guard already routes it.
+
+## Reading 2026-11-02 14:00 EST: 20%, stay at one lane
+
+Operator, 2026-11-02, quoted: "Claude at 20%". The calculator records 20% at Mon 14:00 (5.75 days left, pace line 17.9, 2.1 points ahead, down from 2.8 at the 11:12 reading). Recent burn is 8.6 points per 24 hours (projected end 69.2%, within budget); the week average is 16 points per 24 hours (112%, over budget). The token tally estimated 20.3 for the same moment, within a third of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
