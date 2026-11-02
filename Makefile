@@ -275,10 +275,14 @@ check-internal-refs:
 check-leaks:
 	bash scripts/check-no-local-leaks.sh .
 
-# Seed the operator's local patterns file from the template, but only when
-# .leak-patterns.local is absent — an existing file is never overwritten.
+# Seed .leak-patterns.local: created from the template when absent (an
+# existing file is never overwritten), then names of every federation peer,
+# compute node, observer peer and pool host the local daemon knows are
+# appended — one per line after a '# seeded peer names' comment, deduped
+# against existing lines case-insensitively. Only counts are printed.
+# When the daemon is unreachable nothing is seeded and the target exits 0.
 leak-patterns-init:
-	@if [ ! -e .leak-patterns.local ]; then cp scripts/leak-patterns.local.template .leak-patterns.local; else echo ".leak-patterns.local already exists — left untouched"; fi
+	bash scripts/seed-leak-patterns.sh
 
 check-no-identity-wipe:
 	bash scripts/check-no-identity-wipe.sh
@@ -297,6 +301,7 @@ codeql-local:
 test:
 	go test ./...
 	bash tests/test-check-no-local-leaks.sh
+	bash tests/test-seed-leak-patterns.sh
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
