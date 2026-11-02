@@ -18,7 +18,7 @@ the worktree looked idle past the threshold.
 - `PI_CODING_AGENT_DIR` is supported when locating transcripts.
 - Offline unit tests: `scripts/tests/test_supervisor_watch_activity.py`.
 
-## Commands run (each with `env -u TMUX -u TMUX_TMPDIR`, from the project directory)
+## Commands run (final run 2026-11-02 06:44; each with `env -u TMUX -u TMUX_TMPDIR`, from the project directory)
 
 1. `python3 -I -m py_compile scripts/supervisor-watch.py scripts/tests/test_supervisor_watch_activity.py`
    — passed (rc 0).
@@ -35,7 +35,3 @@ the worktree looked idle past the threshold.
 - No version bump is needed: `scripts/supervisor-watch.py` is exempt in
   `scripts/check-version-bump.sh`.
 - The 60 minute SILENT threshold is unchanged.
-
-## Gate re-run
-
-Re-run on 2026-11-02 at 06:44: all three gate commands above passed again (py_compile rc 0; 7 tests OK; unscoped tmux audit OK).
