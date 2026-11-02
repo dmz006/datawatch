@@ -61,3 +61,8 @@ Branch `automaton/3ebd0001` (worktree `/home/user/.datawatch/prd-worktrees/3ebd0
 ## Verdict
 
 **FAIL (1 of 10 checks).** All Go build/vet/test commands, four of the five lint scripts, the three new node test files (17/17), the version match, the help-link and definitions coverage, and the parity draft all pass. The single failure is `scripts/check-docs-sync.sh`: the embedded PWA docs mirror is missing the three branch-added `docs/plans/` files (the live-smoke report, the parity issue draft, and the live-smoke writeup). The fix is `make sync-docs` plus re-staging the embedded assets, which is outside this gate's "commit that file only" boundary and therefore left for the operator.
+
+## Rule conflicts flagged for the merge step
+
+- **Version bump on a feature branch.** AGENT.md forbids changing `Version` in `cmd/datawatch/main.go` and `internal/server/api.go` or adding a `## vX.Y.Z` CHANGELOG heading on a branch. The task spec asked for the 9.57.0 bump, so it is kept and flagged here. The merge helper (`scripts/merge-branches-bump-version.sh`, `BUMP=minor`) must reconcile it: either accept 9.57.0 as the minor bump or reset the three files and let the helper write the version.
+- **Commit format.** The pipeline writes `task(3ebd0001):` subjects and cannot take a `tracker: <section name>` trailer. The commits that changed the `edit_task` `read_only` contract and added the `autonomous.parallel.*` keys updated `docs/testing-tracker.md`; the merge step should carry the `tracker:` trailer on the squash or merge commit and use a `feat(autonomous):` subject.

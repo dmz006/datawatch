@@ -71,12 +71,15 @@ Depends on BL428 Phase 2 (shipped) and BL370 (shipped). Option B also touches th
 
 ## Parity surface
 
-| Surface | A | B |
+**Decision:** the operator chose options A and B together (read-only task class first, then per-task worktrees with a merge step). Shipped as v9.57.0. The conflict policy is `additive_then_model` by default, with `block` and `triage` selectable.
+
+| Surface | Included | What it carries |
 |---|---|---|
-| Config | none new (reuses `max_concurrent_tasks`) | new keys for per-task worktree on/off and cleanup |
-| REST | task field in create/edit task | worktree and merge status on the task |
-| MCP | `autonomous_prd_edit_task`, `add_task` param | status fields only |
-| CLI | task flag | status output |
-| Comm channel | task edit command | status text |
-| PWA | flag on the task card | merge state on the task card |
-| Mobile | datawatch-app parity issue required (PWA changes) | datawatch-app parity issue required |
+| Config | yes | `autonomous.parallel.{read_only_tasks,worktree_per_task,merge_conflict_policy,merge_conflict_model}` |
+| REST | yes | `read_only` on task create/edit; worktree and merge state on the task; speedup record on the Automaton |
+| MCP | yes | `autonomous_prd_edit_task` / `add_task` `read_only` param; state in task fields; `autonomous_config_set` for the keys |
+| CLI | yes | task flag; status output; `config set` |
+| Comm channel | yes | task edit command; status text; `configure` |
+| PWA | yes | read-only toggle and badge, merge-state badge, settings group, speedup card |
+| Android (datawatch-app) | yes, by issue | Parity issue required because the PWA changed. Drafted in `docs/plans/reports/parallel-tasks-datawatch-app-parity-issue.md`; filed against `dmz006/datawatch-app` at the merge step. |
+| iPhone/iOS | excluded | No iOS client exists to change; the iOS parity docs track it under the APNs item. Nothing to file until one ships. |

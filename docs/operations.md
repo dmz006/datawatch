@@ -759,6 +759,15 @@ Autonomous Automata state lives as plain JSONL files under the autonomous data d
 | `autonomous.progress.since` | empty | First day counted, `YYYY-MM-DD`; empty = the first record's creation date. |
 | `autonomous.progress.snapshot_retention_days` | `0` (= 90) | Days saved progress snapshots are kept. Whole number >= 0. |
 
+**Parallel task settings (v9.57.0).** Tasks of one Automaton can run at the same time. Read-only tasks skip the project write lock; other parallel tasks run in their own worktree and branch and are merged back in dependency order. All four keys are live (no restart), have defaults, and are reachable from web Settings, YAML, `PUT /api/config`, `datawatch config set`, MCP `autonomous_config_set` and chat `configure`. A bad `merge_conflict_policy` is rejected (HTTP 400) and nothing is written. See [the how-to](howto/automaton-parallel-tasks.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.parallel.read_only_tasks` | `true` | Tasks flagged `read_only` skip the tree write lock and run beside other tasks. |
+| `autonomous.parallel.worktree_per_task` | `true` | Each task that runs alongside others gets its own worktree and branch off the Automaton branch. |
+| `autonomous.parallel.merge_conflict_policy` | `additive_then_model` | `additive_then_model` keeps both sides of added lines and asks a model for the rest; `block` holds the task; `triage` raises a question. |
+| `autonomous.parallel.merge_conflict_model` | empty | Model that resolves a merge conflict. Empty = the strongest configured planning model. |
+
 Each key is reachable through all five configuration methods (MCP agents use `config_set` with the same keys, or the `progress_lanes`, `progress_inactive_gap_hours`, `progress_backlog_path`, `progress_since` and `progress_snapshot_retention_days` arguments of `autonomous_config_set`):
 
 | Key | YAML (`autonomous.progress:` block) | CLI | Web UI (Settings → General → Autonomous) | REST | Chat |
