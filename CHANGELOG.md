@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.61.4 — Supervisor watch counts pi transcripts
+
+### Fixed
+
+- **The supervisor watch no longer calls a working pi worker silent.** A pi worker writes its output file only when it finishes, so the watch read minutes to hours of silence for workers that were reading files or compacting their context. The activity measure now also counts the newest pi transcript of the Automaton and of each of its task worktrees (the folder comes from `PI_CODING_AGENT_DIR` when set, otherwise the default; a missing folder is skipped), and the SILENT line names which measure was newest. The 60 minute threshold is unchanged.
+
 ## v9.61.3 — git-lfs suppression removed, Debian ships the fix
 
 ### Security
