@@ -629,7 +629,7 @@ git push origin feature/amazing-feature
 ## 👥 Community & Support
 
 - **💬 Discord**: [Join our community](https://discord.gg/8KzmtXKAcH)
-- **📧 Email**: cyw@cywang.me
+- **📧 Email**: author@example.com
 
 ---
 

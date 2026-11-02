@@ -84,7 +84,7 @@ func TestAddSpawn(t *testing.T) {
 	runAt := time.Now().Add(time.Hour)
 	sc, err := store.AddSpawn(AddSpawnOptions{
 		Task:         "run audit",
-		ProjectDir:   "/home/user/project",
+		ProjectDir:   "/home/<user>/project",
 		Backend:      "openai",
 		LLMRef:       "gpt4o",
 		Model:        "gpt-4o",

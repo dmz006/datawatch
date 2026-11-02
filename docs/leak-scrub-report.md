@@ -250,3 +250,75 @@ prefix scheme. No `mv` was needed in this pass.
 - `.datawatch/verify/replace-hostname-gpu-identifiers.sh` re-discovers the
   identifiers at run time (none are stored in the script or this report)
   and passes.
+
+## Replaced: home paths and emails
+
+(scrub 08) Replaced absolute home-directory paths for real user names and
+personal / operator email addresses across the tracked file set. Before
+this pass the leak check (scripts/check-no-local-leaks.sh) reported about
+336 home-path findings in about 130 files and about 110 email findings in
+about 65 files (files in both classes overlap; about 190 files in total).
+After this pass every class reports zero findings (address, home, email,
+local).
+
+Scheme:
+
+- Linux `/home/<name>` -> `/home/<user>` (docs, scripts, test fixtures).
+  Lines that already carried a placeholder form (`<user>`, `$USER`, `~/`)
+  were left as-is.
+- macOS `/Users/<name>` -> `/Users/<user>`.
+- Windows `C:\Users\<name>` -> `C:\Users\<user>` (install/windows/README.md,
+  including the literal `YOU` example).
+- Personal/operator addresses -> generic placeholders: `me@example.com`,
+  `user@example.com`, `foo@example.com`, `author@example.com`,
+  `attacker@example.com`, `support@example.com`, and single-letter
+  fixtures (`a@example.com`, `x@example.com`, `t@example.com`,
+  `u@example.com`). A few fixtures that carried a real-looking domain as
+  part of their identity were mapped onto the matching placeholder.
+- Maintainer identity in the packaging metadata (packaging/arch/PKGBUILD,
+  packaging/debian/changelog, packaging/debian/control,
+  packaging/rpm/datawatch.spec): personal address replaced with
+  `datawatch@example.com` and the surrounding name generalized to
+  `datawatch`.
+- Credential-embedding examples that happened to land in `user@host` shape
+  (git URL auth, token examples): the credential part was replaced with a
+  placeholder form (`tok@example.com`, `GH_TOKEN@example.com`,
+  `ghp_abc@example.com`) so the examples read identically.
+- Docker images (docker/dockerfiles/*): the non-root user's home was
+  de-hardcoded via a new `ARG DW_USER` (default `datawatch`); the
+  `useradd`/`chown`/`ENV PATH` lines now reference `/home/${DW_USER}`.
+  Image output is byte-identical for default builds; the user name is a
+  build argument instead of a literal.
+- tegrastats field names that the email regex caught as false positives
+  (the GPU temperature field, in internal/observer/gpu_tegrastats.go, a
+  historical plan, and CHANGELOG.md) were re-worded to `temp field
+  (T dot TC)` in the prose so the class no longer fires; the Go probe
+  parsing code is untouched.
+
+Allowed-list additions (scripts/leak-check.allowed-emails — legitimate
+non-personal forms only):
+
+- `*.example`, `*.example.net`, `*@*.example.com`, `*@*.example.net` —
+  IANA-reserved example domains used by webhook/fixture/git hosts.
+- `*.invalid`, `*.local` — RFC 2606 never-assigned domains in test
+  fixtures.
+- `*.test` — IANA-reserved git test identities.
+- `*.service` — systemd user-bus unit names in test evidence.
+- `*@users.noreply.github.com` — GitHub Actions default noreply
+  identifier (bot, not a person).
+- `*@*.png` — Retina asset file names (`...@2x.png`) in evidence HTML.
+
+Verification: `bash scripts/check-no-local-leaks.sh` exits 0 with all four
+classes at 0. `go build ./...` passes; the full `go test ./...` suite
+passes (one load-dependent flake in tests/ci
+`TestDaemonCleanupHelper/InterruptSighup`, 30 s signal-timing timeout,
+reruns green in isolation and on the full package). Test fixtures that
+feed the autonomous scope linter were moved to concrete non-personal
+roots (`/root/...`) because the linter treats `<user>`-style segments as
+placeholders and skips them; data-only fixtures use `/home/<user>`.
+
+No original values are reproduced in this report. Note: the operator's
+GitHub login appears in remote references (remote repo URLs, Go module
+paths, container image registry paths); those are remote identifiers, not
+local home paths or email addresses, and rewriting them would break
+builds — they were left as-is.

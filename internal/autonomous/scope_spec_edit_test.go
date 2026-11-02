@@ -7,7 +7,7 @@ import (
 
 // scopeLintTaskError is the Task.Error the executor writes when the pre-spawn
 // scope lint rejects a task.
-const scopeLintTaskError = "scope: spec line 1 references /home/other/elsewhere/tool outside the allowed directories; edit the task spec to remove or quote it (task not spawned)"
+const scopeLintTaskError = "scope: spec line 1 references /root/elsewhere/tool outside the allowed directories; edit the task spec to remove or quote it (task not spawned)"
 
 // setScopeTestState puts prd into prdStatus and, when taskID is set, marks that
 // task failed with taskErr. It saves through the store so the edit path reads

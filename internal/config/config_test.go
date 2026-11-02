@@ -650,9 +650,9 @@ func TestSessionConfig_ResolveProjectDir(t *testing.T) {
 	}{
 		{
 			name: "empty input falls back to default",
-			def:  "/home/u",
+			def:  "/home/<user>",
 			in:   "",
-			want: "/home/u",
+			want: "/home/<user>",
 		},
 		{
 			name: "empty input + no default returns empty (caller decides)",

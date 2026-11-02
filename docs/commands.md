@@ -1033,14 +1033,14 @@ A one-time spawn that fails to start is marked `failed`.
 # Pure shell job — run imap-mcp rule engine hourly (no LLM needed)
 datawatch schedule spawn \
   --cron "0 * * * *" \
-  --path /home/user/workspace/imap-mcp \
+  --path /home/<user>/workspace/imap-mcp \
   --schedule-name imap-hourly-rules \
   --shell "imap-mcp run-rules --config ~/workspace/dmz-imap.yaml"
 
 # AI task — nightly report with Claude Code
 datawatch schedule spawn \
   --cron "0 2 * * *" \
-  --path /home/user/workspace/project \
+  --path /home/<user>/workspace/project \
   --backend claude-code \
   --schedule-name nightly-report \
   --task "Generate a summary of today's commits and open issues"

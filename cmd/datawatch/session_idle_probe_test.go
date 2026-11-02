@@ -31,7 +31,7 @@ func TestSessionIdleProbe_IdleClaudeWithOwnServersReportsNoWork(t *testing.T) {
 		100: {"bash"},
 		200: {"bash"},
 		300: {"claude"},
-		400: {"/home/user/.datawatch/channel/datawatch-channel"},
+		400: {"/home/<user>/.datawatch/channel/datawatch-channel"},
 		500: {"/usr/local/bin/datawatch", "mcp-search"},
 	}
 	ownServers := []channel.MCPServerSpec{{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}}
@@ -103,21 +103,21 @@ func TestSessionIdleProbe_OwnServerMatchingRules(t *testing.T) {
 	search := channel.MCPServerSpec{Command: "/usr/local/bin/datawatch", Args: []string{"mcp-search"}}
 	launcher := channel.MCPServerSpec{Command: "npx"}
 	npxServer := channel.MCPServerSpec{Command: "npx", Args: []string{"-y", "some-tool"}}
-	jsBridge := channel.MCPServerSpec{Command: "/usr/bin/node", Args: []string{"/home/u/.datawatch/channel/channel.js"}}
+	jsBridge := channel.MCPServerSpec{Command: "/usr/bin/node", Args: []string{"/home/<user>/.datawatch/channel/channel.js"}}
 	cases := []struct {
 		name  string
 		argv  []string
 		specs []channel.MCPServerSpec
 		want  bool
 	}{
-		{"channel by binary name alone", []string{"/home/u/.datawatch/channel/datawatch-channel"}, nil, true},
+		{"channel by binary name alone", []string{"/home/<user>/.datawatch/channel/datawatch-channel"}, nil, true},
 		{"bare bridge spec matches its exact path", []string{"/opt/dw/datawatch-bridge"}, []channel.MCPServerSpec{bridge}, true},
 		{"bare bridge spec ignores a launch with args", []string{"/opt/dw/datawatch-bridge", "x"}, []channel.MCPServerSpec{bridge}, false},
 		{"args spec matches by base name and args", []string{"datawatch", "mcp-search"}, []channel.MCPServerSpec{search}, true},
 		{"args spec rejects other args", []string{"datawatch", "serve"}, []channel.MCPServerSpec{search}, false},
 		{"launcher spec does not claim work it starts", []string{"npx", "-y", "some-tool"}, []channel.MCPServerSpec{launcher}, false},
 		{"empty argv is work", nil, []channel.MCPServerSpec{search}, false},
-		{"node channel bridge matches its spec", []string{"/usr/bin/node", "/home/u/.datawatch/channel/channel.js"}, []channel.MCPServerSpec{jsBridge}, true},
+		{"node channel bridge matches its spec", []string{"/usr/bin/node", "/home/<user>/.datawatch/channel/channel.js"}, []channel.MCPServerSpec{jsBridge}, true},
 		{"node running another script is work", []string{"/usr/bin/node", "/srv/other.js"}, []channel.MCPServerSpec{jsBridge}, false},
 		{"npx-cli run of the spec's package matches", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"}, []channel.MCPServerSpec{npxServer}, true},
 		{"npx-cli run of another package is work", []string{"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "other-tool"}, []channel.MCPServerSpec{npxServer}, false},
@@ -141,7 +141,7 @@ func TestSessionIdleProbe_NpxLaunchedServerIsNotWork(t *testing.T) {
 	argv := map[int][]string{
 		300: {"claude"},
 		400: {"node", "/usr/lib/node_modules/npm/bin/npx-cli.js", "-y", "some-tool"},
-		500: {"node", "/home/u/.npm/_npx/some-tool/index.js"},
+		500: {"node", "/home/<user>/.npm/_npx/some-tool/index.js"},
 	}
 	ownServers := []channel.MCPServerSpec{{Command: "npx", Args: []string{"-y", "some-tool"}}}
 	got := workChildPIDs(roots, children, fakeProcessNames(names), fakeProcessArgv(argv), ownServers)

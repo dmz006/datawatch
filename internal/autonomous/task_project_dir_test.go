@@ -122,7 +122,7 @@ func TestTaskScope_WithOverride(t *testing.T) {
 
 func TestValidateTaskProjectDir(t *testing.T) {
 	prd := &PRD{ProjectDir: "/srv/proj"}
-	for _, ok := range []string{"/srv/proj/sub", "/home/u/x", "/srv/other"} {
+	for _, ok := range []string{"/srv/proj/sub", "/home/<user>/x", "/srv/other"} {
 		if err := ValidateTaskProjectDir(prd, ok); err != nil {
 			t.Errorf("%q: unexpected error %v", ok, err)
 		}

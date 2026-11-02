@@ -168,7 +168,7 @@ func budgetSession(i int, st session.State, updated time.Time, rev int) *session
 	id := fmt.Sprintf("b%04d", i)
 	return &session.Session{
 		ID: id, FullID: "testhost-" + id, Name: "budget-" + id, State: st,
-		ProjectDir:    "/home/user/workspace/budget",
+		ProjectDir:    "/home/<user>/workspace/budget",
 		Task:          budgetText(id+" task", rev, budgetTaskChars),
 		PromptContext: budgetText(id+" prompt", rev, budgetPromptChars),
 		LastResponse:  budgetText(id+" response", rev, budgetResponseChars),

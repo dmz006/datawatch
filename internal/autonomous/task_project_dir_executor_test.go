@@ -350,14 +350,14 @@ func TestBL447_QualityGateBaselineCachedPerDir(t *testing.T) {
 }
 
 func TestBL447_LintTaskScopeFor(t *testing.T) {
-	prd := &PRD{ProjectDir: "/home/u/proj"}
+	prd := &PRD{ProjectDir: "/home/<user>/proj"}
 	none := &Task{}
-	if got, want := LintTaskScopeFor(prd, none, "t", "", []string{"/home/u/other/x.go"}),
-		LintTaskScope(prd, "t", "", []string{"/home/u/other/x.go"}); strings.Join(got, ";") != strings.Join(want, ";") || len(got) == 0 {
+	if got, want := LintTaskScopeFor(prd, none, "t", "", []string{"/home/<user>/other/x.go"}),
+		LintTaskScope(prd, "t", "", []string{"/home/<user>/other/x.go"}); strings.Join(got, ";") != strings.Join(want, ";") || len(got) == 0 {
 		t.Fatalf("no override must match LintTaskScope: got %v want %v", got, want)
 	}
-	over := &Task{ProjectDir: "/home/u/other"}
-	if got := LintTaskScopeFor(prd, over, "t", "", []string{"/home/u/other/x.go"}); len(got) != 0 {
+	over := &Task{ProjectDir: "/home/<user>/other"}
+	if got := LintTaskScopeFor(prd, over, "t", "", []string{"/home/<user>/other/x.go"}); len(got) != 0 {
 		t.Fatalf("override: file in task dir flagged: %v", got)
 	}
 }

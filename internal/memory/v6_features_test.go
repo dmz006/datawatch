@@ -76,7 +76,7 @@ func TestSanitizeQuery_RedactsPatterns(t *testing.T) {
 
 func TestAutoTagFull_FillsAllSixDims(t *testing.T) {
 	wing, room, hall, floor, shelf, box := AutoTagFull(
-		"/home/me/work/myproj",
+		"/home/<user>/work/myproj",
 		"OAuth login token validation in auth middleware",
 		"operator", "", "", "", "", "", "")
 	if wing == "" {

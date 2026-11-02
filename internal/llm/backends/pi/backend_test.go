@@ -19,7 +19,7 @@ import (
 func TestBuildLaunchCmd_NoModel(t *testing.T) {
 	// Since v9.10.19 the pi-family backends no longer fall back to the
 	// host's built-in default model: an empty model is a build error.
-	_, err := buildLaunchCmd("pi", "", "do the thing", "/home/user/work", "cs-abc")
+	_, err := buildLaunchCmd("pi", "", "do the thing", "/home/<user>/work", "cs-abc")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("empty model must be an error wrapping ErrNoModel, got: %v", err)
 	}
@@ -238,11 +238,11 @@ func TestBuildInteractiveCmd_NoSessionWithModel(t *testing.T) {
 	// Since v9.10.19 model is required; an empty session ID still must not
 	// add a --session-id flag.
 	testhome.PrivateTmp(t) // the scratch task file is removed with the test's temp dir
-	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/user/work", "cs-abc")
+	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/<user>/work", "cs-abc")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd with model: %v", err)
 	}
-	if !strings.Contains(cmd, "cd '/home/user/work'") {
+	if !strings.Contains(cmd, "cd '/home/<user>/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
 	if strings.Contains(cmd, "--print") {
@@ -274,7 +274,7 @@ func TestBuildInteractiveCmd_EmptyModelRefused(t *testing.T) {
 	// Since v9.10.19 an empty model is a hard error — silently running on
 	// the pi harness's built-in default model is exactly the fallback the
 	// datawatch launch paths must not take.
-	_, err := buildInteractiveCmd("pi", "", "", "do the thing", "/home/user/work", "cs-abc")
+	_, err := buildInteractiveCmd("pi", "", "", "do the thing", "/home/<user>/work", "cs-abc")
 	if !errors.Is(err, ErrNoModel) {
 		t.Fatalf("empty model must be an ErrNoModel error, got: %v", err)
 	}

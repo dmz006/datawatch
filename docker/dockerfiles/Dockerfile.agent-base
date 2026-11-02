@@ -38,6 +38,8 @@ ARG GH_COMMIT=fc4b137cdef0a6bd28fd461b7cf9c84a5812a8cd
 # so the gh build keeps the same Go minor it was validated with.
 ARG GH_GO_VERSION=1.27.3
 ARG GH_XNET_VERSION=0.60.0
+# Non-root user the image ships as; home under /home/${DW_USER}.
+ARG DW_USER=datawatch
 
 # ── Stage 1: Go builder for the datawatch binary ────────────────────────
 FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-${MINIDEB_TAG} AS dwbuilder
@@ -224,10 +226,10 @@ RUN \
         -exec rm -rf {} +
 
 # ── Layer 5: non-root user, dirs, datawatch binary ──────────────────────
-RUN groupadd -r -g 10001 datawatch && \
-    useradd -r -u 10001 -g datawatch -m -d /home/datawatch -s /bin/bash datawatch && \
+RUN groupadd -r -g 10001 "${DW_USER}" && \
+    useradd -r -u 10001 -g "${DW_USER}" -m -d "/home/${DW_USER}" -s /bin/bash "${DW_USER}" && \
     mkdir -p /data /workspace && \
-    chown -R datawatch:datawatch /data /workspace /home/datawatch
+    chown -R "${DW_USER}:${DW_USER}" /data /workspace "/home/${DW_USER}"
 
 COPY --from=dwbuilder /out/datawatch /usr/local/bin/datawatch
 # BL174 — sibling of datawatch so internal/channel.BinaryPath finds it
@@ -240,7 +242,7 @@ USER datawatch
 WORKDIR /data
 ENV DATAWATCH_DATA_DIR=/data \
     DATAWATCH_WORKSPACE_ROOT=/workspace \
-    PATH="/home/datawatch/.local/bin:${PATH}"
+    PATH="/home/${DW_USER}/.local/bin:${PATH}"
 
 EXPOSE 8080 8443 8081
 

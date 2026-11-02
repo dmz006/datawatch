@@ -1781,7 +1781,7 @@ tags-icon contrast (dark & light): dark (:root) #a855f7 on #1a1d27 = 4.25:1; lig
 
 [voice] POST /api/voice/transcribe 5 bytes abcd
 [voice] transcribe error: TypeError: Failed to fetch
-    at TestContext.<anonymous> (/home/user/.datawatch/prd-worktrees/b6be0001/internal/server/web/app-voice-retry.test.js:115:25)
+    at TestContext.<anonymous> (/home/<user>/.datawatch/prd-worktrees/b6be0001/internal/server/web/app-voice-retry.test.js:115:25)
     at Test.runInAsyncScope (node:async_hooks:227:14)
     at Test.run (node:internal/test_runner/test:1201:25)
     at Test.processPendingSubtests (node:internal/test_runner/test:831:18)

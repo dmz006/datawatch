@@ -52,7 +52,7 @@ func TestInjectTokenIntoURL(t *testing.T) {
 		want  string
 	}{
 		{"no token leaves URL unchanged", "https://github.com/x/y", "", "https://github.com/x/y"},
-		{"https URL gets basic auth", "https://github.com/x/y", "tok", "https://x-access-token:tok@github.com/x/y"},
+		{"https URL gets basic auth", "https://gitea.example.com/x/y", "tok", "https://x-access-token:tok@gitea.example.com/x/y"},
 		{"http URL also accepted (CI/dev)", "http://gitea/x/y", "tok", "http://x-access-token:tok@gitea/x/y"},
 		{"non-http URL untouched", "git@github.com:x/y.git", "tok", "git@github.com:x/y.git"},
 	}

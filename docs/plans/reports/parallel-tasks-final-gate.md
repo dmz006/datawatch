@@ -2,7 +2,7 @@
 
 Date: 2026-11-02 (UTC)
 
-Branch `automaton/3ebd0001` (worktree `/home/user/.datawatch/prd-worktrees/3ebd0001`), merge base `3aa19ca34376580736dd38cadeb4ef36dbcf4456` (merge base of `origin/main`). Every command below was run from the repository root. Lint: the full `make lint` target includes `golangci-lint run ./...`; per the gate spec's explicit alternative ("make lint **or** scripts/check-docs-sync.sh, check-howto-coverage.sh, check-curated-howtos.sh, check-no-internal-refs.sh, check-version-bump.sh") the five named scripts were run instead.
+Branch `automaton/3ebd0001` (worktree `/home/<user>/.datawatch/prd-worktrees/3ebd0001`), merge base `3aa19ca34376580736dd38cadeb4ef36dbcf4456` (merge base of `origin/main`). Every command below was run from the repository root. Lint: the full `make lint` target includes `golangci-lint run ./...`; per the gate spec's explicit alternative ("make lint **or** scripts/check-docs-sync.sh, check-howto-coverage.sh, check-curated-howtos.sh, check-no-internal-refs.sh, check-version-bump.sh") the five named scripts were run instead.
 
 ## Commands (final results)
 

@@ -25,7 +25,7 @@ func TestBL27_Projects_EmptyList(t *testing.T) {
 
 func TestBL27_Projects_UpsertGetDelete(t *testing.T) {
 	s := bl90Server(t)
-	body := `{"name":"foo","dir":"/home/op/foo","default_backend":"claude-code"}`
+	body := `{"name":"foo","dir":"/home/<user>/foo","default_backend":"claude-code"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	s.handleProjects(rr, req)
@@ -42,7 +42,7 @@ func TestBL27_Projects_UpsertGetDelete(t *testing.T) {
 	}
 	var got map[string]any
 	_ = json.NewDecoder(rr.Body).Decode(&got)
-	if got["dir"] != "/home/op/foo" {
+	if got["dir"] != "/home/<user>/foo" {
 		t.Errorf("dir mismatch: %+v", got)
 	}
 

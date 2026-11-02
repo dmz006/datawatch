@@ -249,7 +249,7 @@ cap.
 
 **Key:** the canonical project tree.
 `filepath.EvalSymlinks(filepath.Clean(prd.ProjectDir))`, then the
-`git rev-parse --show-toplevel` of that path, so that `/home/user/workspace/datawatch`,
+`git rev-parse --show-toplevel` of that path, so that `/home/<user>/workspace/datawatch`,
 a symlink to it, and a subdirectory of it all map to the same key.
 
 **Worktree mode (BL407).** A PRD with `Git.Branch` set runs in its own
@@ -795,7 +795,7 @@ a simplification.
 **Facts** (from the daemon's own PRD records, read live 2026-10-14):
 
 - BL423 `9f311580` ("ci-watch: completion guardrail…"), project_dir
-  `/home/user/workspace/datawatch`, direct mode (`git: {}`).
+  `/home/<user>/workspace/datawatch`, direct mode (`git: {}`).
   - Approved 20:52:31 (all times are local, -04:00, 2026-10-13).
   - Ran its 7 tasks sequentially from 20:53 onward.
   - A `boot_reconcile` decision at 22:53:15 and a `run` at 22:53:17
@@ -832,7 +832,7 @@ a simplification.
    and `llm:claude-code`, whose `max_inflight` is 0 (unlimited). All were
    granted instantly.
 5. No tree lock exists, so nothing considered that the three shared
-   `/home/user/workspace/datawatch`.
+   `/home/<user>/workspace/datawatch`.
 
 **Consequences visible in the records:**
 

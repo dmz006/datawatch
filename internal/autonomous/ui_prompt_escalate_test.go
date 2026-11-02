@@ -26,7 +26,7 @@ func upeEvent() session.UIPromptEscalateEvent {
 		SessionName:     "datawatch-main",
 		Task:            "review branch",
 		Backend:         "claude-code",
-		ProjectDir:      "/home/user/work/app",
+		ProjectDir:      "/home/<user>/work/app",
 		PromptKind:      "autocompact-threshold",
 		SelectedOption:  "Autocompact at 400k",
 		SettingEnabled:  true,

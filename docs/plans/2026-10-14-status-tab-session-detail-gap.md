@@ -118,10 +118,10 @@ callback (`cmd/datawatch/main.go:2222-2246`). Conditions:
 
 **Live comparison: neither session type is populated.**
 
-- `/home/user/workspace/datawatch/.claude/` has no `settings.json` and no
+- `/home/<user>/workspace/datawatch/.claude/` has no `settings.json` and no
   `sprint/` directory. Both `ab22` (interactive) and `148a` (autonomous, just
   started) run in that project dir.
-- `/home/user/workspace/datawatch-app/.claude/sprint` (session `9245`) is also
+- `/home/<user>/workspace/datawatch-app/.claude/sprint` (session `9245`) is also
   absent.
 - So on this host `Install` is not taking effect for either session type.
   Possible causes:

@@ -110,9 +110,9 @@ func newFakeClaudeSession(clock *fakeClock, family string) *fakeClaudeSession {
 		snap: postTurnSnapshot{
 			State:         session.StateWaitingInput,
 			BackendFamily: family,
-			LogFile:       "/home/worker/.datawatch/logs/" + postTurnSessionID + ".log",
+			LogFile:       "/home/<user>/.datawatch/logs/" + postTurnSessionID + ".log",
 			TmuxSession:   "dw-" + postTurnSessionID,
-			ProjectDir:    "/home/worker/project",
+			ProjectDir:    "/home/<user>/project",
 			Task:          postTurnTaskText,
 			FullID:        "host-" + postTurnSessionID,
 		},

@@ -1291,7 +1291,7 @@ These are convenience endpoints for programmatic read/write. They are **not the 
 
 `GET /api/identity`
 - Returns the raw content of `identity.yaml` at the configured path
-- Response: `{"content": "...yaml string...", "path": "/home/user/.datawatch/identity.yaml"}`
+- Response: `{"content": "...yaml string...", "path": "/home/<user>/.datawatch/identity.yaml"}`
 - Returns `{"content": null}` with HTTP 204 if the file does not exist yet
 
 `PUT /api/identity`
@@ -1985,7 +1985,7 @@ The identity interview uses `POST /api/autonomous/prds` with `type`, `skill`, `f
 
 **Comm channel `autonomous create` key=value syntax:** The comm command gains optional `key=value` tokens parsed before the spec text. Example:
 ```
-autonomous create type=personal skill=interview-identity file=/home/user/.datawatch/identity.yaml my spec text
+autonomous create type=personal skill=interview-identity file=/home/<user>/.datawatch/identity.yaml my spec text
 ```
 Tokens matching `word=value` before any non-matching word are consumed as params; the rest is `spec`. This keeps the existing positional `autonomous create <spec>` working for the common case.
 

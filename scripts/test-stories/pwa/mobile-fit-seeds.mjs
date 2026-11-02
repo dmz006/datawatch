@@ -316,7 +316,7 @@ function baseSeed({ peers = [], local = {}, clusterNames = null } = {}) {
   responses['/api/channel/info'] = responseOk({
     kind: 'js',
     ready: true,
-    path: '/home/ops/.datawatch/channel/channel.js',
+    path: '/home/<user>/.datawatch/channel/channel.js',
     hint: '',
     node_path: '/usr/bin/node',
     stdio_enabled: true,
@@ -377,7 +377,7 @@ function baseSeed({ peers = [], local = {}, clusterNames = null } = {}) {
   });
   responses['/api/observer/envelope'] = responseOk({
     processes: [
-      makeProcess(101, 'node', '/usr/bin/node /home/ops/.datawatch/channel/channel.js'),
+      makeProcess(101, 'node', '/usr/bin/node /home/<user>/.datawatch/channel/channel.js'),
       makeProcess(202, 'claude', '/usr/local/bin/claude --model seed-model'),
     ],
   });

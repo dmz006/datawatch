@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Live smoke driver (scratch, not part of the repo). Run: env -u TMUX -u TMUX_TMPDIR bash smoke.sh
 set -uo pipefail
-ROOT=/home/user/.datawatch/prd-worktrees/3ebd0001
+ROOT=/home/<user>/.datawatch/prd-worktrees/3ebd0001
 SC=/tmp/claude-1000/-home-dmz--datawatch-prd-worktrees-3ebd0001/ffb0487e-297b-5ce8-84b7-b29af71cd754/scratchpad/smoke
 S="$SC/run"; rm -rf "$S"; mkdir -p "$S/bin" "$S/launcher" "$S/data" "$S/projects" "$S/ev"
 export TD_STATE_DIR="$S/tdstate"
