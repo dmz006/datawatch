@@ -2307,6 +2307,38 @@ Notes from the run: the shell backend echoes its `task` as a comment and does no
 
 Go tests behind the Tested column (all passed on 2026-10-29): `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/ -run 'WorkerQuestion' -count=1`, `go test ./internal/autonomous/ -run 'TestWorkerQuestion|TestAwaitDecision|TestQuestionTick|TestWaitReason_AwaitDecision' -count=1`, `go test ./internal/audit/ -run 'TestQuestionMarkerRefusedAudit' -count=1`, `go test ./internal/config/ ./internal/server/ -run 'TestQuestionsWorkerMarker' -count=1`.
 
+## Claude Code interstitial prompt dismissal — config keys and stats (unreleased)
+
+The four `session.*` settings and the `ui_prompts` stats object that bound the built-in per-kind dismissal table (today: the autocompact-threshold question). Unit rows live in `docs/testing-tracker.md` under *Claude Code interstitial prompt dismissal*; the rows below were run on 2026-11-01 from the repository root with `env -u TMUX -u TMUX_TMPDIR`.
+
+| Item | Test | Scenario | Type | Pass |
+|---|---|---|---|---|
+| Classifier — built-in table | `env -u TMUX go test ./internal/session/ -count=1 -run 'TestInterstitial'` | The autocompact fixture classifies `autocompact-threshold` with `Dismiss: [Esc]` only; idle, quoted and scrolled-out panes classify `none`; Enter never leaves the table; the safe-key allow list is closed | Go unit | PASS |
+| Dismissal — fake tmux | `env -u TMUX go test ./internal/session/ -count=1 -run 'TestUIPromptDismiss_'` | The 400k fixture auto-dismisses (Esc sent once, prompt cleared, state restored); the settle delay and the retry budget are honored; a cleared prompt never gets a key; the master switch off sends nothing; an unsafe key is refused once | Go unit | PASS |
+| Blocked state — park and restore | `env -u TMUX go test ./internal/session/ -count=1 -run 'TestUIPromptBlocked_'` | A running session parks to waiting-for-input, exits the park cleanly on clear, never restores a terminal state; the session JSON is byte-identical apart from the state; the timeline gains exactly one line per change | Go unit | PASS |
+| Escalation — question and alert | `env -u TMUX go test ./internal/autonomous/ ./internal/session/ -count=1 -run 'TestUIPromptEscalate_'` | After the retry budget the operator question fires once (stable occurrence token); channel off or store failure → one alert; withdrawn exactly once on prompt clear and on session end | Go unit | PASS |
+| Settings — default, validator, round-trip | `env -u TMUX go test ./internal/config/ ./internal/server/ ./cmd/datawatch/ ./internal/mcp/ ./internal/router/ -count=1 -run 'TestUIPromptSettings'` | Defaults (true / 5 / 30 / 2) when absent; a good write takes effect immediately and reads back unchanged (REST, CLI, MCP, comm); a bad value is refused naming the key and changes nothing | Go unit | PASS |
+| Stats and audit | `env -u TMUX go test ./internal/stats/ ./internal/audit/ -count=1` | `ui_prompts` (dismissed / not_cleared / refused / by_kind) is absent until tracked and well-shaped after; the audit actions carry kind, key and the option row on screen, escaped for the CEF sink | Go unit | PASS |
+| PWA session card | `node --test internal/server/web/app-ui-prompt-settings.test.js` and `go test ./internal/server/ -count=1 -run 'TestUIPromptSettingsPWA'` | The toggle and the three number rows render with the daemon's floors (0 / 1 / 1) and the links to the definitions section; all five locale bundles carry the eight keys (de, es, fr, ja differ from en); the new strings carry no ticket identifiers | node unit + Go unit | PASS |
+| REST config round-trip and stats shape against a live daemon | `scripts/release-smoke.sh` section 92 (own sandbox daemon) | The four keys at their defaults, the round-trip preserving operator values, the below-floor value refused with 400, `ui_prompts` absent or well-shaped on `GET /api/stats` | Integration | OWE (final gate) |
+| A real autocompact prompt dismisses itself | — | A worker stops on "Want to autocompact at 400k tokens instead?", Esc clears it within the settle delay, the audit shows `ui_prompt_dismissed`, the session resumes its task and the stats object counts one dismissal of kind `autocompact-threshold` | Live | OWE (final gate) |
+| Android / iPhone | — | The four fields read and write the `session.*` keys; `ui_prompts` renders absent and present without error | Mobile | OWE — filed under `docs/plans/parity-issues/claude-interstitial-prompt-dismissal.md` |
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-internal-refs.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash scripts/check-howto-coverage.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash scripts/check-docs-sync.sh` | PASS (both OpenAPI copies in sync) |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-docs.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-settings.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-dismissal.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-blocked-detection.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-escalation.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/ui-prompt-pwa-settings.sh` | PASS |
+| `env -u TMUX -u TMUX_TMPDIR bash .datawatch/verify/interstitial-prompt-classifier.sh` | PASS |
+
 ## Lane fill eligibility, lane counts and per-lane-kind mode (2026-11-01)
 
 Results for the lane fill eligibility work. The row-by-row list is the "Lane fill eligibility, lane counts and per-lane-kind mode" section of [testing-tracker.md](testing-tracker.md); the sandbox live check report is [plans/2026-10-31-lane-fill-eligibility-live-check.md](plans/2026-10-31-lane-fill-eligibility-live-check.md) and the gate report is [plans/2026-10-31-lane-fill-eligibility-final-gate-report.md](plans/2026-10-31-lane-fill-eligibility-final-gate-report.md).

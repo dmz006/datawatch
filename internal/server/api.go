@@ -5903,32 +5903,36 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
-				"llm_backend":                  s.cfg.Session.LLMBackend,
-				"max_sessions":                 s.cfg.Session.MaxSessions,
-				"reserved_interactive":         s.cfg.Session.EffectiveReservedInteractive(),
-				"input_idle_timeout":           s.cfg.Session.InputIdleTimeout,
-				"tail_lines":                   s.cfg.Session.TailLines,
-				"alert_context_lines":          s.cfg.Session.AlertContextLines,
-				"task_delivery_window_seconds": int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
-				"task_delivery_attempts":       s.cfg.Session.EffectiveTaskDeliveryAttempts(),
-				"store_flush_interval":         int(s.cfg.Session.EffectiveStoreFlushInterval().Milliseconds()),
-				"store_archive_after_days":     s.cfg.Session.EffectiveStoreArchiveAfterDays(),
-				"store_field_cap_kb":           s.cfg.Session.EffectiveStoreFieldCapKB(),
-				"store_side_file_cap_kb":       s.cfg.Session.EffectiveStoreSideFileCapKB(),
-				"default_project_dir":          s.cfg.Session.DefaultProjectDir,
-				"workspace_root":               s.cfg.Session.WorkspaceRoot,
-				"claude_enabled":               s.cfg.Session.ClaudeEnabled,
-				"auto_git_commit":              s.cfg.Session.AutoGitCommit,
-				"auto_git_init":                s.cfg.Session.AutoGitInit,
-				"git_default":                  s.cfg.Session.GitDefault,
-				"kill_sessions_on_exit":        s.cfg.Session.KillSessionsOnExit,
-				"one_shot_sessions":            s.cfg.Session.OneShotSessions,
-				"root_path":                    s.cfg.Session.RootPath,
-				"mcp_max_retries":              s.cfg.Session.MCPMaxRetries,
-				"schedule_settle_ms":           s.cfg.Session.ScheduleSettleMs,
-				"console_cols":                 s.cfg.Session.ConsoleCols,
-				"console_rows":                 s.cfg.Session.ConsoleRows,
-				"log_level":                    s.cfg.Session.LogLevel,
+				"llm_backend":                     s.cfg.Session.LLMBackend,
+				"max_sessions":                    s.cfg.Session.MaxSessions,
+				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
+				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
+				"tail_lines":                      s.cfg.Session.TailLines,
+				"alert_context_lines":             s.cfg.Session.AlertContextLines,
+				"task_delivery_window_seconds":    int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
+				"task_delivery_attempts":          s.cfg.Session.EffectiveTaskDeliveryAttempts(),
+				"dismiss_ui_prompts":              s.cfg.Session.EffectiveDismissUIPrompts(),
+				"ui_prompt_dismiss_delay_seconds": s.cfg.Session.EffectiveUIPromptDismissDelaySeconds(),
+				"ui_prompt_clear_bound_seconds":   s.cfg.Session.EffectiveUIPromptClearBoundSeconds(),
+				"ui_prompt_max_attempts":          s.cfg.Session.EffectiveUIPromptMaxAttempts(),
+				"store_flush_interval":            int(s.cfg.Session.EffectiveStoreFlushInterval().Milliseconds()),
+				"store_archive_after_days":        s.cfg.Session.EffectiveStoreArchiveAfterDays(),
+				"store_field_cap_kb":              s.cfg.Session.EffectiveStoreFieldCapKB(),
+				"store_side_file_cap_kb":          s.cfg.Session.EffectiveStoreSideFileCapKB(),
+				"default_project_dir":             s.cfg.Session.DefaultProjectDir,
+				"workspace_root":                  s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":                  s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":                 s.cfg.Session.AutoGitCommit,
+				"auto_git_init":                   s.cfg.Session.AutoGitInit,
+				"git_default":                     s.cfg.Session.GitDefault,
+				"kill_sessions_on_exit":           s.cfg.Session.KillSessionsOnExit,
+				"one_shot_sessions":               s.cfg.Session.OneShotSessions,
+				"root_path":                       s.cfg.Session.RootPath,
+				"mcp_max_retries":                 s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms":              s.cfg.Session.ScheduleSettleMs,
+				"console_cols":                    s.cfg.Session.ConsoleCols,
+				"console_rows":                    s.cfg.Session.ConsoleRows,
+				"log_level":                       s.cfg.Session.LogLevel,
 				"summarizer": map[string]interface{}{
 					"enabled": s.cfg.Session.Summarizer.Enabled,
 					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
@@ -7007,6 +7011,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// identity.backups_to_keep: a bad value rejects the whole PUT before
 	// anything is applied, by the same rule the config file load uses.
 	if err := validateIdentityBackupsPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// session.dismiss_ui_prompts and the session.ui_prompt_* keys: a bad value
+	// rejects the whole PUT before anything is applied, by the same rules the
+	// config file load uses.
+	if err := validateUIPromptPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8684,6 +8695,28 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Identity.BackupsToKeep = &n
 			}
+		case "session.dismiss_ui_prompts":
+			// Bool (a string such as "true" is no different from 1 in JSON —
+			// only a real boolean is accepted, matching session.skip_permissions).
+			b, isBool := v.(bool)
+			if isBool {
+				cfg.Session.DismissUIPrompts = &b
+			}
+		case "session.ui_prompt_dismiss_delay_seconds":
+			// Validated in handlePutConfig to a whole number >= 0.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptDismissDelaySeconds = &n
+			}
+		case "session.ui_prompt_clear_bound_seconds":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptClearBoundSeconds = &n
+			}
+		case "session.ui_prompt_max_attempts":
+			// Validated in handlePutConfig to a whole number >= 1.
+			if n, ok := toInt(v); ok {
+				cfg.Session.UIPromptMaxAttempts = &n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -10247,6 +10280,51 @@ func validateIdentityBackupsPatch(patch map[string]interface{}) error {
 			v, config.DefaultIdentityBackupsToKeep)
 	}
 	return config.ValidateIdentityBackupsToKeep(n)
+}
+
+// validateUIPromptPatch checks session.dismiss_ui_prompts and the three
+// session.ui_prompt_* keys: real types and whole-number bounds, by the same
+// rules the config file load uses.
+func validateUIPromptPatch(patch map[string]interface{}) error {
+	var firstErr error
+	err := func(e error) {
+		if firstErr == nil && e != nil {
+			firstErr = e
+		}
+	}
+	if v, ok := patch["session.dismiss_ui_prompts"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			firstErr = fmt.Errorf("session.dismiss_ui_prompts: %v is invalid; use a boolean (true or false)", v)
+		}
+	}
+	if v, ok := patch["session.ui_prompt_dismiss_delay_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_dismiss_delay_seconds: %v is invalid; use a whole number >= 0 (0 = send at once; default %d)",
+				v, config.DefaultUIPromptDismissDelaySeconds))
+		} else {
+			err(config.ValidateUIPromptDismissDelaySeconds(n))
+		}
+	}
+	if v, ok := patch["session.ui_prompt_clear_bound_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_clear_bound_seconds: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultUIPromptClearBoundSeconds))
+		} else {
+			err(config.ValidateUIPromptClearBoundSeconds(n))
+		}
+	}
+	if v, ok := patch["session.ui_prompt_max_attempts"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("session.ui_prompt_max_attempts: %v is invalid; use a whole number >= 1 (default %d)",
+				v, config.DefaultUIPromptMaxAttempts))
+		} else {
+			err(config.ValidateUIPromptMaxAttempts(n))
+		}
+	}
+	return firstErr
 }
 
 // wholeNumber reports v as an int when it is a JSON number with no fractional

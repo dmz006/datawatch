@@ -486,6 +486,20 @@ Examples:
 - `schedule-results` → all schedules and their most recent result
 - `schedule-results imap-hourly-rules` → recent results for that one schedule
 
+### Interstitial prompt settings via `configure`
+
+Claude Code interstitial prompts (the *“Want to autocompact at 400k tokens instead?”* question, for instance) are recognised per-kind and dismissed with **Esc** by default (never Enter, which would confirm the highlighted option and can change a setting). They are bounded and audited, and all settings take effect immediately:
+
+```
+configure session.dismiss_ui_prompts=false       — never dismiss; flag the operator instead
+configure session.ui_prompt_dismiss_delay_seconds=10   — wait 10 s before the first key
+configure session.ui_prompt_clear_bound_seconds=60     — 60 s between keys per prompt
+configure session.ui_prompt_max_attempts=3             — up to 3 keys per prompt
+configure session.dismiss_ui_prompts     — show current value
+```
+
+Defaults when unset: `dismiss_ui_prompts=true`, delay 5 s, clear bound 30 s, 2 attempts. When the budget is spent (or dismissal is off), the session is flagged waiting-for-input and an operator question is raised with the captured screen tail. Counters show in the stats API under `ui_prompts`. See `docs/howto/sessions-deep-dive.md` and `docs/operations.md` for the full rules.
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.

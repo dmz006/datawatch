@@ -1,0 +1,12 @@
+[1m  Done. The lane-fill summary is written to notes/lane-fill.md and the[0m
+[1m  retry wrapper now backs off between attempts.[0m
+[1m[0m
+[1m  ┌────────────────────────────────────────────────────────────────────────┐[0m
+[1m  │                                                                        │[0m
+[38;5;214m  │  Want to autocompact at 400k tokens instead?                           │[0m
+[1m  │                                                                        │[0m
+[1m  │  ❯ Autocompact at 400k                                                 │[0m
+[1m  │    Keep auto (1m tokens)                                               │[0m
+[1m  │                                                                        │[0m
+[1m  └────────────────────────────────────────────────────────────────────────┘[0m
+[90m  ↑ ↓ to choose · Enter to confirm · Esc not now[0m

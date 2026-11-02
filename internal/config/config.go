@@ -1843,6 +1843,29 @@ type SessionConfig struct {
 	// makes before giving up (default 3).
 	TaskDeliveryAttempts int `yaml:"task_delivery_attempts,omitempty" json:"task_delivery_attempts,omitempty"`
 
+	// DismissUIPrompts (session.dismiss_ui_prompts) switches UI prompt
+	// dismissal on; absent reads as the default true. A pointer without
+	// omitempty so absent and an explicit false differ, and an explicit
+	// false survives a YAML/JSON round trip and a PUT /api/config write
+	// (the identity.backups_to_keep rule).
+	DismissUIPrompts *bool `yaml:"dismiss_ui_prompts" json:"dismiss_ui_prompts"`
+
+	// UIPromptDismissDelaySeconds (session.ui_prompt_dismiss_delay_seconds) is
+	// how many whole seconds to wait before sending the dismissal; absent
+	// reads as the default 5, and an explicit 0 sends at once. Pointer as
+	// above so an explicit 0 survives a round trip.
+	UIPromptDismissDelaySeconds *int `yaml:"ui_prompt_dismiss_delay_seconds" json:"ui_prompt_dismiss_delay_seconds"`
+
+	// UIPromptClearBoundSeconds (session.ui_prompt_clear_bound_seconds) is
+	// the whole-seconds clear bound; a whole number >= 1, absent reads as
+	// the default 30.
+	UIPromptClearBoundSeconds *int `yaml:"ui_prompt_clear_bound_seconds" json:"ui_prompt_clear_bound_seconds"`
+
+	// UIPromptMaxAttempts (session.ui_prompt_max_attempts) is how many
+	// dismissal attempts are made; a whole number >= 1, absent reads as the
+	// default 2.
+	UIPromptMaxAttempts *int `yaml:"ui_prompt_max_attempts" json:"ui_prompt_max_attempts"`
+
 	// StoreFlushInterval is how long the session store coalesces changes
 	// before the background writer saves them, in milliseconds. Unset means
 	// the 1000 ms default; 0 writes through on every change.
@@ -2112,6 +2135,111 @@ func (s *SessionConfig) EffectiveStoreArchiveAfterDays() int {
 		return 0
 	}
 	return *s.StoreArchiveAfterDays
+}
+
+// DefaultUIPrompt values: what the UI prompt handling keys read when the
+// corresponding session.* key is absent.
+const (
+	// DefaultUIPromptEnabled is what dismiss_ui_prompts reads when absent.
+	DefaultUIPromptEnabled = true
+	// DefaultUIPromptDismissDelaySeconds is what
+	// ui_prompt_dismiss_delay_seconds reads when absent (an explicit 0 =
+	// send at once; the default is never 0).
+	DefaultUIPromptDismissDelaySeconds = 5
+	// DefaultUIPromptClearBoundSeconds is what ui_prompt_clear_bound_seconds
+	// reads when absent.
+	DefaultUIPromptClearBoundSeconds = 30
+	// DefaultUIPromptMaxAttempts is what ui_prompt_max_attempts reads when
+	// absent.
+	DefaultUIPromptMaxAttempts = 2
+)
+
+// EffectiveDismissUIPrompts returns session.dismiss_ui_prompts: true when
+// the key is absent.
+func (s *SessionConfig) EffectiveDismissUIPrompts() bool {
+	if s.DismissUIPrompts == nil {
+		return DefaultUIPromptEnabled
+	}
+	return *s.DismissUIPrompts
+}
+
+// EffectiveUIPromptDismissDelaySeconds returns
+// session.ui_prompt_dismiss_delay_seconds: 5 when the key is absent.
+func (s *SessionConfig) EffectiveUIPromptDismissDelaySeconds() int {
+	if s.UIPromptDismissDelaySeconds == nil {
+		return DefaultUIPromptDismissDelaySeconds
+	}
+	return *s.UIPromptDismissDelaySeconds
+}
+
+// EffectiveUIPromptClearBoundSeconds returns
+// session.ui_prompt_clear_bound_seconds: 30 when the key is absent.
+func (s *SessionConfig) EffectiveUIPromptClearBoundSeconds() int {
+	if s.UIPromptClearBoundSeconds == nil {
+		return DefaultUIPromptClearBoundSeconds
+	}
+	return *s.UIPromptClearBoundSeconds
+}
+
+// EffectiveUIPromptMaxAttempts returns session.ui_prompt_max_attempts: 2
+// when the key is absent.
+func (s *SessionConfig) EffectiveUIPromptMaxAttempts() int {
+	if s.UIPromptMaxAttempts == nil {
+		return DefaultUIPromptMaxAttempts
+	}
+	return *s.UIPromptMaxAttempts
+}
+
+// ValidateUIPromptDismissDelaySeconds is the
+// session.ui_prompt_dismiss_delay_seconds rule: a whole number >= 0 (0 =
+// send at once); absent reads as the default 5. The config file load, PUT
+// /api/config and every surface that rides it share this rule.
+func ValidateUIPromptDismissDelaySeconds(n int) error {
+	if n < 0 {
+		return fmt.Errorf("session.ui_prompt_dismiss_delay_seconds: %d is invalid (use a whole number >= 0; 0 = send at once; default %d)",
+			n, DefaultUIPromptDismissDelaySeconds)
+	}
+	return nil
+}
+
+// ValidateUIPromptClearBoundSeconds is the session.ui_prompt_clear_bound_seconds
+// rule: a whole number >= 1; absent reads as the default 30.
+func ValidateUIPromptClearBoundSeconds(n int) error {
+	if n < 1 {
+		return fmt.Errorf("session.ui_prompt_clear_bound_seconds: %d is invalid (use a whole number >= 1; default %d)",
+			n, DefaultUIPromptClearBoundSeconds)
+	}
+	return nil
+}
+
+// ValidateUIPromptMaxAttempts is the session.ui_prompt_max_attempts rule:
+// a whole number >= 1; absent reads as the default 2.
+func ValidateUIPromptMaxAttempts(n int) error {
+	if n < 1 {
+		return fmt.Errorf("session.ui_prompt_max_attempts: %d is invalid (use a whole number >= 1; default %d)",
+			n, DefaultUIPromptMaxAttempts)
+	}
+	return nil
+}
+
+// validate checks the UI prompt handling keys; it runs at config load.
+func (s *SessionConfig) validate() error {
+	if s.UIPromptDismissDelaySeconds != nil {
+		if err := ValidateUIPromptDismissDelaySeconds(*s.UIPromptDismissDelaySeconds); err != nil {
+			return err
+		}
+	}
+	if s.UIPromptClearBoundSeconds != nil {
+		if err := ValidateUIPromptClearBoundSeconds(*s.UIPromptClearBoundSeconds); err != nil {
+			return err
+		}
+	}
+	if s.UIPromptMaxAttempts != nil {
+		if err := ValidateUIPromptMaxAttempts(*s.UIPromptMaxAttempts); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // EffectiveStoreFieldCapKB returns the session field cap in KB, falling back
@@ -5841,6 +5969,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.Questions.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Session.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {

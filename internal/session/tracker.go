@@ -108,6 +108,24 @@ func (t *Tracker) RecordNeedsInput(prompt string) error {
 	return t.commitAll("session: waiting for input — " + truncateStr(prompt, 50))
 }
 
+// RecordUIPrompt appends exactly one timestamped ui-prompt line to
+// timeline.md (recognised or cleared), in the style of RecordNeedsInput.
+// Callers invoke it at most once per occurrence — the screen-capture tick
+// that recognises the prompt and the tick that clears it — never per tick.
+func (t *Tracker) RecordUIPrompt(kind, selected, event string) error {
+	line := fmt.Sprintf("%s | ui-prompt | %s | kind=%s", timestamp(), event, kind)
+	if selected != "" {
+		line += " | selected=" + truncateStr(selected, 60)
+	}
+	if err := t.appendTimeline(line); err != nil {
+		return err
+	}
+	if err := t.updateReadme(); err != nil {
+		return err
+	}
+	return t.commitAll("session: " + event)
+}
+
 // RecordInputSent appends the user's response to conversation.md, commits.
 // source identifies where the input came from (e.g. "signal", "web", "mcp", "filter", "schedule").
 func (t *Tracker) RecordInputSent(input, source string) error {

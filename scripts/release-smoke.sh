@@ -51,6 +51,11 @@
 #
 # §79 runs the eleven PWA slow-network load scenarios (TS-802..TS-812) against this smoke daemon itself (never a second daemon).
 # The shared navigation section after it runs the phone-width navigation scenario the same way.
+# §92 covers the Claude Code interstitial-prompt dismissal settings: the four session.*
+# prompt keys at their defaults, a changed-value PUT read back applied, bad values
+# (zero attempts, a negative delay, a non-integer) refused without any change, and the
+# ui_prompts counters object in GET /api/stats — writing only against this script's
+# own isolated daemon, never an external one.
 #
 # Returns 0 on success, non-zero on first failure.
 
@@ -4857,7 +4862,11 @@ H "81. Mobile-fit view runner (release smoke)"
 # are missing, or no browser could be launched.
 MOBILE_FIT_SCRIPT="$(dirname "$0")/release-smoke-mobile-fit.sh"
 if [[ -f "$MOBILE_FIT_SCRIPT" ]]; then
-  if MF_OUT=$(DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
+  # The runner gets its own daemon-lifecycle state dir (-u TD_STATE_DIR -u
+  # TD_OWNER): its EXIT trap ends every process recorded in the state dir it
+  # sees, and the inherited one holds this script's isolated daemon, which
+  # would be ended the moment the runner exits (even on a clean skip).
+  if MF_OUT=$(env -u TD_STATE_DIR -u TD_OWNER DATAWATCH_BASE="$BASE" DATAWATCH_TOKEN="$TOK" bash "$MOBILE_FIT_SCRIPT" 2>&1); then
     while IFS= read -r line; do
       [[ -z "$line" ]] && continue
       [[ "$line" == OK:* ]] && continue
@@ -6165,6 +6174,146 @@ assert any(b.get("role")=="smoke-role-a" for b in d["backups"]), "no backup with
 
     # Leave the scratch daemon's identity reset.
     curl "${curl_args[@]}" -X POST -o /dev/null "$BASE/api/identity/reset" 2>/dev/null || true
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+H "92. Claude Code interstitial prompt dismissal — session.ui_prompt* config keys + stats ui_prompts"
+# The four settings (see session/ui_prompt_settings.go):
+#   session.dismiss_ui_prompts                bool,   default true
+#   session.ui_prompt_dismiss_delay_seconds   0+,     default 5
+#   session.ui_prompt_clear_bound_seconds     1+,     default 30
+#   session.ui_prompt_max_attempts            1+,     default 2
+# This section runs ONLY against this script's own isolated daemon (never an
+# external / production daemon, whose operator values it would overwrite):
+#   1) GET /api/config shows the four keys at their defaults
+#      (dismiss_ui_prompts true, delay 5, clear bound 30, max attempts 2)
+#   2) a PUT of changed values reads back and is applied
+#   3) a bad value (zero attempts, a negative delay, a non-integer) is
+#      refused with a 4xx and nothing changes
+#   4) GET /api/stats is well-formed and, whenever the ui_prompts counters
+#      object is present, it carries zero counts and the by-kind map (on a
+#      fresh daemon it is legitimately absent — the in-memory counters start
+#      at zero and the field is only emitted into the stats snapshot after
+#      the first dismissal, which needs a live Claude Code interstitial)
+#   5) every value the section changed is restored to its original value;
+#      it creates no entity, so no add_cleanup kind is needed, and it never
+#      widens the orphan sweep.
+if [[ "$SECTION_SKIP" == "1" ]]; then
+  :
+elif [[ "$EXTERNAL_DAEMON" -ne 0 ]]; then
+  skip "ui_prompt config keys: external daemon (DW_BASE set) may hold the operator's live settings; the section runs only against this script's own isolated daemon"
+else
+  # Read one session.* key from GET /api/config (booleans as true/false, a
+  # missing key as the empty string).
+  _ip_val() {
+    curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c "
+import json,sys
+v=json.load(sys.stdin).get('session',{}).get('$1')
+if v is True: print('true')
+elif v is False: print('false')
+elif v is None: print('')
+else: print(v)
+" 2>/dev/null || echo "?"
+  }
+  # PUT /api/config with a JSON body, answering the HTTP status code.
+  _ip_put() {
+    curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" -d "$1" \
+      -o /dev/null -w '%{http_code}' "$BASE/api/config" 2>/dev/null || echo "000"
+  }
+
+  # -- 1) the four keys at their defaults -------------------------------------
+  if curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c '
+import json,sys
+s=json.load(sys.stdin).get("session",{})
+assert s.get("dismiss_ui_prompts") is True
+assert s.get("ui_prompt_dismiss_delay_seconds")==5
+assert s.get("ui_prompt_clear_bound_seconds")==30
+assert s.get("ui_prompt_max_attempts")==2
+' 2>/dev/null; then
+    ok "defaults: dismiss_ui_prompts=true, dismiss_delay_seconds=5, clear_bound_seconds=30, max_attempts=2"
+  else
+    ko "defaults: a session.ui_prompt* key is missing or not at its default"
+  fi
+
+  # -- 2) a PUT of changed values reads back and is applied --------------------
+  _IP_DISMISS=$(_ip_val dismiss_ui_prompts)
+  _IP_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+  _IP_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+  _IP_MAX=$(_ip_val ui_prompt_max_attempts)
+  if [[ -z "$_IP_DISMISS" || "$_IP_DISMISS" == "?" || -z "$_IP_DELAY" || -z "$_IP_BOUND" || -z "$_IP_MAX" ]]; then
+    skip "changed-value round-trip: GET /api/config could not resolve all four keys; skipping the write steps"
+  else
+    # Changed values: the boolean flipped; each number moved to another
+    # value inside its allowed range (delay >= 0, bound >= 1, attempts >= 1)
+    # that is guaranteed to differ from whatever the daemon holds.
+    _ip_flip() { [[ "$1" == "true" ]] && echo false || echo true; }
+    _ip_diff() { [[ "$1" == "$2" ]] && echo "$3" || echo "$2"; }
+    _N_DISMISS=$(_ip_flip "$_IP_DISMISS")
+    _N_DELAY=$(_ip_diff "$_IP_DELAY" 3 7)
+    _N_BOUND=$(_ip_diff "$_IP_BOUND" 45 60)
+    _N_MAX=$(_ip_diff "$_IP_MAX" 3 4)
+    _N_CODE=$(_ip_put "{\"session.dismiss_ui_prompts\": $_N_DISMISS, \"session.ui_prompt_dismiss_delay_seconds\": $_N_DELAY, \"session.ui_prompt_clear_bound_seconds\": $_N_BOUND, \"session.ui_prompt_max_attempts\": $_N_MAX}")
+    _R_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _R_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _R_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _R_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_N_CODE" == "200" && "$_R_DISMISS" == "$_N_DISMISS" && "$_R_DELAY" == "$_N_DELAY" && "$_R_BOUND" == "$_N_BOUND" && "$_R_MAX" == "$_N_MAX" ]]; then
+      ok "changed values PUT ($_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX) answered 200 and read back applied"
+    else
+      ko "changed-value PUT answered HTTP $_N_CODE or did not apply (read back $_R_DISMISS/$_R_DELAY/$_R_BOUND/$_R_MAX, wanted $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    fi
+
+    # -- 3) bad values: refused 4xx, nothing changes ---------------------------
+    _B1_CODE=$(_ip_put '{"session.ui_prompt_max_attempts": 0}')
+    if [[ "$_B1_CODE" == "400" ]]; then ok "max_attempts=0 (below the minimum of 1) refused with 400"; else ko "max_attempts=0 answered HTTP $_B1_CODE (expected 400)"; fi
+    _B2_CODE=$(_ip_put '{"session.ui_prompt_dismiss_delay_seconds": -8}')
+    if [[ "$_B2_CODE" == "400" ]]; then ok "negative delay (-8) refused with 400"; else ko "negative delay answered HTTP $_B2_CODE (expected 400)"; fi
+    _B3_CODE=$(_ip_put '{"session.ui_prompt_clear_bound_seconds": 1.5}')
+    if [[ "$_B3_CODE" == "400" ]]; then ok "non-integer clear bound (1.5) refused with 400"; else ko "non-integer clear bound answered HTTP $_B3_CODE (expected 400)"; fi
+    # Every refused PUT above must have left the config exactly where step 2
+    # left it.
+    _U_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _U_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _U_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _U_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_U_DISMISS" == "$_N_DISMISS" && "$_U_DELAY" == "$_N_DELAY" && "$_U_BOUND" == "$_N_BOUND" && "$_U_MAX" == "$_N_MAX" ]]; then
+      ok "the refused bad-value PUTs changed nothing (values are still $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    else
+      ko "a refused bad-value PUT changed the config (read back $_U_DISMISS/$_U_DELAY/$_U_BOUND/$_U_MAX, wanted $_N_DISMISS/$_N_DELAY/$_N_BOUND/$_N_MAX)"
+    fi
+
+    # -- 5) restore every value the section changed ----------------------------
+    _RS_CODE=$(_ip_put "{\"session.dismiss_ui_prompts\": $_IP_DISMISS, \"session.ui_prompt_dismiss_delay_seconds\": $_IP_DELAY, \"session.ui_prompt_clear_bound_seconds\": $_IP_BOUND, \"session.ui_prompt_max_attempts\": $_IP_MAX}")
+    _S_DISMISS=$(_ip_val dismiss_ui_prompts)
+    _S_DELAY=$(_ip_val ui_prompt_dismiss_delay_seconds)
+    _S_BOUND=$(_ip_val ui_prompt_clear_bound_seconds)
+    _S_MAX=$(_ip_val ui_prompt_max_attempts)
+    if [[ "$_RS_CODE" == "200" && "$_S_DISMISS" == "$_IP_DISMISS" && "$_S_DELAY" == "$_IP_DELAY" && "$_S_BOUND" == "$_IP_BOUND" && "$_S_MAX" == "$_IP_MAX" ]]; then
+      ok "all four keys restored to their original values ($_IP_DISMISS/$_IP_DELAY/$_IP_BOUND/$_IP_MAX)"
+    else
+      ko "restore answered HTTP $_RS_CODE or the original values did not hold (read back $_S_DISMISS/$_S_DELAY/$_S_BOUND/$_S_MAX)"
+    fi
+  fi
+
+  # -- 4) the ui_prompts counters object in GET /api/stats ----------------------
+  STATS92=$(curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null || echo "")
+  if echo "$STATS92" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+u=d.get("ui_prompts")
+# On a fresh daemon the in-memory counters start at zero and the field is
+# only emitted into the stats snapshot after the first dismissal, so absent
+# is the expected, correct shape here; present with non-zero counts would
+# mean the daemon already saw an interstitial — also acceptable, malformed
+# is not.
+if u is not None:
+    assert isinstance(u.get("dismissed"),int) and isinstance(u.get("not_cleared"),int) and isinstance(u.get("refused"),int)
+    assert isinstance(u.get("by_kind"),dict)
+' 2>/dev/null; then
+    ok "stats: ui_prompts object absent (nothing dismissed yet) or well-shaped (dismissed/not_cleared/refused counts + by_kind map)"
+  else
+    ko "stats: ui_prompts present but malformed or the stats snapshot is broken: $(echo "$STATS92" | head -c 200)"
   fi
 fi
 

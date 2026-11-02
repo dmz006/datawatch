@@ -503,6 +503,29 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 
 ---
 
+### Claude Code interstitial prompts
+
+Some Claude Code sessions pause on interstitial prompts that block the session's input instead of a task — the most common is the autocompact threshold question: Claude Code asks *“Want to autocompact at 400k tokens instead?”* and waits between “**Autocompact at 400k**” and “Keep auto”, a choice where pressing **Enter** confirms the highlighted option and changes a setting. Idle prompts and similar notices sit the same way. Left alone, such a prompt makes the session look healthy while it sits idle — a worker can sit on it for an hour, holding its lane, until a supervisor watch flags it as silent.
+
+datawatch recognises the known interstitial prompts in a session's terminal output (a small, explicit kind table, matched on the last few non-empty lines after ANSI escape codes are stripped) and closes them by sending the one safe key for that prompt kind — **Esc** (“not now”), never **Enter** on a choice that changes a setting — instead of typing anything into the prompt. The dismissal is bounded: a fixed delay before the first key, a retry only while the prompt is still visible after a re-capture, and a small attempt budget before the session is flagged. Every outcome is audited (`ui_prompt_dismissed` with the prompt kind, `ui_prompt_not_cleared` after the budget is spent, `ui_prompt_refused` when a screen could not be classified), and when the budget is exhausted datawatch raises an operator question describing the prompt and the screen tail so the operator can answer it by hand. A per-kind counter feeds `GET /api/stats` (the `ui_prompts` object) and the Prometheus `ui_prompt_dismissals_total` metric.
+
+Known prompt kinds: the built-in table today holds one kind, **autocompact-threshold** — the “Want to autocompact at Nk tokens instead?” question with the Autocompact / Keep auto option pair and the “choose · confirm · Esc not now” hint line — dismissed with **Esc** since **Enter** would pick the highlighted row and can change a setting. Everything else classifies as *none* by design: idle prompts, quoted prompt wording, and every startup or decision dialog (workspace trust, permission and usage-limit prompts) are deliberately left for the operator. Matching is strict — all anchor phrases plus the prompt's own hint line must be present in the last 20 non-empty lines, ANSI stripped — and a partial or in-doubt capture is *none*. Kinds are governed, not configured: a new kind is only added in-tree with its safe dismissal key, the reason that key is safe, and a recorded fixture carrying the exact wording and its source — see the *Detection Pattern Governance* note in `AGENT.md`.
+
+The four Settings → Sessions controls behind this behaviour (also `configure session.dismiss_ui_prompts=…` as a chat verb and the same keys on `PUT /api/config`, `config_set` and `datawatch config set`):
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `session.dismiss_ui_prompts` | on | Recognise and dismiss known interstitial prompts automatically. Switch off to answer them yourself. |
+| `session.ui_prompt_dismiss_delay_seconds` | `5` | How long datawatch waits after detecting a prompt before sending the dismissal. `0` sends it at once. |
+| `session.ui_prompt_clear_bound_seconds` | `30` | How long the dismissal must hold before the prompt counts as cleared. A prompt that reappears inside the bound is retried. |
+| `session.ui_prompt_max_attempts` | `2` | How many dismissal attempts datawatch makes before flagging the session and asking the operator to step in. |
+
+**Where it shows up:** Settings → Sessions in the PWA (four rows, each with a link to this section); the `configure` chat verb; `PUT /api/config` and the MCP `config_set` tool; `datawatch config set`/`get` in the CLI; the session's needs-input and question channels on escalation; the audit log entries above; the `ui_prompts` counters in `GET /api/stats` and the `get_stats` MCP tool; and the Prometheus `ui_prompt_dismissals_total` metric.
+
+**See also:** [`howto/sessions-deep-dive.md`](howto/sessions-deep-dive.md), `docs/plans/parity-issues/claude-interstitial-prompt-dismissal.md`
+
+---
+
 ### Inside a session — terminal area
 
 `Tmux` tab is the live xterm.js view of the tmux pane the LLM is attached to. Read-only by default; tap the input bar to send commands.

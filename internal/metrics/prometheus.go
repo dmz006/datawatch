@@ -2,9 +2,11 @@
 package metrics
 
 import (
+	"net/http"
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
 )
 
 var (
@@ -183,6 +185,16 @@ var (
 		Name: "datawatch_worker_questions_total",
 		Help: "Worker question marker outcomes (raised, duplicate, refused, parked, resumed)",
 	}, []string{"outcome"})
+	// Interstitial UI-prompt dismissals: what became of the safe dismiss key
+	// the daemon pressed on a recognised interstitial prompt. outcome:
+	// dismissed (the key cleared the prompt) | not_cleared (attempts cap
+	// used up, the daemon gave up on keys for the occurrence) | refused (the
+	// send-site guard refused the key, nothing was sent). kind is the
+	// interstitial prompt kind (e.g. autocompact).
+	UIPromptDismissalsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_ui_prompt_dismissals_total",
+		Help: "Interstitial UI-prompt dismissals by kind and outcome (dismissed, not_cleared, refused)",
+	}, []string{"kind", "outcome"})
 	// Session result endpoint metrics (scheduled-job structured results).
 	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
 	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
@@ -195,25 +207,31 @@ var (
 	})
 )
 
-// Register registers all Prometheus metrics.
+// Register registers all Prometheus metrics. Re-calling it is safe:
+// the second call is a no-op.
+var registerOnce sync.Once
+
 func Register() {
-	prometheus.MustRegister(
-		CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
-		VerifierRuns, VerifierWaitSeconds, VerifierRunSeconds,
-		SessionsActive, SessionsTotal,
-		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
-		MessagesTotal, AlertsTotal,
-		AccessLogEventsTotal,
-		SessionResultsPosted, SessionResultsRejected,
-		RTKTokensSaved, RTKSavingsPct,
-		VerifierDiffInjectionsTotal,
-		InjectionGuardHitsTotal,
-		QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
-		WebSearchQueriesTotal, WebSearchErrorsTotal,
-		AcmeCertExpirySeconds, AcmeRenewalsTotal,
-		WorkerQuestionsTotal,
-		SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
-	)
+	registerOnce.Do(func() {
+		prometheus.MustRegister(
+			CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
+			VerifierRuns, VerifierWaitSeconds, VerifierRunSeconds,
+			SessionsActive, SessionsTotal,
+			CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
+			MessagesTotal, AlertsTotal,
+			AccessLogEventsTotal,
+			SessionResultsPosted, SessionResultsRejected,
+			RTKTokensSaved, RTKSavingsPct,
+			VerifierDiffInjectionsTotal,
+			InjectionGuardHitsTotal,
+			QualityGateRunsTotal, QualityGatePassTotal, QualityGateRegressionTotal,
+			WebSearchQueriesTotal, WebSearchErrorsTotal,
+			AcmeCertExpirySeconds, AcmeRenewalsTotal,
+			WorkerQuestionsTotal,
+			UIPromptDismissalsTotal,
+			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
+		)
+	})
 }
 
 // Handler returns an HTTP handler for the /metrics endpoint.

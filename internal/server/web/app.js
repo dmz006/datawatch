@@ -8926,6 +8926,12 @@ const DOCS_LINKS_BY_KEY = {
   gc_dw: 'howto/setup-and-install.md',
   gc_autoupdate: DOCS_DEFINITIONS + '#self-update-v8-9-21',
   gc_sess: DOCS_DEFINITIONS + '#sessions',
+  // UI prompt handling (Claude Code interstitial prompts) — all four
+  // Settings → Sessions rows open the same definitions section.
+  settings_dismiss_ui_prompts: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
+  settings_ui_prompt_dismiss_delay_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
+  settings_ui_prompt_clear_bound_seconds: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
+  settings_ui_prompt_max_attempts: DOCS_DEFINITIONS + '#claude-code-interstitial-prompts',
   gc_summarizer: DOCS_DEFINITIONS + '#session-ai-summarizer',
   gc_whisper: 'howto/voice-input.md',
   test_whisper: 'howto/voice-input.md',
@@ -16427,6 +16433,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },
+    // UI prompt handling — Claude Code interstitial prompts: the on/off
+    // switch (default on) plus the three numeric knobs. Every row links to
+    // the same definitions manual section via docsKey; the numeric rows
+    // save through savePromptNumberSetting, which enforces exactly the
+    // floor the daemon enforces (whole number; delay ≥ 0 where 0 = send at
+    // once; clear bound and max attempts ≥ 1) before sending the PUT.
+    { key: 'session.dismiss_ui_prompts', label: 'Dismiss Claude Code interstitial prompts', labelKey: 'settings_dismiss_ui_prompts', helpKey: 'settings_dismiss_ui_prompts_help', docsKey: 'settings_dismiss_ui_prompts', type: 'toggle' },
+    { key: 'session.ui_prompt_dismiss_delay_seconds', label: 'UI prompt dismiss delay (sec, 0 = at once)', labelKey: 'settings_ui_prompt_dismiss_delay_seconds', helpKey: 'settings_ui_prompt_dismiss_delay_seconds_help', docsKey: 'settings_ui_prompt_dismiss_delay_seconds', type: 'number', min: 0, step: 1, placeholder: '5', onchange: "savePromptNumberSetting('session.ui_prompt_dismiss_delay_seconds', this.value, 0)" },
+    { key: 'session.ui_prompt_clear_bound_seconds', label: 'UI prompt clear bound (sec)', labelKey: 'settings_ui_prompt_clear_bound_seconds', helpKey: 'settings_ui_prompt_clear_bound_seconds_help', docsKey: 'settings_ui_prompt_clear_bound_seconds', type: 'number', min: 1, step: 1, placeholder: '30', onchange: "savePromptNumberSetting('session.ui_prompt_clear_bound_seconds', this.value, 1)" },
+    { key: 'session.ui_prompt_max_attempts', label: 'UI prompt max attempts', labelKey: 'settings_ui_prompt_max_attempts', helpKey: 'settings_ui_prompt_max_attempts_help', docsKey: 'settings_ui_prompt_max_attempts', type: 'number', min: 1, step: 1, placeholder: '2', onchange: "savePromptNumberSetting('session.ui_prompt_max_attempts', this.value, 1)" },
     { key: 'server.suppress_active_toasts', label: 'Suppress toasts for active session', type: 'toggle' },
   ]},
   // Section title "Session AI Summarizer" → slug "session-ai-summarizer" →
@@ -17605,7 +17621,7 @@ function loadGeneralConfig() {
             const checked = !!val;
             const _togHint = _fieldHintHTML(f);
             html += `<div class="settings-row" style="justify-content:space-between;${_togHint ? 'flex-wrap:wrap;' : ''}">
-              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+              <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               <label class="toggle-switch">
                 <input type="checkbox" ${checked ? 'checked' : ''} onchange="saveGeneralField('${f.key}', this.checked)" />
                 <span class="toggle-slider"></span>
@@ -18394,6 +18410,24 @@ function saveGeneralConfigPut(key, value) {
 
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
+}
+
+// savePromptNumberSetting saves a UI prompt handling numeric setting once
+// the entered value clears exactly the floor the daemon enforces in
+// internal/config/config.go: a whole number of at least 0 for the dismiss
+// delay (0 means "send at once"), and a whole number of at least 1 for the
+// clear bound and the max attempts. An out-of-range or non-whole entry is
+// reported with an error toast and nothing is sent. The input's own min
+// attribute repeats the floor for the browser; this check is the real gate,
+// mirroring saveIdentityBackupsKeep's client-side guard.
+function savePromptNumberSetting(key, rawValue, min) {
+  const text = String(rawValue == null ? '' : rawValue).trim();
+  const n = Number(text);
+  if (text === '' || !Number.isInteger(n) || n < min) {
+    showToast('Enter a whole number of at least ' + min, 'error');
+    return;
+  }
+  saveGeneralField(key, n);
 }
 
 // Quality-gate scoping settings: the scope select saves its value as-is,
@@ -42341,6 +42375,7 @@ window.toggleLLM = toggleLLM;
 window.openLLMSetup = openLLMSetup;
 window.loadGeneralConfig = loadGeneralConfig;
 window.saveGeneralField = saveGeneralField;
+window.savePromptNumberSetting = savePromptNumberSetting;
 window.saveGateScopeSetting = saveGateScopeSetting;
 window.saveGateSmokePackagesSetting = saveGateSmokePackagesSetting;
 window.saveInterfaceField = saveInterfaceField;

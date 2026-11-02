@@ -1,0 +1,5 @@
+  Done. The retry wrapper now backs off between attempts and the summary
+  is written to notes/lane-fill.md.
+
+  ┌────────────────────────────────────────────────────────────────────────┐
+  ❯

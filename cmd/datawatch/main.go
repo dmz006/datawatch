@@ -6854,6 +6854,58 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					mgr.SetWorkerQuestionGate(func() bool {
 						return cfg.Autonomous.Questions.Enabled && cfg.Autonomous.Questions.EffectiveWorkerMarker()
 					})
+					// UI prompt handling: the manager reads the live session config
+					// on every call, so a PUT /api/config (or configure / config_set
+					// / config set) takes effect with no daemon restart.
+					mgr.SetUIPromptSettings(func() session.UIPromptSettings {
+						return session.UIPromptSettings{
+							Enabled:           cfg.Session.EffectiveDismissUIPrompts(),
+							DelaySeconds:      cfg.Session.EffectiveUIPromptDismissDelaySeconds(),
+							ClearBoundSeconds: cfg.Session.EffectiveUIPromptClearBoundSeconds(),
+							MaxAttempts:       cfg.Session.EffectiveUIPromptMaxAttempts(),
+						}
+					})
+					// Interstitial UI-prompt dismissals: every final outcome
+					// (dismissed, not_cleared, refused) the session manager books
+					// arrives on the capture goroutine — the hook is invoked
+					// synchronously at the moment of the decision — and lands as
+					// one audit-log line (and CEF mirror line) plus one
+					// Prometheus counter increment. It must never block or fail
+					// the capture loop: both sinks are non-fatal.
+					mgr.SetUIPromptAuditHook(func(ev session.UIPromptAuditEvent) {
+						action := ""
+						switch ev.Outcome {
+						case session.UIPromptOutcomeDismissed:
+							action = auditpkg.ActionUIPromptDismissed
+						case session.UIPromptOutcomeNotCleared:
+							action = auditpkg.ActionUIPromptNotCleared
+						case session.UIPromptOutcomeRefused:
+							action = auditpkg.ActionUIPromptRefused
+						default:
+							return
+						}
+						details := map[string]any{
+							"session_id": ev.SessionFullID,
+							"backend":    ev.Backend,
+							"kind":       ev.Kind,
+							"key":        ev.Key,
+							"attempt":    ev.Attempt,
+						}
+						if ev.SelectedOption != "" {
+							details["selected_option"] = ev.SelectedOption
+						}
+						if wiredAuditLog != nil {
+							_ = wiredAuditLog.Write(auditpkg.Entry{
+								Timestamp: time.Now(),
+								Actor:     "autonomous",
+								Action:    action,
+								SessionID: ev.SessionFullID,
+								Subject:   ev.SessionFullID,
+								Details:   details,
+							})
+						}
+						metricsPkg.UIPromptDismissalsTotal.WithLabelValues(ev.Kind, ev.Outcome).Inc()
+					})
 					workerQuestionDeps := autonomouspkg.WorkerQuestionDeps{
 						Store:  qstore,
 						Audit:  lifecycleAuditFn,
@@ -6862,6 +6914,60 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}
 					mgr.SetWorkerQuestionHook(func(ev session.WorkerQuestionEvent) {
 						go autonomouspkg.RaiseWorkerQuestion(workerQuestionDeps, ev)
+					})
+					// UI prompt escalation: when the safe-dismiss rules could not
+					// clear a recognised interstitial prompt — the attempts cap is
+					// used up and the prompt is still on screen, or dismissal is
+					// off and the prompt has sat past the delay plus one clear
+					// bound — the session is stalled and the operator gets one
+					// question on this same question channel (deduped per prompt
+					// occurrence, withdrawn when the prompt clears or the session
+					// ends). When the channel is off or the raise failed, exactly
+					// one high-priority alert replaces it. The channel on/off is
+					// read live on each event, like the worker-question gate above.
+					uiPromptEscalationDeps := autonomouspkg.UIPromptEscalationDeps{
+						Store: qstore,
+						ChannelOn: func() bool {
+							return cfg.Autonomous.Questions.Enabled
+						},
+						Audit:  lifecycleAuditFn,
+						Notify: httpServer.NotifyQuestionRaised,
+						FallbackAlert: func(sessionID, title, body string) {
+							alertStore.Add(alertspkg.LevelError, title, body, sessionID)
+						},
+						Logf: log.Printf,
+					}
+					mgr.SetUIPromptQuestionHook(func(ev session.UIPromptEscalateEvent) (questionID string, err error) {
+						// Runs on the capture loop: the raise is in-memory (the question
+						// store keeps its questions in RAM) and only the fallback path
+						// touches the alert store - safe to do synchronously, and the hook
+						// must answer with the question id so the manager can book it on
+						// the session's UIPrompt record (staying unlinked on failure, the
+						// daemon having already sent its one alert).
+						defer func() {
+							if r := recover(); r != nil {
+								log.Printf("[autonomous] ui prompt escalation handler panic for %s: %v", ev.SessionFullID, r)
+								alertStore.Add(alertspkg.LevelError,
+									"ui prompt escalation for "+ev.SessionFullID+" failed",
+									fmt.Sprintf("the escalation handler panicked: %v", r),
+									ev.SessionFullID)
+							}
+						}()
+						q, _, err := autonomouspkg.RaiseUIPromptEscalation(uiPromptEscalationDeps, ev)
+						if err != nil {
+							return "", err
+						}
+						return q.ID, nil
+					})
+					mgr.SetUIPromptEscalateWithdrawHook(func(ev session.UIPromptEscalateWithdrawEvent) {
+						go func() {
+							defer func() {
+								if r := recover(); r != nil {
+									log.Printf("[autonomous] ui prompt escalation withdraw panic for %s: %v", ev.SessionFullID, r)
+								}
+							}()
+							autonomouspkg.WithdrawUIPromptEscalation(uiPromptEscalationDeps, ev)
+						}()
 					})
 				}
 				// BL427 (phase 5) — POST /api/autonomous/events/forward: a peer's
@@ -8072,6 +8178,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				statsCollector.SetEBPFStatus(true, false, "Degraded — run: datawatch setup ebpf")
 			}
 		}
+		// Interstitial UI-prompt dismissal outcome counters (in-memory on the
+		// manager, reset at daemon restart) surfaced as ui_prompts in every
+		// collected stats snapshot — GET /api/stats and the get_stats MCP
+		// tool both marshal SystemStats, so the field rides along.
+		statsCollector.SetUIPromptsFunc(func() *statspkg.UIPromptStats {
+			dismissed, notCleared, refused, byKind := mgr.UIPromptStatsSnapshot()
+			if dismissed == 0 && notCleared == 0 && refused == 0 {
+				return nil
+			}
+			out := &statspkg.UIPromptStats{Dismissed: dismissed, NotCleared: notCleared, Refused: refused}
+			if len(byKind) > 0 {
+				out.ByKind = make(map[string]statspkg.UIPromptKindStats, len(byKind))
+				for kind, c := range byKind {
+					out.ByKind[kind] = statspkg.UIPromptKindStats{Dismissed: c.Dismissed, NotCleared: c.NotCleared, Refused: c.Refused}
+				}
+			}
+			return out
+		})
 		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
 			var stats []statspkg.SessionStat
 			// Observer session attribution: the pane PIDs resolved

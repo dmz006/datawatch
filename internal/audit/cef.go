@@ -214,6 +214,12 @@ func cefSignature(action string) (int, string, int) {
 		return 61, "QuestionMarkerRefused", 4
 	case ActionLaneFillMode:
 		return 62, "AutonomousLaneFillMode", 3
+	case ActionUIPromptDismissed:
+		return 62, "UIPromptDismissed", 2
+	case ActionUIPromptNotCleared:
+		return 63, "UIPromptNotCleared", 3
+	case ActionUIPromptRefused:
+		return 64, "UIPromptRefused", 4
 	default:
 		return 0, "AuditEvent", 3
 	}
