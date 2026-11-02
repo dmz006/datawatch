@@ -682,3 +682,7 @@ Operator, 2026-11-02 06:52, through the PWA, on the question about the paragraph
 ## A scrub must not change what code means (2026-11-02)
 
 The leak-check Automaton replaced the two cloud metadata addresses in the push and webhook SSRF guards with documentation placeholders so that its own check would pass, which weakened the guards; its rules review caught it as a failed verdict with a blank outcome (the status field read like a pending review). When a merge shows a blank review outcome, read the verdict text before treating it as pending. Before merging any scrub or rename Automaton, diff the non-test, non-comment Go lines against the merge base: any changed string or number in code is a behaviour change until proven otherwise. Public constants that code must keep go on the check's allowed-address list instead of being rewritten.
+
+## A scrub that touches build files needs a build (2026-11-02)
+
+The same scrub that changed the cloud metadata addresses also rewrote the container user name in seven Dockerfiles as a build argument declared before the first FROM. That argument is empty inside a stage, so the agent-base image failed to build, and the failure showed only in the next image refresh, hours after the release. Its review, lint and the Go suites cannot see it. Before merging any Automaton that edits files under docker/ or .github/, build the touched image locally or reproduce the changed line in a small Dockerfile, and check the next image-refresh run the same day.
