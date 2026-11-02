@@ -66,6 +66,9 @@ type BurnGuardConfig struct {
 	// RetryLimitClaude is the most retries of one task on Claude, 0 to 20
 	// (default 2).
 	RetryLimitClaude int `yaml:"retry_limit_claude" json:"retry_limit_claude"`
+	// AskOnChange: when true, the guard asks one open question per rung
+	// change; when false (default) it sends its alert only.
+	AskOnChange bool `yaml:"ask_on_change" json:"ask_on_change"`
 }
 
 var (
@@ -98,6 +101,7 @@ func DefaultBurnGuard() BurnGuardConfig {
 			"final_gate": BurnGuardCeilingLow,
 		},
 		RetryLimitClaude: BurnGuardRetryLimitClaudeDefault,
+		AskOnChange:      false, // the guard alerts only; it does not ask questions
 	}
 }
 
@@ -105,8 +109,9 @@ func burnGuardFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0
 
 // normalizeBurnGuard returns c with every invalid or unset value replaced by
 // its default. Invalid (as opposed to unset) values are reported through warn.
-// Enabled, StepBack and RefitOnReading are taken as given: a config loads on
-// top of DefaultConfig, so an unset key keeps its default true.
+// Enabled, StepBack, RefitOnReading and AskOnChange are taken as given:
+// a config loads on top of DefaultConfig, so an unset key keeps its
+// default.
 func normalizeBurnGuard(c BurnGuardConfig, warn func(format string, args ...interface{})) BurnGuardConfig {
 	d := DefaultBurnGuard()
 	say := func(format string, args ...interface{}) {
