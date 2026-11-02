@@ -66,6 +66,9 @@ type Automation struct {
 	Members         []AutomationMember `json:"members"`
 	Version         int64              `json:"version"` // bumped on every write; optimistic concurrency
 
+	// EffortCeiling maps a task kind to its effort ceiling for this Automaton.
+	EffortCeiling map[string]string `json:"effort_ceiling,omitempty"`
+
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"`
 	// BudgetState records the current budget breach episode, if any. It is
 	// runtime state written only by the coordinator; create and update ignore

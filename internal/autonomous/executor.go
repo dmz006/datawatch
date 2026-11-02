@@ -1491,6 +1491,37 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					m.recordFailureEscalationDecision(prd.ID, t.ID, note, backend, model)
 				}
 			}
+			// Burn guard: an effort ceiling lowers the effort (or moves a Claude
+			// task to the cheaper backend), and the Claude retry limit routes a
+			// task off Claude or holds it once its retries are used up.
+			var ceilThinking string
+			{
+				var cheaper bool
+				effort, ceilThinking, cheaper = ApplyEffortCeiling(t, auto, effort, resolveThinkingLevel(t, story, prd, ""))
+				if cheaper && IsClaudeBackend(backend) {
+					backend, model, execSource = cheaperBackendFor, "", ExecutorSourceBurnGuard
+				}
+				var held error
+				var routed string
+				m.store.WithLock(func() {
+					routed, held = ApplyClaudeRetryLimit(t, backend, attempt > 0)
+				})
+				if held != nil {
+					oldStatus := t.Status
+					m.store.WithLock(func() {
+						t.Status = TaskWaitingDecision
+						t.WaitReason = ClaudeRetryHoldQuestion(t, currentBurnGuardLimits().RetryLimitClaude)
+						t.Error = held.Error()
+					})
+					if m.store.SaveTask(t) == nil {
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					}
+					return held
+				}
+				if routed != backend {
+					backend, model, execSource = routed, "", ExecutorSourceBurnGuard
+				}
+			}
 			// Backstop for the Run preflight: never spawn an invalid pair.
 			if merr := validateModelForBackend(backend, model); merr != nil {
 				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
@@ -1526,7 +1557,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// Most-specific pi --thinking override wins: per-task →
 			// per-story → per-PRD → the session manager's configured
 			// pi.thinking_level (applied when the resolved value is empty).
-			thinkingLevel := resolveThinkingLevel(t, story, prd, "")
+			thinkingLevel := ceilThinking
 			lspLang := t.LSPLanguage
 			if lspLang == "" {
 				lspLang = prd.LSPLanguage
