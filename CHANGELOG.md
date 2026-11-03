@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.70.3 — Link-aware plans folder tidy
+
+The plans folder tidy no longer breaks links or moves documents that are still in use.
+
+- `scripts/tidy-plans.sh` keeps a dated plan in place while an open registry row, a script, a root rules file or another doc still references it. Only unreferenced plans past the age cutoff with a closed registry row move to the historical folder, and every link to a moved plan is rewritten.
+- `scripts/check-plans-links.sh` reports the number of references into the plans folder whose target no longer resolves (counts only). It runs in `make lint`.
+- Registry hygiene runs with every tidy: duplicate sections and rows are removed, closed tables are merged, verbose closed rows are trimmed to one line, and stale draft rows can be corrected from an Automaton list export.
+- `tests/test-tidy-plans.sh` covers the tidy and the hygiene with temporary repositories and runs in `make test`.
+- Counts-only output, `--dry-run` and `--check` modes; the release smoke script still checks the folder first.
+
 ## v9.70.2 — The stats installer fetches the right archive
 
 ### Added

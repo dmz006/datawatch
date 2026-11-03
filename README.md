@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.70.2 (2026-11-03).** The datawatch-stats installer now downloads the standalone stats archive (it fetched the main daemon archive before) and can install from a local tarball with --archive. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.70.3 (2026-11-03).** The plans folder tidy now keeps every plan that is still referenced, rewrites links when it moves one, checks for broken links in lint and trims closed registry rows. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
