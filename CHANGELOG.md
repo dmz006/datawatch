@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Operator documentation for decompose lint and task templates.** The new how-to [howto/automaton-decompose-lint.md](docs/howto/automaton-decompose-lint.md) covers the three modes (`off` the no-op, `shadow` the default one-pass-and-record, `enforce` the re-run with block findings fed back) and the retry budget (default 2, `0` a valid "record but don't auto-retry", cap 5, only `block` findings retried); the seven-rule built-in pack (five `block`, two `warn`) with operator additions, same-id replacements and disables; the task templates (idempotent apply at decompose time, slots, `depends_on`) with the built-in pack and per-project `enabled` overrides; and decompose guidance (literal text, an existing readable file, the generated-from-rules fallback). The [Decompose lint](docs/datawatch-definitions.md#decompose-lint) glossary entry names all of it, `docs/config-reference.yaml` now records `autonomous.decompose_lint`, `autonomous.task_templates` and `autonomous.decompose_guidance` with their defaults, and the OpenAPI spec gains the four routes the surfaces already call — `GET/PUT /api/autonomous/decompose-lint/config` and `GET/POST /api/autonomous/prds/{id}/decompose-lint`.
+
 ## v9.67.0 — Cost report
 
 ### Added

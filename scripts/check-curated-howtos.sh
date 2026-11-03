@@ -23,7 +23,7 @@ CURATED=(
     tailscale-mesh skills-sync federated-observer sessions-deep-dive
     cross-agent-memory chat-and-llm-quickstart voice-input mcp-tools
     pipeline-chaining automata-orchestrator evals
-    automaton-held-state-questions
+    automaton-held-state-questions automaton-decompose-lint
 )
 
 ERRORS=0
