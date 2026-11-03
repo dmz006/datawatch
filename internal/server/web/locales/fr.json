@@ -2127,6 +2127,7 @@
   "capacity_card_backoff_title": "Attente après limite d'usage",
   "capacity_card_backoff_resets": "Réinitialisation",
   "capacity_card_backoff_reset_unknown": "heure de réinitialisation inconnue",
+  "capacity_card_backoff_rung": "niveau de garde de la dépense",
   "capacity_card_budget_title": "Budgets LLM",
   "capacity_card_budget_estimate": "La part d'allocation est une estimation fondée sur l'offre, pas une valeur mesurée",
   "capacity_card_holders": "Détenteurs",

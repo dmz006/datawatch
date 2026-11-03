@@ -200,6 +200,26 @@ To step back yourself:
   both move with it, and a reading that shows the week is lower than projected
   lets the guard step back.
 
+### Where the rung and its reason show
+
+While a rung holds a backend, the daemon lists it as an active back-off flag
+next to the pools and budgets. You see the rung name next to its reason in
+three places:
+
+- **`datawatch capacity`** prints each active back-off flag; a flag the guard
+  set reads `claude-code: resets <time> (burn guard rung <rung>: <reason>)`,
+  and a flag without a rung (a rate limit or an operator set) keeps the
+  plain `(<reason>)` form. The reset time is shown in the zone the daemon
+  sent it in.
+- **The comm channel** `capacity` verb answers with the same text.
+- **The web UI** capacity card shows the rung as a small label next to the
+  backend name, with the reason on its own line below.
+
+The hold ends on its own when the guard steps back, at the next reading, or
+at the weekly reset. Until then the flag stays in the list — its presence is
+the clearest sign that something the guard did is still restricting
+admission.
+
 ## The effort ceiling
 
 The effort ceiling caps how much effort a kind of task may use, so routine
