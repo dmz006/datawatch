@@ -74,8 +74,11 @@ func (m *Manager) readOnlyTreeStatus(ctx context.Context, prd *PRD, t *Task) (st
 		return "", false
 	}
 	args := []string{"-C", root, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude).datawatch"} // #nosec G204 -- fixed subcommand; root comes from the PRD's resolved tree
-	if rp := reportPathOf(t); rp != "" {
-		args = append(args, ":(exclude)"+rp) // #nosec G204 -- rp is validated by validateReportPath
+	// An unvalidated path is never passed to git: if the path fails
+	// validateReportPath the exclusion is simply not applied, so a write
+	// there still registers as dirty.
+	if rp := reportPathOf(t); rp != "" && validateReportPath(rp) == nil {
+		args = append(args, ":(exclude)"+rp) // #nosec G204 -- rp is validated by validateReportPath above
 	}
 	cmd := exec.CommandContext(ctx, "git", args...)
 	out, err := cmd.Output()

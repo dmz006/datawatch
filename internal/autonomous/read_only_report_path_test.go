@@ -146,6 +146,33 @@ func TestReadOnlyTreeStatusIgnoresReportPath(t *testing.T) {
 	}
 }
 
+// TestReadOnlyTreeStatusInvalidReportPathNotExcluded checks the guard in
+// readOnlyTreeStatus: a ReportPath that fails validateReportPath is never
+// passed to git as a pathspec, so a write there still registers as dirty.
+func TestReadOnlyTreeStatusInvalidReportPathNotExcluded(t *testing.T) {
+	repo := gitRepoWithDWSeed(t)
+	mgr := newRoManager(t, nil)
+	// "notes.md" fails validation (not under .datawatch/reports/): a write
+	// there must still register as dirty.
+	prd := makeReportPathPRD(t, mgr, repo, true, "notes.md")
+	id := prd.Story[0].Tasks[0].ID
+	tk, ok := mgr.Store().GetTask(id)
+	if !ok || tk == nil {
+		t.Fatal("GetTask")
+	}
+
+	if err := os.WriteFile(filepath.Join(repo, "notes.md"), []byte("r"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	now, ok := mgr.readOnlyTreeStatus(context.Background(), prd, tk)
+	if !ok {
+		t.Fatal("readOnlyTreeStatus did not run")
+	}
+	if !strings.Contains(now, "notes.md") {
+		t.Errorf("invalid report path must not be excluded; status = %q", now)
+	}
+}
+
 // TestReadOnlyReportPathWriteCompletes runs the full executor path: a
 // read-only task whose only write is at its report path finishes
 // successfully.
