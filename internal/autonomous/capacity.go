@@ -248,6 +248,33 @@ func (m *Manager) capacityOn() bool {
 	return m.capacity != nil && m.capacityKeys != nil && (m.cfg.CapacityEnabled == nil || *m.cfg.CapacityEnabled)
 }
 
+// capacityWaitRemaining is bound less the queue time this task's current
+// admission has already used.
+func (m *Manager) capacityWaitRemaining(taskID string, bound time.Duration) time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return bound - m.capacityWaitSpent[taskID]
+}
+
+func (m *Manager) addCapacityWaitSpent(taskID string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.capacityWaitSpent == nil {
+		m.capacityWaitSpent = map[string]time.Duration{}
+	}
+	m.capacityWaitSpent[taskID] += d
+}
+
+// resetCapacityWait ends a task's admission: the next one gets a full bound.
+func (m *Manager) resetCapacityWait(taskID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.capacityWaitSpent, taskID)
+}
+
 func (m *Manager) capacityWait() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -347,7 +374,22 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
-	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+	// A worker's capacity bound is one budget for the whole admission: time
+	// already spent queued by an earlier acquireLease of this admission (the
+	// node-load failover re-enters here) counts against it, so re-entering
+	// does not start a fresh window. It starts counting here, once the request
+	// is admissible (the pools resolved and the request about to be queued),
+	// and uses the audit recorder's clock so tests can drive it.
+	bound := m.capacityWait()
+	if role == capacity.RoleWorker {
+		bound = m.capacityWaitRemaining(t.ID, bound)
+		if bound <= 0 {
+			return fmt.Errorf("capacity: %w", capacity.ErrWaitTimeout)
+		}
+		entered := rec.Now()
+		defer func() { m.addCapacityWaitSpent(t.ID, rec.Now().Sub(entered)) }()
+	}
+	err := led.Acquire(ctx, req, bound, func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
 		}

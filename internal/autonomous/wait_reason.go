@@ -108,6 +108,7 @@ func RateCeilingWaitText(now func() time.Time, pool, dimension string, used, cei
 // the shape does not match. It reads both the ledger's wording ("requests 3/3
 // in 1m0s, resets at <RFC3339>") and RateCeilingWaitText's.
 func parseRateCeilingWait(reason string) (pool, dimension string, used, ceiling int64, resetsAt time.Time, ok bool) {
+	reason = stripRequestedPool(reason)
 	i := strings.Index(reason, rateCeilingInfix)
 	if i < 0 {
 		return
@@ -215,6 +216,7 @@ func ReadableWaitText(reason string, holders []string, holderName func(holderID 
 // or a busy node), in listing order. Nil when the reason names no holders at
 // all — the other reasons never do — so the caller can skip re-wording.
 func WaitReasonHolders(reason string) []string {
+	reason = stripRequestedPool(reason)
 	switch ClassifyWaitReason(reason) {
 	case WaitCausePoolFull, WaitCauseNodeBusy:
 	default:
@@ -242,7 +244,7 @@ func WaitReasonHolders(reason string) []string {
 // parsePoolWait splits a pool-full reason ("pool <p> full (<u>/<l> …") into
 // the pool name, used and limit. ok is false when the shape does not match.
 func parsePoolWait(reason string) (pool string, used, limit int, ok bool) {
-	rest := strings.TrimSpace(reason)
+	rest := strings.TrimSpace(stripRequestedPool(reason))
 	if !strings.HasPrefix(rest, poolPrefix) {
 		return
 	}
@@ -266,7 +268,7 @@ func parsePoolWait(reason string) (pool string, used, limit int, ok bool) {
 // engines …") into the node name, used and limit. ok is false when the shape
 // does not match.
 func parseNodeWait(reason string) (node string, used, limit int, ok bool) {
-	rest := strings.TrimSpace(reason)
+	rest := strings.TrimSpace(stripRequestedPool(reason))
 	if !strings.HasPrefix(rest, nodeBusyPrefix) {
 		return
 	}
@@ -420,20 +422,60 @@ func relativeIn(now func() time.Time, until time.Time) string {
 	return fmt.Sprintf("in %dh%02dm", mins/60, mins%60)
 }
 
-// nameRequestedPool makes a multi-node wait reason ("waiting for nodes a, b:
-// ...") name the pool the task actually asked for, using the pools resolved
-// from the explicit backend. A reason that already names one of the pools, or
-// a single-node reason whose parsers expect an exact shape, is returned
-// unchanged, so every prefix ClassifyWaitReason matches on is kept.
+// requestedPoolMarker introduces the pool(s) the task asked for at the end of
+// a wait reason. It is appended after everything the parsers read, and the
+// parsers drop it first, so every prefix and shape ClassifyWaitReason and the
+// parse helpers match on is unchanged.
+const requestedPoolMarker = " \u2014 requested pool "
+
+// stripRequestedPool removes a trailing requested-pool note.
+func stripRequestedPool(reason string) string {
+	if i := strings.Index(reason, requestedPoolMarker); i >= 0 {
+		return reason[:i]
+	}
+	return reason
+}
+
+func poolNameByte(c byte) bool {
+	return c == '_' || c == '.' || c == ':' || c == '-' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+// namesPool reports whether reason mentions pool as a whole name, so
+// "llm:qwen" is not found inside "llm:qwen-2".
+func namesPool(reason, pool string) bool {
+	for from := 0; pool != ""; {
+		i := strings.Index(reason[from:], pool)
+		if i < 0 {
+			return false
+		}
+		i += from
+		end := i + len(pool)
+		// A trailing ": " (as in "waiting for node n1: ...") ends the name.
+		endsName := end == len(reason) || !poolNameByte(reason[end]) || reason[end] == ':' && (end+1 == len(reason) || reason[end+1] == ' ')
+		if (i == 0 || !poolNameByte(reason[i-1])) && endsName {
+			return true
+		}
+		from = i + 1
+	}
+	return false
+}
+
+// nameRequestedPool makes any ledger wait reason (pool full, node busy, multi
+// node, rate ceiling) name the pool(s) the task actually asked for, from the
+// explicit backend's resolved pools, unless the reason already names each of
+// them as a whole pool name. The note is a suffix; see requestedPoolMarker.
 func nameRequestedPool(reason string, pools []string) string {
-	const multiNodePrefix = "waiting for nodes "
-	if len(pools) == 0 || !strings.HasPrefix(reason, multiNodePrefix) {
+	if reason == "" || len(pools) == 0 || strings.Contains(reason, requestedPoolMarker) {
 		return reason
 	}
+	var missing []string
 	for _, p := range pools {
-		if strings.Contains(reason, p) {
-			return reason
+		if p != "" && !namesPool(reason, p) && !namesPool(reason, strings.TrimPrefix(p, "node:")) {
+			missing = append(missing, p)
 		}
 	}
-	return reason + " (requested pool " + strings.Join(pools, ", ") + ")"
+	if len(missing) == 0 {
+		return reason
+	}
+	return reason + requestedPoolMarker + strings.Join(pools, ", ")
 }

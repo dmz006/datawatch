@@ -1584,6 +1584,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
+			m.resetCapacityWait(t.ID) // each relaunch is a new admission
 			if aerr := m.admitPreferring(ctx, prd, t, backend, model, capacity.RoleWorker, prevNode); aerr != nil {
 				if errors.Is(aerr, errCancelledWhileWaiting) {
 					return nil
@@ -1592,7 +1593,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			// A multi-node LLM entry needs its model resident on the leased node
 			// before the spawn; a single-node entry skips this step entirely.
-			if lerr := m.loadWorkerNode(ctx, prd, t, backend, model); lerr != nil {
+			lerr := m.loadWorkerNode(ctx, prd, t, backend, model)
+			m.resetCapacityWait(t.ID) // admission, failover included, is over
+			if lerr != nil {
 				if errors.Is(lerr, errCancelledWhileWaiting) {
 					return nil
 				}
