@@ -241,6 +241,77 @@ The source graph is only read. It is **never deleted or changed**, so it keeps
 working beside the new draft. Review the draft, activate it, and retire the
 graph yourself when you are satisfied.
 
+## 9. Activate an Automation whose entry is a fork or a nested Automation
+
+The entry member need not be a plain Automaton — you may point `entry`
+(`--entry-member`) at a fork or at a nested Automation, and the activation
+call itself is unchanged from section 2, on every surface:
+
+```bash
+datawatch automation activate <id>        # CLI
+```
+
+MCP: `automation_activate` (`id`; optional `actor`, `reason` — both recorded
+in the audit trail). REST: `POST /api/automations/{id}/activate` with an
+optional `{"actor": "...", "reason": "..."}` body (actor defaults to
+`operator`). Comm channel: `automation activate <id>`.
+
+What happens depends on the entry member's kind, and each kind goes through
+the same approval gate the coordinator uses between members:
+
+| Entry member | What activation does |
+|---|---|
+| A plain Automaton | Starts it through its own gate (a paused one resumes; an approvable one runs). If the gate refuses it (for example the Automaton is not approved), nothing starts: the Automation becomes **blocked**, a decision note names the entry Automaton with the reason, and **one** alert says why it cannot start |
+| A **fork** | Fires every branch in sorted order, each starting through its own gate, and evaluates the paired join. A branch the gate denies is recorded as failed (the decision notes why) while the startable branches still begin — the Automation stays **active** until the join settles under its `on_branch_failure` rule |
+| A **nested Automation** (`kind` `automation`) | Activates the child (it must be a draft with a startable entry of its own). When the child completes, is blocked or is cancelled, the matching edge on the parent member is followed, exactly as for any later nested member (section 4). A child that cannot be activated blocks the parent: one alert and a decision note carry the child's refusal |
+
+Activation only takes a `draft` Automation: activating the same Automation
+twice, or one that is already active, paused or terminal, is **refused with
+HTTP 409** and names its current status. An unknown ID is 404. A fork entry
+that fires is not an error: the fork member reads `completed` (outcome
+`forked`), the branches run, and the cursors sit on the branches until the
+join passes.
+
+## 10. Return a blocked Automation to the draft (before anything started)
+
+An Automation that went **blocked before any member started** — an entry the
+gate refused, a join that could not settle, a member with no edge to follow —
+can be put back where it was when you created it, instead of cancelling. The
+call makes no model call and starts no member. Its effects:
+
+- the status goes back to `draft`; the started time, the cursors and the
+  budget episode of the blocked spell are cleared;
+- **every member is `pending` again, with no started or finished
+  timestamps**, so edits to members and edges are refused no more;
+- activating it afterwards (section 9) runs it **as if it had never
+  started**, through the same gates.
+
+The same call on every surface:
+
+```bash
+datawatch automation return-to-draft <id>       # CLI (--actor, --reason,
+                                                #  --expected-version like the
+                                                #  other control verbs)
+```
+
+MCP: `automation_return_to_draft` (`id` required; `expected_version` optional,
+`actor` optional and recorded in the audit trail). REST:
+`POST /api/automations/{id}/return_to_draft` with an optional
+`{"actor": "...", "reason": "...", "expected_version": n}` body (all optional; actor defaults to `operator`). Comm channel: `automation return-to-draft <id>` (actor set to `comm` by the daemon).
+
+`200` returns the Automation back in `draft`; an unknown ID is 404. The call
+is **refused with HTTP 409 and names the reason** when:
+
+| Situation | Why |
+|---|---|
+| The Automation is not `blocked` (it is `draft`, `active`, `paused` or terminal) | only a blocked Automation can go back; the 409 names its real status |
+| Any member already started, or a cursor sat on a member when it blocked | the Automation ran before it blocked, so its history must be kept — cancel it instead, with the `--cancel-in-flight true\|false` choice (section 6) |
+| `expected_version` does not match the stored version | the same optimistic-lock rule as every other control call (section 6); omit an `expected_version` (or pass none) to skip the check |
+
+The call writes an audit entry under `automation_return_to_draft` naming the
+actor (and the reason, when you give one), so the trip blocked → draft →
+active again is visible in the history.
+
 ## Related
 
 - [automation-queue-advance.md](automation-queue-advance.md): how the hand-off, idle alert and restart recovery work
