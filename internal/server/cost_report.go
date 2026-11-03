@@ -1,35 +1,66 @@
-// Cost report REST — exposes the cost report engine
-// (internal/costreport) over the server API.
+// The daemon's cost-report REST surface (cost_report block): one route,
+// GET /api/cost/report, running the costreport engine over the daemon's
+// recorded sessions — token totals per group_by key always, USD estimates
+// where the daemon has a rate configured for the group's backends, and the
+// row's billing-mode fields where the operator has configured usage.billing
+// profiles.
 //
-//   GET /api/cost/report                        report over the configured
-//                                               default window/grouping
-//   GET /api/cost/report?group_by=<g>           one of automaton,
-//                                               automation, backend, week
-//   GET /api/cost/report?since=<RFC3339|YYYY-MM-DD>&until=<...>
+// group_by / since / until are all optional query params; absent values
+// fall back to the daemon's cost_report config block (EffectiveGroupBy,
+// EffectiveWindowDays, EffectiveShowUSDEstimates, ...), the same config the
+// CLI and the MCP cost_report tool read. The REST response is the same
+// costreport.Report shape the engine returns; the engine flags a request
+// that spans a wider window than the cost ledger keeps (Report.
+// LifetimeFallbackApplied) rather than silently zeroing it.
 //
-// The response is the engine's costreport.Report, including the
-// retention_days and lifetime_fallback fields that explain which spend
-// horizon the dollar figures rest on.
+// Attribution: every session the cost report prices is also tried for an
+// owner. When the daemon's autonomous manager is wired in the shape the
+// daemon uses (autonomous.NewAPI(mgr)), a session is attributed to the PRD
+// (automaton) that owns it, the owning PRD's automation (by PRD.AutomationID
+// or by member scan), and the release the owner shipped in — the same
+// session→PRD linkage PRDCostUSD uses (Manager.PRDSessionIDs, which walks
+// worker, verifier and judge sessions) — so a cost report row for
+// group_by=automaton prices the same spend the PRD view prices. Sessions
+// with no recorded owner land in the engine's "unattributed" row, and work
+// whose owner has not shipped lands in "unreleased" for group_by=release.
 
 package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
-// managerCostSource serves costreport.Source from the daemon's recorded
-// sessions: one Record per session that has usage, stamped with the
-// session's last update time. The engine does the windowing, grouping
-// and pricing; this adapter only hands it rows.
+// managerCostSource feeds costreport.Build with the daemon's recorded
+// sessions: one costreport.Record per session that has usage, stamped
+// with the session's last update time and owned (automaton / automation /
+// release) where the autonomous manager resolves one. The same adapter
+// shape the MCP cost_report tool uses, plus the ShippedSource method
+// (ShippedUnits) for group_by=release.
 type managerCostSource struct {
-	m *session.Manager
+	m     *session.Manager
+	owner map[string]costOwner
+	// auto — the daemon's autonomous manager for the shipped-state reads
+	// (nil when not wired: released grouping then reports only the
+	// "unreleased" row and rows are unattributed).
+	auto *autonomous.Manager
+}
+
+// costOwner is what an adapter knows a session's owner to be; empty fields
+// mean "no recorded owner" (unattributed / unshipped).
+type costOwner struct {
+	automaton  string // prd id — the automaton
+	automation string // owning automation id
+	release    string // release the owner shipped in ("" = unshipped)
 }
 
 func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport.SourceResult, error) {
@@ -37,37 +68,192 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 	if src.m == nil {
 		return res, nil
 	}
+	since, until := opts.Since, opts.Until
 	for _, sess := range src.m.ListSessions() {
 		if sess == nil || (sess.TokensIn == 0 && sess.TokensOut == 0) {
 			continue
 		}
-		res.Records = append(res.Records, costreport.Record{
+		if !inWindow(sess.UpdatedAt, since, until) {
+			continue
+		}
+		rec := costreport.Record{
 			SessionID: sess.ID,
 			Backend:   sess.BackendFamily,
 			At:        sess.UpdatedAt,
 			TokensIn:  sess.TokensIn,
 			TokensOut: sess.TokensOut,
+		}
+		if o, ok := src.owner[sess.ID]; ok {
+			rec.AutomatonID = o.automaton
+			rec.AutomationID = o.automation
+			rec.Release = o.release
+		}
+		res.Records = append(res.Records, rec)
+	}
+	return res, nil
+}
+
+// ShippedUnits implements costreport.ShippedSource: every PRD and
+// Automation the daemon knows shipped (MergedAt recorded), for
+// group_by=release. The unit list is non-nil even when empty (the
+// contract ShippedResult documents); when the manager is not wired it is
+// empty and the engine's release rows all land under "unreleased".
+func (src managerCostSource) ShippedUnits() (*costreport.ShippedResult, error) {
+	res := &costreport.ShippedResult{Units: []costreport.ShippedUnit{}}
+	if src.auto == nil {
+		return res, nil
+	}
+	for _, p := range src.auto.Store().ListPRDs() {
+		if p == nil || !p.IsShipped() {
+			continue
+		}
+		res.Units = append(res.Units, costreport.ShippedUnit{
+			UnitID:  p.ID,
+			Kind:    "prd",
+			Release: p.MergedInRelease,
+		})
+	}
+	for _, a := range src.auto.ListAutomations() {
+		if a == nil || !a.IsShipped() {
+			continue
+		}
+		res.Units = append(res.Units, costreport.ShippedUnit{
+			UnitID:  a.ID,
+			Kind:    "automation",
+			Release: a.MergedInRelease,
 		})
 	}
 	return res, nil
 }
 
-// parseCostReportBound accepts an RFC3339 timestamp or a bare
-// YYYY-MM-DD date (interpreted with zero time in the local zone, the
-// same reading time.Parse gives a layout without a zone).
-func parseCostReportBound(v string) (time.Time, bool) {
-	if t, err := time.Parse(time.RFC3339, v); err == nil {
-		return t, true
+// inWindow — a zero bound means "no bound on that side"; a record with a
+// zero At is always included (there is no better time, and excluding it
+// would silently drop spend).
+func inWindow(at, since, until time.Time) bool {
+	if at.IsZero() {
+		return true
 	}
-	if t, err := time.Parse("2006-01-02", v); err == nil {
-		return t, true
+	if !since.IsZero() && at.Before(since) {
+		return false
 	}
-	return time.Time{}, false
+	if !until.IsZero() && at.After(until) {
+		return false
+	}
+	return true
 }
 
-// handleCostReport exposes the cost report engine (internal/costreport)
-// built over the cost_report config block (s.cfg.CostReport) with rows
-// from the recorded sessions.
+// costReportAutonomousManager returns the daemon's autonomous manager when
+// it is wired in the shape the daemon uses (autonomous.NewAPI(mgr), see
+// main.go's SetAutonomousAPI call); nil otherwise. The cost report's
+// PRD/automation ownership and shipped-state reads go through the Manager
+// (Store().ListPRDs, PRDSessionIDs, ListAutomations), not the
+// AutonomousAPI surface: the manager is where the PRD ownership and the
+// shipped state live.
+func (s *Server) costReportAutonomousManager() *autonomous.Manager {
+	if s == nil || s.autonomousMgr == nil {
+		return nil
+	}
+	if api, ok := s.autonomousMgr.(*autonomous.API); ok {
+		return api.M
+	}
+	return nil
+}
+
+// costReportOwners maps session id → costOwner (automaton / automation /
+// release): every PRD's sessions (worker, verifier and judge — exactly the
+// set Manager.PRDSessionIDs sums for PRDCostUSD) get the PRD as their
+// automaton, the owning automation (PRD.AutomationID, else the automation
+// the PRD is a member of), and the release the owner shipped in. First PRD
+// in store order wins a session's ownership (deterministic).
+func (s *Server) costReportOwners(mgr *autonomous.Manager) map[string]costOwner {
+	owners := map[string]costOwner{}
+	if mgr == nil {
+		return owners
+	}
+
+	// automationByPrd — member scan: a PRD that is an automation member but
+	// has no AutomationID field set still owns the automation's spend.
+	automationByPrd := map[string]*autonomous.Automation{}
+	for _, a := range mgr.ListAutomations() {
+		if a == nil {
+			continue
+		}
+		for _, mem := range a.Members {
+			if mem.PRDID != "" {
+				if _, ok := automationByPrd[mem.PRDID]; !ok {
+					automationByPrd[mem.PRDID] = a
+				}
+			}
+		}
+	}
+
+	prds := mgr.Store().ListPRDs() // store order (insertion), deterministic
+	for _, p := range prds {
+		if p == nil {
+			continue
+		}
+		o := costOwner{automaton: p.ID}
+		var auto *autonomous.Automation
+		if p.AutomationID != "" {
+			o.automation = p.AutomationID
+			if got, ok := mgr.GetAutomation(p.AutomationID); ok {
+				auto = got
+			}
+		}
+		if auto == nil {
+			auto = automationByPrd[p.ID]
+			if auto != nil {
+				o.automation = auto.ID
+			}
+		}
+		o.release = earliestShippedRelease(p, auto)
+		for _, sid := range mgr.PRDSessionIDs(p.ID) {
+			if sid == "" {
+				continue
+			}
+			if _, ok := owners[sid]; !ok {
+				owners[sid] = o
+			}
+		}
+	}
+	return owners
+}
+
+// earliestShippedRelease picks the release of the earliest-shipped owner:
+// the PRD's own shipped release when it merged first, else its
+// automation's (a tie goes to the PRD). An unshipped owner contributes
+// nothing; both unshipped → "" (the record lands in the "unreleased" row).
+func earliestShippedRelease(p *autonomous.PRD, auto *autonomous.Automation) string {
+	prdRel, prdAt := "", (*time.Time)(nil)
+	if p != nil && p.IsShipped() {
+		prdRel, prdAt = p.MergedInRelease, p.MergedAt
+	}
+	autoRel, autoAt := "", (*time.Time)(nil)
+	if auto != nil && auto.IsShipped() {
+		autoRel, autoAt = auto.MergedInRelease, auto.MergedAt
+	}
+	switch {
+	case prdRel == "" && autoRel == "":
+		return ""
+	case autoRel == "":
+		return prdRel
+	case prdRel == "":
+		return autoRel
+	default:
+		if prdAt != nil && (autoAt == nil || !prdAt.After(*autoAt)) {
+			return prdRel
+		}
+		return autoRel
+	}
+}
+
+// handleCostReport — GET /api/cost/report. Validate the optional
+// group_by (must be in the engine's vocabulary), since/until bounds,
+// resolve the window from the request (falling back to
+// costreport.cfg.EffectiveWindowDays when the request bounded neither
+// side, and now as the upper bound when it omitted until), run
+// costreport.Build over the daemon's sessions and return the Report as
+// JSON.
 func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -80,47 +266,75 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "manager not available", http.StatusServiceUnavailable)
 		return
 	}
-
 	q := r.URL.Query()
-	groupBy := costreport.GroupBy(q.Get("group_by"))
-	if groupBy != "" && !groupBy.Valid() {
-		http.Error(w, `group_by must be one of automaton, automation, backend, week`, http.StatusBadRequest)
-		return
+
+	req := costreport.Request{}
+	if v := strings.TrimSpace(q.Get("group_by")); v != "" {
+		gb := costreport.GroupBy(v)
+		switch gb {
+		case costreport.GroupByAutomaton, costreport.GroupByAutomation, costreport.GroupByBackend,
+			costreport.GroupByRelease, costreport.GroupByWeek:
+			req.GroupBy = gb
+		default:
+			http.Error(w, `group_by must be one of automaton, automation, backend, release, week`, http.StatusBadRequest)
+			return
+		}
 	}
-	since := time.Time{}
 	if v := q.Get("since"); v != "" {
-		t, ok := parseCostReportBound(v)
-		if !ok {
-			http.Error(w, "since must be RFC3339 or YYYY-MM-DD", http.StatusBadRequest)
+		t, err := parseCostBound(v)
+		if err != nil {
+			http.Error(w, "since must be an RFC3339 or YYYY-MM-DD timestamp", http.StatusBadRequest)
 			return
 		}
-		since = t
+		req.Since = t
 	}
-	until := time.Time{}
 	if v := q.Get("until"); v != "" {
-		t, ok := parseCostReportBound(v)
-		if !ok {
-			http.Error(w, "until must be RFC3339 or YYYY-MM-DD", http.StatusBadRequest)
+		t, err := parseCostBound(v)
+		if err != nil {
+			http.Error(w, "until must be an RFC3339 or YYYY-MM-DD timestamp", http.StatusBadRequest)
 			return
 		}
-		until = t
+		req.Until = t
+	}
+
+	mgr := s.costReportAutonomousManager()
+	src := managerCostSource{
+		m:     s.manager,
+		owner: s.costReportOwners(mgr),
+		auto:  mgr,
 	}
 
 	cr := config.CostReportConfig{}
+	var billing costreport.BillingFunc
 	if s.cfg != nil {
 		cr = s.cfg.CostReport
+		billing = func(backend string) config.EffectiveBillingProfile {
+			return s.cfg.Usage.EffectiveBillingProfile(backend)
+		}
 	}
-	rep, err := costreport.Build(
-		cr,
-		costreport.Request{GroupBy: groupBy, Since: since, Until: until},
-		managerCostSource{m: s.manager},
-		s.exposedRate,
-		time.Now(),
-	)
+
+	rep, err := costreport.Build(cr, req, src, src, s.exposedRate, billing, time.Now())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(rep)
+}
+
+// parseCostBound — since/until accept RFC3339 or bare YYYY-MM-DD (the two
+// forms the CLI's help text documents). A bare YYYY-MM-DD is the start of
+// that day UTC.
+func parseCostBound(v string) (time.Time, error) {
+	raw := strings.TrimSpace(v)
+	if raw == "" {
+		return time.Time{}, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t.UTC(), nil
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf("invalid bound %q: want RFC3339 or YYYY-MM-DD", raw)
 }

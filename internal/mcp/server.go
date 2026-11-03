@@ -68,6 +68,7 @@ type Server struct {
 	manager       *session.Manager
 	cfg           *config.MCPConfig
 	costReportCfg config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
+	usageCfg      config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
 	fallbackToken       string
 	dataDir             string
@@ -300,6 +301,11 @@ type Options struct {
 	// the cost_report tool serves costreport.Build over the recorded
 	// sessions with this config as its defaults.
 	CostReportCfg config.CostReportConfig
+	// UsageCfg is the daemon's usage config: its Billing map drives the
+	// cost_report rows' billing_mode / billing_label fields (bundled_plan →
+	// API-equivalent, not billed; api_metered → usd_estimate; free_local →
+	// tokens only; unset → assumed api_metered).
+	UsageCfg config.UsageConfig
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -324,6 +330,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		latestVersion:       opts.LatestVersion,
 		fallbackToken:       opts.FallbackToken,
 		costReportCfg:       opts.CostReportCfg,
+		usageCfg:            opts.UsageCfg,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get

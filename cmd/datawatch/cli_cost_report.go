@@ -26,7 +26,7 @@ func newCostReportCmd() *cobra.Command {
 		Use:   "report",
 		Short: "Grouped token + USD cost report",
 		Long: "Asks the daemon for the grouped cost report (GET /api/cost/report).\n\n" +
-			"  --group-by  automaton | automation | backend | week (default: cost_report.default_group_by config)\n" +
+			"  --group-by  automaton | automation | backend | release | week (default: cost_report.default_group_by config)\n" +
 			"  --since     window lower bound, RFC3339 or YYYY-MM-DD\n" +
 			"  --until     window upper bound, RFC3339 or YYYY-MM-DD\n" +
 			"  --format    text (table, default) or json",
@@ -55,7 +55,7 @@ func newCostReportCmd() *cobra.Command {
 			return printCostReport(body)
 		},
 	}
-	cmd.Flags().StringVar(&groupBy, "group-by", "", "group by automaton, automation, backend or week")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "group by automaton, automation, backend, release or week")
 	cmd.Flags().StringVar(&since, "since", "", "window lower bound (RFC3339 or YYYY-MM-DD)")
 	cmd.Flags().StringVar(&until, "until", "", "window upper bound (RFC3339 or YYYY-MM-DD)")
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text (table) or json")
