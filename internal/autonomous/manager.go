@@ -4318,6 +4318,46 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 	return m.store.SavePRD(prd)
 }
 
+// RecordTaskSkippedSnapshotPaths (sibling of RecordTaskFilesTouched) —
+// daemon-internal hook fired after one of the session's staging commits
+// (or the attempt snapshot pass) refused to add candidate files: it records
+// the skip list the session commit helper returned
+// (session.ProjectGit.LastStagingSkipped) on the task result. Capped at 50
+// entries. Replaced wholesale each call, so the field always holds the last
+// staging pass on the task. No lock-after-approve gate — this fires after
+// the worker session ends, like RecordTaskFilesTouched.
+func (m *Manager) RecordTaskSkippedSnapshotPaths(prdID, taskID string, skipped []SnapshotSkippedPath) error {
+	if len(skipped) == 0 {
+		return nil
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	if len(skipped) > 50 {
+		skipped = skipped[:50]
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].SkippedSnapshotPaths = skipped
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
 // RecordTaskAttemptCommit (v5.26.64 sibling of RecordTaskFilesTouched) —
 // daemon-internal hook fired by the autonomous verifier once the worker
 // session's deterministic commit sha is known. Appends it to the task's

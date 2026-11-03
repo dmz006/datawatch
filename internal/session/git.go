@@ -228,7 +228,9 @@ func (g *ProjectGit) stageChanges(scope []string) ([]StagingSkip, error) {
 	var candidates []string
 	if len(scope) > 0 {
 		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
-			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n", g.dir)
+			// Placeholder, not the path: the warning must not print the home
+			// directory into logs.
+			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory <home> — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n")
 		}
 		absDir, err := filepath.Abs(g.dir)
 		if err != nil {
