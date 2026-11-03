@@ -1034,6 +1034,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 		return nil
 	}
+	// Merge the task change records and write the enabled generated
+	// artefacts before the review so it can read them.
+	m.writeGeneratedArtefacts(prd)
 	if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
 		return err
 	} else if blocked {
@@ -1250,6 +1253,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// a branch that never touched it.
 	lastFailureCategory := ""
 	defer m.releaseCapacity(t.ID)
+	m.noteTaskStart(ctx, prd, t) // remember the base ref for the change record
 	// BL428 §3a — per-canonical-tree advisory write lock. Admit order:
 	// capacity (m.admit, per attempt) → refuse-dirty-tree gate → tree
 	// lock → spawn. The lock is held across spawn, verify and the retry
@@ -2057,6 +2061,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				_ = m.store.SaveTask(t)
 				continue
 			}
+			// Build and save the task's change record (never fails the task).
+			m.recordTaskChange(prd, t)
 			// BL386 Phase 2 — harvest session-local memories after task completes.
 			if t.SessionID != "" && prd.MemoryHarvest.Enabled {
 				m.mu.Lock()
@@ -2700,6 +2706,9 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		inv.GuardrailPinned = pinned
 	}
 	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
+	if inv.ScriptRan {
+		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
+	}
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict

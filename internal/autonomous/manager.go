@@ -1484,6 +1484,10 @@ type Manager struct {
 	// fake.
 	driftGit driftGitRunner
 
+	// genArt — change-record and generated-artefact wiring
+	// (generated_artefacts.go). The zero value is dormant.
+	genArt generatedArtefactState
+
 	// taskCommit — commits a task's leftover files when the uncommitted-work
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
 	taskCommit TaskCommitFn
