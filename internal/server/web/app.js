@@ -20429,7 +20429,10 @@ function loadServers() {
       const displayName = sv.name === 'local' ? (sv.hostname || sv.name) : sv.name;
       return `<div class="settings-row" style="justify-content:space-between">
         <div><strong>${escHtml(displayName)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+        <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? (t('status_connected') || 'Connected') : (t('btn_select') || 'Select')}</button>
+        ${isActive && sv.name !== 'local' ? `<button class="btn-secondary" data-back-to-local="1" style="font-size:12px;padding:4px 8px" onclick="selectServer(null)">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>` : ''}
+        </div>
       </div>`;
     })).then(rows => {
       el.innerHTML = rows.join('');
@@ -20442,9 +20445,13 @@ function loadServers() {
 // it must NOT reload the page or touch the update banner.
 function selectServer(name) {
   const prev = state.activeServer;
+  // null / '' / 'local' all mean "go back to the local server".
+  const target = (!name || name === 'local') ? null : name;
+  // Re-selecting the already-active server is a no-op (no state reset, no
+  // toast). Returning to local is always an explicit control (selectServer(null)).
+  if (target === (prev || null)) return;
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
-  // Toggle back to null (local) if same button clicked; otherwise switch
-  state.activeServer = (state.activeServer === name) ? null : name;
+  state.activeServer = target;
   loadServers();
   if (state.activeServer !== prev) {
     state.sessions = [];
@@ -37164,7 +37171,9 @@ function _loadServerPickerModalList() {
     el.innerHTML = chips.map(c => {
       const isActive = c.name === active;
       return `<button data-server-name="${escHtml(c.name || '')}" onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
-    }).join('');
+    }).join('') + ((active && active !== 'all')
+      ? `<button data-back-to-local="1" onclick="${escHtml(`selectServer(null);document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--text);cursor:pointer;">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
+      : '');
     // GH#194 -- re-render (not a text-patch) once the real hostname
     // resolves, so the "● "/"○ " active-marker prefix this modal's
     // markup carries is rebuilt correctly rather than clobbered by a
