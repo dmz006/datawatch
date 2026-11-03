@@ -122,6 +122,17 @@ no-opinion (for the other interactive families).
   models; lower it if you want faster stall detection and accept that slow, quiet
   turns will be flagged.
 
+**Where to set them.** Both keys are carried by the YAML file, the REST config
+routes, the MCP `config_set` tool, `datawatch config set`, the comm-channel
+`configure` command, and the web Settings page. Every surface applies the same
+validation: a negative number is refused, and a backend name that is not a known
+backend or family is refused rather than silently ignored.
+
+```bash
+datawatch config set session.liveness_window_seconds 180
+datawatch config set session.liveness_idle_timeout_overrides '{"pi": 30, "goose": 0}'
+```
+
 ### `session.liveness_idle_timeout_overrides`
 
 Per-backend input-idle timeout overrides, as a map of backend names to seconds.

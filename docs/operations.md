@@ -393,6 +393,8 @@ session:
   # Lower values = faster detection; higher values = fewer false positives.
   # Default: 10
   input_idle_timeout: 10
+  liveness_window_seconds: 120          # 0 = built-in default (120); negative refused
+  liveness_idle_timeout_overrides: {}   # e.g. {pi: 30, goose: 0}; unknown backend names refused
 
   # Default number of lines returned by tail and status commands.
   # Default: 20
@@ -569,6 +571,22 @@ servers:
     token: ""        # Bearer token for that remote server
     enabled: true
 ```
+
+### Session liveness keys
+
+`session.liveness_window_seconds` (default 120; `0` means the default) is how long an
+alive print-mode worker may stay silent before its session shows `stalled`.
+`session.liveness_idle_timeout_overrides` maps a backend name or family to its
+input-idle timeout in seconds; an explicit `0` turns the silence flip off for that
+backend, and an unknown backend name or a negative value is refused. Both keys are
+carried by the YAML file, REST config routes, MCP `config_set`, `datawatch config set`,
+the comm `configure` command and the web Settings page. See `docs/backend-state.md`.
+
+```bash
+datawatch config set session.liveness_window_seconds 180
+datawatch config set session.liveness_idle_timeout_overrides '{"pi": 30, "goose": 0}'
+```
+
 
 **Note on `--secure` mode:** When started with `datawatch --secure start`, ALL data stores
 are encrypted with XChaCha20-Poly1305: `sessions.json`, `schedule.json`, `commands.json`,
