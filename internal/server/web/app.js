@@ -194,6 +194,8 @@ async function setLocaleOverride(lang) {
   }
   // bl434 row 1 (eye-only): inventory-graded — not a session connect, bolt
   // would misreport "connecting"; eye = "app alive, switching locale".
+  // Audit (b42f0003): deliberate operator action (the operator chose a new
+  // locale) — never triggered by a federated-server switch.
   performFullPageRefresh({ eyeBolt: false });
 }
 window.setLocaleOverride = setLocaleOverride;
@@ -410,6 +412,8 @@ function _fedFetchError(resp) {
 }
 // Back-compat alias -- a couple of call sites below were written against
 // the old name in the same pass this got renamed; functionally identical.
+// Audit (b42f0003): probe + first-page fetch only — never reloads the page
+// and never touches the update banner, in either the success or error path.
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
@@ -502,6 +506,28 @@ function _wsSendPing() {
 // Daemon-version-change reload policy. A new build must never yank the page
 // out from under someone who is typing or using the terminal, so reloads are
 // deferred behind a tap-to-reload banner until the user is idle.
+//
+// Reload-path audit (task b42f0003): every reload/banner trigger in this file
+// must be either a REAL build change of the daemon serving THIS page or an
+// explicit operator action — never a side effect of state.activeServer
+// changing (the federated-picker switch). Every call site:
+//   - _onDaemonVersionChange — called only by _daemonVersionNoteFrame (the
+//     active server's recorded version actually changed; per-server ledger,
+//     b42f0002) and the SW controllerchange handler. Both real signals.
+//   - _scheduleUpdateRecheck timer — gated on state._updateAvailable, which
+//     only _onDaemonVersionChange sets. Real.
+//   - update-banner Reload button — an explicit tap on a banner that only
+//     _onDaemonVersionChange creates. Real + manual.
+//   - registerServiceWorker controllerchange — the SW is only ever served
+//     by this page's own origin (federated peers are reached via the local
+//     /api/proxy), so switching activeServer can never change which SW
+//     controls the page; the event is always a genuine new-asset swap.
+//   - performFullPageRefresh → location.reload — called only by the locale
+//     switch (setLocaleOverride) and window.forcePWAUpdate; both deliberate.
+//   - forcePWAUpdate — deliberate (manual PWA cache escape hatch).
+//   - replaySplash — deliberate (the Replay-splash button).
+//   - selectServer() and _checkFederatedConnection() never reload at all
+//     (socket reconnect + fetch only); pinned by app-reload-guard.test.js.
 const AUTO_RELOAD_IDLE_MS = 30000;
 const AUTO_RELOAD_RECHECK_MS = 5000;
 function _canAutoReload(ctx) {
@@ -542,6 +568,7 @@ function _scheduleUpdateRecheck() {
   state._updateBannerTimer = setTimeout(() => {
     state._updateBannerTimer = null;
     if (!state._updateAvailable) return;
+    // Real build change (the banner's own signal) and the user is now idle past the grace.
     if (_canAutoReload(_autoReloadCtx())) { _hideUpdateBanner(); location.reload(); return; }
     _scheduleUpdateRecheck();
   }, AUTO_RELOAD_RECHECK_MS);
@@ -559,16 +586,21 @@ function _showUpdateBanner() {
   btn.type = 'button';
   btn.textContent = 'Reload';
   btn.style.cssText = 'padding:4px 12px;border-radius:4px;border:0;cursor:pointer;';
+  // Explicit operator tap; the banner is only ever created by _onDaemonVersionChange (a real build change).
   btn.addEventListener('click', () => { _hideUpdateBanner(); location.reload(); });
   bar.appendChild(label);
   bar.appendChild(btn);
   document.body.appendChild(bar);
   _scheduleUpdateRecheck();
 }
-// Single entry point for every "the daemon build changed" signal.
+// Single entry point for every "the daemon build changed" signal. The only
+// callers are _daemonVersionNoteFrame (the active server's own recorded
+// version moved — the per-server ledger means a peer's version can never
+// reach this path) and the SW controllerchange handler.
 function _onDaemonVersionChange(newVersion) {
   if (_canAutoReload(_autoReloadCtx())) {
     console.log(`[datawatch] daemon version changed → ${newVersion}, reloading…`);
+    // Real build change, and the user is idle enough to take it now.
     location.reload();
     return;
   }
@@ -4692,6 +4724,8 @@ function performFullPageRefresh(opts) {
   const minDwell = Math.max(600, (typeof opts.minDwell === 'number' && opts.minDwell > 0) ? opts.minDwell : 600);
   mountFullPageRefreshSplash({ eyeBolt: !!opts.eyeBolt, text: opts.text });
   const doReload = () => {
+    // Audit (b42f0003): callers are deliberate operator actions (locale
+    // switch, forcePWAUpdate) or pass their own reload() — never a server switch.
     if (typeof opts.reload === 'function') opts.reload();
     else location.reload();
   };
@@ -20200,6 +20234,9 @@ function loadServers() {
   }).catch(() => { if (el) el.textContent = t('servers_unavailable') || 'Servers unavailable'; });
 }
 
+// Audit (b42f0003): a picker switch can never trigger a reload — this only
+// re-routes the socket and fetches. It must (and does) reconnect and probe;
+// it must NOT reload the page or touch the update banner.
 function selectServer(name) {
   const prev = state.activeServer;
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
@@ -20737,6 +20774,8 @@ window.replaySplash = function() {
     localStorage.removeItem('cs_splash_time');
     localStorage.removeItem('cs_splash_version');
   } catch (_) {}
+  // Audit (b42f0003): deliberate operator action (the Replay-splash button),
+  // never triggered by a federated-server switch.
   location.reload();
 };
 
@@ -22413,6 +22452,11 @@ function _swRegisterFailureMessage(err) {
 // Printed at most once per page load even if registerServiceWorker is
 // called again (e.g. a retry path), so the operator isn't spammed.
 let _swDisabledInfoShown = false;
+// Audit (b42f0003): the controllerchange listener attaches at most once per
+// page load — a retry path re-running registerServiceWorker must not stack a
+// second handler whose own _hadController could read a late claim event as
+// an update and reload the page.
+let _swControllerChangeAttached = false;
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -22460,21 +22504,34 @@ function registerServiceWorker() {
       }
       console.warn('SW registration failed:', err);
     });
-    let _reloadGuard = false;
-    // First install: sw.js clients.claim() fires controllerchange although
-    // there is no new build — only a change from an existing controller is an update.
-    let _hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (_reloadGuard) return;
-      if (!_hadController) { _hadController = true; return; }
-      console.log('SW controller changed — fresh assets available');
-      if (_canAutoReload(_autoReloadCtx())) {
-        _reloadGuard = true;
-        window.location.reload();
-      } else {
-        _onDaemonVersionChange(null);
+      // Audit (b42f0003): the SW is only ever served by the origin that
+      // serves THIS page (federated peers are reached through the local
+      // /api/proxy), so a controllerchange here is always a real
+      // new-asset signal for this page — it can never be a side effect of
+      // state.activeServer changing.
+      if (!_swControllerChangeAttached) {
+        _swControllerChangeAttached = true;
+
+        let _reloadGuard = false;
+        // First install: sw.js clients.claim() fires controllerchange
+        // although there is no new build — only a change from an existing
+        // controller is an update.
+        let _hadController = !!navigator.serviceWorker.controller;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_reloadGuard) return;
+          if (!_hadController) { _hadController = true; return; }
+          console.log('SW controller changed — fresh assets available');
+          if (_canAutoReload(_autoReloadCtx())) {
+            // Real build change: a fresh SW took control of this page and
+            // the user is idle — take the page over now.
+            _reloadGuard = true;
+            window.location.reload();
+          } else {
+            // Real update, not now: banner + recheck (reloads once idle).
+            _onDaemonVersionChange(null);
+          }
+        });
       }
-    });
   }
 }
 
@@ -22496,6 +22553,8 @@ window.forcePWAUpdate = async function() {
   // Hard reload bypassing HTTP cache too.
   // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
   // eye keeps the deliberate gesture from reading as a broken page.
+  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
+  // hatch) — never triggered by a federated-server switch.
   performFullPageRefresh({ eyeBolt: false });
 };
 
