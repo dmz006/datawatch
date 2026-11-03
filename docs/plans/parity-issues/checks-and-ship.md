@@ -1,7 +1,7 @@
 # [sync] Automation checks and ship steps
 
-Parent release: the release that carries this change (the merge helper sets the number at merge).
-Filing: to be filed against dmz006/datawatch-app at merge, by the merge step. **Not filed yet.**
+Parent release: v9.68.0.
+Filing: filed against dmz006/datawatch-app by the merge step when the release is tagged (v9.68.0); the issue number is recorded here and in docs/parity-status.md at that point.
 
 ## Body
 
