@@ -82,6 +82,12 @@ type DecomposeLintConfig struct {
 	// Rules is the ordered list of lint rules. Empty (unset) means no
 	// rules: the check finds nothing in any mode.
 	Rules []DecomposeLintRule `yaml:"rules" json:"rules"`
+	// DisabledRules lists rule ids to drop from the effective rule set
+	// (the internal/autonomous package resolves which rules apply: the
+	// built-in default pack merged with these operator rules, minus any
+	// rule whose Disabled flag is set or whose id appears here).
+	// No omitempty, deliberately (same round-trip guarantee as Rules).
+	DisabledRules []string `yaml:"disabled_rules" json:"disabled_rules"`
 }
 
 // DecomposeLintRule is one decompose-lint rule: the fields of a task
@@ -98,8 +104,15 @@ type DecomposeLintRule struct {
 	// Match describes the task fields the rule fires on.
 	Match DecomposeLintMatch `yaml:"match" json:"match"`
 	// Message is the finding text. Required (a rule with no message
-	// cannot be surfaced).
+	// cannot be surfaced) — except for disabled rules, which need only
+	// a legal, unique ID to name the rule they disable.
 	Message string `yaml:"message" json:"message"`
+	// Disabled removes this rule from the effective set. A bare
+	// {id: ..., disabled: true} entry is a valid way to disable a
+	// built-in rule of the same id (or a previously added operator
+	// rule): severity, message and match stay unused and are not
+	// validated.
+	Disabled bool `yaml:"disabled" json:"disabled"`
 }
 
 // DecomposeLintMatch describes which tasks a rule fires on. The string
@@ -323,7 +336,9 @@ func validateMatch(m DecomposeLintMatch, path string, depth int) error {
 }
 
 // validateRule checks one rule (id, severity, message, match) and
-// registers its id in seen, rejecting a duplicate.
+// registers its id in seen, rejecting a duplicate. A disabled rule is
+// checked for id only — it carries finding text it never emits — so a
+// bare {id, disabled: true} entry is legal.
 func validateRule(r DecomposeLintRule, i int, seen map[string]bool) error {
 	prefix := fmt.Sprintf("decompose_lint.rules[%d]", i)
 	id := strings.TrimSpace(r.ID)
@@ -334,6 +349,9 @@ func validateRule(r DecomposeLintRule, i int, seen map[string]bool) error {
 		return fmt.Errorf("%s: duplicate rule id %q (ids must be unique)", prefix, id)
 	}
 	seen[id] = true
+	if r.Disabled {
+		return nil
+	}
 	if _, err := NormalizeDecomposeLintSeverity(r.Severity); err != nil {
 		return fmt.Errorf("%s: %v", prefix, err)
 	}

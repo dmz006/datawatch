@@ -2963,6 +2963,42 @@ autonomous:
     # the release verification script. When true the daemon runs it once per
     # start, in the background; failures are logged and never block startup.
     backfill_on_start: false
+  # ── Decompose lint (fresh-decomposition lint) ──
+  # Rules that lint a freshly decomposed task graph (stories + tasks) for
+  # spec smells. The rule set is data: the built-in default pack
+  # (internal/autonomous, decompose_lint_rules.go) merged with the rules
+  # below — an operator rule with the same id *replaces* the built-in
+  # (at its original position), a new id is appended — minus every rule
+  # flagged disabled or named in disabled_rules (either mechanism drops
+  # the rule; a bare {id, disabled: true} entry is the canonical way to
+  # disable a built-in). A rule whose regex fails to compile is skipped
+  # with a reported error; the rest still apply. A rule's match block
+  # combines present conditions with AND (spec_regex, title_regex,
+  # files_regex over their fields; the read_only tri-state; the
+  # verification-script-empty flag), and composes with any_of (at least
+  # one member) / all_of (every member), recursively. Lint findings carry
+  # rule id, severity, message, story/task ids and a matched excerpt.
+  # The engine (internal/autonomous/decompose_lint.go) is pure
+  # in-memory: LintTasks(stories, rules), LintTasksWithErrors, and
+  # EffectiveRules(decompose_lint config); LintSummary totals the
+  # findings by severity.
+  # mode: off (no check) | shadow (findings recorded/surfaced, never
+  # blocking) | enforce (severity-block findings stop the current
+  # decompose; the decomposer gets them as input for the next try) —
+  # default off. max_retries: extra re-decompose cycles after a failed
+  # enforce finding; 0 (default) = none (the PRD stops, the findings are
+  # the reason). Whole number >= 0.
+  decompose_lint:
+    mode: off
+    max_retries: 0
+    # Operator rule overrides/disables/additions (empty = the built-in
+    # pack, unmodified). Severity: block | warn. A rule entry's
+    # `disabled: true` removes it from the effective set (a bare
+    # {id, disabled: true} entry is valid — no severity/message/match
+    # needed). Disabled_rules: ids dropped from the effective set
+    # regardless of origin (unknown ids are ignored, no error).
+    rules: []
+    disabled_rules: []
 # ── Dashboard (operator console + card visibility) ──
 # The dashboard.* block switches gate the PWA dashboard board and the
 # operator console one-glance summary (GET /api/dashboard/console, MCP
