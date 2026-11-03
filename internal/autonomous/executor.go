@@ -1300,13 +1300,20 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		budget = esc.MaxFailures - m.escalationFailureCount(t)
 	}
 	var run attemptRun
+	// An executor cancelled mid-attempt (operator cancel or daemon restart)
+	// still closes the attempt it left open.
+	defer func() {
+		if ctx.Err() != nil {
+			m.recordInterruptedAttempt(prd, t, run)
+		}
+	}()
 	// inherited is true only on the first pass: a task that arrives with a
 	// session and an in-flight status was left that way by an earlier daemon
 	// run. Later passes (including re-queued ones) carry their own session.
 	inherited := true
 	for attempt := 0; attempt < budget; attempt++ {
 		var err error
-		run = attemptRun{RefsBefore: len(t.AttemptRefs)}
+		run = attemptRun{RefsBefore: len(t.AttemptRefs), AttemptsBefore: len(t.Attempts)}
 		inheritedSession := inherited
 		inherited = false
 		// Tree state before a read-only task starts; compared after it ends.
@@ -1338,6 +1345,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				log.Printf("[autonomous] executeOne: task %s resuming verify for live session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
+				run.SessionID, run.Adopted = t.SessionID, true
 			case alive:
 				// Adopted at boot-resume: never spawn (and never reach the
 				// kill-before-respawn block). Wait for the session's completion
@@ -1345,6 +1353,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
+				run.SessionID, run.Adopted = t.SessionID, true
 				adopted := AdoptedWait{PRDID: prd.ID, TaskID: t.ID, SessionID: t.SessionID, NudgedAt: t.NudgeTimeForSession(t.SessionID)}
 				startConfirm := m.adoptedStartWatchFor(t)
 				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, adopted, startConfirm); werr != nil {
@@ -1414,6 +1423,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				if finished {
 					log.Printf("[autonomous] executeOne: task %s verifying finished session %s from recorded result (daemon restart)", t.ID, t.SessionID)
 					skipSpawn = true
+					run.SessionID, run.Adopted = t.SessionID, true
 				}
 			}
 		}
@@ -1739,6 +1749,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return fmt.Errorf("spawn: %w", err)
 			}
+			run.SessionID = sr.SessionID
+			run.Adopted = false
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
@@ -2001,7 +2013,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						// Fold regression summary into retry hint so the next attempt
 						// knows what broke.
 						hint = "quality gate regression: " + cmp.Summary
-						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr})
+						m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr, EndReason: attemptEndVerifierFailed})
 						if cp := m.relocateCheckpoint(prd, t); cp != "" {
 							hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 						}
@@ -2067,7 +2079,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// quality-gate regression already does above.
 				lastFailureCategory = "" // BL410 Phase 3 — content
 				hint = contentHint
-				m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr})
+				m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: hint, Verification: vr, EndReason: attemptEndVerifierFailed})
 				m.store.WithLock(func() {
 					t.Error = hint
 				})
@@ -2175,7 +2187,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
 		if !textCounted {
-			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
+			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
 		}
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
@@ -2259,7 +2271,7 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 		}
 		log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
 			t.ID, SessionStartFailureReason, t.StartFailures)
-		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error()})
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
 		m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
 		m.relocateCheckpoint(prd, t)
 		if serr := m.store.SaveTask(t); serr != nil {
@@ -2274,7 +2286,7 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 	log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
 		t.ID, t.StartFailures, SessionStartRetryBudget)
 	t.Error = cause.Error()
-	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true})
+	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true, EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
 	_ = m.store.SaveTask(t)
 	return false, nil
 }
