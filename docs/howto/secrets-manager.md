@@ -341,16 +341,17 @@ with an error that names the secret and the LLM entry so you can fix
 either. The error never prints a secret value.
 - **The reference is the whole value.** `api_key_ref` must be exactly
 `${secret:name}` — no surrounding text, no template interpolation, no
-concatenation. A partial reference is treated as a literal string and will
-not resolve, so the call fails rather than sending a broken key.
+concatenation. A value that contains a `${secret:` token but is not exactly
+one reference (e.g. text around it, or two references) is refused outright
+with an error naming the LLM entry, so no broken key is ever sent.
 - **Every resolution is audit-logged.** Each time the reference is
 resolved you get an audit entry with the LLM entry name, the secret name,
-and the outcome (resolved / failed). The secret value itself is never
-written to the audit log.
+and the outcome (`ok`, `missing`, or `refused`). The secret value
+itself is never written to the audit log.
 
 A literal key in `api_key_ref` still works and is what older setups use,
 but the reference form is preferred wherever a secrets backend is
-available — and one of ours is, on every installation, with zero setup.
+available (see the backends above).
 See [howto/llm-registry](llm-registry.md) for the full LLM entry
 reference and [howto/compute-routing](compute-routing.md) for a worked
 cloud-LLM setup.
