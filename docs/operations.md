@@ -201,6 +201,18 @@ The systemctl restart path is not changed; the policy only decides whether and w
 
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
 
+#### What a restart does to running work
+
+This section is for the operator: what happens to an Automaton's running tasks when the daemon restarts.
+
+- **Launch refusal while draining.** While the daemon is shutting down it refuses new session launches. An Automaton task whose launch is refused this way is not counted as an attempt. It goes back to waiting, and when the daemon is up again the launch is made once more. No retry counter moves and the task's `Attempts` list gets no new entry.
+- **Adoption.** If a live session for the task is still running after the restart, the daemon adopts it instead of starting a second one. The task keeps its session and its attempt number, and no counter changes. A session that was started with a clean-restart request is not adopted over; it is ended first.
+- **Worktree protection.** A worktree that holds uncommitted changes and is owned by a live session is never reset. The reset is refused, the refusal is written to the Automaton's decisions, and the session is left running.
+- **Duplicate-session rule.** If two live sessions match one task, the older one is kept and the newer one is ended. Set `autonomous.duplicate_session_keep` to `newer` to keep the newer one instead; any other value means `older`. A session is counted as ended only after a fresh listing shows it gone. The decision (which was kept, which ended, why) is recorded once on the task, in the Automaton's decisions and in the audit log.
+- **Attempt records.** Each attempt records the session it used (`session_id`, `tmux_session`) and why it ended (`end_reason`), so a restart can be told apart from a failure when you read the history.
+- **Restart policy values.** `autonomous.restart_policy` is `immediate` (default, restart at once), `wait_quiet` (wait up to `autonomous.restart_quiet_timeout_seconds` for no running tasks, then `autonomous.restart_on_timeout` decides `proceed` or `abort`) or `drain` (stop new tasks starting, let running ones finish, then restart; 6-hour safety cap).
+- **Interruption count.** Every policy reports how many running tasks and live sessions the restart interrupts, in the log and in the REST and tool reply. `GET /api/autonomous/restart-interruptions` reads the same count without restarting.
+
 **What does not survive.** Two things, both listed as open choices in `docs/plans/restart-matrix-findings.md` and neither changed:
 
 - **Planning.** A PRD whose decompose was running is reset to `draft` and its decompose session is ended, because the code that would read the plan was inside the stopped daemon. The PRD waits for the operator to plan again; nothing is planned automatically.
