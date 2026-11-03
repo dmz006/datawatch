@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Node drain for maintenance.** A compute node can be drained so it stops receiving new work while work already running on it is allowed to finish: drain with an optional end time and reason, and undrain when the maintenance is done or the end time has passed. Available on every surface — CLI (`datawatch compute node drain <name> --until ... --reason ...` / `undrain <name>`), REST (`POST`/`DELETE /api/compute/nodes/<name>/drain`), MCP (`compute_node_drain` / `compute_node_undrain`), the comm channel (`compute node drain <name>` / `undrain`), and the PWA **Compute** page, which also shows how many tasks are still finishing on a drained node. A drain with an end time ends on its own when it passes; an open-ended drain stays until an explicit undrain. The drain state lives on the node in the node registry (`~/.datawatch/compute/nodes.json`), not in `config.yaml`.
+
+### Fixed
+
+- **Placement skips drained, consumer-denied and maintenance nodes.** The capacity gate now skips a candidate that refuses the work's consumer — drained, consumer-denied, or in a maintenance window — when choosing where to place it, instead of letting the worker bind to a node that will not take it and then sit waiting with no reason. The wait reason names each refusal (`drained`, `consumer <name> denied`, `in maintenance`).
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.
