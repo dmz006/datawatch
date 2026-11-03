@@ -112,12 +112,17 @@ func OutputsRef(prdID, taskID string) string {
 // CapPRDText returns a copy of prd whose long text fields are cut to max
 // bytes each (see TruncatedField). prd itself, and so the stored record, is
 // never modified: every slice and pointer the cap touches is copied first.
+// The copy also carries ReviewState, the review view derived from the
+// verdicts on the PRD (see ReviewStateOf): state, cause, action and the
+// attempt count behind the deciding verdict. Neither field is ever stored.
 // max <= 0 returns prd unchanged. A nil prd yields nil.
 func CapPRDText(prd *PRD, max int) *PRD {
 	if prd == nil || max <= 0 {
 		return prd
 	}
 	out := *prd
+	res := ReviewStateOf(prd)
+	out.ReviewState = &res
 	pc := &capper{max: max, ref: OutputsRef(prd.ID, "")}
 	pc.str("spec", &out.Spec)
 	pc.str("memory_report", &out.MemoryReport)
