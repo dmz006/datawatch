@@ -6465,6 +6465,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// autonomous.ship — install the configured push/tag/ci_watch modes so
 			// the ship step honours off and shadow instead of the built-in default.
 			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)
+			autonomouspkg.SetChecksConfig(cfg.Autonomous.Checks)
 			// Session-end scratch releases by the owner are counted into the
 			// cleanup status (owner bucket) so the safety-net sweep's count
 			// stays separate (cleanup_status.go).

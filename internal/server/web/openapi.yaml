@@ -1610,6 +1610,61 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/checks:
+    get:
+      summary: Checks policy and findings
+      description: |
+        The resolved mode of each automatic check (`pre_start_verifier`, `plan_rules`,
+        `after_done`, `registry_readme`: `off`, `shadow` or `on`, plus
+        `block_when_missing`) and the findings the checks recorded on the Automata's
+        triage records, newest first. `prd_id` narrows the findings to one Automaton;
+        `project_dir` resolves the per-project policy. Read-only; needs the autonomous
+        read capability when called by a federated peer. The settings are the
+        `autonomous.checks.*` keys on `/api/config`.
+      operationId: autonomousChecks
+      tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Only the findings of this Automaton, schema: {type: string}}
+        - {name: project_dir, in: query, required: false, description: Resolve the policy for this project directory, schema: {type: string}}
+      responses:
+        "200":
+          description: Checks policy and findings
+          content:
+            application/json:
+              schema: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/ship:
+    get:
+      summary: Ship policy and outcomes
+      description: |
+        The resolved ship settings (`push`, `tag` and `ci_watch` modes, `tag_format`,
+        `remote`, `ci_workflows`) and the push, tag and CI-watch outcomes recorded
+        on the Automata's triage records, newest first. `prd_id` narrows the outcomes
+        to one Automaton; `project_dir` resolves the per-project policy. Read-only;
+        needs the autonomous read capability when called by a federated peer. The
+        settings are the `autonomous.ship.*` keys on `/api/config`.
+      operationId: autonomousShip
+      tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Only the outcomes of this Automaton, schema: {type: string}}
+        - {name: project_dir, in: query, required: false, description: Resolve the policy for this project directory, schema: {type: string}}
+      responses:
+        "200":
+          description: Ship policy and outcomes
+          content:
+            application/json:
+              schema: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/merge:
     get:
       summary: Automaton merge status
