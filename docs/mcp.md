@@ -865,13 +865,13 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 
 ### `cost_report`
 
-Cost report over the daemon's recorded session spend: the `internal/costreport` engine, the same engine call `GET /api/cost/report` makes, with the daemon's `cost_report` config block as the source of every default. Grouped by automaton, automation, backend, or week; token totals always, USD estimates when rates are configured. Read-only.
+Cost report over the daemon's recorded session spend: the `internal/costreport` engine, the same engine call `GET /api/cost/report` makes, with the daemon's `cost_report` config block as the source of every default. Grouped by automaton, automation, backend or week (the `group_by=release` grouping is REST/CLI-only — it needs shipped-unit state this tool does not expose, and is rejected with a clear message); token totals always, USD estimates when rates are configured, and — where the owning provider has a `usage.billing` profile — the billing label (a bundled plan reads “bundled plan — API-equivalent, not billed”) with the point figures. Read-only.
 
 **Parameters:**
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `group_by` | string | No | One of `automaton`, `automation`, `backend`, `week`. Defaults to the `cost_report` config (`default_group_by`). |
+| `group_by` | string | No | One of `automaton`, `automation`, `backend`, `week`. `release` is rejected by this tool (it is REST/CLI-only — it needs shipped-unit state the tool does not expose). Defaults to the `cost_report` config (`default_group_by`). |
 | `since` | string | No | Lower bound, RFC3339 or `YYYY-MM-DD`. Defaults to the `cost_report` config window (`default_window_days`). |
 | `until` | string | No | Upper bound, RFC3339 or `YYYY-MM-DD`. Defaults to now. |
 
@@ -880,15 +880,19 @@ Cost report over the daemon's recorded session spend: the `internal/costreport` 
 {
   "group_by": "backend",
   "rows": [
-    {"key": "claude-code", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000, "rate_configured": true, "usd_estimate": 0.78},
-    {"key": "opencode", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000, "rate_configured": true, "usd_estimate": 0.24}
+    {"key": "claude-code", "sessions": 3, "tokens_in": 120000, "tokens_out": 24000, "rate_configured": true, "usd_estimate": 0.78,
+     "billing_mode": "bundled_plan", "billing_label": "bundled plan — API-equivalent, not billed",
+     "api_equivalent_usd": 0.78, "estimated_usage_points": 3.9, "share_of_monthly_price": 0.008},
+:    {"key": "opencode", "sessions": 1, "tokens_in": 50000, "tokens_out": 9000, "rate_configured": true,
+     "billing_mode": "free_local", "billing_label": "free local inference — not billed, token usage only"}
   ],
-  "retention_days": 90,
-  "lifetime_fallback": false
+  "retention_days": 31,
+  "lifetime_fallback": false,
+  "retention_note": "Figures rest on the last 31 days of recorded sessions."
 }
 ```
 
-Rows are sorted by key. `rate_configured` is `false` when at least one session in the row has no rate (the row then has no `usd_estimate`).
+Rows are sorted by key. `rate_configured` is `false` when at least one session in the row has no rate (the row then has no `usd_estimate`). `billing_mode` and `billing_label` are set where the row's providers have a billing profile — a fully-unprofiled row reads mode `api_metered` with the "(assumed — no usage.billing entry)" label. A `free_local` row carries no `usd_estimate` at all (nothing to bill and no rate to price by — the `rate_configured: true` above is why it isn't omitted). `api_equivalent_usd`, `estimated_usage_points` and `share_of_monthly_price` appear only on bundled rows whose profile carries a `monthly_price`. `units` only in `release` rows (REST/CLI only).
 
 ---
 
@@ -1885,7 +1889,10 @@ ceiling, lane choice (recent lanes and the max), the pace line and headroom
 after the safety margin, the one burn figure (the weekly average, with a
 fallback notice when the recent window fell back to 48h), the projected end
 of cycle per burn line, run-out warnings, the finish-early estimate (queue ×
-per-task cost vs the typed remaining work) under the run-flat-out policy, and
+per-task cost vs the typed remaining work) under the run-flat-out policy,
+the point-value line from the billing profile — the estimated cost of one
+point and of a full week, an API-equivalent estimate, not a bill, sourced
+from the configured `usage.billing` profile or the assumed default — and
 the plain-English advice block naming the formulas used.
 
 **Parameters:**

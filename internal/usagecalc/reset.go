@@ -113,6 +113,38 @@ func parseClock(clock string) (int, int, error) {
 	return hour, min, nil
 }
 
+// Schedule is a reset schedule: a weekday and an HH:MM clock time, with no
+// zone — the shape a billing profile carries for a plan's weekly reset. A
+// zero value (an empty clock) is invalid and applies nothing, so the
+// settings' own schedule stands.
+type Schedule struct {
+	Weekday time.Weekday
+	Clock   string // HH:MM, 24-hour
+}
+
+// Valid reports whether the schedule names a usable weekday and a strict
+// HH:MM clock time.
+func (s Schedule) Valid() bool {
+	if s.Weekday < time.Sunday || s.Weekday > time.Saturday {
+		return false
+	}
+	_, _, err := parseClock(s.Clock)
+	return err == nil
+}
+
+// Apply returns the spec with the schedule's weekday and clock in place of
+// the spec's own, the zone and its markers (ServerZone, FellBack) kept: the
+// schedule supplies when, the settings supply whose clock. An invalid
+// schedule returns the spec unchanged and false.
+func (s Schedule) Apply(r ResetSpec) (ResetSpec, bool) {
+	if !s.Valid() {
+		return r, false
+	}
+	r.Weekday = s.Weekday
+	r.Clock = s.Clock
+	return r, true
+}
+
 func (r ResetSpec) anchor(at time.Time) (resetAnchor, error) {
 	loc, hour, min, err := r.parse()
 	if err != nil {

@@ -102,6 +102,10 @@ func textLines(resp Response) []string {
 			txtPoints(ad.ExtraCreditPoints), txtPoints(ad.Ceiling)))
 	}
 
+	if ad.PointValue != nil {
+		lines = append(lines, pointValueLine(ad.PointValue))
+	}
+
 	full := ad.ReadAt != nil
 
 	if full {
@@ -173,6 +177,9 @@ func readLine(ad Advice) string {
 	reset := "not set"
 	if ad.NextResetAt != nil {
 		reset = clockStr(*ad.NextResetAt)
+		if ad.ResetFromProfile {
+			reset += " (from the claude-code billing profile)"
+		}
 		if ad.ServerZone {
 			reset += " (server zone)"
 		}
@@ -182,6 +189,23 @@ func readLine(ad Advice) string {
 		clockStr(*ad.ReadAt),
 		reset,
 		txtHours(ad.DaysLeft))
+}
+
+// pointValueLine is the billing profile's estimate of what the allowance
+// points are worth in money: the cost-equivalent of one point and of a week
+// of the allowance, with the source they came from, marked as an estimate —
+// the money is price-derived, never a metered spend.
+func pointValueLine(pv *PointValue) string {
+	source := "the assumed default claude-code profile"
+	if pv.Source == PointValueSourceProfile {
+		source = "the claude-code billing profile"
+	}
+	line := fmt.Sprintf("point value (estimate, from %s): %s per point, %s per week",
+		source, txtCost(pv.PerPoint), txtCost(pv.PerWeek))
+	if pv.Currency != "" {
+		line += ", " + pv.Currency
+	}
+	return line
 }
 
 func paceLine(ad Advice) string {

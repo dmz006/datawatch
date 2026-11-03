@@ -9566,6 +9566,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- bl90 — Usage billing profiles (mode / plan / price / reset / unit) -->
+        <div class="settings-section" data-group="compute" style="${stab!=='compute'?'display:none':''}">
+          ${settingsSectionHeader('usagebilling', 'Usage billing', 'api/sessions.md')}
+          <div id="settings-sec-usagebilling" style="${secContent('usagebilling')}">
+            <div id="usageBillingList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          </div>
+        </div>
+
         ${GENERAL_CONFIG_FIELDS.map(sec => {
           // BL247 — route pipeline/autonomous/orchestrator sections to Automata tab;
           // plugins section to Plugins tab; everything else stays in General.
@@ -10538,6 +10546,7 @@ function renderSettingsView() {
   // loadKgPanel, renderObserverPeersCard) moved to renderObserverView() since
   // those cards now live in the top-level Observer view.
   loadCostRatesConfig();
+  loadUsageBillingConfig();
   loadDetectionFilters();
   loadTemplatesPanel();
   loadDeviceAliasesPanel();
@@ -27422,7 +27431,7 @@ window.requestWatchCardHtml = function(status) {
 // through escHtml; row keys and group labels are machine- or
 // agent-generated and treated as untrusted.
 const COST_REPORT_HELP_HREF = '/diagrams.html#docs/datawatch-definitions.md#cost-report';
-const COST_REPORT_GROUP_BYS = ['automaton', 'automation', 'backend', 'week'];
+const COST_REPORT_GROUP_BYS = ['automaton', 'automation', 'backend', 'release', 'week'];
 const COST_REPORT_MAX_ROWS = 50;
 
 // costReportHelpLink: the small help link beside the card title. Honors
@@ -27463,25 +27472,79 @@ window.costReportShowUsd = function(rows, showUsdPref) {
     Number.isFinite(Number(r.usd_estimate)));
 };
 
+// costReportFieldHas — true when at least one row carries a usable
+// (non-null, non-blank, finite) value for the field. A column renders
+// only when the report actually has data for it — never an empty column.
+window.costReportFieldHas = function(rows, field) {
+  if (!Array.isArray(rows)) return false;
+  return rows.some(r => r && typeof r === 'object' && r[field] !== undefined && r[field] !== null &&
+    String(r[field]).trim() !== '' && Number.isFinite(Number(r[field])));
+};
+
 // costReportRowHtml renders one group row: group → sessions → tokens
-// (in / out) → USD, with the USD cell only when `withUsd`.
+// (in / out) → billing → usage points → share of monthly price →
+// API-equivalent (not billed) → units → USD. The middle columns show
+// only when the card's opts flag them (the card computes the flags from
+// the report, one per field); USD follows its own show-usd preference.
 window.costReportRowHtml = function(row, opts) {
   const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : null;
   if (!r) return '';
-  const withUsd = !!(opts && opts.withUsd);
+  const o = (opts && typeof opts === 'object' && !Array.isArray(opts)) ? opts : {};
+  const withUsd = !!o.withUsd;
+  const withBilling = !!o.withBilling;
+  const withPoints = !!o.withPoints;
+  const withShare = !!o.withShare;
+  const withApi = !!o.withApi;
+  const withUnits = !!o.withUnits;
   const key = (r.key === undefined || r.key === null || r.key === '')
     ? (t('cost_report_key_unknown') || '—') : r.key;
+  const td = (style, inner) => `<td style="padding:3px 8px;border-bottom:1px solid var(--border);${style}">${inner}</td>`;
+  const dash = escHtml(t('cost_report_usd_none') || '—');
   const cells = [
-    `<td style="padding:3px 8px 3px 0;border-bottom:1px solid var(--border);color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(String(key))}">${escHtml(String(key))}</td>`,
-    `<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text2);text-align:right;">${Number.isFinite(Number(r.sessions)) ? Number(r.sessions) : 0}</td>`,
-    `<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;">${escHtml(t('cost_report_tokens_io', [Number(r.tokens_in) || 0, Number(r.tokens_out) || 0]) || 'tokens')}</td>`,
+    td('color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;',
+       `<span title="${escHtml(String(key))}">${escHtml(String(key))}</span>`),
+    td('color:var(--text2);text-align:right;', `${Number.isFinite(Number(r.sessions)) ? Number(r.sessions) : 0}`),
+    td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+       escHtml(t('cost_report_tokens_io', [Number(r.tokens_in) || 0, Number(r.tokens_out) || 0]) || 'tokens')),
   ];
+  if (withBilling) {
+    const label = (typeof r.billing_label === 'string' && r.billing_label) ? r.billing_label : '';
+    const mode = (typeof r.billing_mode === 'string' && r.billing_mode) ? r.billing_mode : '';
+    cells.push(td('color:var(--text2);font-size:9px;white-space:nowrap;',
+      `<span title="${escHtml(label || mode)}">${escHtml(label || mode || (t('cost_report_usd_none') || '—'))}</span>`));
+  }
+  if (withPoints) {
+    const n = Number(r.estimated_usage_points);
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+      Number.isFinite(n)
+        ? escHtml(t('cost_report_points_value', [n.toFixed(1)]) || (n.toFixed(1) + ' pts'))
+        : dash));
+  }
+  if (withShare) {
+    const n = Number(r.share_of_monthly_price);
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;',
+      Number.isFinite(n)
+        ? escHtml(t('cost_report_share_value', [(n * 100).toFixed(1)]) || ((n * 100).toFixed(1) + '%'))
+        : dash));
+  }
+  if (withApi) {
+    const n = Number(r.api_equivalent_usd);
+    cells.push(td('color:var(--text2);text-align:right;font-family:monospace;white-space:nowrap;',
+      Number.isFinite(n)
+        ? escHtml(t('cost_report_usd_value', [n.toFixed(2)]) || ('$' + n.toFixed(2)))
+        : dash));
+  }
+  if (withUnits) {
+    const n = Number(r.units);
+    cells.push(td('color:var(--text2);text-align:right;font-family:monospace;white-space:nowrap;',
+      Number.isFinite(n) ? String(n) : dash));
+  }
   if (withUsd) {
     const hasUsd = r.usd_estimate !== undefined && r.usd_estimate !== null && Number.isFinite(Number(r.usd_estimate));
     const usd = hasUsd
       ? escHtml(t('cost_report_usd_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2)))
       : escHtml(t('cost_report_usd_none') || '—');
-    cells.push(`<td style="padding:3px 0;border-bottom:1px solid var(--border);color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;">${usd}</td>`);
+    cells.push(td('color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;', usd));
   }
   return `<tr class="cost-report-row">${cells.join('')}</tr>`;
 };
@@ -27498,12 +27561,23 @@ window.costReportCardHtml = function(report, opts) {
   const rep = (report && typeof report === 'object' && !Array.isArray(report)) ? report : {};
   const rows = Array.isArray(rep.rows) ? rep.rows : [];
   const withUsd = window.costReportShowUsd(rows, o.showUsd);
+  const withBilling = rows.some(r => r && typeof r === 'object' &&
+    ((typeof r.billing_label === 'string' && r.billing_label) || (typeof r.billing_mode === 'string' && r.billing_mode)));
+  const withPoints = window.costReportFieldHas(rows, 'estimated_usage_points');
+  const withShare = window.costReportFieldHas(rows, 'share_of_monthly_price');
+  const withApi = window.costReportFieldHas(rows, 'api_equivalent_usd');
+  const withUnits = window.costReportFieldHas(rows, 'units');
+  const rowOpts = { withUsd, withBilling, withPoints, withShare, withApi, withUnits };
   const head = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
     <span style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(t('cost_report_card_title') || 'Cost report')}</span>
     ${window.costReportHelpLink()}
   </div>`;
   let notes = '<div style="font-size:9px;color:var(--text2);margin-bottom:6px;line-height:1.5;">';
-  if (Number.isFinite(Number(rep.retention_days))) {
+  if (typeof rep.retention_note === 'string' && rep.retention_note.trim()) {
+    // The daemon's own retention note (31-day window; the lifetime
+    // fallback wording when the window was widened) rides on the body.
+    notes += `<div>${escHtml(rep.retention_note)}</div>`;
+  } else if (Number.isFinite(Number(rep.retention_days))) {
     notes += `<div>${escHtml(t('cost_report_retention_window', [Number(rep.retention_days)]) || ('Figures rest on the last ' + Number(rep.retention_days) + ' days of recorded sessions.'))}</div>`;
   }
   if (rep.lifetime_fallback === true) {
@@ -27517,8 +27591,8 @@ window.costReportCardHtml = function(report, opts) {
   const thL = txt => `<th style="padding:2px 8px 2px 0;text-align:left;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   const thR = txt => `<th style="padding:2px 8px;text-align:right;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
   let body = `<div style="overflow-x:auto;font-size:10px;"><table style="border-collapse:collapse;width:100%;">
-    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withUsd ? thR(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
-    <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, { withUsd })).join('')}</tbody>
+    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withBilling ? thL(t('cost_report_column_billing') || 'Billing') : ''}${withPoints ? thR(t('cost_report_column_points') || 'Points') : ''}${withShare ? thR(t('cost_report_column_share') || 'Share of price') : ''}${withApi ? thR(t('cost_report_column_api_equiv') || 'API-equiv (unbilled)') : ''}${withUnits ? thR(t('cost_report_column_units') || 'Units') : ''}${withUsd ? thL(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
+    <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, rowOpts)).join('')}</tbody>
   </table></div>`;
   const hidden = rows.length - maxRows;
   if (hidden > 0) {
@@ -39107,6 +39181,7 @@ function _dashRenderCostReport() {
       ${opt('automaton', c.groupBy === 'automaton', optLabel('automaton'))}
       ${opt('automation', c.groupBy === 'automation', optLabel('automation'))}
       ${opt('backend', c.groupBy === 'backend', optLabel('backend'))}
+      ${opt('release', c.groupBy === 'release', optLabel('release'))}
       ${opt('week', c.groupBy === 'week', optLabel('week'))}
     </select>
     <input type="number" min="1" step="1" aria-label="${escHtml(t('cost_report_window_days') || 'Window (days)')}"
@@ -44133,6 +44208,312 @@ function resetCostRates() {
     .catch(() => showToast('Failed to reset cost rates', 'error'));
 }
 window.resetCostRates = resetCostRates;
+
+
+// ── bl90 — Usage billing settings card ────────────────────────────────────────
+// Per-provider billing profile (usage.billing.<provider>.<field>): the
+// mode, the plan, the monthly price + currency, the allowance-reset
+// weekday/time and the allowance unit. The daemon assumes api_metered
+// for every provider without a profile — and says so in its cost-report
+// labels — so the card lists every known backend and badges the
+// unprofiled ones as the assumed default instead of hiding them.
+// Saves PUT flat dotted keys (the daemon validates every field and 400s
+// naming the offending key; null clears a field; one PUT of the whole
+// entry is all-or-nothing). Same discipline as the cost-report card:
+// one action-triggered load per render, no timers.
+
+const USAGE_BILLING_MODES = ['bundled_plan', 'api_metered', 'free_local'];
+const USAGE_BILLING_UNITS = ['percent', 'requests', 'tokens'];
+const USAGE_BILLING_WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const USAGE_BILLING_FIELDS = ['mode', 'plan', 'monthly_price', 'currency', 'reset_weekday', 'reset_time', 'allowance_unit'];
+
+// _ubLbl — localized label with an English fallback for when t() answers
+// with the key itself (missing bundle entry).
+function _ubLbl(key, fallback) {
+  const s = (typeof t === 'function') ? t(key) : '';
+  return (s && s !== key) ? s : fallback;
+}
+
+// _usageBillingModeLabel(mode) — the localized mode name; an unknown
+// (but persisted) mode renders as-is; empty → ''.
+window._usageBillingModeLabel = function(mode) {
+  const m = (mode === undefined || mode === null || mode === '') ? '' : String(mode);
+  if (!m) return '';
+  return (USAGE_BILLING_MODES.indexOf(m) >= 0) ? _ubLbl('settings_usage_billing_mode_' + m, m) : m;
+};
+
+// _usageBillingUnitLabel(unit) — the localized allowance-unit name.
+window._usageBillingUnitLabel = function(unit) {
+  const u = (unit === undefined || unit === null || unit === '') ? '' : String(unit);
+  if (!u) return '';
+  return (USAGE_BILLING_UNITS.indexOf(u) >= 0) ? _ubLbl('settings_usage_billing_unit_' + u, u) : u;
+};
+
+// _usageBillingProfileParts(profile) → Array<{label, value}> in display
+// order (mode, plan, monthly price + currency, reset weekday + time,
+// allowance unit). value is '' for unset fields — the caller renders
+// the localized dash. Pure: data in, label/value pairs out.
+window._usageBillingProfileParts = function(profile) {
+  const p = (profile && typeof profile === 'object' && !Array.isArray(profile)) ? profile : {};
+  let money = '';
+  const price = (p.monthly_price === undefined || p.monthly_price === null || p.monthly_price === '') ? NaN : Number(p.monthly_price);
+  if (Number.isFinite(price) && price > 0) {
+    const cur = (typeof p.currency === 'string' && p.currency.trim()) ? p.currency.trim().toUpperCase() + ' ' : '';
+    money = cur + price;
+  }
+  const resetParts = [p.reset_weekday, p.reset_time].filter(v => v !== undefined && v !== null && String(v).trim() !== '');
+  return [
+    { label: _ubLbl('settings_usage_billing_mode', 'Mode'), value: window._usageBillingModeLabel(p.mode) },
+    { label: _ubLbl('settings_usage_billing_plan', 'Plan'), value: (p.plan === undefined || p.plan === null || p.plan === '') ? '' : String(p.plan) },
+    { label: _ubLbl('settings_usage_billing_monthly_price', 'Monthly price'), value: money },
+    { label: _ubLbl('settings_usage_billing_reset', 'Reset'), value: resetParts.map(v => String(v)).join(' ') },
+    { label: _ubLbl('settings_usage_billing_allowance_unit', 'Allowance unit'), value: window._usageBillingUnitLabel(p.allowance_unit) },
+  ];
+};
+
+// _usageBillingRowHtml(provider, profile) — one card row. profile may be
+// undefined → the row carries the "assumed default" badge and no field
+// list. Every interpolated value is escHtml'd (provider names are
+// arbitrary operator text and are treated as untrusted).
+window._usageBillingRowHtml = function(provider, profile) {
+  const name = (provider && typeof provider === 'string') ? provider : '';
+  const has = (profile !== undefined && profile !== null && typeof profile === 'object' && !Array.isArray(profile));
+  const safe = escHtml(name);
+  let badge;
+  let partsHtml = '';
+  if (has) {
+    badge = `<span style="font-size:9px;color:var(--text2);border:1px solid var(--border);border-radius:8px;padding:0 6px;white-space:nowrap;">${escHtml(window._usageBillingModeLabel(profile.mode))}</span>`;
+    const dash = escHtml(_ubLbl('settings_usage_billing_unset', '—'));
+    partsHtml = `<div style="font-size:11px;color:var(--text2);margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 12px;">` +
+      window._usageBillingProfileParts(profile).map(pt =>
+        `<span>${escHtml(pt.label)}: <b style="color:var(--text);font-weight:600;">${(pt.value && String(pt.value).trim()) ? escHtml(String(pt.value)) : dash}</b></span>`
+      ).join('') + '</div>';
+  } else {
+    badge = `<span title="${escHtml(_ubLbl('settings_usage_billing_assumed_hint', 'No billing profile — the daemon assumes api_metered for this provider.'))}" style="font-size:9px;color:var(--accent);border:1px solid var(--accent);border-radius:8px;padding:0 6px;white-space:nowrap;">${escHtml(_ubLbl('settings_usage_billing_assumed', 'assumed default'))}</span>`;
+  }
+  let actions = '';
+  if (name) {
+    actions = `<div style="display:flex;gap:6px;flex:0 0 auto;">
+      <button onclick="window._usageBillingOpen('${safe}')" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;">${escHtml(_ubLbl('edit_btn', 'Edit'))}</button>
+      ${has ? `<button onclick="window._usageBillingRemove('${safe}')" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;">${escHtml(_ubLbl('settings_usage_billing_remove', 'Remove'))}</button>` : ''}
+    </div>`;
+  }
+  return `<div class="usage-billing-row" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:0;">
+      <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+        <span style="font-weight:700;font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${safe}</span>
+        ${badge}
+      </div>
+      ${actions}
+    </div>
+    ${partsHtml}
+  </div>`;
+};
+
+// _ubFieldInput(label, inner) — one grid cell of the profile form.
+function _ubField(label, inner) {
+  return `<label style="font-size:12px;color:var(--text2);display:block;">${label}<br>${inner}</label>`;
+}
+function _ubOpt(value, selected, text) {
+  return `<option value="${escHtml(value)}"${selected ? ' selected' : ''}>${escHtml(text)}</option>`;
+}
+
+// _usageBillingFormHtml(provider, profile, allowProvider) — the profile
+// form. allowProvider → add mode (provider key is free text); otherwise
+// the provider is pinned (a disabled input so the save path can read it
+// like every other field).
+window._usageBillingFormHtml = function(provider, profile, allowProvider) {
+  const p = (profile && typeof profile === 'object' && !Array.isArray(profile)) ? profile : {};
+  const inputSt = 'width:100%;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;';
+  const pickOpt = (cur, v) => (cur === undefined || cur === null || String(cur).trim() === '') ? (v === '') : (String(cur) === v);
+  const providerInput = allowProvider
+    ? `<input type="text" id="ubProvider" placeholder="claude-code" style="${inputSt}">`
+    : `<input type="text" id="ubProvider" value="${escHtml(provider)}" disabled style="${inputSt}">`;
+  return `
+  <div class="usage-billing-form" style="border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:4px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
+      ${_ubField(_ubLbl('settings_usage_billing_provider', 'Provider key'), providerInput)}
+      ${_ubField(_ubLbl('settings_usage_billing_mode', 'Mode'),
+        `<select id="ubMode" style="${inputSt}">` +
+        _ubOpt('', pickOpt(p.mode, ''), '—') +
+        USAGE_BILLING_MODES.map(m => _ubOpt(m, p.mode === m, window._usageBillingModeLabel(m))).join('') +
+        `</select>`)}
+      ${_ubField(_ubLbl('settings_usage_billing_plan', 'Plan'),
+        `<input type="text" id="ubPlan" value="${escHtml(p.plan === undefined || p.plan === null ? '' : String(p.plan))}" placeholder="max5" style="${inputSt}">`)}
+      ${_ubField(_ubLbl('settings_usage_billing_monthly_price', 'Monthly price'),
+        `<input type="number" min="0" step="0.01" id="ubPrice" value="${(p.monthly_price === undefined || p.monthly_price === null || p.monthly_price === '') ? '' : String(p.monthly_price)}" style="${inputSt}">`)}
+      ${_ubField(_ubLbl('settings_usage_billing_currency', 'Currency'),
+        `<input type="text" id="ubCurrency" value="${escHtml(p.currency === undefined || p.currency === null ? '' : String(p.currency))}" placeholder="USD" style="${inputSt}">`)}
+      ${_ubField(_ubLbl('settings_usage_billing_reset_weekday', 'Reset weekday'),
+        `<select id="ubWeekday" style="${inputSt}">` +
+        _ubOpt('', pickOpt(p.reset_weekday, ''), '—') +
+        USAGE_BILLING_WEEKDAYS.map(w => _ubOpt(w, p.reset_weekday === w, w)).join('') +
+        `</select>`)}
+      ${_ubField(_ubLbl('settings_usage_billing_reset_time', 'Reset time'),
+        `<input type="time" id="ubTime" value="${escHtml(p.reset_time === undefined || p.reset_time === null ? '' : String(p.reset_time))}" style="${inputSt}">`)}
+      ${_ubField(_ubLbl('settings_usage_billing_allowance_unit', 'Allowance unit'),
+        `<select id="ubUnit" style="${inputSt}">` +
+        _ubOpt('', pickOpt(p.allowance_unit, ''), '—') +
+        USAGE_BILLING_UNITS.map(u => _ubOpt(u, p.allowance_unit === u, window._usageBillingUnitLabel(u))).join('') +
+        `</select>`)}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;align-items:center;">
+      <button onclick="window._usageBillingSave()" style="background:var(--accent2);color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:12px;">${escHtml(_ubLbl('save_btn', 'Save'))}</button>
+      <button onclick="window._usageBillingCloseForm()" style="background:var(--bg3,#2d3148);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;">${escHtml(_ubLbl('cancel_btn', 'Cancel'))}</button>
+    </div>
+  </div>`;
+};
+
+// _usageBillingRowsHtml(billing, backends) — pure: the profile rows for
+// every known provider (union of configured keys and known backends),
+// unprofiled ones badged as the assumed default.
+window._usageBillingRowsHtml = function(billing, backends) {
+  const names = new Set();
+  if (billing && typeof billing === 'object' && !Array.isArray(billing)) {
+    Object.keys(billing).forEach(k => { if (k) names.add(k); });
+  }
+  (Array.isArray(backends) ? backends : []).forEach(b => {
+    const nb = (b && typeof b === 'object') ? String(b.name || '') : String(b || '');
+    if (nb) names.add(nb);
+  });
+  return Array.from(names).sort().map(n => {
+    const prof = (billing && typeof billing === 'object' && !Array.isArray(billing) && billing[n] !== undefined && billing[n] !== null) ? billing[n] : undefined;
+    return window._usageBillingRowHtml(n, prof);
+  }).join('');
+};
+
+// _usageBillingPut(provider, values) — the one save path: a whole-entry
+// PUT of flat dotted keys (the daemon's all-or-nothing contract), null
+// for every absent field. values is a raw {field: value} object; blanks
+// become null.
+function _usageBillingPut(provider, values) {
+  const v = (values && typeof values === 'object') ? values : {};
+  const body = {};
+  USAGE_BILLING_FIELDS.forEach(f => {
+    let val = v[f];
+    if (val === undefined || val === null || String(val).trim() === '') val = null;
+    if (f === 'monthly_price') {
+      val = (val === null) ? null : Number(val);
+    }
+    body['usage.billing.' + provider + '.' + f] = val;
+  });
+  return apiFetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// loadUsageBillingConfig — one action-triggered load (the settings
+// render), no timers: reads the usage.billing map + known backends,
+// renders the rows, and keeps the last good state in window._usageBilling
+// so the form/save/remove paths never re-fetch.
+window._usageBilling = null; // { billing: {}, backends: [] }
+window.loadUsageBillingConfig = function() {
+  const el = document.getElementById('usageBillingList');
+  if (!el) return;
+  el.innerHTML = `<div style="color:var(--text2);width:40px;">${loadingEyeBlock()}</div>`;
+  Promise.all([
+    apiFetch('/api/config').catch(() => null),
+    apiFetch('/api/llms').catch(() => null),
+  ]).then(([cfg, llms]) => {
+    const billing = (cfg && cfg.usage && typeof cfg.usage.billing === 'object' && !Array.isArray(cfg.usage.billing)) ? cfg.usage.billing : {};
+    const rawLlms = (llms && Array.isArray(llms.llms)) ? llms.llms : (llms && Array.isArray(llms.backends)) ? llms.backends : [];
+    const known = rawLlms
+      .filter(l => l && typeof l === 'object' && l.name && !l.disabled)
+      .map(l => String(l.name));
+    window._usageBilling = { billing, backends: known };
+    if (!Object.keys(billing).length && !known.length) {
+      el.innerHTML = `<div style="font-size:11px;color:var(--text2);padding:8px 0;">${escHtml(_ubLbl('settings_usage_billing_empty', 'No billing profiles yet — and no known backends to assume.'))}</div>`
+        + `<div style="margin-top:6px;"><button onclick="window._usageBillingOpenNew()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:11px;padding:4px 12px;cursor:pointer;">+ ${escHtml(_ubLbl('settings_usage_billing_add', 'Add billing profile'))}</button></div>`
+        + `<div id="ubFormSlot"></div>`;
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${escHtml(_ubLbl('settings_usage_billing_hint', 'How each provider’s spend counts against its plan — providers without a profile are assumed api_metered.'))}</div>`;
+    html += `<div id="ubRows">${window._usageBillingRowsHtml(billing, known)}</div>`;
+    html += `<div style="margin-top:6px;"><button onclick="window._usageBillingOpenNew()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:11px;padding:4px 12px;cursor:pointer;">+ ${escHtml(_ubLbl('settings_usage_billing_add', 'Add billing profile'))}</button></div>`;
+    html += `<div id="ubFormSlot"></div>`;
+    el.innerHTML = html;
+  }).catch(e => {
+    el.innerHTML = `<div style="font-size:12px;color:var(--text2);">Failed to load billing profiles: ${e && e.message ? escHtml(e.message) : ''}</div>`;
+  });
+};
+
+// _usageBillingOpenNew — drops the add-mode form into ubFormSlot (present
+// in every rendered card state).
+window._usageBillingOpenNew = function() {
+  const slot = document.getElementById('ubFormSlot');
+  if (!slot) return;
+  slot.innerHTML = window._usageBillingFormHtml('', {}, true);
+};
+
+// _usageBillingOpen(provider) — the edit form for one profile.
+window._usageBillingOpen = function(provider) {
+  const st = window._usageBilling;
+  const billing = (st && st.billing) || {};
+  const slot = document.getElementById('ubFormSlot');
+  if (!slot) return;
+  const name = (provider && typeof provider === 'string') ? provider : '';
+  slot.innerHTML = window._usageBillingFormHtml(name, (billing[name] !== undefined && billing[name] !== null) ? billing[name] : {}, false);
+};
+
+window._usageBillingCloseForm = function() {
+  const slot = document.getElementById('ubFormSlot');
+  if (slot) slot.innerHTML = '';
+};
+
+// window._usageBillingSave — collects the form and PUTs the whole profile
+// (flat dotted keys; blanks → null, per the daemon's all-or-nothing
+// contract). A 400 lands in e.message naming the offending key → toast.
+window._usageBillingSave = function() {
+  const read = id => { const e = document.getElementById(id); return e ? e.value : ''; };
+  const provider = String(read('ubProvider') || '').trim();
+  if (!provider) {
+    showToast(_ubLbl('settings_usage_billing_provider_missing', 'Provider key is required.'), 'error', 4000);
+    return;
+  }
+  const rawPrice = String(read('ubPrice') || '').trim();
+  const values = {
+    mode: String(read('ubMode') || '').trim(),
+    plan: String(read('ubPlan') || '').trim(),
+    monthly_price: (rawPrice === '') ? '' : Number(rawPrice),
+    currency: String(read('ubCurrency') || '').trim().toUpperCase(),
+    reset_weekday: String(read('ubWeekday') || '').trim(),
+    reset_time: String(read('ubTime') || '').trim(),
+    allowance_unit: String(read('ubUnit') || '').trim(),
+  };
+  window._usageBillingSaving = true;
+  _usageBillingPut(provider, values).then(() => {
+    showToast(_ubLbl('settings_usage_billing_saved', 'Billing profile saved'), 'success', 2500);
+    if (typeof showRestartHint === 'function') showRestartHint();
+    window._usageBillingCloseForm();
+    if (typeof loadUsageBillingConfig === 'function') loadUsageBillingConfig();
+  }).catch(e => {
+    showToast(_ubLbl('settings_usage_billing_save_failed', 'Saving the billing profile failed') + (e && e.message ? ': ' + e.message : ''), 'error', 6000);
+  }).then(() => { window._usageBillingSaving = false; });
+};
+
+// window._usageBillingRemove — clears every field for the provider
+// (null per field: the daemon keeps the entry, it just resolves to the
+// assumed defaults) after a confirm.
+window._usageBillingRemove = function(provider) {
+  const p = (provider && typeof provider === 'string') ? provider.trim() : '';
+  if (!p) return;
+  if (typeof confirm === 'function') {
+    const ok = confirm(_ubLbl('settings_usage_billing_remove_confirm', 'Remove the billing profile for this provider? It will be assumed api_metered again.'));
+    if (!ok) return;
+  }
+  if (typeof window._usageBillingSaving === 'boolean' && window._usageBillingSaving) return;
+  window._usageBillingSaving = true;
+  _usageBillingPut(p, {}).then(() => {
+    showToast(_ubLbl('settings_usage_billing_removed', 'Billing profile removed'), 'success', 2500);
+    if (typeof showRestartHint === 'function') showRestartHint();
+    if (typeof loadUsageBillingConfig === 'function') loadUsageBillingConfig();
+  }).catch(e => {
+    showToast(_ubLbl('settings_usage_billing_save_failed', 'Removing the billing profile failed') + (e && e.message ? ': ' + e.message : ''), 'error', 6000);
+  }).then(() => { window._usageBillingSaving = false; });
+};
+
 
 // ── BL220-G10 — Global cooldown controls ──────────────────────────────────────
 

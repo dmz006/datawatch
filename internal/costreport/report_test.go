@@ -3,6 +3,7 @@ package costreport
 import (
 	"errors"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestCostReportRowsPerAutomaton(t *testing.T) {
 		makeRecord("s2", "auto-2", "auto1", "claude-code", fixedDay(time.October, 6, 11), 0, 1000, false),
 		makeRecord("s3", "auto-3", "auto2", "aider", fixedDay(time.October, 7, 9), 500, 500, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,7 +118,7 @@ func TestCostReportRowsPerAutomation(t *testing.T) {
 		makeRecord("s2", "a1", "auto1", "aider", fixedDay(time.October, 6, 11), 10, 20, false),
 		makeRecord("s3", "a2", "auto2", "aider", fixedDay(time.October, 7, 9), 30, 40, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomation}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomation}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestCostReportRowsPerBackend(t *testing.T) {
 		makeRecord("s1", "a1", "auto1", "claude-code", fixedDay(time.October, 6, 10), 1000, 2000, false),
 		makeRecord("s2", "a2", "auto2", "aider", fixedDay(time.October, 7, 9), 500, 500, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByBackend}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByBackend}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +173,7 @@ func TestCostReportRowsPerWeek(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := &fakeSource{result: &SourceResult{Records: records}}
-			rep, err := Build(tc.cfg, Request{GroupBy: GroupByWeek}, src, testRate, fixedNow)
+			rep, err := Build(tc.cfg, Request{GroupBy: GroupByWeek}, src, nil, testRate, nil, fixedNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -194,7 +195,7 @@ func TestCostReportUSDEstimateWhenRateConfigured(t *testing.T) {
 	src := &fakeSource{result: &SourceResult{Records: []Record{
 		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +211,7 @@ func TestCostReportUSDEstimateAbsentWhenRateMissing(t *testing.T) {
 		// Group "local" is entirely unpriced → no estimate either.
 		makeRecord("s3", "a2", "local", "ollama", fixedDay(time.October, 6, 12), 42, 42, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestCostReportUSDEstimateAbsentWhenNoRateSource(t *testing.T) {
 	src := &fakeSource{result: &SourceResult{Records: []Record{
 		makeRecord("s1", "a1", "auto1", "claude-code", fixedDay(time.October, 6, 10), 100, 100, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, nil, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +241,7 @@ func TestCostReportWindowBounds(t *testing.T) {
 		makeRecord("edge-out", "d", "auto2", "aider", until, 40, 40, false),
 		makeRecord("after", "e", "auto2", "aider", fixedDay(time.October, 6, 1), 80, 80, false),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton, Since: since, Until: until}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton, Since: since, Until: until}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +266,7 @@ func TestCostReportDefaultWindowFromConfig(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := &fakeSource{result: &SourceResult{}}
-			rep, err := Build(config.CostReportConfig{DefaultWindowDays: tc.days}, Request{Until: fixedNow}, src, testRate, fixedNow)
+			rep, err := Build(config.CostReportConfig{DefaultWindowDays: tc.days}, Request{Until: fixedNow}, src, nil, testRate, nil, fixedNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -287,7 +288,7 @@ func TestCostReportRetentionAndFallbackFields(t *testing.T) {
 		Records:          []Record{makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1, 1, false)},
 		LifetimeFallback: true,
 	}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +300,7 @@ func TestCostReportRetentionAndFallbackFields(t *testing.T) {
 	}
 	// And it stays off when the source did not fall back.
 	src2 := &fakeSource{result: &SourceResult{}}
-	rep2, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src2, testRate, fixedNow)
+	rep2, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src2, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -340,6 +341,7 @@ func TestCostReportGroupByDefaultsTable(t *testing.T) {
 		{"automaton", "automaton", GroupByAutomaton},
 		{"automation", "automation", GroupByAutomation},
 		{"backend", "backend", GroupByBackend},
+		{"release", "release", GroupByRelease},
 		{"week", "week", GroupByWeek},
 		{"unknown falls back to automaton", "bogus", GroupByAutomaton},
 		{"case-insensitive", "Week", GroupByWeek},
@@ -350,7 +352,7 @@ func TestCostReportGroupByDefaultsTable(t *testing.T) {
 				cfg.DefaultGroupBy = &tc.cfg
 			}
 			src := &fakeSource{result: &SourceResult{}}
-			rep, err := Build(cfg, Request{}, src, testRate, fixedNow)
+			rep, err := Build(cfg, Request{}, src, &fakeShipped{}, testRate, nil, fixedNow)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -363,7 +365,7 @@ func TestCostReportGroupByDefaultsTable(t *testing.T) {
 
 func TestCostReportInvalidGroupByIsRejected(t *testing.T) {
 	src := &fakeSource{result: &SourceResult{}}
-	if _, err := Build(config.CostReportConfig{}, Request{GroupBy: "everything"}, src, testRate, fixedNow); err == nil {
+	if _, err := Build(config.CostReportConfig{}, Request{GroupBy: "everything"}, src, nil, testRate, nil, fixedNow); err == nil {
 		t.Fatal("want an error for an unknown group_by, got none")
 	}
 }
@@ -373,7 +375,7 @@ func TestCostReportPeerSpendExcludedByDefault(t *testing.T) {
 		makeRecord("own", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 10, 10, false),
 		makeRecord("peer", "a2", "auto2", "aider", fixedDay(time.October, 6, 11), 99, 99, true),
 	}}}
-	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +396,7 @@ func TestCostReportPeerSpendIncludedWhenConfigured(t *testing.T) {
 		makeRecord("own", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 10, 10, false),
 		makeRecord("peer", "a2", "auto2", "aider", fixedDay(time.October, 6, 11), 99, 99, true),
 	}}}
-	rep, err := Build(cfg, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(cfg, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +414,7 @@ func TestCostReportUSDEstimatesHiddenWhenConfiguredOff(t *testing.T) {
 	src := &fakeSource{result: &SourceResult{Records: []Record{
 		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
 	}}}
-	rep, err := Build(cfg, Request{GroupBy: GroupByAutomaton}, src, testRate, fixedNow)
+	rep, err := Build(cfg, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,15 +425,303 @@ func TestCostReportUSDEstimatesHiddenWhenConfiguredOff(t *testing.T) {
 func TestCostReportSourceFailureSurfaces(t *testing.T) {
 	wanted := errors.New("store unavailable")
 	src := &fakeSource{err: wanted}
-	if _, err := Build(config.CostReportConfig{}, Request{}, src, testRate, fixedNow); err == nil || !errors.Is(err, wanted) {
+	if _, err := Build(config.CostReportConfig{}, Request{}, src, nil, testRate, nil, fixedNow); err == nil || !errors.Is(err, wanted) {
 		t.Fatalf("want wrapped source error, got %v", err)
 	}
 }
 
 func TestCostReportNilSourceIsRejected(t *testing.T) {
-	if _, err := Build(config.CostReportConfig{}, Request{}, nil, testRate, fixedNow); err == nil {
+	if _, err := Build(config.CostReportConfig{}, Request{}, nil, nil, testRate, nil, fixedNow); err == nil {
 		t.Fatal("want an error for a nil source, got none")
 	}
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// billingOf builds the BillingFunc over a usage.billing map, the same
+// resolution the daemon wires (config.UsageConfig.EffectiveBillingProfile).
+func billingOf(profiles map[string]config.BillingProfile) BillingFunc {
+	uc := config.UsageConfig{Billing: profiles}
+	return uc.EffectiveBillingProfile
+}
+
+// fakeShipped is the test ShippedSource: one fixed unit list.
+type fakeShipped struct {
+	units []ShippedUnit
+	err   error
+}
+
+func (f *fakeShipped) ShippedUnits() (*ShippedResult, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &ShippedResult{Units: f.units}, nil
+}
+
+func TestCostReportBillingBundledPlan(t *testing.T) {
+	billing := billingOf(map[string]config.BillingProfile{
+		"aider": {Mode: config.BillingModeBundledPlan, MonthlyPrice: 100, Currency: "USD"},
+	})
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billing, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			row = r
+			break
+		}
+	}
+	if row.BillingMode != config.BillingModeBundledPlan {
+		t.Fatalf("billing_mode: want %q, got %q", config.BillingModeBundledPlan, row.BillingMode)
+	}
+	if !strings.Contains(row.BillingLabel, "API-equivalent, not billed") {
+		t.Fatalf("billing_label: want the API-equivalent wording, got %q", row.BillingLabel)
+	}
+	if row.USDEstimate != nil {
+		t.Fatalf("bundled plans are not billed: want no usd_estimate, got %v", *row.USDEstimate)
+	}
+	if row.APIEquivalentUSD == nil {
+		t.Fatal("want api_equivalent_usd priced at API rates")
+	}
+	// 1000/1K * 0.03 + 1000/1K * 0.006 = 0.036
+	floatEq(t, *row.APIEquivalentUSD, 0.036)
+	// Points: est / (monthly_price / (52/12) / 100).
+	pc := config.BillingProfile{MonthlyPrice: 100}.PointCostEquivalent()
+	floatEq(t, *row.EstimatedUsagePoints, 0.036/pc)
+	floatEq(t, *row.ShareOfMonthlyPrice, 0.036/100)
+}
+
+func TestCostReportBillingFreeLocal(t *testing.T) {
+	billing := billingOf(map[string]config.BillingProfile{
+		"aider": {Mode: config.BillingModeFreeLocal},
+	})
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billing, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			row = r
+			break
+		}
+	}
+	if row.BillingMode != config.BillingModeFreeLocal {
+		t.Fatalf("billing_mode: want %q, got %q", config.BillingModeFreeLocal, row.BillingMode)
+	}
+	if row.USDEstimate != nil || row.APIEquivalentUSD != nil {
+		t.Fatalf("free local inference is not billed: want no dollar figures, got %+v", row)
+	}
+	if row.TokensIn != 1000 {
+		t.Fatalf("tokens stay visible, got %+v", row)
+	}
+}
+
+func TestCostReportBillingAssumedAndMetered(t *testing.T) {
+	// No usage.billing entry at all: the row reads as assumed api_metered;
+	// an explicit one reads as metered.
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
+	}}}
+	// Assumed: the billing map does not name "aider".
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billingOf(nil), fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assumed Row
+	var metered Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			assumed = r
+		}
+	}
+	if assumed.BillingMode != config.BillingModeAPIMetered {
+		t.Fatalf("billing_mode: want %q, got %q", config.BillingModeAPIMetered, assumed.BillingMode)
+	}
+	if !strings.Contains(assumed.BillingLabel, "assumed") {
+		t.Fatalf("billing_label: want the assumed wording, got %q", assumed.BillingLabel)
+	}
+	if assumed.USDEstimate == nil {
+		t.Fatal("assumed metering still carries the usd_estimate")
+	}
+	floatEq(t, *assumed.USDEstimate, 0.036)
+
+	// Explicit metered.
+	billing := billingOf(map[string]config.BillingProfile{
+		"aider": {Mode: config.BillingModeAPIMetered},
+	})
+	rep, err = Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billing, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			metered = r
+		}
+	}
+	if metered.BillingMode != config.BillingModeAPIMetered {
+		t.Fatalf("billing_mode: want %q, got %q", config.BillingModeAPIMetered, metered.BillingMode)
+	}
+	if strings.Contains(metered.BillingLabel, "assumed") {
+		t.Fatalf("an explicit profile is not assumed, got %q", metered.BillingLabel)
+	}
+	if metered.USDEstimate == nil {
+		t.Fatal("metered rows carry the usd_estimate")
+	}
+	floatEq(t, *metered.USDEstimate, 0.036)
+}
+
+func TestCostReportBillingMixedModes(t *testing.T) {
+	billing := billingOf(map[string]config.BillingProfile{
+		"aider":       {Mode: config.BillingModeBundledPlan, MonthlyPrice: 100},
+		"claude-code": {Mode: config.BillingModeAPIMetered},
+	})
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
+		makeRecord("s2", "a2", "auto1", "claude-code", fixedDay(time.October, 6, 11), 1000, 1000, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, billing, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			row = r
+		}
+	}
+	if row.BillingMode != MixedBillingMode {
+		t.Fatalf("billing_mode: want %q, got %q", MixedBillingMode, row.BillingMode)
+	}
+	if row.USDEstimate == nil {
+		t.Fatal("mixed rows keep the unambiguous usd_estimate")
+	}
+	// aider 0.036 + claude-code (1000/1K*0.01 + 1000/1K*0.02) 0.03 = 0.066
+	floatEq(t, *row.USDEstimate, 0.066)
+}
+
+func TestCostReportBillingNilKeepsLegacyShape(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1000, 1000, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var row Row
+	for _, r := range rep.Rows {
+		if r.Key == "auto1" {
+			row = r
+		}
+	}
+	if row.USDEstimate == nil {
+		t.Fatal("legacy shape keeps the usd_estimate")
+	}
+	if row.BillingMode != "" || row.BillingLabel != "" || row.APIEquivalentUSD != nil {
+		t.Fatalf("legacy shape has no billing fields, got %+v", row)
+	}
+}
+
+func TestCostReportReleaseGrouping(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 100, 100, false),
+		makeRecord("s2", "a2", "auto2", "aider", fixedDay(time.October, 6, 11), 50, 50, false),
+		makeRecord("s3", "a3", "auto3", "aider", fixedDay(time.October, 7, 9), 25, 25, false),
+	}}}
+	rec := src.result
+	rec.Records[0].Release = "v1.2.0"
+	rec.Records[1].Release = "v1.2.0"
+	// rec.Records[2] keeps a blank release → "unreleased".
+
+	shipped := &fakeShipped{units: []ShippedUnit{
+		{UnitID: "prd-1", Kind: "prd", Release: "v1.1.0"},
+		{UnitID: "auto-7", Kind: "automation", Release: "v1.1.0"},
+		{UnitID: "prd-2", Kind: "prd", Release: "v1.2.0"},
+	}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByRelease}, src, shipped, testRate, billingOf(nil), fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.GroupBy != GroupByRelease {
+		t.Fatalf("group_by: want release, got %q", rep.GroupBy)
+	}
+	if len(rep.Rows) != 3 {
+		t.Fatalf("want v1.1.0, v1.2.0 and unreleased, got %+v", rep.Rows)
+	}
+	want := map[string]struct {
+		sessions int
+		units    int
+	}{
+		"v1.1.0":     {sessions: 0, units: 2}, // shipped, no spend in the window
+		"v1.2.0":     {sessions: 2, units: 1}, // two sessions, one shipped PRD
+		"unreleased": {sessions: 1, units: 0},
+	}
+	for key, w := range want {
+		var row Row
+		found := false
+		for _, r := range rep.Rows {
+			if r.Key == key {
+				row = r
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("release %q not found in %+v", key, rep.Rows)
+		}
+		if row.Sessions != w.sessions || row.Units != w.units {
+			t.Fatalf("release %q: want sessions=%d units=%d, got sessions=%d units=%d", key, w.sessions, w.units, row.Sessions, row.Units)
+		}
+	}
+	// Rows stay sorted by key.
+	for i := 1; i < len(rep.Rows); i++ {
+		if rep.Rows[i-1].Key >= rep.Rows[i].Key {
+			t.Fatalf("rows not sorted by key: %+v", rep.Rows)
+		}
+	}
+}
+
+func TestCostReportReleaseWithoutShippedSourceIsRejected(t *testing.T) {
+	src := &fakeSource{result: &SourceResult{}}
+	if _, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByRelease}, src, nil, testRate, billingOf(nil), fixedNow); err == nil {
+		t.Fatal("want an error for group_by=release without a shipped source")
+	}
+}
+
+func TestCostReportRetentionNote(t *testing.T) {
+	// Inside the retention horizon: the note states the 31-day window.
+	src := &fakeSource{result: &SourceResult{Records: []Record{
+		makeRecord("s1", "a1", "auto1", "aider", fixedDay(time.October, 6, 10), 1, 1, false),
+	}}}
+	rep, err := Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton, Since: fixedNow.Add(-3 * day)}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rep.RetentionNote, "31") {
+		t.Fatalf("retention note should name the 31-day window, got %q", rep.RetentionNote)
+	}
+	if rep.LifetimeFallback {
+		t.Fatal("a 3-day window does not fall back to lifetime totals")
+	}
+
+	// Beyond the horizon: the fallback note says the rows carry lifetime
+	// totals.
+	rep, err = Build(config.CostReportConfig{}, Request{GroupBy: GroupByAutomaton, Since: fixedNow.Add(-120 * day)}, src, nil, testRate, nil, fixedNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.LifetimeFallback {
+		t.Fatal("a 120-day window must flag the lifetime fallback")
+	}
+	if !strings.Contains(rep.RetentionNote, "lifetime") {
+		t.Fatalf("fallback note should mention lifetime totals, got %q", rep.RetentionNote)
+	}
+}

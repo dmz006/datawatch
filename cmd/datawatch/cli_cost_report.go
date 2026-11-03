@@ -4,7 +4,11 @@
 // a thin REST proxy: it locates the running daemon, forwards the
 // --group-by / --since / --until flags as query parameters, and renders
 // the report. The report engine itself lives in the daemon — nothing
-// here duplicates that logic.
+// here duplicates that logic. Rows may also carry the owning provider's
+// billing mode (usage.billing): bundled-plan rows show an API-equivalent
+// estimate (not a bill) with the usage points it represents and their
+// share of the monthly price; group_by release carries shipped-unit
+// counts.
 
 package main
 
@@ -14,6 +18,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -26,10 +32,16 @@ func newCostReportCmd() *cobra.Command {
 		Use:   "report",
 		Short: "Grouped token + USD cost report",
 		Long: "Asks the daemon for the grouped cost report (GET /api/cost/report).\n\n" +
-			"  --group-by  automaton | automation | backend | week (default: cost_report.default_group_by config)\n" +
+			"  --group-by  automaton | automation | backend | release | week (default: cost_report.default_group_by config)\n" +
 			"  --since     window lower bound, RFC3339 or YYYY-MM-DD\n" +
 			"  --until     window upper bound, RFC3339 or YYYY-MM-DD\n" +
-			"  --format    text (table, default) or json",
+			"  --format    text (table, default) or json\n\n" +
+			"Rows carry the owning provider's billing mode where usage.billing is\n" +
+			"configured: bundled plans read as an API-equivalent estimate (a bundled\n" +
+			"plan bills the subscription, not this usage), with the usage points it\n" +
+			"represents and its share of the monthly price; unset providers are\n" +
+			"shown as assumed. group_by release adds shipped-unit counts per\n" +
+			"release; work whose owner has not shipped lands under 'unreleased'.",
 		RunE: func(*cobra.Command, []string) error {
 			q := url.Values{}
 			if groupBy != "" {
@@ -55,7 +67,7 @@ func newCostReportCmd() *cobra.Command {
 			return printCostReport(body)
 		},
 	}
-	cmd.Flags().StringVar(&groupBy, "group-by", "", "group by automaton, automation, backend or week")
+	cmd.Flags().StringVar(&groupBy, "group-by", "", "group by automaton, automation, backend, release or week")
 	cmd.Flags().StringVar(&since, "since", "", "window lower bound (RFC3339 or YYYY-MM-DD)")
 	cmd.Flags().StringVar(&until, "until", "", "window upper bound (RFC3339 or YYYY-MM-DD)")
 	cmd.Flags().StringVar(&format, "format", "text", "output format: text (table) or json")
@@ -71,61 +83,136 @@ type costReportWire struct {
 	Rows             []costReportRow `json:"rows"`
 	RetentionDays    int             `json:"retention_days"`
 	LifetimeFallback bool            `json:"lifetime_fallback"`
+	RetentionNote    string          `json:"retention_note"`
 }
 
 type costReportRow struct {
-	Key         string   `json:"key"`
-	Sessions    int      `json:"sessions"`
-	TokensIn    int      `json:"tokens_in"`
-	TokensOut   int      `json:"tokens_out"`
-	USDEstimate *float64 `json:"usd_estimate"`
+	Key                  string   `json:"key"`
+	Sessions             int      `json:"sessions"`
+	TokensIn             int      `json:"tokens_in"`
+	TokensOut            int      `json:"tokens_out"`
+	USDEstimate          *float64 `json:"usd_estimate"`
+	APIEquivalentUSD     *float64 `json:"api_equivalent_usd"`
+	EstimatedUsagePoints *float64 `json:"estimated_usage_points"`
+	ShareOfMonthlyPrice  *float64 `json:"share_of_monthly_price"`
+	Units                int      `json:"units"`
+	BillingMode          string   `json:"billing_mode"`
+	BillingLabel         string   `json:"billing_label"`
 }
 
-// printCostReport renders the report as a table:
-// key | sessions | tokens_in | tokens_out | usd — the usd column only
-// appears when at least one row carries a dollar estimate, and a row
-// prints "-" there when the server omitted it (no rates configured).
-// The footer shows the retention days and whether the server fell back
-// to lifetime totals for the window.
+// printCostReport renders the report as a table. The base columns are
+// always key | sessions | tokens_in | tokens_out; the usd column appears
+// when at least one row carries a dollar estimate; the api_equiv_usd /
+// usage_pts / share_of_price columns appear when any row is a bundled
+// plan (they hold the estimate, its usage points and its share of the
+// monthly price — an equivalence, not a charge); units appears for
+// group_by release; billing carries the row's billing-mode label (e.g.
+// "bundled plan — API-equivalent, not billed", "api_metered (assumed —
+// no usage.billing entry)"). A missing value prints "-". The footer
+// shows the retention explanation (the server's retention_note, else
+// the retention days) and the lifetime-fallback flag.
 func printCostReport(body []byte) error {
 	var rep costReportWire
 	if err := json.Unmarshal(body, &rep); err != nil {
 		return fmt.Errorf("parse cost report: %w", err)
 	}
 
-	anyUSD := false
+	var anyUSD, anyAPI, anyUnits, anyBilling bool
 	for _, r := range rep.Rows {
 		if r.USDEstimate != nil {
 			anyUSD = true
-			break
 		}
+		if r.APIEquivalentUSD != nil {
+			anyAPI = true
+		}
+		if r.Units > 0 {
+			anyUnits = true
+		}
+		if r.BillingLabel != "" {
+			anyBilling = true
+		}
+	}
+	if rep.GroupBy == "release" {
+		anyUnits = true // ships the units column even when every count is 0
+	}
+
+	header := "key\tsessions\ttokens_in\ttokens_out"
+	rowFns := []func(costReportRow) string{
+		func(r costReportRow) string { return r.Key },
+		func(r costReportRow) string { return strconv.Itoa(r.Sessions) },
+		func(r costReportRow) string { return strconv.Itoa(r.TokensIn) },
+		func(r costReportRow) string { return strconv.Itoa(r.TokensOut) },
+	}
+	if anyUSD {
+		header += "\tusd"
+		rowFns = append(rowFns, func(r costReportRow) string { return moneyOrDash(r.USDEstimate) })
+	}
+	if anyAPI {
+		header += "\tapi_equiv_usd\tusage_pts\tshare_of_price"
+		rowFns = append(rowFns,
+			func(r costReportRow) string { return moneyOrDash(r.APIEquivalentUSD) },
+			func(r costReportRow) string { return numOrDash(r.EstimatedUsagePoints) },
+			func(r costReportRow) string { return shareOrDash(r.ShareOfMonthlyPrice) },
+		)
+	}
+	if anyUnits {
+		header += "\tunits"
+		rowFns = append(rowFns, func(r costReportRow) string { return strconv.Itoa(r.Units) })
+	}
+	if anyBilling {
+		header += "\tbilling"
+		rowFns = append(rowFns, func(r costReportRow) string {
+			if r.BillingLabel == "" {
+				return "-"
+			}
+			return r.BillingLabel
+		})
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	if anyUSD {
-		_, _ = fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out\t usd")
-	} else {
-		_, _ = fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out")
-	}
+	_, _ = fmt.Fprintln(w, header)
 	for _, r := range rep.Rows {
-		if anyUSD {
-			usd := "-"
-			if r.USDEstimate != nil {
-				usd = fmt.Sprintf("$%.2f", *r.USDEstimate)
-			}
-			_, _ = fmt.Fprintf(w, "%s\t %d\t %d\t %d\t %s\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut, usd)
-		} else {
-			_, _ = fmt.Fprintf(w, "%s\t %d\t %d\t %d\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut)
+		line := make([]string, 0, len(rowFns))
+		for _, f := range rowFns {
+			line = append(line, f(r))
 		}
+		_, _ = fmt.Fprintln(w, strings.Join(line, "\t"))
 	}
 	//nolint:errcheck
 	w.Flush()
 
-	fmt.Printf("retention: %d days\n", rep.RetentionDays)
+	if rep.RetentionNote != "" {
+		fmt.Println("retention:", rep.RetentionNote)
+	} else {
+		fmt.Printf("retention: %d days\n", rep.RetentionDays)
+	}
 	if rep.LifetimeFallback {
 		fmt.Println("lifetime fallback: yes (window reaches beyond the retention horizon)")
 	} else {
 		fmt.Println("lifetime fallback: no")
 	}
 	return nil
+}
+
+func moneyOrDash(f *float64) string {
+	if f == nil {
+		return "-"
+	}
+	return fmt.Sprintf("$%.2f", *f)
+}
+
+func numOrDash(f *float64) string {
+	if f == nil {
+		return "-"
+	}
+	return strconv.FormatFloat(*f, 'f', -1, 64)
+}
+
+// shareOrDash renders the row's share of the plan's monthly price as a
+// percentage (the wire value is a fraction: 0.05 = 5% of the price).
+func shareOrDash(f *float64) string {
+	if f == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f%%", *f*100)
 }

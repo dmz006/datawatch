@@ -168,6 +168,103 @@ sources and the screen always shows which one is in use:
 The number of queued tasks is shown beside both. Treat the cost per task as a
 starting figure and calibrate it against real readings.
 
+## The point value (estimate)
+
+The advice always carries a **point-value line**: the estimated value of one
+usage point and of a full week of the allowance, with the source it came from —
+**the claude-code billing profile** when you set one (a `usage.billing`
+entry, typically a `bundled_plan` with its `monthly_price`) and **the assumed
+default claude-code profile** when you did not. It is an
+**API-equivalent estimate, not a bill**: the money is price-derived from the
+profile's `monthly_price` (assuming the allowance is fully used each week),
+never a metered spend, and where the profile has no `monthly_price` the
+figures read zero rather than inventing a number. The cost report shows the
+same profile's money as the row's `api_equivalent_usd`, `estimated_usage_points`
+and `share_of_monthly_price` rows, so the two surfaces agree by construction.
+
+See the field reference in [api/cost.md — Billing profiles](../api/cost.md#billing-profiles-usagebilling) and the
+[billing profile definition](../datawatch-definitions.md#billing-profile-usagebilling), and
+[how a cost-report row reads it](cost-report.md#the-billing-profiles).
+
+## The billing profile (usage.billing)
+
+The point-value line above is driven by one setting the calculator reads:
+**`usage.billing.claude-code`**, the billing profile you keep for the
+`claude-code` provider. The profile describes *how you pay* for a provider,
+per provider key (`usage.billing.<provider>.<field>`), where the key is the
+provider name from your LLM registry — `claude-code`, `openai`, `gemini`,
+`ollama`, or any other name without dots.
+
+The calculator uses the `claude-code` entry for two things: the **point
+value** (from `monthly_price`) and, when the profile names a reset, the
+**allowance reset** the advice counts down to — a `reset_weekday` and
+`reset_time` on the profile take the place of the
+`usage.calculator.reset_*` settings for that countdown, in the calculator's
+zone. The profile never touches the policy, the lanes or the verdict: it only
+supplies the money and the reset the figures are measured against.
+
+**The default assumption.** A provider with no profile at all is read as
+`api_metered` with percent allowances — and every surface says so with an
+"assumed" or “(assumed — no usage.billing entry)” label rather than
+presenting it as a fact. Because the assumed default carries no price, the
+point-value line reads zero, which is the daemon being honest: it would
+rather show no estimate than invent one. Setting a profile removes the
+assumption.
+
+| `mode` | What it says | What the calculator gets from it |
+|---|---|---|
+| `bundled_plan` | A flat monthly subscription (Pro / Max style) whose allowance resets on a schedule. | The point value, from `monthly_price`; if the profile also names `reset_weekday`/`reset_time`, the reset it counts down to. The money stays an API-equivalent estimate, never a charge. |
+| `api_metered` | Pay-per-use API spend, no allowance. | No allowance to read; figures are ordinary estimates unless you give a `monthly_price` as a stand-in rate. |
+| `free_local` | Local inference (Ollama and friends) at no charge. | None — nothing to bill and no allowance. |
+
+### Setting it up
+
+Every field is optional and independent — set only what you know; the others
+stay unset. A blank string (and `0` for numbers) clears a field back to
+unset.
+
+| Field | Accepts | A bundled-plan example |
+|---|---|---|
+| `usage.billing.claude-code.mode` | `bundled_plan`, `api_metered`, `free_local` | `bundled_plan` |
+| `usage.billing.claude-code.plan` | Free text naming the plan; for `claude-code` the accepted tiers are `pro`, `max_5x`, `max_20x` (the same vocabulary the LLM entries' `plan_tier` uses) | `max_5x` |
+| `usage.billing.claude-code.monthly_price` | A finite number at 0 or above, in `currency`; `0` for a free plan | `200` |
+| `usage.billing.claude-code.currency` | A 3-letter code | `usd` |
+| `usage.billing.claude-code.reset_weekday` | `sunday` through `saturday` | `thursday` |
+| `usage.billing.claude-code.reset_time` | A 24-hour `HH:MM` clock time | `00:00` |
+| `usage.billing.claude-code.allowance_unit` | `percent` (default), `requests` or `tokens` — the unit the allowance is counted in | `percent` |
+
+A minimal working profile for a bundled plan is two fields:
+
+```yaml
+usage:
+  billing:
+    claude-code:
+      mode: bundled_plan
+      monthly_price: 200
+```
+
+That is enough for the calculator to carry a non-zero point value and for the
+cost report to label its `claude-code` rows “bundled plan —
+API-equivalent, not billed” with the point figures. Add `plan`, `currency`,
+the reset and the allowance unit when you want the label to name your actual
+plan.
+
+Six ways to set it (a change is live the moment it is stored; no restart):
+
+| Method | How |
+|---|---|
+| **YAML** | The `usage.billing` block in `~/.datawatch/config.yaml`, as above. |
+| **CLI** | `datawatch config set usage.billing.claude-code.mode bundled_plan`, `datawatch config set usage.billing.claude-code.monthly_price 200`, and so on per field; read it back with `datawatch config get usage.billing`. |
+| **Web UI** | The billing profiles group on the Usage calculator card in Settings: provider key, mode, plan, monthly price, currency, reset and allowance unit per provider, with “assumed default” marked on a provider that has no profile. |
+| **REST API** | `PUT /api/config` with one field per request, e.g. `{"usage.billing.claude-code.mode": "bundled_plan"}`; the block reads back under `usage.billing` on `GET /api/config`. |
+| **Comm channel** | `configure usage.billing.claude-code.mode=bundled_plan`. |
+| **MCP** | The `config_set` tool with `key: usage.billing.claude-code.mode` (or any other field) and the value, one field per call; the block reads back through `config` or on the surfaces below. |
+
+It is a config patch, not a dedicated endpoint. One invalid value rejects the
+whole call (400, naming the key) and stores nothing; an unknown provider or
+field is refused the same way. Deleting a provider's profile (removing the
+map entry, or clearing its fields) puts it back on the assumed default.
+
 ## Sharing across federated daemons
 
 A weekly allowance belongs to the account, not to one daemon, so the readings
@@ -264,7 +361,8 @@ Where lanes show up on each method:
 ## See also
 
 - [Automata capacity](automata-capacity.md)
-- [Configuration reference](../config-reference.yaml) (`usage.calculator`)
+- [Cost report](cost-report.md) — the other read surface of the same billing profiles
+- [Configuration reference](../config-reference.yaml) (`usage.calculator`, `usage.billing`)
 - [Burn guard](burn-guard.md)
 - [Parity status](../parity-status.md)
 

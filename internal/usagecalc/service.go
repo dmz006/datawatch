@@ -64,6 +64,14 @@ func validVariant(v string) bool {
 type Settings struct {
 	// Reset is the weekly reset: a weekday, an HH:MM clock time and an IANA zone.
 	Reset ResetSpec
+	// Schedule is the billing profile's reset schedule; when valid it replaces
+	// Reset's weekday and clock (the zone stays Reset's), and
+	// Advice.ResetFromProfile marks that. An invalid one changes nothing.
+	Schedule Schedule
+	// PointValue is the billing profile's estimated cost-equivalent of a
+	// point and of a week of the allowance (see PointValue); nil leaves the
+	// advice without one.
+	PointValue *PointValue
 	// Variant is the stored display variant; empty means VariantAll.
 	Variant string
 	// Policy is the stored policy; empty means use-all.
@@ -235,10 +243,16 @@ func (s *Service) Advice(ctx context.Context, o Options) (*AdviceResult, error) 
 	}
 
 	stamped := newestStampedLanes(snap.Record.Readings)
+	reset := cfg.Reset
+	if applied, ok := cfg.Schedule.Apply(reset); ok {
+		reset = applied
+	}
 	in := Input{
 		Readings:          nonNilReadings(snap.Record.Readings),
-		Reset:             cfg.Reset,
+		Reset:             reset,
+		ResetFromProfile:  cfg.Schedule != (Schedule{}) && cfg.Schedule.Valid(),
 		Now:               s.now(),
+		PointValue:        cfg.PointValue,
 		ExtraCreditPoints: snap.Record.ExtraCreditPoints,
 		Lanes:             lanesFrom(o, cfg, stamped),
 		RecentLanes:       stamped,

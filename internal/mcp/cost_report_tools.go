@@ -17,6 +17,7 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -77,11 +78,21 @@ func parseCostReportBound(v string) (time.Time, bool) {
 
 // buildCostReport runs the engine (costreport.Build) with the
 // cost_report config block — the same engine call the REST route makes.
+// group_by=release is rejected with a clear message: the MCP tool's
+// manager view exposes no shipped units (no PRD ownership linkage), so
+// release grouping is a REST/CLI-only grouping; everything else (the
+// billing fields included) is the same shape as GET /api/cost/report.
 func (s *Server) buildCostReport(req costreport.Request) (*costreport.Report, error) {
 	if s.manager == nil {
 		return nil, errCostReportUnavailable
 	}
-	return costreport.Build(s.costReportCfg, req, managerCostReportSource{m: s.manager}, s.costReportRate, time.Now())
+	if req.GroupBy == costreport.GroupByRelease {
+		return nil, errors.New("group_by=release requires a shipped units source; the cost_report tool exposes none — use group_by=automaton, automation, backend or week (or GET /api/cost/report)")
+	}
+	billing := func(backend string) config.EffectiveBillingProfile {
+		return s.usageCfg.EffectiveBillingProfile(backend)
+	}
+	return costreport.Build(s.costReportCfg, req, managerCostReportSource{m: s.manager}, nil, s.costReportRate, billing, time.Now())
 }
 
 // toolCostReport declares the cost_report tool: cost report over the
@@ -89,10 +100,15 @@ func (s *Server) buildCostReport(req costreport.Request) (*costreport.Report, er
 func (s *Server) toolCostReport() mcpsdk.Tool {
 	return mcpsdk.NewTool("cost_report",
 		mcpsdk.WithDescription("Cost report over the daemon's recorded session spend (the internal/costreport engine, "+
-			"same data as GET /api/cost/report). Grouped by automaton, automation, backend or week; token totals "+
-			"always, USD estimates when rates are configured. group_by, since and until are all optional — the "+
+			"same data as GET /api/cost/report). Grouped by automaton, automation or backend (release is REST/CLI-only: it needs shipped-unit state this tool does not expose); "+
+			"or week (ISO 8601 week buckets); token totals always, USD estimates when rates are configured. Rows carry "+
+			"billing_mode + billing_label from the usage.billing profiles (bundled_plan → api_equivalent_usd, "+
+			"'API-equivalent, not billed', plus estimated_usage_points / share_of_monthly_price where the plan is priced; "+
+			"free_local → not billed; api_metered assumed when no profile is set), and the report carries a "+
+			"retention_note (the ledger's 31-day retention window, and whether this window's amounts fell back to "+
+			"per-session lifetime totals). group_by, since and until are all optional — the "+
 			"grouping and window defaults come from the cost_report config section, not fixed literals."),
-		mcpsdk.WithString("group_by", mcpsdk.Description("Optional. One of automaton, automation, backend, week. Defaults to the cost_report config.")),
+		mcpsdk.WithString("group_by", mcpsdk.Description("Optional. One of automaton, automation, backend, week (release is REST/CLI-only). Defaults to the cost_report config.")),
 		mcpsdk.WithString("since", mcpsdk.Description("Optional lower bound, RFC3339 or YYYY-MM-DD. Defaults to the cost_report config window.")),
 		mcpsdk.WithString("until", mcpsdk.Description("Optional upper bound, RFC3339 or YYYY-MM-DD. Defaults to now.")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),

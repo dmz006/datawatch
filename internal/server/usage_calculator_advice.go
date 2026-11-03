@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/usagecalc"
 )
+
 
 // usageWeekday maps the config's lowercase weekday names to the calendar weekday the
 // calculator's reset spec takes.
@@ -44,24 +46,66 @@ var usageWeekday = map[string]time.Weekday{
 	"sunday":    time.Sunday,
 }
 
-// UsageCalculatorSettings maps one effective calculator config into the service's live
-// settings. All of the config's numeric fields already carry defaults after
-// EffectiveUsageCalculator. The reset zone is the effective one from
-// EffectiveUsageResetZone: the operator's set zone, or the daemon's local zone when the
-// operator left it unset, or UTC as a last resort. The serverZone and fellBack
-// markers ride along so the advice can show the "(server zone)" marker and note
-// the UTC fallback.
-// UsageCalculatorSettings maps one calculator config into the service's live
-// settings. It takes the config as stored (defaults and the effective reset
-// zone are applied here, not by the caller): an unset zone follows
-// EffectiveUsageResetZone, so the advice sees the effective zone with the
-// serverZone and fellBack markers telling the UI and the text renderings to
-// show the "(server zone)" mark and name the UTC fallback.
-func UsageCalculatorSettings(c config.UsageCalculatorConfig) usagecalc.Settings {
+// UsageCalculatorSettings maps the daemon's usage config — the
+// usage.calculator settings plus the claude-code billing profile — into the
+// service's live settings. The calculator's numeric fields already carry
+// defaults after EffectiveUsageCalculator, and the reset zone is the
+// effective one from EffectiveUsageResetZone: the operator's set zone, or the daemon's
+// local zone when the operator left it unset, or UTC as a last resort. The
+// serverZone and fellBack markers ride along so the advice can show the
+// "(server zone)" marker and note the UTC fallback.
+//
+// Two more inputs come from the claude-code billing profile, not from the
+// usage.calculator settings (usage.billing.claude-code):
+//
+//   - the plan's weekly-allowance reset. When the profile names a reset
+//     weekday and an HH:MM time, they replace the calculator's weekday and
+//     time (Settings.Schedule; the service applies them to the reset and the
+//     advice carries reset_from_profile). The zone stays the calculator's —
+//     the profile says when, the settings say in whose clock. A weekday or
+//     time the profile does not name, or that does not parse, leaves the
+//     calculator's own schedule standing and Settings.Schedule zero.
+//   - the point value. PointCostEquivalent derives the estimated cost-
+//     equivalent of one usage point from the profile's monthly price, and a
+//     week of the allowance is WeeklyAllowance times it (Settings.PointValue).
+//     It is always an estimate, and PointValue.Source says whether the figure
+//     came from a profile the operator set ("profile") or from the assumed
+//     default profile, price zero ("default").
+func UsageCalculatorSettings(u config.UsageConfig) usagecalc.Settings {
+	c := u.Calculator
 	e := config.EffectiveUsageCalculator(c)
 	zone, serverZone, fellBack := config.EffectiveUsageResetZone(c)
 	safety := e.SafetyPoints
 	baseline := e.BaselinePer24h
+	reset := usagecalc.ResetSpec{
+		Weekday:    usageWeekday[strings.ToLower(strings.TrimSpace(e.ResetWeekday))],
+		Clock:      strings.TrimSpace(e.ResetTime),
+		Zone:       zone,
+		ServerZone: serverZone,
+		FellBack:   fellBack,
+	}
+
+	eff := u.EffectiveBillingProfile("claude-code")
+	p := eff.Profile
+	var schedule usagecalc.Schedule // provenance of reset.Weekday/Clock when set
+	if wd, ok := usageWeekday[strings.ToLower(strings.TrimSpace(p.ResetWeekday))]; ok {
+		if clock := strings.TrimSpace(p.ResetTime); clock != "" {
+			cand := reset
+			cand.Weekday, cand.Clock = wd, clock
+			if cand.Validate() == nil {
+				reset.Weekday, reset.Clock = wd, clock
+				schedule = usagecalc.Schedule{Weekday: wd, Clock: clock}
+			}
+		}
+	}
+	perPoint := p.PointCostEquivalent()
+	if math.IsNaN(perPoint) || perPoint < 0 {
+		perPoint = 0
+	}
+	source := usagecalc.PointValueSourceDefault
+	if !eff.IsDefault {
+		source = usagecalc.PointValueSourceProfile
+	}
 	return usagecalc.Settings{
 		Variant:        e.Variant,
 		Policy:         e.Policy,
@@ -69,12 +113,14 @@ func UsageCalculatorSettings(c config.UsageCalculatorConfig) usagecalc.Settings 
 		MaxLanes:       e.MaxLanes,
 		SafetyPoints:   &safety,
 		BaselinePer24h: &baseline,
-		Reset: usagecalc.ResetSpec{
-			Weekday:    usageWeekday[strings.ToLower(strings.TrimSpace(e.ResetWeekday))],
-			Clock:      strings.TrimSpace(e.ResetTime),
-			Zone:       zone,
-			ServerZone: serverZone,
-			FellBack:   fellBack,
+		Reset:          reset,
+		Schedule:       schedule,
+		PointValue: &usagecalc.PointValue{
+			Estimate: true,
+			Source:   source,
+			PerPoint: perPoint,
+			PerWeek:  perPoint * usagecalc.WeeklyAllowance,
+			Currency: strings.ToUpper(strings.TrimSpace(p.Currency)),
 		},
 	}
 }
@@ -122,7 +168,7 @@ func (s *Server) AttachUsageCalculator(queue usagecalc.QueueCounter) error {
 		if s.cfg == nil {
 			return usagecalc.Settings{}
 		}
-		return UsageCalculatorSettings(s.cfg.Usage.Calculator)
+		return UsageCalculatorSettings(s.cfg.Usage)
 	}
 	s.SetUsageCalculator(usagecalc.NewService(series, store, settings, queue,
 		usagecalc.WithLiveLanes(usageLaneCounter{s: s})))

@@ -172,7 +172,7 @@ func (r *Router) handleCostCmd(cmd Command) {
 // report logic lives in exactly one place; the handler only translates the
 // chat tokens into query parameters and relays the JSON back.
 func (r *Router) handleCostReportCmd(cmd Command) {
-	const usage = "usage: cost report [group_by=<automaton|automation|backend|week>] [since=<RFC3339|YYYY-MM-DD>] [until=<RFC3339|YYYY-MM-DD>]"
+	const usage = "usage: cost report [group_by=<automaton|automation|backend|release|week>] [since=<RFC3339|YYYY-MM-DD>] [until=<RFC3339|YYYY-MM-DD>]"
 	q := url.Values{}
 	for _, tok := range strings.Fields(cmd.Text) {
 		k, v, ok := strings.Cut(tok, "=")

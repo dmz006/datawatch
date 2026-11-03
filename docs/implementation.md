@@ -254,6 +254,28 @@ saved value falls back to its default with a logged warning, as `normalizeUsageC
 - `effort_ceiling` — map of task kind to ceiling `low` | `medium` | `high` | `cheaper_backend` (default `docs`, `parity`, `live_check`, `final_gate` all `low`; an unknown ceiling becomes `low`).
 - `retry_limit_claude` — most retries of one task on Claude, 0 to 20 (default `2`).
 
+Billing profiles (`internal/config/billing_profile.go`, the `Billing` field of
+`UsageConfig`): the `usage.billing` block is an open map keyed by provider
+(`claude-code`, `openai`, `gemini`, or any other operator-chosen key). Each
+entry is a `BillingProfile` with:
+- `mode` — `bundled_plan` | `api_metered` | `free_local`. Unset resolves to `api_metered`, but that is an *assumed default*, not a fact about the provider: `EffectiveBillingProfile` returns it flagged via `IsDefault` so surfaces must label it.
+- `plan` — free text naming the subscription plan. For the `claude-code` provider the accepted plans are `pro`, `max_5x` and `max_20x` (the same `inference.PlanTier` vocabulary the LLM entries' `plan_tier` uses).
+- `monthly_price` — the plan's monthly price, a finite number ≥ 0 in `currency` (0 = a free plan).
+- `currency` — ISO 4217 code of `monthly_price` (e.g. `USD`).
+- `reset_weekday` / `reset_time` — optional weekly allowance reset, same vocabulary as `usage.calculator`: a weekday name (`sunday`..`saturday`) and a 24-hour `HH:MM`.
+- `allowance_unit` — `percent` (default) | `requests` | `tokens`, the unit the weekly allowance is counted in.
+
+Methods and helpers on the profile:
+- `(UsageConfig) EffectiveBillingProfile(provider)` — the profile for an open provider key, or the assumed default profile (`api_metered`, unit `percent`) flagged `IsDefault` when the provider has no entry. Empty `mode`/`allowance_unit` of a configured profile resolve to those defaults.
+- `(BillingProfile) PointCostEquivalent()` — the monthly cost-equivalent of one point (1% of the weekly allowance), returned as an estimate: `monthly_price / (weekly allowances per month) / 100` with 52/12 allowances per month. It assumes the full allowance is used each week and ignores overage, mid-cycle prorating and non-`percent` units.
+- `(Config) EffectivePlanTierAllocationUSD(tier)` — reconciliation with the existing tier settings. Precedence, documented in the code: the explicit `autonomous.plan_tier_allocation_usd` entry for the tier always wins; when it is absent and a `usage.billing.<provider>.plan` names the tier (`pro`, `max_5x`, `max_20x`), the profile's `monthly_price` stands in for the tier's allocation. The value is *derived, never copied* — the price is stored only once, in the billing profile — so the two cannot drift, and an LLM entry's `plan_tier` needs no stored dollar figure of its own (it resolves through the same table lookup). When several profiles name the same tier with different prices the lowest `monthly_price` wins.
+
+Validation runs in the config validate path next to the `plan_tier_*` checks
+(`validateLoaded` → `validateBillingProfiles`): an empty provider key, an
+unknown `mode`, a negative or non-finite `monthly_price`, a bad `reset_weekday`
+or `reset_time`, and an unknown `allowance_unit` are all refused. Tests are in
+`internal/config/billing_profile_test.go` (temp dirs and fakes only).
+
 Shared readings federation (`internal/usagecalc/shared.go`,
 `internal/server/usage_readings.go`): `usage.calc.SharedSeries` wires one daemon's local
 store to the federation — with an empty `keeper` the daemon keeps the series; otherwise
