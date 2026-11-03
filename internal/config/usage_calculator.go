@@ -83,6 +83,13 @@ type UsageCalculatorConfig struct {
 type UsageConfig struct {
 	Calculator UsageCalculatorConfig `yaml:"calculator,omitempty" json:"calculator,omitempty"`
 	BurnGuard  BurnGuardConfig       `yaml:"burn_guard,omitempty" json:"burn_guard,omitempty"`
+	// Billing holds the per-provider billing profiles (usage.billing),
+	// keyed by an open provider name (claude-code, openai, gemini, ...).
+	// Empty means no profiles are configured; EffectiveBillingProfile then
+	// reports the assumed default profile flagged as such. See
+	// billing_profile.go for the fields, defaults, validation and the
+	// reconciliation with autonomous.plan_tier_allocation_usd.
+	Billing map[string]BillingProfile `yaml:"billing,omitempty" json:"billing,omitempty"`
 }
 
 // DefaultUsageCalculator returns the calculator settings applied when none

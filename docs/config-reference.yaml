@@ -3232,6 +3232,29 @@ usage:
       final_gate: low
     # Most retries of one task on Claude. 0 to 20, default 2.
     retry_limit_claude: 2
+  # Billing profiles: per-provider pricing model. Open map keyed by provider
+  # (claude-code, openai, gemini, or any other operator-chosen key). A
+  # provider with no profile reads the assumed default (api_metered, unit
+  # percent) flagged as an assumption so surfaces can label it.
+  billing:
+    claude-code:
+      # bundled_plan | api_metered | free_local. Unset resolves to api_metered
+      # (an assumption, not a fact about the provider).
+      mode: bundled_plan
+      # Free text; for claude-code the accepted plans are pro, max_5x, max_20x
+      # (the same plan_tier vocabulary the LLM entries use). When the tier has
+      # no autonomous.plan_tier_allocation_usd entry, monthly_price stands in
+      # for it (derived at read time, never copied into that table).
+      plan: pro
+      # Monthly price of the plan, finite number >= 0, in currency (0 = free).
+      monthly_price: 20
+      # ISO 4217 code (USD, EUR, ...).
+      currency: USD
+      # Weekly allowance reset (optional), same vocabulary as usage.calculator.
+      reset_weekday: monday
+      reset_time: "00:00"
+      # percent (default) | requests | tokens — unit of the weekly allowance.
+      allowance_unit: percent
 
 # ── Plugin Framework (BL33 — v3.11.0) ──
 # Subprocess plugins discovered under <data_dir>/plugins/<name>/ with
