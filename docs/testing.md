@@ -99,6 +99,58 @@ the responsible package — if any scratch directory is left behind.
 repository; the ordinary `go test ./...` run of the same test keeps a small
 default list so a local run stays fast.
 
+## Smoke checks: the no-config-copy rule (smoke-check-task)
+
+A smoke check is the live verification of a build or an installation: it
+proves that the binary starts, serves, and behaves against representative
+input. Historically such tasks instructed the worker to bring the operator's
+real configuration and data into the repository — the home config directory,
+`datawatch.yaml`, secrets, database files — so the daemon "runs against the
+real thing". That puts operator credentials and private data under version
+control, and the scope boundary treats the project directory as the only
+place a worker may write, so copies there are a leak by construction.
+
+**The rule: a smoke task never copies the operator's configuration or data
+into the repository** — not with `cp`, `copy`, `rsync`, `symlink` (`ln -s`),
+or a "snapshot" of `$HOME/.config`, `$HOME/.datawatch`, `datawatch.yaml`,
+secrets, or any production database file. Instead it **synthesizes** its
+world: a synthetic minimal config and fake credentials written by the task
+itself into a temp directory (`mktemp -d`) or a scratch folder outside the
+repository, with the daemon pointed at that; Go tests use in-process fakes
+and `t.TempDir()` (see [temp directory hygiene](#temp-directory-hygiene-for-tests)).
+
+Three mechanisms carry the rule:
+
+- **The task template — `smoke-check-task`.** `templates/smoke-check-task.md`
+  is the starting point for a smoke task spec: the rule, the
+  scratch-space setup pattern (`mktemp -d` throwaway home, synthetic config
+  with placeholder values, ephemeral port, teardown), a fill-in spec
+  skeleton, and a definition of done. Name the template in the task spec
+  and keep every path under the scratch space or the project directory.
+- **The decompose lint rule (smoke-config lint).** At plan lint, next to the
+  scope lint and honoring the same `scope_lint` mode (off / warn / enforce),
+  a task whose kind is `smoke` or whose title/spec says "smoke"/"live check"
+is flagged when its spec pairs a copy verb (`cp`, `copy`, `rsync`, `symlink`,
+  `ln -s`, `snapshot`) with an operator-data target (the home config
+directory, `datawatch.yaml`, secrets, databases). A spec that merely
+  mentions configuration or secrets without moving them stays clean; specs
+  that build synthetic configuration in temp space read back no problems
+  (`internal/autonomous/smoke_config_lint.go`, covered by
+  `go test ./internal/autonomous/ -run LintSmokeConfig`).
+- **`scripts/check-no-config-copies.sh`.** The change-set regression guard:
+it looks at the paths of the files that changed (staged and working-tree
+diffs against HEAD, or `<base-ref>..HEAD` plus untracked non-ignored files
+when a base ref is given) and fails when any path looks like a copy of
+operator-local configuration or credentials — `*.bak`/`*.orig` backups, `.env`-style
+files, `datawatch.yaml.*`/`config.yaml.*` copies, files under a copied
+`.datawatch` or `.config/datawatch` directory, and secret or key files
+(`id_rsa*`, `*.pem`, `*.token`, `credentials*`, and friends). Deletions are
+never flagged (removing a stray copy must not be blocked), and documented
+templates or testdata fixtures go in the script's `ALLOW_LIST` (exact
+repo-relative paths or glob patterns). Its shell tests live in
+`scripts/check-no-config-copies_test.sh`
+(`bash scripts/check-no-config-copies_test.sh`).
+
 ## Internal-Ref Leak Check
 
 - `scripts/check-no-internal-refs.sh` blocks internal tracking IDs from leaking into
