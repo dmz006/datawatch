@@ -5,4 +5,5 @@
 - Packages failed: 0
 - Tests passed: 9933
 - Tests failed: 0
-- Doc-sync: pass
+- Doc-sync: fail (with this report present)
+- Doc-sync on tree without this report: pass
