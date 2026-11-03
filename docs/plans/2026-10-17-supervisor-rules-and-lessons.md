@@ -731,3 +731,13 @@ Rules:
 Why: I fixed a CodeQL alert in `internal/server/web/app-usage-billing.test.js` and pushed it as a test-only change with no bump, following the 2026-10-28 note that test-only changes skip the bump. The CI version check failed (version not greater than base), because that folder is embedded in the binary and the check counts any change under it. A patch release (9.71.1) fixed it.
 
 Rule: "test-only changes skip the bump" holds for Go test files and test scripts outside the embedded folders. Any change under `internal/server/web/`, including `*.test.js`, takes a patch bump with a changelog entry and the README release line, even when it only fixes a test.
+
+### Lesson 2026-11-03: a deploy restart can throw away a running worker's output
+
+Why: the 9.73.1 deploy restarted the daemon while a task was launching. The task's first attempt was recorded as failed ("daemon is shutting down; a new launch is refused"), yet its worker session kept running for 93 minutes. When the executor started a second attempt it reset the worktree, and the first session's diff (444 lines in 13 files) was discarded. Two earlier deploys also reset planning runs to draft.
+
+Rules until the restart defect (`aee00001`) is fixed:
+1. Before a deploy, check `datawatch capacity` for running tasks and how long they have run. Prefer to deploy when no task has run more than about ten minutes, or batch deploys: ship several merges, deploy once.
+2. A deploy of a change that only touches docs, scripts or tests does not need a restart (already the practice).
+3. After any restart, restart the planning runs that went back to draft and check each running task's attempts for a spawn failure with a live session.
+4. The deploy-after-ship rule stays, but "never hold" means do not leave a release undeployed for hours, not restart under a long running task.
