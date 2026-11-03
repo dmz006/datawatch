@@ -324,7 +324,9 @@ type Options struct {
 	// no consumer check). For a multi-node request a candidate for which it
 	// returns false is skipped, as an unhealthy node is, and its waiting
 	// reason is the returned reason verbatim, for example "gpu-box-1: drained"
-	// or "gpu-box-1: consumer session_spawn denied". For a single-node request
+	// or "gpu-box-1: consumer session_spawn denied". When that refusal is
+	// every candidate rather than one full node among others, the reason is
+	// prefixed with AllCandidatesGatePrefix. For a single-node request
 	// (Node set, fewer than two NodeChoices) it is checked before the pool
 	// check, and a refusal blocks it with "waiting for node <name>: <reason>",
 	// for example "waiting for node gpu-box-1: drained". A drained node keeps
@@ -691,13 +693,21 @@ func (l *Ledger) rankedLocked(req Request) []NodeChoice {
 	return out
 }
 
+// AllCandidatesGatePrefix introduces the wait reason of a multi-node
+// request refused by the node gate on every candidate (drained, in
+// maintenance, or its consumer denied) rather than merely full: the same
+// per-candidate "node: reason" parts, named up front as gate refusals.
+const AllCandidatesGatePrefix = "all candidate nodes drained or denied: "
+
 // resolveLocked decides where req would run now. For an ordinary request it is
 // blockReasonLocked on req itself. For a request with NodeChoices it returns
 // the request bound to the first healthy candidate node, least loaded first,
 // that passes every check together with Pools, and an empty reason; when none
 // fits it returns req unchanged and a reason naming every candidate and what
-// blocks it. The order and the block check read the same usage figures under
-// one lock hold, so the node chosen is one the check passed.
+// blocks it, prefixed with AllCandidatesGatePrefix when the gate — not a full
+// pool — blocked every candidate. The order and the block check read the same
+// usage figures under one lock hold, so the node chosen is one the check
+// passed.
 // nodeGateLocked reports whether node may take new work for the request's
 // consumer now: NodeGate when set (its reason verbatim), else the legacy
 // NodeHealthy hook ("unhealthy" when it refuses), else every node is open.
@@ -734,10 +744,12 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 	}
 	names := make([]string, 0, len(ranked))
 	parts := make([]string, 0, len(ranked))
+	gateBlocked := 0
 	for _, c := range ranked {
 		name := c.Name
 		names = append(names, name)
 		if ok, why := l.nodeGateLocked(name, req.Consumer); !ok {
+			gateBlocked++
 			parts = append(parts, name+": "+why)
 			continue
 		}
@@ -749,7 +761,11 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 		why = strings.TrimPrefix(why, "waiting for node "+name+": ")
 		parts = append(parts, name+": "+why)
 	}
-	return req, fmt.Sprintf("waiting for nodes %s: %s", strings.Join(names, ", "), strings.Join(parts, "; "))
+	inner := strings.Join(parts, "; ")
+	if gateBlocked == len(ranked) && gateBlocked >= 2 {
+		inner = AllCandidatesGatePrefix + inner
+	}
+	return req, fmt.Sprintf("waiting for nodes %s: %s", strings.Join(names, ", "), inner)
 }
 
 func (l *Ledger) holdersLocked(pool string) string {
