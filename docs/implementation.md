@@ -2495,3 +2495,14 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Change records and generated artefacts
+
+`internal/changerecord` builds a `ChangeRecord` (files, Go packages, settings, routes, locale keys,
+tests and recorded command runs) from a `DiffSource`; `GitDiff` is the git-backed source. `Merge`
+combines task records into one Automaton record, and `Save`/`Load` persist it as
+`<automaton data dir>/change-records/<id>.json` (atomic write). Executor wiring comes later.
+
+Config: `autonomous.generated_artefacts` with `change_record`, `gate_report`, `changelog_draft`,
+`parity_draft`, `tracker_rows`, `registry_row` and `combined_docs_task` (all bool, all on when
+unset). `AutonomousConfig.EffectiveGeneratedArtefacts()` resolves the defaults.

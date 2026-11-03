@@ -2728,6 +2728,11 @@ type AutonomousConfig struct {
 	// DefaultPlanCoverageMinRequirementChars). No omitempty, same
 	// round-trip reason as PlanCoverageMinRatio.
 	PlanCoverageMinRequirementChars int `yaml:"plan_coverage_min_requirement_chars" json:"plan_coverage_min_requirement_chars"`
+	// GeneratedArtefacts switches the artefacts an Automaton generates from its
+	// change record (gate report, changelog draft, parity draft, tracker rows,
+	// registry row, combined docs task). Every switch is on when unset; see
+	// EffectiveGeneratedArtefacts. No omitempty so an explicit off round-trips.
+	GeneratedArtefacts GeneratedArtefacts `yaml:"generated_artefacts" json:"generated_artefacts"`
 	// VerificationTimeoutSeconds bounds one verifier or guardrail one-shot
 	// judgment session. Default 1800 seconds (30 minutes); zero or negative
 	// values fall back to the default. Raise for slow local (Ollama /
