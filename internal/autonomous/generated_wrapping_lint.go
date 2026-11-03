@@ -6,6 +6,7 @@ package autonomous
 import (
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
@@ -275,4 +276,98 @@ func (m *Manager) dropGeneratedPlanTasks(stories []Story) ([]Story, []string) {
 		notes = append(notes, "task "+d.TaskID+" ("+d.Title+") "+d.Reason)
 	}
 	return kept, notes
+}
+
+// generatedKindOrder lists the kinds in the order the planner guidance names
+// them.
+var generatedKindOrder = []genartifacts.Kind{
+	genartifacts.GateReport, genartifacts.ChangelogDraft, genartifacts.ParityDraft,
+	genartifacts.TrackerRows, genartifacts.RegistryRow,
+}
+
+// GeneratedArtefactGuidance builds the planner instruction text from the
+// effective settings. It names exactly the enabled kinds; a kind that is off
+// is omitted so a task for it is allowed. The combined-documentation rule is
+// included unless combined_docs_task is off. Empty when nothing applies.
+func GeneratedArtefactGuidance(e config.EffectiveGeneratedArtefactsSettings) string {
+	var nouns []string
+	for _, k := range generatedKindOrder {
+		if generatedKindEnabled(e, k) {
+			nouns = append(nouns, generatedKindTable[k].noun)
+		}
+	}
+	var b strings.Builder
+	if len(nouns) > 0 {
+		b.WriteString("Generated artefacts: " + strings.Join(nouns, ", ") +
+			" — the daemon generates these from the change record. Do not plan a task for any of them.\n")
+	}
+	if e.CombinedDocsTask {
+		b.WriteString("Documentation: write at most one combined documentation task per Automaton for " +
+			"documentation that needs judgment (how-to, definition, operator docs). Its \"files\" list " +
+			"must cover every doc it writes. Do not plan one documentation task per surface.\n")
+	}
+	return b.String()
+}
+
+// generatedArtefactPlanSuffix is appended to the planner prompt. Empty when
+// the feature is not wired.
+func (m *Manager) generatedArtefactPlanSuffix() string {
+	eff, wired := m.generatedArtefactSettings()
+	if !wired {
+		return ""
+	}
+	g := GeneratedArtefactGuidance(eff)
+	if g == "" {
+		return ""
+	}
+	return "\n\n" + g
+}
+
+var genDocTitleRe = regexp.MustCompile(`(?i)\b(?:docs?|documentation|how-?tos?|readme|operator guide|definitions?)\b`)
+
+func genIsDocTask(t Task) bool {
+	if t.Kind == TaskKindSmoke || t.Kind == TaskKindFinalGate {
+		return false
+	}
+	if _, gen := generatedKindOfPath(firstOr(t.FilesPlanned)); gen && len(t.FilesPlanned) > 0 {
+		return false
+	}
+	if genDocTitleRe.MatchString(t.Title) {
+		return true
+	}
+	if len(t.FilesPlanned) == 0 {
+		return false
+	}
+	for _, f := range t.FilesPlanned {
+		n := normalizeGenPath(f)
+		if !(strings.HasPrefix(n, "docs/") || strings.HasSuffix(strings.ToLower(n), ".md")) {
+			return false
+		}
+	}
+	return true
+}
+
+func firstOr(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	return s[0]
+}
+
+// LintCombinedDocs warns when a plan has more than one documentation task. It
+// names the tasks and suggests the combined task; nothing is dropped.
+func LintCombinedDocs(stories []Story) []string {
+	var ids []string
+	for _, st := range stories {
+		for _, t := range st.Tasks {
+			if genIsDocTask(t) {
+				ids = append(ids, t.ID+" ("+t.Title+")")
+			}
+		}
+	}
+	if len(ids) < 2 {
+		return nil
+	}
+	return []string{"plan has " + strconv.Itoa(len(ids)) + " documentation tasks: " + strings.Join(ids, ", ") +
+		"; merge them into one combined documentation task whose files list covers every doc"}
 }

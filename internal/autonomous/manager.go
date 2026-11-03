@@ -875,7 +875,7 @@ func DefaultConfig() Config {
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
-		SnapshotNeverStage:   append([]string(nil), config.DefaultSnapshotNeverStage...),
+		SnapshotNeverStage:  append([]string(nil), config.DefaultSnapshotNeverStage...),
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
@@ -2534,6 +2534,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		Actor:         "autonomous",
 	})
 	prd.ScopeWarnings = append(m.planScopeWarnings(prd, s), genDropNotes...)
+	prd.ScopeWarnings = append(prd.ScopeWarnings, LintCombinedDocs(s)...)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -2697,6 +2698,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	prompt += m.generatedArtefactPlanSuffix()
 
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — a pi-family decompose session must launch with an explicit
@@ -2859,6 +2861,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	prompt += m.generatedArtefactPlanSuffix()
 
 	// Operator-reported: a PRD configured for claude-code kept running
 	// decompose against the daemon's global qwen default instead. Root
