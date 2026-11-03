@@ -4016,7 +4016,10 @@ commit.
    - Staging is scoped to the session's write directories — files
      elsewhere in the same tree are never swept in. If the session has
      no write scope, only the files changed during that run are staged,
-     and a log warning names them.
+     and a log warning names them. The protection rules, the
+     `autonomous.snapshot_never_stage` patterns and the task's
+     `skipped_snapshot_paths` skip record are documented in
+     [howto/autonomous.md](howto/autonomous.md).
 
 ### `git: false` — what the session does
 

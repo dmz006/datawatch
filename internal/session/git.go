@@ -105,13 +105,17 @@ func (g *ProjectGit) SetNeverStagePatterns(patterns []string) {
 }
 
 // matchesNeverStage reports whether the repo-relative slash-form path
-// matches one of g.neverStagePatterns. A trailing "/" matches a directory
-// component anywhere in the path ("data/" covers "build/data/out.txt"); a
-// glob ("*.tmp", "*.log") matches the file or the full relative path with
-// path.Match; anything else matches the exact path or a whole leading
-// directory ("secrets" or "vendor/cache"). Malformed/blank patterns never
-// match, so a bad config entry can only fail open in the sense of never
-// matching — it can never match everything.
+// matches one of g.neverStagePatterns, anchored at the repository root.
+// A trailing "/" names a root directory: it and everything under it
+// ("data/" covers "data/notes" but not "build/data/notes"). A glob is
+// tried against the full relative path and, a second time, against the
+// file name alone — so a slash-free file-name glob like "*.tmp" refuses
+// at any depth, while "secrets/key.*" covers only "secrets/key.<name>"
+// at the root. Anything else matches the exact relative path or a whole
+// leading directory ("secrets/credentials.yaml", or "vendor" for the
+// root vendor directory and its contents). Malformed/blank/absolute
+// patterns never match, so a bad config entry can only fail by
+// protecting nothing — it can never match everything.
 func (g *ProjectGit) matchesNeverStage(rel string) bool {
 	target := filepath.ToSlash(filepath.Clean(rel))
 	if target == "." || target == "" {
