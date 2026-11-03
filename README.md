@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.71.2 (2026-11-03).** The burn guard's back-off now ends when the guard steps back, shows its time in the daemon's zone, and names the guard rung and reason on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.72.0 (2026-11-03).** An Automation can now start from a fork or a nested Automation as well as a plain Automaton, and a blocked Automation that never started can be returned to draft. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

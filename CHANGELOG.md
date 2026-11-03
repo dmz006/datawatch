@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.72.0 — An Automation can start from a fork or a nested Automation
+
+### Added
+
+- **An Automation can start from a fork or a nested Automation, and that is now documented end to end.** The entry member of an Automation may be a fork or a nested Automation, not only a plain Automaton: activation enters the entry member through the same approval gate used between members, so a fork entry fires its branches in sorted order (each through its own gate, a denied branch recorded as failed while the others start) and evaluates the paired join, and a nested entry activates its child and follows the matching parent edge when the child settles. A plain entry the gate refuses to start blocks the Automation, names the reason in a decision note and raises one alert. [howto/automation-chains.md](docs/howto/automation-chains.md) gains the *Activate an Automation whose entry is a fork or a nested Automation* section covering the fork and nested entry behaviours, and both OpenAPI specs (this repo's `docs/api/openapi.yaml` and the web build's `internal/server/web/openapi.yaml`) now describe the entry-member kinds on `POST /api/automations/{id}/activate`.
+- **A blocked Automation that never started a member can go back to the draft it was created from, with docs and API spec for it.** The new return-to-draft operation (`datawatch automation return-to-draft <id>`, the `automation_return_to_draft` MCP tool, `automation return-to-draft <id>` on the comm channel, and `POST /api/automations/{id}/return_to_draft`) returns a blocked Automation that has never started a member to `draft`: the started time, cursors and budget episode of the blocked spell are cleared, every member is `pending` again with no timestamps, and activating it afterwards runs it as if it had never started. The call is refused with HTTP 409 when the Automation is not blocked or a member already started (a cursor sat on a member), in which case it must be cancelled with the `cancel_in_flight` choice, and a mismatching `expected_version` is the usual optimistic-lock 409. The same how-to gains the *Return a blocked Automation to the draft (before anything started)* section with the effects, the four access surfaces and the refusal table, both OpenAPI specs gain the `return_to_draft` path with its 409 responses, and [testing-tracker.md](docs/testing-tracker.md) records the tested coverage of the changed activate contract and the new endpoint.
+
 ## v9.71.2 — Burn guard back-off shows the right end time and the rung
 
 The back-off line for a backend held by the burn guard is now correct and says why.
