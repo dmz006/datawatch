@@ -323,6 +323,17 @@ func (m *Manager) admitPreferring(ctx context.Context, prd *PRD, t *Task, backen
 	return m.acquireLease(ctx, prd, t, backend, model, role, nil, prefer)
 }
 
+// capacityPriorityOf resolves the PRD's capacity-queue priority at read
+// time: an explicitly set priority (PrioritySource "explicit") always
+// wins; otherwise the priority_by_kind table (autonomous.priority_by_kind)
+// decides by effective kind, with the "other" entry as fallback. Resolving
+// here (instead of trusting the persisted value) keeps the ledger in sync
+// with a live table change without re-writing the PRD record.
+func (m *Manager) capacityPriorityOf(prd *PRD) int {
+	p, _ := ResolvePriority(prd, m.PriorityByKind())
+	return p
+}
+
 // acquireLease blocks until the task holds a capacity lease, never on a node
 // named in exclude, and breaking a tie between equally loaded nodes toward
 // prefer. admit calls it with nil and ""; the node-load failover calls it
@@ -344,7 +355,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	var waitStart time.Time
 	var lastCause WaitCause
 	req := capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
 	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
@@ -472,7 +483,7 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	}
 	holder := "plan:" + prd.ID
 	lreq := capacity.Request{
-		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
+		Holder: holder, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
 	}
 	lreq.Refresh = m.placementRefresh(lreq, backend, model, decomposePools)
 	err := led.Acquire(context.Background(), lreq, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
@@ -605,7 +616,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		}
 	}
 	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown,
+		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown,
 	}, t.SessionID, VerifyHolder(t.ID))
 }
 

@@ -521,6 +521,12 @@ type PRD struct {
 	// Priority orders this PRD's tasks in the capacity wait queue (higher
 	// first; default 0).
 	Priority int `json:"priority,omitempty"`
+	// PrioritySource records where Priority was resolved from for this PRD:
+	// "explicit" (SetPRDPriority, even when 0), "kind" (resolved from the
+	// priority_by_kind table by the PRD's kind — see
+	// ResolvePriority/PrioritySource constants in priority_by_kind.go), or
+	// "default" (no explicit value and no table entry).
+	PrioritySource string `json:"priority_source,omitempty"`
 
 	// BL386 Phase 1 — warm-start seeding. When Enabled, the executor
 	// seeds each spawned task's session-local scope from project-shared,

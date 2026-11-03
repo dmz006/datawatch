@@ -554,6 +554,14 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// PriorityByKind is the kind→capacity-priority table used by
+	// ResolvePriority (priority_by_kind.go): an Automaton without an
+	// explicit priority gets the value of its effective kind —
+	// feature, bug, other or maintenance — from this map, falling back to
+	// the "other" entry. Main wiring supplies the effective table
+	// (shipped defaults + operator's autonomous.priority_by_kind); nil or
+	// empty means every unresolved priority reads 0.
+	PriorityByKind map[string]int `json:"priority_by_kind,omitempty"`
 	// Node over-admission switches (nil = on) and the restart adoption wait
 	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
 	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
@@ -2576,6 +2584,20 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	if defaultAutoPR && !prd.Git.AutoPR {
 		prd.Git.AutoPR = true
 		_ = m.store.SavePRD(prd)
+	}
+	// Resolve the initial capacity-queue priority from the kind table
+	// when nothing was set explicitly: the effective kind (feature, bug,
+	// other or maintenance) picks its entry from
+	// autonomous.priority_by_kind, falling back to the "other" entry.
+	// SetPRDPriority still outranks this; the source is recorded on the
+	// record so the choice stays auditable.
+	if prio, src := ResolvePriority(prd, m.PriorityByKind()); src != PrioritySourceExplicit {
+		if prd.Priority != prio || prd.PrioritySource != src {
+			prd.Priority = prio
+			prd.PrioritySource = src
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+		}
 	}
 	return prd, nil
 }
@@ -6188,15 +6210,40 @@ func (m *Manager) SetPRDGitPush(prdID, policy string) (*PRD, error) {
 	return prd, m.store.SavePRD(prd)
 }
 
-// SetPRDPriority sets the PRD's capacity-queue priority.
+// SetPRDPriority sets the PRD's capacity-queue priority. The value is
+// recorded as explicitly set (PrioritySource "explicit"), so it outranks
+// the priority_by_kind table even when n is 0.
 func (m *Manager) SetPRDPriority(prdID string, n int) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	prd.Priority = n
+	prd.PrioritySource = PrioritySourceExplicit
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// SetPriorityByKind replaces the kind→priority table used by
+// ResolvePriority (runtime config entry; main.go's boot-time wiring
+// starts from the effective autonomous.priority_by_kind table). A nil
+// argument clears the table, after which every unresolved priority reads
+// 0.
+func (m *Manager) SetPriorityByKind(table map[string]int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.PriorityByKind = table
+}
+
+// PriorityByKind returns a copy of the current kind→priority table (a map
+// value copy of the key/value pairs held in the config snapshot).
+func (m *Manager) PriorityByKind() map[string]int {
+	cfg := m.Config()
+	out := make(map[string]int, len(cfg.PriorityByKind))
+	for k, v := range cfg.PriorityByKind {
+		out[k] = v
+	}
+	return out
 }
 
 // kindSetAttempts bounds how often SetPRDKind retries after another writer
@@ -6210,7 +6257,7 @@ const kindSetAttempts = 3
 func (m *Manager) SetPRDKind(prdID, kind string) error {
 	k, ok := NormalizePRDKind(kind)
 	if !ok {
-		return fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(kind))
+		return fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(kind))
 	}
 	for attempt := 0; attempt < kindSetAttempts; attempt++ {
 		rev, found := m.store.PRDRev(prdID)

@@ -4419,6 +4419,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
+			// priority_by_kind (autonomous.priority_by_kind): the
+			// kind→capacity-priority table ResolvePriority resolves against.
+			// Wired as the EFFECTIVE table (shipped defaults bug=80,
+			// maintenance=70, feature=20, other=0 with the operator's
+			// autonomous.priority_by_kind entries layered on top), so a
+			// pristine daemon still assigns kind priorities; runtime
+			// replacement goes through Manager.SetPriorityByKind.
+			PriorityByKind: acfgIn.EffectivePriorityByKind(),
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
