@@ -1,0 +1,22 @@
+✔ buildCostReportQuery accepts the release grouping (24.767756ms)
+✔ report columns appear only when the report carries the fields (10.187706ms)
+✔ billing columns render values and dashes where a row lacks them (12.346888ms)
+✔ billing columns stay hidden when every value is blank or null (8.782205ms)
+✔ retention_note from the report body renders, escaped (8.389346ms)
+✔ mode and unit labels resolve from the bundle; unknown modes render raw (10.891052ms)
+✔ profile parts are ordered and formatted; unsets are blank for the dash (9.072892ms)
+✔ a profiled provider row shows its fields, mode badge and full actions (7.425809ms)
+✔ an unprofiled provider row gets the assumed-default badge and no remove (7.99939ms)
+✔ hostile provider names cannot inject markup, even via the onclick key (7.341643ms)
+✔ rows cover the union of configured and known providers, sorted (7.250937ms)
+✔ the form pins the provider in edit mode and leaves it free in add mode (9.601776ms)
+✔ the load action fetches config + backends and renders the card without assuming disabled ones (10.125623ms)
+✔ every locale bundle carries the new usage-billing and cost-report keys (5.108089ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 176.822552
