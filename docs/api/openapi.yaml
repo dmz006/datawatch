@@ -3410,6 +3410,118 @@ paths:
                   suppressed: {$ref: "#/components/schemas/PlanCoverageSuppressed"}
         "404": {description: Not found}
         "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/decompose-lint:
+    get:
+      summary: Read an Automaton's stored decompose-lint record
+      description: |
+        Read-only view of the decompose-lint record captured when the
+        Automaton was last decomposed (`autonomous.decompose_lint` / the
+        decompose-time hook). `decompose_lint` is the stored record — mode
+        that ran (`shadow` or `enforce`; an `off` run records nothing), the
+        `attempts` (1 = no retry, or 1 + the retries consumed, at most
+        1 + `max_retries`), the final pass timestamp `linted_at`, and the
+        final `decompose_lint_findings` — or `null` when the check was off
+        when this Automaton was decomposed (no record stored). Findings are
+        recorded, never fatal: a decomposition is never failed because of
+        this check. Only GET is served here (POST is the read-only dry run
+        below), and a federated peer needs the autonomous read capability.
+      operationId: autonomousPRDGetDecomposeLint
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: The stored decompose-lint record, or null when nothing was stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [prd_id, decompose_lint]
+                properties:
+                  prd_id: {type: string, description: "Automaton id"}
+                  decompose_lint:
+                    nullable: true
+                    description: "The stored record; null when no record was captured (off run, or decomposed before the feature)"
+                    allOf: [{$ref: "#/components/schemas/DecomposeLintRecord"}]
+        "400": {description: Missing or malformed id}
+        "404": {description: Automaton not found}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous disabled}
+    post:
+      summary: Dry-run the decompose-lint check over an Automaton's stored plan
+      description: |
+        Read-only dry run of the decompose-lint rule engine over the
+        Automaton's STORED stories — the same engine the decompose-time
+        hook runs (`EffectiveRules` + `LintTasks`) — reporting what the
+        check would record right now, in whatever mode is configured. It
+        never mutates the Automaton, never resolves templates, and never
+        calls the planner: the report is the current config's view of an
+        existing plan, not a fresh decomposition. The report is the mode,
+        the number of active (effective) rules used, the findings in plan
+        order (empty when clean) and their block/warn tally. A federated
+        peer needs the autonomous read capability.
+      operationId: autonomousPRDDryRunDecomposeLint
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: The decompose-lint report for the current configuration
+          content:
+            application/json:
+              schema: {allOf: [{$ref: "#/components/schemas/DecomposeLintReport"}]}
+        "400": {description: Missing or malformed id}
+        "404": {description: Automaton not found}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous disabled}
+  /api/autonomous/decompose-lint/config:
+    get:
+      summary: Read the live decompose-lint, task-templates and decompose-guidance config
+      description: |
+        Live config object for the decompose-lint feature: `decompose_lint`
+        (`autonomous.decompose_lint`: mode, max_retries, rules, disabled_rules),
+        `task_templates` (`autonomous.task_templates`: enabled, templates,
+        per-project overrides) and `decompose_guidance`
+        (`autonomous.decompose_guidance`: the literal text or file path), as one
+        object. A federated peer needs the autonomous read capability.
+      operationId: autonomousDecomposeLintConfigGet
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The live decompose-lint config object
+          content:
+            application/json:
+              schema: {allOf: [{$ref: "#/components/schemas/DecomposeLintConfigView"}]}
+        "503": {description: Autonomous disabled}
+    put:
+      summary: Replace the decompose-lint, task-templates or decompose-guidance block(s)
+      description: |
+        Validated partial replace of the decompose-lint config. The body may
+        contain any of `decompose_lint` (a full
+        `{mode, max_retries, rules, disabled_rules}` object), `task_templates`
+        (a full `{enabled, templates, projects}` object) and
+        `decompose_guidance` (a string); each present key replaces its whole
+        block, omitted keys are left untouched. Every supplied block is
+        validated before any of them is applied (legal mode from off|shadow|
+        enforce, well-shaped unique rule ids, legal severities, non-empty rule
+        messages, compiling regexes, well-shaped unique template ids), so a bad
+        value never leaves a half-updated config. 200 returns the new full
+        config object; 400 returns the first rejection. A federated peer needs
+        the autonomous write capability.
+      operationId: autonomousDecomposeLintConfigPut
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {allOf: [{$ref: "#/components/schemas/DecomposeLintConfigPatch"}]}
+      responses:
+        "200":
+          description: The new full decompose-lint config object
+          content:
+            application/json:
+              schema: {allOf: [{$ref: "#/components/schemas/DecomposeLintConfigView"}]}
+        "400": {description: A supplied block failed validation (nothing was applied)}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous disabled}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
@@ -7889,6 +8001,125 @@ components:
         scoped_requirements: {type: boolean, description: "Only count requirement wording inside the configured spec sections (default true)"}
         requirement_sections: {type: array, items: {type: string}, description: "Spec section names to scope requirements to (default scope,constraints)"}
         min_requirement_chars: {type: integer, description: "Shortest requirement sentence, in characters, that counts (default 30)"}
+    DecomposeLintRule:
+      type: object
+      description: |
+        One decompose-lint rule. Operator rules with a built-in rule's `id`
+        replace that built-in at its position; new `id`s add to the pack.
+        `match` ANDs together its present conditions; `any_of` / `all_of`
+        compose sub-conditions. The regexes are deliberately generic — they
+        describe the shape of a dangerous task spec.
+      required: [id, severity, message]
+      properties:
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files (block) and no_verification_script, names_tracker_id (warn)"}
+        severity: {type: string, enum: [block, warn], description: "`block` stops decomposition in enforce mode and is fed back to the decomposer; `warn` is reported only"}
+        message: {type: string, description: "Finding text shown when the rule fires (non-empty)"}
+        match:
+          type: object
+          description: "AND of its present conditions; each condition is optional"
+          properties:
+            spec_regex: {type: string, description: "Regex a task's spec must match (RE2)"}
+            title_regex: {type: string, description: "Regex a task's title must match (RE2)"}
+            read_only: {type: boolean, description: "Assert the task is flagged read-only"}
+            verification_script_empty: {type: boolean, description: "Assert the task has no verification script"}
+            files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
+            any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}
+            all_of: {type: array, items: {type: object}, description: "Matches when every sub-condition matches"}
+        disabled: {type: boolean, description: "Per-rule disable flag (equivalent to a `disabled_rules` entry)"}
+    DecomposeLintConfig:
+      type: object
+      description: |
+        `autonomous.decompose_lint`. Defaults when unset: `mode: shadow`,
+        `max_retries: 2`, the seven-rule built-in pack, and an empty
+        `disabled_rules`. `mode` empty normalizes to `shadow`; a typo is a
+        validation error. `max_retries` clamps negatives to 0 (0 = valid,
+        lint-and-record without retrying) and above the cap (5) to the cap.
+      properties:
+        mode: {type: string, enum: [off, shadow, enforce], description: "off records nothing; shadow lints and records without retrying; enforce feeds block findings back to the decomposer up to max_retries times"}
+        max_retries: {type: integer, minimum: 0, description: "Retries an enforce run may spend over block findings (0 = no retry; negative → 0; above the cap → the cap)"}
+        rules: {type: array, items: {allOf: [{$ref: "#/components/schemas/DecomposeLintRule"}]}, description: "Operator rule additions / same-id replacements of the built-in pack (validated for unique well-formed ids, legal severities, non-empty messages, compiling regexes)"}
+        disabled_rules: {type: array, items: {type: string}, description: "Built-in (or operator) rule ids to drop from the effective pack"}
+    TaskTemplateDef:
+      type: object
+      description: One task template. A same-`id` operator template replaces the built-in template at its position; new ids append. `spec` may use the slots `{{feature}}`, `{{files}}` and `{{files_list}}`.
+      required: [id]
+      properties:
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Template id; unique within the pack. Built-ins: changelog_entry, parity_issue_draft, docs_set, final_gate, version_bump_left_to_merge"}
+        title: {type: string}
+        spec: {type: string, description: "Task body; supports the slots {{feature}}, {{files}} and {{files_list}}"}
+        files: {type: string, description: "Files the generated task declares"}
+        kind: {type: string, description: "Task kind the generated task carries"}
+        read_only: {type: boolean, description: "Flag the generated task read-only"}
+        depends_on: {type: array, items: {type: string}, description: "Other template ids (or task ids) this one depends on; wired into a real depends_on edge at apply time"}
+        applies_when: {type: string, description: "Scope guard; the built-in pack applies to every feature"}
+    TaskTemplatesConfig:
+      type: object
+      description: |
+        `autonomous.task_templates`. Default when unset: `enabled: true` and
+        the built-in pack (applied to every feature). `enabled: false` turns
+        apply off globally; a per-project `projects[<key>].enabled` override
+        resolves over the global for that project.
+      properties:
+        enabled: {type: boolean, description: "Apply the pack at decompose time (default true)"}
+        templates: {type: array, items: {allOf: [{$ref: "#/components/schemas/TaskTemplateDef"}]}, description: "Operator template additions / same-id replacements of the built-in pack"}
+        projects: {type: object, additionalProperties: {type: object, properties: {enabled: {type: boolean, description: "Per-project apply switch; null (absent) inherits the global `enabled`"}}}, description: "Per-project enable/disable overrides keyed by project key"}
+    LintFinding:
+      type: object
+      required: [rule_id, severity, message, story, task]
+      properties:
+        rule_id: {type: string, description: "Rule that fired (findings and docs reference rules by this id)"}
+        severity: {type: string, enum: [block, warn]}
+        message: {type: string, description: "The rule's finding text"}
+        story: {type: string, description: 'Story the offending task belongs to (may be "-" for plan-level findings)'}
+        task: {type: string, description: 'Offending task id (may be "-" for story-/plan-level findings)'}
+        matched: {type: string, description: "The matched snippet, or a short description of an asserted field state for predicate-only rules"}
+    LintSummary:
+      type: object
+      required: [block, warn]
+      properties:
+        block: {type: integer, description: "Findings from block-severity rules"}
+        warn: {type: integer, description: "Findings from warn-severity rules"}
+    DecomposeLintRecord:
+      type: object
+      description: |
+        The decompose-lint record captured at decompose time (all modes
+        except off — off records nothing) and read from the PRD GET surface.
+      required: [decompose_lint_findings, mode, attempts, linted_at]
+      properties:
+        decompose_lint_findings: {type: array, items: {allOf: [{$ref: "#/components/schemas/LintFinding"}]}, description: "Final finding set in plan order (shadow: the single pass; enforce: what remained after the retry budget); empty when clean. Recorded, never fatal"}
+        mode: {type: string, enum: [shadow, enforce], description: "Mode that ran (off is never stored)"}
+        attempts: {type: integer, description: "1 when no retry ran, or 1 + the retries consumed (at most 1 + max_retries)"}
+        linted_at: {type: string, format: date-time, description: "When the final pass ran"}
+    DecomposeLintReport:
+      type: object
+      description: |
+        The dry-run report the PRD POST surface returns: mode in effect,
+        active rule count, findings over the stored plan (empty when clean)
+        and their block/warn tally.
+      required: [prd, mode, rule_count, findings, summary]
+      properties:
+        prd: {type: string, description: "Automaton id the report covers"}
+        mode: {type: string, enum: [off, shadow, enforce], description: "Mode in effect when the report was computed; the report itself is mode-agnostic"}
+        rule_count: {type: integer, description: "Number of active (effective) rules the run used"}
+        findings: {type: array, items: {allOf: [{$ref: "#/components/schemas/LintFinding"}]}, description: "Finding set in plan order; empty when clean"}
+        summary: {allOf: [{$ref: "#/components/schemas/LintSummary"}]}
+    DecomposeLintConfigView:
+      type: object
+      description: The live decompose-lint config object returned by the config GET/PUT.
+      properties:
+        decompose_lint: {allOf: [{$ref: "#/components/schemas/DecomposeLintConfig"}]}
+        task_templates: {allOf: [{$ref: "#/components/schemas/TaskTemplatesConfig"}]}
+        decompose_guidance: {type: string, description: "autonomous.decompose_guidance: literal text, or a path to a readable guidance file; unset generates one line per active rule"}
+    DecomposeLintConfigPatch:
+      type: object
+      description: |
+        Partial-replace body for the config PUT: supply at least one of the
+        three keys; each present key replaces its whole block, omitted keys
+        are untouched. All supplied blocks are validated before any is applied.
+      properties:
+        decompose_lint: {allOf: [{$ref: "#/components/schemas/DecomposeLintConfig"}]}
+        task_templates: {allOf: [{$ref: "#/components/schemas/TaskTemplatesConfig"}]}
+        decompose_guidance: {type: string, description: "Literal guidance text (replaces the previous value)"}
     PlanReviewVerdict:
       type: object
       description: |
