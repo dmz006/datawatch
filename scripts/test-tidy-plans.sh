@@ -3,199 +3,324 @@
 # test-tidy-plans.sh — self-contained tests for scripts/tidy-plans.sh,
 # scripts/plans_links.py, and scripts/check-plans-links.sh.
 #
-# Builds a throwaway git repo under a temp dir and exercises the full
-# contract: kept vs archived classification by references, relative and
-# absolute link rewriting, registry handling, release-notes grouping,
-# count-only output (never a file list), --dry-run, --check, idempotency,
-# and the dangling-link checker.  The real docs/plans/ is never touched.
+# Every case builds its own throwaway git repository under a mktemp
+# directory, copies the code under test in, exercises one piece of the
+# contract, and cleans up on exit.  The real docs/plans/ is never
+# touched (each tool resolves its repo root from the temp repo, so
+# commands are always run with that temp repo as the working directory).
+#
+# Covered:
+#   * a plan linked from an open registry row stays
+#   * a plan linked from a script, a rules file, or a doc stays
+#   * an unreferenced closed plan is archived
+#   * links to a moved file are rewritten
+#   * the links check fails on a broken link and passes when clean
+#   * tidy output contains counts only (never a file list)
+#
+# Usage:
+#   scripts/test-tidy-plans.sh            run all cases (default)
+#   scripts/test-tidy-plans.sh all        same
+#   scripts/test-tidy-plans.sh hygiene    run only the registry hygiene cases
+#
+# Exit 0 when every case passes, 1 otherwise.
 
 set -euo pipefail
 
+# never attach to a tmux session while testing
+unset TMUX TMUX_TMPDIR
+
 SELF_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd "$SELF_DIR/.." && pwd)
+
+MODE="${1:-all}"
+case "$MODE" in
+  all|hygiene) ;;
+  *) printf 'usage: test-tidy-plans.sh [all|hygiene]\n' >&2; exit 2 ;;
+esac
 
 FAILED=0
 ok()   { printf 'ok   - %s\n' "$1"; }
 fail() { printf 'FAIL - %s\n' "$1" >&2; FAILED=1; }
 
-assert_contains() { # $1=what  $2=haystack  $3=literal substring
+# ── assertions ───────────────────────────────────────────────────────────
+assert_line() { # $1=description  $2=haystack  $3=ERE some line must match
+  printf '%s\n' "$2" | grep -Eq "$3" \
+    || { printf '     want line matching: %s\n     got:\n%s\n' "$3" "$2" >&2; fail "$1"; }
+  ok "$1"
+}
+assert_contains() { # $1=description  $2=haystack  $3=literal substring
   case "$2" in
     *"$3"*) ok "$1" ;;
     *) printf '     want substring: %s\n     got:\n%s\n' "$3" "$2" >&2; fail "$1" ;;
   esac
 }
-assert_line() { # $1=what  $2=haystack  $3=literal line prefix
-  printf '%s\n' "$2" | grep -Eq "^$3" || { printf '     got:\n%s\n' "$2" >&2; fail "$1"; return; }
-  ok "$1"
+assert_lacks() { # $1=description  $2=haystack  $3=ERE that must not appear
+  if printf '%s\n' "$2" | grep -Eq "$3"; then printf '     found: %s\n' "$3" >&2; fail "$1"; else ok "$1"; fi
 }
-assert_not_line() {
-  if printf '%s\n' "$2" | grep -Eq "^$3"; then printf '     found: %s\n' "$3" >&2; fail "$1"; else ok "$1"; fi
+assert_file()  { [ -f "$2" ] && ok "$1" || fail "$1 (missing $2: $(basename -- "$2"))"; }
+assert_no_file() { [ ! -e "$2" ] && ok "$1" || fail "$1 (unexpected: $(basename -- "$2"))"; }
+# count-only output: no line may mention a .md filename
+assert_counts_only() { # $1=description  $2=haystack
+  if printf '%s\n' "$2" | grep -qE '\.md\b'; then
+    printf '     got:\n%s\n' "$2" >&2; fail "$1"
+  else
+    ok "$1"
+  fi
 }
-assert_no_file_paths() { # count-only output: no line may reference a .md file
-  if printf '%s\n' "$2" | grep -qE '\.md\b'; then printf '     got:\n%s\n' "$2" >&2; fail "$1"; else ok "$1"; fi
+
+# ── scratch repos ────────────────────────────────────────────────────────
+TMPDIRS=()
+cleanup() {
+  local d
+  for d in "${TMPDIRS[@]:-}"; do
+    if [ -n "$d" ]; then rm -rf "$d"; fi
+  done
+  return 0
 }
-assert_file()  { [ -f "$2" ] && ok "$1" || fail "$1 (missing $2)"; }
-assert_no_file() { [ ! -e "$2" ] && ok "$1" || fail "$1 (unexpected $2)"; }
+trap cleanup EXIT
 
-# ── fixture repo ─────────────────────────────────────────────────────────
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
-cd "$TMP"
-git init -q .
-git config user.name "tidy-test"
-git config user.email "tidy-test@localhost"
+# Build a fresh throwaway git repo with the code under test copied in;
+# sets NEW_REPO and registers the dir for cleanup.
+new_repo() {
+  local d
+  d=$(mktemp -d)
+  TMPDIRS+=("$d")
+  (
+    cd "$d"
+    git init -q .
+    git config user.name "tidy-test"
+    git config user.email "tidy-test@localhost"
+    mkdir -p scripts docs/plans
+    cp "$REPO_DIR/scripts/tidy-plans.sh"        scripts/
+    cp "$REPO_DIR/scripts/plans_links.py"       scripts/
+    cp "$REPO_DIR/scripts/check-plans-links.sh" scripts/
+  )
+  NEW_REPO="$d"
+  return 0
+}
 
-mkdir -p docs/plans docs scripts cmd/datawatch
-# the code under test: pristine copies from the real repo
-cp "$REPO_DIR/scripts/plans_links.py"       scripts/
-cp "$REPO_DIR/scripts/tidy-plans.sh"        scripts/
-cp "$REPO_DIR/scripts/check-plans-links.py" scripts/
+# Run the tools with the temp repo as working directory so their
+# `git rev-parse --show-toplevel` resolves to the temp repo, never the
+# one this file lives in.
+run_tidy()    { ( cd "$1" && exec bash scripts/tidy-plans.sh ); }
+run_checker() { ( cd "$1" && exec bash scripts/check-plans-links.sh ); }
 
-printf 'package main\n\nvar Version = "1.2.3"\n' > cmd/datawatch/main.go
+# Old date: far past the default 7-day age cutoff.
+OLD=2020-01-01
 
-cat > docs/plans/README.md <<'EOF'
+# ── cases ────────────────────────────────────────────────────────────────
+case_open_row_kept() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  printf '# open-row plan\n' > "$repo/docs/plans/${OLD}-open-row.md"
+  cat > "$repo/docs/plans/README.md" <<EOF
 # Registry
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | [done plan](2020-01-01-done-plan.md) | done, shipped in 1.2.0 |
-| 2 | [open plan](2020-01-02-open-plan.md) | not started |
-| 3 | [row ref plan](2020-01-03-row-ref.md) | done |
-| 4 | [abs ref plan](docs/plans/2020-01-04-abs-ref.md) | done, merged |
+| 1 | [open-row plan](${OLD}-open-row.md) | in progress |
 EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "open row: tidy crashed: $out"; return; fi
+  assert_line "open row: plan kept"                "$out" 'plans kept: 1'
+  assert_line "open row: nothing archived"         "$out" 'plans archived: 0'
+  assert_file   "open row: plan still top-level"   "$repo/docs/plans/${OLD}-open-row.md"
+  assert_no_file "open row: no historical copy"    "$repo/docs/plans/historical-plans/${OLD}-open-row.md"
+  assert_counts_only "open row: count-only output" "$out"
+}
 
-for p in 2020-01-01-done-plan 2020-01-02-open-plan 2020-01-03-row-ref \
-         2020-01-04-abs-ref 2020-01-05-docs-ref 2020-01-06-script-ref \
-         2020-01-07-rule-ref; do
-  printf '# %s\n\nContent.\n' "$p" > "docs/plans/$p.md"
-done
-# fresh plan: today's date, no references -> kept by age
-printf '# recent\n' > "docs/plans/$(date +%Y-%m-%d)-recent-plan.md"
-
-# referencing surfaces (each keeps its plan)
-cat > docs/other-guide.md <<'EOF'
-See [docs ref](plans/2020-01-05-docs-ref.md) for details.
-EOF
-cat > scripts/tool.sh <<'EOF'
+case_script_ref_kept() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  printf '# scripted plan\n' > "$repo/docs/plans/${OLD}-script-ref.md"
+  # no registry row for this plan: only the script reference keeps it
+  cat > "$repo/scripts/tool.sh" <<EOF
 #!/usr/bin/env bash
-# reference: docs/plans/2020-01-06-script-ref.md
+# uses the flow in docs/plans/${OLD}-script-ref.md
 echo ok
 EOF
-cat > AGENT.md <<'EOF'
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "script ref: tidy crashed: $out"; return; fi
+  assert_line  "script ref: plan kept"        "$out" 'plans kept: 1'
+  assert_line  "script ref: nothing archived" "$out" 'plans archived: 0'
+  assert_file  "script ref: plan still top-level" "$repo/docs/plans/${OLD}-script-ref.md"
+}
+
+case_rules_ref_kept() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  printf '# rules-linked plan\n' > "$repo/docs/plans/${OLD}-rule-ref.md"
+  # root rules file (no registry row for this plan)
+  cat > "$repo/AGENT.md" <<EOF
 # rules
-- see [rule ref](docs/plans/2020-01-07-rule-ref.md)
+- the flow from [rule ref](docs/plans/${OLD}-rule-ref.md) applies
+EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "rules ref: tidy crashed: $out"; return; fi
+  assert_line  "rules ref: plan kept"        "$out" 'plans kept: 1'
+  assert_line  "rules ref: nothing archived" "$out" 'plans archived: 0'
+  assert_file  "rules ref: plan still top-level" "$repo/docs/plans/${OLD}-rule-ref.md"
+}
+
+case_docs_ref_kept() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  printf '# doc-linked plan\n' > "$repo/docs/plans/${OLD}-doc-ref.md"
+  # a file under docs/ outside docs/plans/ (no registry row for this plan)
+  cat > "$repo/docs/guide.md" <<EOF
+# guide
+See [doc ref](plans/${OLD}-doc-ref.md) for details.
+EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "doc ref: tidy crashed: $out"; return; fi
+  assert_line  "doc ref: plan kept"        "$out" 'plans kept: 1'
+  assert_line  "doc ref: nothing archived" "$out" 'plans archived: 0'
+  assert_file  "doc ref: plan still top-level" "$repo/docs/plans/${OLD}-doc-ref.md"
+}
+
+case_closed_unreferenced_archived() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  printf '# stale plan\n' > "$repo/docs/plans/${OLD}-stale.md"
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [stale plan](${OLD}-stale.md) | done, shipped |
+EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "archived: tidy crashed: $out"; return; fi
+  assert_line  "archived: exactly one archived"       "$out" 'plans archived: 1'
+  assert_line  "archived: none kept"                  "$out" 'plans kept: 0'
+  assert_file  "archived: plan in historical-plans/"  "$repo/docs/plans/historical-plans/${OLD}-stale.md"
+  assert_no_file "archived: gone from plans top level" "$repo/docs/plans/${OLD}-stale.md"
+  assert_counts_only "archived: count-only output" "$out"
+}
+
+case_links_rewritten() {
+  local repo out reg
+  new_repo; repo=$NEW_REPO
+  printf '# moved plan\n' > "$repo/docs/plans/${OLD}-moved.md"
+  # three closed registry rows referencing the plan three different ways
+  # (row links, bare name, absolute path).  Closed rows never *keep* the
+  # plan, but every reference is rewritten when it moves.
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [moved plan](${OLD}-moved.md) | merged |
+| 2 | follow-up in plans/${OLD}-moved.md | cancelled |
+| 3 | absolute mention docs/plans/${OLD}-moved.md | done |
+EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "rewritten: tidy crashed: $out"; return; fi
+  assert_line "rewritten: plan archived"   "$out" 'plans archived: 1'
+  assert_line "rewritten: none kept"       "$out" 'plans kept: 0'
+  assert_line "rewritten: all 3 links rewritten" "$out" 'links rewritten: 3'
+  assert_file  "rewritten: plan in historical-plans/" "$repo/docs/plans/historical-plans/${OLD}-moved.md"
+  assert_no_file "rewritten: plan moved out of plans/" "$repo/docs/plans/${OLD}-moved.md"
+  reg=$(cat "$repo/docs/plans/README.md")
+  assert_contains "rewritten: row link now historical"      "$reg" "](historical-plans/${OLD}-moved.md)"
+  assert_lacks    "rewritten: no old row link remains"      "$reg" '\]\(2020-01-01-moved\.md\)'
+  assert_contains "rewritten: bare path now historical"     "$reg" "plans/historical-plans/${OLD}-moved.md"
+  assert_lacks    "rewritten: no old bare path remains"     "$reg" 'in plans/2020-01-01-moved'
+  assert_contains "rewritten: absolute path now historical" "$reg" "docs/plans/historical-plans/${OLD}-moved.md"
+  assert_lacks    "rewritten: no old absolute path remains" "$reg" 'docs/plans/2020-01-01-moved'
+}
+
+case_links_check() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  # every plan the registry links to exists -> clean
+  printf '# kept one\n' > "$repo/docs/plans/${OLD}-kept-one.md"
+  printf '# kept two\n' > "$repo/docs/plans/${OLD}-kept-two.md"
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [open plan](${OLD}-kept-one.md) | in progress |
+| 2 | [done plan](${OLD}-kept-two.md) | done |
 EOF
 
-# release notes: one stale minor, one current; one unclassified file
-printf 'old notes\n'  > docs/plans/RELEASE-NOTES-v0.9.1.md
-printf 'cur notes\n'  > docs/plans/RELEASE-NOTES-v1.2.0.md
-printf 'scratch\n'    > docs/plans/notes.md
+  # clean: checker passes and prints only the zero count
+  if out=$(run_checker "$repo" 2>/dev/null); then
+    ok "links check: passes when clean"
+  else
+    fail "links check: expected clean exit on a link-clean repo (out: $out)"
+  fi
+  assert_line "links check: count is 0"                    "$out" '^0$'
+  assert_counts_only "links check: counts only, no names" "$out"
 
-git add -A
-git commit -qm init
-cd "$TMP"
+  # broken: a doc links at a plan that does not exist anywhere
+  cat > "$repo/docs/broken.md" <<EOF
+# broken
+See [ghost](plans/2019-05-05-ghost-plan.md).
+EOF
+  if out=$(run_checker "$repo" 2>/dev/null); then
+    fail "links check: expected non-zero exit with a broken link"
+  else
+    ok "links check: fails on a broken link"
+  fi
+  assert_line "links check: counts the broken link" "$out" '^[1-9][0-9]*$'
+  assert_counts_only "links check: counts only, no names" "$out"
 
-# ── 1. dry run: exact counts, nothing moved, no file paths ──────────────
-out=$(bash scripts/tidy-plans.sh --dry-run)
-assert_line  "dry-run: plans kept"           "$out" 'plans kept: 5'
-assert_line  "dry-run: plans archived"       "$out" 'plans archived: 3'
-assert_line  "dry-run: links rewritten"      "$out" 'links rewritten: 3'
-assert_line  "dry-run: release notes moved"  "$out" 'release notes moved: 1'
-assert_line  "dry-run: unclassified counted" "$out" 'unclassified \(manual review needed\): 1'
-assert_line  "dry-run: marker printed"       "$out" '^\(dry run'
-assert_no_file_paths "dry-run: count-only output (no .md lines)" "$out"
-assert_file "dry-run: archived plan still in place"      "docs/plans/2020-01-01-done-plan.md"
-assert_no_file "dry-run: historical-plans/ not created"  "docs/plans/historical-plans"
-assert_file "dry-run: stale release note still in place" "docs/plans/RELEASE-NOTES-v0.9.1.md"
+  # back to clean: removing the broken link passes again
+  rm "$repo/docs/broken.md"
+  if ! out=$(run_checker "$repo" 2>/dev/null); then
+    fail "links check: expected clean exit after removing the bad link (out: $out)"
+  else
+    ok "links check: passes again after fix"
+  fi
+  assert_line "links check: count back to 0" "$out" '^0$'
+}
 
-# ── 2. --check fails while anything would move ──────────────────────────
-if bash scripts/tidy-plans.sh --check >/dev/null 2>&1; then
-  fail "--check: expected non-zero exit while plans are stale"
-else
-  ok "--check: non-zero exit while plans are stale"
-fi
+case_counts_only_output() {
+  local repo out
+  new_repo; repo=$NEW_REPO
+  # mixed registry: one closed row (archived), one open row (kept)
+  printf '# stale mixed\n' > "$repo/docs/plans/${OLD}-stale-mixed.md"
+  printf '# live mixed\n'  > "$repo/docs/plans/${OLD}-live-mixed.md"
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
 
-# ── 3. real run: moves, link rewrites, release notes ────────────────────
-out=$(bash scripts/tidy-plans.sh)
-assert_line  "run: plans kept"           "$out" 'plans kept: 5'
-assert_line  "run: plans archived"       "$out" 'plans archived: 3'
-assert_line  "run: links rewritten"      "$out" 'links rewritten: 3'
-assert_line  "run: release notes moved"  "$out" 'release notes moved: 1'
-assert_no_file_paths "run: count-only output (no .md lines)" "$out"
+| # | Item | Status |
+|---|------|--------|
+| 1 | [stale](${OLD}-stale-mixed.md) | cancelled |
+| 2 | [live](${OLD}-live-mixed.md) | in progress |
+EOF
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "counts: tidy crashed: $out"; return; fi
+  assert_line        "counts: kept and archived both reported"  "$out" 'plans kept: 1'
+  assert_line        "counts: "                                    "$out" 'plans archived: 1'
+  assert_counts_only "counts: no .md filenames in output"         "$out"
+  assert_lacks       "counts: no absolute paths in output"        "$out" '^/'
+}
 
-assert_file "run: bare-row plan moved"    "docs/plans/historical-plans/2020-01-01-done-plan.md"
-assert_file "run: row-ref plan moved"     "docs/plans/historical-plans/2020-01-03-row-ref.md"
-assert_file "run: abs-ref plan moved"     "docs/plans/historical-plans/2020-01-04-abs-ref.md"
-assert_no_file "run: open-row plan kept"  "docs/plans/historical-plans/2020-01-02-open-plan.md"
-assert_file  "run: open-row plan still top-level"  "docs/plans/2020-01-02-open-plan.md"
-assert_file  "run: docs-referenced plan kept"     "docs/plans/2020-01-05-docs-ref.md"
-assert_file  "run: scripts-referenced plan kept"  "docs/plans/2020-01-06-script-ref.md"
-assert_file  "run: rules-referenced plan kept"    "docs/plans/2020-01-07-rule-ref.md"
-assert_file  "run: fresh plan kept"               "docs/plans/$(date +%Y-%m-%d)-recent-plan.md"
-assert_file  "run: stale release note moved"      "docs/plans/historical-releasenotes/0.9/RELEASE-NOTES-v0.9.1.md"
-assert_file  "run: current release note kept"     "docs/plans/RELEASE-NOTES-v1.2.0.md"
-assert_file  "run: unclassified file kept"        "docs/plans/notes.md"
+# ── registry hygiene cases ──────────────────────────────────────────────
+# (populated by the registry hygiene task)
+case_hygiene_placeholder() {
+  echo "hygiene: no registry hygiene cases registered yet"
+}
 
-reg=$(cat docs/plans/README.md)
-assert_contains "run: bare registry link rewritten"  "$reg" '](historical-plans/2020-01-03-row-ref.md)'
-assert_contains "run: closed-row bare link rewritten" "$reg" '](historical-plans/2020-01-01-done-plan.md)'
-assert_contains "run: absolute registry link rewritten" "$reg" '](docs/plans/historical-plans/2020-01-04-abs-ref.md)'
-assert_contains "run: open-row link untouched"   "$reg" '](2020-01-02-open-plan.md)'
-# no un-rewritten bare registry links to moved plans remain
-if grep -qE '\]\(2020-01-0[134]-' docs/plans/README.md; then
-  fail "run: un-rewritten registry link remains"
-else
-  ok "run: no un-rewritten registry links remain"
-fi
-
-# ── 4. idempotency: second run is a no-op ───────────────────────────────
-out=$(bash scripts/tidy-plans.sh)
-assert_line "rerun: nothing archived"     "$out" 'plans archived: 0'
-assert_line "rerun: nothing rewritten"    "$out" 'links rewritten: 0'
-assert_line "rerun: all plans kept"       "$out" 'plans kept: 5'
-assert_line "rerun: no release notes"     "$out" 'release notes moved: 0'
-
-# ── 5. --check passes once the tree is tidy ─────────────────────────────
-if bash scripts/tidy-plans.sh --check >/dev/null 2>&1; then
-  ok "--check: clean exit after tidy"
-else
-  fail "--check: expected clean exit after tidy"
-fi
-
-# ── 6. dangling-link checker: passes, then catches an injected bad link ─
-out=$(python3 scripts/check-plans-links.py "$TMP")
-assert_line "checker: zero dangling after tidy" "$out" 'dangling plan references: 0'
-if bash -n "$REPO_DIR/scripts/check-plans-links.sh"; then ok "checker: wrapper syntax"; else fail "checker: wrapper syntax"; fi
-
-echo 'See [ghost](plans/2019-05-05-ghost-plan.md).' > docs/bad-guide.md
-if python3 scripts/check-plans-links.py "$TMP" >/dev/null 2>&1; then
-  fail "checker: expected non-zero exit with a dangling link"
-else
-  ok "checker: non-zero exit with a dangling link"
-fi
-out=$(python3 scripts/check-plans-links.py "$TMP" || true)
-assert_line "checker: counts the dangling link" "$out" 'dangling plan references: 1'
-rm docs/bad-guide.md
-
-# ── 7. python module direct: py_compile + standalone counts ─────────────
-if python3 -I -m py_compile scripts/plans_links.py scripts/check-plans-links.py; then
-  ok "python: py_compile"
-else
-  fail "python: py_compile"
-fi
-out=$(python3 scripts/plans_links.py "$TMP" --dry-run)
-assert_line "python: standalone kept"      "$out" 'plans kept: 5'
-assert_line "python: standalone archived"  "$out" 'plans archived: 0'
-assert_no_file_paths "python: count-only output" "$out"
-
-# ── 8. days threshold: huge window keeps everything ─────────────────────
-out=$(python3 "$TMP/scripts/plans_links.py" "$TMP" --days 36500 --dry-run)
-assert_line "days: huge threshold keeps all" "$out" 'plans archived: 0'
+# ── dispatch ─────────────────────────────────────────────────────────────
+echo "── test-tidy-plans: mode=$MODE ──"
+case "$MODE" in
+  hygiene)
+    case_hygiene_placeholder
+    ;;
+  *)
+    case_open_row_kept
+    case_script_ref_kept
+    case_rules_ref_kept
+    case_docs_ref_kept
+    case_closed_unreferenced_archived
+    case_links_rewritten
+    case_links_check
+    case_counts_only_output
+    case_hygiene_placeholder
+    ;;
+esac
 
 echo
 if [ "$FAILED" -eq 0 ]; then
-  echo "tidy-plans tests: all passed"
+  echo "test-tidy-plans: all cases passed"
 else
-  echo "tidy-plans tests: FAILURES (see above)" >&2
+  echo "test-tidy-plans: FAILURES (see above)" >&2
   exit 1
 fi
