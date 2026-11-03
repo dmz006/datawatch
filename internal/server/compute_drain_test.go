@@ -123,6 +123,19 @@ func TestDrainPastUntil400(t *testing.T) {
 	}
 }
 
+func TestDrainBadJSON400(t *testing.T) {
+	srv, reg := newComputeDrainServer(t)
+
+	code, _ := drainRequest(t, srv, http.MethodPost, "/api/compute/nodes/gpu-a/drain", `{"until":`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("drain with truncated json: got %d, want 400", code)
+	}
+	n, _ := reg.Get("gpu-a")
+	if n.Drained {
+		t.Fatalf("a malformed drain body must not set the drain state")
+	}
+}
+
 func TestDrainUnknownNode404(t *testing.T) {
 	srv, _ := newComputeDrainServer(t)
 
