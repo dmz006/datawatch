@@ -194,14 +194,20 @@ without changing behavior:
   Behavior is unchanged and no reload is needed." The note is hidden while
   the two builds match or while you are looking at the local server.
 - **Switching servers never reloads the page.** Each server's reported
-  version is recorded under that server's own key. A peer's version — even
-  a different one — is never read as an update: selecting the peer, looking
-  at its data, and switching back to local fires no reload and no prompt.
-- **The update prompt is about the primary only.** The "Update available —
-  tap to reload" banner (and the automatic reload that follows it once you
-  are idle) appears only when the same daemon serving this page reports a
-  new version, and only once per version. A peer on an older or newer
-  release can never trigger it.
+  version is recorded under that server's own key. A version seen for the
+  first time on a given server is only recorded — it is never read as an
+  update. So selecting a peer whose build differs from the primary's, and
+  switching back to local, fire no reload and no prompt (the page itself is
+  only ever served by the primary; nothing about the switch reloads it).
+- **When the update prompt appears.** The "Update available — tap to
+  reload" banner (and the automatic reload that follows once you are
+  idle), shown at most once per version change, fires when the selected
+  server reports a *different* build than the one last recorded for *that
+  server*. That can be the primary reporting a newer build while you are
+  on it, or a selected peer whose own daemon changed builds while that
+  peer was the active server. A peer that merely runs a different release
+  from the primary does not trigger it: only a version change attributed
+  to that server does.
 - **What the `Showing: <server>` line means.** The About, General,
   Plugins, Comms, Compute and Automata settings tabs each carry a
   "Showing:" line. It names the daemon whose data those tabs actually
