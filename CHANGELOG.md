@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.70.0 — Explicit retry backend honoured by capacity admission
+
+A task retried with an explicit backend now waits on the pool it asked for, and says so.
+
+- Admission and the task record use the explicit backend and model of a retry (`resolve-review --action retry --backend ... --model ...`), so a retry on the cloud backend no longer waits on a full local pool while the cloud lane is idle.
+- The wait reason names the requested pool, appended at the end so the existing reason prefixes and the classifier still match.
+- The capacity wait budget counts from the first admissible request and is carried across re-entry, so a node-load failover no longer restarts the 4-hour clock.
+- New setting `autonomous.capacity_fallthrough` (default off): when on, a worker may be admitted on another idle allowed pool when the requested one is full. It is on REST, MCP, the CLI, the comm channel and the web settings, with five locales, and is described in the capacity how-to.
+
 ## v9.69.0 — Automation checks and ship steps
 
 ### Added

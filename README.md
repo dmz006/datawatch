@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.69.0 (2026-11-03).** The daemon reviews an Automaton's work with four automatic checks and carries out the ship steps (push, tag, CI watch), each off, shadow or on. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.70.0 (2026-11-03).** A task retried with an explicit backend now waits on the pool it asked for and names it, the capacity wait budget no longer restarts on re-entry, and an optional pool fall-through setting is added. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
