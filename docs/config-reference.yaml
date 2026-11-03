@@ -2542,12 +2542,16 @@ autonomous:
   security_scan: true
   # Snapshot and automatic-staging paths (the refs/datawatch/attempts
   # attempt snapshots and the other automatic commits) must never stage
-  # files matching these path patterns: an entry ending in "/" names a
-  # directory (every file under it is refused) while any other entry is a
-  # shell-style glob matched against the candidate's file name (a pattern
-  # no file name can match is simply inert). The shipped list covers
-  # scratch, temp and local data folders (scratch/, tmp/, temp/, .tmp/,
-  # data/, .data/, *.tmp). Omit the key to keep the shipped defaults;
+  # candidates whose repo-relative path matches these patterns, matched
+  # from the repository root: an entry ending in "/" names a root
+  # directory (it and everything under it are refused — "data/" covers
+  # "data/notes" but not "build/data/notes"), a slash-free glob is also
+  # matched against the candidate's file name ("*.tmp" refuses at any
+  # depth), and anything else names an exact path or a root-level
+  # leading directory (a pattern nothing can match is simply inert).
+  # The shipped list covers scratch, temp and local data folders
+  # (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp). Omit the key
+  # to keep the shipped defaults;
   # an explicit empty list disables every never-stage rule, which is a
   # different state from "unset" and survives a config round trip (the
   # key carries no omitempty for that reason). Blank entries are rejected

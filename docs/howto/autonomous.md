@@ -136,28 +136,38 @@ default list applies:
 
 | Pattern | Meaning |
 |---|---|
-| `scratch/` | any `scratch` directory, at any depth |
-| `tmp/` | any `tmp` directory, at any depth |
-| `temp/` | any `temp` directory, at any depth |
-| `.tmp/` | any `.tmp` directory, at any depth |
-| `data/` | any `data` directory, at any depth |
-| `.data/` | any `.data` directory, at any depth |
-| `*.tmp` | any file ending in `.tmp` |
+| `scratch/` | the `scratch` directory at the repository root, and everything under it |
+| `tmp/` | the `tmp` directory at the repository root, and everything under it |
+| `temp/` | the `temp` directory at the repository root, and everything under it |
+| `.tmp/` | the `.tmp` directory at the repository root, and everything under it |
+| `data/` | the `data` directory at the repository root, and everything under it |
+| `.data/` | the `.data` directory at the repository root, and everything under it |
+| `*.tmp` | any file named `*.tmp`, at any depth (a file-name glob) |
 
 ### Pattern syntax
 
+- Patterns are **root-anchored**: they are matched against the
+  candidate's **repo-relative** path, starting at the repository root —
+  not at any component halfway down the path. A pattern names a
+  location *at the root*; it does not "float" to wherever the same
+  directory happens to sit deeper in the tree.
 - An entry with a **trailing `/`** (e.g. `vendor/`, `node_modules/`)
-  protects a directory at *any* component of the path: `node_modules/`
-  refuses `node_modules`, `lib/node_modules` and
-  `pkg/vendor/node_modules`; a bare file named `node_modules` is refused
-  too.
-- An entry **without a trailing `/`** is matched as a shell-style glob.
-  `*.tmp` refuses any `*.tmp` file; `secrets/key.*` refuses files under
-  a `secrets` directory whose name begins with `key.`; an exact name
-  like `secrets/credentials.yaml` refuses that file at any depth.
-- Patterns are matched against the **repo-relative** path of the
-  candidate. Absolute patterns never match (and are inert) — use
-  root-anchored relative paths.
+  names a root directory: `node_modules/` refuses `node_modules` itself
+  and `node_modules/anything` — but *not* `lib/node_modules` or
+  `pkg/vendor/node_modules`. Protect those by listing them explicitly
+  (`lib/node_modules/`, `pkg/vendor/node_modules/`).
+- An entry **without a trailing `/`** is matched as a shell-style glob
+  against the relative path, and also against the candidate's file name
+  alone. A **slash-free** glob therefore catches the name at *any*
+  depth: `*.tmp` refuses any `*.tmp` file wherever it sits. A glob with
+  a slash is root-anchored: `secrets/key.*` refuses
+  `secrets/key.<anything>` at the repository root only.
+- An exact entry (no `/` glob characters, no trailing slash) names that
+  exact relative path — or a root-level directory and everything under
+  it: `secrets/credentials.yaml` refuses exactly that path, not
+  `vendor/secrets/credentials.yaml` deeper down.
+- Absolute patterns never match (and are inert). Use repo-relative
+  patterns, anchored at the repository root.
 
 ### Unset vs. explicit empty — and validation
 
@@ -234,7 +244,9 @@ task's write scope: widen the task's write directories. `ignored` / `size`
 model-weight pattern refused it: fix the ignore rule, the file size or
 the name. `never-stage` → it is in your `snapshot_never_stage` list;
 remove or narrow that pattern only if it was not meant to protect that
-path (remember `out/` protects every `out` directory at any depth).
+path (remember patterns are root-anchored: `out/` protects the `out`
+directory at the repository root and its contents — a nested `out/`
+needs its own entry, e.g. `build/out/`).
 
 **The guard refused the whole commit** (`auto-commit refused: …` in the
 daemon log, the task failing or stalling on the commit): too many files
