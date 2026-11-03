@@ -23,10 +23,11 @@ func recordOne(t *testing.T, mutate func(*Task), run attemptRun, f attemptFailur
 	return task.Attempts[0]
 }
 
-func TestAttemptSessionRecord_SessionFromTaskAndRun(t *testing.T) {
+func TestAttemptSessionRecord_SessionFromRunOnly(t *testing.T) {
+	// A stale task session that this attempt did not start is not recorded.
 	a := recordOne(t, func(tk *Task) { tk.SessionID = "sess-task" }, attemptRun{}, attemptFailure{Outcome: attemptOutcomeFailed})
-	if a.SessionID != "sess-task" {
-		t.Fatalf("SessionID = %q, want task session", a.SessionID)
+	if a.SessionID != "" {
+		t.Fatalf("SessionID = %q, want empty: the attempt started no session", a.SessionID)
 	}
 	a = recordOne(t, func(tk *Task) { tk.SessionID = "sess-task" }, attemptRun{SessionID: "sess-run", TmuxSession: "dw-x"}, attemptFailure{Outcome: attemptOutcomeFailed})
 	if a.SessionID != "sess-run" || a.TmuxSession != "dw-x" {
@@ -51,7 +52,8 @@ func TestAttemptSessionRecord_EndReason(t *testing.T) {
 		{"infra", nil, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra"}, attemptEndSessionDied, ""},
 		{"verifier", nil, attemptFailure{Outcome: attemptOutcomeFailed, Category: "content", Verification: VerificationResult{Summary: "bad"}}, attemptEndVerifierFailed, ""},
 		{"cancelled", nil, attemptFailure{Outcome: "cancelled"}, attemptEndCancelledByOperator, ""},
-		{"adopted", func(tk *Task) { tk.AdoptedSession = true }, attemptFailure{Outcome: attemptOutcomeFailed}, attemptEndAdoptedThenFailed, ""},
+		{"generic", nil, attemptFailure{Outcome: attemptOutcomeFailed}, attemptEndExecutorError, ""},
+		{"generic-with-category", nil, attemptFailure{Outcome: attemptOutcomeFailed, Category: "content"}, attemptEndExecutorError, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -98,5 +100,77 @@ func TestAttemptSessionRecord_RenderedInEscalationTextAndView(t *testing.T) {
 	e := buildTaskEntry(&Task{ID: "t", Attempts: []TaskAttempt{{Number: 1}, a}})
 	if e.LastAttemptSessionID != "sess-9" || e.LastAttemptTmuxSession != "dw-9" || e.LastAttemptEndReason != attemptEndStalled || e.LastAttemptEndDetail != "no output 10m" {
 		t.Fatalf("view = %+v", e)
+	}
+}
+
+func TestAttemptSessionRecord_AdoptedRun(t *testing.T) {
+	a := recordOne(t, nil, attemptRun{SessionID: "s1", Adopted: true}, attemptFailure{Outcome: attemptOutcomeFailed, EndReason: attemptEndVerifierFailed})
+	if a.EndReason != attemptEndAdoptedThenFailed || a.SessionID != "s1" {
+		t.Fatalf("got %q/%q", a.EndReason, a.SessionID)
+	}
+	a = recordOne(t, nil, attemptRun{SessionID: "s1", Adopted: true}, attemptFailure{Outcome: attemptOutcomeCancelled, EndReason: attemptEndDaemonRestart})
+	if a.EndReason != attemptEndDaemonRestart {
+		t.Fatalf("daemon_restart must keep its name, got %q", a.EndReason)
+	}
+}
+
+func TestAttemptSessionRecord_TmuxFromLister(t *testing.T) {
+	m, _ := newFailureEscalationFixture(t, t.TempDir())
+	m.SetSessionListerFn(func() []SessionInfo {
+		return []SessionInfo{{ID: "other", TmuxSession: "dw-other"}, {ID: "s1", TmuxSession: "dw-s1"}}
+	})
+	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	task := &prd.Story[0].Tasks[0]
+	m.recordFailedAttempt(context.Background(), prd, task, attemptRun{SessionID: "s1"}, attemptFailure{Outcome: attemptOutcomeFailed})
+	if got := task.Attempts[0].TmuxSession; got != "dw-s1" {
+		t.Fatalf("TmuxSession = %q, want dw-s1", got)
+	}
+}
+
+func TestAttemptSessionRecord_InterruptedAttempt(t *testing.T) {
+	// Daemon restart: executor stopped, PRD and task still active.
+	m, _ := newFailureEscalationFixture(t, t.TempDir())
+	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	task := &prd.Story[0].Tasks[0]
+	run := attemptRun{SessionID: "s1", AttemptsBefore: 0}
+	m.recordInterruptedAttempt(prd, task, run)
+	if len(task.Attempts) != 1 {
+		t.Fatalf("attempts = %d, want 1", len(task.Attempts))
+	}
+	a := task.Attempts[0]
+	if a.EndReason != attemptEndDaemonRestart || a.Outcome != attemptOutcomeCancelled || a.SessionID != "s1" {
+		t.Fatalf("got %+v", a)
+	}
+	if task.EscalationFailures != 0 {
+		t.Fatal("an interrupted attempt must not count toward the escalation budget")
+	}
+	// Already recorded: no second attempt.
+	m.recordInterruptedAttempt(prd, task, run)
+	if len(task.Attempts) != 1 {
+		t.Fatalf("recorded twice: %d", len(task.Attempts))
+	}
+	// No session started: nothing to close.
+	m2, _ := newFailureEscalationFixture(t, t.TempDir())
+	prd2 := newFailureEscalationPRD(t, m2, t.TempDir(), nil)
+	t2 := &prd2.Story[0].Tasks[0]
+	m2.recordInterruptedAttempt(prd2, t2, attemptRun{})
+	if len(t2.Attempts) != 0 {
+		t.Fatal("no attempt expected when no session started")
+	}
+}
+
+func TestAttemptSessionRecord_OperatorCancel(t *testing.T) {
+	m, _ := newFailureEscalationFixture(t, t.TempDir())
+	prd := newFailureEscalationPRD(t, m, t.TempDir(), nil)
+	task := &prd.Story[0].Tasks[0]
+	prd.Status = PRDCancelled
+	if err := m.store.SavePRD(prd); err != nil {
+		t.Fatal(err)
+	}
+	m.recordInterruptedAttempt(prd, task, attemptRun{SessionID: "s1"})
+	stored, _ := m.store.GetPRD(prd.ID)
+	st, _ := findTaskInPRD(stored, task.ID)
+	if len(st.Attempts) != 1 || st.Attempts[0].EndReason != attemptEndCancelledByOperator {
+		t.Fatalf("attempts = %+v", st.Attempts)
 	}
 }
