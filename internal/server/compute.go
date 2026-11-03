@@ -7,6 +7,8 @@
 //	DELETE /api/compute/nodes/{name}       remove one
 //	GET    /api/compute/nodes/{name}/health    static + live capacity
 //	GET    /api/compute/nodes/{name}/detail    on-demand pull from stub /api/stats sidecar (ASK 24 hybrid)
+//	POST   /api/compute/nodes/{name}/drain    drain the node (optional until, reason)
+//	DELETE /api/compute/nodes/{name}/drain    undrain (idempotent)
 //
 // Returns 503 when no registry is wired.
 
@@ -16,6 +18,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,6 +62,10 @@ func (a *clusterLookupAdapter) GetClusterProfile(name string) (kubeconfigPath, c
 	// empty kubeconfigPath tells the probe to use the kubectl default.
 	return "", cp.Context, nil, nil
 }
+
+// serverNow is the clock the server uses for drain bookkeeping and node
+// health "now" checks. Tests override it with a fixed clock.
+var serverNow = func() time.Time { return time.Now().UTC() }
 
 func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 	if s.computeReg == nil {
@@ -218,6 +225,23 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		s.auditCompute(name, "compute_node_detach_observer")
 		writeJSONOK(w, map[string]any{"name": name, "observer_peer": "", "ok": true})
 
+	// Drain the node: stop new placements, keep in-flight work. POST body
+	// is optional: {"until": "<RFC3339>", "reason": "..."}. DELETE clears
+	// the drain; it is idempotent and 200 even when the node was not
+	// drained. Both reply with the node health JSON so the caller sees the
+	// new state.
+	case strings.HasSuffix(rest, "/drain") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeDrain(w, r, strings.TrimSuffix(rest, "/drain"), true)
+
+	case strings.HasSuffix(rest, "/drain") && r.Method == http.MethodDelete:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeDrain(w, r, strings.TrimSuffix(rest, "/drain"), false)
+
 	case strings.HasSuffix(rest, "/health") && r.Method == http.MethodGet:
 		if !s.fedCap(w, r, federation.CapComputeRead) {
 			return
@@ -344,13 +368,68 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 	out := map[string]any{
 		"name":                n.Name,
 		"kind":                n.Kind,
-		"in_maintenance":      n.InMaintenance(time.Now().UTC()),
+		"in_maintenance":      n.InMaintenance(serverNow()),
 		"declared_capacity":   n.DeclaredCapacity,
 		"scheduling_priority": n.SchedulingPriority,
 		"address":             n.Address,
 		"auto_created":        n.AutoCreated,
+		"drained":             n.Drained,
+		"drain_active":        n.DrainActive(serverNow()),
+		"drain_reason":        n.DrainReason,
+	}
+	if !n.DrainUntil.IsZero() {
+		out["drain_until"] = n.DrainUntil.UTC().Format(time.RFC3339)
 	}
 	writeJSONOK(w, out)
+}
+
+// handleComputeNodeDrain sets (drain=true) or clears (drain=false) the
+// node's drain via the registry and replies with the node health JSON.
+// A non-zero until that is not after now is a 400; an unknown node is a
+// 404. Undrain is idempotent: 200 even when the node was not drained.
+func (s *Server) handleComputeNodeDrain(w http.ResponseWriter, r *http.Request, name string, drain bool) {
+	now := serverNow()
+	var until time.Time
+	var reason string
+	if drain {
+		var body struct {
+			Until  string `json:"until"`
+			Reason string `json:"reason"`
+		}
+		if r.Body != nil {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+				http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if body.Until != "" {
+			parsed, err := time.Parse(time.RFC3339, body.Until)
+			if err != nil {
+				http.Error(w, "until must be an RFC3339 timestamp", http.StatusBadRequest)
+				return
+			}
+			if !parsed.After(now) {
+				http.Error(w, "until must be after now", http.StatusBadRequest)
+				return
+			}
+			until = parsed
+		}
+		reason = strings.TrimSpace(body.Reason)
+	}
+	if err := s.computeReg.SetDrain(name, drain, until, now, reason); err != nil {
+		code := http.StatusInternalServerError
+		if err == compute.ErrNotFound {
+			code = http.StatusNotFound
+		}
+		http.Error(w, err.Error(), code)
+		return
+	}
+	if drain {
+		s.auditCompute(name, "compute_node_drain")
+	} else {
+		s.auditCompute(name, "compute_node_undrain")
+	}
+	s.handleComputeNodeHealth(w, r, name)
 }
 
 // handleComputeNodeDetail serves the node detail with the node's slot figures
