@@ -161,6 +161,16 @@ repo-relative paths or glob patterns). Its shell tests live in
 
 **Actual:** covered by `internal/inference/apikey_test.go`, `internal/inference/dispatcher_secret_test.go`, the adapter tests under `internal/inference/adapters/` and `internal/audit/secret_access_events_test.go`; all pass. Statement coverage of the touched packages is 75 to 88 percent; raising it is a follow-up. Not run against a live provider.
 
+## Multi-server version skew: opening a federated peer's About page
+
+**Defect:** viewing a federated peer whose daemon runs a different release than the page's own daemon showed 'update available, tap to reload' and then reloaded back to the primary, because the page compared the active server's reported version with the primary's.
+
+**Steps:** select a federated peer on a different release; open Settings, then About; switch back to the primary; repeat on each About sub-page and each Settings tab with the peer selected.
+
+**Expected:** a version-skew note on the peer's About page, no update banner, no reload, and every page shows the selected server's own data and names the server. A real update on the same server still prompts.
+
+**Actual:** covered by the node tests for the multi-server version-skew file and the page audit (`docs/plans/reports/version-skew-audit.md`); the browser story `TS-845` is authored and syntax-checked, not yet run against the sandbox daemon.
+
 ## Internal-Ref Leak Check
 
 - `scripts/check-no-internal-refs.sh` blocks internal tracking IDs from leaking into

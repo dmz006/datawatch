@@ -180,8 +180,12 @@ async function setLocaleOverride(lang) {
     // non-fatal — the UI bundle change should still apply on reload even
     // if the daemon's PUT /api/config rejects (e.g. token mismatch on a
     // proxied PWA). Don't block the page reload on this.
+    // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+    // selected federated peer when one is active, so the whisper.language
+    // sync lands on the server the About page is describing instead of
+    // always the daemon serving this page.
     try {
-      await fetch('/api/config', {
+      await fetch(_apiPath('/api/config'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(typeof tokenHeader === 'function' ? tokenHeader() : {}) },
         body: JSON.stringify({ 'whisper.language': lang }),
@@ -194,6 +198,8 @@ async function setLocaleOverride(lang) {
   }
   // bl434 row 1 (eye-only): inventory-graded — not a session connect, bolt
   // would misreport "connecting"; eye = "app alive, switching locale".
+  // Audit (b42f0003): deliberate operator action (the operator chose a new
+  // locale) — never triggered by a federated-server switch.
   performFullPageRefresh({ eyeBolt: false });
 }
 window.setLocaleOverride = setLocaleOverride;
@@ -253,6 +259,12 @@ const state = {
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
+  // Per-server daemon version bookkeeping (see _daemonVersionNoteFrame):
+  // key 'local' = this daemon (null/'local'/'all' all mean local), each
+  // other key a federated peer. state._daemonVersion remains 'the daemon
+  // that serves this page' (the primary), set at boot — so anything
+  // comparing against it (e.g. the splash) never sees a peer's build.
+  _daemonVersionByServer: {},
   alertUnread: 0,         // unread alert count for badge
   alertSystemUnread: 0,   // BL226 — system-sourced unread count
   alertWatchedUnread: 0,  // GH#192 D61a — unread count among watched sessions only
@@ -404,6 +416,8 @@ function _fedFetchError(resp) {
 }
 // Back-compat alias -- a couple of call sites below were written against
 // the old name in the same pass this got renamed; functionally identical.
+// Audit (b42f0003): probe + first-page fetch only — never reloads the page
+// and never touches the update banner, in either the success or error path.
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
@@ -496,6 +510,28 @@ function _wsSendPing() {
 // Daemon-version-change reload policy. A new build must never yank the page
 // out from under someone who is typing or using the terminal, so reloads are
 // deferred behind a tap-to-reload banner until the user is idle.
+//
+// Reload-path audit (task b42f0003): every reload/banner trigger in this file
+// must be either a REAL build change of the daemon serving THIS page or an
+// explicit operator action — never a side effect of state.activeServer
+// changing (the federated-picker switch). Every call site:
+//   - _onDaemonVersionChange — called only by _daemonVersionNoteFrame (the
+//     active server's recorded version actually changed; per-server ledger,
+//     b42f0002) and the SW controllerchange handler. Both real signals.
+//   - _scheduleUpdateRecheck timer — gated on state._updateAvailable, which
+//     only _onDaemonVersionChange sets. Real.
+//   - update-banner Reload button — an explicit tap on a banner that only
+//     _onDaemonVersionChange creates. Real + manual.
+//   - registerServiceWorker controllerchange — the SW is only ever served
+//     by this page's own origin (federated peers are reached via the local
+//     /api/proxy), so switching activeServer can never change which SW
+//     controls the page; the event is always a genuine new-asset swap.
+//   - performFullPageRefresh → location.reload — called only by the locale
+//     switch (setLocaleOverride) and window.forcePWAUpdate; both deliberate.
+//   - forcePWAUpdate — deliberate (manual PWA cache escape hatch).
+//   - replaySplash — deliberate (the Replay-splash button).
+//   - selectServer() and _checkFederatedConnection() never reload at all
+//     (socket reconnect + fetch only); pinned by app-reload-guard.test.js.
 const AUTO_RELOAD_IDLE_MS = 30000;
 const AUTO_RELOAD_RECHECK_MS = 5000;
 function _canAutoReload(ctx) {
@@ -536,6 +572,7 @@ function _scheduleUpdateRecheck() {
   state._updateBannerTimer = setTimeout(() => {
     state._updateBannerTimer = null;
     if (!state._updateAvailable) return;
+    // Real build change (the banner's own signal) and the user is now idle past the grace.
     if (_canAutoReload(_autoReloadCtx())) { _hideUpdateBanner(); location.reload(); return; }
     _scheduleUpdateRecheck();
   }, AUTO_RELOAD_RECHECK_MS);
@@ -553,21 +590,78 @@ function _showUpdateBanner() {
   btn.type = 'button';
   btn.textContent = 'Reload';
   btn.style.cssText = 'padding:4px 12px;border-radius:4px;border:0;cursor:pointer;';
+  // Explicit operator tap; the banner is only ever created by _onDaemonVersionChange (a real build change).
   btn.addEventListener('click', () => { _hideUpdateBanner(); location.reload(); });
   bar.appendChild(label);
   bar.appendChild(btn);
   document.body.appendChild(bar);
   _scheduleUpdateRecheck();
 }
-// Single entry point for every "the daemon build changed" signal.
+// Single entry point for every "the daemon build changed" signal. The only
+// callers are _daemonVersionNoteFrame (the active server's own recorded
+// version moved — the per-server ledger means a peer's version can never
+// reach this path) and the SW controllerchange handler.
 function _onDaemonVersionChange(newVersion) {
   if (_canAutoReload(_autoReloadCtx())) {
     console.log(`[datawatch] daemon version changed → ${newVersion}, reloading…`);
+    // Real build change, and the user is idle enough to take it now.
     location.reload();
     return;
   }
   state._updateAvailable = newVersion || true;
   _showUpdateBanner();
+}
+
+// ── Per-server daemon version tracking ──────────────────────────────────────
+// 'all' mode (like null/'local') keeps the LOCAL socket, so all three
+// picker values map to the 'local' key; anything else is a peer name.
+function _daemonVersionKey(serverName) {
+  const srv = (serverName !== undefined) ? serverName : state.activeServer;
+  return (srv && srv !== 'local' && srv !== 'all') ? srv : 'local';
+}
+
+// One 'sessions' frame stamped with a daemon version arrives. Attribute it
+// to the server the socket belongs to, record it in _daemonVersionByServer
+// (key 'local' doubles as the boot fallback for state._daemonVersion), and
+// take the update path ONLY when that same key already recorded a
+// different version. The first frame for a key only records. The
+// once-per-version guard lives in state._versionChangeSeen, now an object
+// keyed the same way, so repeated frames from the same server — or the
+// same version re-arriving after a reconnect — never re-fire.
+function _daemonVersionNoteFrame(version, serverName) {
+  if (!version) return;
+  const key = _daemonVersionKey(serverName);
+  const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
+  const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
+  if (!(key in bySrv)) {
+    bySrv[key] = version; // first frame from this server: record only
+    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    return;
+  }
+  if (bySrv[key] === version || seen[key] === version) return;
+  bySrv[key] = version;
+  seen[key] = version;
+  _loadUiConfig();
+  _onDaemonVersionChange(version);
+}
+
+// The daemon serving this page (the primary), captured at boot from a
+// plain non-proxied fetch of /api/health. Never apiFetch(): apiFetch
+// routes through /api/proxy/<name> once a federated peer is selected,
+// which would record the PEER's version as the page's own. If this fetch
+// fails, _daemonVersionNoteFrame's local-first-frame fallback fills it in.
+function _bootDaemonVersion() {
+  if (state._daemonVersion) return;
+  fetch('/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(h => {
+      const v = (h && typeof h.version === 'string') ? h.version : '';
+      if (!v || state._daemonVersion) return; // lost the race to a local frame
+      state._daemonVersion = v;
+      const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
+      bySrv[_daemonVersionKey('local')] = v;
+    })
+    .catch(() => {});
 }
 
 // Pure decision function (no I/O) so it's unit-testable without a real
@@ -767,6 +861,12 @@ function connect() {
       if (statusEl) statusEl.textContent = t('splash_status_connected') || 'Connected';
       const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
       const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
+      // The splash's 'new version' decision must compare against the
+      // daemon serving THIS page (the primary), not against the active
+      // peer's build: state._daemonVersion is only ever set from a
+      // local source (boot /api/health or a local sessions frame), so
+      // switching to a peer can neither change it nor show the update
+      // splash. Never read _daemonVersionByServer here for that reason.
       const serverVer = state._daemonVersion || '';
       const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
       const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
@@ -873,6 +973,12 @@ function connect() {
     }
   });
 
+  // Late 'sessions' frames from a socket that selectServer already
+  // superseded must not reach handleMessage: selectServer closes the old
+  // socket, but one final frame can still be queued in the event loop,
+  // and its version would otherwise be attributed to whatever server is
+  // now active. Dropping a stale socket here is what makes per-server
+  // version attribution safe.
   ws.addEventListener('message', e => {
     if (state.ws !== ws) return;
     state.wsLastActivityAt = Date.now();
@@ -1003,20 +1109,36 @@ function send(type, data) {
   return true;
 }
 
+// _apiPath — the single proxy-routing rule for data requests, shared by
+// apiFetch and the About call sites that build their own fetch() (custom
+// headers / best-effort error handling). When state.activeServer is a
+// specific federated peer the path is rewritten under
+// /api/proxy/<peer>/, so the request lands on the peer the About sub
+// sections (version, API, Config Viewer) are describing; for 'local' or
+// 'all' the path passes through to the daemon serving this page, exactly
+// as before.
+function _apiPath(path) {
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  return isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+}
+window._apiPath = _apiPath;
+
 // apiFetch wraps fetch() with auth header and JSON response parsing.
 // Rejects with an Error whose message is the server error text on non-2xx.
 // 204 / 205 (no-content success) resolve to null — v8.19.8: RFC 7231 §3.3
 // forbids a body on 204, so the body can never arrive and r.json() throws
-// "Failed to execute 'json' on 'Response': Unexpected end of JSON input".
+// "Failed to execute 'json' on 'Response": Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
   // Route through proxy when a specific remote server is selected
-  // ('all' mode uses local API — aggregated endpoint handles fan-out)
+  // ('all' mode uses local API — aggregated endpoint handles fan-out).
+  // Same rule as _apiPath — one place, so the two can never drift.
   const srv = state.activeServer;
   const isRemote = srv && srv !== 'local' && srv !== 'all';
-  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const url = _apiPath(path);
   return fetch(url, Object.assign({}, opts, { headers }))
     .then(r => {
       if (r.status === 204 || r.status === 205) return null;
@@ -1263,19 +1385,14 @@ function handleMessage(msg) {
       // (if showing) is now stale regardless of phase, since the thing it
       // was waiting for just happened.
       if (state._fedConnStatus) state._fedConnStatus = null;
-      // Auto-reload browser if daemon version changed (new build deployed)
-      if (msg.data && msg.data.version) {
-        if (!state._daemonVersion) {
-          state._daemonVersion = msg.data.version;
-        } else if (state._daemonVersion !== msg.data.version && state._versionChangeSeen !== msg.data.version) {
-          // Once per new version: every later 'sessions' frame carries the same
-          // version and would otherwise refetch /api/config each time while the
-          // update banner waits for an idle moment to reload.
-          state._versionChangeSeen = msg.data.version;
-          _loadUiConfig();
-          _onDaemonVersionChange(msg.data.version);
-        }
-      }
+      // Version-change check, tracked PER SERVER. Each federated peer runs
+      // its own build and each of their sockets broadcasts a sessions frame
+      // stamped with ITS version; a picker switch (selectServer) therefore
+      // looks like a brand-new version and must never be treated as an
+      // update of the daemon serving this page — no banner, no reload, no
+      // _loadUiConfig. Only a version change from the SAME server, against
+      // a version we already recorded from it, is an update.
+      if (msg.data && msg.data.version) _daemonVersionNoteFrame(msg.data.version);
       onSessionsUpdated();
       break;
     case 'session_state':
@@ -4628,6 +4745,8 @@ function performFullPageRefresh(opts) {
   const minDwell = Math.max(600, (typeof opts.minDwell === 'number' && opts.minDwell > 0) ? opts.minDwell : 600);
   mountFullPageRefreshSplash({ eyeBolt: !!opts.eyeBolt, text: opts.text });
   const doReload = () => {
+    // Audit (b42f0003): callers are deliberate operator actions (locale
+    // switch, forcePWAUpdate) or pass their own reload() — never a server switch.
     if (typeof opts.reload === 'function') opts.reload();
     else location.reload();
   };
@@ -9355,6 +9474,13 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-section[data-group]').forEach(s => {
     s.style.display = s.dataset.group === tab ? '' : 'none';
   });
+  // Version-skew audit — keep the per-tab "Showing:" line in sync with
+  // the active tab (it sits outside .settings-section, so toggle it too).
+  if (tab !== 'about') {
+    document.querySelectorAll('[data-showing-line]').forEach(d => {
+      d.style.display = d.dataset.showingLine === tab ? '' : 'none';
+    });
+  }
   document.querySelectorAll('.settings-tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
@@ -9408,6 +9534,12 @@ function renderSettingsView() {
         ${tabBtns}
       </div>
       <div class="settings-view">
+
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="comms" style="${stab!=='comms'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
 
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('comms_auth', 'Authentication')}
@@ -9483,6 +9615,12 @@ function renderSettingsView() {
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="compute" style="${stab!=='compute'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
         </div>
 
         <!-- v7.0.0-alpha.10 — legacy "LLM Configuration" card REMOVED per
@@ -9597,6 +9735,12 @@ function renderSettingsView() {
              Registries / Autonomous Config). Original placement assumed
              the Agents tab would carry "who am I" + automation; the
              operator clarified that Automata is the canonical home. -->
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="automata" style="${stab!=='automata'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
+
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('identity', t('identity_section_title')||'Identity')}
           <div id="settings-sec-identity" style="${secContent('identity')}">
@@ -9690,6 +9834,12 @@ function renderSettingsView() {
             </div>
             <div id="agentsConfigPanel" style="padding:4px 12px;font-size:13px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
+        </div>
+
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="general" style="${stab!=='general'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
         </div>
 
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
@@ -10124,6 +10274,20 @@ function renderSettingsView() {
             <div class="settings-label">${t('settings_version')||'Version'}</div>
             <div class="settings-value" id="aboutVersion">—</div>
           </div>
+          <!-- Version-skew note: shown only while viewing a federated peer's
+               About page whose daemon runs a different release than the one
+               serving this page. Informational only — never the update banner,
+               never touches _onDaemonVersionChange. -->
+          <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Which server every About sub-section (this Version card, the
+               API block, the Config Viewer block) above/below actually
+               describes. The single shared "Showing:" label for the whole
+               About tab — the version-skew note task's label, deliberately
+               not duplicated per sub-section. Peer name when a federated
+               peer is selected, local hostname otherwise. -->
+          <div class="settings-row">
+            <div class="settings-label" id="aboutShowingServer" style="color:var(--text2);font-size:12px;">—</div>
+          </div>
           <div class="settings-row">
             <div class="settings-label">${t('settings_update')||'Update'}</div>
             <div class="settings-value" id="aboutUpdate">
@@ -10219,7 +10383,7 @@ function renderSettingsView() {
               <div class="settings-value">
                 <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);">/api/mcp/docs</a>
                 <span style="color:var(--text2);font-size:11px;margin-left:6px;">(HTML) </span>
-                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch('/api/mcp/docs',{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
+                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch(_apiPath('/api/mcp/docs'),{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
               </div>
             </div>
             <!-- BL302 S1 — MCP Resources panel (read-only list + content view) -->
@@ -10380,6 +10544,12 @@ function renderSettingsView() {
         </div>
 
 
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="plugins" style="${stab!=='plugins'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
+
         <!-- BL238 — Plugins sub-tab -->
         <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
           ${settingsSectionHeader('plugins_list', 'Plugin Manager', 'plugins.md')}
@@ -10515,6 +10685,10 @@ function renderSettingsView() {
   // PRD/cost rollup does.
   _injectServerPickerBar(view, renderSettingsView, { hideAll: true });
 
+  // Version-skew audit — fill the general/plugins/comms/compute/automata
+  // "Showing:" lines now that state.activeServer is settled for this render.
+  settingsRefreshShowingLines();
+
   loadSkillsPanel();
   if (typeof loadGuardrailProfilesPanel === 'function') loadGuardrailProfilesPanel(); // BL303 S2
   if (typeof loadRetryProfilesPanel === 'function') loadRetryProfilesPanel(); // BL410 Phase 1
@@ -10529,8 +10703,10 @@ function renderSettingsView() {
   loadServers();
   loadCommsConfig();
   loadProxySettings();
-  // Populate auth token fields in comms tab
-  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+  // Populate auth token fields in comms tab.
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer when one is active (no-op for local/all), matching loadCommsConfig.
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
     if (!cfg) return;
     const wt = document.getElementById('cfgWebToken');
     if (wt) wt.value = cfg.server?.token || '';
@@ -12998,14 +13174,35 @@ function loadVersionInfo() {
   // or a selected remote peer) is actually active.
   apiFetch('/api/health')
     .then(data => {
+      loadAboutShowingServer();
       if (!data) return;
       const el = document.getElementById('aboutVersion');
       if (el) {
         const ver = data.version || '?';
         el.innerHTML = `<a href="https://github.com/dmz006/datawatch/releases/tag/v${encodeURIComponent(ver)}" target="_blank" rel="noopener" style="color:var(--accent2);">v${escHtml(ver)}</a>`;
       }
+      // Version-skew note: only when a federated peer is selected and its
+      // daemon (the proxied /api/health version) differs from the daemon
+      // serving this page (state._daemonVersion). Informational note only --
+      // not the update banner, and deliberately NOT _onDaemonVersionChange.
+      const noteEl = document.getElementById('aboutVersionSkewNote');
+      if (noteEl) {
+        const active = state.activeServer;
+        const isPeer = !!active && active !== 'local' && active !== 'all';
+        const peerVer = data.version || '';
+        const localVer = state._daemonVersion || '';
+        if (isPeer && peerVer && localVer && peerVer !== localVer) {
+          noteEl.style.display = '';
+          noteEl.innerHTML = escHtml(t('about_version_skew_note', [peerVer, localVer])
+            || `This server is running v${peerVer}, a different release than v${localVer}, the one serving this page. Behavior is unchanged and no reload is needed.`);
+        } else {
+          noteEl.style.display = 'none';
+          noteEl.innerHTML = '';
+        }
+      }
     })
     .catch(e => {
+      loadAboutShowingServer();
       const el = document.getElementById('aboutVersion');
       const msg = _fedMsg(e, null);
       if (el && msg) el.innerHTML = `<span style="color:var(--error);">${escHtml(msg)}</span>`;
@@ -13015,6 +13212,39 @@ function loadVersionInfo() {
   loadAboutOrphanedTmux();
   loadAboutFinishedOneShots();
 }
+
+// About tab "Showing:" line — which server the About rows above actually
+// describe. A federated peer's own name when one is selected; the local
+// hostname label (when known) when viewing the local server.
+// Shared "Showing: <server name>" label for the Settings tabs. The About
+// tab reuses it (#aboutShowingServer); general/plugins/comms each render
+// a line with the same rule (version-skew audit): a specific federated
+// peer shows that peer's name; 'local'/'all'/unset show the local
+// hostname (or the generic label). English fallback mirrors About.
+function settingsShowingLabel() {
+  const active = state.activeServer;
+  const name = (active && active !== 'local' && active !== 'all')
+    ? active : (_localHostname || (t('server_local_label') || 'this server'));
+  return t('settings_showing_server', [name]) || ('Showing: ' + name);
+}
+window.settingsShowingLabel = settingsShowingLabel;
+
+function loadAboutShowingServer() {
+  const el = document.getElementById('aboutShowingServer');
+  if (!el) return;
+  el.textContent = settingsShowingLabel();
+}
+window.loadAboutShowingServer = loadAboutShowingServer;
+
+// Fill every "Showing:" line currently in the DOM (the general, plugins
+// and comms tab tops). renderSettingsView calls this after each (re)render
+// and the server picker re-renders the view, so the label tracks the
+// active server at all times.
+function settingsRefreshShowingLines() {
+  const label = settingsShowingLabel();
+  document.querySelectorAll('[data-showing-line] .settings-label').forEach(el => { el.textContent = label; });
+}
+window.settingsRefreshShowingLines = settingsRefreshShowingLines;
 
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
@@ -15703,11 +15933,13 @@ window.ensureLLMModelLists = function() {
   const needBackends = state._prdBackends == null;
   if (state._availableModels !== undefined && state._llmModelListsFull && !needBackends) return Promise.resolve();
   return Promise.all([
-    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/opencode/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/llm/claude/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    needBackends ? fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+    // Proxy-aware (version-skew audit): _apiPath targets the selected
+    // peer for the model pickers on Settings tabs (no-op for local/all).
+    fetch(_apiPath('/api/ollama/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/openwebui/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/opencode/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/llm/claude/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    needBackends ? fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
   ]).then(([oll, owui, oc, claude, backendsResp]) => {
     if (needBackends && backendsResp) {
       state._prdBackends = (backendsResp.llms || []).filter(l => !l.disabled);
@@ -16554,7 +16786,9 @@ window.openPRDInstantiateModal = openPRDInstantiateModal;
 
 function toggleLLM(cfgKey, enabled, name) {
   if (!cfgKey) return;
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [cfgKey]: enabled }),
@@ -16578,7 +16812,9 @@ function openLLMSetup(name) {
   }
   const section = LLM_CFG_SECTION[name];
   if (!section) { showToast('No config fields for ' + name, 'info'); return; }
-  fetch('/api/config', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the GET to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() })
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -16595,7 +16831,9 @@ function openLLMSetup(name) {
 }
 
 function setActiveLLM(name) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'session.backend_family': name }),
@@ -17533,7 +17771,9 @@ function onCertSourceChange(mode) {
     patch['acme.enabled'] = true;
     patch['server.tls_auto_generate'] = false;
   }
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(patch),
@@ -17849,7 +18089,9 @@ function loadOpenCodeProvidersCard(parentEl) {
   const PROVIDERS = ['anthropic', 'openai', 'google'];
   const labelKey = { anthropic: 'opencode_provider_anthropic', openai: 'opencode_provider_openai', google: 'opencode_provider_google' };
 
-  fetch('/api/opencode/providers', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/opencode/providers'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .catch(() => null)
     .then(data => {
@@ -17893,7 +18135,9 @@ function saveOpenCodeProviderKey(provider, inputId) {
   if (!input) return;
   const key = input.value.trim();
   if (!key) { showToast('Enter an API key first', 'error', 2000); return; }
-  fetch('/api/opencode/providers', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/opencode/providers'), {
     method: 'PUT',
     headers: Object.assign({ 'Content-Type': 'application/json' }, tokenHeader()),
     body: JSON.stringify({ provider, api_key: key }),
@@ -18152,8 +18396,10 @@ function loadGeneralConfig() {
                     return arr.map(m => m.name || m).filter(Boolean);
                   };
                   return Promise.all([
-                    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch('/api/compute/nodes', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    // Proxy-aware (version-skew audit): _apiPath routes the
+                    // datalist fetches to the selected peer (no-op otherwise).
+                    fetch(_apiPath('/api/ollama/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch(_apiPath('/api/compute/nodes'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
                   ]).then(([local, cnResp]) => {
                     const seen = new Set();
                     const merged = [];
@@ -18162,7 +18408,7 @@ function loadGeneralConfig() {
                     const nodes = cnResp && Array.isArray(cnResp.nodes) ? cnResp.nodes : [];
                     return Promise.all(
                       nodes.filter(n => n.kind === 'ollama' && n.name).map(n =>
-                        fetch(`/api/ollama/models?node=${encodeURIComponent(n.name)}`, { headers: tokenHeader() })
+                        fetch(_apiPath('/api/ollama/models?node=' + encodeURIComponent(n.name)), { headers: tokenHeader() })
                           .then(r => r.ok ? r.json() : null).catch(() => null).then(toNames)
                       )
                     ).then(nodeModels => { nodeModels.forEach(add); return merged; });
@@ -18384,7 +18630,10 @@ function saveInterfaceField(key, listEl, changedEl) {
   }
 
   const val = finalChecked.join(',');
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all) so the save lands where the tab
+  // was showing.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [key]: val }),
@@ -18745,7 +18994,9 @@ function _taskReviewPanelHTML(prd, task) {
 }
 
 function saveGeneralConfigPut(key, value) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [key]: value }),
@@ -18837,7 +19088,9 @@ function savePlanTierTable() {
     if (v < 0) v = 0;
     table[inp.dataset.planTier] = v;
   });
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'autonomous.plan_tier_max_inflight': table }),
@@ -18863,7 +19116,9 @@ function savePlanTierAllocationTable() {
     if (v < 0) v = 0;
     table[inp.dataset.planTierAllocation] = v;
   });
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'autonomous.plan_tier_allocation_usd': table }),
@@ -18916,7 +19171,9 @@ function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
   const browser = document.getElementById(browserId);
   if (!browser) return;
   browser.innerHTML = loadingEyeBlock();
-  fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the dir browser to
+  // the selected peer (no-op for local/all).
+  fetch(_apiPath('/api/files?path=' + encodeURIComponent(path || '~')), { headers: tokenHeader() })
     .then(r => r.json())
     .then(data => {
       const currentPath = data.path || path;
@@ -19164,7 +19421,9 @@ function loadMCPResources() {
   const tmplEl = document.getElementById('mcpTemplatesList');
   if (listEl) listEl.innerHTML = loadingEyeBlock();
   if (tmplEl) tmplEl.innerHTML = '';
-  fetch('/api/mcp/resources', {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // federated peer, so the panel shows the peer the About tab describes.
+  fetch(_apiPath('/api/mcp/resources'), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const resources = d.resources || [];
@@ -19213,7 +19472,7 @@ function loadMCPResources() {
       listEl.innerHTML = html;
     })
     .catch(e => { if (listEl) listEl.innerHTML = '<span style="color:var(--error)">' + escHtml(String(e)) + '</span>'; });
-  fetch('/api/mcp/resources/templates', {headers: tokenHeader()})
+  fetch(_apiPath('/api/mcp/resources/templates'), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const templates = d.templates || [];
@@ -19236,7 +19495,7 @@ function readMCPResource(uri) {
   contentEl.style.display = 'block';
   labelEl.textContent = uri;
   bodyEl.innerHTML = loadingEyeBlock();
-  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent(uri), {headers: tokenHeader()})
+  fetch(_apiPath('/api/mcp/resources/read?uri=' + encodeURIComponent(uri)), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const contents = d.contents || [];
@@ -19256,7 +19515,8 @@ function loadMCPSamplingLog() {
   if (!listEl) return;
   listEl.innerHTML = loadingEyeBlock();
   // The sampling log is embedded in the datawatch://stats/mcp resource.
-  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp'), {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp')), {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
     .then(function(d) {
       const contents = d.contents || [];
@@ -19304,7 +19564,8 @@ function loadMCPPrompts() {
   var listEl = document.getElementById('mcpPromptsList');
   if (!listEl) return;
   listEl.innerHTML = loadingEyeBlock();
-  fetch('/api/mcp/prompts', {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/prompts'), {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var prompts = d.prompts || [];
@@ -19356,7 +19617,8 @@ function getMCPPrompt(name, btn) {
   var labelEl = document.getElementById('mcpPromptResultLabel');
   var bodyEl = document.getElementById('mcpPromptResultBody');
   if (resultEl) resultEl.style.display = 'none';
-  fetch('/api/mcp/prompts/get', {
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/prompts/get'), {
     method: 'POST',
     headers: Object.assign({'Content-Type': 'application/json'}, tokenHeader()),
     body: JSON.stringify({name: name, arguments: args})
@@ -19454,7 +19716,9 @@ function loadConfigStatus() {
 }
 
 function toggleBackend(service, enable) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [service + '.enabled']: enable }),
@@ -19530,7 +19794,9 @@ const BACKEND_FIELDS = {
 };
 
 function openBackendSetup(service) {
-  fetch('/api/config', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() })
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -19659,7 +19925,9 @@ function testBackendConnection(service) {
   }
 
   showToast('Saving config and testing…', 'info', 2000);
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -19714,7 +19982,9 @@ function saveBackendConfig(service) {
       updates[cfgPrefix + f.key] = el.value.trim();
     }
   }
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -20088,9 +20358,11 @@ function loadServers() {
   // Fetch server list, health, and config (for the sandbox-origin PWA
   // link below) in parallel.
   Promise.all([
-    fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    // Proxy-aware (version-skew audit): _apiPath routes the Servers card
+    // to the selected peer (no-op for local/all).
+    fetch(_apiPath('/api/servers'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch(_apiPath('/api/servers/health'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([servers, health, cfg]) => {
     if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
@@ -20165,6 +20437,9 @@ function loadServers() {
   }).catch(() => { if (el) el.textContent = t('servers_unavailable') || 'Servers unavailable'; });
 }
 
+// Audit (b42f0003): a picker switch can never trigger a reload — this only
+// re-routes the socket and fetches. It must (and does) reconnect and probe;
+// it must NOT reload the page or touch the update banner.
 function selectServer(name) {
   const prev = state.activeServer;
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
@@ -20202,7 +20477,9 @@ function selectServer(name) {
 
 // BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
 function _loadAllServersSessions() {
-  fetch('/api/sessions/aggregated', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/sessions/aggregated'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
@@ -20550,7 +20827,9 @@ function loadServerListEager() {
   if (state.servers !== undefined) return;
   if (state._serversLoading) return;
   state._serversLoading = true;
-  fetch('/api/servers', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all) — same rule as the comms tab's own reads.
+  fetch(_apiPath('/api/servers'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => {
       state.servers = d;
@@ -20603,7 +20882,9 @@ function startLinking() {
   const btn = document.querySelector('#linkActionRow button');
   if (btn) { btn.disabled = true; btn.textContent = t('btn_starting') || 'Starting…'; }
 
-  fetch('/api/link/start', {
+  // Proxy-aware (version-skew audit): _apiPath routes the link flow to
+  // the selected peer (no-op for local/all).
+  fetch(_apiPath('/api/link/start'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ device_name: '' }),
@@ -20702,6 +20983,8 @@ window.replaySplash = function() {
     localStorage.removeItem('cs_splash_time');
     localStorage.removeItem('cs_splash_version');
   } catch (_) {}
+  // Audit (b42f0003): deliberate operator action (the Replay-splash button),
+  // never triggered by a federated-server switch.
   location.reload();
 };
 
@@ -22302,7 +22585,9 @@ function coerceYAMLScalar(s) {
 }
 
 function smokeProfile(kind, name) {
-  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name) + '/smoke',
+  // Proxy-aware (version-skew audit): _apiPath routes the smoke run to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/profiles/' + kind + 's/' + encodeURIComponent(name) + '/smoke'),
         { method: 'POST', headers: tokenHeader() })
   .then(r => r.json().then(j => ({ status: r.status, body: j })))
   .then(({status, body}) => {
@@ -22318,7 +22603,9 @@ function smokeProfile(kind, name) {
 
 function deleteProfile(kind, name) {
   if (!confirm('Delete ' + kind + ' profile "' + name + '"?')) return;
-  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name),
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/profiles/' + kind + 's/' + encodeURIComponent(name)),
         { method: 'DELETE', headers: tokenHeader() })
   .then(r => {
     if (r.status >= 400) { showToast('Delete failed: HTTP ' + r.status, 'error', 3000); return; }
@@ -22378,6 +22665,11 @@ function _swRegisterFailureMessage(err) {
 // Printed at most once per page load even if registerServiceWorker is
 // called again (e.g. a retry path), so the operator isn't spammed.
 let _swDisabledInfoShown = false;
+// Audit (b42f0003): the controllerchange listener attaches at most once per
+// page load — a retry path re-running registerServiceWorker must not stack a
+// second handler whose own _hadController could read a late claim event as
+// an update and reload the page.
+let _swControllerChangeAttached = false;
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
@@ -22425,21 +22717,34 @@ function registerServiceWorker() {
       }
       console.warn('SW registration failed:', err);
     });
-    let _reloadGuard = false;
-    // First install: sw.js clients.claim() fires controllerchange although
-    // there is no new build — only a change from an existing controller is an update.
-    let _hadController = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (_reloadGuard) return;
-      if (!_hadController) { _hadController = true; return; }
-      console.log('SW controller changed — fresh assets available');
-      if (_canAutoReload(_autoReloadCtx())) {
-        _reloadGuard = true;
-        window.location.reload();
-      } else {
-        _onDaemonVersionChange(null);
+      // Audit (b42f0003): the SW is only ever served by the origin that
+      // serves THIS page (federated peers are reached through the local
+      // /api/proxy), so a controllerchange here is always a real
+      // new-asset signal for this page — it can never be a side effect of
+      // state.activeServer changing.
+      if (!_swControllerChangeAttached) {
+        _swControllerChangeAttached = true;
+
+        let _reloadGuard = false;
+        // First install: sw.js clients.claim() fires controllerchange
+        // although there is no new build — only a change from an existing
+        // controller is an update.
+        let _hadController = !!navigator.serviceWorker.controller;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (_reloadGuard) return;
+          if (!_hadController) { _hadController = true; return; }
+          console.log('SW controller changed — fresh assets available');
+          if (_canAutoReload(_autoReloadCtx())) {
+            // Real build change: a fresh SW took control of this page and
+            // the user is idle — take the page over now.
+            _reloadGuard = true;
+            window.location.reload();
+          } else {
+            // Real update, not now: banner + recheck (reloads once idle).
+            _onDaemonVersionChange(null);
+          }
+        });
       }
-    });
   }
 }
 
@@ -22461,6 +22766,8 @@ window.forcePWAUpdate = async function() {
   // Hard reload bypassing HTTP cache too.
   // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
   // eye keeps the deliberate gesture from reading as a broken page.
+  // Audit (b42f0003): deliberate operator action (manual PWA cache escape
+  // hatch) — never triggered by a federated-server switch.
   performFullPageRefresh({ eyeBolt: false });
 };
 
@@ -35621,7 +35928,9 @@ function removeObserverPeer(name) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/observer/peers/' + encodeURIComponent(name), { method: 'DELETE', headers })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/observer/peers/' + encodeURIComponent(name)), { method: 'DELETE', headers })
     .then(r => {
       if (r.ok) {
         showToast(`Removed peer ${name}`, 'info');
@@ -36377,7 +36686,9 @@ function loadSavedCommands() {
 }
 
 function deleteSavedCmd(name) {
-  fetch('/api/commands?name=' + encodeURIComponent(name), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/commands?name=' + encodeURIComponent(name)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadSavedCommands() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
 }
@@ -36413,7 +36724,9 @@ function createSavedCmd() {
   const name = (document.getElementById('newCmdName') || {}).value || '';
   const command = (document.getElementById('newCmdValue') || {}).value || '';
   if (!name || !command) { showToast('Name and command required', 'error'); return; }
-  fetch('/api/commands', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/commands'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ name, command }),
@@ -36483,13 +36796,17 @@ function loadFilters() {
 }
 
 function toggleFilter(id, enable) {
-  fetch('/api/filters', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
+  // Proxy-aware (version-skew audit): _apiPath routes the PATCH to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters'), { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
     .then(r => r.ok ? loadFilters() : showToast('Update failed', 'error'))
     .catch(() => showToast('Update failed', 'error'));
 }
 
 function deleteFilter(id) {
-  fetch('/api/filters?id=' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters?id=' + encodeURIComponent(id)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadFilters() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
 }
@@ -36529,7 +36846,9 @@ function createFilter() {
   const action = (document.getElementById('newFilterAction') || {}).value || '';
   const value = (document.getElementById('newFilterValue') || {}).value || '';
   if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
-  fetch('/api/filters', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ pattern, action, value }),
@@ -36609,7 +36928,9 @@ function loadAlertRuleFirings() {
 
 function toggleAlertRule(name, enable) {
   const action = enable ? 'enable' : 'disable';
-  fetch('/api/alert-rules/' + encodeURIComponent(name) + '/' + action, {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules/' + encodeURIComponent(name) + '/' + action), {
     method: 'POST',
     headers: tokenHeader(),
   })
@@ -36618,7 +36939,9 @@ function toggleAlertRule(name, enable) {
 }
 
 function deleteAlertRule(name) {
-  fetch('/api/alert-rules/' + encodeURIComponent(name), {
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules/' + encodeURIComponent(name)), {
     method: 'DELETE',
     headers: tokenHeader(),
   })
@@ -36647,7 +36970,9 @@ function createAlertRule() {
   };
   if (description) body.description = description;
   if (source_filter) body.source_filter = source_filter;
-  fetch('/api/alert-rules', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(body),
@@ -36722,7 +37047,9 @@ function createExitHook() {
     body.notify_session = notifySession;
     if (notifyMessage) body.notify_message = notifyMessage;
   }
-  fetch('/api/exit-hooks', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(body),
@@ -36744,7 +37071,9 @@ function createExitHook() {
 
 function toggleExitHook(id, enable) {
   const updates = { enabled: enable };
-  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks/' + encodeURIComponent(id)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -36754,7 +37083,9 @@ function toggleExitHook(id, enable) {
 }
 
 function deleteExitHook(id) {
-  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks/' + encodeURIComponent(id)), {
     method: 'DELETE',
     headers: tokenHeader(),
   })
@@ -36920,6 +37251,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   registerServiceWorker();
+  // Capture the page's own daemon version immediately (boot fetch of the
+  // non-proxied /api/health); independent of the WS and of i18n, so the
+  // first local 'sessions' frame is already recorded-against-known.
+  _bootDaemonVersion();
   // Load i18n bundle before rendering — non-blocking on the WS connect.
   // navigate() reads from t() so the bundle must be present before the
   // first render. Falls through to English on fetch failure.
@@ -40615,7 +40950,10 @@ function submitFedPeerForm() {
   if (channelIdentityRaw.trim()) body.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
   if (fingerprintSync) body.fingerprint_sync = true; // off by default; opt in explicitly
 
-  fetch('/api/federation/peers', {
+  // Proxy-aware (version-skew audit): _apiPath routes peer CRUD to the
+  // selected peer (no-op for local/all) so create/edit/test/delete land
+  // on the daemon the comms tab is showing.
+  fetch(_apiPath('/api/federation/peers'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(window._authHeaders || {}) },
     body: JSON.stringify(body),
@@ -40634,7 +40972,9 @@ function submitFedPeerForm() {
 window.submitFedPeerForm = submitFedPeerForm;
 
 function testFedPeer(name) {
-  fetch('/api/federation/peers/' + encodeURIComponent(name) + '/test', {
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/federation/peers/' + encodeURIComponent(name) + '/test'), {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
@@ -40646,7 +40986,9 @@ window.testFedPeer = testFedPeer;
 
 function deleteFedPeer(name) {
   if (!confirm('Delete federation peer "' + name + '"?')) return;
-  fetch('/api/federation/peers/' + encodeURIComponent(name), {
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/federation/peers/' + encodeURIComponent(name)), {
     method: 'DELETE',
     headers: { ...(window._authHeaders || {}) },
   }).then(resp => {
@@ -46325,7 +46667,9 @@ function loadWorkQueue() {
 
 function deleteQueueItem(id) {
   if (!confirm('Delete queue item ' + id + '?')) return;
-  fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/queue/' + encodeURIComponent(id)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? r.json() : Promise.reject(r))
     .then(() => loadWorkQueue())
     .catch(() => alert('Failed to delete queue item ' + id));
@@ -46339,7 +46683,9 @@ function pushQueueItem() {
   if (payloadStr) {
     try { payload = JSON.parse(payloadStr); } catch(e) { alert('Invalid payload JSON: ' + e.message); return; }
   }
-  fetch('/api/queue/push', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/queue/push'), {
     method: 'POST',
     headers: { ...tokenHeader(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ role, payload })

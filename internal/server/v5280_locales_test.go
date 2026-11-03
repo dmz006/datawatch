@@ -367,6 +367,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"notify_events_group_warnings",
 		"notify_events_opt_in_marker",
 		"notify_events_opt_in_help",
+		// Version-skew audit (2026-10-27): the high-visibility keys the
+		// operator sees while a federated peer is selected — the About-tab
+		// version-skew note, the shared "Showing:" server label and the
+		// local-server fallback label behind it.
+		"about_version_skew_note",
+		"settings_showing_server",
+		"server_local_label",
 		"lifecycle_sub_form_group_warnings",
 		"lifecycle_sub_form_opt_in_hint",
 		// 2026-10-26 — autonomous triage: the settings field for
