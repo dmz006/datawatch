@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.71.0 — Billing profiles for the usage calculator and the cost report
+
+The usage calculator and the cost report now know which plan you are on.
+
+- A billing profile per provider (`usage.billing.<provider>`): a bundled plan, a metered API, or free local, with a price and a reset schedule. Other providers need configuration only.
+- The calculator uses the profile for the reset schedule and the cost of one usage point, shown as an estimate.
+- The cost report shows tokens and estimated usage points for a bundled plan, and labels API-rate dollars as "API-equivalent, not billed"; metered APIs keep dollars and free local shows tokens only.
+- The cost report groups correctly by Automaton and by Automation.
+- On REST, MCP, the CLI, the comm channel and the web settings, with five locales and operator how-tos for the calculator and the cost report.
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.

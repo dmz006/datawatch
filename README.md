@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.70.3 (2026-11-03).** The plans folder tidy now keeps every plan that is still referenced, rewrites links when it moves one, checks for broken links in lint and trims closed registry rows. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.71.0 (2026-11-03).** The calculator and the cost report now know the plan: a per-provider billing profile (bundled plan, metered API or free local) drives the reset, the cost of a usage point and how the cost report labels dollars. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
