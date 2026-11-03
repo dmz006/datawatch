@@ -1,0 +1,29 @@
+# [sync] {{.Title}} (datawatch next release)
+
+Parent release: datawatch next release
+
+## What changed
+
+{{.Summary}}
+
+## Settings to add to the mobile app
+{{if .Settings}}{{range .Settings}}
+- `{{.}}`{{end}}{{else}}
+None.{{end}}
+
+## REST contract from routes added
+{{if .Routes}}{{range .Routes}}
+- `{{.}}`{{end}}{{else}}
+None.{{end}}
+
+## New locale keys with English values
+{{if .LocaleKeys}}
+| Key | English |
+|---|---|{{range .LocaleKeys}}
+| `{{.Key}}` | {{cell .Value}} |{{end}}{{else}}
+None.{{end}}
+
+## Screens
+{{if .Screens}}{{range .Screens}}
+- {{.}}{{end}}{{else}}
+None.{{end}}
