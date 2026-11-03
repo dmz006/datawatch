@@ -2114,6 +2114,21 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	mgr.SetGitPushSettings(func() (policy, remote string) {
 		return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
 	})
+	// Pre-push secret scan (git.secret_scan): the live policy is read on
+	// every push attempt by both one-shot paths (push-on-complete and
+	// push-before-teardown). The daemon default is shadow (see
+	// effectiveSecretScanMode), so a fresh install scans + alerts without
+	// ever refusing a push; enforce refuses (Kind=secret_found) with the
+	// remote untouched.
+	mgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+		al := cfg.Git.EffectiveSecretScanAllowList()
+		return gitpkg.SecretScanPolicy{
+			Mode:         cfg.Git.EffectiveSecretScanMode(),
+			Detectors:    cfg.Git.EffectiveSecretScanDetectors(),
+			PathPatterns: al.Paths,
+			Fingerprints: al.Fingerprints,
+		}
+	})
 	// Operator alert sink for one-shot push failures → the same alert
 	// store every other system alert goes to.
 	mgr.SetPushAlertFn(func(level, title, body string) {
@@ -6508,6 +6523,20 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// as the CommSink closures above).
 			amgr.SetGitPushSettings(func() (string, string) {
 				return cfg.Git.EffectivePushOnComplete(), cfg.Git.EffectivePushRemote()
+			})
+			// Pre-push secret scan (git.secret_scan) for the autonomous
+			// push engine: enforce mode refuses the push
+			// (Kind=secret_found, remote untouched, redacted reason),
+			// shadow mode pushes and records the redacted findings via
+			// the same Decision + alert mechanism as push failures.
+			amgr.SetSecretScanSettings(func() gitpkg.SecretScanPolicy {
+				al := cfg.Git.EffectiveSecretScanAllowList()
+				return gitpkg.SecretScanPolicy{
+					Mode:         cfg.Git.EffectiveSecretScanMode(),
+					Detectors:    cfg.Git.EffectiveSecretScanDetectors(),
+					PathPatterns: al.Paths,
+					Fingerprints: al.Fingerprints,
+				}
 			})
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles

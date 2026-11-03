@@ -6,6 +6,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/git"
@@ -247,5 +248,86 @@ func TestRecordGitPushOutcomeSuccessFailureSuccess(t *testing.T) {
 	got, _ := m.store.GetPRD(prd.ID)
 	if got.Git.PushState != PushStatePushed || got.Git.PushWarning != "" || got.Git.PushedSHA != "def456" {
 		t.Errorf("persisted push state = %+v", got.Git)
+	}
+}
+
+// TestRecordGitPushOutcomeShadowAndEnforce — the secret-scan recording
+// contract: a shadow-mode SUCCESS finds the secret, records the
+// redacted findings as a Decision row and alerts once; an enforce-mode
+// refusal (secret_found) takes the failure path with the same redacted
+// fields. A fake secret value never appears in ANY persisted PRD field
+// or alert — not the state, not the decisions, not the alert bodies.
+func TestRecordGitPushOutcomeShadowAndEnforce(t *testing.T) {
+	// Assembled at runtime; the fingerprint is a fake hash, NOT derived
+	// from the secret (the real scanner hashes secret + path + line).
+	secret := "gh" + "p_" + "shadowTokenValue42xy"
+	findings := []git.SecretFinding{{
+		Commit: "aaa111", Detector: "github_token", Path: "env", Line: 1,
+		Fingerprint: "0123456789abcdef",
+	}}
+	summary := git.RedactedFindingsSummary(findings)
+
+	m := newGitPushTestManager(t)
+	prd, _ := m.CreatePRD("spec", "", "", "", "")
+	var alerts [][]string
+	m.SetAlertSink(func(level, title, body string) string {
+		alerts = append(alerts, []string{level, title, body})
+		return ""
+	})
+
+	// 1. Shadow mode, push succeeded: recorded as success PLUS
+	//    redacted findings — one extra decision row, one warn alert.
+	before := len(prd.Decisions)
+	m.recordPushOutcome(prd, git.PushResult{
+		Pushed: true, Remote: "origin", Ref: "refs/heads/prd/p1", SHA: "abc123",
+		SecretFindings: findings,
+	}, git.PushBranch)
+	if prd.Git.PushState != PushStatePushed || prd.Git.PushedSHA != "abc123" {
+		t.Fatalf("shadow push still records success: %+v", prd.Git)
+	}
+	if len(prd.Decisions) != before+2 {
+		t.Fatalf("want git_pushed + shadow decisions, got %+v", prd.Decisions)
+	}
+	if last := prd.Decisions[before+1]; last.Kind != "git_secret_scan_shadow" || last.Note != summary {
+		t.Errorf("shadow decision = %+v", last)
+	}
+	if len(alerts) != 1 || alerts[0][0] != "warn" ||
+		!strings.Contains(alerts[0][1], prd.ID) || alerts[0][2] != summary {
+		t.Fatalf("shadow alert = %v", alerts)
+	}
+
+	// 2. Enforce mode, push refused: failure path, redacted reason
+	//    (counts, detector, file:line, fingerprint — never the secret).
+	m.recordPushOutcome(prd, git.PushResult{
+		Remote: "origin", Ref: "refs/heads/prd/p1", Kind: git.PushFailSecret,
+		Reason:         summary,
+		SecretFindings: findings,
+	}, git.PushBranch)
+	if prd.Git.PushState != PushStateNotPushed {
+		t.Fatalf("enforce refusal records not_pushed: %+v", prd.Git)
+	}
+	if !strings.Contains(prd.Git.PushWarning, "secret finding(s)") {
+		t.Errorf("warning = %q", prd.Git.PushWarning)
+	}
+	if len(alerts) != 2 || alerts[1][0] != "warn" || alerts[1][2] != summary {
+		t.Fatalf("enforce alert = %v", alerts)
+	}
+
+	// 3. Redaction end-to-end: no persisted PRD field and no alert line
+	//    carries the secret value, only its fingerprint does (and only
+	//    the fake one, which the scanner would derive).
+	dump, err := json.Marshal(prd)
+	if err != nil {
+		t.Fatalf("marshal prd: %v", err)
+	}
+	if strings.Contains(string(dump), secret) {
+		t.Fatalf("persisted PRD carries the secret")
+	}
+	for _, a := range alerts {
+		for _, s := range a {
+			if strings.Contains(s, secret) {
+				t.Fatalf("alert carries the secret: %v", a)
+			}
+		}
 	}
 }

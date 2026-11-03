@@ -11,6 +11,10 @@
 //     operator alert (see recordPushOutcome);
 //   - never force-pushes: internal/git performs plain fast-forward-only
 //     pushes and has no force option;
+//   - secret-scanned before the push when the daemon wires a scan policy
+//     (SetSecretScanSettings, git.secret_scan): enforce mode refuses the
+//     push (Kind=secret_found, remote untouched), shadow mode returns the
+//     redacted findings on the result, which recordPushOutcome records;
 //   - serialised per PRD so two concurrent tasks cannot interleave a
 //     pair of push attempts;
 //   - safe to call repeatedly (after each validated task, then again at
@@ -76,6 +80,7 @@ func (m *Manager) pushValidatedWork(prd *PRD, finalGatesPassed bool) {
 	if policy == git.PushNever {
 		return
 	}
+	scan := m.effectiveSecretScan()
 	if _, err := runGitIn(dir, "rev-parse", "--is-inside-work-tree"); err != nil {
 		return // not a git repo — nothing to push
 	}
@@ -105,12 +110,31 @@ func (m *Manager) pushValidatedWork(prd *PRD, finalGatesPassed bool) {
 			return // detached HEAD with no recorded work branch — no state change
 		}
 		log.Printf("autonomous: prd %s push-on-complete (branch): pushing %s to remote %s", saved.ID, branch, remote)
-		m.recordPushOutcome(saved, git.PushToBranch(ctx, dir, remote, branch), policy)
+		m.recordPushOutcome(saved, git.PushToBranch(ctx, dir, remote, branch, scan), policy)
 	case git.PushDefaultBranch:
 		if !finalGatesPassed {
 			return
 		}
 		log.Printf("autonomous: prd %s push-on-complete (default_branch): pushing HEAD to remote %s", saved.ID, remote)
-		m.recordPushOutcome(saved, git.PushToDefaultBranch(ctx, dir, remote), policy)
+		m.recordPushOutcome(saved, git.PushToDefaultBranch(ctx, dir, remote, scan), policy)
 	}
+}
+
+// effectiveSecretScan resolves the live pre-push secret scan policy for
+// one push attempt from the daemon setting (SetSecretScanSettings, i.e.
+// git.secret_scan). Unwired — unit tests, harness runs without a daemon
+// config reader — reads as off: with no policy the push functions skip
+// the scan entirely, so those callers keep the legacy behaviour.
+func (m *Manager) effectiveSecretScan() git.SecretScanPolicy {
+	m.mu.Lock()
+	fn := m.gitScanPolicyFn
+	m.mu.Unlock()
+	if fn == nil {
+		return git.SecretScanPolicy{Mode: git.ScanOff}
+	}
+	p := fn()
+	if p.Mode == "" { // unset on the daemon side behaves as off, not shadow
+		p.Mode = git.ScanOff
+	}
+	return p
 }

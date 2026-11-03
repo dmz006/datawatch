@@ -42,6 +42,33 @@ func (m *Manager) SetPushAlertFn(fn func(level, title, body string)) {
 	m.pushAlertFn = fn
 }
 
+// SetSecretScanSettings wires the live pre-push secret scan policy
+// (git.secret_scan: mode, detectors, path and fingerprint allow-lists)
+// into both one-shot push paths: push-on-complete and
+// push-before-teardown. Same live-config pattern as SetGitPushSettings:
+// the closure is stored, not its result — it is read on every push
+// attempt, so a runtime `configure git.secret_scan=...` applies without
+// a restart. Nil (or a zero policy) = no scan, the legacy push
+// behaviour.
+func (m *Manager) SetSecretScanSettings(fn func() git.SecretScanPolicy) {
+	m.secretScanPolicyFn = fn
+}
+
+// effectiveSecretScan resolves the live scan policy for one push
+// attempt. Unwired (unit test / CLI without a daemon) or an empty mode
+// reads as off: with no policy the push functions skip the scan
+// entirely, so those callers keep the legacy behaviour.
+func (m *Manager) effectiveSecretScan() git.SecretScanPolicy {
+	if m.secretScanPolicyFn == nil {
+		return git.SecretScanPolicy{Mode: git.ScanOff}
+	}
+	p := m.secretScanPolicyFn()
+	if p.Mode == "" { // unset on the daemon side behaves as off, not shadow
+		p.Mode = git.ScanOff
+	}
+	return p
+}
+
 // pushAfterCommit pushes a just-committed one-shot's work per the live
 // push-on-complete policy. sha is the commit's sha; an empty sha (nothing
 // was committed) or a PRD-owned session (the autonomous executor pushes
@@ -86,11 +113,11 @@ func (m *Manager) pushAfterCommit(sess *Session, sha string) {
 			res = git.PushResult{Kind: git.PushFailOther, Reason: "detached HEAD: no branch to push"}
 		} else {
 			log.Printf("session %s: one-shot push-on-complete (branch): pushing %s to remote %s", sess.ID, branch, remote)
-			res = git.PushToBranch(ctx, dir, remote, branch)
+			res = git.PushToBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
 		}
 	case git.PushDefaultBranch:
 		log.Printf("session %s: one-shot push-on-complete (default_branch): pushing HEAD to remote %s", sess.ID, remote)
-		res = git.PushToDefaultBranch(ctx, dir, remote)
+		res = git.PushToDefaultBranch(ctx, dir, remote, m.effectiveSecretScan())
 	}
 
 	if res.Pushed || res.NothingToPush {
@@ -100,6 +127,9 @@ func (m *Manager) pushAfterCommit(sess *Session, sha string) {
 			sess.PushedSHA = res.SHA
 		} else {
 			sess.PushedSHA = sha
+		}
+		if len(res.SecretFindings) > 0 {
+			m.recordShadowSecretFindings(sess, res.SecretFindings)
 		}
 	} else {
 		reason := res.Reason
@@ -222,7 +252,7 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 	}
 
 	log.Printf("session %s: teardown push: pushing %d unpushed commit(s) on %s to remote %s", sess.ID, count, branch, remote)
-	res := git.PushToBranch(ctx, dir, remote, branch)
+	res := git.PushToBranch(ctx, dir, remote, branch, m.effectiveSecretScan())
 	rep.Attempted = true
 
 	if res.Pushed || res.NothingToPush {
@@ -231,6 +261,9 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 		sess.PushWarning = ""
 		sess.PushedSHA = res.SHA
 		log.Printf("session %s: teardown push succeeded: %s on %s", sess.ID, res.SHA, branch)
+		if len(res.SecretFindings) > 0 {
+			m.recordShadowSecretFindings(sess, res.SecretFindings)
+		}
 	} else {
 		reason := res.Reason
 		if reason == "" {
@@ -246,13 +279,31 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 
 // recordTeardownPushFailure records a failed teardown push on the
 // session and fires one warn-level operator alert (when an alert sink
-// is wired).
+// is wired). A refused enforce-mode pre-push secret scan takes this
+// path too: the Reason the push function built is already redacted
+// (counts, detector names, file:line, fingerprints — the scanner never
+// keeps the secret itself), so the alert body never contains one.
 func (m *Manager) recordTeardownPushFailure(sess *Session, reason string) {
 	sess.PushState = "not_pushed"
 	sess.PushWarning = "not pushed: " + reason
 	if m.pushAlertFn != nil {
 		m.pushAlertFn("warn", fmt.Sprintf("Session %s not pushed before teardown", sess.ID), reason)
 	}
+}
+
+// recordShadowSecretFindings records redacted shadow-mode scan findings
+// on a session whose push SUCCEEDED, and fires ONE warn-level operator
+// alert (when an alert sink is wired). The summary carries the count,
+// detector names, file:line and fingerprints — never the matched secret
+// (SecretFinding does not hold it, and the session record only ever
+// receives the summary).
+func (m *Manager) recordShadowSecretFindings(sess *Session, findings []git.SecretFinding) {
+	summary := git.RedactedFindingsSummary(findings)
+	sess.PushWarning = "pushed; pre-push secret scan (shadow mode) reported: " + summary
+	if m.pushAlertFn != nil {
+		m.pushAlertFn("warn", fmt.Sprintf("Session %s: %d pre-push secret finding(s) (shadow mode)", sess.ID, len(findings)), summary)
+	}
+	log.Printf("session %s: pushed with shadow-mode secret scan findings: %s", sess.ID, summary)
 }
 
 // recordTeardownPushRefused records a deliberately refused teardown push
