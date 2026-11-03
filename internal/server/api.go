@@ -7095,6 +7095,8 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// Keep the ship step's policy in step with the live autonomous.ship config.
+	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
 	// The question lifecycle events follow the switch at runtime: a flip
 	// attaches (or drops) the store's event sink, so no restart is needed.
 	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
