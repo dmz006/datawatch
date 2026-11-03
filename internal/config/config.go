@@ -3089,6 +3089,21 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// DecomposeLint — check over a freshly decomposed task graph
+	// (autonomous.decompose_lint): mode off|shadow|enforce (default
+	// shadow), the auto-retry budget (default 2, 0 allowed, cap 5) and
+	// the lint rules. See DecomposeLintConfig.
+	DecomposeLint DecomposeLintConfig `yaml:"decompose_lint" json:"decompose_lint"`
+	// TaskTemplates — reusable task definitions offered at
+	// decomposition time (autonomous.task_templates): enabled (default
+	// true), the template list and per-project overrides. See
+	// TaskTemplatesConfig.
+	TaskTemplates TaskTemplatesConfig `yaml:"task_templates" json:"task_templates"`
+	// DecomposeGuidance — literal guidance text or a file path handed to
+	// the planner; empty (default) means the guidance is generated from
+	// the configured decompose-lint rules (EffectiveDecomposeGuidance).
+	DecomposeGuidance string `yaml:"decompose_guidance" json:"decompose_guidance"`
+
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
 	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
@@ -5822,8 +5837,10 @@ func DefaultConfig() *Config {
 					SecurityWorkflows: append([]string(nil), DefaultRepoCIWatchSecurityWorkflows...),
 				},
 			},
-			LaneFill: DefaultAutonomousLaneFill(),
-			Progress: AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
+			LaneFill:      DefaultAutonomousLaneFill(),
+			DecomposeLint: DefaultDecomposeLint(),
+			TaskTemplates: DefaultTaskTemplates(),
+			Progress:      AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
 			// (autonomous.notify.default_events). Written as literals,
 			// not the internal/autonomous constants: the config package
@@ -6381,6 +6398,12 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.DecomposeLint.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.TaskTemplates.Validate(); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {
