@@ -482,16 +482,12 @@ func (s *Server) handleAutonomousStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSONOK(w, s.autonomousMgr.Status())
 }
 
-// truncationRefusal is the single source for the 400 message every spec and
-// description write handler returns when its text carries the capped-view
-// truncation marker (autonomous.HasTruncationMarker). It returns the message
-// naming the field — telling the operator to read the full text and edit
-// that — and whether to refuse. An empty value never refuses.
+// truncationRefusal is the refusal every spec and description write handler
+// reports for text carrying the capped-view truncation marker; it delegates
+// to autonomous.TruncationRefusal, the single source shared with the CLI and
+// the MCP tools, so a refusal reads identically client-side and in the 400.
 func truncationRefusal(field, value string) (string, bool) {
-	if value == "" || !autonomous.HasTruncationMarker(value) {
-		return "", false
-	}
-	return field + ": contains a truncation marker — it was copied from a capped view; read the full text and edit that", true
+	return autonomous.TruncationRefusal(field, value)
 }
 
 // handleAutonomousPRDs — GET (list) / POST (create) on the collection,

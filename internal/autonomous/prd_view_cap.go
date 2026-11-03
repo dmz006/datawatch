@@ -44,6 +44,20 @@ func HasTruncationMarker(s string) bool {
 	return strings.Contains(s, truncationMarker)
 }
 
+// TruncationRefusal is the single source of the refusal message every
+// spec/description write uses for text that carries the capped-view
+// truncation marker: the daemon's 400, the CLI and the MCP tools all report
+// it, naming the field and pointing the operator to the level whose read
+// returns the full, uncut text. The message and true are returned when the
+// write must be refused; an empty value never refuses, so optional fields
+// stay optional.
+func TruncationRefusal(field, value string) (string, bool) {
+	if value == "" || !HasTruncationMarker(value) {
+		return "", false
+	}
+	return field + ": contains a truncation marker — it was copied from a capped view; read the full text and edit that", true
+}
+
 // capText returns s cut to at most max bytes on a rune boundary, with a
 // marker appended, and whether it was cut. max <= 0 never cuts.
 func capText(s string, max int) (string, bool) {
