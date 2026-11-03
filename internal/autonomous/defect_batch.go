@@ -9,10 +9,12 @@
 //
 // Decompose hook note: BatchTemplateText and BatchGroupingHint return the
 // text the decompose prompt builder should include for a defect batch. The
-// decompose prompt assembly in manager.go has no clean per-kind hook (it
-// builds one prompt for every PRD), so they are exported here rather than
-// wired in; a caller that knows the PRD is a defect batch appends both to
-// the spec it hands to the decomposer.
+// manager appends per-PRD suffixes (rulesContextSuffix, verificationScriptSuffix)
+// at its decompose prompt assembly, but the PRD model has no defect-batch kind
+// to key a suffix on, so these are exported rather than wired in; a caller that
+// knows the PRD is a defect batch appends both to the spec it hands to the
+// decomposer. The defect reference of each story lives on PlanStory.DefectID
+// because the Story model has no such field.
 package autonomous
 
 import (
@@ -298,9 +300,10 @@ func SplitOutStory(plan *BatchPlan, storyID string) (*BatchPlan, error) {
 		return nil, fmt.Errorf("defect %q of story %q not in batch %s", moved.DefectID, storyID, plan.Batch.ID)
 	}
 
-	// New plan: a batch of one.
+	// New plan: a batch of one. Its ID is distinct from the original's even
+	// when the split defect was the first member (which names the original).
 	nb := DefectBatch{
-		ID: "batch-" + def.ID, Project: plan.Batch.Project, Defects: []Defect{def},
+		ID: "batch-split-" + def.ID, Project: plan.Batch.Project, Defects: []Defect{def},
 		PriorityRule: plan.Batch.PriorityRule, keys: plan.Batch.keys, allowUnrelated: plan.Batch.allowUnrelated,
 	}
 	nb.RecomputePriority()

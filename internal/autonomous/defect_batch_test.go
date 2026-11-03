@@ -140,6 +140,9 @@ func TestDefectBatch_SplitOutFailedStory(t *testing.T) {
 			t.Fatalf("split missing own %s", k)
 		}
 	}
+	if split.Batch.ID == p.Batch.ID {
+		t.Fatalf("split batch ID %q collides with original", split.Batch.ID)
+	}
 	if split.Batch.Priority != 9 {
 		t.Fatalf("split priority %d", split.Batch.Priority)
 	}
