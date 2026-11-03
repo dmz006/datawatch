@@ -205,8 +205,9 @@ func TestBootReconcileAdoptsByTaskLinkAndWorktree(t *testing.T) {
 	m.reconcileStuckTasks()
 	got, _ := m.Store().GetPRD(prd.ID)
 	tk := got.Story[0].Tasks[0]
-	if tk.Status != TaskInProgress || tk.SessionID != "linked-new" {
-		t.Fatalf("status=%s session=%q, want in-progress on linked-new", tk.Status, tk.SessionID)
+	// The duplicate-session default keeps the older live session.
+	if tk.Status != TaskInProgress || tk.SessionID != "linked-old" {
+		t.Fatalf("status=%s session=%q, want in-progress on linked-old", tk.Status, tk.SessionID)
 	}
 }
 

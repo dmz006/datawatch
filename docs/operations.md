@@ -189,7 +189,29 @@ The restart matrix (`scripts/restart-matrix.sh`, see [The restart matrix](#the-r
 
 **Start-confirm bound for launched and adopted sessions.** A claude-code worker has one start-confirm bound whether the daemon launched it or adopted it after a restart: `autonomous.session_start_confirm_seconds`, default 120 seconds, measured from the last evidence of life. For an adopted worker that is the latest update, channel event or log write the session left before the restart; when none is known, the clock starts at the task's launch time. A launched worker has no evidence of life until its first sign of work, so its clock starts at the first check that finds it silent. If the session is still in `waiting_input` with no assistant output past that limit, it is ended and the start counts as a failure against the start retry budget: two requeues, then the task fails. Once a first assistant turn appears, the bound no longer applies. Other backends are not held to it, because their start cannot be confirmed from the assistant marker.
 
+**Restart policy.** A restart requested through `POST /api/restart`, the `restart_daemon` tool or the chat `restart` command first applies `autonomous.restart_policy`. Whatever the policy, it logs, and the REST reply and the tool reply carry, how many running tasks (executing worker, running tests or verifying) and live sessions the restart interrupts, with their ids. `GET /api/autonomous/restart-interruptions`, the `restart_interruptions` tool, `datawatch autonomous restart-interruptions` and the chat verb `autonomous restart-interruptions` read the same count without restarting.
+
+| `autonomous.restart_policy` | What the restart does |
+|---|---|
+| `immediate` (default) | Restarts at once, as before the setting existed. |
+| `wait_quiet` | Waits up to `autonomous.restart_quiet_timeout_seconds` (default 600) for zero running tasks. If the wait runs out, `autonomous.restart_on_timeout` decides: `proceed` (default) restarts anyway, `abort` cancels the restart and logs why. |
+| `drain` | Stops new tasks from starting (a task not yet started waits at the door of the executor), lets the running ones finish, then restarts. A drain has no configured timeout, only a 6-hour safety cap; when the cap ends the drain, the restart is cancelled and new tasks start again. |
+
+The systemctl restart path is not changed; the policy only decides whether and when it runs. The ACME renewal restart keeps the plain restart. A task counts as interrupted only in its `in_progress`, `running_tests` or `verifying` states; queued, waiting and pending tasks are not interrupted. Live sessions are counted too, though tmux sessions survive a restart (see the table above).
+
 **Shutdown drain.** On a stop, the daemon first waits (at most 6 seconds) for the HTTP server to shut down, so no new launch arrives over HTTP. It then refuses new session launches and gives each launch still running a fixed grace of 15 seconds (`shutdownLaunchGrace` in `cmd/datawatch/shutdown_launch.go`; it is not a config key). A launch still running after that is rolled back, and the daemon logs `[session] rolled back launch <id>` for each one. The rollback's own settle wait (about 2 seconds) comes on top, so the stop stays well inside the 90-second default systemd stop timeout.
+
+#### What a restart does to running work
+
+This section is for the operator: what happens to an Automaton's running tasks when the daemon restarts.
+
+- **Launch refusal while draining.** While the daemon is shutting down it refuses new session launches. An Automaton task whose launch is refused this way is not counted as an attempt. It goes back to waiting, and when the daemon is up again the launch is made once more. No retry counter moves and the task's `Attempts` list gets no new entry.
+- **Adoption.** If a live session for the task is still running after the restart, the daemon adopts it instead of starting a second one. The task keeps its session and its attempt number, and no counter changes. A session that was started with a clean-restart request is not adopted over; it is ended first.
+- **Worktree protection.** A worktree that holds uncommitted changes and is owned by a live session is never reset. The reset is refused, the refusal is written to the Automaton's decisions, and the session is left running.
+- **Duplicate-session rule.** If two live sessions match one task, the older one is kept and the newer one is ended. Set `autonomous.duplicate_session_keep` to `newer` to keep the newer one instead; any other value means `older`. A session is counted as ended only after a fresh listing shows it gone. The decision (which was kept, which ended, why) is recorded once on the task, in the Automaton's decisions and in the audit log.
+- **Attempt records.** Each attempt records the session it used (`session_id`, `tmux_session`) and why it ended (`end_reason`), so a restart can be told apart from a failure when you read the history.
+- **Restart policy values.** `autonomous.restart_policy` is `immediate` (default, restart at once), `wait_quiet` (wait up to `autonomous.restart_quiet_timeout_seconds` for no running tasks, then `autonomous.restart_on_timeout` decides `proceed` or `abort`) or `drain` (stop new tasks starting, let running ones finish, then restart; 6-hour safety cap).
+- **Interruption count.** Every policy reports how many running tasks and live sessions the restart interrupts, in the log and in the REST and tool reply. `GET /api/autonomous/restart-interruptions` reads the same count without restarting.
 
 **What does not survive.** Two things, both listed as open choices in `docs/plans/restart-matrix-findings.md` and neither changed:
 
@@ -5337,6 +5359,7 @@ The daemon runs four report-only checks around an Automaton's work — the pre-s
 |---|---|---|---|---|---|
 | Read the checks and their findings | n/a | `datawatch autonomous checks [--prd ID] [--project-dir DIR] [--json]` | Automation view, Overview, *Automata checks* card | `GET /api/autonomous/checks[?prd_id=ID&project_dir=DIR]` | `autonomous checks [automaton-id]` |
 | Read the ship steps and their outcomes | n/a | `datawatch autonomous ship [--prd ID] [--project-dir DIR] [--json]` | Automation view, Overview, *Automata ship status* card | `GET /api/autonomous/ship[?prd_id=ID&project_dir=DIR]` | `autonomous ship [automaton-id]` |
+| Read what a restart now would interrupt | n/a | `datawatch autonomous restart-interruptions [--json]` | n/a | `GET /api/autonomous/restart-interruptions` | `autonomous restart-interruptions` |
 | Set a check mode | `autonomous.checks.pre_start_verifier`, `plan_rules`, `after_done`, `registry_readme` (each `off`, `shadow` or `on`); `autonomous.checks.block_when_missing` (`true` or `false`) | `datawatch config set autonomous.checks.plan_rules shadow` | Settings, General, Automata settings, *Checks* | `PUT /api/config` with `autonomous.checks.plan_rules` | `configure autonomous.checks.plan_rules=shadow` |
 | Set a ship step | `autonomous.ship.push`, `tag`, `ci_watch` (each `off`, `shadow` or `on`); `tag_format`, `remote`, `ci_workflows` | `datawatch config set autonomous.ship.tag shadow` | Settings, General, Automata settings, *Ship steps* | `PUT /api/config` with `autonomous.ship.tag` | `configure autonomous.ship.tag=shadow` |
 

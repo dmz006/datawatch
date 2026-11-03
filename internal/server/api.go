@@ -6276,6 +6276,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"descendant_stall_seconds":             s.cfg.Autonomous.DescendantStallSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
+			"duplicate_session_keep":               config.NormalizeDuplicateSessionKeep(s.cfg.Autonomous.DuplicateSessionKeep),
+			"restart_policy":                       config.NormalizeRestartPolicy(s.cfg.Autonomous.RestartPolicy),
+			"restart_quiet_timeout_seconds":        config.NormalizeRestartQuietTimeoutSeconds(s.cfg.Autonomous.RestartQuietTimeoutSeconds),
+			"restart_on_timeout":                   config.NormalizeRestartOnTimeout(s.cfg.Autonomous.RestartOnTimeout),
 			"stuck_running_seconds":                s.cfg.Autonomous.StuckRunningSeconds,
 			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
 			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
@@ -7158,6 +7162,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := validateChecksShipPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateRestartPolicyPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9021,6 +9029,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeOrphanGraceSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.OrphanGraceSeconds = n
+			}
+		case "autonomous.restart_policy", "autonomous.restart_on_timeout",
+			"autonomous.restart_quiet_timeout_seconds":
+			// Validated in handlePutConfig (validateRestartPolicyPatch).
+			applyRestartPolicyKey(cfg, k, v)
+		case "autonomous.duplicate_session_keep":
+			// "older" (default) or "newer"; anything else is rejected.
+			if str, ok := v.(string); ok {
+				switch strings.ToLower(strings.TrimSpace(str)) {
+				case config.DuplicateSessionKeepOlder, config.DuplicateSessionKeepNewer:
+					cfg.Autonomous.DuplicateSessionKeep = config.NormalizeDuplicateSessionKeep(str)
+				}
 			}
 		case "autonomous.stuck_running_seconds":
 			// Stored as-is; zero falls back to the default via
@@ -12172,7 +12192,12 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "restarting"}) //nolint:errcheck
+	resp := map[string]interface{}{"status": "restarting"}
+	if rep, ok := s.restartInterruptions(); ok {
+		// What this restart interrupts, counted before the restart policy runs.
+		resp["interrupts"] = rep
+	}
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})
 	go func() {
 		time.Sleep(500 * time.Millisecond)

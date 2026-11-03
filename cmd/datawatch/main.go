@@ -2596,6 +2596,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// can resolve named LLMs to their adapter kind at call time.
 		autonomousInferenceReg *inference.Registry
 	)
+	// Read at restart time, because the autonomous manager and the live config
+	// are filled in after the restart functions are wired.
+	liveRestartManager := func() restartPolicyManager {
+		if autonomousMgrRef == nil {
+			return nil // a true nil interface, not a typed nil
+		}
+		return autonomousMgrRef
+	}
+	liveRestartSettings := func() restartPolicySettings { return restartSettingsFrom(cfg.Autonomous) }
 
 	// Batch output lines per session to prevent WebSocket flood.
 	// Accumulates lines for 100ms then sends as one message.
@@ -3033,7 +3042,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			v, _ := fetchLatestVersion()
 			return v
 		})
-		r.SetRestartFunc(func() {
+		r.SetRestartFunc(guardRestart(func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -3044,7 +3053,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
-		})
+		}, liveRestartManager, liveRestartSettings))
 		// v5.27.2 — subsystem hot-reload from chat. Routes through the
 		// same in-process Server.ReloadSubsystem path the REST + CLI +
 		// MCP surfaces hit, so chat parity stays in sync without extra
@@ -4432,6 +4441,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
+			DuplicateSessionKeep:             acfgIn.DuplicateSessionKeep,
+			RestartPolicy:                    acfgIn.RestartPolicy,
+			RestartQuietTimeoutSeconds:       acfgIn.RestartQuietTimeoutSeconds,
+			RestartOnTimeout:                 acfgIn.RestartOnTimeout,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
@@ -7099,7 +7112,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				for _, s := range mgr.ListSessions() {
 					out = append(out, autonomouspkg.SessionInfo{
 						ID: s.FullID, Name: s.Name, TaskID: s.TaskID, PRDID: s.PRDID, Task: s.Task,
-						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt,
+						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt, TmuxSession: s.TmuxSession,
 						Alive: s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled,
 					})
 				}
@@ -8570,7 +8583,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Printf("[daemon] Update complete. Spawning new process and exiting (v%s → %s).\n", Version, exe)
 			os.Exit(0)
 		}
-		httpServer.SetRestartFunc(daemonRestartFn)
+		// autonomous.restart_policy runs before the restart; the ACME renewal
+		// path keeps the plain function, because it restarts to reload a cert.
+		guardedRestartFn := guardRestart(daemonRestartFn, liveRestartManager, liveRestartSettings)
+		httpServer.SetRestartFunc(guardedRestartFn)
 
 		// BL397 — native ACME subsystem. Disabled by default (acme.enabled
 		// is false unless the operator opts in); failure to start it never
@@ -8829,7 +8845,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
-		RestartFn: func() {
+		RestartFn: guardRestart(func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
@@ -8840,7 +8856,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				_ = syscall.Exec(selfPath, os.Args, os.Environ()) // #nosec G702 -- argv-list, not shell; selfPath from os.Executable()
 			}
 			os.Exit(0)
-		},
+		}, liveRestartManager, liveRestartSettings),
 	})
 	mcpSrv.SetChannelStats(chanTracker.Get("mcp"))
 	mcpSrv.SetWebPort(cfg.Server.Port)

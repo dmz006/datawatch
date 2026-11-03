@@ -2595,6 +2595,23 @@ autonomous:
   # judge, council and eval sessions are never swept. 0 or unset falls back to
   # the 300s default (NormalizeOrphanGraceSeconds).
   orphan_grace_seconds: 300
+  # Which live session survives when two or more match one task (a daemon
+  # restart or a pre-spawn lookup finds duplicates): "older" (default) keeps
+  # the older session until it ends; "newer" keeps the newer one. The other
+  # sessions are ended through the session killer, only after their process
+  # exit is confirmed, never by name pattern. Each decision is recorded on the
+  # task (session_decisions) and in the audit log.
+  duplicate_session_keep: older
+  # What a requested daemon restart does about running work. "immediate"
+  # (default) restarts at once. "wait_quiet" waits up to
+  # restart_quiet_timeout_seconds for zero running tasks, then proceeds or
+  # aborts per restart_on_timeout. "drain" stops new tasks starting, lets the
+  # running ones finish, then restarts. Every restart logs, and its REST/MCP
+  # reply carries, the count of running tasks and live sessions it interrupts
+  # (GET /api/autonomous/restart-interruptions reads the same count).
+  restart_policy: immediate
+  restart_quiet_timeout_seconds: 600   # wait_quiet only; 0 or unset => 600
+  restart_on_timeout: proceed          # wait_quiet only: "proceed" or "abort"
   loop_detect_turns: 3   # pi worker observability (docs/operations.md): how many of the worker's most recent assistant turns the live loop detector compares (announce-without-acting or identical-call repeats => loop rescue); 0 = loop detection off; negative rejected
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,

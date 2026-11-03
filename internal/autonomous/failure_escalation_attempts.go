@@ -24,6 +24,26 @@ const maxAttemptChangedFiles = 50
 const (
 	attemptOutcomeFailed  = "failed"
 	attemptOutcomeStalled = "stalled"
+	// attemptOutcomeCancelled is an attempt cut short by an operator
+	// cancellation or a daemon restart.
+	attemptOutcomeCancelled = "cancelled"
+)
+
+// End reasons written to TaskAttempt.EndReason. The retry loop names the
+// reason at each place it closes an attempt; recordFailedAttempt derives one
+// from the outcome and category when a caller leaves it empty.
+const (
+	attemptEndCompleted           = "completed"
+	attemptEndVerifierFailed      = "verifier_failed"
+	attemptEndStalled             = "stalled"
+	attemptEndSessionDied         = "session_died"
+	attemptEndDaemonRestart       = "daemon_restart"
+	attemptEndLaunchRefused       = "launch_refused"
+	attemptEndAdoptedThenFailed   = "adopted_then_failed"
+	attemptEndCancelledByOperator = "cancelled_by_operator"
+	// attemptEndExecutorError is a failure that no verifier, stall or session
+	// fault explains (a plain executor error).
+	attemptEndExecutorError = "executor_error"
 )
 
 // attemptRun is what the retry loop knows about the attempt it is running:
@@ -38,6 +58,16 @@ type attemptRun struct {
 	RefsBefore int
 	// Escalated is true when an escalation step chose this attempt's worker.
 	Escalated bool
+	// SessionID and TmuxSession name the session the attempt used, when the
+	// caller knows them. Both stay empty when no session started.
+	SessionID   string
+	TmuxSession string
+	// Adopted is true when the attempt ran on a session adopted after a
+	// restart rather than one this attempt spawned.
+	Adopted bool
+	// AttemptsBefore is len(t.Attempts) when the attempt began; the executor's
+	// exit hook uses it to tell whether the attempt was already recorded.
+	AttemptsBefore int
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -57,6 +87,37 @@ type attemptFailure struct {
 	// retry). Such a failure is recorded but does not count toward the
 	// failure escalation policy's max_failures.
 	Requeue bool
+	// EndReason is the machine value for why the attempt ended (an
+	// attemptEnd* constant) and EndDetail its free text. EndReason empty
+	// means "derive it from Outcome and Category".
+	EndReason string
+	EndDetail string
+}
+
+// deriveAttemptEndReason picks an end reason for a failure whose caller did
+// not name one.
+func deriveAttemptEndReason(f attemptFailure, adopted bool) string {
+	switch {
+	case f.EndReason != "":
+		// A failure on an adopted session is labelled as such; the reasons that
+		// say the attempt was cut short or never started keep their own name.
+		if adopted && (f.EndReason == attemptEndVerifierFailed || f.EndReason == attemptEndStalled ||
+			f.EndReason == attemptEndSessionDied || f.EndReason == attemptEndExecutorError) {
+			return attemptEndAdoptedThenFailed
+		}
+		return f.EndReason
+	case adopted:
+		return attemptEndAdoptedThenFailed
+	case f.Outcome == attemptOutcomeStalled:
+		return attemptEndStalled
+	case f.Outcome == attemptOutcomeCancelled:
+		return attemptEndCancelledByOperator
+	case f.Category == "infra":
+		return attemptEndSessionDied
+	case f.Verification.Summary != "" || len(f.Verification.Issues) > 0:
+		return attemptEndVerifierFailed
+	}
+	return attemptEndExecutorError
 }
 
 // attemptNow returns the time an attempt starts or ends at: the injected
@@ -85,6 +146,11 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 
 	started := run.StartedAt
 	var ref string
+	sessionID, adopted := run.SessionID, run.Adopted
+	tmux := run.TmuxSession
+	if tmux == "" && sessionID != "" {
+		tmux = m.tmuxSessionFor(sessionID)
+	}
 	m.store.WithLock(func() {
 		if len(t.AttemptRefs) > run.RefsBefore {
 			ref = t.AttemptRefs[len(t.AttemptRefs)-1]
@@ -112,6 +178,10 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
+		SessionID:       sessionID,
+		TmuxSession:     tmux,
+		EndReason:       deriveAttemptEndReason(f, adopted),
+		EndDetail:       f.EndDetail,
 	}
 	m.store.WithLock(func() {
 		if ev := t.RunnerEvidence; ev != nil {
@@ -181,4 +251,49 @@ func attemptGitEnv() []string {
 		env = append(env, kv)
 	}
 	return env
+}
+
+// tmuxSessionFor returns the tmux session name of the session id, read through
+// the injected session lister. It returns "" when no lister is wired or the
+// session is unknown.
+func (m *Manager) tmuxSessionFor(id string) string {
+	m.mu.Lock()
+	listFn := m.sessionListerFn
+	m.mu.Unlock()
+	if listFn == nil || id == "" {
+		return ""
+	}
+	for _, s := range listFn() {
+		if s.ID == id {
+			return s.TmuxSession
+		}
+	}
+	return ""
+}
+
+// recordInterruptedAttempt closes the attempt a cancelled executor left open.
+// An operator cancellation (the Automaton or the task is cancelled) is labelled
+// cancelled_by_operator; any other cancellation of the executor context is a
+// daemon restart. It records onto the stored task, so a status the cancel set
+// is not overwritten, and never counts toward the escalation budget.
+func (m *Manager) recordInterruptedAttempt(prd *PRD, t *Task, run attemptRun) {
+	if run.SessionID == "" || len(t.Attempts) != run.AttemptsBefore {
+		return
+	}
+	reason, detail := attemptEndDaemonRestart, "executor stopped while the attempt was running"
+	cur := t
+	if latest, ok := m.store.GetPRD(prd.ID); ok && latest != nil {
+		if lt, _ := findTaskInPRD(latest, t.ID); lt != nil {
+			cur = lt
+		}
+		if latest.Status == PRDCancelled || (cur != nil && cur.Status == TaskCancelled) {
+			reason, detail = attemptEndCancelledByOperator, "cancelled by the operator while the attempt was running"
+		}
+	}
+	if cur.Status == TaskCompleted || len(cur.Attempts) != run.AttemptsBefore {
+		return
+	}
+	m.recordFailedAttempt(context.Background(), prd, cur, run, attemptFailure{
+		Outcome: attemptOutcomeCancelled, Summary: detail, Requeue: true, EndReason: reason, EndDetail: detail,
+	})
 }

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // SessionInfo is the slice of a session record the boot reconcile needs to
@@ -21,6 +22,8 @@ type SessionInfo struct {
 	ProjectDir string
 	CreatedAt  time.Time
 	Alive      bool
+	// TmuxSession is the session's tmux session name; empty when it has none.
+	TmuxSession string
 }
 
 // SetSessionListerFn wires the session lister used by reconcileStuckTasks to
@@ -36,10 +39,17 @@ func (m *Manager) SetSessionListerFn(fn func() []SessionInfo) {
 // plus the other live matches (older, left for reset cleanup). A session
 // matches when its recorded TaskID (and PRDID, when set) equal the task's, or
 // when its task text contains the task id and its ProjectDir equals the task's
-// resolved project dir. The newest match is the adopted one; adopted is nil
+// resolved project dir. The newest match is the adopted one here; adopted is nil
 // when nothing matches. Sessions already linked to a different task of the PRD
 // are never matched, whichever id form the task or the lister uses.
 func findAdoptableSession(prd *PRD, t *Task, sessions []SessionInfo) (adopted *SessionInfo, others []SessionInfo) {
+	return findAdoptableSessionKeep(prd, t, sessions, config.DuplicateSessionKeepNewer)
+}
+
+// findAdoptableSessionKeep is findAdoptableSession with the survivor chosen by
+// the duplicate-session policy (DecideDuplicateSession): the older match by
+// default, the newer one when keep is "newer".
+func findAdoptableSessionKeep(prd *PRD, t *Task, sessions []SessionInfo, keep string) (adopted *SessionInfo, others []SessionInfo) {
 	claimed := map[string]bool{}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
@@ -72,8 +82,11 @@ func findAdoptableSession(prd *PRD, t *Task, sessions []SessionInfo) (adopted *S
 	if len(matches) == 0 {
 		return nil, nil
 	}
-	sort.SliceStable(matches, func(i, j int) bool { return matches[i].CreatedAt.After(matches[j].CreatedAt) })
-	return &matches[0], matches[1:]
+	kept, rest := DecideDuplicateSession(matches, keep)
+	if kept == nil {
+		return nil, nil
+	}
+	return kept, rest
 }
 
 // adoptUnlinkedSession tries to adopt a live session for t before the boot
@@ -84,7 +97,7 @@ func (m *Manager) adoptUnlinkedSession(prd *PRD, t *Task, listFn func() []Sessio
 	if listFn == nil {
 		return "", nil
 	}
-	adopted, others := findAdoptableSession(prd, t, listFn())
+	adopted, others := findAdoptableSessionKeep(prd, t, listFn(), m.duplicateSessionKeep())
 	if adopted == nil {
 		return "", nil
 	}
