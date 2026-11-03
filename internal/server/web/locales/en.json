@@ -1195,6 +1195,7 @@
   "server_tls_skip_verify_tip": "Only for a self-signed/local-dev server on a trusted network",
   "server_indicator_return_tip": "Click to return to %1$s",
   "server_local_label": "This server",
+  "settings_showing_server": "Showing: %1$s",
   "server_name_label": "Name",
   "server_picker_add": "Add server",
   "server_picker_federation_peer": "Federation Peer",

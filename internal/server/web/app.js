@@ -9473,6 +9473,13 @@ function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-section[data-group]').forEach(s => {
     s.style.display = s.dataset.group === tab ? '' : 'none';
   });
+  // Version-skew audit — keep the per-tab "Showing:" line in sync with
+  // the active tab (it sits outside .settings-section, so toggle it too).
+  if (tab !== 'about') {
+    document.querySelectorAll('[data-showing-line]').forEach(d => {
+      d.style.display = d.dataset.showingLine === tab ? '' : 'none';
+    });
+  }
   document.querySelectorAll('.settings-tab-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
@@ -9526,6 +9533,12 @@ function renderSettingsView() {
         ${tabBtns}
       </div>
       <div class="settings-view">
+
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="comms" style="${stab!=='comms'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
 
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
           ${settingsSectionHeader('comms_auth', 'Authentication')}
@@ -9808,6 +9821,12 @@ function renderSettingsView() {
             </div>
             <div id="agentsConfigPanel" style="padding:4px 12px;font-size:13px;color:var(--text2);">${loadingEyeBlock()}</div>
           </div>
+        </div>
+
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="general" style="${stab!=='general'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
         </div>
 
         <div class="settings-section" data-group="general" style="${stab!=='general'?'display:none':''}">
@@ -10512,6 +10531,12 @@ function renderSettingsView() {
         </div>
 
 
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="plugins" style="${stab!=='plugins'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
+
         <!-- BL238 — Plugins sub-tab -->
         <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
           ${settingsSectionHeader('plugins_list', 'Plugin Manager', 'plugins.md')}
@@ -10647,6 +10672,10 @@ function renderSettingsView() {
   // PRD/cost rollup does.
   _injectServerPickerBar(view, renderSettingsView, { hideAll: true });
 
+  // Version-skew audit — fill the general/plugins/comms "Showing:"
+  // lines now that state.activeServer is settled for this render.
+  settingsRefreshShowingLines();
+
   loadSkillsPanel();
   if (typeof loadGuardrailProfilesPanel === 'function') loadGuardrailProfilesPanel(); // BL303 S2
   if (typeof loadRetryProfilesPanel === 'function') loadRetryProfilesPanel(); // BL410 Phase 1
@@ -10661,8 +10690,10 @@ function renderSettingsView() {
   loadServers();
   loadCommsConfig();
   loadProxySettings();
-  // Populate auth token fields in comms tab
-  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+  // Populate auth token fields in comms tab.
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer when one is active (no-op for local/all), matching loadCommsConfig.
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
     if (!cfg) return;
     const wt = document.getElementById('cfgWebToken');
     if (wt) wt.value = cfg.server?.token || '';
@@ -13172,15 +13203,35 @@ function loadVersionInfo() {
 // About tab "Showing:" line — which server the About rows above actually
 // describe. A federated peer's own name when one is selected; the local
 // hostname label (when known) when viewing the local server.
+// Shared "Showing: <server name>" label for the Settings tabs. The About
+// tab reuses it (#aboutShowingServer); general/plugins/comms each render
+// a line with the same rule (version-skew audit): a specific federated
+// peer shows that peer's name; 'local'/'all'/unset show the local
+// hostname (or the generic label). English fallback mirrors About.
+function settingsShowingLabel() {
+  const active = state.activeServer;
+  const name = (active && active !== 'local' && active !== 'all')
+    ? active : (_localHostname || (t('server_local_label') || 'this server'));
+  return t('settings_showing_server', [name]) || ('Showing: ' + name);
+}
+window.settingsShowingLabel = settingsShowingLabel;
+
 function loadAboutShowingServer() {
   const el = document.getElementById('aboutShowingServer');
   if (!el) return;
-  const active = state.activeServer;
-  const isPeer = !!active && active !== 'local' && active !== 'all';
-  const name = isPeer ? active : (_localHostname || (t('server_local_label') || 'this server'));
-  el.textContent = t('about_showing_server', [name]) || ('Showing: ' + name);
+  el.textContent = settingsShowingLabel();
 }
 window.loadAboutShowingServer = loadAboutShowingServer;
+
+// Fill every "Showing:" line currently in the DOM (the general, plugins
+// and comms tab tops). renderSettingsView calls this after each (re)render
+// and the server picker re-renders the view, so the label tracks the
+// active server at all times.
+function settingsRefreshShowingLines() {
+  const label = settingsShowingLabel();
+  document.querySelectorAll('[data-showing-line] .settings-label').forEach(el => { el.textContent = label; });
+}
+window.settingsRefreshShowingLines = settingsRefreshShowingLines;
 
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
@@ -15869,11 +15920,13 @@ window.ensureLLMModelLists = function() {
   const needBackends = state._prdBackends == null;
   if (state._availableModels !== undefined && state._llmModelListsFull && !needBackends) return Promise.resolve();
   return Promise.all([
-    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/openwebui/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/opencode/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    fetch('/api/llm/claude/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-    needBackends ? fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
+    // Proxy-aware (version-skew audit): _apiPath targets the selected
+    // peer for the model pickers on Settings tabs (no-op for local/all).
+    fetch(_apiPath('/api/ollama/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/openwebui/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/opencode/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch(_apiPath('/api/llm/claude/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    needBackends ? fetch(_apiPath('/api/llms'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null) : Promise.resolve(null),
   ]).then(([oll, owui, oc, claude, backendsResp]) => {
     if (needBackends && backendsResp) {
       state._prdBackends = (backendsResp.llms || []).filter(l => !l.disabled);
@@ -17697,7 +17750,9 @@ function onCertSourceChange(mode) {
     patch['acme.enabled'] = true;
     patch['server.tls_auto_generate'] = false;
   }
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(patch),
@@ -18316,8 +18371,10 @@ function loadGeneralConfig() {
                     return arr.map(m => m.name || m).filter(Boolean);
                   };
                   return Promise.all([
-                    fetch('/api/ollama/models', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
-                    fetch('/api/compute/nodes', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    // Proxy-aware (version-skew audit): _apiPath routes the
+                    // datalist fetches to the selected peer (no-op otherwise).
+                    fetch(_apiPath('/api/ollama/models'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+                    fetch(_apiPath('/api/compute/nodes'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
                   ]).then(([local, cnResp]) => {
                     const seen = new Set();
                     const merged = [];
@@ -18326,7 +18383,7 @@ function loadGeneralConfig() {
                     const nodes = cnResp && Array.isArray(cnResp.nodes) ? cnResp.nodes : [];
                     return Promise.all(
                       nodes.filter(n => n.kind === 'ollama' && n.name).map(n =>
-                        fetch(`/api/ollama/models?node=${encodeURIComponent(n.name)}`, { headers: tokenHeader() })
+                        fetch(_apiPath('/api/ollama/models?node=' + encodeURIComponent(n.name)), { headers: tokenHeader() })
                           .then(r => r.ok ? r.json() : null).catch(() => null).then(toNames)
                       )
                     ).then(nodeModels => { nodeModels.forEach(add); return merged; });
@@ -18537,7 +18594,10 @@ function saveInterfaceField(key, listEl, changedEl) {
   }
 
   const val = finalChecked.join(',');
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all) so the save lands where the tab
+  // was showing.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [key]: val }),
@@ -18898,7 +18958,9 @@ function _taskReviewPanelHTML(prd, task) {
 }
 
 function saveGeneralConfigPut(key, value) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [key]: value }),
@@ -18974,7 +19036,9 @@ function savePlanTierTable() {
     if (v < 0) v = 0;
     table[inp.dataset.planTier] = v;
   });
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'autonomous.plan_tier_max_inflight': table }),
@@ -19000,7 +19064,9 @@ function savePlanTierAllocationTable() {
     if (v < 0) v = 0;
     table[inp.dataset.planTierAllocation] = v;
   });
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'autonomous.plan_tier_allocation_usd': table }),
@@ -19053,7 +19119,9 @@ function loadSettingsDirContents(path, inputId, browserId, cfgKey) {
   const browser = document.getElementById(browserId);
   if (!browser) return;
   browser.innerHTML = loadingEyeBlock();
-  fetch('/api/files?path=' + encodeURIComponent(path || '~'), { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the dir browser to
+  // the selected peer (no-op for local/all).
+  fetch(_apiPath('/api/files?path=' + encodeURIComponent(path || '~')), { headers: tokenHeader() })
     .then(r => r.json())
     .then(data => {
       const currentPath = data.path || path;
@@ -19596,7 +19664,9 @@ function loadConfigStatus() {
 }
 
 function toggleBackend(service, enable) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [service + '.enabled']: enable }),
@@ -19672,7 +19742,9 @@ const BACKEND_FIELDS = {
 };
 
 function openBackendSetup(service) {
-  fetch('/api/config', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() })
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -19801,7 +19873,9 @@ function testBackendConnection(service) {
   }
 
   showToast('Saving config and testing…', 'info', 2000);
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -19856,7 +19930,9 @@ function saveBackendConfig(service) {
       updates[cfgPrefix + f.key] = el.value.trim();
     }
   }
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer (no-op for local/all).
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -20230,9 +20306,11 @@ function loadServers() {
   // Fetch server list, health, and config (for the sandbox-origin PWA
   // link below) in parallel.
   Promise.all([
-    fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    // Proxy-aware (version-skew audit): _apiPath routes the Servers card
+    // to the selected peer (no-op for local/all).
+    fetch(_apiPath('/api/servers'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch(_apiPath('/api/servers/health'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([servers, health, cfg]) => {
     if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
@@ -20347,7 +20425,9 @@ function selectServer(name) {
 
 // BL312 S4 — fetch sessions from /api/sessions/aggregated and merge into state.
 function _loadAllServersSessions() {
-  fetch('/api/sessions/aggregated', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/sessions/aggregated'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
@@ -20695,7 +20775,9 @@ function loadServerListEager() {
   if (state.servers !== undefined) return;
   if (state._serversLoading) return;
   state._serversLoading = true;
-  fetch('/api/servers', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all) — same rule as the comms tab's own reads.
+  fetch(_apiPath('/api/servers'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(d => {
       state.servers = d;
@@ -20748,7 +20830,9 @@ function startLinking() {
   const btn = document.querySelector('#linkActionRow button');
   if (btn) { btn.disabled = true; btn.textContent = t('btn_starting') || 'Starting…'; }
 
-  fetch('/api/link/start', {
+  // Proxy-aware (version-skew audit): _apiPath routes the link flow to
+  // the selected peer (no-op for local/all).
+  fetch(_apiPath('/api/link/start'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ device_name: '' }),
@@ -40772,7 +40856,10 @@ function submitFedPeerForm() {
   if (channelIdentityRaw.trim()) body.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
   if (fingerprintSync) body.fingerprint_sync = true; // off by default; opt in explicitly
 
-  fetch('/api/federation/peers', {
+  // Proxy-aware (version-skew audit): _apiPath routes peer CRUD to the
+  // selected peer (no-op for local/all) so create/edit/test/delete land
+  // on the daemon the comms tab is showing.
+  fetch(_apiPath('/api/federation/peers'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(window._authHeaders || {}) },
     body: JSON.stringify(body),
@@ -40791,7 +40878,9 @@ function submitFedPeerForm() {
 window.submitFedPeerForm = submitFedPeerForm;
 
 function testFedPeer(name) {
-  fetch('/api/federation/peers/' + encodeURIComponent(name) + '/test', {
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/federation/peers/' + encodeURIComponent(name) + '/test'), {
     method: 'POST',
     headers: { ...(window._authHeaders || {}) },
   }).then(r => r.json()).then(d => {
@@ -40803,7 +40892,9 @@ window.testFedPeer = testFedPeer;
 
 function deleteFedPeer(name) {
   if (!confirm('Delete federation peer "' + name + '"?')) return;
-  fetch('/api/federation/peers/' + encodeURIComponent(name), {
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer (no-op for local/all).
+  fetch(_apiPath('/api/federation/peers/' + encodeURIComponent(name)), {
     method: 'DELETE',
     headers: { ...(window._authHeaders || {}) },
   }).then(resp => {

@@ -1223,6 +1223,7 @@
   "server_tls_skip_verify_tip": "Only for a self-signed/local-dev server on a trusted network",
   "server_indicator_return_tip": "Klicken, um zu %1$s zurückzukehren",
   "server_local_label": "Dieser Server",
+  "settings_showing_server": "Anzeige: %1$s",
   "server_name_label": "Name",
   "server_picker_add": "Server hinzufuegen",
   "server_picker_federation_peer": "Verbündeter Peer",
