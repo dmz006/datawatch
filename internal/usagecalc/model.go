@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -36,6 +37,15 @@ const (
 	NeedsPercent = "percent"
 	NeedsReading = "reading"
 	NeedsReset   = "reset"
+)
+
+// PointValue source values: where a PointValue came from.
+const (
+	// PointValueSourceProfile: a claude-code billing profile the operator set.
+	PointValueSourceProfile = "profile"
+	// PointValueSourceDefault: no profile set, the assumed default profile
+	// (zero price) supplies the value.
+	PointValueSourceDefault = "default"
 )
 
 // Fallback reasons for the recent burn, and the notice shown whenever it falls back.
@@ -96,11 +106,32 @@ type RemainingWork struct {
 
 // Input is everything Advise reads. Pointer fields are optional settings whose zero value
 // is meaningful, so nil selects the default.
+// PointValue prices one usage point and a week of the allowance in
+// cost-equivalent money, from the billing profile's monthly price
+// (PointCostEquivalent): a point is 1/100 of a week, so a week is
+// WeeklyAllowance times the per-point value. It is an estimate (Estimate is
+// always true) and never changes the numbers the readings drive.
+type PointValue struct {
+	Estimate bool    `json:"estimate"`
+	Source   string  `json:"source"`
+	PerPoint float64 `json:"per_point"`
+	PerWeek  float64 `json:"per_week"`
+	// Currency is the ISO 4217 code of the values (USD, EUR, …); empty when
+	// the profile does not name one.
+	Currency string `json:"currency,omitempty"`
+}
+
 type Input struct {
 	Readings []Reading `json:"readings"`
 	Reset    ResetSpec `json:"reset"`
 	// Now is used only for Advice.LatestAgeHours.
 	Now time.Time `json:"now"`
+	// PointValue is the billing profile's estimated value of a point and of a
+	// week of the allowance; nil leaves the advice without one.
+	PointValue *PointValue `json:"point_value,omitempty"`
+	// ResetFromProfile marks that Reset's weekday and clock came from the
+	// billing profile's reset schedule; the zone is still the calculator's.
+	ResetFromProfile bool `json:"reset_from_profile,omitempty"`
 	// ExtraCreditPoints is bought extra credit, 0 or more; the ceiling is 100 plus these.
 	ExtraCreditPoints float64 `json:"extra_credit_points"`
 	// Lanes is the lane count the advice plans with.
@@ -197,8 +228,18 @@ type Advice struct {
 	// it unset. ServerZone is true in that latter case — the zone follows
 	// the server, so the text forms carry the "(server zone)" marker and the
 	// settings UI shows it as unset rather than saving the server's zone.
-	Zone       string `json:"zone,omitempty"`
-	ServerZone bool   `json:"server_zone"`
+	// ResetFromProfile marks that the reset's weekday and clock came from the
+	// claude-code billing profile's reset schedule; the zone is still the
+	// calculator's, because a profile names when, not in whose clock.
+	Zone             string `json:"zone,omitempty"`
+	ServerZone       bool   `json:"server_zone"`
+	ResetFromProfile bool   `json:"reset_from_profile,omitempty"`
+
+	// PointValue is the billing profile's estimated cost-equivalent of a usage
+	// point and of a week of the allowance (see PointValue); nil when nothing
+	// names one. It is always an estimate and changes no number the readings
+	// drive.
+	PointValue *PointValue `json:"point_value,omitempty"`
 
 	ExtraCreditPoints float64 `json:"extra_credit_points"`
 	Ceiling           float64 `json:"ceiling"`
@@ -267,6 +308,30 @@ type settings struct {
 }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// normalizePointValue keeps a PointValue when it names a known source and
+// carries finite, non-negative figures, and returns nil for a malformed one
+// (unknown source, a non-finite or negative figure), so a bad value carries
+// nothing rather than wrong money. Estimate is forced on: the figure is
+// always an estimate of profile price, never a metered amount.
+func normalizePointValue(p *PointValue) *PointValue {
+	if p == nil {
+		return nil
+	}
+	if p.Source != PointValueSourceProfile && p.Source != PointValueSourceDefault {
+		return nil
+	}
+	if !finite(p.PerPoint) || p.PerPoint < 0 || !finite(p.PerWeek) || p.PerWeek < 0 {
+		return nil
+	}
+	return &PointValue{
+		Estimate: true,
+		Source:   p.Source,
+		PerPoint: p.PerPoint,
+		PerWeek:  p.PerWeek,
+		Currency: strings.ToUpper(strings.TrimSpace(p.Currency)),
+	}
+}
 
 // clampPoints returns v limited to 0..maxPoints, and fallback when v is not a number.
 func clampPoints(v, fallback float64) float64 {
@@ -392,6 +457,8 @@ func Advise(in Input) Advice {
 
 	out.Zone = in.Reset.Zone
 	out.ServerZone = in.Reset.ServerZone
+	out.ResetFromProfile = in.ResetFromProfile
+	out.PointValue = normalizePointValue(in.PointValue)
 
 	if err := in.Reset.Validate(); err != nil {
 		return out.needing(NeedsReset, "Set the weekly reset as a weekday, an HH:MM time and a time zone name.")

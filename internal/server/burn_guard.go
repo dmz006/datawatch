@@ -512,17 +512,17 @@ func (s *Server) AttachBurnGuard(adm BurnGuardAdmission, sessions BurnGuardSessi
 			if err != nil {
 				return nil, 0, usagecalc.ResetSpec{}, err
 			}
-			var cal config.UsageCalculatorConfig
+			settings := UsageCalculatorSettings(config.UsageConfig{})
 			if s.cfg != nil {
-				cal = s.cfg.Usage.Calculator
+				settings = UsageCalculatorSettings(s.cfg.Usage)
 			}
-			return snap.Record.Readings, snap.Record.ExtraCreditPoints, UsageCalculatorSettings(cal).Reset, nil
+			return snap.Record.Readings, snap.Record.ExtraCreditPoints, settings.Reset, nil
 		},
 		MarginPoints: func() *float64 {
 			if s.cfg == nil {
 				return nil
 			}
-			return UsageCalculatorSettings(s.cfg.Usage.Calculator).SafetyPoints
+			return UsageCalculatorSettings(s.cfg.Usage).SafetyPoints
 		},
 	}
 	g, err := NewBurnGuard(in, adm, sessions, burnGuardNotifier{s: s},
