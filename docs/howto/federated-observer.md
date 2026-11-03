@@ -333,6 +333,69 @@ restructuring.
    All over the same Tailscale mesh. No public exposure.
 ```
 
+## Install the datawatch-stats peer
+
+For a host that only runs the `datawatch-stats` observer reporter (no
+full daemon), the repo ships a standalone installer:
+
+```bash
+bash install/install-stats.sh --datawatch <parent-url>
+```
+
+Common options:
+
+| Option | Meaning |
+|--------|---------|
+| `--datawatch URL` | Parent datawatch base URL (required, or `DATAWATCH_URL` env) |
+| `--name NAME` | Stable peer name reported to the parent (default: hostname) |
+| `--version <version>` | Pin a specific release instead of fetching the latest |
+| `--archive PATH` | Install from a local tarball — no download, no version fetch |
+| `--service` | Also install and enable a systemd service (user, or system with `--root`) |
+| `--root` | System-wide install: `/usr/local/bin` + system service (needs sudo) |
+
+Without `--service`, the installer prints the exact manual start
+command. The bearer token minted by the parent is stored under
+`~/.datawatch-stats/peer.token` (or `/var/lib/datawatch-stats/peer.token`
+for `--root`) and is never written to stdout or logs.
+
+### Release archives
+
+A release publishes the observer peer as its **own** asset:
+
+```
+datawatch-stats_<version>_linux_<amd64|arm64>.tar.gz   # the stats binary
+datawatch_<version>_linux_<arch>.tar.gz                # the main daemon archive
+```
+
+`datawatch_<version>_linux_<arch>.tar.gz` is the **main daemon**
+release, not the stats archive. The installer first looks for the
+standalone `datawatch-stats_<version>_linux_<amd64|arm64>.tar.gz`
+asset; for older releases that shipped the `datawatch-stats` binary
+inside the main archive, it automatically falls back to
+`datawatch_<version>_linux_<arch>.tar.gz` and extracts the binary
+from there. Either way the result is the same: you always end up
+with a working `datawatch-stats`.
+
+### Offline / air-gapped installs
+
+`--archive PATH` skips the download (and the version lookup) and
+installs from a tarball you staged on the host — the standalone
+stats archive or a legacy main-daemon archive both work, as long as
+the `datawatch-stats` binary is inside:
+
+```bash
+# On the air-gapped host, after the archive has been copied in:
+bash install/install-stats.sh \
+  --datawatch https://primary.tailnet.internal:8443 \
+  --name edge-observer \
+  --archive /tmp/datawatch-stats_<version>_linux_amd64.tar.gz
+```
+
+> **Note**: the archive must actually contain the `datawatch-stats`
+> binary; the installer errors out otherwise. For a fully offline pin,
+> combine `--archive` with `--version <version>` if the filename does
+> not already encode it.
+
 ## Common pitfalls
 
 - **Peer can't reach primary.** Mesh is up but `push_to.url` wrong
