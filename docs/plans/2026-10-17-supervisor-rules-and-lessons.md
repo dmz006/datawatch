@@ -725,3 +725,9 @@ Rules:
 1. Set the worker backend, model, effort and planning profile on a draft, before the first decompose and before approval. Approval helpers must not set them (the helper now sets them only when asked).
 2. Check the backend on the Automaton after approving, before an Automation starts it.
 3. If a backend must change after approval: stop the Automation first, cancel and reset the Automaton to draft, change it, plan again. The planner re-queue defect (`9e4d0001`) is meant to remove this.
+
+### Lesson 2026-11-03: a test file under the embedded web folder needs a version bump
+
+Why: I fixed a CodeQL alert in `internal/server/web/app-usage-billing.test.js` and pushed it as a test-only change with no bump, following the 2026-10-28 note that test-only changes skip the bump. The CI version check failed (version not greater than base), because that folder is embedded in the binary and the check counts any change under it. A patch release (9.71.1) fixed it.
+
+Rule: "test-only changes skip the bump" holds for Go test files and test scripts outside the embedded folders. Any change under `internal/server/web/`, including `*.test.js`, takes a patch bump with a changelog entry and the README release line, even when it only fixes a test.
