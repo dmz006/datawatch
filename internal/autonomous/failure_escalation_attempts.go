@@ -26,6 +26,20 @@ const (
 	attemptOutcomeStalled = "stalled"
 )
 
+// End reasons written to TaskAttempt.EndReason. The retry loop names the
+// reason at each place it closes an attempt; recordFailedAttempt derives one
+// from the outcome and category when a caller leaves it empty.
+const (
+	attemptEndCompleted           = "completed"
+	attemptEndVerifierFailed      = "verifier_failed"
+	attemptEndStalled             = "stalled"
+	attemptEndSessionDied         = "session_died"
+	attemptEndDaemonRestart       = "daemon_restart"
+	attemptEndLaunchRefused       = "launch_refused"
+	attemptEndAdoptedThenFailed   = "adopted_then_failed"
+	attemptEndCancelledByOperator = "cancelled_by_operator"
+)
+
 // attemptRun is what the retry loop knows about the attempt it is running:
 // the worker it was spawned on, when it started, and how many snapshot refs
 // the task held before it began. The refs count lets the record find the
@@ -38,6 +52,10 @@ type attemptRun struct {
 	RefsBefore int
 	// Escalated is true when an escalation step chose this attempt's worker.
 	Escalated bool
+	// SessionID and TmuxSession name the session the attempt used, when the
+	// caller knows them. SessionID falls back to the task's current session.
+	SessionID   string
+	TmuxSession string
 }
 
 // attemptFailure is how an attempt ended when it did not succeed.
@@ -57,6 +75,31 @@ type attemptFailure struct {
 	// retry). Such a failure is recorded but does not count toward the
 	// failure escalation policy's max_failures.
 	Requeue bool
+	// EndReason is the machine value for why the attempt ended (an
+	// attemptEnd* constant) and EndDetail its free text. EndReason empty
+	// means "derive it from Outcome and Category".
+	EndReason string
+	EndDetail string
+}
+
+// deriveAttemptEndReason picks an end reason for a failure whose caller did
+// not name one.
+func deriveAttemptEndReason(f attemptFailure, adopted bool) string {
+	switch {
+	case f.EndReason != "":
+		return f.EndReason
+	case adopted:
+		return attemptEndAdoptedThenFailed
+	case f.Outcome == attemptOutcomeStalled:
+		return attemptEndStalled
+	case f.Outcome == "cancelled":
+		return attemptEndCancelledByOperator
+	case f.Category == "infra":
+		return attemptEndSessionDied
+	case f.Verification.Summary != "" || len(f.Verification.Issues) > 0 || f.Category != "":
+		return attemptEndVerifierFailed
+	}
+	return attemptEndVerifierFailed
 }
 
 // attemptNow returns the time an attempt starts or ends at: the injected
@@ -84,8 +127,13 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 	}
 
 	started := run.StartedAt
-	var ref string
+	var ref, sessionID string
+	var adopted bool
 	m.store.WithLock(func() {
+		sessionID, adopted = t.SessionID, t.AdoptedSession
+		if run.SessionID != "" {
+			sessionID = run.SessionID
+		}
 		if len(t.AttemptRefs) > run.RefsBefore {
 			ref = t.AttemptRefs[len(t.AttemptRefs)-1]
 		}
@@ -112,6 +160,10 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 		ChangedFiles:    attemptChangedFiles(ctx, m.resolveTaskProjectDir(prd, t), ref),
 		SnapshotRef:     ref,
 		Escalated:       run.Escalated,
+		SessionID:       sessionID,
+		TmuxSession:     run.TmuxSession,
+		EndReason:       deriveAttemptEndReason(f, adopted),
+		EndDetail:       f.EndDetail,
 	}
 	m.store.WithLock(func() {
 		if ev := t.RunnerEvidence; ev != nil {

@@ -124,6 +124,20 @@ func formatEscalationAttemptFull(a TaskAttempt) string {
 	fmt.Fprintf(&b, "  Worker: %s\n", escalationWorkerLabel(a))
 	fmt.Fprintf(&b, "  Duration: %d s\n", a.DurationSeconds)
 	fmt.Fprintf(&b, "  Outcome: %s\n", escalationOutcomeLabel(a))
+	if a.SessionID != "" {
+		sess := a.SessionID
+		if a.TmuxSession != "" {
+			sess += " (tmux " + a.TmuxSession + ")"
+		}
+		fmt.Fprintf(&b, "  Session: %s\n", sess)
+	}
+	if a.EndReason != "" {
+		end := a.EndReason
+		if a.EndDetail != "" {
+			end += ": " + truncateEscalationText(a.EndDetail, escalationPromptMaxSummaryChars)
+		}
+		fmt.Fprintf(&b, "  Ended because: %s\n", end)
+	}
 	if a.FailureSummary != "" {
 		fmt.Fprintf(&b, "  Failure: %s\n", truncateEscalationText(a.FailureSummary, escalationPromptMaxSummaryChars))
 	}

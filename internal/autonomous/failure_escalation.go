@@ -103,6 +103,16 @@ type TaskAttempt struct {
 	RunnerLastOutput []string `json:"runner_last_output,omitempty"`
 	// RunnerProcesses describes the runner's processes at that time.
 	RunnerProcesses []string `json:"runner_processes,omitempty"`
+	// SessionID is the session this attempt used; empty when no session
+	// started.
+	SessionID string `json:"session_id,omitempty"`
+	// TmuxSession is that session's multiplexer name, when known.
+	TmuxSession string `json:"tmux_session,omitempty"`
+	// EndReason is a short machine value for why the attempt ended (see the
+	// attemptEnd* constants). Attempts stored before it existed leave it empty.
+	EndReason string `json:"end_reason,omitempty"`
+	// EndDetail is free text that goes with EndReason.
+	EndDetail string `json:"end_detail,omitempty"`
 }
 
 // ReviewSummary is written when a task is held in TaskReviewNeeded.

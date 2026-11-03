@@ -32,6 +32,12 @@ type TaskEntry struct {
 	// AttemptCount is the number of recorded attempts of the task.
 	AttemptCount  int    `json:"attempt_count,omitempty"`
 	ReviewSummary string `json:"review_summary,omitempty"`
+	// LastAttemptSessionID, LastAttemptTmuxSession, LastAttemptEndReason and
+	// LastAttemptEndDetail describe how the most recent recorded attempt ended.
+	LastAttemptSessionID   string `json:"last_attempt_session_id,omitempty"`
+	LastAttemptTmuxSession string `json:"last_attempt_tmux_session,omitempty"`
+	LastAttemptEndReason   string `json:"last_attempt_end_reason,omitempty"`
+	LastAttemptEndDetail   string `json:"last_attempt_end_detail,omitempty"`
 	// InfraRetries is the history of infrastructure retries of the task and
 	// InfraRetryCount the consecutive ones in the current incident.
 	InfraRetries    []InfraRetryEntry `json:"infra_retries,omitempty"`
@@ -103,6 +109,11 @@ func buildTaskEntry(task *Task) TaskEntry {
 	}
 	entry.EscalationFailures = task.EscalationFailures
 	entry.AttemptCount = len(task.Attempts)
+	if n := len(task.Attempts); n > 0 {
+		a := task.Attempts[n-1]
+		entry.LastAttemptSessionID, entry.LastAttemptTmuxSession = a.SessionID, a.TmuxSession
+		entry.LastAttemptEndReason, entry.LastAttemptEndDetail = a.EndReason, a.EndDetail
+	}
 	if task.ReviewSummary != nil {
 		entry.ReviewSummary = task.ReviewSummary.Text
 	}

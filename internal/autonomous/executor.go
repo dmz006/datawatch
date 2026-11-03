@@ -2175,7 +2175,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
 		if !textCounted {
-			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
+			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr, EndReason: attemptEndVerifierFailed})
 		}
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
@@ -2259,7 +2259,7 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 		}
 		log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
 			t.ID, SessionStartFailureReason, t.StartFailures)
-		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error()})
+		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
 		m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
 		m.relocateCheckpoint(prd, t)
 		if serr := m.store.SaveTask(t); serr != nil {
@@ -2274,7 +2274,7 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 	log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
 		t.ID, t.StartFailures, SessionStartRetryBudget)
 	t.Error = cause.Error()
-	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true})
+	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true, EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
 	_ = m.store.SaveTask(t)
 	return false, nil
 }
