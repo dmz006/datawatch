@@ -562,8 +562,17 @@ launching:
 ]
 ```
 
-`${secret:name}` references in `api_key_ref` are resolved at call time
-via the secrets store (never written to disk in resolved form).
+`api_key_ref` accepts two forms. The preferred form is a `${secret:name}`
+reference into the secrets store, resolved at call time via the secrets
+store (never written to disk in resolved form): because it is re-resolved on
+every call, a rotated secret takes effect from the next call — no restart,
+no config edit. If the secret is missing, the call fails with an error that
+names the secret and the LLM entry and never prints a value, and every
+resolution is audit-logged (entry name, secret name, outcome — never the
+value). The reference must be the whole value: exactly `${secret:name}`,
+with no surrounding text. A literal key still works, but the reference form
+is preferred. See [howto/secrets-manager](secrets-manager.md) § “Keeping LLM
+API keys out of configuration” for the full setup.
 
 ## Block-on-delete and the reassign flow
 
@@ -644,7 +653,8 @@ tmux process.
   `llm refresh-models`.
 - **`api_key_ref` with wrong secret name.** The LLM will test as
   reachable if the network is OK, but calls fail at runtime when the
-  secret can't resolve. Verify with `datawatch secrets get <name>`.
+  secret can't resolve; the failure names the secret and the LLM entry
+  and never prints a value. Verify with `datawatch secrets get <name>`.
 - **Delete blocked by stale session.** A session stuck in `running`
   after its tmux pane died will still show as a binding. Kill the
   stale session first (`datawatch sessions kill <id>`), then delete

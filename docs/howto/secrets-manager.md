@@ -303,6 +303,58 @@ the child process env, never touches the log file.
 Default-fallback syntax: `${secret:name:fallback-value}` resolves to
 `fallback-value` if the secret is missing. Useful for optional creds.
 
+## Keeping LLM API keys out of configuration
+
+LLM registry entries for cloud inference kinds (Anthropic, Gemini, and
+similar) take an `api_key_ref` field. Do not paste the key into config
+files, registry JSON, or shell profiles — once a literal key lives in a
+config it ends up in backups, dotfiles, and commit history. Store it in
+the secrets store and reference it by name instead:
+
+```sh
+# 1. Store the key in the secrets store (placeholder below — put your
+#    real key here in a private terminal, never in a config file).
+datawatch secrets set ANTHROPIC_API_KEY '<your-api-key>'
+
+# 2. Point the LLM entry at that secret.
+datawatch llm add claude-api \
+  --kind claude \
+  --model claude-sonnet-5 \
+  --api-key-ref '${secret:ANTHROPIC_API_KEY}'
+```
+
+In registry JSON the field is `"api_key_ref"`: `"${secret:ANTHROPIC_API_KEY}"`
+— same reference, same store, same rules. This covers every consumer of the
+entry: plain sessions, `/api/ask` and Council calls, and Automata running on
+that LLM.
+
+What the reference form gives you:
+
+- **Rotation without a restart.** The reference is resolved on every LLM
+call, not once at startup. To rotate, store a new value under the same
+name — `datawatch secrets set ANTHROPIC_API_KEY '<new-api-key>'` — and
+the next call uses the new value. Nothing to restart, no config file to
+touch.
+- **A missing secret fails loudly and safely.** If the secret does not
+exist (wrong name, deleted, backend unreachable), the LLM call fails
+with an error that names the secret and the LLM entry so you can fix
+either. The error never prints a secret value.
+- **The reference is the whole value.** `api_key_ref` must be exactly
+`${secret:name}` — no surrounding text, no template interpolation, no
+concatenation. A partial reference is treated as a literal string and will
+not resolve, so the call fails rather than sending a broken key.
+- **Every resolution is audit-logged.** Each time the reference is
+resolved you get an audit entry with the LLM entry name, the secret name,
+and the outcome (resolved / failed). The secret value itself is never
+written to the audit log.
+
+A literal key in `api_key_ref` still works and is what older setups use,
+but the reference form is preferred wherever a secrets backend is
+available — and one of ours is, on every installation, with zero setup.
+See [howto/llm-registry](llm-registry.md) for the full LLM entry
+reference and [howto/compute-routing](compute-routing.md) for a worked
+cloud-LLM setup.
+
 ## Diagram
 
 ```
