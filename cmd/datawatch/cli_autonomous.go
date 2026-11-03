@@ -250,6 +250,9 @@ Subcommands:
 		newAutonomousEventsCmd(),
 		// Triage read (docs/plans/2026-10-26-autonomous-triage-read-route.md).
 		newAutonomousTriageCmd(),
+		// Checks and ship status reads.
+		newAutonomousChecksCmd(),
+		newAutonomousShipCmd(),
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),
