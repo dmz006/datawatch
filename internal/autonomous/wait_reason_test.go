@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/capacity"
 )
 
 // waitReasonClock is the fixed clock every wait-reason test reads: 12:00 UTC.
@@ -40,6 +42,32 @@ func TestWaitReason_PoolFullNamesHolder(t *testing.T) {
 func TestWaitReason_NodeBusyNamesHolder(t *testing.T) {
 	got := NodeBusyWaitText("gpu-box", 1, 1, []string{"task-c"})
 	assertWaitText(t, got, "waiting for node gpu-box: 1/1 engines in use, held by task-c", WaitCauseNodeBusy)
+}
+
+func TestWaitReason_AllCandidatesDrainedOrDenied(t *testing.T) {
+	// The ledger names a gate refusal up front when it is every candidate.
+	// Both spellings classify the same way.
+	drained := "waiting for nodes b, a: " + capacity.AllCandidatesGatePrefix +
+		"b: drained; a: drained"
+	assertWaitText(t, drained, drained, WaitCauseNodeDrainedOrDenied)
+	denied := "waiting for nodes b, a: " + capacity.AllCandidatesGatePrefix +
+		"b: consumer session_spawn denied; a: consumer session_spawn denied"
+	assertWaitText(t, denied, denied, WaitCauseNodeDrainedOrDenied)
+
+	// A reason that mixes one gate refusal with one merely full node is the
+	// pre-existing wording; it must not be classified as a gate refusal.
+	mixed := "waiting for nodes a, b: a: drained; b: 1/1 engines in use, held by t1"
+	if c := ClassifyWaitReason(mixed); c == WaitCauseNodeDrainedOrDenied {
+		t.Errorf("mixed gate/full reason classified %q, want it not treated as a gate refusal", c)
+	}
+
+	// The text displays unchanged and names no holders.
+	if got := ReadableWaitText(drained, WaitReasonHolders(drained), nil); got != drained {
+		t.Errorf("readable = %q, want unchanged %q", got, drained)
+	}
+	if h := WaitReasonHolders(denied); h != nil {
+		t.Errorf("holders = %v, want nil", h)
+	}
 }
 
 func TestWaitReason_BackoffWithResetTime(t *testing.T) {
