@@ -180,8 +180,12 @@ async function setLocaleOverride(lang) {
     // non-fatal — the UI bundle change should still apply on reload even
     // if the daemon's PUT /api/config rejects (e.g. token mismatch on a
     // proxied PWA). Don't block the page reload on this.
+    // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+    // selected federated peer when one is active, so the whisper.language
+    // sync lands on the server the About page is describing instead of
+    // always the daemon serving this page.
     try {
-      await fetch('/api/config', {
+      await fetch(_apiPath('/api/config'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(typeof tokenHeader === 'function' ? tokenHeader() : {}) },
         body: JSON.stringify({ 'whisper.language': lang }),
@@ -1105,20 +1109,36 @@ function send(type, data) {
   return true;
 }
 
+// _apiPath — the single proxy-routing rule for data requests, shared by
+// apiFetch and the About call sites that build their own fetch() (custom
+// headers / best-effort error handling). When state.activeServer is a
+// specific federated peer the path is rewritten under
+// /api/proxy/<peer>/, so the request lands on the peer the About sub
+// sections (version, API, Config Viewer) are describing; for 'local' or
+// 'all' the path passes through to the daemon serving this page, exactly
+// as before.
+function _apiPath(path) {
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  return isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+}
+window._apiPath = _apiPath;
+
 // apiFetch wraps fetch() with auth header and JSON response parsing.
 // Rejects with an Error whose message is the server error text on non-2xx.
 // 204 / 205 (no-content success) resolve to null — v8.19.8: RFC 7231 §3.3
 // forbids a body on 204, so the body can never arrive and r.json() throws
-// "Failed to execute 'json' on 'Response': Unexpected end of JSON input".
+// "Failed to execute 'json' on 'Response": Unexpected end of JSON input".
 function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
   if (token) headers['Authorization'] = 'Bearer ' + token;
   // Route through proxy when a specific remote server is selected
-  // ('all' mode uses local API — aggregated endpoint handles fan-out)
+  // ('all' mode uses local API — aggregated endpoint handles fan-out).
+  // Same rule as _apiPath — one place, so the two can never drift.
   const srv = state.activeServer;
   const isRemote = srv && srv !== 'local' && srv !== 'all';
-  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const url = _apiPath(path);
   return fetch(url, Object.assign({}, opts, { headers }))
     .then(r => {
       if (r.status === 204 || r.status === 205) return null;
@@ -10227,8 +10247,12 @@ function renderSettingsView() {
                serving this page. Informational only — never the update banner,
                never touches _onDaemonVersionChange. -->
           <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
-          <!-- Which server the rows above actually describe. Peer name when a
-               federated peer is selected, local hostname otherwise. -->
+          <!-- Which server every About sub-section (this Version card, the
+               API block, the Config Viewer block) above/below actually
+               describes. The single shared "Showing:" label for the whole
+               About tab — the version-skew note task's label, deliberately
+               not duplicated per sub-section. Peer name when a federated
+               peer is selected, local hostname otherwise. -->
           <div class="settings-row">
             <div class="settings-label" id="aboutShowingServer" style="color:var(--text2);font-size:12px;">—</div>
           </div>
@@ -10327,7 +10351,7 @@ function renderSettingsView() {
               <div class="settings-value">
                 <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);">/api/mcp/docs</a>
                 <span style="color:var(--text2);font-size:11px;margin-left:6px;">(HTML) </span>
-                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch('/api/mcp/docs',{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
+                <a href="/api/mcp/docs" target="_blank" style="color:var(--accent2);font-size:11px;" onclick="event.preventDefault();fetch(_apiPath('/api/mcp/docs'),{headers:tokenHeader()}).then(r=>r.json()).then(d=>{const w=window.open('','_blank');w.document.write('<pre>'+JSON.stringify(d,null,2)+'</pre>')})">JSON</a>
               </div>
             </div>
             <!-- BL302 S1 — MCP Resources panel (read-only list + content view) -->
@@ -19277,7 +19301,9 @@ function loadMCPResources() {
   const tmplEl = document.getElementById('mcpTemplatesList');
   if (listEl) listEl.innerHTML = loadingEyeBlock();
   if (tmplEl) tmplEl.innerHTML = '';
-  fetch('/api/mcp/resources', {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // federated peer, so the panel shows the peer the About tab describes.
+  fetch(_apiPath('/api/mcp/resources'), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const resources = d.resources || [];
@@ -19326,7 +19352,7 @@ function loadMCPResources() {
       listEl.innerHTML = html;
     })
     .catch(e => { if (listEl) listEl.innerHTML = '<span style="color:var(--error)">' + escHtml(String(e)) + '</span>'; });
-  fetch('/api/mcp/resources/templates', {headers: tokenHeader()})
+  fetch(_apiPath('/api/mcp/resources/templates'), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const templates = d.templates || [];
@@ -19349,7 +19375,7 @@ function readMCPResource(uri) {
   contentEl.style.display = 'block';
   labelEl.textContent = uri;
   bodyEl.innerHTML = loadingEyeBlock();
-  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent(uri), {headers: tokenHeader()})
+  fetch(_apiPath('/api/mcp/resources/read?uri=' + encodeURIComponent(uri)), {headers: tokenHeader()})
     .then(r => r.json())
     .then(d => {
       const contents = d.contents || [];
@@ -19369,7 +19395,8 @@ function loadMCPSamplingLog() {
   if (!listEl) return;
   listEl.innerHTML = loadingEyeBlock();
   // The sampling log is embedded in the datawatch://stats/mcp resource.
-  fetch('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp'), {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/resources/read?uri=' + encodeURIComponent('datawatch://stats/mcp')), {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
     .then(function(d) {
       const contents = d.contents || [];
@@ -19417,7 +19444,8 @@ function loadMCPPrompts() {
   var listEl = document.getElementById('mcpPromptsList');
   if (!listEl) return;
   listEl.innerHTML = loadingEyeBlock();
-  fetch('/api/mcp/prompts', {headers: tokenHeader()})
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/prompts'), {headers: tokenHeader()})
     .then(function(r) { return r.json(); })
     .then(function(d) {
       var prompts = d.prompts || [];
@@ -19469,7 +19497,8 @@ function getMCPPrompt(name, btn) {
   var labelEl = document.getElementById('mcpPromptResultLabel');
   var bodyEl = document.getElementById('mcpPromptResultBody');
   if (resultEl) resultEl.style.display = 'none';
-  fetch('/api/mcp/prompts/get', {
+  // Proxy-aware (version-skew audit): _apiPath targets the selected peer.
+  fetch(_apiPath('/api/mcp/prompts/get'), {
     method: 'POST',
     headers: Object.assign({'Content-Type': 'application/json'}, tokenHeader()),
     body: JSON.stringify({name: name, arguments: args})
