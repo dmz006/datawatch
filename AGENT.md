@@ -81,6 +81,14 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 - Every logical change gets its own commit with a conventional commit message.
 - Format: `type(scope): description` — e.g. `feat(session): add rate-limit retry logic`
 - Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`
+- **Automated PRD / automaton task commits** are written directly on the live
+  project tree by the task pipeline and are exempt from the type list above:
+  they use `task(<prd-id>): description` with the PRD id as the scope
+  (e.g. `task(e4cd0001): Add --archive option to install from a local
+  tarball`), since the PRD id is the audit handle and the merge commit
+  records it either way. Everything else in this section (one commit per
+  logical change, meaningful and reversible, exact staging) still applies to
+  them.
 - Do not squash history. Each commit should be meaningful and reversible.
 - Do not force-push to `main`.
 - **Stage only the files this commit is actually about — never `git add -A`/`git add .` as a
