@@ -1904,6 +1904,12 @@ func (a *API) ActivateAutomation(id, actor string, expectedVersion int64) (any, 
 	return a.M.ActivateAutomation(id, actor, expectedVersion)
 }
 
+// ReturnAutomationToDraft returns a blocked Automation (nothing started) to
+// the draft the operator can still edit (in-process; never via REST).
+func (a *API) ReturnAutomationToDraft(id, actor string, expectedVersion int64) (any, error) {
+	return a.M.ReturnAutomationToDraft(id, actor, expectedVersion)
+}
+
 // RecordPRDShipped records the Automaton's shipped state — release, merged
 // time, merge commit, source — via the manager (the single write path),
 // then emits an SSE update so existing subscribers see the fields without

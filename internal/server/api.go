@@ -951,6 +951,7 @@ type AutonomousAPI interface {
 	ListAutomations() []any
 	GetAutomation(id string) (any, bool)
 	ActivateAutomation(id, actor string, expectedVersion int64) (any, error)
+	ReturnAutomationToDraft(id, actor string, expectedVersion int64) (any, error)
 
 	// Record shipped state: the release the work was merged into, the merge
 	// time (zero = cleared), the merge commit, and the source of the record
