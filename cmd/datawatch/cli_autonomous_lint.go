@@ -1,85 +1,74 @@
-// cli_autonomous_lint.go — the `datawatch autonomous lint ...` CLI verbs:
-// the decompose-lint config (read + scalar set), the read-only dry run for
-// one Automaton, and the lint record the executor stored for it. Thin REST
-// proxies over the daemon endpoints (GET/PUT
-// /api/autonomous/decompose-lint/config, per-PRD
-// /api/autonomous/prds/{id}/decompose-lint); findings render through
-// internal/autonomous/decompose_lint_text.go, the same wording the comm
-// verbs (autonomous lint ...) and the web UI show.
-
+// cli_autonomous_lint.go — the `datawatch autonomous lint ...` subcommand:
+// the decompose-lint config read, the config-set override surface, the
+// per-PRD dry-run and the stored findings read. Every verb proxies the
+// daemon's REST endpoints for decompose-lint (GET/PUT
+// /api/autonomous/decompose-lint/config, POST (dry-run) and GET
+// /api/autonomous/prds/{id}/decompose-lint) with the shared daemon
+// helpers from cli_sx_parity.go, and prints the daemon's own reply.
+//
+// The operator-facing wording for the finding lines is shared with the
+// comm channel verb (`autonomous lint ...`) in
+// internal/autonomous/decompose_lint_text.go, so both surfaces say the
+// same thing.
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-
-	"github.com/spf13/cobra"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/spf13/cobra"
 )
 
-// decomposeLintConfigPath is the daemon's decompose-lint config endpoint
-// (GET snapshot, PUT validated replace of the named block(s)).
-const decomposeLintConfigPath = "/api/autonomous/decompose-lint/config"
-
-// decomposeLintPRDPath is the per-Automaton decompose-lint endpoint
-// (GET the stored record, POST the read-only dry run).
-func decomposeLintPRDPath(prd string) string {
-	return "/api/autonomous/prds/" + prd + "/decompose-lint"
-}
-
-// lintDo issues a decompose-lint request and returns the raw response body
-// WITHOUT printing it — the verb decides how the body renders. Non-2xx
-// replies are an error carrying the daemon's message (same convention as
-// daemonJSON).
-func lintDo(method, path string, body []byte) ([]byte, error) {
-	u := daemonURL() + path
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequest(method, u, reader)
-	if err != nil {
-		return nil, err
-	}
-	if len(body) > 0 {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	if tok := daemonToken(); tok != "" {
-		req.Header.Set("Authorization", "Bearer "+tok)
-	}
-	resp, err := daemonClient().Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	out, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return out, fmt.Errorf("%s %s: %s", method, path, string(out))
-	}
-	return out, nil
-}
-
+// newAutonomousLintCmd assembles the decompose-lint read/config surface:
+//
+//	config                  the live decompose-lint config: mode, enforce
+//	                          retry budget, active rules, disabled rule ids
+//	config-set key=value ... set mode / max_retries / disabled_rules,
+//	                          preserving the active rule pack
+//	dry-run <id>            lint one Automaton's stored plan read-only
+//	findings <id>           the decompose-lint record stored for one
+//	                          Automaton
+//
+// Every verb reaches the daemon's REST endpoints for decompose-lint
+// (GET/PUT /api/autonomous/decompose-lint/config, POST (dry-run) and GET
+// /api/autonomous/prds/{id}/decompose-lint) with the shared daemon
+// helpers, so the CLI says what the daemon says.
 func newAutonomousLintCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "lint",
-		Short: "Decompose lint: config, dry-run, findings",
-		Long: `The decompose-lint surface: the rule pack's config, a read-only
-dry run over one Automaton's stored plan, and the lint record the
-executor stored for it.
+		Short: "Decompose-lint config, dry-run, and the findings one automation stored",
+		Long: `Decompose lint: the quality check the decomposer runs over each new
+decomposition — the rule pack (bare verbs, missing test mention, ...),
+enforced in enforce mode with a retry budget, or recorded only in shadow.
 
-  lint config                 Show the decompose-lint config (mode, retry budget, rules, disabled rules)
-  lint config-set key=value ...   Set mode / max_retries / disabled_rules, preserving the rest of the block
-  lint dry-run <id>           Lint one Automaton's stored plan read-only (nothing is retried, nothing is stored)
-  lint findings <id>          Show the decompose-lint record the executor last stored for one Automaton
+config
+    Read the live decompose-lint config: the mode, the enforce retry
+    budget, the active rule pack and the disabled rule ids.
 
-Findings print one line each: [severity] rule_id task: message.`,
+config-set key=value ...
+    Set decompose-lint keys, preserving the rest of the block (notably
+    the active rule pack) — the daemon's PUT is the gate and returns the
+    new config. Allowed:
+        mode            off | shadow | enforce
+        max_retries     whole number >= 0 (the enforce retry budget)
+        disabled_rules  comma list of rule ids (empty value clears it)
+
+dry-run <id>
+    Lint one Automaton's stored plan WITHOUT storing or retrying: which
+    rules fire, on which tasks, at the current config.
+
+findings <id>
+    The decompose-lint record the executor stored for one Automaton:
+    the mode, the attempts and the final findings, one line each.
+    When nothing is stored the daemon says so (mode off records nothing).
+
+Every verb proxies the daemon's REST endpoints for decompose-lint and
+prints the daemon's own reply; with --json the raw daemon reply is
+printed instead of the operator-facing text.
+Exit codes: 0 on success, 1 otherwise (bad key=value, bad id shape,
+daemon error).`,
 	}
 	c.AddCommand(
 		newAutonomousLintConfigCmd(),
@@ -90,130 +79,161 @@ Findings print one line each: [severity] rule_id task: message.`,
 	return c
 }
 
+// autonomousLintDo proxies one daemon REST call for decompose-lint with
+// the shared daemon helpers (same URL resolution, auth and error wording
+// as every other daemon-facing CLI verb) and returns the raw reply.
+func autonomousLintDo(method, path string, body any) (string, error) {
+	raw, err := daemonJSONBody(method, path, body)
+	if err != nil {
+		return "", fmt.Errorf("decompose lint: %w", err)
+	}
+	return strings.TrimSpace(string(raw)), nil
+}
+
+// newAutonomousLintConfigCmd — `lint config`: the live decompose-lint
+// config (read only).
 func newAutonomousLintConfigCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "config",
-		Short: "Show the decompose-lint config",
-		Long: "Show the live decompose-lint config: mode (off|shadow|enforce), " +
-			"the enforce retry budget (max_retries), the active rules (built-in " +
-			"pack merged with operator rules, disabled rules removed) and the " +
-			"disabled rule ids. A read: nothing is configured or run.",
+		Short: "Read the decompose-lint config (mode, retry budget, rules)",
+		Long: `Read the live decompose-lint config: the mode, the enforce retry
+budget, the active rule pack and the disabled rule ids. Read only —
+changes go through config-set.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			out, err := lintDo(http.MethodGet, decomposeLintConfigPath, nil)
+			asJSON, _ := cmd.Flags().GetBool("json")
+			body, err := autonomousLintDo("GET", "/api/autonomous/decompose-lint/config", nil)
 			if err != nil {
 				return err
 			}
-			_, err = cmd.OutOrStdout().Write(append(out, '\n'))
-			return err
+			if asJSON {
+				fmt.Println(body)
+				return nil
+			}
+			prettyPrint([]byte(body))
+			return nil
 		},
 	}
+	c.Flags().Bool("json", false, "print the raw daemon reply instead of pretty JSON")
+	return c
 }
 
+// newAutonomousLintConfigSetCmd — `lint config-set key=value ...`: set
+// decompose-lint keys, merging over the live block so the untouched keys
+// (notably the active rule pack) survive, the way config-set for the
+// judge policy does.
 func newAutonomousLintConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config-set key=value ...",
-		Short: "Set decompose-lint mode / max_retries / disabled_rules",
-		Long: `Set scalar fields of the decompose_lint config block, preserving
-everything else (notably the active rule pack).
+		Short: "Set decompose-lint mode / max_retries / disabled_rules, preserving the active rules",
+		Long: `Set decompose-lint config keys, preserving everything the daemon
+already carries that the key=value list does not touch (notably the
+active rule pack) — the daemon's PUT on
+/api/autonomous/decompose-lint/config is the final gate and returns the
+new config, which is printed.
 
-  lint config-set mode=enforce
-  lint config-set max_retries=2 disabled_rules=bare_verbs,no_test_mention
-  lint config-set disabled_rules=          # clear the disabled rule list
+Allowed keys:
+    mode            off | shadow | enforce
+    max_retries     whole number >= 0 (the enforce retry budget)
+    disabled_rules  comma list of rule ids (an empty value clears it)
 
-Values: mode is off | shadow | enforce; max_retries is a whole number >= 0;
-disabled_rules is a comma-separated list of rule ids (empty = nothing
-disabled). The daemon re-validates the merged block and replaces it
-atomically; the reply is the new config.`,
-		Args: cobra.MinimumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+Example:
+    datawatch autonomous lint config-set mode=enforce max_retries=2`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("expected at least one of mode, max_retries, disabled_rules as key=value")
+			}
 			overrides, err := autonomous.ParseDecomposeLintOverrides(args)
 			if err != nil {
-				return err
+				return fmt.Errorf("decompose lint config-set: %w", err)
 			}
-			cur, err := lintDo(http.MethodGet, decomposeLintConfigPath, nil)
+			live, err := autonomousLintDo("GET", "/api/autonomous/decompose-lint/config", nil)
 			if err != nil {
 				return err
 			}
-			var cfg map[string]json.RawMessage
-			if err := json.Unmarshal(cur, &cfg); err != nil {
-				return fmt.Errorf("decompose-lint config is not a JSON object: %v", err)
+			block, err := autonomous.MergeDecomposeLintBlock([]byte(live), overrides)
+			if err != nil {
+				return fmt.Errorf("decompose lint config-set: %w", err)
 			}
-			block, err := autonomous.MergeDecomposeLintBlock(cfg["decompose_lint"], overrides)
+			putBody, err := json.Marshal(map[string]any{"decompose_lint": json.RawMessage(block)})
+			if err != nil {
+				return fmt.Errorf("cannot encode the merged block: %w", err)
+			}
+			out, err := autonomousLintDo("PUT", "/api/autonomous/decompose-lint/config", putBody)
 			if err != nil {
 				return err
 			}
-			payload, err := json.Marshal(map[string]json.RawMessage{"decompose_lint": block})
-			if err != nil {
-				return err
-			}
-			var body []byte
-			body, err = lintDo(http.MethodPut, decomposeLintConfigPath, payload)
-			if err != nil {
-				return err
-			}
-			_, err = cmd.OutOrStdout().Write(append(body, '\n'))
-			return err
+			prettyPrint([]byte(out))
+			return nil
 		},
 	}
 }
 
+// newAutonomousLintDryRunCmd — `lint dry-run <id>`: lint one stored plan
+// read-only and print the daemon's report, one finding line each.
 func newAutonomousLintDryRunCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "dry-run <id>",
-		Short: "Lint one Automaton's stored plan read-only",
-		Long: "Run the effective decompose-lint rules over one Automaton's STORED " +
-			"stories and tasks and print the findings: the mode in effect, how " +
-			"many active rules ran, and one line per finding ([severity] rule_id " +
-			"task: message). Read-only — no planner call, no retry, nothing is " +
-			"stored or held.\n\n" +
-			"  lint dry-run <id>",
+		Short: "Lint one Automaton's stored plan read-only (nothing is stored or retried)",
+		Long: `Lint one Automaton's stored plan WITHOUT storing or retrying:
+which rules fire, on which tasks, at the current config. Prints the
+daemon's report — one line per finding, in the shared surface wording
+[severity] rule_id task: message.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out, err := lintDo(http.MethodPost, decomposeLintPRDPath(args[0]), []byte(`null`))
+			asJSON, _ := cmd.Flags().GetBool("json")
+			body, err := autonomousLintDo("POST", "/api/autonomous/prds/"+args[0]+"/decompose-lint", nil)
 			if err != nil {
 				return err
+			}
+			if asJSON {
+				fmt.Println(body)
+				return nil
 			}
 			var rep autonomous.DecomposeLintReport
-			if err := json.Unmarshal(out, &rep); err != nil {
-				return fmt.Errorf("dry-run reply is not a decompose-lint report: %v", err)
+			if err := json.Unmarshal([]byte(body), &rep); err != nil {
+				return fmt.Errorf("the daemon's dry-run reply is not a decompose-lint report: %w", err)
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), autonomous.RenderDecomposeLintReport(rep))
-			return err
+			fmt.Println(autonomous.RenderDecomposeLintReport(rep))
+			return nil
 		},
 	}
+	c.Flags().Bool("json", false, "print the raw daemon reply instead of the finding lines")
+	return c
 }
 
+// newAutonomousLintFindingsCmd — `lint findings <id>`: the decompose-lint
+// record the executor stored for one Automaton.
 func newAutonomousLintFindingsCmd() *cobra.Command {
-	return &cobra.Command{
+	c := &cobra.Command{
 		Use:   "findings <id>",
-		Short: "Show the decompose-lint record stored for one Automaton",
-		Long: "Show the decompose-lint record the executor stored for one " +
-			"Automaton: the mode it ran in, the attempts (1 plus any enforce " +
-			"retries consumed), and the final findings one line each " +
-			"([severity] rule_id task: message). A read; it is a 'no record' " +
-			"answer when mode off ran the last decompose, before the first " +
-			"decompose, or after deletion.\n\n" +
-			"  lint findings <id>",
+		Short: "The decompose-lint findings one Automaton's executor stored",
+		Long: `The decompose-lint record the executor stored for one Automaton:
+the mode, the attempts and the final findings, one line each
+([severity] rule_id task: message). When nothing is stored the daemon
+says so — mode off records nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out, err := lintDo(http.MethodGet, decomposeLintPRDPath(args[0]), nil)
+			asJSON, _ := cmd.Flags().GetBool("json")
+			body, err := autonomousLintDo("GET", "/api/autonomous/prds/"+args[0]+"/decompose-lint", nil)
 			if err != nil {
 				return err
 			}
-			var rec struct {
-				PRDID         string                          `json:"prd_id"`
+			if asJSON {
+				fmt.Println(body)
+				return nil
+			}
+			var stored struct {
 				DecomposeLint *autonomous.DecomposeLintRecord `json:"decompose_lint"`
 			}
-			if err := json.Unmarshal(out, &rec); err != nil {
-				return fmt.Errorf("findings reply is not a stored-record body: %v", err)
+			if err := json.Unmarshal([]byte(body), &stored); err != nil {
+				return fmt.Errorf("the daemon's reply is not a stored decompose-lint record: %w", err)
 			}
-			prd := rec.PRDID
-			if prd == "" {
-				prd = args[0]
-			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), autonomous.RenderDecomposeLintRecord(prd, rec.DecomposeLint))
-			return err
+			fmt.Println(autonomous.RenderDecomposeLintRecord(args[0], stored.DecomposeLint))
+			return nil
 		},
 	}
+	c.Flags().Bool("json", false, "print the raw daemon reply instead of the finding lines")
+	return c
 }
