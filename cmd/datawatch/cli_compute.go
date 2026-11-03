@@ -7,6 +7,8 @@
 //	datawatch compute node delete <name>
 //	datawatch compute node health <name>
 //	datawatch compute node detail <name>     (on-demand pull from monitoring sidecar)
+//	datawatch compute node drain <name> [--until RFC3339] [--reason TEXT]
+//	datawatch compute node undrain <name>
 //	datawatch compute pin config-get
 //	datawatch compute pin config-set --seconds N   (pin keeper interval; 0 = off)
 
@@ -18,6 +20,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -189,6 +192,27 @@ func newComputeNodeCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			return daemonGet("/api/compute/nodes/" + args[0] + "/health")
+		},
+	})
+	drainCmd := &cobra.Command{
+		Use:   "drain <name>",
+		Short: "Drain a ComputeNode (stop routing new sessions); optional --until / --reason",
+		Long: `Drains a ComputeNode: the scheduler stops routing new sessions to it.
+--until takes an RFC3339 timestamp that bounds the drain (omitted =
+open-ended until undrained); --reason records why. The daemon replies
+with the node health JSON.`,
+		Args: cobra.ExactArgs(1),
+		RunE: newComputeNodeDrainRunE,
+	}
+	drainCmd.Flags().String("until", "", "RFC3339 timestamp until which the drain is active (empty = open-ended until undrained)")
+	drainCmd.Flags().String("reason", "", "reason to record with the drain")
+	cmd.AddCommand(drainCmd)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "undrain <name>",
+		Short: "Clear the drain state of a ComputeNode",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodDelete, "/api/compute/nodes/"+args[0]+"/drain", nil)
 		},
 	})
 	cmd.AddCommand(&cobra.Command{
@@ -389,6 +413,37 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().StringVar(&tlsCertFingerprint, "tls-cert-fingerprint", "", "SHA-256 fingerprint of the node's leaf certificate, 64 hex chars, colons allowed (update replaces the whole node, so omitting this clears the pin)")
 	cmd.Flags().BoolVar(&tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "turn certificate checking off for this node; audited and shown in the PWA; cannot be combined with --tls-ca-file or --tls-cert-fingerprint (update replaces the whole node, so omitting this turns checking back on)")
 	return cmd
+}
+
+// newComputeNodeDrainRunE is the RunE for `compute node drain <name>`. It
+// validates --until, builds the request body (only the keys that were set)
+// and POSTs it to the daemon, which replies with the node health JSON.
+func newComputeNodeDrainRunE(cmd *cobra.Command, args []string) error {
+	until, _ := cmd.Flags().GetString("until")
+	reason, _ := cmd.Flags().GetString("reason")
+	if err := validateComputeDrainUntil(until); err != nil {
+		return err
+	}
+	body := map[string]any{}
+	if until != "" {
+		body["until"] = until
+	}
+	if reason != "" {
+		body["reason"] = reason
+	}
+	return daemonJSON(http.MethodPost, "/api/compute/nodes/"+args[0]+"/drain", body)
+}
+
+// validateComputeDrainUntil rejects a --until that is set but not a valid
+// RFC3339 timestamp before anything is sent to the daemon.
+func validateComputeDrainUntil(until string) error {
+	if until == "" {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339, until); err != nil {
+		return fmt.Errorf("--until must be an RFC3339 timestamp (got %q)", until)
+	}
+	return nil
 }
 
 func splitCSV(s string) []string {

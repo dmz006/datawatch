@@ -9,6 +9,8 @@
 //	compute node delete <name>
 //	compute node health <name>
 //	compute node detail <name>
+//	compute node drain <name> [until=<RFC3339>] [reason=<text>]
+//	compute node undrain <name>
 //	compute pin                   → show pin_check_seconds
 //	compute pin <seconds>         → set pin_check_seconds (0 = keeper off)
 
@@ -17,8 +19,10 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const computeUsage = `Usage:
@@ -35,6 +39,8 @@ const computeUsage = `Usage:
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
+  compute node drain <name> [until=<RFC3339>] [reason=<text>]  stop routing new sessions (until = when the drain ends)
+  compute node undrain <name>                       clear the drain state
   compute node attach-observer <name> <peer>       bind a registered observer peer (alpha.23b)
   compute node detach-observer <name>              clear observer-peer binding
   compute node observer-free                       list peers with no bound ComputeNode
@@ -181,6 +187,10 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			return
 		}
 		r.reply("compute node detail "+tail, prettyJSON(out))
+	case "drain":
+		r.handleComputeNodeDrainComm(tail, true)
+	case "undrain":
+		r.handleComputeNodeDrainComm(tail, false)
 	case "attach-observer":
 		// alpha.23b — `compute node attach-observer <name> <peer>`
 		bits := strings.Fields(tail)
@@ -290,6 +300,94 @@ func (r *Router) handleComputePinCmd(arg string) {
 		return
 	}
 	r.reply("compute pin", fmt.Sprintf("pin_check_seconds = %d. Takes effect after the next daemon restart.", secs))
+}
+
+// handleComputeNodeDrainComm implements the comm-channel
+// `compute node drain <name> [until=<RFC3339>] [reason=<text>]` and
+// `compute node undrain <name>` verbs. Drain sends
+// POST /api/compute/nodes/<name>/drain with the until/reason body keys the
+// daemon understands; undrain sends DELETE on the same path (idempotent).
+// Replies are one line: "drained <name> until <time>", "drained <name> with
+// no end time" or "undrained <name>".
+func (r *Router) handleComputeNodeDrainComm(tail string, drain bool) {
+	verb := "drain"
+	if !drain {
+		verb = "undrain"
+	}
+	fields := strings.Fields(tail)
+	if len(fields) == 0 || fields[0] == "" {
+		r.reply("compute node "+verb, "Usage: compute node "+verb+" <name>"+drainUntilUsage(drain))
+		return
+	}
+	name := fields[0]
+	until := ""
+	reason := ""
+	for _, tok := range fields[1:] {
+		switch {
+		case strings.HasPrefix(tok, "until="):
+			until = strings.TrimSpace(strings.TrimPrefix(tok, "until="))
+		case strings.HasPrefix(tok, "reason="):
+			reason = strings.TrimPrefix(tok, "reason=")
+		default:
+			r.reply("compute node "+verb, "Usage: compute node "+verb+" <name>"+drainUntilUsage(drain))
+			return
+		}
+	}
+	if drain && until != "" {
+		if _, err := time.Parse(time.RFC3339, until); err != nil {
+			r.reply("compute node drain", "until must be an RFC3339 timestamp (got "+until+")")
+			return
+		}
+	}
+	if !drain && len(fields) > 1 {
+		r.reply("compute node undrain", "Usage: compute node undrain <name>")
+		return
+	}
+	method := http.MethodDelete
+	body := ""
+	if drain {
+		method = http.MethodPost
+		m := map[string]any{}
+		if until != "" {
+			m["until"] = until
+		}
+		if reason != "" {
+			m["reason"] = reason
+		}
+		b, _ := json.Marshal(m)
+		body = string(b)
+	}
+	out, err := r.commJSON(method, "/api/compute/nodes/"+name+"/drain", body)
+	if err != nil {
+		r.reply("compute node "+verb, err.Error())
+		return
+	}
+	var health struct {
+		Drained    bool   `json:"drained"`
+		DrainUntil string `json:"drain_until"`
+	}
+	if err := json.Unmarshal([]byte(out), &health); err != nil {
+		r.reply("compute node "+verb, prettyJSON(out))
+		return
+	}
+	if !drain {
+		r.reply("compute node undrain "+name, "undrained "+name)
+		return
+	}
+	if health.DrainUntil != "" {
+		r.reply("compute node drain "+name, "drained "+name+" until "+health.DrainUntil)
+		return
+	}
+	r.reply("compute node drain "+name, "drained "+name+" with no end time")
+}
+
+// drainUntilUsage is the usage hint the drain verbs append when the name is
+// missing; undrain takes no extra keys.
+func drainUntilUsage(drain bool) string {
+	if drain {
+		return " [until=<RFC3339>] [reason=<text>]"
+	}
+	return ""
 }
 
 // withTLSSummary pretty-prints a node reply and appends a one-line summary
