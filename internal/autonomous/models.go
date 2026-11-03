@@ -394,7 +394,12 @@ type PRD struct {
 	// Kind classifies the work as "feature", "bug" or "other"; empty means
 	// derive at read time (old records keep working). See EffectiveKind.
 	Kind   string   `json:"kind,omitempty"`
-	Skills []string `json:"skills,omitempty"`
+
+	// DefectIntake records the defect-intake outcome when this Automaton
+	// was filed kind bug (defect_intake.go): one of the DefectIntake* outcome
+	// constants. nil = the intake path never ran for this record.
+	DefectIntake *DefectIntakeRecord `json:"defect_intake,omitempty"`
+	Skills       []string            `json:"skills,omitempty"`
 	// LanePreference says which kind of lane suits this Automaton: "gpu" or
 	// "claude". Empty means any lane. See NormalizeLanePreference.
 	LanePreference string `json:"lane_preference,omitempty"`

@@ -562,6 +562,13 @@ type Config struct {
 	// (shipped defaults + operator's autonomous.priority_by_kind); nil or
 	// empty means every unresolved priority reads 0.
 	PriorityByKind map[string]int `json:"priority_by_kind,omitempty"`
+	// DefectIntakeAutomation mirrors autonomous.defect_intake_automation:
+	// the name of the Automation this installation takes defect intake on
+	// (defect_intake.go). Deliberately empty by default: each installation
+	// chooses its own; an empty value means a kind-bug filing is recorded
+	// not_configured and nothing is offered — the manager never guesses an
+	// Automation.
+	DefectIntakeAutomation string `json:"defect_intake_automation,omitempty"`
 	// Node over-admission switches (nil = on) and the restart adoption wait
 	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
 	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
@@ -1115,7 +1122,12 @@ type Manager struct {
 	sessionTags SessionTagCounter
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
+	// defect intake (defect_intake.go): the DefectIntake implementation; the
+	// name of the Automation that takes kind-bug filings lives in
+	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
+	// Guarded by mu.
 	tagEventFn func(TagEvent)
+	defectIntake DefectIntake
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
@@ -2599,6 +2611,12 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 			_ = m.store.SavePRD(prd)
 		}
 	}
+	// Defect intake (defect_intake.go): an Automaton filed with kind bug is
+	// offered to the Automation named by autonomous.defect_intake_automation
+	// when that setting is set; the outcome (offered / not_configured /
+	// skipped / error) is recorded on the Automaton (prd.DefectIntake).
+	// Never fails the filing.
+	m.intakeDefect(prd)
 	return prd, nil
 }
 
