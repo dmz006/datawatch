@@ -148,6 +148,10 @@ type PlanStructureReport struct {
 	// parent, counted once per distinct finding (kind, story, task,
 	// detail). Always 0 when the option is off.
 	Suppressed int
+
+	// Advisory — rule findings from plan_rules_findings.go. They never
+	// affect Pass or Count and never block approval.
+	Advisory []StructuralFinding
 }
 
 // PlanStructureOptions tunes CheckPlanStructureWithOptions.
