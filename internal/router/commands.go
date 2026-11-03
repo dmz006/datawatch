@@ -1902,7 +1902,7 @@ help                            show this help
 
 — v3.7.x parity (Sx2) —
 cost [<full_id>]                 token+USD rollup (or per-session)
-cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|week)
+cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|release|week; bundled-plan rows show the API-equivalent estimate, usage points and share of the monthly price)
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown

@@ -6001,6 +6001,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"usage": map[string]interface{}{
 			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
 			"burn_guard": s.cfg.Usage.BurnGuard,
+			// Billing profiles the cost report and the usage calculator price
+			// from. {} when none are set — the assumed api_metered default
+			// then applies per backend and the report labels it as assumed —
+			// never null, so a fresh daemon's config has the same shape.
+			"billing": billingProfilesForDisplay(s.cfg.Usage.Billing),
 		},
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
@@ -6703,6 +6708,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Burn guard keys (usage.burn_guard.*): any invalid value rejects the whole PUT.
 	if verr := validateBurnGuardPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Billing profiles (usage.billing.<provider>.<field>): any invalid value
+	// (unknown mode or allowance unit, a negative or non-finite monthly
+	// price, a bad reset weekday or time, an unknown field) rejects the
+	// whole PUT, the same way every other usage.* key does.
+	if verr := validateBillingPatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9358,6 +9371,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// validateRequestWatchPatch. The watcher reads the live block on
 			// every tick, so the change applies with no restart.
 			if applyRequestWatchPatch(cfg, k, v) {
+				continue
+			}
+			// usage.billing.<provider>.<field>; the values were checked by
+			// validateBillingPatch. The cost report and the usage calculator
+			// read the live block, so the change applies with no restart.
+			if applyBillingPatchKey(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>

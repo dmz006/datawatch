@@ -168,6 +168,23 @@ sources and the screen always shows which one is in use:
 The number of queued tasks is shown beside both. Treat the cost per task as a
 starting figure and calibrate it against real readings.
 
+## The point value (estimate)
+
+The advice always carries a **point-value line**: the estimated value of one
+usage point and of a full week of the allowance, with the source it came from —
+**the claude-code billing profile** when you set one (a `usage.billing`
+entry, typically a `bundled_plan` with its `monthly_price`) and **the assumed
+default claude-code profile** when you did not. It is an
+**API-equivalent estimate, not a bill**: the money is price-derived from the
+profile's `monthly_price` (assuming the allowance is fully used each week),
+never a metered spend, and where the profile has no `monthly_price` the
+figures read zero rather than inventing a number. The cost report shows the
+same profile's money as the row's `api_equivalent_usd`, `estimated_usage_points`
+and `share_of_monthly_price` rows, so the two surfaces agree by construction.
+
+See the profile fields in [api/cost.md](../api/cost.md) and the
+[billing profile definition](../datawatch-definitions.md#billing-profile-usagebilling).
+
 ## Sharing across federated daemons
 
 A weekly allowance belongs to the account, not to one daemon, so the readings

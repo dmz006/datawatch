@@ -326,3 +326,109 @@ func TestCostReport_CLI_ErrWhenDaemonUnreachable(t *testing.T) {
 		t.Error("expected an error when the daemon is unreachable")
 	}
 }
+
+// runCostReportCLI runs `cost report` against srv and returns the stdout
+// text (pipe capture, same pattern as the table tests above).
+func runCostReportCLI(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	var runErr error
+	rerr := withServerURL(t, srv, func() error {
+		os.Stdout = writer
+		c := newCostReportCmd()
+		runErr = c.RunE(c, []string{})
+		if closeErr := writer.Close(); closeErr != nil {
+			t.Errorf("writer.Close: %v", closeErr)
+		}
+		os.Stdout = oldStdout
+		return runErr
+	})
+	if rerr != nil {
+		t.Fatalf("run: %v", rerr)
+	}
+	if runErr != nil {
+		t.Fatalf("runErr: %v", runErr)
+	}
+	out, _ := io.ReadAll(reader)
+	return string(out)
+}
+
+// TestCostReport_CLI_BillingColumns pins the billing surface: a
+// bundled-plan row renders the API-equivalent estimate (money), the usage
+// points it represents, its share of the monthly price, and the
+// "API-equivalent, not billed" label; the unprofiled row keeps its
+// assumed label. No usd column appears (bundled rows are not billed).
+func TestCostReport_CLI_BillingColumns(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"group_by": "backend",
+			"rows": [
+				{"key": "claude-code", "sessions": 2, "tokens_in": 400000, "tokens_out": 30000,
+				 "api_equivalent_usd": 12.5, "estimated_usage_points": 25, "share_of_monthly_price": 0.05,
+				 "billing_mode": "bundled_plan", "billing_label": "bundled plan — API-equivalent, not billed"},
+				{"key": "ollama", "sessions": 1, "tokens_in": 1000, "tokens_out": 100,
+				 "billing_mode": "api_metered", "billing_label": "api_metered (assumed — no usage.billing entry)"}
+			],
+			"retention_days": 31,
+			"retention_note": "spend figures cover up to 31 days back",
+			"lifetime_fallback": false
+		}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	out := runCostReportCLI(t, srv)
+	for _, frag := range []string{
+		"claude-code", "ollama",
+		"api_equiv_usd", "usage_pts", "share_of_price", "billing", // headers
+		"$12.50", "25", "5.0%", // the bundled row's estimate, points, share
+		"API-equivalent, not billed", // the label, verbatim
+		"assumed", // the unprofiled row's label
+		"spend figures cover up to 31 days back", // the retention note in the footer
+	} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("output misses %q:\n%s", frag, out)
+		}
+	}
+	// A bare "usd" column must not appear: bundled rows carry an
+	// API-equivalent estimate, not a bill. ("api_equiv_usd" contains the
+	// substring, so compare whole cells.)
+	headerCells := strings.Split(strings.SplitN(out, "\n", 2)[0], "\t")
+	for _, cell := range headerCells {
+		if strings.TrimSpace(cell) == "usd" {
+			t.Errorf("bare usd column must not render next to api_equiv_usd:\n%s", out)
+			break
+		}
+	}
+}
+
+// TestCostReport_CLI_ReleaseUnits pins group_by release: shipped-unit
+// counts render in the units column and unshipped work lands under the
+// "unreleased" key.
+func TestCostReport_CLI_ReleaseUnits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{
+			"group_by": "release",
+			"rows": [
+				{"key": "v1.2.0", "sessions": 3, "tokens_in": 90000, "tokens_out": 4000, "units": 3},
+				{"key": "unreleased", "sessions": 2, "tokens_in": 60000, "tokens_out": 2000}
+			],
+			"retention_days": 31,
+			"retention_note": "up to 31 days back",
+			"lifetime_fallback": false
+		}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	out := runCostReportCLI(t, srv)
+	for _, frag := range []string{"units", "v1.2.0", "unreleased", "3"} {
+		if !strings.Contains(out, frag) {
+			t.Errorf("output misses %q:\n%s", frag, out)
+		}
+	}
+}

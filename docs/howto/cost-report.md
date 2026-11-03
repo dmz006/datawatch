@@ -8,7 +8,7 @@ exec_steps:
     args: {}
     read_only: true
   - tool: cost_report
-    description: Ask for another grouping and window in one call. group_by is one of automaton, automation, backend, week; since and until accept RFC3339 or YYYY-MM-DD and are optional
+    description: Ask for another grouping and window in one call. group_by is one of automaton, automation, backend, release, week (release is REST/CLI-only; this MCP tool rejects it — it needs shipped-unit state it does not expose); since and until accept RFC3339 or YYYY-MM-DD and are optional. Rows carry the billing label from the owning provider's usage.billing profile (e.g. "bundled plan — API-equivalent, not billed") plus the point figures when it is a bundled plan
     args: {group_by: backend, since: "2026-10-26", until: "2026-11-02"}
     read_only: true
   - tool: config_set
@@ -44,6 +44,21 @@ with:
   in that group. Where a rate is missing, the row shows the tokens and no
   dollar figure, and `rate_configured` is `false`.
 
+Where the owning provider has a **billing profile** (the `usage.billing.*`
+settings), the row says how its money figures should be read:
+
+- `billing_mode` — `bundled_plan`, `api_metered` or `free_local` (a row that
+  spans differently-priced providers says `mixed`),
+- `billing_label` — the one line every UI family shows, e.g.
+  **“bundled plan — API-equivalent, not billed”** or
+  **“api_metered (assumed — no usage.billing entry)”**,
+- and for a bundled plan the three point figures: the **API-equivalent USD**
+  (an equivalence, not a charge), the **usage points** it represents, and its
+  **share of the monthly price**.
+
+No profile? The row keeps its ordinary tokens and estimate and says so with
+the “(assumed)” label — nothing is invented, nothing is billed.
+
 The report body also carries two facts about the dollar figures: the
 **retention** the figures rest on (the ledger keeps 31 days of recorded
 sessions, the field is `retention_days`) and a **lifetime-fallback note**
@@ -51,13 +66,14 @@ sessions, the field is `retention_days`) and a **lifetime-fallback note**
 that window. Read spend older than the ledger only through lifetime totals —
 it is not broken out as per-window rows.
 
-## The four groupings
+## The groupings
 
 | `group_by` | One row per |
 |---|---|
 | `automaton` (default) | Owning Automaton |
 | `automation` | Owning Automation — the automation that ran the work |
 | `backend` | Backend family |
+| `release` | Release (with `units` — the shipped units — per row; work not yet shipped lands under `unreleased`) |
 | `week` | Week, using `cost_report.week_start` (Monday by default, or Sunday) |
 
 ## The window
@@ -100,7 +116,7 @@ default.
 | Method | How |
 |---|---|
 | **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml`; see `docs/config-reference.yaml` |
-| **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|week] [--since <t>] [--until <t>] [--format json]`, a table by default, JSON the raw body |
+| **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|release\|week] [--since <t>] [--until <t>] [--format json]`, a table by default, JSON the raw body |
 | **Web UI** | The **Cost report** card on the dashboard (grouping and window controls, the retention line, at most 50 rows shown); Settings → Cost Report for the five keys |
 | **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; settings via `PUT /api/config` with `cost_report.<key>` and read back on `GET /api/config` |
 | **MCP** | `cost_report` (read-only), `config_set` with `key: cost_report.<key>` |
@@ -113,8 +129,9 @@ recorded sessions, so the same window and grouping give the same rows.
 
 - It does not stop, slow or rerun anything. It is advice-free by design: the
   figures are yours to act on.
-- It does not bill. The USD figures are estimates at configured rates; where no
-  rate is configured there is no figure, not a zero.
+- It does not bill. The USD figures are estimates at configured rates, and a
+  bundled-plan row’s money figures are **API-equivalents — not bills**. Where
+  no rate is configured there is no figure, not a zero.
 - It does not retain more than the ledger does: 31 days of recorded sessions,
   with older spend visible only through lifetime totals.
 
