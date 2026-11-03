@@ -67,7 +67,7 @@ await runStory(async (page) => {
 
     // Both sessions reach the client, the first one as stalled.
     await page.waitForFunction(
-      (id) => (window.state?.sessions || []).some((s) => (s.full_id === id || s.id === id) && s.state === 'stalled'),
+      (id) => ((typeof state !== 'undefined' && state.sessions) || []).some((s) => (s.full_id === id || s.id === id) && s.state === 'stalled'),
       stalled.id, { timeout: 15000 });
 
     // Locale bundles from the daemon itself, so the expected text is the real key value.
@@ -85,9 +85,9 @@ await runStory(async (page) => {
     // chipLabel opens the state filter and reads the Stalled chip's text.
     const chipLabel = async () => {
       await page.evaluate(() => {
-        window.state._stateFilterOpen = true;
-        window.state.sessionStateChip = 'all';
-        window.renderSessionsView();
+        state._stateFilterOpen = true;
+        state.sessionStateChip = 'all';
+        renderSessionsView();
       });
       await page.waitForSelector('.state-filter-chips button[onclick*="\'stalled\'"]', { timeout: 10000 });
       return page.evaluate(() => {
@@ -99,7 +99,7 @@ await runStory(async (page) => {
     // Open the Sessions list in English.
     await page.evaluate(() => { localStorage.setItem('datawatch.locale', 'en'); });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.state && window.state.sessions.length > 0, null, { timeout: 20000 });
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.sessions.length > 0, null, { timeout: 20000 });
     const en = await chipLabel();
     await saveLog('chip-en', en);
     await screenshot(page, '01-chip-en');
@@ -108,7 +108,7 @@ await runStory(async (page) => {
     // Switch the UI language: the label must change to the German text.
     await page.evaluate(() => { localStorage.setItem('datawatch.locale', 'de'); });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.state && window.state.sessions.length > 0, null, { timeout: 20000 });
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.sessions.length > 0, null, { timeout: 20000 });
     const de = await chipLabel();
     await saveLog('chip-de', de);
     await screenshot(page, '02-chip-de');
@@ -118,13 +118,13 @@ await runStory(async (page) => {
     // Back to English, then click the chip and check the list.
     await page.evaluate(() => { localStorage.setItem('datawatch.locale', 'en'); });
     await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForFunction(() => window.state && window.state.sessions.length > 0, null, { timeout: 20000 });
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.sessions.length > 0, null, { timeout: 20000 });
     await chipLabel();
     await page.click('.state-filter-chips button[onclick*="\'stalled\'"]');
-    await waitFor(() => page.evaluate(() => window.state.sessionStateChip === 'stalled'), 'the stalled chip to become active');
+    await waitFor(() => page.evaluate(() => state.sessionStateChip === 'stalled'), 'the stalled chip to become active');
 
     const listed = await page.evaluate(() => {
-      const stateById = new Map((window.state.sessions || []).map((s) => [s.full_id, s.state]));
+      const stateById = new Map((state.sessions || []).map((s) => [s.full_id, s.state]));
       const cards = [...document.querySelectorAll('[data-session-id], [data-full-id], .session-card')];
       return { cards: cards.map((c) => c.textContent.replace(/\s+/g, ' ').trim().slice(0, 120)), states: [...stateById.values()] };
     });
@@ -135,7 +135,7 @@ await runStory(async (page) => {
     if (/ts-844-running/.test(text)) throw new Error(`running session still listed under the Stalled filter: ${text}`);
     // Every listed session card belongs to a session in the stalled state.
     const nonStalled = await page.evaluate(() => {
-      const shown = (window.state.sessions || []).filter((s) => s.state !== 'stalled');
+      const shown = (state.sessions || []).filter((s) => s.state !== 'stalled');
       const body = document.body.innerText;
       return shown.filter((s) => s.name && body.includes(s.name)).map((s) => `${s.name}:${s.state}`);
     });
