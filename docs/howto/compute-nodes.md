@@ -704,6 +704,8 @@ See [`v7-compute-migration.md`](v7-compute-migration.md) for the full migration 
 
 `permissions.allowed_consumers` restricts which callers may route to this node. Valid consumer names are `council`, `ask`, `agent_spawn`, `session_spawn`, and `*` (wildcard). An empty `allowed_consumers` list means all consumers are allowed. `denied_consumers` always wins over `allowed_consumers`.
 
+The same check is applied when the daemon places pi-family work, not only when a caller routes directly to a node. The node gate asks each candidate whether it may take new work for the work's consumer; a node that denies the consumer — via `denied_consumers`, or via an `allowed_consumers` list that does not include it — is skipped as if it were full, so the work goes to another eligible node when one exists. That is where `denied_consumers` steers placement: `gpu-box-1` still takes the work while `local-vm` denies the consumer, and work whose candidates all deny or drain waits with a reason that names each refusal (`consumer <name> denied`, `drained`).
+
 Example — a high-priority inference-only node that Automata may not use:
 
 ```sh
@@ -729,9 +731,11 @@ For example, with `gpu-box-1` (priority 80, 1 of 2 sessions in use) and `gpu-box
 
 **A full node is passed over.** A node whose limit is reached cannot take the worker, so the ledger tries the next node in load order. If every candidate is full, the worker waits and is placed on the first node that frees a slot.
 
-**What counts as unhealthy.** A node is skipped, as if it were full, when either of these holds:
+**What counts as unhealthy.** A node is skipped, as if it were full, when any of these holds:
 
-- the node is not in the compute registry (it was deleted, or the entry names it wrongly), or
+- the node is not in the compute registry (it was deleted, or the entry names it wrongly),
+- the node is [drained](#draining-a-node-for-maintenance), open-ended or with an end time that has not yet passed,
+- the node's permissions deny the consumer the work runs under (see [Scheduling priority and permissions](#scheduling-priority-and-permissions)), or
 - a [maintenance window](#maintenance-windows) covers the current time, including an open-ended window with no `to`.
 
 A maintenance window opening or closing takes effect at once. A node added to or removed from the registry is noticed on the next capacity sync, which runs every 10 seconds.
@@ -753,10 +757,13 @@ An entry that lists no nodes is not affected.
 The waiting reason is shown on the task and in the `waiting` list of `GET /api/capacity`. With two or more candidate nodes it names every candidate in load order and what blocks it:
 
 ```
-waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: unhealthy; gpu-box-2: 2/2 engines in use, held by <task-id>, <task-id>
+waiting for nodes gpu-box-1, gpu-box-2: gpu-box-1: drained; gpu-box-2: 2/2 engines in use, held by <task-id>, <task-id>
 ```
 
-- `<node>: unhealthy` — the node is not in the registry or is in a maintenance window.
+- `<node>: drained` — the node is [drained](#draining-a-node-for-maintenance).
+- `<node>: in maintenance` — a [maintenance window](#maintenance-windows) covers the current time.
+- `<node>: consumer session_spawn denied` — the node's permissions deny the consumer the work runs under.
+- `<node>: node not in the compute registry` — the node is not in the registry at all.
 - `<node>: N/M engines in use, held by ...` — the node is full; the holders are the sessions using its slots.
 - `no eligible node among gpu-box-1, gpu-box-2: all excluded` — every candidate was already tried and dropped for this attempt (for example the node refused to load the model), so the worker has nowhere left to go.
 
@@ -794,6 +801,77 @@ curl -sk -X PUT \
 ```
 
 An open-ended window (no `to`) means "from now until manually removed." The health endpoint reports `in_maintenance: true` during active windows.
+
+## Draining a node for maintenance
+
+Draining is the short-lived, date-free way to take a node out of new-work placement without touching anything else about it. The node stays in the registry, its `disabled` toggle is left exactly where it is, and the drain can be open-ended or given an end time. Use it for maintenance you will finish by hand — a driver update, a package upgrade, a reboot — or when you want a now-stops, now-resumes pause rather than a dated [maintenance window](#maintenance-windows).
+
+What a drain does:
+
+- **New work is skipped.** The node gate refuses new work for a drained node, so work that would have landed there — worker, verifier or judge — takes another eligible node instead.
+- **In-flight work is allowed to finish.** Tasks already running on the node keep their leases and run to completion; the drain does not interrupt them. The `node:<name>` pool in the capacity view (`GET /api/capacity`) still reports those tasks — `held`, `holders`, `hold_names` — alongside the `drained` flag and `drain_until`, and the PWA node card shows a live “N tasks still finishing” line while they land.
+- **Work waiting only on drained or consumer-denied nodes shows that reason.** When every candidate is refused by the gate, the wait reason says so up front and then names each refusal, e.g. `waiting for nodes gpu-box-1, gpu-box-2: all candidate nodes drained or denied: gpu-box-1: drained; gpu-box-2: consumer session_spawn denied`.
+- **An optional end time ends the drain on its own.** A drain with an `until` reads as inactive once the end time has passed and the node takes work again without anything to do; an open-ended drain (no end time) stays until an explicit undrain. Either way the stored drain state stays on the node until an undrain clears it — for a timed drain whose end time has passed, the node still reports `drained: true` with `drain_active: false`.
+
+Where the state lives: on the node in the node registry (`~/.datawatch/compute/nodes.json`) as the `drained`, `drain_until` and `drain_reason` fields. There is no drain key in `config.yaml` — draining is a registry operation, not a daemon setting.
+
+A drain whose end time is in the past is refused by the daemon with a 400 (`until must be after now`), an unknown node is a 404, and undrain is idempotent — it succeeds even when the node was not drained. Both operations are audit-logged (`compute_node_drain` / `compute_node_undrain`) with the node name.
+
+### CLI
+
+```sh
+datawatch compute node drain gpu-box-1 --until 2026-11-04T06:00:00Z --reason 'Ollama upgrade'
+# -> node health JSON: "drained":true, "drain_active":true,
+#    "drain_until":"2026-11-04T06:00:00Z", "drain_reason":"Ollama upgrade"
+# omit --until for an open-ended drain
+datawatch compute node undrain gpu-box-1
+# -> "drained":false, "drain_active":false, "drain_reason":""
+#    (drain_until is the zero time once cleared)
+```
+
+### REST
+
+```sh
+# Drain with an end time and a reason (auth required).
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"until":"2026-11-04T06:00:00Z","reason":"Ollama upgrade"}' \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+# -> node health JSON with "drained":true and the fields set
+
+# Open-ended drain: omit the body entirely.
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+
+# Clear the drain (idempotent — succeeds when the node was not drained).
+curl -sk -X DELETE -H "Authorization: Bearer $TOKEN" \
+  $BASE/api/compute/nodes/gpu-box-1/drain
+```
+
+### MCP
+
+```
+compute_node_drain   name=gpu-box-1 until=2026-11-04T06:00:00Z reason=Ollama upgrade
+# until and reason are both optional; omit both for an open-ended drain
+compute_node_undrain name=gpu-box-1
+```
+
+### Comm channel
+
+```{command}
+compute node drain gpu-box-1 until=2026-11-04T06:00:00Z reason=ollama-upgrade
+# -> "drained gpu-box-1 until 2026-11-04T06:00:00Z"
+# omit until= for an open-ended drain -> "drained gpu-box-1 with no end time"
+compute node undrain gpu-box-1
+# -> "undrained gpu-box-1"
+```
+
+On the comm channel `reason=` is a single token (the message is split on whitespace); use the CLI, REST or MCP when the reason has spaces.
+
+### PWA
+
+The node card in **Settings → Compute** carries a **Drain** button next to each node. Clicking it opens a small inline form with an optional end time and a reason; saving drains the node. While the node is drained the card shows a “Drained until <time>” line (or the no-end-time wording), a live “N tasks still finishing” line, and an **Undrain** button that clears the drain.
 
 ---
 
