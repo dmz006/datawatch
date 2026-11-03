@@ -6246,6 +6246,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Tag browser settings (autonomous.tags) — the effective values, so an
 			// unset block shows its defaults. Validated by ValidateTagSetting.
 			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			// Defect queue (autonomous.defect_queue) — effective block values and
+			// per-project overrides. Validated by ValidateDefectQueueSetting.
+			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
 			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
@@ -6596,6 +6599,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// shared validator before anything is applied, so a bad value rejects the
 	// whole PUT and the comm, MCP and CLI surfaces show the same message.
 	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Defect queue settings (autonomous.defect_queue.*): same shared validator.
+	if verr := firstDefectQueueSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9439,6 +9447,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
+			// autonomous.defect_queue.*; validated in handlePutConfig, Set
+			// leaves the block unchanged on a refusal.
+			if name, ok := strings.CutPrefix(k, config.DefectQueueSettingPrefix); ok {
+				_ = cfg.Autonomous.DefectQueue.Set(name, v)
+				continue
+			}
 			// autonomous.failure_escalation.{enabled,max_failures,steps}; the
 			// values were checked by validateFailureEscalationPatch.
 			if applyFailureEscalationPatch(cfg, k, v) {

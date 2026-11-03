@@ -3103,6 +3103,76 @@ autonomous:
     # the release verification script. When true the daemon runs it once per
     # start, in the background; failures are logged and never block startup.
     backfill_on_start: false
+
+  # ── Defect queue (autonomous.defect_queue) ──
+  # Tunes how queued defects are grouped into batches and when a defect
+  # qualifies as a "tiny fix" (a small, low-risk change that needs no operator
+  # review). Every key has a built-in default, so an absent block behaves like
+  # the values shown. Settable on every configuration channel: PUT /api/config,
+  # CLI `datawatch config set`, MCP `config_set` and comm `configure`, using the
+  # dotted key (autonomous.defect_queue.batch.size_cap, ...). GET /api/config
+  # returns the effective values under autonomous.defect_queue. A bad value in
+  # config.yaml refuses startup; a bad value in a write is a 400 with the same
+  # message. Precedence for any batch / tiny_fix key: the project entry under
+  # `projects`, then this block, then the built-in default.
+  defect_queue:
+    # Master switch for the defect queue. Default true.
+    enabled: true
+    batch:
+      # Most defects one batch holds. Whole number >= 1. Default 5.
+      size_cap: 5
+      # Attributes defects are grouped on. Any of project_area, shared_files,
+      # shared_surfaces; at least one. Over the API / chat, a JSON list or a
+      # comma-separated string. Default: all three.
+      grouping_keys: [project_area, shared_files, shared_surfaces]
+      # Let defects that share no grouping key land in one batch. Default false.
+      allow_unrelated: false
+      # How a batch takes its priority from its members: highest_member (the
+      # highest-priority member's priority) or first_member (the priority of
+      # the member that joined first). Default highest_member.
+      priority_rule: highest_member
+    tiny_fix:
+      # Switch tiny-fix handling. Default true.
+      enabled: true
+      # Most files a tiny fix may touch. Whole number >= 1. Default 3.
+      max_files: 3
+      # Paths a tiny fix may touch. Default (shown): test files, docs, scripts
+      # and lint / rule configuration. A non-empty list replaces the default.
+      allowed_path_globs:
+        - "**/*_test.go"
+        - "**/testdata/**"
+        - "tests/**"
+        - "test/**"
+        - "docs/**"
+        - "**/*.md"
+        - "scripts/**"
+        - ".golangci.yml"
+        - ".golangci.yaml"
+        - ".trivyignore"
+        - ".gitleaks.toml"
+        - ".markdownlint*"
+      # Change kinds that qualify as a tiny fix. Any of test_only, docs_only,
+      # script_only, rule_tweak, lint_tweak; at least one. Default: all five.
+      allowed_kinds: [test_only, docs_only, script_only, rule_tweak, lint_tweak]
+      # Paths whose change is operator-visible; a change touching one is never
+      # a tiny fix. Default (shown).
+      operator_visible_path_globs:
+        - "internal/server/web/**"
+        - "cmd/**"
+        - "internal/server/api.go"
+    # Per-project overrides, keyed by project name. An entry may set any batch.*
+    # or tiny_fix.* key above (not `enabled`); only the keys it sets replace the
+    # block value. Over the API: autonomous.defect_queue.projects.<project>.
+    # <batch.size_cap | tiny_fix.max_files | ...>; a null value clears that
+    # override. Default: no overrides.
+    projects: {}
+    #   datawatch-app:
+    #     batch:
+    #       size_cap: 3
+    #       priority_rule: first_member
+    #     tiny_fix:
+    #       max_files: 2
+    #       allowed_kinds: [test_only, docs_only]
 # ── Dashboard (operator console + card visibility) ──
 # The dashboard.* block switches gate the PWA dashboard board and the
 # operator console one-glance summary (GET /api/dashboard/console, MCP
