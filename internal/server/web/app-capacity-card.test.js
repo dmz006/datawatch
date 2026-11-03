@@ -61,6 +61,29 @@ test('a back-off flag with reset_known false shows the unknown label instead of 
   assert.ok(html.includes('rate limited'), 'reason missing');
 });
 
+test('a back-off flag set by a burn guard rung shows the rung next to the backend and keeps the reason line', () => {
+  const html = render({ backoff: [{ backend: 'claude-code', until: '2026-11-01T14:00:00-04:00', reason: 'usage cap hit', rung: 'hold_claude', reset_known: true }] });
+  assert.ok(html.includes('burn guard rung'), 'rung label missing: ' + html);
+  assert.ok(html.includes('hold_claude'), 'rung value missing: ' + html);
+  // The label and its value sit in the backend cell, before the reset time.
+  const row = html.slice(html.indexOf('claude-code'), html.indexOf('Resets:'));
+  assert.ok(row.includes('burn guard rung') && row.includes('hold_claude'), 'rung must sit next to the backend name: ' + row);
+  assert.ok(html.includes('usage cap hit'), 'reason line must stay');
+});
+
+test('a back-off flag without a rung shows rung label and no rung value', () => {
+  const html = render({ backoff: [{ backend: 'ollama', until: '2026-10-22T15:00:00Z', reason: 'rate limited', reset_known: true }] });
+  assert.ok(!html.includes('burn guard rung'), 'no rung label without a rung: ' + html);
+  assert.ok(html.includes('rate limited'), 'reason must still show');
+});
+
+test('the reset time renders in the zone of the value it is given, not the reader local zone', () => {
+  const html = render({ backoff: [{ backend: 'claude-code', until: '2026-11-01T14:00:00-04:00', reason: 'usage cap hit', reset_known: true }] });
+  assert.ok(html.includes('2026-11-01 14:00:00 -04:00'), 'the -04:00 wall time and offset must show as sent: ' + html);
+  const z = render({ backoff: [{ backend: 'claude-code', until: '2026-11-01T14:00:00Z', reason: 'usage cap hit', reset_known: true }] });
+  assert.ok(z.includes('2026-11-01 14:00:00 UTC'), 'a Z value must show 14:00 UTC: ' + z);
+});
+
 const BUDGET = {
   llm: 'claude-pro', ceiling_usd: 10, spend_usd: 3, peer_spend_usd: 1,
   window_end: '2026-10-26T00:00:00Z', rolls_over_at: '2026-10-26T01:00:00Z', full: false,

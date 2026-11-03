@@ -24704,8 +24704,17 @@ function _renderDetailContent(prd) {
 // labelled as an estimate.
 function budgetUSD(n) { return '$' + (Number(n) || 0).toFixed(2); }
 function budgetTime(iso) {
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+  const s = String(iso == null ? '' : iso);
+  // Show the time in the zone of the value handed in (the daemon's zone),
+  // not the reader's local zone: the offset travels with the text.
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:?\d{2})?/);
+  if (!m) {
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? s : d.toLocaleString();
+  }
+  let tz = m[7];
+  if (tz === undefined || tz === 'Z') tz = 'UTC';
+  return m[1] + '-' + m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + (m[6] ? ':' + m[6] : '') + ' ' + tz;
 }
 function budgetCapacityLines(budgets) {
   if (!Array.isArray(budgets) || budgets.length === 0) return '';
@@ -24969,16 +24978,21 @@ function capacityPoolsHtml(cap, now) {
     .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
   return limited + unlimited + idleNodes;
 }
-// One row per active back-off flag: backend, when it resets (or the label for
-// an unknown reset time), and the reason.
+// One row per active back-off flag: backend (with a small rung label when the
+// flag was set by one rung of a ladder, for example the burn guard's
+// hold_claude hold), when it resets (or the label for an unknown reset time),
+// and the reason.
 function capacityBackoffHtml(backoff) {
   if (!Array.isArray(backoff) || backoff.length === 0) return '';
   const rows = backoff.map(b => {
     const reset = b.reset_known
       ? `${escHtml(t('capacity_card_backoff_resets')||'Resets')}: ${escHtml(budgetTime(b.until))}`
       : escHtml(t('capacity_card_backoff_reset_unknown')||'reset time unknown');
+    const rung = b.rung
+      ? ` <span class="cap-backoff-rung" style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--bg3,rgba(0,0,0,0.2));color:var(--text2);">${escHtml(t('capacity_card_backoff_rung')||'burn guard rung')}: ${escHtml(b.rung)}</span>`
+      : '';
     const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
-    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
+    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}${rung}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
 }

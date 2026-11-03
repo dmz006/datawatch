@@ -84,6 +84,46 @@ func TestCapacityText_OldBodyFallsBackToRawIDs(t *testing.T) {
 	}
 }
 
+// TestCapacityText_BackoffRungAndReason asserts a back-off flag that the burn
+// guard set prints its rung and its reason, a rung-only flag prints just the
+// rung, and a flag without a rung prints its reason exactly as before —
+// with the reset time shown in the offset the daemon sent it with.
+func TestCapacityText_BackoffRungAndReason(t *testing.T) {
+	offset := time.FixedZone("EDT", -4*3600)
+	CapacityTextClock = func() time.Time { return time.Date(2026, 11, 1, 12, 0, 0, 0, offset) }
+	t.Cleanup(func() { CapacityTextClock = time.Now })
+
+	out, err := FormatCapacityText([]byte(`{
+"pools":[],"leases":[],"waiting":[],
+"backoff":[
+{"backend":"claude-code","until":"2026-11-01T14:00:00-04:00","reason":"usage cap hit","rung":"hold_claude","reset_known":true},
+{"backend":"pi","until":"2026-11-01T14:30:00-04:00","rung":"lower_inflight","reset_known":true},
+{"backend":"ollama","until":"2026-11-01T15:00:00Z","reason":"rate limited","reset_known":true}],
+"budgets":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		// Rung + reason: the rung names the guard's hold, the reason follows
+		// it, and the time keeps the daemon's -04:00 offset (no UTC rewrite).
+		"claude-code: resets 2026-11-01T14:00:00-04:00 (burn guard rung hold_claude: usage cap hit)",
+		// Rung with no reason: the rung is still printed.
+		"pi: resets 2026-11-01T14:30:00-04:00 (burn guard rung lower_inflight)",
+		// No rung: the old form, reason in plain parentheses.
+		"ollama: resets 2026-11-01T15:00:00Z (rate limited)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q in:\n%s", want, out)
+		}
+	}
+	// The -04:00 offset must not be rewritten to UTC or a different zone.
+	for _, gone := range []string{"18:00:00Z", "10:00:00-04:00"} {
+		if strings.Contains(out, gone) {
+			t.Fatalf("offset rewritten to %q:\n%s", gone, out)
+		}
+	}
+}
+
 func TestHolderNameDisplay(t *testing.T) {
 	cases := []struct {
 		v    HolderNameView

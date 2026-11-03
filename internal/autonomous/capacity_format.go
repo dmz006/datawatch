@@ -24,6 +24,9 @@ type capacityBackoffView struct {
 	Until      time.Time `json:"until"`
 	Reason     string    `json:"reason"`
 	ResetKnown bool      `json:"reset_known"`
+	// Rung names the ladder rung that set the flag (for example the burn
+	// guard's hold_claude hold); empty on rate-limit and operator back-offs.
+	Rung string `json:"rung"`
 }
 
 // capacityPoolView is one /api/capacity pool entry: the base PoolStatus plus
@@ -163,13 +166,23 @@ func FormatCapacityText(body []byte) (string, error) {
 	} else {
 		fmt.Fprintf(&b, "Back-off (%d):\n", len(c.Backoff))
 		for _, f := range c.Backoff {
+			// Until was parsed once by json.Unmarshal and keeps the offset the
+			// daemon sent it with; Format(RFC3339) prints that same offset
+			// instead of converting to UTC.
 			when := "reset time unknown"
 			if f.ResetKnown {
 				when = "resets " + f.Until.Format(time.RFC3339)
 			}
 			fmt.Fprintf(&b, "  %s: %s", f.Backend, when)
-			if f.Reason != "" {
-				fmt.Fprintf(&b, " (%s)", f.Reason)
+			switch {
+			case f.Rung != "" && f.Reason != "":
+				fmt.Fprintf(&b, " (burn guard rung %s: %s)", f.Rung, f.Reason)
+			case f.Rung != "":
+				fmt.Fprintf(&b, " (burn guard rung %s)", f.Rung)
+			default:
+				if f.Reason != "" {
+					fmt.Fprintf(&b, " (%s)", f.Reason)
+				}
 			}
 			b.WriteString("\n")
 		}
