@@ -98,6 +98,22 @@ func (s *Server) toolComputeNodeHealth() mcpsdk.Tool {
 	)
 }
 
+func (s *Server) toolComputeNodeDrain() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_drain",
+		mcpsdk.WithDescription("Drain a ComputeNode: stop new placements, keep in-flight work. until and reason are optional; until, when set, must be an RFC3339 timestamp after now. Returns the node health JSON in the new state."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+		mcpsdk.WithString("until", mcpsdk.Description("optional RFC3339 timestamp bounding the drain (omit for an open-ended drain)")),
+		mcpsdk.WithString("reason", mcpsdk.Description("optional free-text reason recorded with the drain")),
+	)
+}
+
+func (s *Server) toolComputeNodeUndrain() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_undrain",
+		mcpsdk.WithDescription("Clear the drain state of a ComputeNode. Idempotent: succeeds even when the node was not drained. Returns the node health JSON in the new state."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
+	)
+}
+
 func (s *Server) toolComputeNodeDetail() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_detail",
 		mcpsdk.WithDescription("On-demand pull from the Node's monitoring sidecar (--listen). Use for live process drill-down. The result also carries session_slots (the operator's override, 0 = derive) and derived_slots (the slot count in effect, when the node has a pool limit)."),
@@ -184,6 +200,34 @@ func (s *Server) handleComputeNodeDeleteMCP(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) handleComputeNodeHealthMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/compute/nodes/"+mustString(req, "name")+"/health", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// handleComputeNodeDrainMCP and handleComputeNodeUndrainMCP proxy the
+// /drain REST endpoints (POST drains, DELETE undrains), whose handler
+// calls the same registry SetDrain and replies with the node health
+// JSON, so the caller sees the new drained / drain_until state.
+func (s *Server) handleComputeNodeDrainMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := mustString(req, "name")
+	body := map[string]any{}
+	if v := optString(req, "until"); v != "" {
+		body["until"] = v
+	}
+	if v := optString(req, "reason"); v != "" {
+		body["reason"] = v
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/compute/nodes/"+name+"/drain", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleComputeNodeUndrainMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodDelete, "/api/compute/nodes/"+mustString(req, "name")+"/drain", nil)
 	if err != nil {
 		return nil, err
 	}
