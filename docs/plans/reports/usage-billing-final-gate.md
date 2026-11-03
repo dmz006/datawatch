@@ -46,3 +46,12 @@
 ### New config keys covered in `docs/implementation.md`
 
 - **7 of 7** `usage.billing.<provider>.*` keys documented: `mode`, `plan`, `monthly_price`, `currency`, `reset_weekday`, `reset_time`, `allowance_unit` (plus the profile methods and validation rules around them).
+
+## Note — the scope line, read plainly
+
+"**Counts only**" means the gate counted what already passed (the package/test counts above, the lint pass, the locale-key parity, the seven `usage.billing.<provider>.*` keys in `docs/implementation.md`). It does not mean the feature was finished, the branch was clean, or the record is reconciled. The rules review found four things this report does not cover, all now fixed on the branch:
+
+1. **Operator-facing wording.** The plan, the parity draft, the testing-tracker entry and the CHANGELOG entry referred to the operator session as "the individual" in places and named a task ID in an operator-facing file. They now say "Automaton session" (and "the operator" where the person is meant) and carry no task ID.
+2. **The dollar-figure rule.** Nothing in the shipped feature or its tests invents a price: the report's figures stay the rate card's estimates and the rate card's zero, and the `bundled_plan` label says "API-equivalent, not billed". The plan, the parity draft and the testing-tracker now carry it verbatim.
+3. **The tracked `.gate-run/` log.** Four gate-run log files had been committed at the repo root and were not in `.gitignore`. They are now ignored (`/scripts/check-no-local-leaks.sh` reports them); the tracked copies are deleted from the working tree on this branch, so the removal is part of the branch. (The gate-run directory is a local working dir — nothing in the tree reads it.)
+4. **The record.** The CHANGELOG entry (v9.67.0) names the billing-profile fields and every surface that sets them; `docs/testing-tracker.md` has a "Billing profile (`usage.billing`)" section (config, report engine, REST, CLI and PWA rows, all unit-validated, live left unmarked); `docs/plans/2026-11-02-cost-report.md` has a "Billing profile" section with the config surface and the MCP refusal; and `docs/plans/README.md` lists this release with the plan, the parity draft and this report.
