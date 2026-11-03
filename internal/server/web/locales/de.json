@@ -1883,6 +1883,7 @@
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
   "settings_task_override_statuses": "Automaten-Status, die LLM-Überschreibungen akzeptieren",
+  "settings_snapshot_never_stage": "Muster, die der Snapshot nie zum commit hinzufügen darf (kommagetrennt)",
   "settings_verification_timeout": "Verifizierungs-/Guardrail-Session-Timeout (Sek., 0=30min)",
   "settings_judge_policy": "Judge-Backends (geordnet, durch Kommas getrennt; leer = Verifier-Routing-Richtlinie)",
   "settings_judge_policy_help": "Die LLM-Backends, die die Judges der Reihe nach versuchen, jeweils ein Versuch: der Guardrail des Automaten sowie Plan-Review- und andere autonome Judges. Ein Judge wechselt nur dann zum nächsten Backend, wenn sein Lauf das Zeitlimit erreicht. Leer (Standard) folgt der Verifier-Routing-Richtlinie, sodass Judges dieselben Modi und Backends nutzen wie Verifier; die Anzahl der Versuche entspricht der Anzahl der Backends, die die Richtlinie anbietet.",

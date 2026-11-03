@@ -16837,6 +16837,11 @@ const GENERAL_CONFIG_FIELDS = [
     // backend behavior via verification_backend above.
     { key: 'autonomous.verification_backends', label: 'Verification backends (load-balance, comma-separated)', type: 'text', placeholder: 'ollama-datawatch, ollama-local-node', csv: true },
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
+    // Path patterns the autonomous snapshot must never `git add`
+    // (e.g. secret files, out-of-scope trees). Blank entries are
+    // rejected by the daemon; empty = no protected patterns; unset =
+    // the built-in default list applies.
+    { key: 'autonomous.snapshot_never_stage', label: 'Snapshot never-stage patterns (comma-separated)', labelKey: 'settings_snapshot_never_stage', type: 'text', placeholder: '.env, node_modules', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.stuck_running_seconds', label: 'Stuck Automaton timeout (seconds)', labelKey: 'settings_stuck_running_seconds', helpKey: 'settings_stuck_running_seconds_help', type: 'number', min: 0, placeholder: '900' },
     { key: 'autonomous.verifier_no_progress_timeout_seconds', label: 'Verifier no-progress timeout (sec, 0=10min)', labelKey: 'settings_verifier_no_progress_timeout', type: 'number', placeholder: '600' },

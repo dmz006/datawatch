@@ -569,6 +569,11 @@ type Config struct {
 	// before it is no longer eligible for resume (default 3600). 0 is
 	// meaningful: never resume.
 	ResumeMaxAgeSeconds int `json:"resume_max_age_seconds"`
+	// SnapshotNeverStage — path patterns the autonomous snapshot must
+	// never `git add` (mirrors config.AutonomousConfig; nil = the built-in
+	// defaults apply). No omitempty, same round-trip reason as
+	// VerificationBackends.
+	SnapshotNeverStage []string `json:"snapshot_never_stage"`
 	// CIWatchTimeoutSeconds bounds how long the ci-watch completion guardrail waits for this automaton's own pushed commit's CI runs to finish (default 1500).
 	// Default rationale: this repo's own tag Release workflow took ~18
 	// minutes on the most recent real run (gh run list) and ordinary
@@ -864,6 +869,10 @@ func DefaultConfig() Config {
 		FailureEscalation:   defaultFailureEscalationPolicy(),
 		AutoFixRetries:      1,
 		SecurityScan:        true,
+		// Snapshot-never-stage defaults match the daemon config's (nil =
+		// reads these in both packages), so a fresh manager GETs the same
+		// effective list as the daemon's /api/config does.
+		SnapshotNeverStage:   append([]string(nil), config.DefaultSnapshotNeverStage...),
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
