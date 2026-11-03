@@ -10,6 +10,8 @@
 package config
 
 import (
+	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -89,4 +91,45 @@ func (c *Config) LivenessInputIdleTimeoutEffective(backendName string) int {
 		return promptModeIdleTimeoutDefault
 	}
 	return c.effectiveSessionInputIdleTimeout()
+}
+
+// ValidateLivenessSettings checks the two liveness settings before they are
+// stored: window is session.liveness_window_seconds (0 means the default,
+// DefaultLivenessWindowSeconds; negative is refused) and overrides is
+// session.liveness_idle_timeout_overrides (backend name to whole seconds,
+// 0 meaning off; negative is refused). Every override key must name a known
+// backend: either a full name from knownBackends ("pi-prompt") or the family
+// of a print-mode one ("pi" for "pi-prompt"), the same two forms
+// lookupLivenessIdleTimeoutOverride resolves. Unknown names are refused with
+// an error that names the key. A nil knownBackends skips the name check.
+func ValidateLivenessSettings(window int, overrides map[string]int, knownBackends []string) error {
+	if window < 0 {
+		return fmt.Errorf("session.liveness_window_seconds: %d is invalid; use whole seconds >= 0 (0 = default %d)",
+			window, DefaultLivenessWindowSeconds)
+	}
+	var known map[string]bool
+	if knownBackends != nil {
+		known = make(map[string]bool, len(knownBackends)*2)
+		for _, n := range knownBackends {
+			n = strings.ToLower(strings.TrimSpace(n))
+			known[n] = true
+			if isPromptFamily(n) {
+				known[strings.TrimSuffix(n, "-prompt")] = true
+			}
+		}
+	}
+	keys := make([]string, 0, len(overrides))
+	for k := range overrides {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if known != nil && !known[strings.ToLower(strings.TrimSpace(k))] {
+			return fmt.Errorf("session.liveness_idle_timeout_overrides: unknown backend %q; use a backend name or family such as \"pi\" or \"pi-prompt\"", k)
+		}
+		if overrides[k] < 0 {
+			return fmt.Errorf("session.liveness_idle_timeout_overrides.%s: %d is invalid; use whole seconds >= 0 (0 = off)", k, overrides[k])
+		}
+	}
+	return nil
 }
