@@ -1,10 +1,10 @@
 # Deflake round five — findings (unawaited raise-notify alert write)
 
 - Date: 2026-11-02
-- Package: `internal/server` (plus `cmd/datawatch` wiring)
-- Tests covered: `TestQuestionStep2Restarts_AnsweredEventExactlyOnce`, `TestQuestionStep2HappyPath_FullFlow`, `TestQuestionNotifyWaitsForAlertWrite` (new regression test)
-- CI signature hunted: `TempDir RemoveAll cleanup: … directory not empty` on the step-2 suite
-- Evidence: `.datawatch/deflake5/` (scratch, gitignored — `repro-summary.txt`, `after-summary.txt`, `regression-stub-run.txt`, `other-stores.txt`, `background-writers.txt`)
+- Package: `internal/server` (plus `cmd/datawatch` wiring) and `internal/autonomous` (same defect class, covered below)
+- Tests covered: `TestQuestionStep2Restarts_AnsweredEventExactlyOnce`, `TestQuestionStep2HappyPath_FullFlow`, `TestQuestionNotifyWaitsForAlertWrite` (new regression test), and — autonomous package — `TestAutomationIdleStartStop` + `TestCoordinatorStopWaitsForIdleLoop` (new regression test)
+- CI signature hunted: `TempDir RemoveAll cleanup: … directory not empty` on the step-2 suite (and, on the same release run, the autonomous-package sibling `TestAutomationIdleStartStop`)
+- Evidence: `.datawatch/deflake5/` (scratch, gitignored — `repro-summary.txt`, `after-summary.txt`, `regression-stub-run.txt`, `other-stores.txt`, `background-writers.txt`, plus the 2026-11-02 300-run outputs `before-question-300.txt`, `after-question-300.txt`, `before-idle-300.txt`, `after-idle-300.txt`)
 
 ## Cause
 
@@ -132,7 +132,7 @@ empty`, is the **same defect class with a different writer** — the
 through a Manager rooted in the test's `t.TempDir()`
 (`internal/autonomous/automation_coordinator_test.go:57`) while
 `Coordinator.Stop` joins only the lane-fill loop's done channel; no
-`idleDone` signal exists in `internal/autonomous`. The round-5
+`idleDone` signal exists in `internal/autonomous` (state at investigation time; it is resolved on this branch — see the next bullet). The round-5
 `WaitQuestionNotifies` therefore **cannot** cover it; it is a distinct
 incident of "unjoined writer races cleanup" (detailed in
 `docs/plans/reports/idle-stop-shared-cause-investigation.md`). The other
@@ -141,6 +141,71 @@ unjoined launch sites on the question/idle paths
 `automation_idle.go:24` ctx-cancel bridge) write no test TempDir files
 and were not touched.
 
+- **Resolved on this branch.** `Coordinator.Start` now creates an
+  `idleDone` channel and passes it to the idle loop, and `Stop` blocks
+  on it after closing the stop channel
+  (`internal/autonomous/automation_coordinator.go`), so a stop returns
+  only once the loop goroutine — including its in-flight `triagePass`
+  (triage → retro → cleanup sweep) — has fully finished; the pre-fix
+  `Stop` returned immediately while a pass could still be writing the
+  Manager's root, which in the test is rooted in `t.TempDir()`. A
+  test-only seam (`idleTickHook`, nil on the production path) lets a
+  test occupy the pass window, and the regression test
+  `TestCoordinatorStopWaitsForIdleLoop`
+  (`internal/autonomous/automation_idle_stop_test.go`) starts the
+  coordinator on a one-millisecond tick, blocks the first pass on the
+  hook, and asserts `Stop` returns only after the pass completed. This
+  is the direct analogue of the question-side
+  `TestQuestionNotifyWaitsForAlertWrite`.
+
+## 300-iteration under-load evidence (both halves, this branch, 2026-11-02)
+
+`GOMAXPROCS=1`, `-race`, `-count=300`, `TMUX`/`TMUX_TMPDIR` unset, 8
+busy-loop load generators on a 48-core host. Pre-fix runs in a
+throwaway worktree checked out at the pre-fix commit; post-fix runs on
+this branch. The question triad = the three `internal/server` tests
+above; the autonomous run adds `TestCoordinatorStopWaitsForIdleLoop`
+(post-fix only — pre-fix has no seam to drive it, which is the point
+in itself).
+
+| Run | Iterations | Failures | Flake signatures | Wall time |
+|---|---|---|---|---|
+| pre-fix, question triad | 300 | 0 | 0 | 291 s |
+| post-fix, question triad | 300 | 0 | 0 | 289 s |
+| pre-fix, `TestAutomationIdleStartStop` | 300 | 0 | 0 | 101 s |
+| post-fix, both autonomous tests | 300 | 0 | 0 | 634 s |
+
+Notes for the record:
+
+- **The flake did not reproduce on this host at any iteration count
+  (100, 200, 300), before or after, loaded or not** — the same
+  zero-flake result the earlier iterations recorded. The escape window
+  (a few milliseconds, scheduler-timing dependent; it hit the Release
+  run, not this host) is therefore pinned where it is deterministic:
+  with the wait stubbed to no-op semantics the question regression test
+  fails 100% of the time (see Regression check), and the autonomous
+  regression test proves the join — pre-fix `Stop` returned immediately
+  while the pass was still in flight (the crash), post-fix it cannot.
+  The 12% flake rate for `TestAutomationIdleStartStop` (and the
+  before-fail / after-0 split) was seen on the sibling host's runs,
+  recorded in
+  `docs/plans/reports/idle-stop-shared-cause-investigation.md`.
+- **The post-fix autonomous run is slower than the pre-fix one by
+  design, not by regression:** because `Stop` now joins the idle loop,
+  each of the 300 iterations waits for the in-flight pass to finish —
+  and that pass includes the `datawatch-*` temp sweep over the host's
+  temp root, which at run time carried tens of thousands of leftover
+  entries from earlier test campaigns. Under a single core under load
+  each such pass is slow, so the post-fix run completed in 634 s where
+  the pre-fix (unjoined, never waiting for anything) run took 101 s.
+  Joining is the fix; the sweep's cost was pre-existing, and the
+  post-fix run simply pays for it at test time instead of hiding it.
+- **No root-level result file:** the plan to carry the result in a
+  tracked file at the repository root would have tripped
+  `tests/ci/repo_root_files_test.go`. The evidence lives in this
+  report, and the raw per-run output in the gitignored scratch dir
+  `.datawatch/deflake5/` (named above).
+
 ## Versioning
 
 The fix is a **production change** (a new public join point plus daemon
@@ -148,6 +213,10 @@ shutdown wiring), not test-only:
 
 - **Patch bump through the merge helper at merge time** — no version
   edit is made on this branch.
-- **CHANGELOG entry at merge** describing the fix (raise-notify fan-out
-  now joined; daemon shutdown waits for in-flight alert writes).
+- **CHANGELOG entry is on this branch, under `[Unreleased]`** (the
+  earlier "entry added at merge" phrasing is superseded): it records
+  both the raise-notify fan-out join (daemon shutdown awaits in-flight
+  alert writes, and can no longer panic with a WaitGroup misuse) and
+  the autonomous coordinator `Stop` join, both regression tests, and
+  this report.
 - The report file itself carries no version number.

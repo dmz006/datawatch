@@ -127,3 +127,43 @@ Every citation above was re-checked against the live tree on 2026-11-02 and all 
   tick body, which is the one `Stop` never joins.
 
 Companion evidence copy (scratch, gitignored): `.datawatch/deflake5/idle-stop-shared-cause.md`.
+
+## Resolution (added 2026-11-02, after the fix landed on this branch)
+
+The conclusions above are recorded as they stood at investigation time
+(read-only; the fix was then only on `automaton/64580001`). They are
+superseded on the current tree of THIS branch:
+
+- **The autonomous-side fix is now present here.** `Start` creates an
+  `idleDone` channel and the idle loop closes it; `Stop` blocks on
+  `<-idleDone` after closing the stop channel
+  (`internal/autonomous/automation_coordinator.go:161-162, 203-204`).
+  The writer found in Evidence 3-4 (`*Coordinator.idleLoop`) is now
+  joined before `Stop` returns, so a pass in flight can no longer write
+  the `t.TempDir()` root after the test has cleaned it up.
+- **The regression test is present here too**:
+  `internal/autonomous/automation_idle_stop_test.go`
+  (`TestCoordinatorStopWaitsForIdleLoop`) drives one tick through the
+  `idleTickHook` test seam (nil on the production path) and asserts
+  `Stop` does not return before that tick completes — the "no tick
+  after Stop returns" guarantee from sibling commit `027c9c58f`.
+- **"directory not empty" is gone in the under-load run on this
+  branch**: `TestAutomationIdleStartStop` +
+  `TestCoordinatorStopWaitsForIdleLoop`, `-race -count=300`,
+  `GOMAXPROCS=1` under load — 300/300 PASS, 0 "directory not empty",
+  wall 634 s (the join makes each iteration wait for the in-flight
+  pass; the pass includes the `datawatch-*` temp sweep over the host
+  temp root, whose tens of thousands of leftover entries from earlier
+  test campaigns are the dominant runtime — pre-existing environmental
+  load, not a regression; the pre-fix 300-iteration run of
+  `TestAutomationIdleStartStop` alone completed in 101 s). See the
+  evidence table in `docs/plans/reports/deflake-round-five-findings.md`
+  (Scratch: `.datawatch/deflake5/after-idle-300.txt`).
+
+The "Run that settles it" section above therefore describes the
+historical before/after that was expected; the same before/after was
+actually run this round (pre-fix and this branch, `-count=300`, both
+green here; the 12% flake reproduction occurred on the sibling host
+during its round). The defect-class link to question-step2 holds:
+same fix shape (join the writer before `Stop`/return), distinct
+writers, distinct incidents.

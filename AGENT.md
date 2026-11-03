@@ -1449,6 +1449,7 @@ Write `N/A` for every row whose trigger did not fire.
 | B16 | New audit-event-emitting code path | JSON-lines round-trip test + CEF format + escape test added | `audit-tests: added` |
 | B17 | New Go module dependency added | Dep noted in CHANGELOG; dependency age rule verified (security patches exempt); `go mod tidy` run | `deps: <module@version>` |
 | B18 | New `case "..."` block added to `internal/server/autonomous.go` (or new autonomous handler) | Federation-Parity Rule: write/run cases have `fedCap` guard; read cases have `CapAutonomousRead` | `fed-parity: verified` |
+| B19 | Flaky-test (deflake) round closed: before/after evidence collected | Evidence lives in the round's report under `docs/plans/reports/` (round five: `docs/plans/reports/deflake-round-five-findings.md`) with the iteration-300 under-load runs before **and** after, a regression test that fails before and passes after, and raw output in the gitignored scratch dir (`DATAWATCH-CONTEXT.md`). Never a tracked result file at the repository root — `tests/ci/repo_root_files_test.go` fails any unknown root file. No B/BL/F ids in the report or the CHANGELOG entry describing it (A7 applies) | `deflake: reported + regressed` |
 
 ---
 
