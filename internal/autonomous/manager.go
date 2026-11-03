@@ -5543,7 +5543,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := resolveTaskBackendModel(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
+					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
 					if backend == "" {
 						backend = "unknown"
 					}

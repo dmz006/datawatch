@@ -68,6 +68,9 @@ func (r *reviewRequeue) apply(t *Task, now time.Time) {
 		t.Backend, t.Model, t.Effort = r.req.Backend, r.req.Model, r.req.Effort
 	}
 	t.OperatorWorkerSet = r.workerChanged
+	// The next attempt is admitted afresh from the task's current worker, never
+	// from the pair the failed attempt was admitted with.
+	t.AdmittedBackend, t.AdmittedModel = "", ""
 	if r.filesChanged {
 		t.FilesPlanned = r.files
 	}

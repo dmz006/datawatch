@@ -2977,25 +2977,32 @@ const (
 	ExecutorSourceEscalation = "escalation"
 )
 
-// recordAdmittedWorker stores the worker an attempt is admitted with on the
-// task. A task whose own backend supplied the worker (the operator's choice
-// in a review retry included) also keeps the model admission used, so the
-// persisted Backend and Model match the lease and the spawn; a worker chosen
-// by escalation or routing for this attempt only is not written to
-// Backend/Model. The caller holds the store lock.
+// recordAdmittedWorker stores the worker an attempt is admitted with on a task
+// that has its own backend. A task whose own backend supplied the worker (the
+// operator's choice in a review retry included) also keeps the model admission
+// used, so the persisted Backend and Model match the lease and the spawn; a
+// worker chosen by escalation or routing for this attempt only is not written
+// to Backend/Model. A task with no backend of its own records nothing, so its
+// admission keeps following the story, PRD and Automation. The caller holds
+// the store lock.
 func recordAdmittedWorker(t *Task, source, backend, model string) {
+	if t.Backend == "" {
+		t.AdmittedBackend, t.AdmittedModel = "", ""
+		return
+	}
 	t.AdmittedBackend, t.AdmittedModel = backend, model
-	if source == ExecutorSourceTask && t.Backend == backend {
+	if source == ExecutorSourceTask {
 		t.Model = model
 	}
 }
 
-// admittedWorker is the worker capacity admission places a task with: the
-// pair its current attempt was admitted with when one is recorded, otherwise
-// the resolved worker. Re-admission and lease adoption use it so they never
-// re-derive a different worker than the attempt started with.
+// admittedWorker is the worker capacity admission places a task with: for a
+// task with its own backend, the pair its current attempt was admitted with
+// when one is recorded; otherwise the resolved worker. Re-admission, lease
+// adoption and reporting use it so they never re-derive a different worker
+// than the attempt started with.
 func admittedWorker(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
-	if t.AdmittedBackend != "" {
+	if t.Backend != "" && t.AdmittedBackend != "" {
 		return t.AdmittedBackend, t.AdmittedModel
 	}
 	return resolveTaskBackendModel(t, story, prd, auto, fallbackBackend)
