@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/gitguard"
@@ -32,6 +34,47 @@ type ProjectGit struct {
 	// the harness commit through a CommitGuard's hooks; set it only after
 	// validation has passed.
 	commitEnv []string
+	// neverStagePatterns holds the autonomous.snapshot_never_stage path
+	// patterns (e.g. "scratch/", "data/", "*.tmp") that automatic commits
+	// must never `git add`. Nil means no protected patterns; production
+	// call sites pass the configured list (built-in defaults when unset).
+	neverStagePatterns []string
+	// lastSkippedMu guards lastSkipped, the skip list from the most recent
+	// stageChanges call, readable via LastStagingSkipped.
+	lastSkippedMu sync.Mutex
+	lastSkipped   []StagingSkip
+}
+
+// setLastSkipped stores the skip list from a stageChanges call for
+// LastStagingSkipped.
+func (g *ProjectGit) setLastSkipped(skipped []StagingSkip) {
+	g.lastSkippedMu.Lock()
+	g.lastSkipped = append([]StagingSkip{}, skipped...)
+	g.lastSkippedMu.Unlock()
+}
+
+// LastStagingSkipped returns a copy of the candidates the most recent
+// staging pass refused to add, with the reason for each (see StagingSkip).
+// Empty when nothing was skipped or no staging has happened yet.
+func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
+	g.lastSkippedMu.Lock()
+	defer g.lastSkippedMu.Unlock()
+	return append([]StagingSkip{}, g.lastSkipped...)
+}
+
+// StagingSkip records one candidate file that an automatic commit did not
+// stage and why. Reason is one of:
+//
+//	"outside-plan"   the path is outside the task's declared plan scope
+//	"never-stage"    the path matches an autonomous.snapshot_never_stage pattern
+//	"ignored"        the path matches .gitignore (git check-ignore)
+//
+// plus the staging guard's own reasons ("size", "ignore-dir", "pattern",
+// "outside-root") from internal/gitguard. Skipping is the safe direction:
+// a wrong skip only leaves a file unstaged; a missed skip is a leak.
+type StagingSkip struct {
+	Path   string
+	Reason string
 }
 
 // NewProjectGit creates a new ProjectGit for the given directory, bounded
@@ -50,6 +93,80 @@ func (g *ProjectGit) SetStagingPolicy(p gitguard.Policy) {
 // appended (typically CommitGuard.CommitEnv()). Nil clears it.
 func (g *ProjectGit) SetCommitEnv(env []string) {
 	g.commitEnv = env
+}
+
+// SetNeverStagePatterns sets the path patterns this ProjectGit never stages
+// (the autonomous.snapshot_never_stage list, resolved against the built-in
+// defaults upstream). Nil clears the list — nothing is protected.
+func (g *ProjectGit) SetNeverStagePatterns(patterns []string) {
+	cp := make([]string, len(patterns))
+	copy(cp, patterns)
+	g.neverStagePatterns = cp
+}
+
+// matchesNeverStage reports whether the repo-relative slash-form path
+// matches one of g.neverStagePatterns. A trailing "/" matches a directory
+// component anywhere in the path ("data/" covers "build/data/out.txt"); a
+// glob ("*.tmp", "*.log") matches the file or the full relative path with
+// path.Match; anything else matches the exact path or a whole leading
+// directory ("secrets" or "vendor/cache"). Malformed/blank patterns never
+// match, so a bad config entry can only fail open in the sense of never
+// matching — it can never match everything.
+func (g *ProjectGit) matchesNeverStage(rel string) bool {
+	target := filepath.ToSlash(filepath.Clean(rel))
+	if target == "." || target == "" {
+		return false
+	}
+	for _, p := range g.neverStagePatterns {
+		p = strings.TrimSpace(p)
+		if p == "" || strings.ContainsRune(p, 0) || filepath.IsAbs(p) {
+			continue
+		}
+		switch {
+		case strings.HasSuffix(p, "/"):
+			dir := strings.TrimSuffix(filepath.ToSlash(filepath.Clean(p)), "/")
+			if dir == "" || dir == "." {
+				continue // "/" on its own names the root and must never protect
+			}
+			if target == dir || strings.HasPrefix(target, dir+"/") {
+				return true
+			}
+		case strings.ContainsAny(p, "*?["):
+			if ok, err := path.Match(p, target); err == nil && ok {
+				return true
+			}
+			if ok, err := path.Match(p, filepath.Base(target)); err == nil && ok {
+				return true
+			}
+		default:
+			if target == p || strings.HasPrefix(target, p+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ignoredSet asks git which of the given repo-relative candidate paths
+// .gitignore rules ignore (git check-ignore). git exits 0 when at least
+// one path is ignored and 1 when none is; both are valid outcomes here.
+// A failed or missing git response returns an empty set — the candidate
+// still has to pass the scope and never-stage checks before it can be
+// staged, so a check-ignore failure cannot by itself hide a protected path.
+func (g *ProjectGit) ignoredSet(paths []string) map[string]bool {
+	ignored := map[string]bool{}
+	for start := 0; start < len(paths); start += 500 {
+		end := min(start+500, len(paths))
+		cmd := exec.Command("git", append([]string{"check-ignore", "--"}, paths[start:end]...)...)
+		cmd.Dir = g.dir
+		out, _ := cmd.Output() // exit 0 or 1 are both fine
+		for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				ignored[l] = true
+			}
+		}
+	}
+	return ignored
 }
 
 // commit runs git commit with the commit environment, if any. args are fixed
@@ -103,10 +220,12 @@ func (g *ProjectGit) Init() error {
 // file-count refusal, and a bounded add. Automatic commits in the user's
 // home directory are flagged with a warning, since the guard is what keeps
 // them from staging the whole home tree.
-func (g *ProjectGit) stageChanges(scope []string) error {
+func (g *ProjectGit) stageChanges(scope []string) ([]StagingSkip, error) {
 	if err := gitguard.RefuseNonProject(g.dir); err != nil {
-		return err
+		return nil, err
 	}
+	skipped := []StagingSkip{}
+	var candidates []string
 	if len(scope) > 0 {
 		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
 			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n", g.dir)
@@ -137,26 +256,71 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 			// the staged-empty check below skips the commit. Never fall back
 			// to add -A here — that would be the exact leak this function
 			// exists to close.
-			return nil
+			return skipped, nil
 		}
-		candidates, err := g.scopedCandidates(absDir, inside)
+		cand, out, err := g.scopedCandidates(absDir, inside)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return g.stageCandidates(candidates)
+		skipped = append(skipped, out...)
+		candidates = cand
+	} else {
+		files := g.unscopedChangedFiles(g.runStart)
+		if len(files) == 0 {
+			fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staged nothing (no files changed this run detected)\n", g.dir)
+			return skipped, nil
+		}
+		names := files
+		if len(names) > 20 {
+			names = append(append([]string{}, names[:20]...), fmt.Sprintf("…(%d more)", len(files)-20))
+		}
+		fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
+			g.dir, len(files), strings.Join(names, ", "))
+		candidates = files
 	}
-	files := g.unscopedChangedFiles(g.runStart)
-	if len(files) == 0 {
-		fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staged nothing (no files changed this run detected)\n", g.dir)
-		return nil
+	// Protection checks applied to every candidate before the staging
+	// guard sees them (see classifyCandidates):
+	//
+	//	autonomous.snapshot_never_stage patterns — reason "never-stage"
+	//	.gitignore rules (git check-ignore)       — reason "ignored"
+	//	paths outside the plan scope              — reason "outside-plan"
+	//
+	// Paths surviving all of those are then run through the staging guard
+	// (per-file size cap, ignore dirs, glob patterns, root containment —
+	// reasons size/ignore-dir/pattern/outside-root) and its file-count
+	// refusal. No candidate can reach `git add` without passing every
+	// check, and there is no whole-tree `git add -A` path anywhere in
+	// this function.
+	kept, sk := g.classifyCandidates(candidates)
+	skipped = append(skipped, sk...)
+	kept, polSkipped := g.stagingPolicy.Keep(g.dir, kept)
+	for _, s := range polSkipped {
+		skipped = append(skipped, StagingSkip{Path: s.File, Reason: s.Reason})
 	}
-	names := files
-	if len(names) > 20 {
-		names = append(append([]string{}, names[:20]...), fmt.Sprintf("…(%d more)", len(files)-20))
+	if reason := g.stagingPolicy.RefuseReason(len(kept)); reason != "" {
+		return skipped, fmt.Errorf("%s: %s", g.dir, reason)
 	}
-	fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
-		g.dir, len(files), strings.Join(names, ", "))
-	return g.stageCandidates(files)
+	if len(skipped) > 0 {
+		fmt.Printf("[datawatch] warning: %s: staged %d file(s), skipped %d (%s):\n",
+			g.dir, len(kept), len(skipped), skipSummary(skipped))
+		logged := len(skipped)
+		if logged > 50 {
+			logged = 50
+		}
+		for _, s := range skipped[:logged] {
+			fmt.Printf("  skipped %s (%s)\n", s.Path, s.Reason)
+		}
+		if len(skipped) > logged {
+			fmt.Printf("  …(and %d more skipped)\n", len(skipped)-logged)
+		}
+	}
+	if len(kept) == 0 {
+		return skipped, nil
+	}
+	if err := g.addBounded(kept); err != nil {
+		return skipped, err
+	}
+	return skipped, nil
 }
 
 // scopedCandidates lists the files a scoped commit may stage: tracked
@@ -168,40 +332,77 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 // Paths are relative to g.dir, the directory git runs in. Sorted for
 // deterministic logs. A fresh repo with no HEAD yet has no diff output, so
 // that diff failure is not an error; the untracked listing must succeed.
-func (g *ProjectGit) scopedCandidates(absDir string, inside []string) ([]string, error) {
+func (g *ProjectGit) scopedCandidates(absDir string, inside []string) (insideCand []string, outside []StagingSkip, err error) {
 	prefixes := make([]string, 0, len(inside))
 	for _, d := range inside {
-		rel, err := filepath.Rel(absDir, d)
-		if err != nil {
+		rel, rerr := filepath.Rel(absDir, d)
+		if rerr != nil {
 			continue
 		}
 		prefixes = append(prefixes, filepath.ToSlash(rel))
 	}
 	seen := make(map[string]struct{})
-	add := func(out string) {
-		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
-			if l = strings.TrimSpace(l); l != "" && underAnyDir(l, prefixes) {
-				seen[l] = struct{}{}
+	var in []string
+	var out []StagingSkip
+	add := func(o string) {
+		for _, l := range strings.Split(strings.TrimSpace(o), "\n") {
+			if l = strings.TrimSpace(l); l == "" {
+				continue
+			}
+			if _, dup := seen[l]; dup {
+				continue
+			}
+			seen[l] = struct{}{}
+			if underAnyDir(l, prefixes) {
+				in = append(in, l)
+			} else {
+				out = append(out, StagingSkip{Path: l, Reason: "outside-plan"})
 			}
 		}
 	}
-	if out, err := gitOutput(g.dir, "diff", "--name-only", "--relative", "HEAD"); err == nil {
-		add(out)
+	if o, e := gitOutput(g.dir, "diff", "--name-only", "--relative", "HEAD"); e == nil {
+		add(o)
 	}
-	if out, err := gitOutput(g.dir, "diff", "--cached", "--name-only", "--relative"); err == nil {
-		add(out)
+	if o, e := gitOutput(g.dir, "diff", "--cached", "--name-only", "--relative"); e == nil {
+		add(o)
 	}
-	untracked, err := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard")
-	if err != nil {
-		return nil, fmt.Errorf("list untracked files in %s: %w", g.dir, err)
+	untracked, uerr := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard")
+	if uerr != nil {
+		return nil, nil, fmt.Errorf("list untracked files in %s: %w", g.dir, uerr)
 	}
 	add(untracked)
-	out := make([]string, 0, len(seen))
-	for f := range seen {
-		out = append(out, f)
+	sort.Strings(in)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return in, out, nil
+}
+
+// classifyCandidates runs every candidate through the automatic-commit
+// protection checks that the staging guard does not cover:
+//
+//  1. the autonomous.snapshot_never_stage patterns set on this ProjectGit
+//     by the call site (reason "never-stage");
+//  2. the repository's ignore rules, asked of git itself via check-ignore
+//     (reason "ignored") — check-ignore exempts files already in the
+//     index, which is what we want: a tracked file the task modified is
+//     the task's own work, while a path git reports as ignored must never
+//     be newly added.
+//
+// Skipped candidates come back with their reason so commit callers can
+// report them; kept candidates are plain paths in input order.
+func (g *ProjectGit) classifyCandidates(candidates []string) (kept []string, skipped []StagingSkip) {
+	ignored := g.ignoredSet(candidates)
+	for _, c := range candidates {
+		if g.matchesNeverStage(c) {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "never-stage"})
+			continue
+		}
+		if ignored[c] {
+			skipped = append(skipped, StagingSkip{Path: c, Reason: "ignored"})
+			continue
+		}
+		kept = append(kept, c)
 	}
-	sort.Strings(out)
-	return out, nil
+	return kept, skipped
 }
 
 // underAnyDir reports whether the repo-relative file path is one of dirs or
@@ -216,30 +417,9 @@ func underAnyDir(file string, dirs []string) bool {
 	return false
 }
 
-// stageCandidates runs candidates through the staging policy and adds the
-// survivors to the index. A candidate set the policy refuses (more files
-// than MaxStagedFiles) returns an error and stages nothing: it stops with a
-// clear message rather than adding part of a huge tree. Skipped files are
-// reported with the reason, so an operator can see why a changed file did
-// not reach the commit.
-func (g *ProjectGit) stageCandidates(candidates []string) error {
-	kept, skipped := g.stagingPolicy.Keep(g.dir, candidates)
-	if reason := g.stagingPolicy.RefuseReason(len(kept)); reason != "" {
-		return fmt.Errorf("%s: %s", g.dir, reason)
-	}
-	if len(skipped) > 0 {
-		fmt.Printf("[datawatch] warning: %s: staged %d, skipped %d (%s) — see staging guard\n",
-			g.dir, len(kept), len(skipped), skipSummary(skipped))
-	}
-	if len(kept) == 0 {
-		return nil
-	}
-	return g.addBounded(kept)
-}
-
 // skipSummary counts skipped candidates by reason, for example
-// "ignore-dir=3, size=1". Reasons are sorted so the log line is stable.
-func skipSummary(skipped []gitguard.Skip) string {
+// "ignored=1, never-stage=2". Reasons are sorted so the log line is stable.
+func skipSummary(skipped []StagingSkip) string {
 	counts := make(map[string]int)
 	for _, s := range skipped {
 		counts[s.Reason]++
@@ -409,11 +589,16 @@ func (g *ProjectGit) stagedOnly() bool {
 // designed to capture pre-existing dirt (the pinned Start() test
 // contract), so the run's later completion commit diffs only against that
 // baseline. Completion auto-commits bound unscoped staging to the run via
-// SetRunStart instead.
+// SetRunStart instead. Candidates the automatic-commit checks refuse to
+// add (never-stage, gitignore, and — for a scoped commit — out-of-plan
+// paths) are reported with their reason in the log and kept readable
+// via LastStagingSkipped.
 func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) error {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
@@ -425,9 +610,11 @@ func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) e
 // only the files changed since the run start (SetRunStart) with a
 // warning.
 func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scope []string) error {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return nil
 	}
@@ -445,9 +632,11 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scop
 // empty stages only the files changed since the run start
 // (SetRunStart), with a warning.
 func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []string) (string, error) {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return "", err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return "", nil
 	}
@@ -475,9 +664,11 @@ type TaskCommitLabel struct {
 // appended as the final line. Returns the new HEAD sha, or ("", nil) when
 // nothing is staged.
 func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, scope []string) (string, error) {
-	if err := g.stageChanges(scope); err != nil {
+	skipped, err := g.stageChanges(scope)
+	if err != nil {
 		return "", err
 	}
+	g.setLastSkipped(skipped)
 	if !g.stagedOnly() {
 		return "", nil
 	}

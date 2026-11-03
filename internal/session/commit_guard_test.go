@@ -406,7 +406,7 @@ func TestCommitGuardHomeDirNonProjectRefusedAuditedOnce(t *testing.T) {
 	pg := NewProjectGit(home)
 
 	var firstErr, secondErr error
-	first := commitGuardCaptureStdout(t, func() { firstErr = pg.stageChanges(nil) })
+	first := commitGuardCaptureStdout(t, func() { _, firstErr = pg.stageChanges(nil) })
 	if !gitguard.IsNonProject(firstErr) {
 		t.Fatalf("home stageChanges error = %v, want a non-project refusal", firstErr)
 	}

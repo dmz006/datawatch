@@ -85,7 +85,7 @@ func TestStageChanges_ScopeEntriesAreContained(t *testing.T) {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
 
-	if err := g.stageChanges([]string{outside, link, inDir}); err != nil {
+	if _, err := g.stageChanges([]string{outside, link, inDir}); err != nil {
 		t.Fatalf("stageChanges: %v", err)
 	}
 	staged, err := gitOutput(dir, "diff", "--cached", "--name-only")
