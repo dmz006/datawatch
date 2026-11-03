@@ -1180,7 +1180,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if autonomous.HasTruncationMarker(req.NewSpec) {
-			http.Error(w, "new_spec ends with a truncation marker: it was copied from a capped view; fetch the full text with ?full=1 or GET .../outputs and edit that", http.StatusBadRequest)
+			http.Error(w, "new_spec contains a truncation marker: it was copied from a capped view; fetch the full text with ?full=1 or GET .../outputs and edit that", http.StatusBadRequest)
 			return
 		}
 		if req.Actor == "" {
