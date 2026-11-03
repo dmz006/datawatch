@@ -103,6 +103,53 @@ type LivenessInput struct {
 	StallOthers bool
 }
 
+// LivenessAssessment pairs the classifier's verdict with the silence fact
+// it carries for callers that need both — the supervisor watch's silence
+// check (internal/autonomous).
+//
+// The two fields matter because the alive-and-silent case — the worker's
+// process is alive, the pane is not at an input prompt, and there has been
+// no activity beyond the liveness window — lands on a different verdict per
+// family: print-mode and stall-consent interactive families report it as
+// LivenessStalled, while claude-code reports LivenessRunning (rule (f)
+// preserves the busy probe's semantics for the busy probe and the gap
+// watcher). AliveSilent is the family-independent fact that the worker is
+// alive yet silent beyond the window — exactly what a silence check is
+// watching for.
+type LivenessAssessment struct {
+	// Verdict is the classifier's answer (ClassifyLiveness) for the same
+	// input.
+	Verdict LivenessVerdict
+
+	// AliveSilent reports that in.ProcessAlive is true, in.AtPrompt is
+	// false, and in.LastActivity is zero or older than in.Window (a
+	// non-positive Window selects DefaultLivenessWindow) at in.Now. For
+	// families whose verdict for that case is LivenessStalled it is already
+	// carried in the verdict; for claude-code it is the verdict's only
+	// companion — the silence the verdict deliberately does not report.
+	AliveSilent bool
+}
+
+// AssessLiveness is ClassifyLiveness plus the alive-and-silent fact, in
+// one pass over in. It is pure like the classifier: it only reads in and
+// does no I/O, so it can be driven entirely by fake inputs in tests. The
+// caller supplies the same facts as before; this function derives nothing
+// and adds no policy of its own — the silence fact is the caller's window,
+// not a different one.
+func AssessLiveness(in LivenessInput) LivenessAssessment {
+	assessment := LivenessAssessment{Verdict: ClassifyLiveness(in)}
+	window := in.Window
+	if window <= 0 {
+		window = DefaultLivenessWindow
+	}
+	// Same within-window test the classifier uses: no observable activity
+	// (zero LastActivity) counts as silent, as does activity older than the
+	// window.
+	within := !in.LastActivity.IsZero() && in.Now.Sub(in.LastActivity) <= window
+	assessment.AliveSilent = in.ProcessAlive && !in.AtPrompt && !within
+	return assessment
+}
+
 // ClassifyLiveness applies the liveness rules to in and returns a verdict.
 // It is pure: it only reads in and does no I/O, so it can be driven entirely
 // by fake inputs in tests.

@@ -556,15 +556,15 @@ func (m *Manager) SetSupervisorWatchSessionLookup(fn func(id string) (*session.S
 }
 
 // SetSupervisorWatchLiveness wires the worktree silence check's view
-// of the session package's own liveness verdicts (the adapter in
+// of the session package's own liveness assessments (the adapter in
 // supervisor_watch_liveness.go, asking the session package's liveness
-// classifier, ClassifyLiveness, for a verdict on each working session).
-// When it yields verdicts for an Automaton's working sessions,
-// CheckSilent trusts them before its worktree-signal fallback; when it
-// yields none, the check's behaviour is exactly what it was before the
-// source was wired. In production this is the session manager's
-// LivenessVerdictFor (cmd/datawatch). Nil restores "no verdict source"
-// — the worktree signals decide alone.
+// classifier, ClassifyLiveness via AssessLiveness, for an assessment of
+// each working session). When it yields assessments for an Automaton's
+// working sessions, CheckSilent trusts them before its worktree-signal
+// fallback; when it yields none, the check's behaviour is exactly what
+// it was before the source was wired. In production this is the session
+// manager's LivenessAssessmentFor (cmd/datawatch). Nil restores "no
+// verdict source" — the worktree signals decide alone.
 func (m *Manager) SetSupervisorWatchLiveness(src SupervisorWatchLivenessSource) {
 	if m == nil {
 		return

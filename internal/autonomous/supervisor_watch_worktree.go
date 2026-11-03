@@ -294,14 +294,17 @@ func (w *SupervisorWatchWorktree) CheckNotRegistered(prds []*PRD) []SupervisorWa
 // Automaton that has a task in progress or verifying and is silent.
 // Silence is judged in two tiers:
 //
-//  1. the session liveness verdicts: when the Liveness source
-//     (supervisor_watch_liveness.go) reports verdicts for the
+//  1. the session liveness assessments: when the Liveness source
+//     (supervisor_watch_liveness.go) reports assessments for the
 //     Automaton's working sessions (their worker and verifier
-//     sessions), those verdicts are authoritative — a session reported
-//     running is never silent, one reported stalled (dead process, or
-//     alive and silent beyond the liveness window) makes the Automaton
-//     silent, and one at a real prompt is waiting for input, which is
-//     not silence;
+//     sessions), those are authoritative — a session reported running
+//     with no silence is never silent, one reported stalled (dead
+//     process, or alive and silent beyond the liveness window, for every
+//     family the classifier stalls) makes the Automaton silent, and one
+//     carrying the alive-and-silent fact is silent too — even on
+//     claude-code, where the verdict deliberately stays running to
+//     preserve the busy probe's semantics; a session at a real prompt
+//     is waiting for input, which is not silence;
 //
 //  2. the worktree signals (the fallback, and the whole judgement when
 //     no verdict is available): the newest activity — the newest
@@ -329,9 +332,10 @@ func (w *SupervisorWatchWorktree) CheckSilent(prds []*PRD) []SupervisorWatchFind
 		if !supervisorWatchWorktreeHasActiveWork(p) {
 			continue // no task in progress or verifying: silence is expected
 		}
-		// Tier 1 — the session liveness verdicts, when available. A
-		// verdict is authoritative: running never reads as silent, a
-		// stalled worker is silent, a worker at a real prompt is
+		// Tier 1 — the session liveness assessments, when available. An
+		// assessment is authoritative: a working worker is never silent,
+		// a stalled worker (dead process, or alive and silent beyond the
+		// liveness window) is silent, and a worker at a real prompt is
 		// waiting for input (not silence).
 		if w.Liveness != nil {
 			if decided, silent := supervisorWatchLivenessDecision(p, w.Liveness, now); decided {
@@ -388,26 +392,30 @@ func (w *SupervisorWatchWorktree) CheckSilent(prds []*PRD) []SupervisorWatchFind
 }
 
 // supervisorWatchLivenessDecision aggregates the session liveness
-// verdicts (SupervisorWatchLivenessSource) for p's working sessions —
+// assessments (SupervisorWatchLivenessSource) for p's working sessions —
 // the worker and verifier sessions of its tasks in progress or
-// verifying, the same sessions CheckSilent would read log activity
-// for — and returns (true, silent) when the verdicts decide the
-// silence question. A session the source reports no verdict for is
-// skipped; when every working session is skipped the verdicts carry
-// no information and the decision falls through (false, false) to the
-// worktree-signal fallback. The verdicts, in priority order:
+// verifying, the same sessions CheckSilent would read log activity for —
+// and returns (true, silent) when the assessments decide the silence
+// question. A session the source reports no assessment for is skipped;
+// when every working session is skipped the assessments carry no
+// information and the decision falls through (false, false) to the
+// worktree-signal fallback. The assessments, in priority order:
 //
-//   - any session running → never silent (fresh liveness outranks
-//     whatever the worktree's files show);
+//   - any session carrying a silence — stalled (dead process, or alive
+//     and silent beyond the liveness window, for every family the
+//     classifier stalls), or the alive-and-silent fact (the claude-code
+//     case: that verdict stays running by design and the silence rides
+//     in the fact) → silent, and it outranks a mate that is still
+//     running or waiting: a running session answers "not silent" for
+//     itself, it does not un-stall the other — the watch is out
+//     looking for the one that stopped;
 //
-//   - else any session stalled → silent (a dead process, or alive and
-//     silent beyond the liveness window, on a working session is
-//     exactly the silence being watched for);
-//
-//   - else (only sessions at a real prompt) → not silent: a worker
-//     waiting for input is where it is expected to be while working.
+//   - else (only running and/or waiting sessions) → not silent: a
+//     running session outranks whatever the worktree's files show,
+//     and a worker at a real prompt is waiting for input, not gone
+//     silent.
 func supervisorWatchLivenessDecision(p *PRD, src SupervisorWatchLivenessSource, now time.Time) (decided bool, silent bool) {
-	verdicts := map[session.LivenessVerdict]bool{}
+	nRunning, nSilent, nWaiting := 0, 0, 0
 	for i := range p.Story {
 		for j := range p.Story[i].Tasks {
 			t := &p.Story[i].Tasks[j]
@@ -418,24 +426,32 @@ func supervisorWatchLivenessDecision(p *PRD, src SupervisorWatchLivenessSource, 
 				if strings.TrimSpace(sid) == "" {
 					continue
 				}
-				v, ok := src.WorkerVerdict(sid, now)
+				v, aliveSilent, ok := src.WorkerVerdict(sid, now)
 				if !ok || v == session.LivenessNoOpinion {
-					continue // no verdict for this session: not information
+					continue // no assessment for this session: not information
 				}
-				verdicts[v] = true
+				switch {
+				// Stalled, or alive yet silent beyond the window (the
+				// claude-code family keeps its running verdict by design;
+				// the fact is what carries the silence there).
+				case v == session.LivenessStalled || aliveSilent:
+					nSilent++
+				case v == session.LivenessRunning:
+					nRunning++
+				default: // waiting for input
+					nWaiting++
+				}
 			}
 		}
 	}
-	if len(verdicts) == 0 {
-		return false, false // no verdict at all: fall back to the worktree
+	decided = nRunning+nSilent+nWaiting > 0
+	if !decided {
+		return false, false // no assessment at all: fall back to the worktree
 	}
-	if verdicts[session.LivenessRunning] {
-		return true, false
+	if nSilent > 0 {
+		return true, true // silence outranks a mate still running or waiting
 	}
-	if verdicts[session.LivenessStalled] {
-		return true, true
-	}
-	return true, false // waiting for input only: not silence
+	return true, false // running and/or waiting: none of them gone silent
 }
 
 // supervisorWatchWorktreeHasActiveWork reports whether p has at least
