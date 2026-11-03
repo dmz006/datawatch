@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.67.1 — Smoke checks must not copy operator configuration
+
+
 ## v9.67.0 — Cost report
 
 ### Added
