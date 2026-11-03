@@ -431,6 +431,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/templates/", api.handleAutonomousTemplates)
 	// BL221 (v6.2.0) Phase 3 — scan config endpoint.
 	apiMux.HandleFunc("/api/autonomous/scan/config", api.handleAutonomousScanConfig)
+	// decompose-lint — config read/replace + per-PRD stored record / dry run.
+	apiMux.HandleFunc("/api/autonomous/decompose-lint/config", api.handleAutonomousDecomposeLintConfig)
+	apiMux.HandleFunc("/api/autonomous/prds/{id}/decompose-lint", api.handleAutonomousDecomposeLintPRD)
 	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
 	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
 	// Tag registry endpoints.

@@ -597,6 +597,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageAcknowledge(), tracked(s.handleAutonomousPRDPlanCoverageAcknowledge))
 	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageGet(), tracked(s.handleAutonomousPRDPlanCoverageGet)) // autonomous_prd_plan_coverage_get — plan coverage read
 	mcpSrv.AddTool(s.toolAutonomousPRDPlanReview(), tracked(s.handleAutonomousPRDPlanReview))           // plan review gate
+	// decompose-lint gate — config read/set + per-PRD dry-run / stored findings
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintConfigGet(), tracked(s.handleAutonomousDecomposeLintConfigGet))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintConfigSet(), tracked(s.handleAutonomousDecomposeLintConfigSet))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintDryRun(), tracked(s.handleAutonomousDecomposeLintDryRun))
+	mcpSrv.AddTool(s.toolAutonomousDecomposeLintFindings(), tracked(s.handleAutonomousDecomposeLintFindings))
 	mcpSrv.AddTool(s.toolAutonomousPRDRequestRevision(), tracked(s.handleAutonomousPRDRequestRevision))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditTask(), tracked(s.handleAutonomousPRDEditTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditStory(), tracked(s.handleAutonomousPRDEditStory))
