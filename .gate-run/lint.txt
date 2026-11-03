@@ -1,0 +1,28 @@
+bash scripts/check-no-unscoped-tmux.sh
+==> Unscoped tmux kill audit (kill-server / kill-session -a)
+OK: no unscoped tmux kills
+bash scripts/check-test-daemon-cleanup.sh
+==> Datawatch daemon cleanup audit (daemon start without cleanup / end-by-name / Go tests missing t.Cleanup)
+OK: no daemon cleanup violations
+bash scripts/check-no-production-service-control.sh
+==> Production service-control audit (stop/restart/kill of the datawatch unit)
+OK: no production service-control hits
+bash scripts/check-go-toolchain-pins.sh
+✓ PASS: all Go toolchain pins are exact and >= 1.26.10
+bash scripts/check-no-internal-refs.sh
+==> Internal-ref leak audit (BL###, F##, B##, S## in user-facing strings)
+✓ PASS: no internal refs in user-facing surfaces.
+bash scripts/check-no-identity-wipe.sh
+==> Identity wipe audit (empty write to /api/identity)
+OK: no empty writes to /api/identity
+bash scripts/check-no-direct-ignore-writes.sh
+==> Generated ignore file audit (.trivyignore, docs/security-review.md)
+OK: generated ignore files match the registry
+bash scripts/check-no-local-leaks.sh .
+local patterns: skipped
+address: 0
+home: 0
+email: 0
+local: 0
+golangci-lint run ./...
+0 issues.

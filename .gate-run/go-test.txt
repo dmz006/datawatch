@@ -1,0 +1,9 @@
+ok  	github.com/dmz006/datawatch/internal/config	2.135s
+ok  	github.com/dmz006/datawatch/internal/usagecalc	0.119s
+ok  	github.com/dmz006/datawatch/internal/costreport	0.004s
+ok  	github.com/dmz006/datawatch/internal/server	68.553s
+ok  	github.com/dmz006/datawatch/internal/server/multiserver	0.022s
+ok  	github.com/dmz006/datawatch/internal/mcp	2.005s
+ok  	github.com/dmz006/datawatch/internal/mcp/search	0.005s
+ok  	github.com/dmz006/datawatch/internal/router	146.406s
+ok  	github.com/dmz006/datawatch/cmd/datawatch	115.324s
