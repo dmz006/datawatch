@@ -103,9 +103,9 @@ func printCostReport(body []byte) error {
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	if anyUSD {
-		fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out\t usd")
+		_, _ = fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out\t usd")
 	} else {
-		fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out")
+		_, _ = fmt.Fprintln(w, "key\t sessions\t tokens_in\t tokens_out")
 	}
 	for _, r := range rep.Rows {
 		if anyUSD {
@@ -113,9 +113,9 @@ func printCostReport(body []byte) error {
 			if r.USDEstimate != nil {
 				usd = fmt.Sprintf("$%.2f", *r.USDEstimate)
 			}
-			fmt.Fprintf(w, "%s\t %d\t %d\t %d\t %s\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut, usd)
+			_, _ = fmt.Fprintf(w, "%s\t %d\t %d\t %d\t %s\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut, usd)
 		} else {
-			fmt.Fprintf(w, "%s\t %d\t %d\t %d\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut)
+			_, _ = fmt.Fprintf(w, "%s\t %d\t %d\t %d\n", r.Key, r.Sessions, r.TokensIn, r.TokensOut)
 		}
 	}
 	//nolint:errcheck
