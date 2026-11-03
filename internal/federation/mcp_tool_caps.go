@@ -40,6 +40,7 @@ var MCPToolCap = map[string]string{
 	"audit_query":                                  CapAuditRead,
 	"audit_access_query":                           CapAuditRead,
 	"automation_activate":                          CapAutonomousWrite,
+	"automation_return_to_draft":                   CapAutonomousWrite,
 	"automation_pause":                             CapAutonomousWrite,
 	"automation_resume":                            CapAutonomousWrite,
 	"automation_cancel":                            CapAutonomousWrite,

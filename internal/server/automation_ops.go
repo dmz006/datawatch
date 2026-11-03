@@ -19,6 +19,7 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"update", http.MethodPut},
 	{"delete", http.MethodDelete},
 	{"activate", http.MethodPost},
+	{"return_to_draft", http.MethodPost},
 	{"shipped", http.MethodPost},
 	{"pause", http.MethodPost},
 	{"resume", http.MethodPost},
@@ -41,7 +42,8 @@ var automationRESTOperations = []AutomationRESTOperation{
 // /api/automations/{id}/ handled by handleAutomationControl.
 var automationNonControlOps = map[string]bool{
 	"list": true, "get": true, "create": true, "update": true, "delete": true,
-	"activate": true, "shipped": true, "status": true, "import-graph": true,
+	"activate":        true,
+	"return_to_draft": true, "shipped": true, "status": true, "import-graph": true,
 }
 
 // AutomationRESTOperations returns the Automation REST operations.

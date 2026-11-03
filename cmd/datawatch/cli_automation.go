@@ -42,6 +42,7 @@ Subcommands:
   delete <id>         Delete an Automation
   status              Show the Automation rows of the loop status (current member, idle time, spend)
   activate <id>       Start a draft Automation
+  return-to-draft <id>  Return a blocked Automation (no member started) to draft
   shipped <id>        Record the shipped state (--release R --commit C; --at TIME, --source merge_step|backfill optional)
   pause <id>          Pause a running Automation
   resume <id>         Resume a paused Automation
@@ -74,6 +75,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationDeleteCmd())
 	cmd.AddCommand(newAutomationStatusCmd())
 	cmd.AddCommand(newAutomationActivateCmd())
+	cmd.AddCommand(newAutomationReturnToDraftCmd())
 	cmd.AddCommand(newAutomationShippedCmd())
 	cmd.AddCommand(newAutomationPauseCmd())
 	cmd.AddCommand(newAutomationResumeCmd())
@@ -98,8 +100,8 @@ func newAutomationListCmd() *cobra.Command {
 	var shippedSel string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short:  "List Automations (narrow with --shipped true|false on the shipped state)",
-		Long:   `List Automations.
+		Short: "List Automations (narrow with --shipped true|false on the shipped state)",
+		Long: `List Automations.
 
 --shipped true keeps only Automations that carry shipped state (a
 non-empty merge commit — their non-skipped member PRs all landed); --shipped
@@ -411,6 +413,26 @@ func newAutomationActivateCmd() *cobra.Command {
 	return cmd
 }
 
+// newAutomationReturnToDraftCmd is `automation return-to-draft <id>`: it
+// returns a blocked Automation — one that went blocked before any member
+// started — back to the draft the operator can still edit. It posts to
+// /return_to_draft through the shared control flags (when --expected-version
+// is omitted the CLI reads the current version first), and a refusal comes
+// back as the daemon's 409 message.
+func newAutomationReturnToDraftCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "return-to-draft <id>",
+		Short: "Return a blocked Automation (no member started) to draft",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAutomationControl(args[0], "return-to-draft", f.body(cmd))
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
 // newAutomationShippedCmd is the `automation shipped <id>` parity sibling of
 // `autonomous shipped record <id> --automation`: it records the shipped state
 // of one Automation (release, merge commit, merge time, source) through
@@ -462,14 +484,15 @@ func (f *automationControlFlags) body(cmd *cobra.Command) map[string]any {
 
 // automationControlOps maps each control subcommand to the REST sub-path it posts to.
 var automationControlOps = map[string]string{
-	"pause":   "pause",
-	"resume":  "resume",
-	"cancel":  "cancel",
-	"skip":    "skip_member",
-	"insert":  "insert_member",
-	"remove":  "remove_member",
-	"edges":   "reorder_edges",
-	"approve": "approve_insert",
+	"pause":           "pause",
+	"resume":          "resume",
+	"cancel":          "cancel",
+	"skip":            "skip_member",
+	"insert":          "insert_member",
+	"remove":          "remove_member",
+	"edges":           "reorder_edges",
+	"approve":         "approve_insert",
+	"return-to-draft": "return_to_draft",
 
 	"set-llm":              "set_llm",
 	"set-verification-llm": "set_verification_llm",

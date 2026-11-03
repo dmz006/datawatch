@@ -4678,11 +4678,15 @@ paths:
     post:
       summary: Activate a draft Automation
       description: |
-        Validates the Automation, marks it active and starts its entry member
-        through the same approval gate used between members; if the entry
-        member cannot start, the Automation becomes blocked instead. Only a
-        draft can be activated. Optional body `{"actor": "...", "reason": "..."}`
-        for the audit log; actor defaults to "operator".
+        Validates the Automation, marks it active and enters its entry
+        member through the same approval gate used between members, whatever
+        its kind: a plain Automaton starts through its own gate (a paused one
+        resumes); a fork fires its branches in sorted order, each through its
+        own gate, and evaluates the paired join; a nested Automation member
+        activates its child. A member the gate refuses to start leaves the
+        Automation blocked with the reason. Only a draft can be activated.
+        Optional body `{"actor": "...", "reason": "..."}` for the audit log;
+        actor defaults to "operator".
       operationId: automationsActivate
       tags: [Automations]
       requestBody:
@@ -4704,6 +4708,47 @@ paths:
         "400": {description: "The Automation cannot be activated (for example it has no entry member)"}
         "404": {description: Automation not found}
         "409": {description: "The Automation is not a draft, or changed while it was being activated"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/return_to_draft:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Return a blocked Automation to draft
+      description: |
+        Returns a blocked Automation that never started a member back to the
+        draft the operator can still edit: the status goes back to draft, the
+        started time, cursors and budget episode are cleared, and every
+        member is `pending` again with no timestamps — activating it
+        afterwards runs it as if it had never started. Refused with a 409
+        that names its status when it is not blocked, or when a member
+        already started (a cursor sat on a member), in which case cancel it
+        with the `cancel_in_flight` choice instead. Optional body
+        `{"actor": "...", "reason": "...", "expected_version": n}`; actor
+        defaults to "operator"; a non-zero expected_version that does not
+        match the stored version is a 409.
+      operationId: automationsReturnToDraft
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string}
+                reason: {type: string}
+                expected_version: {type: integer, format: int64}
+      responses:
+        "200":
+          description: The Automation back in draft, every member pending
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "404": {description: Automation not found}
+        "409": {description: "The Automation is not blocked, a member already started or a cursor sat on a member, or expected_version does not match"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 

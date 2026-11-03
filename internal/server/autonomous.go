@@ -3664,6 +3664,7 @@ func automationErrStatus(err error) (int, string) {
 //	DELETE /api/automations/{id}   — delete
 //	POST   /api/automations/import-graph/{graph_id} — convert an orchestrator graph
 //	POST   /api/automations/{id}/activate — start a draft Automation
+//	POST   /api/automations/{id}/return_to_draft — return a blocked Automation to draft
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
 //	       remove_member|reorder_edges|approve_insert|set_llm|
 //	       set_verification_llm|set_budget|set_decision_assistant} — operator control
@@ -3711,6 +3712,10 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 
 	if actID, ok := strings.CutSuffix(rest, "/activate"); ok && actID != "" && !strings.Contains(actID, "/") {
 		s.handleAutomationActivate(w, r, actID)
+		return
+	}
+	if retID, ok := strings.CutSuffix(rest, "/return_to_draft"); ok && retID != "" && !strings.Contains(retID, "/") {
+		s.handleAutomationReturnToDraft(w, r, retID)
 		return
 	}
 
@@ -3829,6 +3834,43 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.audit(r.Context(), "automation_activate", "automation", id,
+		map[string]any{"actor": req.Actor, "reason": req.Reason})
+	writeJSONOK(w, a)
+}
+
+// handleAutomationReturnToDraft serves POST /api/automations/{id}/return_to_draft:
+// a blocked Automation — one that went blocked before any member started —
+// goes back to the draft the operator can still edit, with every member
+// pending again. Blocked on anything else, not blocked, or carrying a
+// started member, it is a 409; an explicit expected_version that does not
+// match is the usual optimistic-lock 409. Body {actor?, reason?,
+// expected_version?}.
+func (s *Server) handleAutomationReturnToDraft(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed; use POST", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Actor           string `json:"actor"`
+		Reason          string `json:"reason"`
+		ExpectedVersion int64  `json:"expected_version"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	a, err := s.autonomousMgr.ReturnAutomationToDraft(id, req.Actor, req.ExpectedVersion)
+	if err != nil {
+		code, msg := automationErrStatus(err)
+		http.Error(w, msg, code)
+		return
+	}
+	s.audit(r.Context(), "automation_return_to_draft", "automation", id,
 		map[string]any{"actor": req.Actor, "reason": req.Reason})
 	writeJSONOK(w, a)
 }
