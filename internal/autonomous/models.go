@@ -563,6 +563,16 @@ type PRD struct {
 	// check has been stored for this PRD yet.
 	PlanCoverage *PlanCoverage `json:"plan_coverage,omitempty"`
 
+	// DecomposeLint is the decompose-lint record from the last
+	// decomposition (see decompose_lint_hook.go): the mode that ran
+	// (off|shadow|enforce), the number of lint passes (1 = no retry),
+	// when the final pass ran, and the final findings (shadow: the
+	// first pass's; enforce: whatever remained after the retry budget
+	// was spent). Nil = the check was off when this PRD was
+	// decomposed, so nothing was recorded — an off run leaves this
+	// field absent from the stored row.
+	DecomposeLint *DecomposeLintRecord `json:"decompose_lint,omitempty"`
+
 	// Triage is the single record a failed or blocked Automaton carries
 	// while it waits for operator attention (see triage_record.go): the
 	// Automaton's identity, the failed/blocked task and its error, the
@@ -573,6 +583,53 @@ type PRD struct {
 	// cleared when it leaves. Absent (nil) in JSON otherwise, so an
 	// healthy Automaton's stored row is byte-for-byte what it was before.
 	Triage *TriageRecord `json:"triage,omitempty"`
+}
+
+// DecomposeLintRecord captures one decompose-lint pass (all modes
+// except off — off records nothing): the mode in effect when the pass
+// ran, the attempt count, the final pass's timestamp, and the final
+// findings the pass produced (empty when clean). Written by the
+// decompose-time hook after every decomposition (see
+// decompose_lint_hook.go) and re-readable at any time; LintPRD's
+// dry-run report is the same finding shape over the current config.
+type DecomposeLintRecord struct {
+	// Findings is the final finding set in plan order: in shadow mode
+	// every finding of the single pass, in enforce mode whatever
+	// remained when the retry budget was spent (empty when a retry
+	// produced a clean plan). Findings are recorded, never fatal —
+	// a decomposition is never failed because of this check.
+	Findings []LintFinding `json:"decompose_lint_findings"`
+	// Mode is the decompose-lint mode in effect when this pass ran:
+	// "off" is never stored (off records no record), "shadow" lints
+	// and records without retrying, "enforce" retried the decomposer
+	// over block findings before recording what remained.
+	Mode string `json:"mode"`
+	// Attempts is the number of lint passes: 1 when no retry ran, or
+	// 1 + the retries consumed (at most 1 + decompose_lint.max_retries).
+	Attempts int `json:"attempts"`
+	// LintedAt is when the final pass ran.
+	LintedAt time.Time `json:"linted_at"`
+}
+
+// DecomposeLintReport is the dry-run decompose-lint report LintPRD
+// returns: the mode in effect, how many active rules the run used, the
+// findings over the PRD's STORED stories (empty when clean) and their
+// block/warn tally. Computing it never mutates the PRD and never
+// calls the planner — it is the same engine (effective rules, LintTasks)
+// the decompose-time hook runs, read-only over the stored plan.
+type DecomposeLintReport struct {
+	// PRD is the id of the PRD the report covers.
+	PRD string `json:"prd"`
+	// Mode is the decompose-lint mode in effect (off|shadow|enforce)
+	// when the report was computed; the report itself is mode-agnostic
+	// — off still describes what a run would record.
+	Mode string `json:"mode"`
+	// RuleCount is the number of active (effective) rules the run used.
+	RuleCount int `json:"rule_count"`
+	// Findings is the finding set in plan order; empty when clean.
+	Findings []LintFinding `json:"findings"`
+	// Summary tallies the findings by severity.
+	Summary LintSummary `json:"summary"`
 }
 
 // PlanCoverage is the plan-coverage state stored on the PRD
