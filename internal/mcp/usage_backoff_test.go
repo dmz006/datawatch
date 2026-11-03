@@ -59,6 +59,15 @@ func TestUsageBackoff_ToolNamesAndRequiredArgs(t *testing.T) {
 			}
 		}
 	}
+	// The capacity_status description names the backoff array's fields
+	// including rung (the ladder rung on burn-guard hold entries), so a
+	// wording change here fails this test.
+	capDesc := s.toolCapacityStatus().Description
+	for _, field := range []string{"The backoff array", "reset_known", "rung", "hold_claude"} {
+		if !strings.Contains(capDesc, field) {
+			t.Errorf("capacity_status description does not mention %q", field)
+		}
+	}
 	clr := s.toolUsageBackoffClear()
 	if clr.Name != "usage_backoff_clear" {
 		t.Errorf("clear name = %q", clr.Name)

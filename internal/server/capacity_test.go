@@ -695,3 +695,67 @@ func assertUntitledHolderName(t *testing.T, v autonomous.HolderNameView, where s
 		t.Errorf("%s readable = %q, want the task title", where, v.Readable)
 	}
 }
+
+// TestCapacityBackoff_RungOnBurnGuardHold asserts the capacity response's
+// backoff array carries the ladder rung on a burn-guard hold entry (and its
+// reason text) while a rate-limit entry on a different backend has no rung
+// key at all — older clients reading the legacy fields see both unchanged.
+// The fixed clock sits in a non-UTC zone; the response renders the deadline
+// in the daemon zone and both must marshal.
+func TestCapacityBackoff_RungOnBurnGuardHold(t *testing.T) {
+	zone := time.FixedZone("IST", 5*3600+30*60)
+	now := time.Date(2026, 10, 22, 20, 30, 0, 0, zone)
+	bo := autonomous.NewBackoff()
+	bo.Clock = func() time.Time { return now }
+	until := now.Add(15 * time.Minute)
+	bo.SetWithRung("claude-code", until, "burn guard: weekly burn projects over the pace line", "burn_guard", true, "hold_claude")
+	bo.SetWithReset("pi-prompt", until, "rate-limit — reset 20:45", autonomous.BackoffSourceRateLimit, true)
+
+	s := &Server{}
+	s.SetCapacity(capacity.New(capacity.Options{}))
+	s.SetUsageBackoff(bo)
+
+	rec := httptest.NewRecorder()
+	s.handleCapacity(rec, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/capacity = %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Backoff []map[string]any `json:"backoff"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v\n%s", err, rec.Body.String())
+	}
+	byBackend := map[string]map[string]any{}
+	for _, e := range body.Backoff {
+		byBackend[e["backend"].(string)] = e
+	}
+	if len(byBackend) != 2 {
+		t.Fatalf("backoff = %v, want the two live entries", byBackend)
+	}
+
+	hold, ok := byBackend["claude-code"]
+	if !ok {
+		t.Fatal("backoff missing the claude-code hold entry")
+	}
+	if hold["rung"] != "hold_claude" {
+		t.Errorf("hold rung = %v, want hold_claude", hold["rung"])
+	}
+	if hold["reason"] != "burn guard: weekly burn projects over the pace line" {
+		t.Errorf("hold reason = %v, want the reason text alongside the rung", hold["reason"])
+	}
+	if hold["reset_known"] != true || hold["until"] == "" {
+		t.Errorf("hold entry = %v, want reset_known true and a rendered until", hold)
+	}
+
+	rate, ok := byBackend["pi-prompt"]
+	if !ok {
+		t.Fatal("backoff missing the pi-prompt rate-limit entry")
+	}
+	if _, present := rate["rung"]; present {
+		t.Errorf("rate-limit entry = %v, want no rung key", rate)
+	}
+	if rate["reason"] != "rate-limit — reset 20:45" {
+		t.Errorf("rate-limit reason = %v, want the legacy field untouched", rate["reason"])
+	}
+}
