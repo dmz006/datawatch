@@ -351,6 +351,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		if !waited {
 			waitStart = rec.Now()
 		}
+		reason = nameRequestedPool(reason, pools)
 		// The ledger reports every change of reason text (a holder joining a
 		// pool, a count moving); the audit log records only a change of cause.
 		if cause := ClassifyWaitReason(reason); !waited || cause != lastCause {

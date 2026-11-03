@@ -419,3 +419,21 @@ func relativeIn(now func() time.Time, until time.Time) string {
 	}
 	return fmt.Sprintf("in %dh%02dm", mins/60, mins%60)
 }
+
+// nameRequestedPool makes a multi-node wait reason ("waiting for nodes a, b:
+// ...") name the pool the task actually asked for, using the pools resolved
+// from the explicit backend. A reason that already names one of the pools, or
+// a single-node reason whose parsers expect an exact shape, is returned
+// unchanged, so every prefix ClassifyWaitReason matches on is kept.
+func nameRequestedPool(reason string, pools []string) string {
+	const multiNodePrefix = "waiting for nodes "
+	if len(pools) == 0 || !strings.HasPrefix(reason, multiNodePrefix) {
+		return reason
+	}
+	for _, p := range pools {
+		if strings.Contains(reason, p) {
+			return reason
+		}
+	}
+	return reason + " (requested pool " + strings.Join(pools, ", ") + ")"
+}

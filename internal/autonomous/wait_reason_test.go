@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -255,5 +256,19 @@ func TestWaitReason_AwaitDecisionTextAndPredicate(t *testing.T) {
 	// The two await sub-reasons stay distinct.
 	if IsAwaitExternalWaitReason("await_decision: q-1") {
 		t.Error("an await_decision reason must not read as await_external")
+	}
+}
+
+func TestNameRequestedPool(t *testing.T) {
+	multi := "waiting for nodes n1, n2: n1: unhealthy; n2: pool node:n2 full (1/1, held by x)"
+	got := nameRequestedPool(multi, []string{"llm:qwen"})
+	if !strings.HasPrefix(got, "waiting for nodes ") || !strings.Contains(got, "requested pool llm:qwen") {
+		t.Fatalf("got %q", got)
+	}
+	if ClassifyWaitReason(got) != ClassifyWaitReason(multi) {
+		t.Fatal("classification changed")
+	}
+	if nameRequestedPool("pool llm:qwen full (1/1, held by x)", []string{"llm:qwen"}) != "pool llm:qwen full (1/1, held by x)" {
+		t.Fatal("pool-full reason must be unchanged")
 	}
 }
