@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The capacity card's usage "resets at" line now shows the deadline in its own zone.** The PWA no longer re-bases the reset time to the phone's local timezone — it prints the wall-clock in the zone the daemon recorded it in (UTC, `+05:30`, etc.). The daemon's back-off record (the single source every surface reads) is now stored in the daemon's own zone instead of the session-reported UTC, so the PWA, CLI, comm and every other surface agree on the same time.
+
+- **The capacity card's back-off line names the burn-guard rung on hold.** It reads "burn guard: hold_claude, line +130%, resets at …" and the PWA shows a "burn guard rung" chip; a missing reset time says "reset time unknown" and shows no rung chip.
+
+### Added
+
+- **Locale key `capacity_card_backoff_rung`** (en, de, es, fr, ja) for the burn-guard rung label on the capacity card.
+
+### Testing
+
+- `internal/server/web/app-capacity-backoff.test.js` — JS functional tests (zone preservation, fallback, rung chip, "reset time unknown").
+- `cmd/datawatch/usage_backoff_wiring_test.go` `TestRateLimitBackoffHandler_StoresResetInDaemonZone` — Go regression (fails before the fix).
+- `scripts/test-stories/pwa/capacity-backoff-card.mjs` — Playwright story (phone-width, real Chromium; green 2026-11-03).
+
 ## v9.70.2 — The stats installer fetches the right archive
 
 ### Added

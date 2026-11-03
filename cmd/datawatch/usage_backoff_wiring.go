@@ -82,8 +82,13 @@ func rateLimitBackoffHandler(cfg *config.Config, bo *autonomouspkg.Backoff, now 
 		var until time.Time
 		var reason string
 		if hasReset {
-			until = resetAt
-			reason = "rate-limit — reset " + resetAt.Format("15:04")
+			// resetAt is the instant the provider message named, in whatever zone that message
+			// carried (UTC, or e.g. America/New_York). The daemon serves the stored deadline
+			// as-is with no output conversion, so convert it to the daemon zone now — the same
+			// step the burn guard takes — to keep the reader and the deadline in the one zone the
+			// reader expects.
+			until = resetAt.In(time.Local)
+			reason = "rate-limit — reset " + until.Format("15:04")
 			fmt.Printf("[backoff] %s paused until %s (rate limit)\n", backend, until.Format(time.RFC3339))
 		} else {
 			until = now().Add(time.Duration(maxWaitMin) * time.Minute)
@@ -131,7 +136,10 @@ func wireUsageBackoff(ctx context.Context, cfg *config.Config, mgr *session.Mana
 				latest[s.BackendFamily] = *s.RateLimitResetAt
 			}
 		}
-		for backend, until := range latest {
+		for backend, reset := range latest {
+			// Same zone step as the rate-limit path: the stored deadline is served as-is, so
+			// normalize the in-flight reset time to the daemon zone on rebuild.
+			until := reset.In(time.Local)
 			bo.Set(backend, until, "rate-limit — reset "+until.Format("15:04"), autonomouspkg.BackoffSourceRateLimit)
 			fmt.Printf("[backoff] rebuilt: %s paused until %s\n", backend, until.Format(time.RFC3339))
 		}

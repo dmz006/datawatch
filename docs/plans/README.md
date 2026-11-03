@@ -33,6 +33,26 @@ placeholders from the AGENT.md rule "No local-environment leaks in git"
 and say the real value lives in the operator config. `make check-leaks`
 (`scripts/check-no-local-leaks.sh`) must pass before a task is done.
 
+## 42950001 — capacity card usage back-off: zone-preserving "resets at" + burn-guard rung
+
+Fix pass completed 2026-11-03 (this tree). The capacity card's "resets at"
+line now shows the deadline in the zone the daemon recorded it in (not the
+reader's local zone); on a burn-guard hold it names the rung ("burn guard:
+hold_claude, line +130%, resets at …", with a "burn guard rung" chip on the
+PWA); a missing reset says "reset time unknown". The daemon now stores the
+back-off deadline in its own zone (previously the session-reported UTC), so
+the PWA, CLI, comm and MCP all agree.
+
+Test results (all green 2026-11-03): `go test ./…` — 88 test packages,
+16,131 tests, 0 failures; `go build`/`go vet`/`gofmt` clean; JS functional
+tests 5/5 (`node --test internal/server/web/app-capacity-backoff.test.js`);
+PWA browser story `bash scripts/e2e-pwa.sh capacity-backoff-card` → PASS
+(real Chromium, 390px, no overflow); locale key `capacity_card_backoff_rung`
+present in all five bundles. See `docs/testing.md` ("Capacity card usage
+back-off"), `docs/testing-tracker.md` ("Usage back-off line on the capacity
+card"), and `docs/plans/reports/42950001-final-gate.md` for the full
+evidence and commit-token checklist.
+
 ## Active order
 
 Items run in this order, one at a time against this tree, until the write lock

@@ -336,6 +336,32 @@ daemons already on the host), and it reported nothing new.
 | Diff scope vs main | `env -u TMUX -u TMUX_TMPDIR git diff --name-only $(git merge-base main HEAD)` plus a line-by-line read of the added lines | PASS — 36 files (6 new, 30 modified), each one belonging to this change: the six new files are exactly the new helper, guard, audit, release smoke and regression tests above; the 30 modified are the daemon-starting story/e2e/matrix/sandbox/smoke/integration scripts, the session live tests, the runner, the Makefile and the docs that state the rule. No tracker id (B/BL/F series) or release version number appears in any added file or function name, in any added operator-facing (echo/ko/skip) string, or in any added doc text — the only scenario-number mentions in added lines are code comments referencing the repository's pre-existing story scenario names. Three of the added echo messages had initially carried their scenario number as a label; the labels were removed before this gate so the claim is true by inspection, not by convention |
 | Leftover-daemon guard, gate end | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-leftover-test-daemons.sh check .datawatch/final-gate-daemon-snapshot.txt` | PASS — "OK: no leftover test daemons", nothing new since the snapshot |
 
+## Capacity card usage back-off — zone-preserving "resets at" + burn-guard rung (task 42950001)
+
+The capacity card's usage line reads "…resets at <time>". The time is shown in
+the zone the daemon recorded it in (its own zone), not the reader's local zone;
+on a burn-guard hold the line also names the rung, and a missing reset says
+"reset time unknown". The daemon's back-off record is the single source every
+surface reads, so it is stored in the daemon's own zone (not the session-reported
+UTC). Rules-review fix pass 2026-11-03 (Node v24.15.0, Go 1.27.x, linux/amd64);
+every shell command ran under `env -u TMUX -u TMUX_TMPDIR` where it touches the
+OS env.
+
+### Verified (2026-11-03)
+
+| Check | Command | Result |
+|---|---|---|
+| Go build | `go build ./...` | PASS (exit 0) |
+| gofmt (touched files) | `gofmt -l cmd/datawatch/usage_backoff_wiring.go cmd/datawatch/usage_backoff_wiring_test.go` | PASS — no diffs |
+| Go vet (touched pkgs) | `env -u TMUX -u TMUX_TMPDIR go vet ./cmd/datawatch/ ./internal/autonomous/` | PASS (exit 0) |
+| Go tests, whole module | `env -u TMUX -u TMUX_TMPDIR go test ./... -count=1` | PASS — 88 test packages, 16,131 top-level tests, 0 failures (100 packages in the module; 12 have no test files) |
+| Zone regression (**fails before the fix**) | `env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -run 'StoresResetInDaemonZone'` | PASS — the handler stored the reset in UTC (session zone) before; now stores it in the daemon's own zone, matching the burn-guard path |
+| REST / shared-text rung contract | `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ ./internal/server/ -run 'BackoffRung\|RungOnBurnGuardHold'` | PASS — the line names the rung + reason; `GET /api/capacity` and `GET /api/usage-backoff` carry `rung` (omitempty) |
+| JS functional test (not source-string) | `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-capacity-backoff.test.js` | PASS — 5 (zone x4: UTC/`+05:30`/`-08:00`/`+09:45`, fallback, rung chip, "reset time unknown", empty) |
+| app.js syntax | `node --check internal/server/web/app.js` | PASS |
+| PWA browser story (real Chromium) | `bash scripts/e2e-pwa.sh capacity-backoff-card` | PASS — `3 probes OK`; 390px render, no horizontal overflow at 360px; evidence `scripts/test-stories/evidence/capacity-backoff-card/` |
+| Locale key in all five bundles | `grep capacity_card_backoff_rung internal/server/web/locales/{en,de,es,fr,ja}.json` | PASS — present in all five |
+
 ## Historical Feature Tests
 
 ### 1. Splash Screen
