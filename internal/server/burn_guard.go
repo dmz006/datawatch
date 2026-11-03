@@ -257,6 +257,16 @@ func (g *BurnGuard) Tick(ctx context.Context) burnguard.Decision {
 	if applyErr != nil {
 		g.fail("%v", applyErr)
 	}
+	// A rung that stays applied keeps holding: when the hold rung is still in
+	// force and nothing changed, renew the back-off flag it sets so the hold
+	// lasts for the next reading. A changed tick already (re)set the flags it
+	// carries through its actions above, and a step back or release clears
+	// them, so only an unchanged hold is renewed here.
+	if !d.Changed && g.holdApplied(d.Applied) {
+		if err := g.adm.HoldNewWork(burnguard.ClaudeBackend, true); err != nil {
+			g.fail("renew hold: %v", err)
+		}
+	}
 	if d.Changed {
 		g.announce(d)
 	}
@@ -390,6 +400,16 @@ func (g *BurnGuard) announce(d burnguard.Decision) {
 	if err := g.notify.Question(d.QuestionText + running); err != nil {
 		g.fail("queue question not raised: %v", err)
 	}
+}
+
+// holdApplied reports whether the hold rung (hold_claude) is in force after the decision.
+func (g *BurnGuard) holdApplied(applied []string) bool {
+	for _, rung := range applied {
+		if rung == burnguard.RungHoldClaude {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *BurnGuard) fail(format string, args ...any) {
