@@ -1146,6 +1146,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleChannelDiagnostics()
 	case CmdProfile:
 		r.handleProfile(cmd)
+	case CmdProject:
+		r.handleProjectCmd(cmd)
 	case CmdAgent:
 		r.handleAgent(cmd)
 	case CmdBind:

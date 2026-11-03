@@ -396,6 +396,10 @@ const (
 	//   "schedule-results history <name>" → same as above
 	CmdScheduleResults CommandType = "schedule_results"
 
+	// Project policy browsing over chat: `project policy <name> [automaton]`
+	// — mirrors GET /api/projects/{name}/policy/effective.
+	CmdProject CommandType = "project"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -1274,6 +1278,14 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdReload, Text: rest}
 
+	// Project policy browsing: `project policy <name> [automaton]`.
+	case lower == "project" || strings.HasPrefix(lower, "project "):
+		rest := ""
+		if lower != "project" {
+			rest = strings.TrimSpace(text[len("project"):])
+		}
+		return Command{Type: CmdProject, Text: rest}
+
 	// v5.27.10 (BL216) — channel info via chat: `channel info`.
 	case lower == "channel info":
 		return Command{Type: CmdChannelInfo}
@@ -1888,6 +1900,7 @@ profile project list            list project profiles
 profile cluster list            list cluster profiles
 profile <kind> show <name>      show a profile (kind: project|cluster)
 profile <kind> smoke <name>     run profile validation smoke test
+project policy <name> [automaton]  effective project policy with per-setting sources
 agent list                      list active agent workers
 agent spawn <proj> <cluster> [task]   spawn a new agent
 agent show <id>                 show agent detail

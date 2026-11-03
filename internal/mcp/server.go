@@ -541,6 +541,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolProjectList(), tracked(s.handleProjectList))                     // BL27
 	mcpSrv.AddTool(s.toolProjectUpsert(), tracked(s.handleProjectUpsert))                 // BL27
 	mcpSrv.AddTool(s.toolProjectAliasDelete(), tracked(s.handleProjectAliasDelete))       // BL27
+	mcpSrv.AddTool(s.toolProjectPolicyEffective(), tracked(s.handleProjectPolicyEffective)) // project policy tier
 	mcpSrv.AddTool(s.toolSessionRollback(), tracked(s.handleSessionRollback))             // BL29
 	mcpSrv.AddTool(s.toolCooldownStatus(), tracked(s.handleCooldownStatus))               // BL30
 	mcpSrv.AddTool(s.toolCooldownSet(), tracked(s.handleCooldownSet))                     // BL30
