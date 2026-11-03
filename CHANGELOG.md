@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation, definitions and parity for the cost report.** The cost report (`datawatch cost report`, the `cost_report` MCP tool, `cost report` on the comm channel, `GET /api/cost/report`, and the **Cost report** dashboard card) now has an operator how-to — [howto/cost-report.md](docs/howto/cost-report.md) — covering what a row is (sessions, tokens in/out first, a USD estimate only where configured cost rates cover every backend in the group, `rate_configured` false and no dollar value where a rate is missing), the four groupings (`automaton` default, `automation`, `backend`, `week`), the `since`/`until` window (RFC3339 or `YYYY-MM-DD`; an absent `until` is now, an absent `since` the daemon's default window), the 31-day retention the figures rest on with older spend visible only through lifetime totals (`retention_days`, `lifetime_fallback`), and the five `cost_report.*` settings and their defaults (`default_group_by`, `default_window_days`, `show_usd_estimates`, `week_start`, `include_peer_spend`). The [Cost report](docs/datawatch-definitions.md#cost-report) glossary entry now names the four groupings, the window semantics, the retention and lifetime-fallback fields and both peer-spend and USD-visibility settings, and the `cost_report` settings block, its defaults and all five access methods are recorded in [operations](docs/operations.md#cost-report) and [setup](docs/setup.md).
+
 ## v9.66.0 — The burn guard alerts, and asks only if you want it to
 
 ### Added
