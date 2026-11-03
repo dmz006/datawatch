@@ -39,6 +39,15 @@ func (a *Claude) Infer(ctx context.Context, node *compute.Node, llm *inference.L
 	if apiKey == "" {
 		return inference.Response{}, fmt.Errorf("claude: api_key_ref required (set llm.api_key_ref to literal key or ${secret:name})")
 	}
+	// Defense in depth: a ${secret:name} reference is resolved into a
+	// shallow copy by the dispatcher (or equivalent callsite) before this
+	// adapter is reached. If one still shows up in APIKeyRef it must not be
+	// transmitted verbatim — the server would reject it with a 401 — so
+	// refuse, before any request is sent. The error names the LLM entry
+	// and never leaks a key or reference.
+	if strings.Contains(llm.APIKeyRef, "${secret:") {
+		return inference.Response{}, fmt.Errorf("claude: llm %q: api key is an unresolved secret reference — resolve it at the callsite before invoking the adapter", llm.Name)
+	}
 	model := inference.ResolveModel(llm, req)
 	if model == "" {
 		return inference.Response{}, fmt.Errorf("claude: no model (set llm.model or pass model_override)")
