@@ -4837,6 +4837,13 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	if !current.CreatedAt.IsZero() {
 		projGit.SetRunStart(current.CreatedAt)
 	}
+	// Automatic commits must never stage paths that are gitignored or that
+	// match the autonomous.snapshot_never_stage patterns (built-in
+	// defaults when unset). StageChanges enforces both; the skipped paths
+	// are reported per-path with a reason (log + LastStagingSkipped).
+	if m.cfg != nil {
+		projGit.SetNeverStagePatterns(m.cfg.Autonomous.EffectiveSnapshotNeverStage())
+	}
 
 	var sha string
 	var err error
@@ -4865,6 +4872,9 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 		if sha != "" && current.PRDID == "" {
 			m.pushAfterCommit(current, sha)
 		}
+	}
+	for _, sk := range projGit.LastStagingSkipped() {
+		fmt.Printf("[datawatch] completion commit: left %q unstaged (%s)\n", sk.Path, sk.Reason)
 	}
 
 	if stat, _ := projGit.DiffStat(); !stat.IsZero() {

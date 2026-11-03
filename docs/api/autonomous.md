@@ -2084,6 +2084,7 @@ autonomous:
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
+  snapshot_never_stage:   []          # never-stage patterns for the automatic snapshot commits; unset reads the built-in list (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp); an explicit [] protects nothing (see "Snapshot never-stage list")
   verifier_policy:                    # which backend runs a verification (see "Verifier policy")
     mode:                 fixed       # fixed | prefer-free | balance | gpu-only | claude-only
     backends:             []          # ordered eligible backends; empty = verification_backends, then verification_backend
@@ -2106,6 +2107,40 @@ autonomous:
     create_search_mode:   shadow      # off | shadow | on: search-before-create over the existing Automata, registry rows and branches
     create_search_threshold: 0.5      # score at or above which an existing Automaton counts as an overlap; above 0, at most 1
 ```
+
+### Snapshot never-stage list (`snapshot_never_stage`)
+
+`autonomous.snapshot_never_stage` is the list of path patterns the
+automatic snapshot and commit paths must never `git add`. Patterns are
+matched against the candidate's repo-relative path, **anchored at the
+repository root**: an entry ending in `/` names a root directory (it and
+everything under it are refused — `data/` covers `data/notes` but not
+`build/data/notes`); a slash-free glob is also matched against the
+candidate's file name alone, so `*.tmp` refuses at any depth while
+`secrets/key.*` covers only `secrets/key.<name>` at the root; an exact
+entry names that path or a root-level directory and its contents. Absolute
+patterns are inert.
+
+- **Unset** (key absent) reads the built-in list: `scratch/`, `tmp/`,
+  `temp/`, `.tmp/`, `data/`, `.data/`, `*.tmp`.
+- **An explicit empty list** (`[]`) disables every never-stage rule — a
+  different state from unset, preserved by a config round trip.
+- **Blank entries** are refused (`400`, naming the rule) and nothing in
+  the write is applied.
+
+`PUT /api/autonomous/config` takes `{"snapshot_never_stage": [...]}` — an
+array; a non-array non-null value is a `400`. `null` is treated as
+absent (merge-onto-current), and an explicit `[]` is stored verbatim.
+`GET /api/autonomous/config` renders the **effective** list — the
+configured list, or the built-in defaults when the key is unset. The same
+key is also settable as `autonomous.snapshot_never_stage` through
+`GET`/`PUT /api/config` (an array or a comma-separated string), MCP
+`autonomous_config_set` / `autonomous_config_get`, the CLI
+`datawatch config set autonomous.snapshot_never_stage`, the comm
+`configure` verb, and the PWA settings field. The full operator view —
+the scope rule around staging, every surface, and the task's
+`skipped_snapshot_paths` skip record — is
+[howto/autonomous.md](../howto/autonomous.md).
 
 ### Task attempt limits (`task_max_attempt_seconds`, `task_no_progress_seconds`)
 

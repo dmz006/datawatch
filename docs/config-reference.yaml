@@ -2540,6 +2540,23 @@ autonomous:
   # Run the nightwire-port security pattern scan over modified files
   # before marking a task complete.
   security_scan: true
+  # Snapshot and automatic-staging paths (the refs/datawatch/attempts
+  # attempt snapshots and the other automatic commits) must never stage
+  # candidates whose repo-relative path matches these patterns, matched
+  # from the repository root: an entry ending in "/" names a root
+  # directory (it and everything under it are refused — "data/" covers
+  # "data/notes" but not "build/data/notes"), a slash-free glob is also
+  # matched against the candidate's file name ("*.tmp" refuses at any
+  # depth), and anything else names an exact path or a root-level
+  # leading directory (a pattern nothing can match is simply inert).
+  # The shipped list covers scratch, temp and local data folders
+  # (scratch/, tmp/, temp/, .tmp/, data/, .data/, *.tmp). Omit the key
+  # to keep the shipped defaults;
+  # an explicit empty list disables every never-stage rule, which is a
+  # different state from "unset" and survives a config round trip (the
+  # key carries no omitempty for that reason). Blank entries are rejected
+  # on load and by the config write paths.
+  snapshot_never_stage: [scratch/, tmp/, temp/, .tmp/, data/, .data/, "*.tmp"]
   # Default false (halt): the moment any story rolls up to "failed", the
   # PRD stops (status -> blocked) instead of continuing into later,
   # independent stories — so the operator can re-edit/rerun the failed

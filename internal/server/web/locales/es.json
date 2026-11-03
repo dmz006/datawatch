@@ -1883,6 +1883,7 @@
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
   "settings_task_override_statuses": "Estados de autómata que aceptan anulación de LLM",
+  "settings_snapshot_never_stage": "Patrones que el snapshot nunca debe preparar para el commit (separados por comas)",
   "settings_verification_timeout": "Tiempo de espera de la sesión de verificación/guardrail (seg, 0=30m)",
   "settings_judge_policy": "Backends de juez (ordenados, separados por comas; vacío = política de enrutamiento del verificador)",
   "settings_judge_policy_help": "Los backends de LLM que prueban los jueces, en orden, con un intento cada uno: el guardrail del autómata y los jueces de revisión de planes y otros jueces autónomos. Un juez pasa al siguiente backend solo cuando su ejecución alcanza el límite de tiempo. Vacío (predeterminado) sigue la política de enrutamiento del verificador, así que los jueces usan los mismos modos y backends que los verificadores; el número de intentos es el de backends que ofrece la política.",

@@ -1898,6 +1898,20 @@ session, and the task drives to verification/completion.
 
 ---
 
+## Snapshot staging scope — new `autonomous.snapshot_never_stage` and `skipped_snapshot_paths`
+
+The task-finish snapshot commit stages only paths inside the task's declared plan, honours the repository ignore rules and a configurable never-stage pattern list, and reports what it skipped. The skip record on the task result is currently written by the stall-recovery commit path only; the normal completion commit logs its skips.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Config — `autonomous.snapshot_never_stage` default list, validation and round trip | **Yes** (`internal/config/snapshot_never_stage_test.go`) | Not run on a live daemon | Pattern list parse, defaults, invalid pattern refused | |
+| REST config — `GET`/`PUT /api/config` report and persist the key | **Yes** (`internal/server/snapshot_never_stage_config_surfaces_test.go`) | Not run on a live daemon | Round trip through the config handlers | |
+| MCP — `config_set` / `get_config` accept and return the key | **Yes** (`internal/mcp/snapshot_never_stage_test.go`) | Not run on a live daemon | Tool call round trip | |
+| Staging guard — outside-plan, ignored and never-stage skips | **Yes** (`internal/session/git_test.go`) | Not run on a live daemon | Temporary repositories | |
+| `skipped_snapshot_paths` on the task result | Partly (recovery commit path) | Not run | Recorded by the stall-recovery commit only | Normal completion commit logs only; follow-up defect filed |
+
+---
+
 ## Restart no longer revives stale running Automata — new `autonomous.resume_max_age_seconds` limit — v9.5.32
 
 At daemon restart, an Automaton left running is now gated: it resumes only if its newest activity is within `autonomous.resume_max_age_seconds` (default 3600) **and** its project directory still exists; `0` = never auto-resume, `-1` = no age limit (missing dirs still park). Parked Automata become `blocked` with a plain-English reason + operator alert, and each decision (resumed/parked, age, reason) is recorded in the startup log, the decision log, and the autonomous status `boot_resume` list.

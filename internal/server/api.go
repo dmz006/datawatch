@@ -6198,6 +6198,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// never resume, -1 = no age limit: both survive, so no
 			// omitempty on the struct tag.
 			"resume_max_age_seconds": s.cfg.Autonomous.ResumeMaxAgeSeconds,
+			// Snapshot-never-stage list (path patterns the autonomous
+			// snapshot must never `git add`): nil (unset) reads the built-in
+			// defaults (config.DefaultSnapshotNeverStage), so render the
+			// effective list.
+			"snapshot_never_stage": s.cfg.Autonomous.EffectiveSnapshotNeverStage(),
 			// Local-model engine sessions allowed per compute node (1 = default).
 			"max_engines_per_node": s.cfg.Autonomous.MaxEnginesPerNode,
 			// BL304: new key. Also emit legacy key for back-compat with old clients.
@@ -7100,6 +7105,25 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if raw, ok := patch["autonomous.loop_detect_turns"]; ok {
 		if n, okInt := toInt(raw); !okInt || n < 0 {
 			http.Error(w, "autonomous.loop_detect_turns: must be a non-negative integer (0 turns loop detection off; default 3)", http.StatusBadRequest)
+			return
+		}
+	}
+	// autonomous.snapshot_never_stage — the snapshot's never-stage list.
+	// Blank patterns and a wrong type reject the whole PUT (same rule as
+	// the /api/autonomous/config surface); a CSV blank value is nil and
+	// passes (unset → the built-in defaults apply).
+	if rawNS, ok := patch["autonomous.snapshot_never_stage"]; ok {
+		var patterns []string
+		if arr, isArr := toStringArray(rawNS); isArr {
+			patterns = arr
+		} else if str, isStr := rawNS.(string); isStr {
+			patterns = splitCSV(str)
+		} else {
+			http.Error(w, "autonomous.snapshot_never_stage: must be a list of path patterns or a comma-separated string", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateSnapshotNeverStage(patterns); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -8442,6 +8466,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		case "autonomous.snapshot_never_stage":
+			// Path patterns the autonomous snapshot must never `git add`.
+			// Same dual-form handling as task_override_statuses above: JSON
+			// array first, comma-separated string fallback (the comm channel
+			// sends CSV). Blank patterns are rejected earlier in
+			// handlePutConfig; a CSV blank value lands as nil (unset → the
+			// built-in defaults apply).
+			if arr, ok := toStringArray(v); ok {
+				trimmed := make([]string, 0, len(arr))
+				for _, p := range arr {
+					if t := strings.TrimSpace(p); t != "" {
+						trimmed = append(trimmed, t)
+					}
+				}
+				cfg.Autonomous.SnapshotNeverStage = trimmed
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.SnapshotNeverStage = splitCSV(s)
 			}
 		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
 			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",

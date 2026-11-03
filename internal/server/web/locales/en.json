@@ -1851,6 +1851,7 @@
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
   "settings_task_override_statuses": "Automaton statuses that accept LLM overrides",
+  "settings_snapshot_never_stage": "Patterns the snapshot must never stage (comma-separated)",
   "settings_verification_timeout": "Verifier/guardrail session timeout (sec, 0=30m)",
   "settings_judge_policy": "Judge backends (ordered, comma-separated; empty = verifier routing policy)",
   "settings_judge_policy_help": "The LLM backends the judges try in order, one attempt each: the Automaton guardrail, plan-review and other autonomous judges. A judge moves to the next backend only when its run hits the time limit. Empty (default) follows the verifier routing policy, so judges use the same modes and backends as verifiers, and the number of attempts equals the number of backends the policy offers.",

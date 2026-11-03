@@ -569,6 +569,11 @@ type Config struct {
 	// before it is no longer eligible for resume (default 3600). 0 is
 	// meaningful: never resume.
 	ResumeMaxAgeSeconds int `json:"resume_max_age_seconds"`
+	// SnapshotNeverStage — path patterns the autonomous snapshot must
+	// never `git add` (mirrors config.AutonomousConfig; nil = the built-in
+	// defaults apply). No omitempty, same round-trip reason as
+	// VerificationBackends.
+	SnapshotNeverStage []string `json:"snapshot_never_stage"`
 	// CIWatchTimeoutSeconds bounds how long the ci-watch completion guardrail waits for this automaton's own pushed commit's CI runs to finish (default 1500).
 	// Default rationale: this repo's own tag Release workflow took ~18
 	// minutes on the most recent real run (gh run list) and ordinary
@@ -864,6 +869,10 @@ func DefaultConfig() Config {
 		FailureEscalation:   defaultFailureEscalationPolicy(),
 		AutoFixRetries:      1,
 		SecurityScan:        true,
+		// Snapshot-never-stage defaults match the daemon config's (nil =
+		// reads these in both packages), so a fresh manager GETs the same
+		// effective list as the daemon's /api/config does.
+		SnapshotNeverStage:   append([]string(nil), config.DefaultSnapshotNeverStage...),
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
@@ -4293,6 +4302,46 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 		for ti := range prd.Story[si].Tasks {
 			if prd.Story[si].Tasks[ti].ID == taskID {
 				prd.Story[si].Tasks[ti].FilesTouched = files
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// RecordTaskSkippedSnapshotPaths (sibling of RecordTaskFilesTouched) —
+// daemon-internal hook fired after one of the session's staging commits
+// (or the attempt snapshot pass) refused to add candidate files: it records
+// the skip list the session commit helper returned
+// (session.ProjectGit.LastStagingSkipped) on the task result. Capped at 50
+// entries. Replaced wholesale each call, so the field always holds the last
+// staging pass on the task. No lock-after-approve gate — this fires after
+// the worker session ends, like RecordTaskFilesTouched.
+func (m *Manager) RecordTaskSkippedSnapshotPaths(prdID, taskID string, skipped []SnapshotSkippedPath) error {
+	if len(skipped) == 0 {
+		return nil
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	if len(skipped) > 50 {
+		skipped = skipped[:50]
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].SkippedSnapshotPaths = skipped
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 				found = true
 				break

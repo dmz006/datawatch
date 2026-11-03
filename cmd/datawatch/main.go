@@ -4399,6 +4399,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
 			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
+			SnapshotNeverStage:               append([]string(nil), acfgIn.SnapshotNeverStage...),
 			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
 			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
 			PlanningEffort:                   acfgIn.PlanningEffort,
@@ -5562,10 +5563,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 											summary = session.ExtractCompletionSummary(tail)
 										}
 										pg := session.NewProjectGit(taskDir)
-										// Bound unscoped staging to this run's own changes.
+										// Bound unscoped staging to this run's own changes,
+										// and honour the autonomous never-stage patterns.
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
+										pg.SetNeverStagePatterns(cfg.Autonomous.EffectiveSnapshotNeverStage())
 										// Verification has passed, so the commit may carry the
 										// session's commit token.
 										mgr.AuthorizeCommit(s.FullID, pg)
@@ -5584,6 +5587,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										}
 										if cerr != nil {
 											return cerr
+										}
+										for _, sk := range pg.LastStagingSkipped() {
+											log.Printf("[autonomous] verifier commit: left %q unstaged (%s)", sk.Path, sk.Reason)
+										}
+										// Record the staging-guard skip list on the task result
+										// (advisory evidence; last staging pass wins).
+										if autonomousMgrRef != nil {
+											if skipped := pg.LastStagingSkipped(); len(skipped) > 0 {
+												if rerr := autonomousMgrRef.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID, autonomouspkg.TaskSnapshotSkippedFrom(skipped)); rerr != nil {
+													log.Printf("[autonomous] verifier: RecordTaskSkippedSnapshotPaths(%s/%s): %v", task.PRDID, task.ID, rerr)
+												}
+											}
 										}
 										if sha != "" && autonomousMgrRef != nil {
 											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
