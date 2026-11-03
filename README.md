@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.72.0 (2026-11-03).** An Automation can now start from a fork or a nested Automation as well as a plain Automaton, and a blocked Automation that never started can be returned to draft. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.73.0 (2026-11-03).** Sessions of print-mode backends such as pi no longer show waiting for input while they work: the state follows the process and its transcript, and a dead session shows as stalled. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

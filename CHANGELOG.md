@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.73.0 — Session state follows the real process for print-mode backends
+
+Sessions of print-mode backends (such as pi) no longer show "waiting for input" for their whole run.
+
+- A session is Running while its process is alive and its transcript or output file changed within a window. Waiting for input is reserved for a backend really at a prompt.
+- A session whose process is gone but whose record is still open shows a new Stalled state.
+- New settings `session.liveness_window_seconds` and `session.liveness_idle_timeout_overrides` set the window and the per-backend idle timeout; the idle timeout is off by default for print-mode backends.
+- The supervisor watch's silent-session check uses the same signal.
+- The Stalled filter chip is added to the sessions list. Known gap, filed as a follow-up: the two new settings are not yet on the config routes, the web settings, the CLI and the comm channel.
+
 ## v9.72.0 — An Automation can start from a fork or a nested Automation
 
 ### Added
