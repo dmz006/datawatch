@@ -44,6 +44,15 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 	return s
 }
 
+// SessionDecision is one duplicate-session decision on a task: two or more
+// live sessions matched the task, Kept survived and Ended were ended.
+type SessionDecision struct {
+	At     time.Time `json:"at"`
+	Kept   string    `json:"kept"`
+	Ended  []string  `json:"ended,omitempty"`
+	Reason string    `json:"reason"`
+}
+
 // Decision (BL191 Q3, v5.2.0) is one entry in the per-PRD audit log
 // of LLM calls + verifier verdicts. Append-only. Surfaced via
 // GET /api/autonomous/prds/{id}/decisions for the operator timeline,
@@ -1021,6 +1030,10 @@ type Task struct {
 	// It tells executeOne not to spawn: wait for the session's completion
 	// marker, then verify. Cleared once executeOne consumes it.
 	AdoptedSession bool `json:"adopted_session,omitempty"`
+	// SessionDecisions records each duplicate-live-session decision made for
+	// this task: which session was kept, which were ended, and why. Append-only,
+	// one entry per distinct decision.
+	SessionDecisions []SessionDecision `json:"session_decisions,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.

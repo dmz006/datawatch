@@ -72,6 +72,7 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 			}
 		}
 	}
+	var eligible []SessionInfo
 	for _, s := range liveWorkersOwningWorktree(prd, t, listFn(), dir) {
 		if claimed[sessionShortID(s.ID)] {
 			continue
@@ -82,6 +83,12 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 		if startedFn != nil && !startedFn(s.ID) {
 			continue // a bare shell, not a worker
 		}
+		eligible = append(eligible, s)
+	}
+	// Two or more live workers: the duplicate-session policy picks the survivor
+	// (the older one by default) and the others end below.
+	if s, _ := DecideDuplicateSession(eligible, m.duplicateSessionKeep()); s != nil {
+		s := *s
 		now := time.Now()
 		if !sameSessionID(t.SessionID, s.ID) {
 			t.ComputeNode = ""
@@ -99,6 +106,7 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "adopt_live_worker", Actor: "autonomous", Note: note})
 		t.History = append(t.History, TaskHistoryEntry{At: now, Note: note})
 		log.Printf("[autonomous] executeOne: %s", note)
+		m.endDuplicateSessions(prd, t, s.ID, "autonomous.executor.duplicate", fmt.Sprintf("duplicate of the live worker adopted before spawn (keep %s)", m.duplicateSessionKeep()))
 		return s.ID
 	}
 	return ""
