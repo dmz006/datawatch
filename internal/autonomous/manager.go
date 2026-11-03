@@ -1288,6 +1288,8 @@ type Manager struct {
 	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
 	// belonging to a task with an empty or dead session link before resetting it.
 	sessionListerFn func() []SessionInfo
+	// worktreeDirtyFn — the worktree guard's uncommitted-changes check.
+	worktreeDirtyFn func(dir string) (bool, error)
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
 	// worker session's last output time as PRD activity. Nil = liveness only.
 	sessionLastOutputFn func(sessionID string) (time.Time, bool)

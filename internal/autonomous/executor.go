@@ -1318,7 +1318,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// the first attempt (attempt > 0 means the previous session already
 		// finished and failed verification, so we must spawn a new one).
 		skipSpawn := false
-		if attempt == 0 && t.SessionID != "" && (t.Status == TaskVerifying || (t.Status == TaskInProgress && t.AdoptedSession)) {
+		// A live worker of this task already owns its worktree (a restart left it
+		// running while the first attempt was recorded failed): adopt it instead
+		// of spawning a second one. The attempt number and counters are kept.
+		adoptedLive := false
+		if !readOnly && t.Status != TaskVerifying {
+			adoptedLive = m.adoptLiveWorkerBeforeSpawn(prd, t, attempt, m.resolveTaskProjectDir(prd, t)) != ""
+			if adoptedLive {
+				_ = m.store.SaveTask(t)
+			}
+		}
+		if (attempt == 0 || adoptedLive) && t.SessionID != "" && (t.Status == TaskVerifying || (t.Status == TaskInProgress && t.AdoptedSession)) {
 			m.mu.Lock()
 			aliveFn, outputFn, waitFn := m.sessionAliveFn, m.sessionOutputFn, m.sessionWaitFn
 			m.mu.Unlock()
@@ -1412,6 +1422,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// admission as the tie breaker for this attempt's placement.
 		prevNode := ""
 		if !skipSpawn {
+			// Never reset or restore a worktree a live session of this task owns
+			// while it holds uncommitted changes; a CleanRestart ends it first.
+			if !readOnly {
+				if gerr := m.guardLiveWorktree(ctx, prd, t, m.resolveTaskProjectDir(prd, t)); gerr != nil {
+					return fmt.Errorf("spawn: %w", gerr)
+				}
+			}
 			// Kill any session left over from a previous attempt (a failed-
 			// verification retry within this call, or a session inherited from
 			// disk after a daemon restart whose liveness check above came back
