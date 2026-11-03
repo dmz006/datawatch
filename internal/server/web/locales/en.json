@@ -1211,6 +1211,7 @@
   "session_chip_all": "All",
   "session_chip_done": "Done",
   "session_chip_waiting": "Waiting",
+  "session_chip_stalled": "Stalled",
   "session_compute_ref_title": "v7 Compute Node",
   "session_detail_cancel_schedule": "Cancel schedule",
   "session_detail_delete_body": "This removes the session record from the server. Tracking data on disk is preserved. This cannot be undone.",

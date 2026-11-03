@@ -1704,6 +1704,9 @@ func (m *Manager) GetLastResponse(fullID string) string {
 			return ""
 		}
 	}
+	// stalled falls through the default: the process is gone (or silent beyond
+	// the window), so fresh capture is unavailable and the stored LastResponse
+	// IS the latest view — we return it below.
 	switch sess.State {
 	case StateRunning, StateWaitingInput:
 		// When a session is waiting for input AND the dual-summary pipeline has
@@ -4240,7 +4243,10 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		}
 	}
 
-	// Only allow restart of terminal-state sessions
+	// Only allow restart of terminal-state sessions. StateStalled is
+	// deliberately rejected here: it is non-terminal and resumable — activity
+	// returning to the session moves it back to StateRunning, and it reaches
+	// a terminal state before Restart is ever offered for it.
 	switch sess.State {
 	case StateComplete, StateFailed, StateKilled:
 		// OK to restart
@@ -4504,8 +4510,11 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	}
 
 	// Kill the session if it is still alive.
+	// StateStalled is included: a stalled print session's pane may still be
+	// alive (silent beyond the window), and a restart requires it to be
+	// torn down just like any other non-terminal live state.
 	switch sess.State {
-	case StateRunning, StateWaitingInput, StateRateLimited:
+	case StateRunning, StateWaitingInput, StateRateLimited, StateStalled:
 		// Cancel the monitor goroutine and clean up resources before Kill so
 		// Kill's tmux call is the only thing that tears it down.
 		m.mu.Lock()
@@ -7971,7 +7980,10 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	if ok {
 		now := time.Now()
 		switch current.State {
-		case StateWaitingInput:
+		case StateWaitingInput, StateStalled:
+			// StateStalled resumes here too: output arriving on the channel is
+			// activity resuming, and a stalled session must return to
+			// StateRunning on exactly that signal.
 			oldState := current.State
 			current.State = StateRunning
 			current.UpdatedAt = now
