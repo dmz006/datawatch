@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,12 +42,16 @@ func newStrictNodeHealthView() *nodeHealthView {
 	return v
 }
 
-// refresh replaces the copied node set.
+// refresh replaces the copied node set. Each record is copied by value, so
+// the view keeps its own copy of the drain fields and permissions: it never
+// reads a registry entry in place, and a later registry edit of the same node
+// does not change a record the view already copied.
 func (v *nodeHealthView) refresh(nodes []*compute.Node) {
 	m := make(map[string]*compute.Node, len(nodes))
 	for _, n := range nodes {
 		if n != nil {
-			m[n.Name] = n
+			cp := *n
+			m[n.Name] = &cp
 		}
 	}
 	v.mu.Lock()
@@ -63,4 +68,44 @@ func (v *nodeHealthView) healthy(name string) bool {
 	}
 	n, ok := v.nodes[name]
 	return ok && !n.InMaintenance(v.now())
+}
+
+// gate reports whether name may take new work for the named consumer, and
+// the reason when it may not. It is the ledger's NodeGate: the drain and
+// maintenance states and the node's consumer permissions are each evaluated
+// at call time against the copied record, so a drain, an undrain, a window
+// opening or closing, or a permission edit takes effect the next time the
+// ledger checks the node — no refresh tick is needed. The order is drained,
+// in maintenance, consumer denied: drain wins over everything else, and the
+// consumer check runs last so drain and window reasons are never masked by an
+// RBAC refusal.
+//
+// The loaded and strict rules are the healthy() rules: before the first
+// refresh the node is open unless the view is strict, in which case it is
+// denied ("node list not loaded yet"), and a name the registry does not hold
+// is denied ("node not in the compute registry"). An empty consumer means no
+// consumer check, matching capacity.Request's empty-Consumer contract.
+func (v *nodeHealthView) gate(name, consumer string) (bool, string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.loaded {
+		if !v.strict {
+			return true, ""
+		}
+		return false, "node list not loaded yet"
+	}
+	n, ok := v.nodes[name]
+	if !ok {
+		return false, "node not in the compute registry"
+	}
+	if n.DrainActive(v.now()) {
+		return false, "drained"
+	}
+	if n.InMaintenance(v.now()) {
+		return false, "in maintenance"
+	}
+	if consumer != "" && !n.AllowsConsumer(consumer) {
+		return false, fmt.Sprintf("consumer %s denied", consumer)
+	}
+	return true, ""
 }
