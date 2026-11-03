@@ -875,6 +875,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		External:     external,
 		Backpressure: backpressure,
 		NodeHealthy:  nodeHealth.healthy,
+		NodeGate:     nodeHealth.gate,
 		AutonomousBackpressure: composeBackpressure(
 			backoffBackpressure(autonomousBackoff),
 			budgetBackpressure(autonomousBudget),
