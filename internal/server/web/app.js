@@ -3154,6 +3154,7 @@ function renderSessionsView() {
     {key: 'all',          label: 'All',          color: 'var(--text2)'},
     {key: 'running',      label: 'Running',      color: 'var(--success,#10b981)'},
     {key: 'waiting_input',label: 'Waiting',      color: 'var(--warning,#f59e0b)'},
+    {key: 'stalled',      label: 'Stalled',      color: 'var(--error,#ef4444)'},
     {key: 'rate_limited', label: 'Rate-limited', color: 'var(--error,#ef4444)'},
     {key: 'complete',     label: 'Complete',     color: 'var(--text2)'},
     {key: 'failed',       label: 'Failed',       color: 'var(--error,#ef4444)'},
@@ -12724,7 +12725,7 @@ window.llmLoadInUse = function(name, btn) {
       return;
     }
 
-    const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', complete:'⚪', failed:'🔴', killed:'🔴', configured:'🔵' })[s] || '⚫';
+    const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', complete:'⚪', failed:'🔴', killed:'🔴', configured:'🔵', stalled:'🟠' })[s] || '⚫';
 
     const renderRows = (rows, kind) => rows.map(r => {
       const id = r.id || r.name || '';
@@ -12814,7 +12815,7 @@ window._llmShowDeleteBlockModal = function(name, activeBindings) {
   const old = document.getElementById('llmDeleteBlockModal');
   if (old) old.remove();
 
-  const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', configured:'🔵' })[s] || '⚫';
+  const stateIcon = s => ({ running:'🟢', waiting_input:'🟡', planning:'🟡', decomposing:'🟡', configured:'🔵', stalled:'🟠' })[s] || '⚫';
   const bindingsHTML = activeBindings.slice(0, 10).map(r =>
     `<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0;">
       <span>${stateIcon(r.state||'')}</span>

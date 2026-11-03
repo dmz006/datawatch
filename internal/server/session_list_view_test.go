@@ -101,9 +101,11 @@ func TestParseSessionListOptions(t *testing.T) {
 		{query: "since=" + strconv.FormatInt(ts.Unix(), 10), wantSince: ts},
 		{query: "since=2026-10-01T12:00:00.5Z", wantSince: ts.Add(500 * time.Millisecond)},
 		{query: "since=yesterday", wantErr: true},
-		{query: "states=active", wantStates: []string{"rate_limited", "running", "waiting_input"}},
+		// active = every non-terminal state; stalled is non-terminal (it is
+		// resumable to running), so it belongs in the active set.
+		{query: "states=active", wantStates: []string{"rate_limited", "running", "stalled", "waiting_input"}},
 		{query: "states=complete,%20failed", wantStates: []string{"complete", "failed"}},
-		{query: "states=active,killed", wantStates: []string{"killed", "rate_limited", "running", "waiting_input"}},
+		{query: "states=active,killed", wantStates: []string{"killed", "rate_limited", "running", "stalled", "waiting_input"}},
 		{query: "states=bogus", wantErr: true},
 		{query: "states=,", wantErr: true},
 	}

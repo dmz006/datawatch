@@ -202,6 +202,8 @@ func pageSessions(sessions []*session.Session, o sessionPageOptions) ([]*session
 // the pending prompt), cut to n runes.
 func sessionStatusLine(sess *session.Session, n int) string {
 	src := sess.LastResponse
+	// stalled must not be presented as waiting-for-input: no pending-prompt
+	// substitution for that state — the last response line stays as-is.
 	if sess.State == session.StateWaitingInput && sess.PendingInput != "" {
 		src = sess.PendingInput
 	}

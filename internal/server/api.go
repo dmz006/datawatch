@@ -3947,6 +3947,8 @@ func (s *Server) handleSessionSelf(w http.ResponseWriter, r *http.Request) {
 	all := s.manager.ListSessions()
 	var candidates []*session.Session
 	for _, sess := range all {
+		// stalled is not a candidate: redelivery needs an active process to
+		// receive it — a stalled session is non-terminal but not reachable.
 		if sess.ChannelReady && (sess.State == session.StateRunning || sess.State == session.StateWaitingInput) {
 			candidates = append(candidates, sess)
 		}
@@ -4482,7 +4484,7 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session_id": body.SessionID}) //nolint:errcheck
 }
 
-// POST /api/sessions/state {"id":"...","state":"running|waiting_input|complete|killed"}
+// POST /api/sessions/state {"id":"...","state":"running|waiting_input|stalled|complete|killed|failed|rate_limited"}
 func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
@@ -4499,7 +4501,10 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	validStates := map[string]bool{"running": true, "waiting_input": true, "complete": true, "killed": true, "failed": true, "rate_limited": true}
+	// "stalled" is a valid override target: it is non-terminal, so it belongs on
+	// the settable side of the split (a manual stall must be writable, and
+	// revertible to running, just like rate_limited).
+	validStates := map[string]bool{"running": true, "waiting_input": true, "stalled": true, "complete": true, "killed": true, "failed": true, "rate_limited": true}
 	if !validStates[req.State] {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
@@ -11893,6 +11898,8 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 			return sessions[i].CreatedAt.After(sessions[j].CreatedAt)
 		})
 		for _, sess := range sessions {
+			// stalled is excluded: it is non-terminal but the process is not
+			// reachable, so it can't accept a redelivered message.
 			if sess.BackendFamily == "claude-code" &&
 				(sess.State == session.StateRunning || sess.State == session.StateWaitingInput) &&
 				sess.Hostname == s.hostname &&

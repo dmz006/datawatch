@@ -162,6 +162,9 @@ func (m *Manager) applyBusyProbe(fullID string, ts time.Time) bool {
 	if !ok || sess == nil {
 		return false
 	}
+	// StateStalled is deliberately out of scope here: a busy pane alone does not
+	// prove the session is back — it stays stalled until real output resumes it
+	// (see the output-driven stalled→running restore) or a state override runs.
 	if sess.State != StateRunning && sess.State != StateWaitingInput {
 		return false
 	}
