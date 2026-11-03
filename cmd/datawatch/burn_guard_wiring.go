@@ -25,10 +25,6 @@ import (
 // burnGuardBackoffSource marks the back-off flag the hold rung sets.
 const burnGuardBackoffSource = "burn_guard"
 
-// burnGuardHoldSpan is how far out the hold flag's deadline is set; the guard clears it
-// when the rung is released, long before.
-const burnGuardHoldSpan = 365 * 24 * time.Hour
-
 // burnGuardInflight holds the inflight caps the guard has lowered, by LLM entry name.
 // syncLLMLimits consults it on every pass, so the 10s limit sync does not undo a lowered cap.
 var burnGuardInflight = &inflightOverrides{m: map[string]int{}}
@@ -151,8 +147,37 @@ func (a burnGuardAdmission) HoldNewWork(backend string, on bool) error {
 	if a.now != nil {
 		now = a.now
 	}
-	a.bo.Set(backend, now().Add(burnGuardHoldSpan), "burn guard: weekly burn projects over the pace line", burnGuardBackoffSource)
+	until, resetKnown := a.holdDeadline(now())
+	a.bo.SetWithReset(backend, until.In(time.Local), "burn guard: weekly burn projects over the pace line", burnGuardBackoffSource, resetKnown)
 	return nil
+}
+
+// holdDeadline is the deadline of the hold flag: the earlier of the next weekly reset
+// (from the usage calculator settings) and the next guard reading (now plus the guard's
+// tick interval). The guard renews the flag on every tick that keeps the hold rung
+// applied, so the deadline spans at most one reset or one reading — never a fixed
+// long span. resetKnown is false when the reset cannot be resolved; then the deadline
+// is the next guard reading and the surface shows it as a maximum back-off.
+func (a burnGuardAdmission) holdDeadline(now time.Time) (time.Time, bool) {
+	mins := 0
+	if a.cfg != nil {
+		mins = a.cfg.Usage.BurnGuard.IntervalMinutes
+	}
+	if mins < 1 {
+		mins = config.BurnGuardIntervalMinutesDefault
+	}
+	until := now.Add(time.Duration(mins) * time.Minute)
+	if a.cfg == nil {
+		return until, false
+	}
+	reset, err := server.UsageCalculatorSettings(a.cfg.Usage.Calculator).Reset.NextReset(now)
+	if err != nil {
+		return until, false
+	}
+	if reset.Before(until) {
+		until = reset
+	}
+	return until, true
 }
 
 // burnGuardSessions is the read-only session view: it only counts.

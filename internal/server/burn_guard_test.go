@@ -204,6 +204,111 @@ func TestBurnGuardClimbsAndNeverEndsASession(t *testing.T) {
 	ses.assertNoEnd(t)
 }
 
+// TestBurnGuardRenewsHoldWhileAppliedAndClearsOnStepBack: while the hold rung stays applied and
+// nothing changes, every tick renews the hold flag; when the projection returns under the pace
+// line and the rung steps back, the release clears it.
+func TestBurnGuardRenewsHoldWhileAppliedAndClearsOnStepBack(t *testing.T) {
+	cfg := config.DefaultBurnGuard()
+	cfg.Enabled = true
+	cfg.Ladder = []string{burnguard.RungHoldClaude}
+
+	ctx := context.Background()
+	fixedNow := time.Date(2026, 10, 30, 20, 0, 0, 0, time.UTC)
+	proj := filepath.Join(t.TempDir(), "-example-project")
+	if err := os.MkdirAll(proj, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 40M cache-write tokens (about 15 points) in the last hour, shortly before now —
+	// well over the pace line, like the shared rig.
+	line := fmt.Sprintf(`{"type":"assistant","timestamp":"%s","requestId":"r1","message":{"id":"m1","usage":{"cache_creation_input_tokens":40000000,"cache_read_input_tokens":0}}}`+"\n",
+		fixedNow.Add(-5*time.Minute).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(proj, "s.jsonl"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pct := func(v float64) *float64 { return &v }
+	// Usage well over the pace line.
+	readings := []usagecalc.Reading{
+		{At: fixedNow.Add(-6 * time.Hour), Percent: pct(55)},
+		{At: fixedNow.Add(-90 * time.Minute), Percent: pct(60)},
+	}
+	adm := newFakeAdmission(3)
+	notif := &fakeNotifier{}
+	ses := &failingSessions{running: 1}
+	in := BurnGuardInputs{
+		Config: func() config.BurnGuardConfig { return cfg },
+		Readings: func(context.Context) ([]usagecalc.Reading, float64, usagecalc.ResetSpec, error) {
+			return readings, 0, usagecalc.ResetSpec{Weekday: time.Saturday, Clock: "09:00", Zone: "UTC"}, nil
+		},
+		TranscriptDir: filepath.Dir(proj),
+		Now:           func() time.Time { return fixedNow },
+	}
+	g, err := NewBurnGuard(in, adm, ses, notif, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holdCalls := func(on bool) int {
+		adm.mu.Lock()
+		defer adm.mu.Unlock()
+		want := fmt.Sprintf("hold claude-code %v", on)
+		n := 0
+		for _, c := range adm.calls {
+			if c == want {
+				n++
+			}
+		}
+		return n
+	}
+	heldNow := func() bool {
+		adm.mu.Lock()
+		defer adm.mu.Unlock()
+		return adm.held["claude-code"]
+	}
+
+	// First tick: the projection is over the line, the hold rung climbs in and sets the flag once.
+	d := g.Tick(ctx)
+	if d.Direction != burnguard.DirectionClimb || d.Rung != burnguard.RungHoldClaude {
+		t.Fatalf("first tick = %+v, want a climb to hold_claude", d)
+	}
+	if got := holdCalls(true); got != 1 {
+		t.Fatalf("climb set the hold %d times, want 1", got)
+	}
+
+	// Second tick: nothing changes and the rung stays applied. The flag must be renewed.
+	d = g.Tick(ctx)
+	if d.Changed {
+		t.Fatalf("second tick changed: %+v", d)
+	}
+	if got := holdCalls(true); got != 2 {
+		t.Fatalf("no-change tick: hold(true) calls = %d, want 2 (the held tick renews the flag)", got)
+	}
+	if !heldNow() {
+		t.Fatal("the hold is not in force after the renewal ticks")
+	}
+
+	// Step back: burn has quieted (the transcript line is now outside the 3h rate window)
+	// and the readings have dropped under the pace line, so the release clears the flag.
+	line = fmt.Sprintf(`{"type":"assistant","timestamp":"%s","requestId":"r1","message":{"id":"m1","usage":{"cache_creation_input_tokens":40000000,"cache_read_input_tokens":0}}}`+"\n",
+		fixedNow.Add(-40*time.Hour).Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(proj, "s.jsonl"), []byte(line), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	readings = []usagecalc.Reading{
+		{At: fixedNow.Add(-6 * time.Hour), Percent: pct(10)},
+		{At: fixedNow.Add(-90 * time.Minute), Percent: pct(20)},
+	}
+	d = g.Tick(ctx)
+	if d.Direction != burnguard.DirectionStepBack {
+		t.Fatalf("after the readings drop, tick = %+v, want a step back", d)
+	}
+	if heldNow() {
+		t.Fatal("the step back left the hold in force; the release must clear it")
+	}
+	if got := holdCalls(false); got != 1 {
+		t.Fatalf("step back: hold(false) calls = %d, want 1", got)
+	}
+	ses.assertNoEnd(t)
+}
+
 func TestBurnGuardDisabledDoesNothing(t *testing.T) {
 	cfg := config.DefaultBurnGuard()
 	cfg.Enabled = false

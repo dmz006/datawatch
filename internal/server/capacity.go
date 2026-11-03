@@ -404,7 +404,10 @@ func (s *Server) capacityBackoff() []capacityBackoffJSON {
 		return out
 	}
 	for _, e := range s.usageBackoff.Live() {
-		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: e.Until, Reason: e.Reason, ResetKnown: e.ResetKnown})
+		// The deadline is shown in the daemon's own zone: the flag may have
+		// been set from a reset in another zone, and the surfaces show local time.
+		local := e.Until.In(time.Local)
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown})
 	}
 	return out
 }
