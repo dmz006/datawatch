@@ -3089,6 +3089,19 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// PriorityByKind — the priority assigned to an intake item by its kind
+	// (bug / maintenance / feature / other). Shipped defaults are bug=80,
+	// maintenance=70, feature=20, other=0; operator-supplied keys override
+	// those defaults and unknown keys are kept. The map that is in effect is
+	// returned by EffectivePriorityByKind. No omitempty: an operator's
+	// explicit map edit (including clearing a kind to 0) must survive a JSON
+	// round trip, same gotcha as PlanTierMaxInflight above.
+	PriorityByKind map[string]int `yaml:"priority_by_kind" json:"priority_by_kind"`
+	// DefectIntakeAutomation — the name of the Automaton this installation
+	// takes defect intake on. Deliberately empty by default: each installation
+	// chooses its own.
+	DefectIntakeAutomation string `yaml:"defect_intake_automation,omitempty" json:"defect_intake_automation,omitempty"`
+
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
 	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
@@ -3637,6 +3650,41 @@ func (c AutonomousAutomationConfig) EffectiveDiskAlertPercent() int {
 		p = 100
 	}
 	return p
+}
+
+// Shipped priority_by_kind table. Operator policy, not a technical limit:
+// override any kind (or add kinds of your own) in
+// autonomous.priority_by_kind; the effective map is built by
+// DefaultPriorityByKindMap and merged by EffectivePriorityByKind.
+const (
+	DefaultPriorityByKindBug         = 80
+	DefaultPriorityByKindMaintenance = 70
+	DefaultPriorityByKindFeature     = 20
+	DefaultPriorityByKindOther       = 0
+)
+
+// DefaultPriorityByKindMap returns a fresh copy of the shipped
+// priority_by_kind table: bug=80, maintenance=70, feature=20, other=0.
+func DefaultPriorityByKindMap() map[string]int {
+	return map[string]int{
+		"bug":         DefaultPriorityByKindBug,
+		"maintenance": DefaultPriorityByKindMaintenance,
+		"feature":     DefaultPriorityByKindFeature,
+		"other":       DefaultPriorityByKindOther,
+	}
+}
+
+// EffectivePriorityByKind returns the priority table that is in effect: the
+// shipped defaults with the operator's autonomous.priority_by_kind entries
+// layered on top. Operator-supplied keys override the defaults and unknown
+// keys are kept; unset kinds fall back to their shipped value, so an empty
+// config still yields the full table.
+func (c AutonomousConfig) EffectivePriorityByKind() map[string]int {
+	m := DefaultPriorityByKindMap()
+	for k, v := range c.PriorityByKind {
+		m[k] = v
+	}
+	return m
 }
 
 // autonomous.lane_fill.mode values and defaults.
@@ -5793,9 +5841,13 @@ func DefaultConfig() *Config {
 			},
 			// Nothing declared until the operator sets a notional figure.
 			PlanTierAllocationUSD: map[string]float64{},
-			LoopDetectTurns:       &loopDetectTurnsDefault,
-			StaleTaskSeconds:      900,
-			StuckRunningSeconds:   StuckRunningDefaultSeconds,
+			// Shipped priority-by-kind table — operator policy, see the field
+			// doc on PriorityByKind. defect_intake_automation stays empty on
+			// purpose: each installation chooses its own.
+			PriorityByKind:      DefaultPriorityByKindMap(),
+			LoopDetectTurns:     &loopDetectTurnsDefault,
+			StaleTaskSeconds:    900,
+			StuckRunningSeconds: StuckRunningDefaultSeconds,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
