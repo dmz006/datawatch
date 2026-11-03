@@ -131,7 +131,7 @@ runPerfStory(async (page) => {
   if (!bin) await skipStory('datawatch binary not found (set TEST_BINARY or build bin/datawatch)');
   if (!existsSync(template)) await skipStory('testdata/datawatch.yaml not found');
 
-  sandboxRoot = path.join(repoRoot, `.ts846-sandbox-${process.pid}`);
+  sandboxRoot = path.join(repoRoot, '.rm-work', `ts846-sandbox-${process.pid}`);
   mkdirSync(sandboxRoot, { recursive: true });
   const primary = await startDaemon(bin, 'primary', LOCAL_HOST, 'ts846-primary-token');
   const peer = await startDaemon(bin, 'peer', PEER, 'ts846-peer-token');
@@ -151,6 +151,12 @@ runPerfStory(async (page) => {
   p.on('request', (req) => {
     const u = new URL(req.url());
     if (u.pathname.startsWith(`/api/proxy/${PEER}/`)) proxyHits.push(u.pathname);
+  });
+  // Successful proxied responses, counted per tab visit below.
+  const proxyOk = [];
+  p.on('response', (res) => {
+    const u = new URL(res.url());
+    if (u.pathname.startsWith(`/api/proxy/${PEER}/`) && res.ok()) proxyOk.push(u.pathname);
   });
 
   // Open the PWA on the primary over TLS.
@@ -188,7 +194,10 @@ runPerfStory(async (page) => {
     check(h && h.text.includes(who) && !h.text.includes(other), `${label}: server header line should show ${who}, got ${JSON.stringify(h)}`);
     check(h.server === who, `${label}: header line data-server should be ${who}, got ${h.server}`);
     for (const tab of SETTINGS_TABS) {
-      const before = proxyHits.length;
+      // Each visit re-renders Settings, which reloads its panels; count the
+      // proxied requests/responses that belong to THIS visit only.
+      const hitsBefore = proxyHits.length;
+      const okBefore = proxyOk.length;
       await p.evaluate(() => { window.navigate('settings'); });
       await p.evaluate((tb) => window.switchSettingsTab(tb), tab);
       await p.waitForFunction((tb) => {
@@ -204,15 +213,33 @@ runPerfStory(async (page) => {
       check(line !== null && line.includes(who) && !line.includes(other), `${label}: Settings ${tab} should show ${who}, got ${JSON.stringify(line)}`);
       const hh = await headerLine();
       check(hh && hh.text.includes(who), `${label}: header line missing on Settings ${tab}`);
+
+      // Data: the tab renders real content, and the data behind it comes from
+      // the selected server. Peer: successful /api/proxy/<peer>/ responses
+      // arrive during this visit. Local: none do.
+      const body = await p.evaluate((tb) => {
+        const secs = [...document.querySelectorAll(`.settings-section[data-group="${tb}"]`)].filter((s) => s.style.display !== 'none');
+        return { sections: secs.length, text: secs.map((s) => s.innerText).join(' ').trim().length };
+      }, tab);
+      check(body.sections > 0 && body.text > 0, `${label}: Settings ${tab} rendered no content`);
+      if (isPeer) {
+        const deadline = Date.now() + 20000;
+        while (proxyOk.length <= okBefore && Date.now() < deadline) await new Promise((r) => setTimeout(r, 150));
+        check(proxyHits.length > hitsBefore && proxyOk.length > okBefore,
+          `${label}: Settings ${tab} loaded no data through /api/proxy/${PEER}/ during this visit`);
+      } else {
+        await new Promise((r) => setTimeout(r, 400));
+        check(proxyHits.length === hitsBefore, `${label}: Settings ${tab} (local) made proxied requests to ${PEER}`);
+      }
+      // The server answering the app's own data route is the selected one.
+      const answered = await p.evaluate(() => apiFetch('/api/health').then((d) => d && d.hostname).catch(() => null));
+      check(answered === who, `${label}: Settings ${tab} data came from ${JSON.stringify(answered)}, expected ${who}`);
+
       if (tab === 'about') {
         await p.waitForFunction(() => {
           const v = document.getElementById('aboutVersion');
           return v && v.textContent.trim() && v.textContent.trim() !== '—';
         }, null, { timeout: 20000 });
-        if (isPeer) {
-          await p.waitForFunction((n) => performance.getEntriesByType('resource').some((r) => r.name.includes(`/api/proxy/${n}/`)), PEER, { timeout: 20000 });
-          check(proxyHits.length > before || proxyHits.length > 0, `${label}: About data did not come through /api/proxy/${PEER}/`);
-        }
       }
     }
     await p.evaluate(() => { window.navigate('sessions'); });
