@@ -257,14 +257,61 @@ func prdLastPostVerifySHA(prd *PRD) string {
 	return sha
 }
 
+// CIRef names what to list CI runs for: a commit SHA, or a tag.
+type CIRef struct {
+	Commit string // commit SHA; lists runs with gh's commit filter
+	Tag    string // tag name; tag-triggered runs carry the tag as their head branch
+}
+
+func (r CIRef) String() string {
+	if r.Tag != "" {
+		return "tag " + r.Tag
+	}
+	return "commit " + r.Commit
+}
+
+// ghRunListArgs builds the gh argument slice that lists runs for ref.
+func ghRunListArgs(ownerRepo string, ref CIRef) []string {
+	args := []string{"run", "list", "--repo", ownerRepo}
+	if ref.Tag != "" {
+		args = append(args, "--branch", ref.Tag)
+	} else {
+		args = append(args, "--commit", ref.Commit)
+	}
+	return append(args, "--json", "databaseId,name,status,conclusion,url", "--limit", "50")
+}
+
+// filterCIRunsByWorkflow keeps only runs whose workflow name matches one of
+// workflows (case-insensitive); an empty filter keeps every run.
+func filterCIRunsByWorkflow(runs []CIWatchRun, workflows []string) []CIWatchRun {
+	if len(workflows) == 0 {
+		return runs
+	}
+	out := make([]CIWatchRun, 0, len(runs))
+	for _, r := range runs {
+		for _, w := range workflows {
+			if strings.EqualFold(strings.TrimSpace(w), r.Name) {
+				out = append(out, r)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // defaultCIRuns lists the GitHub Actions runs for sha via the gh CLI.
 func defaultCIRuns(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error) {
+	return defaultCIRunsForRef(ctx, ownerRepo, CIRef{Commit: sha})
+}
+
+// defaultCIRunsForRef lists the GitHub Actions runs for a commit or tag via
+// the gh CLI.
+func defaultCIRunsForRef(ctx context.Context, ownerRepo string, ref CIRef) ([]CIWatchRun, error) {
 	ghBin, err := exec.LookPath("gh")
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, ghBin, "run", "list", "--commit", sha, "--repo", ownerRepo, // #nosec G204 -- fixed gh subcommand; sha/ownerRepo come from git's own output
-		"--json", "databaseId,name,status,conclusion,url", "--limit", "50")
+	cmd := exec.CommandContext(ctx, ghBin, ghRunListArgs(ownerRepo, ref)...) // #nosec G204 -- fixed gh subcommand; ref/ownerRepo come from git's own output
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("gh run list: %w", err)
