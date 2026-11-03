@@ -1882,3 +1882,13 @@ Consequences:
 2. A cap above 1 is accepted only with a measured headroom check: a recent measurement for that node, taken with the resident model loaded, showing that the free memory minus the configured minimum covers the extra slots. Without a fresh measurement the cap stays 1 and the refusal names the node and the shortfall.
 3. The measurement runs on demand on an idle node, never automatically on a node that is running work, and only with a model on the pull-allowed list.
 4. Build: the verifier slots Automaton covers the separate pool and the headroom gate; a follow-up Automaton adds the measurement and the refusal of a cap above 1.
+
+## Reading 2026-11-03 08:27: 30%, over the pace line, operator leaves the lane as is
+
+Reading: 30% at Tue 08:27, reset Sun 08:00, 4.98 days left. Pace line 28.8, so 1.2 points ahead (0.5 ahead at the 07:50 reading of 29%). Projected end 104% at the recent burn and at the week average; runs out about Sunday 01:32, roughly 6.5 hours before the reset. The cloud lane had been planning back to back (seven drafts queued for cloud planning), the burn guard was at rung 1 and had not stepped up.
+
+Options put to the operator: leave it and let the guard decide; finish the queued cloud plans and then plan mechanical drafts on the local pool (recommended); pause new cloud planning.
+
+Operator decision, quoted: "leave it and lets see how things go through the day".
+
+Consequence: no lane or planning change. The supervisor watches the burn guard and the next readings, and brings the choice back at the next reading if the projection stays over budget.
