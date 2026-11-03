@@ -310,6 +310,17 @@ type Node struct {
 	// going offline does NOT clear this (Q4: observer-down ≠ Node-down).
 	ObserverPeer string `yaml:"observer_peer,omitempty" json:"observer_peer,omitempty"`
 
+	// Drain state. Drained marks the operator's intent to stop placing
+	// fresh workloads on this node (maintenance, hardware swap, capacity
+	// reservation). DrainUntil bounds the drain: zero = open-ended (until
+	// manually cleared), non-zero = active only before that instant — an
+	// expired drain reads as not active but the stored fields are kept
+	// (DrainActive never mutates the node; clearing is an explicit
+	// undrain). DrainReason is the operator-supplied why.
+	Drained     bool      `yaml:"drained,omitempty" json:"drained,omitempty"`
+	DrainUntil  time.Time `yaml:"drain_until,omitempty" json:"drain_until,omitempty"`
+	DrainReason string    `yaml:"drain_reason,omitempty" json:"drain_reason,omitempty"`
+
 	// Bookkeeping.
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
@@ -479,6 +490,17 @@ func (n *Node) InMaintenance(now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// DrainActive reports whether the node's drain is in effect at now.
+// True when Drained is set and either DrainUntil is zero (open-ended)
+// or now is strictly before DrainUntil. An expired drain reads as not
+// active; this method never clears the stored drain fields.
+func (n *Node) DrainActive(now time.Time) bool {
+	if !n.Drained {
+		return false
+	}
+	return n.DrainUntil.IsZero() || now.Before(n.DrainUntil)
 }
 
 // AllowsConsumer applies the RBAC matrix for the named consumer.
