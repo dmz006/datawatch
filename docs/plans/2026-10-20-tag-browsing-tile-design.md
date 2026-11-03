@@ -578,3 +578,9 @@ in the decisions document, under `## Parity surface`.
     `autonomous_prd_set_tags`, but no Go source in this worktree defines them, and the
     PRD model has no tags field (only `Template.Tags`, `internal/autonomous/models.go`).
     Which build serves those tools, and is the registry in this repo's HEAD at all?
+
+## Addendum 2026-11-03: sessions tile mode, grouping and placement tags
+
+Operator direction (quoted): the Automata cards "stack left to right as well as up and down" and the sessions list "could use a block vs list mode and be able to show more sessions - esp with tagging as a way to group/sub-task list them"; and federated peer placement "should also auto-tag so we can not only see automation/automata tagging but tag by compute or federated etc".
+
+Decisions recorded as Automata: sessions tile mode, density, grouping by tag or tag prefix and sub-task nesting under the owning Automaton (the sessions list feature); placement auto-tags compute:, peer:, backend:, lane:, role: and project: next to the automation:, stage: and kind: tags (the placement auto-tags feature); and the peer placement build placeholder now requires its tags to come from the placement record.
