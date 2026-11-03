@@ -1870,3 +1870,15 @@ Operator, 2026-11-02, quoted: "Claude at 22%". The calculator records 22% at Mon
 - `autonomous.capacity_fallthrough` (default false) lets a worker task whose requested pool is full take another allowed backend and model that is idle now. Off, a task waits for its own pool. It is exposed on config, REST, MCP, CLI help, chat `configure` and the PWA settings, and a fall-through is recorded in the `autonomous_capacity_admitted` audit entry.
 - The wait timeout counts from the first admissible request.
 - Operator text: `docs/howto/automata-capacity.md`.
+
+## Decision 2026-11-03: verifier slots next to the executor cap
+
+Question (supervisor, quoting the operator's earlier ask): would verifiers that use classification verdicts, being short, be fine running in parallel with their own cap per GPU, based on the hardware and the model? Answer in the design: yes, as a separate verifier cap on each compute node next to the executor cap, never replacing the executor pin; the open risk is memory, because a parallel request on a loaded model multiplies its context memory.
+
+Operator decision, quoted: "yes, default 1 with a measured headroom check".
+
+Consequences:
+1. The default verifier cap is 1 on a node where classification verdicts are enabled, and 0 elsewhere. The executor pin of one session per node is unchanged.
+2. A cap above 1 is accepted only with a measured headroom check: a recent measurement for that node, taken with the resident model loaded, showing that the free memory minus the configured minimum covers the extra slots. Without a fresh measurement the cap stays 1 and the refusal names the node and the shortfall.
+3. The measurement runs on demand on an idle node, never automatically on a node that is running work, and only with a model on the pull-allowed list.
+4. Build: the verifier slots Automaton covers the separate pool and the headroom gate; a follow-up Automaton adds the measurement and the refusal of a cap above 1.
