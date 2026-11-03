@@ -1006,6 +1006,29 @@ func (m *Manager) resolveContinueOnStoryFailure(prd *PRD) bool {
 	return d
 }
 
+// resolveTaskConcurrency is the single decision point for the task-session
+// concurrency limit (BL370), resolving the policy tiers in precedence
+// order: the Automaton's own max_concurrent_tasks, then the project policy's
+// (via the injected projectPolicyConcurrency hook — nil or "no value" when
+// the daemon carries no project policy for this PRD's project), then the
+// daemon global default. 0 or 1 stays sequential (existing behaviour).
+func (m *Manager) resolveTaskConcurrency(prd *PRD) int {
+	if prd != nil {
+		if v := prd.MaxConcurrentTasks; v > 0 {
+			return v
+		}
+	}
+	if hook := m.projectPolicyConcurrency; hook != nil {
+		if v, ok := hook(prd); ok && v > 0 {
+			return v
+		}
+	}
+	m.mu.Lock()
+	g := m.cfg.MaxConcurrentTasks
+	m.mu.Unlock()
+	return g
+}
+
 // GuardrailFn (BL191 Q6, v5.10.0) is the indirection that runs one
 // guardrail attestation at the story or task level. Wired in main.go
 // to the same BL103 validator-agent path the BL117 orchestrator uses
@@ -1096,6 +1119,7 @@ type Manager struct {
 	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
 	supervisorWatchAlerted      map[string]bool
 	supervisorWatchAlertMu      sync.Mutex
+	projectPolicyConcurrency    func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
 
 	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
