@@ -408,6 +408,7 @@ func waitResetsAt(cause WaitCause, reason string, bo *Backoff, cooldownFn func()
 // full pool or node, or the task holding a tree lock. "" when it names none.
 func waitReasonHolder(cause WaitCause, reason string) string {
 	const marker = "held by "
+	reason = stripRequestedPool(reason)
 	i := strings.Index(reason, marker)
 	if i < 0 {
 		return ""

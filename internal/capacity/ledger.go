@@ -902,12 +902,19 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 	reason := w.reason
 	l.mu.Unlock()
 
-	if onWait != nil {
-		onWait(reason)
-	}
+	// The wait bound counts from the moment the request was queued (w.since,
+	// the first time it could be admitted to its pool), so neither the onWait
+	// callback's own time nor a later change of reason text moves it.
 	var deadline <-chan time.Time
 	if timeout > 0 {
-		deadline = l.opt.Clock.After(timeout)
+		remaining := timeout - l.opt.Clock.Now().Sub(w.since)
+		if remaining < 0 {
+			remaining = 0
+		}
+		deadline = l.opt.Clock.After(remaining)
+	}
+	if onWait != nil {
+		onWait(reason)
 	}
 	l.mu.Lock()
 	tick := l.opt.Clock.After(l.pollWaitLocked(w))

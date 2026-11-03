@@ -1077,11 +1077,14 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu          sync.Mutex
-	cfg         Config
-	store       *Store
-	automations *AutomationStore
-	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	mu sync.Mutex
+	// capacityWaitSpent is the queue time each task's current admission has
+	// used against the capacity wait bound (capacity.go).
+	capacityWaitSpent map[string]time.Duration
+	cfg               Config
+	store             *Store
+	automations       *AutomationStore
+	repoCIWatch       *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
