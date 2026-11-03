@@ -16,6 +16,9 @@
 #   * links to a moved file are rewritten
 #   * the links check fails on a broken link and passes when clean
 #   * tidy output contains counts only (never a file list)
+#   * registry hygiene: duplicate sections folded, closed tables merged,
+#     duplicate rows dropped, verbose closed rows trimmed, stale draft
+#     rows corrected from a --status-file list (and --dry-run changes nothing)
 #
 # Usage:
 #   scripts/test-tidy-plans.sh            run all cases (default)
@@ -93,6 +96,7 @@ new_repo() {
     mkdir -p scripts docs/plans
     cp "$REPO_DIR/scripts/tidy-plans.sh"        scripts/
     cp "$REPO_DIR/scripts/plans_links.py"       scripts/
+    cp "$REPO_DIR/scripts/plans_registry_hygiene.py" scripts/
     cp "$REPO_DIR/scripts/check-plans-links.sh" scripts/
   )
   NEW_REPO="$d"
@@ -102,7 +106,7 @@ new_repo() {
 # Run the tools with the temp repo as working directory so their
 # `git rev-parse --show-toplevel` resolves to the temp repo, never the
 # one this file lives in.
-run_tidy()    { ( cd "$1" && exec bash scripts/tidy-plans.sh ); }
+run_tidy()    { local repo=$1; shift; ( cd "$repo" && exec bash scripts/tidy-plans.sh "$@" ); }
 run_checker() { ( cd "$1" && exec bash scripts/check-plans-links.sh ); }
 
 # Old date: far past the default 7-day age cutoff.
@@ -293,16 +297,152 @@ EOF
 }
 
 # ── registry hygiene cases ──────────────────────────────────────────────
-# (populated by the registry hygiene task)
-case_hygiene_placeholder() {
-  echo "hygiene: no registry hygiene cases registered yet"
+case_hygiene_registry_cleaned() {
+  local repo out reg
+  new_repo; repo=$NEW_REPO
+  # a duplicate section ("## done" twice), duplicate row 1 kept in planned
+  # and repeated inside the second "done" table, plus two all-closed tables
+  cat > "$repo/docs/plans/README.md" <<'EOF'
+# Registry
+
+## planned
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [one](one.md) | done, archived |
+| 2 | [two](two.md) | in progress |
+
+## done
+
+| # | Item | Status |
+|---|------|--------|
+| 3 | [three](three.md) | shipped |
+
+## done
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [one](one.md) | done, archived |
+| 4 | [four](four.md) | fixed |
+EOF
+  printf '# one\n'   > "$repo/docs/plans/one.md"
+  printf '# two\n'   > "$repo/docs/plans/two.md"
+  printf '# three\n' > "$repo/docs/plans/three.md"
+  printf '# four\n'  > "$repo/docs/plans/four.md"
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "hygiene cleaned: tidy crashed: $out"; return; fi
+  assert_line  "hygiene cleaned: duplicate section removed" "$out" 'duplicate sections removed: 1'
+  assert_line  "hygiene cleaned: closed tables merged"      "$out" 'completed tables merged: 1'
+  assert_line  "hygiene cleaned: duplicate row dropped"     "$out" 'duplicate rows removed: 1'
+  reg=$(cat "$repo/docs/plans/README.md")
+  assert_line  "hygiene cleaned: single 'done' section"     "$reg" '^## done$'
+  [ "$(printf '%s\n' "$reg" | grep -c '^## done$')" -eq 1 ] \
+    && ok "hygiene cleaned: exactly one 'done' section" \
+    || fail "hygiene cleaned: expected exactly one 'done' section"
+  [ "$(printf '%s\n' "$reg" | grep -c 'one\.md')" -eq 1 ] \
+    && ok "hygiene cleaned: entry one kept exactly once" \
+    || fail "hygiene cleaned: entry one must appear exactly once"
+  assert_contains "hygiene cleaned: all four entries survive" "$reg" '[four](four.md)'
+  assert_contains "hygiene cleaned: live entry untouched"     "$reg" 'in progress'
+  assert_counts_only "hygiene cleaned: count-only output"     "$out"
+}
+
+case_hygiene_trim_and_dry_run() {
+  local repo out before after long
+  new_repo; repo=$NEW_REPO
+  long=$(printf '%s ' $(for i in $(seq 1 40); do printf 'verbose-token-%03d' "$i"; done))
+  cat > "$repo/docs/plans/README.md" <<EOF
+# Registry
+
+## backlog
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [verbose](verbose.md) | done, shipped in v9.9.9. ${long}|
+EOF
+  printf '# verbose\n' > "$repo/docs/plans/verbose.md"
+  before=$(md5sum "$repo/docs/plans/README.md")
+  if ! out=$(run_tidy "$repo" --dry-run 2>&1); then fail "hygiene trim: tidy crashed: $out"; return; fi
+  assert_line    "hygiene trim: dry-run reports trim"   "$out" 'closed rows trimmed: 1'
+  [ "$(md5sum "$repo/docs/plans/README.md")" = "$before" ] \
+    && ok "hygiene trim: dry-run changed nothing" \
+    || fail "hygiene trim: dry-run must not change the registry"
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "hygiene trim: apply crashed: $out"; return; fi
+  after=$(md5sum "$repo/docs/plans/README.md")
+  [ "$before" != "$after" ] \
+    && ok "hygiene trim: apply rewrote the registry" \
+    || fail "hygiene trim: apply must change the registry"
+  assert_line    "hygiene trim: counted"                "$out" 'closed rows trimmed: 1'
+  reg=$(cat "$repo/docs/plans/README.md")
+  case "$reg" in *'…'*) ok "hygiene trim: ellipsis present" ;; *) fail "hygiene trim: ellipsis present" ;; esac
+  case "$reg" in *'verbose-token-040'*) fail "hygiene trim: tail text removed" ;; *) ok "hygiene trim: tail text removed" ;; esac
+  case "$reg" in *'verbose-token-001'*) ok "hygiene trim: head text kept" ;; *) fail "hygiene trim: head text kept" ;; esac
+}
+
+case_hygiene_stale_corrected() {
+  local repo out reg
+  new_repo; repo=$NEW_REPO
+  cat > "$repo/statuses.json" <<'EOF'
+[{"id":"deadbeef","status":"completed"},{"id":"feedface","status":"in_progress"}]
+EOF
+  cat > "$repo/docs/plans/README.md" <<'EOF'
+# Registry
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [drafted](drafted.md) | not started (draft PRD `deadbeef`) |
+| 2 | [moving](moving.md) | in progress (PRD `feedface`) |
+EOF
+  printf '# drafted\n' > "$repo/docs/plans/drafted.md"
+  printf '# moving\n'  > "$repo/docs/plans/moving.md"
+  if ! out=$(run_tidy "$repo" 2>&1); then fail "hygiene stale: tidy crashed: $out"; return; fi
+  assert_line  "hygiene stale: list unused without --status-file" "$out" 'stale rows corrected: 0'
+  if ! out=$(run_tidy "$repo" --status-file statuses.json 2>&1); then fail "hygiene stale: tidy crashed: $out"; return; fi
+  assert_line  "hygiene stale: exactly one corrected"    "$out" 'stale rows corrected: 1'
+  reg=$(cat "$repo/docs/plans/README.md")
+  assert_contains "hygiene stale: draft row now corrected"   "$reg" 'corrected (list: PRD `deadbeef` completed)'
+  assert_contains "hygiene stale: live row left alone"       "$reg" 'in progress (PRD `feedface`)'
+  [ "$(printf '%s\n' "$reg" | grep -c 'corrected')" -eq 1 ] \
+    && ok "hygiene stale: only the stale row got a corrected prefix" \
+    || fail "hygiene stale: only the stale row got a corrected prefix"
+}
+
+case_hygiene_idempotent() {
+  local repo out1 out2 before
+  new_repo; repo=$NEW_REPO
+  cat > "$repo/docs/plans/README.md" <<'EOF'
+# Registry
+
+## backlog
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | [one](one.md) | done, archived |
+
+## backlog
+
+| # | Item | Status |
+|---|------|--------|
+| 2 | [two](two.md) | fixed |
+EOF
+  printf '# one\n' > "$repo/docs/plans/one.md"
+  printf '# two\n' > "$repo/docs/plans/two.md"
+  if ! out1=$(run_tidy "$repo" 2>&1); then fail "hygiene idem: first run crashed: $out1"; return; fi
+  before=$(md5sum "$repo/docs/plans/README.md")
+  if ! out2=$(run_tidy "$repo" 2>&1); then fail "hygiene idem: second run crashed: $out2"; return; fi
+  [ "$(md5sum "$repo/docs/plans/README.md")" = "$before" ] \
+    && ok "hygiene idem: second run changes nothing" \
+    || fail "hygiene idem: second run changes nothing"
+  assert_line "hygiene idem: second run all zero" "$out2" 'duplicate sections removed: 0'
 }
 
 # ── dispatch ─────────────────────────────────────────────────────────────
 echo "── test-tidy-plans: mode=$MODE ──"
 case "$MODE" in
   hygiene)
-    case_hygiene_placeholder
+    case_hygiene_registry_cleaned
+    case_hygiene_trim_and_dry_run
+    case_hygiene_stale_corrected
+    case_hygiene_idempotent
     ;;
   *)
     case_open_row_kept
@@ -313,7 +453,10 @@ case "$MODE" in
     case_links_rewritten
     case_links_check
     case_counts_only_output
-    case_hygiene_placeholder
+    case_hygiene_registry_cleaned
+    case_hygiene_trim_and_dry_run
+    case_hygiene_stale_corrected
+    case_hygiene_idempotent
     ;;
 esac
 

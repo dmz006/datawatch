@@ -24,14 +24,26 @@
 # README.md, HISTORY.md, and any other unclassified files are counted
 # but NOT moved (manual review).
 #
+# Registry hygiene (docs/plans/README.md) runs on every tidy via
+# scripts/plans_registry_hygiene.py (python3, standard library only): it
+# removes duplicate sections (first occurrence wins, later copies folded
+# in), merges all-closed tables into one, drops duplicate rows, trims
+# verbose closed status cells, and -- with --status-file PATH -- corrects
+# stale draft/not-started rows from an Automaton list export (JSON, read
+# as-is; no daemon, no gh).
+#
 # Output is counts only (kept, archived, links rewritten, ...) -- never a
 # list of files.
 #
 # Usage:
-#   scripts/tidy-plans.sh             do the moves
-#   scripts/tidy-plans.sh --dry-run   report counts, change nothing
-#   scripts/tidy-plans.sh --check     report counts, exit 1 if anything would move
-#   scripts/tidy-plans.sh --days N    plan age threshold in days (default 7)
+#   scripts/tidy-plans.sh                do the moves + registry hygiene
+#   scripts/tidy-plans.sh --dry-run      report counts, change nothing
+#   scripts/tidy-plans.sh --check        report counts, exit 1 if anything would move
+#   scripts/tidy-plans.sh --days N       plan age threshold in days (default 7)
+#   scripts/tidy-plans.sh --no-hygiene   skip the registry README hygiene pass
+#   scripts/tidy-plans.sh --status-file PATH
+#                                        Automaton list export (JSON) used to
+#                                        correct stale draft rows (off by default)
 #
 # Idempotent: safe to run repeatedly.
 
@@ -44,13 +56,19 @@ DRY_RUN=0
 CHECK=0
 DAYS=7
 RELEASES=1
+HYGIENE=1
+STATUS_FILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --check)   CHECK=1; DRY_RUN=1; shift ;;
     --days) DAYS="$2"; shift 2 ;;
     --no-releases) RELEASES=0; shift ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    --no-hygiene) HYGIENE=0; shift ;;
+    --status-file)
+      if [ $# -lt 2 ]; then echo "--status-file needs a PATH"; exit 2; fi
+      STATUS_FILE="$2"; shift 2 ;;
+    -h|--help) awk 'NR>1 && /^# Idempotent/{exit} NR>1' "$0"; exit 0 ;;
     *) echo "unknown arg: $1"; exit 2 ;;
   esac
 done
@@ -58,6 +76,16 @@ done
 if [ ! -d "$PLANS_DIR" ]; then
   echo "no docs/plans/ — nothing to tidy"
   exit 0
+fi
+
+# ── registry hygiene: duplicate sections / closed tables / dedupe / trim ─
+# Runs first so the tidy steps see a cleaned registry.  Counts only.
+HYGIENE_OUT=""
+if [ "$HYGIENE" -eq 1 ] && [ -f "$PLANS_DIR/README.md" ]; then
+  HY_ARGS=()
+  [ "$DRY_RUN" -eq 1 ] && HY_ARGS+=(--dry-run)
+  [ -n "$STATUS_FILE" ] && HY_ARGS+=(--status-file "$STATUS_FILE")
+  HYGIENE_OUT=$(python3 "$ROOT/scripts/plans_registry_hygiene.py" "$ROOT" ${HY_ARGS[@]+"${HY_ARGS[@]}"})
 fi
 
 # ── dated plans: link-aware, via scripts/plans_links.py ─────────────────
@@ -122,6 +150,12 @@ echo "plans kept: $plans_kept"
 echo "plans archived: $plans_archived"
 echo "links rewritten: $links_rewritten"
 echo "release notes moved: $moved_rn"
+if [ -n "$HYGIENE_OUT" ]; then
+  echo "registry hygiene:"
+  printf '%s\n' "$HYGIENE_OUT" | sed 's/^/  /'
+else
+  echo "registry hygiene: skipped"
+fi
 if [ "$unclassified" -gt 0 ]; then
   echo "unclassified (manual review needed): $unclassified"
 fi
