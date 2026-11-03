@@ -694,3 +694,14 @@ Operator, 2026-11-02 11:22, through the PWA, on the question about CVE-2026-7210
 ## A smoke test must never copy the operator's configuration into the repository (2026-11-02)
 
 The cost report Automaton's live smoke test ran a throwaway daemon whose data folder was created inside the repository (under tmp/) as a copy of the operator's data, including the inference configuration with a real API key. A worker committed about 70 of those runtime files, and the daemon's push before teardown sent three branches to GitHub before any review could see them. The completion review caught it; the supervisor deleted the three remote branches, removed the commit from every local branch, tag and worktree, collapsed the Automaton branch into one clean commit, and told the operator to rotate the key. Rules for specs and merges from now on: (1) any task that starts a throwaway daemon puts its data folder under the supervisor scratch folder (outside every repository) and never copies the operator's configuration, inference or secrets files into it; (2) before approving a decompose that contains a live smoke task, read its spec for the data folder; (3) on a blocked review that mentions runtime files or a key, check the remote branches at once, because the push happens before the review; (4) a key found in a pushed commit is treated as leaked whatever is deleted afterwards.
+
+### Lesson 2026-11-03: group Automata by theme; never write back a spec you only read through a truncating view
+
+Why: one-member wrappers around every Automaton added records and no behaviour. The Automation is meant to carry order, shared settings and a budget for several members. Separately, an Automaton read returns its spec cut at 4096 bytes with a marker inside the text, and editing from that read lost the tail of a placeholder spec (recovered from the saved attachment of the earlier record).
+
+Rules:
+1. The arc is the spine for a release: bugs and defects first, then features, then the held final stage. Everything shares one set of lanes and the capacity ledger; Automations decide order, LLM settings and budget, never lane ownership.
+2. Standing maintenance (deflake, CI fixes, security triage, process tuning) lives in one continuous Automation outside the arc; members are inserted as they appear.
+3. Every defect or tuning finding gets a member the day it is found, and recurring mistakes become decompose lint rules and task templates.
+4. Before editing a spec, check its size; if the read shows a truncation marker, rebuild the spec from the saved attachment or the registry, never from the marked text.
+5. `datawatch automation get <id>` prints a table; use `--json` for the raw response. That was not a bug.
