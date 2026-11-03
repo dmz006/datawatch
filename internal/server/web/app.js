@@ -2668,6 +2668,7 @@ function navigate(view, sessionId, fromPopstate) {
     // GitHub double-dash convention which didn't match. Fixed below.
     const viewer = '/diagrams.html#docs/datawatch-definitions.md';
     const anchorMap = {
+      'dashboard':      viewer + '#cost-report',
       'sessions':       viewer + '#sessions-list',
       'session-detail': viewer + '#inside-a-session-terminal-area',
       'autonomous':     viewer + (_automataNormalizeTab() === 'automation' ? '#automation' : '#automata'),
@@ -9562,7 +9563,7 @@ function renderSettingsView() {
           const grp = _automataIds.includes(sec.id) ? 'automata' : sec.id === 'plugins' ? 'plugins' : 'general';
           return `
         <div class="settings-section" data-group="${grp}" style="${stab!==grp?'display:none':''}">
-          ${settingsSectionHeader('gc_'+sec.id, sec.section, sec.docs)}
+          ${settingsSectionHeader('gc_'+sec.id, sec.sectionKey ? t(sec.sectionKey) : sec.section, sec.docs)}
           <div id="settings-sec-gc_${sec.id}" style="${secContent('gc_'+sec.id)}">
             <div id="gcfg_${sec.id}" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
           </div>
@@ -16656,6 +16657,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.log_level', label: 'Log level', type: 'select', options: ['info','debug','warn','error'] },
     { key: 'server.auto_restart_on_config', label: 'Auto-restart on config save', type: 'toggle' },
     { key: 'session.backend_family', label: 'Default LLM backend', type: 'llm_select' },
+  ]},
+  { id: 'costreport', sectionKey: 'settings_cost_report', section: 'Cost Report', docs: 'datawatch-definitions.md', fields: [
+    { key: 'cost_report.default_group_by', label: 'Default group by', labelKey: 'settings_cost_report_default_group_by', type: 'select', options: ['automaton','automation','backend','week'] },
+    { key: 'cost_report.default_window_days', label: 'Default window (days)', labelKey: 'settings_cost_report_default_window_days', type: 'number', placeholder: '7', min: 1, step: 1 },
+    { key: 'cost_report.show_usd_estimates', label: 'Show USD estimates', labelKey: 'settings_cost_report_show_usd_estimates', type: 'toggle' },
+    { key: 'cost_report.week_start', label: 'Week starts on', labelKey: 'settings_cost_report_week_start', type: 'select', options: ['monday','sunday'] },
+    { key: 'cost_report.include_peer_spend', label: 'Include peer spend', labelKey: 'settings_cost_report_include_peer_spend', type: 'toggle' },
   ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
@@ -27294,6 +27302,128 @@ window.requestWatchCardHtml = function(status) {
   return `<div class="prd-capacity-card request-watch-card" style="min-width:0;">${head}${note}${body}</div>`;
 };
 
+// ── Cost report (PWA view) ───────────────────────────────────────────────────
+// The "Cost report" dashboard card (grid id 'cost-report') reads
+// GET /api/cost/report: { group_by, since, until, rows: [{ key, sessions,
+//   tokens_in, tokens_out, rate_configured, usd_estimate? }],
+//   retention_days, lifetime_fallback }. Tokens are always shown; a group's
+// USD figure appears only when this version of the report carried an
+// usd_estimate for it (absent = no rate configured), and the
+// cost_report.show_usd_estimates setting can turn it off. The retention
+// line and the lifetime-fallback note come from the report body, never
+// from a constant.
+//
+// buildCostReportQuery and costReportCardHtml / costReportRowHtml are pure
+// (in data + preferences → out string), testable headlessly, and exposed
+// on window like requestWatchCardHtml. Every interpolated value goes
+// through escHtml; row keys and group labels are machine- or
+// agent-generated and treated as untrusted.
+const COST_REPORT_HELP_HREF = '/diagrams.html#docs/datawatch-definitions.md#cost-report';
+const COST_REPORT_GROUP_BYS = ['automaton', 'automation', 'backend', 'week'];
+const COST_REPORT_MAX_ROWS = 50;
+
+// costReportHelpLink: the small help link beside the card title. Honors
+// the same "inline doc links" setting as the other help links.
+window.costReportHelpLink = function() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* no storage: show it */ }
+  const label = t('cost_report_help_link') || 'About cost report';
+  return ` <a href="${COST_REPORT_HELP_HREF}" target="_blank" rel="noopener noreferrer" class="docs-link cost-report-help" title="${escHtml(label)}" onclick="event.stopPropagation()">${escHtml(label)}</a>`;
+};
+
+// buildCostReportQuery builds the GET /api/cost/report query string from
+// the card's controls: group_by (only when one of the four groupings the
+// daemon accepts) and, when a window (days) was set, since=<YYYY-MM-DD>
+// computed against `now` (ms) or the current time. Returns '' when there
+// is nothing to constrain — the daemon's own config defaults then apply.
+window.buildCostReportQuery = function(params) {
+  const p = (params && typeof params === 'object' && !Array.isArray(params)) ? params : {};
+  const parts = [];
+  const g = (typeof p.groupBy === 'string') ? p.groupBy : '';
+  if (COST_REPORT_GROUP_BYS.indexOf(g) >= 0) parts.push('group_by=' + encodeURIComponent(g));
+  const days = Number(p.windowDays);
+  if (Number.isFinite(days) && Math.floor(days) >= 1) {
+    const nowMs = Number.isFinite(Number(p.now)) ? Number(p.now) : Date.now();
+    const d = new Date(nowMs - Math.floor(days) * 86400000);
+    const pad = n => (n < 10 ? '0' + n : String(n));
+    parts.push('since=' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()));
+  }
+  return parts.join('&');
+};
+
+// costReportShowUsd decides whether the group table carries a USD column:
+// only when the preference allows it (absent = show) and at least one row
+// actually carries a usd_estimate from the daemon.
+window.costReportShowUsd = function(rows, showUsdPref) {
+  if (showUsdPref === false) return false;
+  return Array.isArray(rows) && rows.some(r =>
+    r && typeof r === 'object' && r.usd_estimate !== undefined && r.usd_estimate !== null &&
+    Number.isFinite(Number(r.usd_estimate)));
+};
+
+// costReportRowHtml renders one group row: group → sessions → tokens
+// (in / out) → USD, with the USD cell only when `withUsd`.
+window.costReportRowHtml = function(row, opts) {
+  const r = (row && typeof row === 'object' && !Array.isArray(row)) ? row : null;
+  if (!r) return '';
+  const withUsd = !!(opts && opts.withUsd);
+  const key = (r.key === undefined || r.key === null || r.key === '')
+    ? (t('cost_report_key_unknown') || '—') : r.key;
+  const cells = [
+    `<td style="padding:3px 8px 3px 0;border-bottom:1px solid var(--border);color:var(--text);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(String(key))}">${escHtml(String(key))}</td>`,
+    `<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text2);text-align:right;">${Number.isFinite(Number(r.sessions)) ? Number(r.sessions) : 0}</td>`,
+    `<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;">${escHtml(t('cost_report_tokens_io', [Number(r.tokens_in) || 0, Number(r.tokens_out) || 0]) || 'tokens')}</td>`,
+  ];
+  if (withUsd) {
+    const hasUsd = r.usd_estimate !== undefined && r.usd_estimate !== null && Number.isFinite(Number(r.usd_estimate));
+    const usd = hasUsd
+      ? escHtml(t('cost_report_usd_value', [Number(r.usd_estimate).toFixed(2)]) || ('$' + Number(r.usd_estimate).toFixed(2)))
+      : escHtml(t('cost_report_usd_none') || '—');
+    cells.push(`<td style="padding:3px 0;border-bottom:1px solid var(--border);color:var(--text);text-align:right;font-family:monospace;white-space:nowrap;">${usd}</td>`);
+  }
+  return `<tr class="cost-report-row">${cells.join('')}</tr>`;
+};
+
+// costReportCardHtml renders the whole card body from a decoded
+// GET /api/cost/report body: title + help link, the retention line
+// (retention_days), the lifetime-fallback note, the group table (tokens
+// first; USD column only when present, at most 50 rows), and the empty
+// state. Malformed input renders title + empty state, never throws.
+window.costReportCardHtml = function(report, opts) {
+  const o = (opts && typeof opts === 'object' && !Array.isArray(opts)) ? opts : {};
+  const mv = Number(o.maxRows);
+  const maxRows = (Number.isFinite(mv) && Math.floor(mv) >= 1) ? Math.floor(mv) : COST_REPORT_MAX_ROWS;
+  const rep = (report && typeof report === 'object' && !Array.isArray(report)) ? report : {};
+  const rows = Array.isArray(rep.rows) ? rep.rows : [];
+  const withUsd = window.costReportShowUsd(rows, o.showUsd);
+  const head = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
+    <span style="font-size:13px;font-weight:700;color:var(--text);">${escHtml(t('cost_report_card_title') || 'Cost report')}</span>
+    ${window.costReportHelpLink()}
+  </div>`;
+  let notes = '<div style="font-size:9px;color:var(--text2);margin-bottom:6px;line-height:1.5;">';
+  if (Number.isFinite(Number(rep.retention_days))) {
+    notes += `<div>${escHtml(t('cost_report_retention_window', [Number(rep.retention_days)]) || ('Figures rest on the last ' + Number(rep.retention_days) + ' days of recorded sessions.'))}</div>`;
+  }
+  if (rep.lifetime_fallback === true) {
+    notes += `<div>${escHtml(t('cost_report_lifetime_fallback') || 'Some USD figures fall back to lifetime rates.')}</div>`;
+  }
+  notes += '</div>';
+  if (!rows.length) {
+    return head + notes +
+      `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(t('cost_report_empty') || 'No recorded sessions with token usage in this window.')}</div>`;
+  }
+  const thL = txt => `<th style="padding:2px 8px 2px 0;text-align:left;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
+  const thR = txt => `<th style="padding:2px 8px;text-align:right;font-size:9px;color:var(--text2);font-weight:600;white-space:nowrap;">${escHtml(txt)}</th>`;
+  let body = `<div style="overflow-x:auto;font-size:10px;"><table style="border-collapse:collapse;width:100%;">
+    <thead><tr>${thL(t('cost_report_column_group') || 'Group')}${thR(t('cost_report_column_sessions') || 'Sessions')}${thR(t('cost_report_column_tokens') || 'Tokens')}${withUsd ? thR(t('cost_report_column_usd') || 'USD (est.)') : ''}</tr></thead>
+    <tbody>${rows.slice(0, maxRows).map(r => window.costReportRowHtml(r, { withUsd })).join('')}</tbody>
+  </table></div>`;
+  const hidden = rows.length - maxRows;
+  if (hidden > 0) {
+    body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
+  }
+  return head + notes + body;
+};
+
 // ── Automata progress card ───────────────────────────────────────────────────
 // progressCardHtml(state, opts) is a pure function from the loader state to
 // markup. state: {status: 'loading'|'ok'|'stale'|'failed', data: the
@@ -37917,6 +38047,13 @@ const DASH_CARD_DEFS = [
   // BL391 — multi-provider web search usage tile.
   { id: 'websearch-usage', label: 'Search Usage', icon: '🔎', defaultCs: 3,
     body: () => '<div id="dashWebSearchUsageCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
+
+  // Cost report card — token (and, when the daemon reports it, USD) spend
+  // grouped by automaton / automation / backend / week. Data:
+  // GET /api/cost/report; controls in the card: group select, window
+  // (days) input, Refresh button. Sits beside the EKG card's burn-rate USD.
+  { id: 'cost-report', label: 'Cost report', labelKey: 'dash_cost_report', icon: '💲', defaultCs: 6,
+    body: () => '<div id="dashCostReportCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
 ];
 
 const DASH_DEFAULT_LAYOUT = [
@@ -37930,6 +38067,7 @@ const DASH_DEFAULT_LAYOUT = [
   { id: 'gantt',        cs: 12, rs: 1 },
   { id: 'heatmap',      cs: 3,  rs: 1 },
   { id: 'ekg',          cs: 6,  rs: 2 },
+  { id: 'cost-report',  cs: 6,  rs: 1 },
 ];
 
 // 2026-11-02 dashboard card audit (docs/plans/2026-11-02-dashboard-card-audit.md):
@@ -38192,6 +38330,8 @@ function _dashBuildGrid(layout) {
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
+  _dashFetchCostReport();
+  _dashRenderCostReport();
   _dashRenderConsole();
   // Operator console: prime/refresh the one shared summary payload whenever
   // the board carries at least one console card; per-tick refresh then
@@ -38735,6 +38875,128 @@ function _dashRenderWebSearchUsage() {
         </div>
       </div>`;
     }
+  }
+  el.innerHTML = html;
+}
+
+// ── Cost report card (dashboard wiring) ──────────────────────────────────────
+// Card id 'cost-report' — the /api/cost/report view. Same discipline as the
+// other cached dashboard cards: last good data on _dash, no timers; a
+// fetch runs when the card mounts, when the operator changes group or
+// window, and when they hit Refresh. Nothing here re-renders on a fixed
+// frame cadence, so in-flight controls are never clobbered.
+if (!_dash._costReport) {
+  _dash._costReport = {
+    report: null,         // last good decoded GET /api/cost/report body
+    cfgLoaded: false,     // cost_report settings read at least once
+    cfgLoading: false,    // the cost_report settings read is in flight
+    loading: false,
+    error: null,
+    groupBy: '',          // '' = the daemon's cost_report.default_group_by
+    windowDays: 0,        // 0  = the daemon's default window (days)
+    userTouched: false,   // operator changed a control → config no longer clobbers
+    showUsd: true,        // cost_report.show_usd_estimates; absent = show
+  };
+}
+window._costReportGet = function() { return _dash._costReport; };
+
+// _dashFetchCostReport seeds the card state from the cost_report settings
+// (GET /api/config — no hardcoded defaults in the view) and kicks off the
+// first report fetch. Later calls reuse whatever was loaded.
+function _dashFetchCostReport() {
+  const c = _dash._costReport;
+  if (c.cfgLoaded) {
+    if (!c.report && !c.loading) window._costReportRefresh();
+    else _dashRenderCostReport();
+    return;
+  }
+  if (c.cfgLoading) return; // a settings read is already in flight
+  c.cfgLoading = true;
+  apiFetch('/api/config').then(cfg => {
+    const cr = (cfg && typeof cfg === 'object' && cfg.cost_report && typeof cfg.cost_report === 'object') ? cfg.cost_report : {};
+    c.showUsd = cr.show_usd_estimates !== false;
+    if (!c.userTouched) {
+      if (typeof cr.default_group_by === 'string' && cr.default_group_by) c.groupBy = cr.default_group_by;
+      const d = Number(cr.default_window_days);
+      c.windowDays = (Number.isFinite(d) && Math.floor(d) >= 1) ? Math.floor(d) : 0;
+    }
+    c.cfgLoaded = true;
+    if (!c.report && !c.loading) window._costReportRefresh();
+  }).catch(() => {
+    c.cfgLoaded = true;
+    _dashRenderCostReport();
+  }).finally(() => {
+    c.cfgLoading = false;
+  });
+}
+
+window._costReportRefresh = function() {
+  const c = _dash._costReport;
+  if (c.loading) return;
+  c.loading = true;
+  c.error = null;
+  _dashRenderCostReport();
+  const query = window.buildCostReportQuery({ groupBy: c.groupBy, windowDays: c.windowDays, now: Date.now() });
+  apiFetch(query ? '/api/cost/report?' + query : '/api/cost/report').then(rep => {
+    c.report = (rep && typeof rep === 'object') ? rep : null;
+    c.error = null;
+  }).catch(e => { c.error = (e && e.message) ? new Error(e.message) : new Error('cost report unavailable'); })
+    .finally(() => {
+      c.loading = false;
+      _dashRenderCostReport();
+    });
+};
+
+window._costReportSetGroup = function(g) {
+  const c = _dash._costReport;
+  c.groupBy = (typeof g === 'string' && COST_REPORT_GROUP_BYS.indexOf(g) >= 0) ? g : '';
+  c.userTouched = true;
+  window._costReportRefresh();
+};
+
+window._costReportSetDays = function(v) {
+  const c = _dash._costReport;
+  const n = parseInt(v, 10);
+  c.windowDays = (Number.isFinite(n) && Math.floor(n) >= 1) ? Math.floor(n) : 0;
+  c.userTouched = true;
+  window._costReportRefresh();
+};
+
+function _dashRenderCostReport() {
+  const el = document.getElementById('dashCostReportCard');
+  if (!el) return;
+  const c = _dash._costReport;
+  const optLabel = v => {
+    const k = 'cost_report_group_' + v;
+    const s = t(k);
+    return (s && s !== k) ? s : v;
+  };
+  const opt = (v, sel, label) => `<option value="${v}" ${sel ? 'selected' : ''}>${escHtml(label)}</option>`;
+  // Controls: group select (incl. the daemon default), window (days),
+  // Refresh. Current values live in the card state, seeded from the
+  // cost_report settings — never hardcoded here.
+  let html = `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+    <select aria-label="${escHtml(t('cost_report_group_by') || 'Group by')}" style="flex:1;min-width:90px;" onchange="window._costReportSetGroup(this.value)">
+      ${opt('', !c.groupBy, t('cost_report_group_default') || 'default')}
+      ${opt('automaton', c.groupBy === 'automaton', optLabel('automaton'))}
+      ${opt('automation', c.groupBy === 'automation', optLabel('automation'))}
+      ${opt('backend', c.groupBy === 'backend', optLabel('backend'))}
+      ${opt('week', c.groupBy === 'week', optLabel('week'))}
+    </select>
+    <input type="number" min="1" step="1" aria-label="${escHtml(t('cost_report_window_days') || 'Window (days)')}"
+      placeholder="${escHtml(t('cost_report_window_days') || 'days')}" value="${c.windowDays || ''}"
+      onchange="window._costReportSetDays(this.value)" style="width:68px;">
+    <button onclick="window._costReportRefresh()" aria-label="${escHtml(t('cost_report_refresh') || 'Refresh')}"
+      style="background:none;border:1px solid var(--border);border-radius:3px;color:var(--accent);font-size:10px;padding:2px 8px;cursor:pointer;white-space:nowrap;">${escHtml(t('cost_report_refresh') || 'Refresh')}</button>
+  </div>`;
+  if (c.error && !c.report) {
+    html += `<div style="color:var(--text2);font-size:10px;padding:6px 0;">${escHtml(t('cost_report_error') || 'Cost report unavailable.')}${c.error && c.error.message ? ' ' + escHtml(String(c.error.message)) : ''}</div>`;
+  } else if (c.loading && !c.report) {
+    html += `<div style="color:var(--text2);font-size:10px;padding:6px 0;">${escHtml(t('cost_report_loading') || 'Loading cost report…')}</div>`;
+  } else if (c.report) {
+    html += window.costReportCardHtml(c.report, { showUsd: c.showUsd });
+  } else {
+    html += `<div style="color:var(--text2);font-size:10px;padding:6px 0;">${escHtml(t('cost_report_empty') || 'No recorded sessions with token usage in this window.')}</div>`;
   }
   el.innerHTML = html;
 }

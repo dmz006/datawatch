@@ -1069,6 +1069,18 @@ Per-backend enable/disable + setup for the original adapter system. Each backend
 
 Per-backend per-model input + output token rates the daemon multiplies session token counts by to compute `EstCostUSD`. Adjust if a backend's billing changed or you negotiated a custom rate. Values default to public list pricing on first run.
 
+#### Cost Report
+
+The **Cost report** dashboard card (help link target: `#cost-report`). Groups the daemon's recorded session token usage over a recent window and renders it next to the live cost card, with three controls:
+
+- **Group by** — `automaton`, `automation`, `backend` or `week`; the `default` choice leaves the grouping to the daemon's `cost_report.default_group_by` setting.
+- **Window (days)** — how far back the report reaches; blank leaves the window to the daemon's `cost_report.default_window_days` setting.
+- **Refresh** — re-requests `GET /api/cost/report` with the current controls.
+
+Rendering rules: token counts (in/out) are shown first, for every group; a USD figure appears **only** where the report carries one (a group counts toward a USD estimate only while it has a rate configured — cost rates above — under the `cost_report.show_usd_estimates` setting, and the card also shows the daemon's retention line, e.g. *Figures rest on the last 31 days of recorded sessions*, plus a note when some figures fall back to lifetime rates). The card never invents a USD number for a group the daemon did not price.
+
+**Settings** (`cost_report` group in PWA settings): `default_group_by`, `default_window_days`, `show_usd_estimates`, `week_start` (Monday or Sunday for the `week` grouping) and `include_peer_spend`.
+
 #### Detection filters
 
 Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.
