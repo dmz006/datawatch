@@ -142,27 +142,53 @@ fi
 mkdir -p "${TOKEN_DIR}"
 chmod 700 "${TOKEN_DIR}"
 
-# Download binary from GitHub release
-ARCHIVE="datawatch_${VERSION}_linux_${GOARCH}.tar.gz"
+# Download binary from GitHub release.
+# Primary: the standalone datawatch-stats archive published by goreleaser.
+# Fallback: older releases that shipped the stats binary inside the main
+# datawatch archive.
+ARCHIVE="datawatch-stats_${VERSION}_linux_${GOARCH}.tar.gz"
 URL="https://github.com/${REPO}/releases/download/v${VERSION}/${ARCHIVE}"
+FALLBACK_ARCHIVE="datawatch_${VERSION}_linux_${GOARCH}.tar.gz"
+FALLBACK_URL="https://github.com/${REPO}/releases/download/v${VERSION}/${FALLBACK_ARCHIVE}"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "${TMPDIR}"' EXIT
 
-info "Downloading ${URL} ..."
-if command -v curl &>/dev/null; then
-  curl -fsSL --max-time 120 -o "${TMPDIR}/${ARCHIVE}" "${URL}" \
-    || error "Download failed. Check version v${VERSION} exists at https://github.com/${REPO}/releases"
-elif command -v wget &>/dev/null; then
-  wget -q --show-progress --timeout=120 -O "${TMPDIR}/${ARCHIVE}" "${URL}" \
-    || error "Download failed."
-else
-  error "Neither curl nor wget found. Install one and retry."
-fi
+# Fetch a release asset with whichever downloader is available.
+download() {
+  local url="$1" dest="$2"
+  if command -v curl &>/dev/null; then
+    curl -fsSL --max-time 120 -o "${dest}" "${url}"
+  elif command -v wget &>/dev/null; then
+    wget -q --show-progress --timeout=120 -O "${dest}" "${url}"
+  else
+    error "Neither curl nor wget found. Install one and retry."
+  fi
+}
 
-tar -xzf "${TMPDIR}/${ARCHIVE}" -C "${TMPDIR}"
-FOUND=$(find "${TMPDIR}" -maxdepth 3 -name "${BINARY}" -not -name "*.tar.gz" | head -1)
+# Extract an already-downloaded archive and locate the stats binary inside it.
+find_stats_binary() {
+  local archive="$1"
+  tar -xzf "${TMPDIR}/${archive}" -C "${TMPDIR}"
+  find "${TMPDIR}" -maxdepth 3 -name "${BINARY}" -not -name "*.tar.gz" 2>/dev/null | head -1
+}
+
+info "Downloading ${URL} ..."
+FOUND=""
+TRIED="${ARCHIVE}"
+if download "${URL}" "${TMPDIR}/${ARCHIVE}"; then
+  FOUND="$(find_stats_binary "${ARCHIVE}" || true)"
+fi
 if [[ -z "${FOUND}" || ! -f "${FOUND}" ]]; then
-  error "${BINARY} not found in archive ${ARCHIVE}. This release may predate goreleaser support for datawatch-stats (added v8.25.2+). Either upgrade to a newer release or build from source: GOOS=linux GOARCH=${GOARCH} go build -o ${BINARY} ./cmd/datawatch-stats/"
+  warn "No ${BINARY} in ${ARCHIVE}; falling back to main archive ${FALLBACK_ARCHIVE} ..."
+  FOUND=""
+  TRIED="${FALLBACK_ARCHIVE}"
+  info "Downloading ${FALLBACK_URL} ..."
+  if download "${FALLBACK_URL}" "${TMPDIR}/${FALLBACK_ARCHIVE}"; then
+    FOUND="$(find_stats_binary "${FALLBACK_ARCHIVE}" || true)"
+  fi
+fi
+if [[ -z "${FOUND}" || ! -f "${FOUND}" ]]; then
+  error "${BINARY} not found in archive ${TRIED}. Check that version v${VERSION} exists at https://github.com/${REPO}/releases or build from source: GOOS=linux GOARCH=${GOARCH} go build -o ${BINARY} ./cmd/datawatch-stats/"
 fi
 
 ${SUDO} install -m 755 "${FOUND}" "${INSTALL_DIR}/${BINARY}"
