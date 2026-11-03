@@ -5501,6 +5501,12 @@ type ProjectConfigEntry struct {
 	Dir            string `yaml:"dir" json:"dir"`
 	DefaultBackend string `yaml:"default_backend,omitempty" json:"default_backend,omitempty"`
 	Description    string `yaml:"description,omitempty" json:"description,omitempty"`
+	// Policy is the per-project autonomous policy override block: set fields
+	// apply to every Automaton of this project, sitting above the daemon's
+	// autonomous.* defaults and below the Automaton's own override fields.
+	// Nil (key absent) = a plain project with no per-project overrides
+	// (see ProjectPolicy and ResolveProjectPolicy).
+	Policy *ProjectPolicy `yaml:"policy,omitempty" json:"policy,omitempty"`
 }
 
 // SessionTemplateEntry (BL5) — reusable bundle of session start params.

@@ -376,10 +376,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 
 	// BL370 — resolve concurrency limit: per-PRD overrides global config.
 	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
-	m.mu.Lock()
-	globalConc := m.cfg.MaxConcurrentTasks
-	m.mu.Unlock()
-	concurrency := effectiveTaskConcurrency(prd.MaxConcurrentTasks, globalConc)
+	concurrency := m.resolveTaskConcurrency(prd)
 	if concurrency <= 1 {
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
