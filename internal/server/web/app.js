@@ -253,6 +253,12 @@ const state = {
   servers: undefined,     // remote server list from /api/servers — undefined (not []) is load-bearing: it's the signal _injectServerPickerBar/_loadServerPickerModalList use to know they haven't fetched yet. A [] default made that check always false, so the fetch never ran unless some other view (Settings) happened to populate it as a side effect (operator-reported 2026-10-07: picker never appeared).
   _fedConnStatus: null,   // {server, phase:'connecting'|'loading_sessions'|'error', message} — real status while switched to a specific federated server, cleared once real session data actually arrives
   activeServer: null,     // selected server name (null = local)
+  // Per-server daemon version bookkeeping (see _daemonVersionNoteFrame):
+  // key 'local' = this daemon (null/'local'/'all' all mean local), each
+  // other key a federated peer. state._daemonVersion remains 'the daemon
+  // that serves this page' (the primary), set at boot — so anything
+  // comparing against it (e.g. the splash) never sees a peer's build.
+  _daemonVersionByServer: {},
   alertUnread: 0,         // unread alert count for badge
   alertSystemUnread: 0,   // BL226 — system-sourced unread count
   alertWatchedUnread: 0,  // GH#192 D61a — unread count among watched sessions only
@@ -570,6 +576,58 @@ function _onDaemonVersionChange(newVersion) {
   _showUpdateBanner();
 }
 
+// ── Per-server daemon version tracking ──────────────────────────────────────
+// 'all' mode (like null/'local') keeps the LOCAL socket, so all three
+// picker values map to the 'local' key; anything else is a peer name.
+function _daemonVersionKey(serverName) {
+  const srv = (serverName !== undefined) ? serverName : state.activeServer;
+  return (srv && srv !== 'local' && srv !== 'all') ? srv : 'local';
+}
+
+// One 'sessions' frame stamped with a daemon version arrives. Attribute it
+// to the server the socket belongs to, record it in _daemonVersionByServer
+// (key 'local' doubles as the boot fallback for state._daemonVersion), and
+// take the update path ONLY when that same key already recorded a
+// different version. The first frame for a key only records. The
+// once-per-version guard lives in state._versionChangeSeen, now an object
+// keyed the same way, so repeated frames from the same server — or the
+// same version re-arriving after a reconnect — never re-fire.
+function _daemonVersionNoteFrame(version, serverName) {
+  if (!version) return;
+  const key = _daemonVersionKey(serverName);
+  const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
+  const seen = state._versionChangeSeen || (state._versionChangeSeen = {});
+  if (!(key in bySrv)) {
+    bySrv[key] = version; // first frame from this server: record only
+    if (key === 'local' && !state._daemonVersion) state._daemonVersion = version;
+    return;
+  }
+  if (bySrv[key] === version || seen[key] === version) return;
+  bySrv[key] = version;
+  seen[key] = version;
+  _loadUiConfig();
+  _onDaemonVersionChange(version);
+}
+
+// The daemon serving this page (the primary), captured at boot from a
+// plain non-proxied fetch of /api/health. Never apiFetch(): apiFetch
+// routes through /api/proxy/<name> once a federated peer is selected,
+// which would record the PEER's version as the page's own. If this fetch
+// fails, _daemonVersionNoteFrame's local-first-frame fallback fills it in.
+function _bootDaemonVersion() {
+  if (state._daemonVersion) return;
+  fetch('/api/health', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(h => {
+      const v = (h && typeof h.version === 'string') ? h.version : '';
+      if (!v || state._daemonVersion) return; // lost the race to a local frame
+      state._daemonVersion = v;
+      const bySrv = state._daemonVersionByServer || (state._daemonVersionByServer = {});
+      bySrv[_daemonVersionKey('local')] = v;
+    })
+    .catch(() => {});
+}
+
 // Pure decision function (no I/O) so it's unit-testable without a real
 // timer — the stub browser environment node:test uses for this file's
 // sibling tests no-ops setInterval entirely.
@@ -767,6 +825,12 @@ function connect() {
       if (statusEl) statusEl.textContent = t('splash_status_connected') || 'Connected';
       const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
       const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
+      // The splash's 'new version' decision must compare against the
+      // daemon serving THIS page (the primary), not against the active
+      // peer's build: state._daemonVersion is only ever set from a
+      // local source (boot /api/health or a local sessions frame), so
+      // switching to a peer can neither change it nor show the update
+      // splash. Never read _daemonVersionByServer here for that reason.
       const serverVer = state._daemonVersion || '';
       const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
       const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
@@ -873,6 +937,12 @@ function connect() {
     }
   });
 
+  // Late 'sessions' frames from a socket that selectServer already
+  // superseded must not reach handleMessage: selectServer closes the old
+  // socket, but one final frame can still be queued in the event loop,
+  // and its version would otherwise be attributed to whatever server is
+  // now active. Dropping a stale socket here is what makes per-server
+  // version attribution safe.
   ws.addEventListener('message', e => {
     if (state.ws !== ws) return;
     state.wsLastActivityAt = Date.now();
@@ -1263,19 +1333,14 @@ function handleMessage(msg) {
       // (if showing) is now stale regardless of phase, since the thing it
       // was waiting for just happened.
       if (state._fedConnStatus) state._fedConnStatus = null;
-      // Auto-reload browser if daemon version changed (new build deployed)
-      if (msg.data && msg.data.version) {
-        if (!state._daemonVersion) {
-          state._daemonVersion = msg.data.version;
-        } else if (state._daemonVersion !== msg.data.version && state._versionChangeSeen !== msg.data.version) {
-          // Once per new version: every later 'sessions' frame carries the same
-          // version and would otherwise refetch /api/config each time while the
-          // update banner waits for an idle moment to reload.
-          state._versionChangeSeen = msg.data.version;
-          _loadUiConfig();
-          _onDaemonVersionChange(msg.data.version);
-        }
-      }
+      // Version-change check, tracked PER SERVER. Each federated peer runs
+      // its own build and each of their sockets broadcasts a sessions frame
+      // stamped with ITS version; a picker switch (selectServer) therefore
+      // looks like a brand-new version and must never be treated as an
+      // update of the daemon serving this page — no banner, no reload, no
+      // _loadUiConfig. Only a version change from the SAME server, against
+      // a version we already recorded from it, is an update.
+      if (msg.data && msg.data.version) _daemonVersionNoteFrame(msg.data.version);
       onSessionsUpdated();
       break;
     case 'session_state':
@@ -36876,6 +36941,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   registerServiceWorker();
+  // Capture the page's own daemon version immediately (boot fetch of the
+  // non-proxied /api/health); independent of the WS and of i18n, so the
+  // first local 'sessions' frame is already recorded-against-known.
+  _bootDaemonVersion();
   // Load i18n bundle before rendering — non-blocking on the WS connect.
   // navigate() reads from t() so the bundle must be present before the
   // first render. Falls through to English on fetch failure.
