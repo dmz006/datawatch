@@ -5957,6 +5957,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"max_sessions":                    s.cfg.Session.MaxSessions,
 				"reserved_interactive":            s.cfg.Session.EffectiveReservedInteractive(),
 				"input_idle_timeout":              s.cfg.Session.InputIdleTimeout,
+				"liveness_window_seconds":         s.cfg.Session.LivenessWindowSeconds,
+				"liveness_idle_timeout_overrides": livenessOverridesForDisplay(s.cfg.Session.LivenessIdleTimeoutOverrides),
 				"tail_lines":                      s.cfg.Session.TailLines,
 				"alert_context_lines":             s.cfg.Session.AlertContextLines,
 				"task_delivery_window_seconds":    int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
@@ -7113,6 +7115,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// session.liveness_window_seconds / session.liveness_idle_timeout_overrides:
+	// a bad value or an unknown backend name rejects the whole PUT.
+	if err := validateLivenessPatch(patch, s.availableBackends); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	// pi.thinking_level — pre-validate like task_override_statuses above so an
 	// unknown level rejects the whole PUT instead of silently no-op'ing in
 	// applyConfigPatch. Empty string is valid (clears the flag).
@@ -7634,6 +7642,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.input_idle_timeout":
 			if n, ok := toInt(v); ok {
 				cfg.Session.InputIdleTimeout = n
+			}
+		case "session.liveness_window_seconds":
+			if n, ok := wholeNumber(v); ok {
+				cfg.Session.LivenessWindowSeconds = n
+			}
+		case "session.liveness_idle_timeout_overrides":
+			if m, ok := livenessOverridesFromValue(v); ok {
+				if len(m) == 0 {
+					m = nil
+				}
+				cfg.Session.LivenessIdleTimeoutOverrides = m
 			}
 		case "session.tail_lines":
 			if n, ok := toInt(v); ok {
@@ -13125,4 +13144,91 @@ func applyParallelValue(pc *config.AutonomousParallelConfig, field string, v int
 			pc.MergeConflictModel = str
 		}
 	}
+}
+
+const livenessOverridesKey = "session.liveness_idle_timeout_overrides"
+
+// livenessOverridesForDisplay returns a copy of the overrides map for GET
+// /api/config; it is never nil so clients always see an object.
+func livenessOverridesForDisplay(m map[string]int) map[string]int {
+	out := make(map[string]int, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// livenessOverridesFromValue converts a JSON object with whole-number values
+// into the overrides map. ok is false when v is not such an object.
+func livenessOverridesFromValue(v interface{}) (map[string]int, bool) {
+	switch obj := v.(type) {
+	case map[string]interface{}:
+		m := make(map[string]int, len(obj))
+		for k, raw := range obj {
+			n, whole := wholeNumber(raw)
+			if !whole {
+				return nil, false
+			}
+			m[k] = n
+		}
+		return m, true
+	case map[string]int:
+		m := make(map[string]int, len(obj))
+		for k, n := range obj {
+			m[k] = n
+		}
+		return m, true
+	}
+	return nil, false
+}
+
+// validateLivenessPatch checks the two liveness keys in a config patch. It
+// also folds the nested form "session.liveness_idle_timeout_overrides.<name>"
+// into the object form, so applyConfigPatch only sees one shape. Called
+// before anything is applied.
+func validateLivenessPatch(patch map[string]interface{}, known []string) error {
+	window := 0
+	if v, ok := patch["session.liveness_window_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("session.liveness_window_seconds: %v is invalid; use a whole number of seconds >= 0 (0 = default %d)",
+				v, config.DefaultLivenessWindowSeconds)
+		}
+		window = n
+	}
+	var overrides map[string]int
+	prefix := livenessOverridesKey + "."
+	var nested []string
+	for k := range patch {
+		if strings.HasPrefix(k, prefix) && len(k) > len(prefix) {
+			nested = append(nested, k)
+		}
+	}
+	if v, ok := patch[livenessOverridesKey]; ok {
+		m, isObj := livenessOverridesFromValue(v)
+		if !isObj {
+			return fmt.Errorf("%s: %v is invalid; use an object of backend name to whole seconds (0 = off)", livenessOverridesKey, v)
+		}
+		overrides = m
+	}
+	if len(nested) > 0 {
+		if overrides == nil {
+			overrides = map[string]int{}
+		}
+		for _, k := range nested {
+			name := strings.TrimPrefix(k, prefix)
+			n, whole := wholeNumber(patch[k])
+			if !whole {
+				return fmt.Errorf("%s: %v is invalid; use whole seconds >= 0 (0 = off)", k, patch[k])
+			}
+			overrides[name] = n
+			delete(patch, k)
+		}
+		out := make(map[string]interface{}, len(overrides))
+		for k, n := range overrides {
+			out[k] = float64(n)
+		}
+		patch[livenessOverridesKey] = out
+	}
+	return config.ValidateLivenessSettings(window, overrides, known)
 }
