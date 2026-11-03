@@ -30,6 +30,14 @@ import (
 
 const defaultAnthropicEndpoint = "https://api.anthropic.com"
 
+// anthropicEndpoint is the base URL the adapter POSTs to when the
+// dispatch node doesn't carry an Address (cloud-kind default path).
+// It is a package-level var — not a const — so tests in the same
+// package can override it with an httptest server URL and drive the
+// resolved-reference path through the real dispatcher. Production
+// callers never reassign it.
+var anthropicEndpoint = defaultAnthropicEndpoint
+
 type Claude struct{}
 
 func (a *Claude) Kind() inference.Kind { return inference.KindClaude }
@@ -52,7 +60,7 @@ func (a *Claude) Infer(ctx context.Context, node *compute.Node, llm *inference.L
 	if model == "" {
 		return inference.Response{}, fmt.Errorf("claude: no model (set llm.model or pass model_override)")
 	}
-	endpoint := defaultAnthropicEndpoint
+	endpoint := anthropicEndpoint
 	if node != nil && strings.TrimSpace(node.Address) != "" {
 		endpoint = strings.TrimRight(node.Address, "/")
 	}

@@ -21,6 +21,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -41,22 +42,16 @@ func claudeServer(checkAuth func(got string) (int, string)) *httptest.Server {
 	}))
 }
 
-// Test 1 — the regression: a fake server that returns 401 unless
-// x-api-key is exactly the resolved value, with the reference resolved
-// the same way the dispatcher does (inference.ResolveAPIKey into a
-// shallow copy of the entry — dispatcher.go callOnce) before the adapter
-// call. Post-resolution the adapter hands the resolved value to the
-// server, which gets 200.
+// Test 1 — the regression: a fake server returning 401 unless x-api-key
+// is exactly the resolved value, driven end-to-end through the
+// DISPATCHER with a ${secret:name} reference in the registry entry.
 //
-// Note: claude is a cloud kind, so Dispatcher.Call passes a nil node and
-// the adapter targets the hard-coded api.anthropic.com endpoint — an
-// in-process httptest server is not reachable through the full
-// dispatcher. dispatcher-level resolution (same resolver, registry entry
-// unchanged, audit report) is covered by
-// internal/inference/dispatcher_secret_test.go. This test drives the
-// real adapter over the wire with that same resolution handoff and a
-// key-gated fake server.
-func TestClaude_ResolvedSecretRefSendsResolvedKey(t *testing.T) {
+// KindClaude is a cloud kind — the dispatcher passes a nil node and the
+// adapter targets the package-level anthropicEndpoint. The test
+// overrides that one variable with the httptest URL (restored on
+// cleanup) so the wire call actually lands on the fake server. No other
+// production behavior changes.
+func TestClaude_ResolvedSecretRefThroughDispatcher(t *testing.T) {
 	const stored = "RESOLVED-ANTHROPIC-KEY-77"
 	ts := claudeServer(func(got string) (int, string) {
 		if got != stored {
@@ -66,32 +61,44 @@ func TestClaude_ResolvedSecretRefSendsResolvedKey(t *testing.T) {
 	})
 	defer ts.Close()
 
-	llm := &inference.LLM{
+	savedEndpoint := anthropicEndpoint
+	anthropicEndpoint = ts.URL
+	t.Cleanup(func() { anthropicEndpoint = savedEndpoint })
+
+	reg := inference.NewRegistry()
+	if err := reg.Add(&inference.LLM{
 		Name:      "claude",
 		Kind:      inference.KindClaude,
 		Model:     "claude-opus-4-1",
 		APIKeyRef: "${secret:anthropic-key}",
+	}); err != nil {
+		t.Fatalf("registry add: %v", err)
 	}
-	store := &fakeSecret{byName: map[string]string{"anthropic-key": stored}}
+	// Cloud kinds never consult the compute-node lookup (see
+	// dispatch.go isCloudKind branch in Call). Return a hard error if
+	// something is accidentally routed here, so a regression surfaces
+	// loudly instead of a silent nil-node path.
+	d := inference.NewDispatcher(reg, func(string) (*compute.Node, error) {
+		return nil, compute.ErrNotFound
+	})
+	d.RegisterAdapter(&Claude{})
+	d.SetSecretsStore(&fakeSecret{byName: map[string]string{"anthropic-key": stored}}, nil)
 
-	// Exactly the dispatcher's callOnce resolution handoff.
-	key, err := inference.ResolveAPIKey(llm, store)
-	if err != nil {
-		t.Fatalf("ResolveAPIKey: %v", err)
-	}
-	cp := *llm
-	cp.APIKeyRef = key
-
-	resp, err := (&Claude{}).Infer(context.Background(), testNode(ts.URL), &cp, inference.Request{Prompt: "ping"})
+	resp, err := d.Call(context.Background(), "claude", inference.Request{Prompt: "ping"})
 	if err != nil {
 		t.Fatalf("expected 200 with the resolved key, got error: %v", err)
 	}
 	if resp.Text != "pong" {
 		t.Fatalf("unexpected reply: %q", resp.Text)
 	}
-	// The registry entry must still carry the reference, not the value.
-	if llm.APIKeyRef != "${secret:anthropic-key}" {
-		t.Fatalf("registry entry must keep the ${secret: reference, got %q", llm.APIKeyRef)
+	// The registry entry must still carry the reference, not the resolved
+	// value: the dispatcher's resolution step must not mutate the entry.
+	got, gerr := reg.Get("claude")
+	if gerr != nil || got == nil {
+		t.Fatalf("registry get: %v", gerr)
+	}
+	if got.APIKeyRef != "${secret:anthropic-key}" {
+		t.Fatalf("registry entry must keep the ${secret: reference, got %q", got.APIKeyRef)
 	}
 }
 
