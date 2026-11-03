@@ -6,7 +6,7 @@
 
 ## Result
 
-PASS. 8 checks passed, 0 failed. No checks failed.
+FAIL. 7 checks passed, 1 failed. The failed check is docs-sync.
 
 ## Checks
 
@@ -17,13 +17,14 @@ PASS. 8 checks passed, 0 failed. No checks failed.
 | archive-name-tests (Go) | pass |
 | docs-curated-howtos | pass |
 | docs-howto-coverage | pass |
-| docs-sync | pass |
+| docs-sync | fail |
 | no-version-bump | pass |
 | local-archive install (tarball under GoReleaser asset name, redirected HOME) | pass |
 
 ## Totals
 
-- Passed: 8
-- Failed: 0
+- Passed: 7
+- Failed: 1
+- Failed check: docs-sync
 
-No daemon started, no gh usage, no version variable changed, no files edited.
+No daemon started, no gh usage, no version variable changed, no source files edited (only this report was written).
