@@ -366,6 +366,10 @@ func (c *Coordinator) laneFillPoll(ctx context.Context) {
 	// One set of lane counts for the whole poll: the lanes, the planner, the
 	// idle alert and the decompose-ahead room all read this configuration.
 	cfg, counts := laneFillDeriveCounts(cfg, c.laneFillCapSource())
+	// A project's policy lanes are a shared-budget floor: when a project's
+	// tier sets a lower lane count, the daemon runs the shared budget at no
+	// more than that count (never raised). No-op when unwired.
+	cfg, counts = c.laneFillApplyProjectCaps(cfg, counts)
 
 	c.lf.mu.Lock()
 	rec := c.lf.records

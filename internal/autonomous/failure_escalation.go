@@ -192,6 +192,9 @@ func (m *Manager) resolveFailureEscalation(prd *PRD, t *Task) EffectiveFailureEs
 	m.mu.Lock()
 	global := m.cfg.FailureEscalation
 	m.mu.Unlock()
+	if pe := m.effectiveFailureEscalation(prd); pe != nil {
+		global = projectFailureEscalation(global, pe)
+	}
 	return resolveFailureEscalationFrom(global, prd, t)
 }
 
