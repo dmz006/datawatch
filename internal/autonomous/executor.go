@@ -1590,6 +1590,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return aerr
 			}
+			// A fall-through admission leased the alternate's pools: spawn there.
+			if alt, ok := m.fallthroughOf(t.ID); ok {
+				backend, model = alt.Backend, alt.Model
+			}
 			// A multi-node LLM entry needs its model resident on the leased node
 			// before the spawn; a single-node entry skips this step entirely.
 			if lerr := m.loadWorkerNode(ctx, prd, t, backend, model); lerr != nil {
