@@ -279,6 +279,14 @@ type Config struct {
 	// (default) or "newer" — which live session survives when two match one
 	// task (config.NormalizeDuplicateSessionKeep).
 	DuplicateSessionKeep string `json:"duplicate_session_keep,omitempty"`
+	// RestartPolicy, RestartQuietTimeoutSeconds and RestartOnTimeout mirror
+	// autonomous.restart_policy, .restart_quiet_timeout_seconds and
+	// .restart_on_timeout (config.NormalizeRestartPolicy and friends). The
+	// restart entry point reads them from config.Config; the fields exist so
+	// the live config round-trip does not drop the keys.
+	RestartPolicy              string `json:"restart_policy,omitempty"`
+	RestartQuietTimeoutSeconds int    `json:"restart_quiet_timeout_seconds,omitempty"`
+	RestartOnTimeout           string `json:"restart_on_timeout,omitempty"`
 	VerificationModel  string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
@@ -1292,6 +1300,10 @@ type Manager struct {
 	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
 	// belonging to a task with an empty or dead session link before resetting it.
 	sessionListerFn func() []SessionInfo
+	// launchDraining, when set, holds every task that has not started yet at
+	// the door of executeOne, so a restart drain lets running tasks finish
+	// without new ones starting. See restart_policy.go.
+	launchDraining atomic.Bool
 	// worktreeDirtyFn — the worktree guard's uncommitted-changes check.
 	worktreeDirtyFn func(dir string) (bool, error)
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live

@@ -253,6 +253,7 @@ Subcommands:
 		// Checks and ship status reads.
 		newAutonomousChecksCmd(),
 		newAutonomousShipCmd(),
+		newAutonomousRestartInterruptionsCmd(),
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),

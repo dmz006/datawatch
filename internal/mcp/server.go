@@ -689,6 +689,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
 	mcpSrv.AddTool(s.toolChecksStatus(), tracked(s.handleChecksStatus))
 	mcpSrv.AddTool(s.toolShipStatus(), tracked(s.handleShipStatus))
+	mcpSrv.AddTool(s.toolRestartInterruptions(), tracked(s.handleRestartInterruptions))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
 	mcpSrv.AddTool(s.toolHeldQuestions(), tracked(s.handleHeldQuestions))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
@@ -2939,7 +2940,12 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 		shutdowncause.MarkAPIInitiated("mcp-restart")
 		s.restartFn()
 	}()
-	return mcpsdk.NewToolResultText("Restarting daemon… active tmux sessions will be preserved."), nil
+	msg := "Restarting daemon… active tmux sessions will be preserved."
+	// What the restart interrupts, counted before the restart policy runs.
+	if out, err := s.proxyGet("/api/autonomous/restart-interruptions", nil); err == nil {
+		msg += "\nInterruptions: " + string(out)
+	}
+	return mcpsdk.NewToolResultText(msg), nil
 }
 
 // BL397 — ACME subsystem MCP handlers.

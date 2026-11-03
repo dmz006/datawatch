@@ -82,3 +82,33 @@ func newAutonomousShipCmd() *cobra.Command {
 			return autonomous.RenderShipStatusText(s), nil
 		})
 }
+
+// newAutonomousRestartInterruptionsCmd is `datawatch autonomous
+// restart-interruptions`: what a daemon restart now would interrupt.
+func newAutonomousRestartInterruptionsCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "restart-interruptions",
+		Short: "Show the running tasks and live sessions a restart now would interrupt",
+		Long:  "Show the running tasks (executing worker or verifying) and the live sessions, with their ids, that a daemon restart now would interrupt, and the configured restart policy (autonomous.restart_policy). A read: nothing is restarted.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body, err := progressGet("/api/autonomous/restart-interruptions", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			r, err := autonomous.ParseRestartInterruption(body)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), autonomous.RestartInterruptionText(r))
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	return c
+}

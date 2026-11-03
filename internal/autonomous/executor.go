@@ -1231,6 +1231,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
+	// A restart drain holds a task that has not started until the drain ends.
+	if err := m.waitLaunchDrain(ctx); err != nil {
+		return err
+	}
 	// v8.36.1 — a fresh Run() (operator reset_task, boot-resume) starts
 	// executeOne with no in-loop retry history, but the task itself may
 	// carry context from a previous, separately-triggered attempt (see

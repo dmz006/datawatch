@@ -2800,6 +2800,19 @@ type AutonomousConfig struct {
 	// session killer, and only after their process exit is confirmed. Unset or
 	// unrecognised => "older" (see NormalizeDuplicateSessionKeep).
 	DuplicateSessionKeep string `yaml:"duplicate_session_keep,omitempty" json:"duplicate_session_keep,omitempty"`
+	// RestartPolicy is what a requested daemon restart does about running
+	// work: "immediate" (default) restarts at once; "wait_quiet" waits up to
+	// RestartQuietTimeoutSeconds for zero running tasks; "drain" stops new
+	// tasks starting, lets running ones finish, then restarts. Unset or
+	// unrecognised => "immediate" (see NormalizeRestartPolicy).
+	RestartPolicy string `yaml:"restart_policy,omitempty" json:"restart_policy,omitempty"`
+	// RestartQuietTimeoutSeconds bounds the wait_quiet wait. 0 or unset => 600
+	// (see NormalizeRestartQuietTimeoutSeconds).
+	RestartQuietTimeoutSeconds int `yaml:"restart_quiet_timeout_seconds,omitempty" json:"restart_quiet_timeout_seconds,omitempty"`
+	// RestartOnTimeout is what wait_quiet does when the wait runs out with
+	// tasks still running: "proceed" (default) restarts anyway, "abort"
+	// cancels the restart (see NormalizeRestartOnTimeout).
+	RestartOnTimeout string `yaml:"restart_on_timeout,omitempty" json:"restart_on_timeout,omitempty"`
 	// LoopDetectTurns is the worker loop-detection window (how many
 	// recent turns autonomous.DetectLoop compares). *int: nil = unset →
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
