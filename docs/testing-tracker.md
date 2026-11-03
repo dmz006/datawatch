@@ -5038,7 +5038,7 @@ env -u TMUX -u TMUX_TMPDIR go test ./internal/mcp/ -count=1 -run '^TestAutomatio
 env -u TMUX -u TMUX_TMPDIR go test ./cmd/datawatch/ -count=1 -run '^TestAutomationCLIReturnToDraft$'
 ```
 
-Result, 2026-11-03: all listed tests pass in all five packages (each `go test` reports ok; 41 pass results including subtests)
+Result, 2026-11-03: all listed tests pass in all five packages (each `go test` reports ok; 42 pass results including subtests)
 
 | Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
 |---|---|---|---|---|---|---|---|---|
