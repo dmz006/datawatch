@@ -1245,6 +1245,7 @@
   "session_chip_all": "Tout",
   "session_chip_done": "Terminé",
   "session_chip_waiting": "En attente",
+  "session_chip_stalled": "Stagnant",
   "session_chrome": "Intégration Chrome",
   "session_compute_ref_title": "Nœud de calcul v7",
   "session_detail_cancel_schedule": "Annuler la planification",

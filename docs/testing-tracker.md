@@ -1942,6 +1942,21 @@ Four automatic report-only checks (pre-start verifier, plan rules, after-done ch
 
 ---
 
+## Backend-aware session state — new `stalled` state, `session.liveness_window_seconds` and `session.liveness_idle_timeout_overrides`
+
+A session of a print-mode backend (one that writes nothing to its pane until it finishes) is Running while its process is alive and its transcript or output changed inside a window, instead of showing waiting-for-input for its whole run. A session whose process is gone but whose record is open is shown as stalled. The state-setting endpoint accepts the new `stalled` value.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Liveness classifier per backend (alive and writing, alive and silent, dead, at a real prompt) | **Yes** (`internal/session/backend_liveness_test.go`, `liveness_assessment_test.go`, `busy_probe_test.go`) | Not run on a live daemon | Fakes for the pane, the process and the transcript | |
+| State engine and gap watcher use the rules | **Yes** (`internal/session/state_engine_liveness_test.go`, `store_stalled_test.go`) | Not run on a live daemon | Fixed clock | |
+| Config — window and per-backend idle timeout overrides | **Yes** (`internal/config/backend_liveness_config_test.go`) | Not run | Defaults and validation | **Gap:** the two keys are not yet on the config read and write routes, the web fields, the CLI and the comm channel; filed as a follow-up |
+| REST — session list view and state setting accept `stalled` | **Yes** (`internal/server/session_list_view_test.go`) | Not run | Fake manager | |
+| Web — Stalled filter chip and locale key | Partly (`internal/server/stalled_locale_test.go`) | Not run in a browser story | The chip label is an English literal like its siblings | Browser story and a locale pass over all chips are follow-ups |
+| Supervisor watch silent-session check reuses the signal | **Yes** (`internal/autonomous/supervisor_watch_liveness_test.go`) | Not run | Fake sessions | |
+
+---
+
 ## Burn guard back-off: hold deadline, daemon-zone times and the rung — `GET /api/capacity` gains `rung`
 
 The capacity view's back-off line for a backend held by the burn guard now ends when the guard steps back or at the next window boundary (it showed a reset one year ahead), shows its time in the daemon's time zone, and names the guard rung and reason.

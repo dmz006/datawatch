@@ -1245,6 +1245,7 @@
   "session_chip_all": "Alle",
   "session_chip_done": "Fertig",
   "session_chip_waiting": "Wartend",
+  "session_chip_stalled": "Stagniert",
   "session_chrome": "Chrome-Integration",
   "session_compute_ref_title": "v7 Compute-Knoten",
   "session_detail_cancel_schedule": "Zeitplan abbrechen",

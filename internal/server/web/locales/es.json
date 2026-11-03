@@ -1245,6 +1245,7 @@
   "session_chip_all": "Todas",
   "session_chip_done": "Hechas",
   "session_chip_waiting": "En espera",
+  "session_chip_stalled": "Estancado",
   "session_chrome": "Integración con Chrome",
   "session_compute_ref_title": "Nodo de cómputo v7",
   "session_detail_cancel_schedule": "Cancelar programación",

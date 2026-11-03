@@ -54,11 +54,22 @@ const (
 	StateFailed       State = "failed"
 	StateKilled       State = "killed"
 	StateRateLimited  State = "rate_limited"
+	// StateStalled — the record is open but the process has died, or the print
+	// session's process is alive yet silent beyond the window. It is NOT
+	// terminal (IsTerminal is false): when activity resumes the session returns
+	// to StateRunning, and it must never be counted as waiting-for-input in any
+	// counter or alert (waiting-input handling gates on StateWaitingInput
+	// explicitly and excludes it). It is not in the set Restart accepts either —
+	// a stalled session resumes via back-to-running, not relaunch.
+	StateStalled State = "stalled"
 )
 
 // IsTerminal reports whether the session has finished for good: complete,
 // failed or killed. This is the same set RestartSession accepts. A
 // rate_limited session is paused, not finished, so it is not terminal.
+// StateStalled is also non-terminal: the record is still resumable — output
+// (or a state override) returns it to StateRunning, so every site that keys
+// off !IsTerminal keeps treating a stalled session as live.
 func (s State) IsTerminal() bool {
 	switch s {
 	case StateComplete, StateFailed, StateKilled:
@@ -69,7 +80,7 @@ func (s State) IsTerminal() bool {
 
 // KnownStates lists every session lifecycle state.
 func KnownStates() []State {
-	return []State{StateRunning, StateWaitingInput, StateComplete, StateFailed, StateKilled, StateRateLimited}
+	return []State{StateRunning, StateWaitingInput, StateStalled, StateComplete, StateFailed, StateKilled, StateRateLimited}
 }
 
 // Session holds metadata about a single claude-code session.

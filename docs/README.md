@@ -20,6 +20,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [backends.md](backends.md) | Overview of all LLM and messaging backends |
 | [llm-backends.md](llm-backends.md) | Detailed guide for every LLM backend (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) |
 | [messaging-backends.md](messaging-backends.md) | Detailed guide for every messaging backend (Signal, Telegram, Matrix, Discord, Slack, Twilio, ntfy, email, GitHub webhook, generic webhook) |
+| [backend-state.md](backend-state.md) | How each backend family's session state is decided — what counts as working, when waiting_input vs stalled is shown, the default idle timeout per family, and the liveness window and idle-timeout config keys |
 
 ## Interfaces
 

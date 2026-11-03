@@ -1245,6 +1245,7 @@
   "session_chip_all": "すべて",
   "session_chip_done": "完了",
   "session_chip_waiting": "待機中",
+  "session_chip_stalled": "滞止中",
   "session_chrome": "Chrome統合",
   "session_compute_ref_title": "v7 コンピュートノード",
   "session_detail_cancel_schedule": "スケジュールをキャンセル",

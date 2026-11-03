@@ -69,7 +69,9 @@ func DetectStuckLoop(sessionID, output string, threshold int) *Anomaly {
 }
 
 // DetectLongInputWait flags sessions that have been in StateWaitingInput
-// longer than threshold seconds.
+// longer than threshold seconds. Stalled sessions are deliberately excluded:
+// StateStalled is non-terminal but must not be counted as waiting-for-input
+// in any waiting-time alert or counter.
 func DetectLongInputWait(sess *Session, thresholdSeconds int) *Anomaly {
 	if sess == nil || sess.State != StateWaitingInput || thresholdSeconds <= 0 {
 		return nil

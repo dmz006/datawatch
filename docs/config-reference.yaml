@@ -82,6 +82,20 @@ session:
   store_side_file_cap_kb: 64
   # Seconds of idle output before declaring a session is waiting for input
   input_idle_timeout: 10
+  # liveness: seconds the liveness rule watches a print-mode backend (a family
+  # name ending in -prompt, e.g. pi-prompt) before considering it stalled.
+  # 0 (or absent) = built-in default 120. Never read the raw value; callers
+  # resolve it via Config.LivenessWindowSecondsEffective().
+  liveness_window_seconds: 120
+  # liveness: per-backend input-idle timeout (seconds) overrides. Keys are
+  # backend family names ("pi" matches "pi-prompt"); full backend names also
+  # match. An empty map means the global input_idle_timeout applies, with the
+  # one rule that print-mode backends default to off (0) while interactive
+  # backends keep the global default of 10. Resolve via
+  # Config.LivenessInputIdleTimeoutEffective(backend), which is the only
+  # correct reader: raw zero values here do not mean "unset".
+  # Example: {pi: 30, goose: 0, claude-code: 25}
+  liveness_idle_timeout_overrides: {}
   # Default number of output lines returned by tail/status commands
   tail_lines: 20
   # Number of non-empty output lines included in prompt alerts sent to messaging channels
