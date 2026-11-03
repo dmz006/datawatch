@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.71.1 — Billing test helper no longer double-unescapes
+
+A CodeQL double-escaping alert in the usage billing test helper is fixed (the `&amp;` replacement now runs last); no behaviour change.
+
 ## v9.71.0 — Billing profiles for the usage calculator and the cost report
 
 The usage calculator and the cost report now know which plan you are on.
