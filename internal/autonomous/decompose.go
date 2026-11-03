@@ -52,7 +52,9 @@ const planReadOnlyFlagRuleBullet = `- "read_only" (optional boolean): set it to 
   changes no files (a gate, smoke test, suite run, eval, install or
   investigation), and give such a task an empty "files" list. A task that
   writes, edits, creates, moves or removes any file must omit "read_only"
-  or set it false. When unsure, omit it.
+  or set it false. When unsure, omit it. A read-only task whose only
+  output is a report declares that one path in "report_path" under
+  .datawatch/reports/ and keeps "files" empty.
 `
 
 // PlanningPrompt is the system+user prompt prefix the LLM sees.
@@ -75,6 +77,7 @@ Return ONLY a JSON object with this shape:
           "files": ["<repo-relative path>", "..."],
           "depends_on": [],
           "read_only": false, // optional boolean, see the read_only rule below
+          "report_path": "", // optional string: only valid on a read_only task; the one report under .datawatch/reports/ it may write
           "kind": "<smoke|final_gate>" // optional, see the kind rule below
         }
       ]
@@ -164,6 +167,7 @@ The JSON must follow this schema exactly:
           "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
           "files_generated": ["<repo-relative path>", "..."],
           "read_only": false, // optional boolean — true only for a task that changes no files, see the read_only rule below
+          "report_path": "", // optional string — only valid on a read_only task: the one report under .datawatch/reports/ it may write, with files empty
           "kind": "<smoke|final_gate>" // optional — "smoke" for a live smoke-test task, "final_gate" for the end-to-end verification task
         }
       ]
@@ -244,7 +248,10 @@ func validateParsedPlan(stories []Story) error {
 // normalizeReadOnlyTasks keeps the read_only flag a decomposed task carries
 // only when it is consistent: a task that also lists files it will change
 // is not read-only, so the flag is cleared and the task takes the tree
-// lock as before. It reports how many flags it cleared.
+// lock as before. report_path follows the same rule — it is only valid
+// on a read_only task, so it is kept when the flag stands and cleared
+// when the flag is cleared or absent. It reports how many flags it
+// cleared.
 func normalizeReadOnlyTasks(stories []Story) int {
 	cleared := 0
 	for si := range stories {
@@ -253,6 +260,9 @@ func normalizeReadOnlyTasks(stories []Story) int {
 			if t.ReadOnly && len(t.FilesPlanned) > 0 {
 				t.ReadOnly = false
 				cleared++
+			}
+			if !t.ReadOnly {
+				t.ReportPath = ""
 			}
 		}
 	}
