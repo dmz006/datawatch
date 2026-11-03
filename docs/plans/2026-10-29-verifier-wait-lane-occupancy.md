@@ -9,7 +9,7 @@ Rule in `AGENT.md`. The internal Go type is `PRD` (`internal/autonomous`); this 
 coordinator and is not an Automation (capital A).
 
 This is **Step 3 (duty 6)** of
-`docs/plans/2026-10-25-automation-supervisor-duties-proposal.md`:
+`docs/plans/historical-plans/2026-10-25-automation-supervisor-duties-proposal.md`:
 
 > **Step 3.** Verifier-wait lane occupancy (duty 6). Adds a wait-on-verifier flag to each
 > occupant (the wait reason is already captured by `setWaiting`), so `PlanLaneFill` counts

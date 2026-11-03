@@ -4,7 +4,7 @@
 # Search before create — Step 2 of the Automation coordinator's duties
 
 This is the plan for Step 2 (duty 4, "Search before create") of
-[the Automation supervisor duties proposal](2026-10-25-automation-supervisor-duties-proposal.md),
+[the Automation supervisor duties proposal](historical-plans/2026-10-25-automation-supervisor-duties-proposal.md),
 one of the confirmed coordinator duties. Surface answers: the operator answered
 Q4 as option (b) (full set) for every duty, recorded on the proposal document
 on 2026-10-25; that supersedes the document's recommendation (a) for this duty.

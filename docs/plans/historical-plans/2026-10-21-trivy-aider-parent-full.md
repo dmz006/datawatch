@@ -90,7 +90,7 @@ fix, so even trixie would not clear it.
   installed `2.4.2-3+deb12u9` is already the newest bookworm build, so
   `apt-get upgrade` cannot clear it, and a base-image move to trixie would not
   help either. Following the existing no-fix CVE precedent (see the
-  CVE-2026-53615 note, docs/plans/2026-10-21-cve-2026-53615-agent-base.md), the
+  CVE-2026-53615 note, docs/plans/historical-plans/2026-10-21-cve-2026-53615-agent-base.md), the
   finding is to be recorded as a no-fix entry in the Trivy ignore registry
   (`.trivyignore`) and `security/accepted-risks.yml`, citing
   security-tracker.debian.org/tracker/CVE-2026-55453 (checked 2026-10-21). This

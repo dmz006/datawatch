@@ -1248,7 +1248,7 @@ implementations:**
    today: tasks/stories/files/time/cost per Automation, and per-member
    status. Pulls from the same task/story/PRD/Decision/`cost_summary`
    fields named in BL440's "already-available data" map (see
-   docs/plans/2026-10-14-status-tab-session-detail-gap.md once it lands) —
+   docs/plans/historical-plans/2026-10-14-status-tab-session-detail-gap.md once it lands) —
    reuse that data path, don't build a second one.
 2. **Observer rollup by Automation.** Given an Automation's member PRD
    IDs → their tasks' `SessionID`s → the matching `session:<id>` envelopes
