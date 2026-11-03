@@ -1678,6 +1678,38 @@ autonomous:
     #     pre_start_verifier: shadow
     #     after_done: off
 
+  # Ship: policy for the push, tag and CI-watch steps after a merge. The three
+  # step keys use the same modes as autonomous.checks, matched without regard
+  # to case; an unknown value is rejected with an error naming the key:
+  #   off    the step is skipped.
+  #   shadow the step is planned and the exact command is recorded, but not run.
+  #   on     the step runs.
+  #
+  # push: off | shadow | on. Default on. Pushes the merged commit to remote.
+  # tag: off | shadow | on. Default on. Creates and pushes the release tag.
+  # ci_watch: off | shadow | on. Default on. Watches CI for the pushed commit.
+  # tag_format: tag name template. Default "v{version}". Must contain the
+  #   {version} placeholder; a value without it is rejected.
+  # remote: git remote to push to. Default origin.
+  # ci_workflows: list of workflow names to watch. Default [] (empty), meaning
+  #   every run on the pushed commit is watched.
+  # projects: map keyed by project directory. Each entry may set any of the
+  #   keys above; a key left out inherits the global value. An empty map (the
+  #   default) means every project follows the global values.
+  ship:
+    push: on
+    tag: on
+    ci_watch: on
+    tag_format: "v{version}"
+    remote: origin
+    ci_workflows: []
+    projects: {}
+    # projects:
+    #   /path/to/project:
+    #     push: shadow
+    #     remote: upstream
+    #     ci_workflows: [release]
+
   # Infrastructure retry: a task that fails because the machinery around it
   # failed (not because of its own work) is retried on a back-off schedule and
   # the failure is not counted against the task. Every key is settable at
