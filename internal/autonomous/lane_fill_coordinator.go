@@ -595,7 +595,7 @@ func (c *Coordinator) laneFillWorkerBackend(r laneFillRaw, execution string) str
 	if r.automationID != "" {
 		auto, _ = c.m.automations.Get(r.automationID)
 	}
-	backend, _ := resolveTaskBackendModel(&task, story, prd, auto, execution)
+	backend, _ := admittedWorker(&task, story, prd, auto, execution)
 	return backend
 }
 
