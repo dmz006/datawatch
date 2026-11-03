@@ -9616,6 +9616,12 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="compute" style="${stab!=='compute'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
+
         <!-- v7.0.0-alpha.10 — legacy "LLM Configuration" card REMOVED per
              operator 2026-05-09. The fields it surfaced (cfg.ollama.host,
              cfg.openwebui.url) now live in the new LLM registry; the
@@ -9728,6 +9734,12 @@ function renderSettingsView() {
              Registries / Autonomous Config). Original placement assumed
              the Agents tab would carry "who am I" + automation; the
              operator clarified that Automata is the canonical home. -->
+        <!-- Version-skew audit — name the server this tab is showing
+             (the selected federated peer, or the local server). -->
+        <div data-showing-line="automata" style="${stab!=='automata'?'display:none':''}">
+          <span class="settings-label" style="display:block;color:var(--text2);font-size:12px;padding:0 0 4px;">—</span>
+        </div>
+
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('identity', t('identity_section_title')||'Identity')}
           <div id="settings-sec-identity" style="${secContent('identity')}">
@@ -10672,8 +10684,8 @@ function renderSettingsView() {
   // PRD/cost rollup does.
   _injectServerPickerBar(view, renderSettingsView, { hideAll: true });
 
-  // Version-skew audit — fill the general/plugins/comms "Showing:"
-  // lines now that state.activeServer is settled for this render.
+  // Version-skew audit — fill the general/plugins/comms/compute/automata
+  // "Showing:" lines now that state.activeServer is settled for this render.
   settingsRefreshShowingLines();
 
   loadSkillsPanel();
@@ -16773,7 +16785,9 @@ window.openPRDInstantiateModal = openPRDInstantiateModal;
 
 function toggleLLM(cfgKey, enabled, name) {
   if (!cfgKey) return;
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ [cfgKey]: enabled }),
@@ -16797,7 +16811,9 @@ function openLLMSetup(name) {
   }
   const section = LLM_CFG_SECTION[name];
   if (!section) { showToast('No config fields for ' + name, 'info'); return; }
-  fetch('/api/config', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the GET to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), { headers: tokenHeader() })
     .then(r => {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.json();
@@ -16814,7 +16830,9 @@ function openLLMSetup(name) {
 }
 
 function setActiveLLM(name) {
-  fetch('/api/config', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/config'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'session.backend_family': name }),
@@ -18068,7 +18086,9 @@ function loadOpenCodeProvidersCard(parentEl) {
   const PROVIDERS = ['anthropic', 'openai', 'google'];
   const labelKey = { anthropic: 'opencode_provider_anthropic', openai: 'opencode_provider_openai', google: 'opencode_provider_google' };
 
-  fetch('/api/opencode/providers', { headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes to the selected
+  // peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/opencode/providers'), { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .catch(() => null)
     .then(data => {
@@ -18112,7 +18132,9 @@ function saveOpenCodeProviderKey(provider, inputId) {
   if (!input) return;
   const key = input.value.trim();
   if (!key) { showToast('Enter an API key first', 'error', 2000); return; }
-  fetch('/api/opencode/providers', {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/opencode/providers'), {
     method: 'PUT',
     headers: Object.assign({ 'Content-Type': 'application/json' }, tokenHeader()),
     body: JSON.stringify({ provider, api_key: key }),
@@ -22533,7 +22555,9 @@ function coerceYAMLScalar(s) {
 }
 
 function smokeProfile(kind, name) {
-  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name) + '/smoke',
+  // Proxy-aware (version-skew audit): _apiPath routes the smoke run to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/profiles/' + kind + 's/' + encodeURIComponent(name) + '/smoke'),
         { method: 'POST', headers: tokenHeader() })
   .then(r => r.json().then(j => ({ status: r.status, body: j })))
   .then(({status, body}) => {
@@ -22549,7 +22573,9 @@ function smokeProfile(kind, name) {
 
 function deleteProfile(kind, name) {
   if (!confirm('Delete ' + kind + ' profile "' + name + '"?')) return;
-  fetch('/api/profiles/' + kind + 's/' + encodeURIComponent(name),
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/profiles/' + kind + 's/' + encodeURIComponent(name)),
         { method: 'DELETE', headers: tokenHeader() })
   .then(r => {
     if (r.status >= 400) { showToast('Delete failed: HTTP ' + r.status, 'error', 3000); return; }
@@ -35858,7 +35884,9 @@ function removeObserverPeer(name) {
   const token = localStorage.getItem('cs_token') || '';
   const headers = {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  fetch('/api/observer/peers/' + encodeURIComponent(name), { method: 'DELETE', headers })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/observer/peers/' + encodeURIComponent(name)), { method: 'DELETE', headers })
     .then(r => {
       if (r.ok) {
         showToast(`Removed peer ${name}`, 'info');
@@ -36614,7 +36642,9 @@ function loadSavedCommands() {
 }
 
 function deleteSavedCmd(name) {
-  fetch('/api/commands?name=' + encodeURIComponent(name), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/commands?name=' + encodeURIComponent(name)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadSavedCommands() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
 }
@@ -36650,7 +36680,9 @@ function createSavedCmd() {
   const name = (document.getElementById('newCmdName') || {}).value || '';
   const command = (document.getElementById('newCmdValue') || {}).value || '';
   if (!name || !command) { showToast('Name and command required', 'error'); return; }
-  fetch('/api/commands', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/commands'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ name, command }),
@@ -36720,13 +36752,17 @@ function loadFilters() {
 }
 
 function toggleFilter(id, enable) {
-  fetch('/api/filters', { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
+  // Proxy-aware (version-skew audit): _apiPath routes the PATCH to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters'), { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ id, enabled: enable }) })
     .then(r => r.ok ? loadFilters() : showToast('Update failed', 'error'))
     .catch(() => showToast('Update failed', 'error'));
 }
 
 function deleteFilter(id) {
-  fetch('/api/filters?id=' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters?id=' + encodeURIComponent(id)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? loadFilters() : showToast('Delete failed', 'error'))
     .catch(() => showToast('Delete failed', 'error'));
 }
@@ -36766,7 +36802,9 @@ function createFilter() {
   const action = (document.getElementById('newFilterAction') || {}).value || '';
   const value = (document.getElementById('newFilterValue') || {}).value || '';
   if (!pattern || !action) { showToast('Pattern and action required', 'error'); return; }
-  fetch('/api/filters', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/filters'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ pattern, action, value }),
@@ -36846,7 +36884,9 @@ function loadAlertRuleFirings() {
 
 function toggleAlertRule(name, enable) {
   const action = enable ? 'enable' : 'disable';
-  fetch('/api/alert-rules/' + encodeURIComponent(name) + '/' + action, {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules/' + encodeURIComponent(name) + '/' + action), {
     method: 'POST',
     headers: tokenHeader(),
   })
@@ -36855,7 +36895,9 @@ function toggleAlertRule(name, enable) {
 }
 
 function deleteAlertRule(name) {
-  fetch('/api/alert-rules/' + encodeURIComponent(name), {
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules/' + encodeURIComponent(name)), {
     method: 'DELETE',
     headers: tokenHeader(),
   })
@@ -36884,7 +36926,9 @@ function createAlertRule() {
   };
   if (description) body.description = description;
   if (source_filter) body.source_filter = source_filter;
-  fetch('/api/alert-rules', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/alert-rules'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(body),
@@ -36959,7 +37003,9 @@ function createExitHook() {
     body.notify_session = notifySession;
     if (notifyMessage) body.notify_message = notifyMessage;
   }
-  fetch('/api/exit-hooks', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(body),
@@ -36981,7 +37027,9 @@ function createExitHook() {
 
 function toggleExitHook(id, enable) {
   const updates = { enabled: enable };
-  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+  // Proxy-aware (version-skew audit): _apiPath routes the PUT to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks/' + encodeURIComponent(id)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify(updates),
@@ -36991,7 +37039,9 @@ function toggleExitHook(id, enable) {
 }
 
 function deleteExitHook(id) {
-  fetch('/api/exit-hooks/' + encodeURIComponent(id), {
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/exit-hooks/' + encodeURIComponent(id)), {
     method: 'DELETE',
     headers: tokenHeader(),
   })
@@ -46573,7 +46623,9 @@ function loadWorkQueue() {
 
 function deleteQueueItem(id) {
   if (!confirm('Delete queue item ' + id + '?')) return;
-  fetch('/api/queue/' + encodeURIComponent(id), { method: 'DELETE', headers: tokenHeader() })
+  // Proxy-aware (version-skew audit): _apiPath routes the DELETE to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/queue/' + encodeURIComponent(id)), { method: 'DELETE', headers: tokenHeader() })
     .then(r => r.ok ? r.json() : Promise.reject(r))
     .then(() => loadWorkQueue())
     .catch(() => alert('Failed to delete queue item ' + id));
@@ -46587,7 +46639,9 @@ function pushQueueItem() {
   if (payloadStr) {
     try { payload = JSON.parse(payloadStr); } catch(e) { alert('Invalid payload JSON: ' + e.message); return; }
   }
-  fetch('/api/queue/push', {
+  // Proxy-aware (version-skew audit): _apiPath routes the POST to the
+  // selected peer when one is active; no-op for local/all.
+  fetch(_apiPath('/api/queue/push'), {
     method: 'POST',
     headers: { ...tokenHeader(), 'Content-Type': 'application/json' },
     body: JSON.stringify({ role, payload })
