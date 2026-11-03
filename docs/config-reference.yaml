@@ -254,6 +254,43 @@ git:
   push_on_complete: branch
   # Remote name the finished branch is pushed to (default: origin).
   push_remote: origin
+  # Pre-push secret scan (the "secret scan push gate"). Before any daemon
+  # push attempt (PRD push-on-complete, one-shot push, pre-teardown save
+  # push) it scans the commits on HEAD that are on no ref of push_remote,
+  # looking only at the lines those commits add. Read live on every push
+  # attempt — a runtime change (REST/MCP/comm/CLI) applies on the next
+  # push, no restart. Findings are redacted everywhere: detector, commit,
+  # file:line and a 16-hex fingerprint (sha256 of the matched material);
+  # the secret itself is never stored, logged, alerted or printed.
+  secret_scan:
+    # What a finding does with the push.
+    #   shadow — (default; unset/empty reads shadow) scan, log, record the
+    #            findings on the PRD/session and raise one warn alert; the
+    #            push proceeds.
+    #   enforce — any finding not allow-listed refuses the push before it
+    #             runs; the remote is left untouched and the local commit
+    #             is kept exactly where it is.
+    #   off — no scan at all.
+    # A value other than off|shadow|enforce is refused on every write path
+    # (REST/MCP/comm/CLI) with an error naming the allowed values.
+    mode: shadow
+    # Detector names to run; built-ins: private_key, aws_access_key,
+    # github_token, generic_token, slack_token. Empty (or omitted) reads as
+    # all built-ins; an empty value written at runtime resets to all
+    # built-ins. An unknown name fails the scan (logged, push proceeds) —
+    # it never silently no-ops.
+    detectors: []
+    # Allow-list: matching findings are suppressed.
+    allow_list:
+      # Path globs matched (path.Match) against the repository-relative
+      # path; a bare directory name (e.g. vendor, testdata) also matches
+      # any path inside it. Matches are skipped entirely.
+      paths: []
+      # Fingerprints of specific findings: the short 16-hex form shown on
+      # every finding, or the full 64-hex sha256 digest of the matched
+      # material. Each entry must be 16- or 64-char hex (write paths
+      # validate). Only the hash is stored — never the secret.
+      fingerprints: []
 
 # ── Web Server ──
 # HTTP/WebSocket server for the PWA, REST API, and browser access.
