@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
@@ -59,8 +61,15 @@ func TestChecksShipIntegration(t *testing.T) {
 	}
 	ciGit(t, work, "add", ".")
 	ciGit(t, work, "commit", "-m", "release")
-	tagsOf := func() string { return ciGit(t, remote, "tag", "-l") + "|" + ciGit(t, work, "tag", "-l") }
-	tagsBefore := tagsOf()
+	// Publish main once so the remote has a real refs/heads/main to compare.
+	ciGit(t, work, "push", "origin", "main")
+	// refsOf lists every ref (name and object) on the remote and in the work
+	// repo, so any push, tag or branch move shows up as a difference.
+	refsOf := func() (string, string) {
+		return ciGit(t, remote, "for-each-ref", "--format=%(refname) %(objectname)"),
+			ciGit(t, work, "for-each-ref", "--format=%(refname) %(objectname)") + "\nHEAD " + ciGit(t, work, "rev-parse", "HEAD")
+	}
+	remoteBefore, workBefore := refsOf()
 
 	m, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
 	if err != nil {
@@ -93,7 +102,34 @@ func TestChecksShipIntegration(t *testing.T) {
 	// 1. A task whose verification script is missing is blocked before any
 	// worker starts, and a triage record is written.
 	blocked := newPRD("missing script", "scripts/verify-missing.sh")
+	var seenMu sync.Mutex
+	var blockedSeen []string
+	cancelSub := m.Subscribe(autonomous.LifecycleFilter{PRDID: blocked.ID}, func(ev autonomous.LifecycleEvent) {
+		if ev.NewStatus != "" && strings.HasPrefix(ev.Kind, "task.") {
+			seenMu.Lock()
+			blockedSeen = append(blockedSeen, ev.NewStatus)
+			seenMu.Unlock()
+		}
+	})
 	_ = m.Run(context.Background(), blocked.ID, spawn, verify)
+	deadline := time.Now().Add(5 * time.Second)
+	hasBlocked := func() bool {
+		seenMu.Lock()
+		defer seenMu.Unlock()
+		for _, st := range blockedSeen {
+			if st == string(autonomous.TaskBlocked) {
+				return true
+			}
+		}
+		return false
+	}
+	for !hasBlocked() && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancelSub()
+	if !hasBlocked() {
+		t.Fatalf("task never reached status blocked; transitions %v", blockedSeen)
+	}
 	got, _ := m.Store().GetPRD(blocked.ID)
 	finalTaskStatus := string(got.Story[0].Tasks[0].Status)
 	snap, ok := m.Store().SnapshotPRD(blocked.ID)
@@ -113,13 +149,28 @@ func TestChecksShipIntegration(t *testing.T) {
 
 	// 2. A finished release runs the ship step in shadow mode.
 	shipped := newPRD("ships", "")
+	// Keep the separate push-on-complete branch push out of this run, so any
+	// ref change below can only come from the ship step.
+	if _, err := m.SetPRDGitPush(shipped.ID, "never"); err != nil {
+		t.Fatal(err)
+	}
 	if err := m.Run(context.Background(), shipped.ID, spawn, verify); err != nil {
 		t.Fatalf("run shipping PRD: %v", err)
 	}
-	// Shadow ship must create and push no tag (the branch push belongs to the
-	// separate push-on-complete step, not the ship step).
-	if after := tagsOf(); after != tagsBefore {
-		t.Fatalf("shadow ship created tags:\nbefore %q\nafter  %q", tagsBefore, after)
+	// Shadow ship must run nothing: no ref on the remote (including
+	// refs/heads/main and tags) or in the work repo may differ.
+	remoteAfter, workAfter := refsOf()
+	gitChanges := 0
+	if remoteAfter != remoteBefore {
+		gitChanges++
+		t.Errorf("remote refs changed:\nbefore %q\nafter  %q", remoteBefore, remoteAfter)
+	}
+	if workAfter != workBefore {
+		gitChanges++
+		t.Errorf("work refs changed:\nbefore %q\nafter  %q", workBefore, workAfter)
+	}
+	if !strings.Contains(remoteAfter, "refs/heads/main ") || strings.Contains(remoteAfter, "refs/tags/") {
+		t.Errorf("remote refs unexpected: %q", remoteAfter)
 	}
 
 	// 3. Serve the real handlers over httptest and point every surface at it.
@@ -225,6 +276,18 @@ func TestChecksShipIntegration(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("COUNTS blocked_tasks=%d final_task_status=%s worker_spawns_for_blocked=%d triage_notes=%d checks_surfaces=%d ship_surfaces=%d ship_commands_recorded=3 git_changes=0",
-		blockedTasks, finalTaskStatus, blockedSpawns, len(snap.Triage.Notes), len(checksSurfaces), len(shipSurfaces))
+	recorded := 0
+	for _, c := range wantShip[1:4] {
+		if strings.Contains(shipSurfaces["rest"], c) {
+			recorded++
+		}
+	}
+	if recorded != 3 || gitChanges != 0 {
+		t.Errorf("ship commands recorded = %d (want 3), git ref changes = %d (want 0)", recorded, gitChanges)
+	}
+	seenMu.Lock()
+	transitions := strings.Join(blockedSeen, ">")
+	seenMu.Unlock()
+	t.Logf("COUNTS blocked_tasks=%d task_status_transitions=%s final_task_status=%s worker_spawns_for_blocked=%d triage_notes=%d checks_surfaces=%d ship_surfaces=%d ship_commands_recorded=%d git_changes=%d",
+		blockedTasks, transitions, finalTaskStatus, blockedSpawns, len(snap.Triage.Notes), len(checksSurfaces), len(shipSurfaces), recorded, gitChanges)
 }

@@ -11,12 +11,15 @@ Counts only.
 | Tasks blocked before start (triage record status blocked) | 1 |
 | Worker spawns for the blocked task | 0 |
 | Triage notes recorded for the block | 1 |
+| Blocked status transitions observed on the task (in_progress, blocked, failed) | 3 |
 | Surfaces that returned the check finding (REST, CLI, MCP, comm) | 4 of 4 |
 | Surfaces that returned the ship finding (REST, CLI, MCP, comm) | 4 of 4 |
 | Ship commands recorded in shadow | 3 |
 | Ship commands run in shadow | 0 |
-| Tags created locally or on the remote | 0 |
+| Ref changes on the remote or in the work repo after the shadow ship (all refs, including refs/heads/main and tags) | 0 |
+| Branch pushes by push-on-complete in the shipping run (policy never) | 0 |
 | Test result | 1 passed, 0 failed |
 
-Observation: the blocked task's final status after the run is failed (1 task);
-the triage record keeps status blocked.
+Observation: the task does reach status blocked (observed through the lifecycle
+events), and the triage record keeps status blocked. The executor then settles the
+task's own final status as failed (1 task); that is existing behavior, not changed here.
