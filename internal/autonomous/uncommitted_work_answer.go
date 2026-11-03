@@ -318,12 +318,11 @@ func uncommittedAnswerCommitMessage(r *uncommittedAnswer) string {
 // task again under the configured policy, the way the completion check does.
 func (m *Manager) completeHeldTask(ctx context.Context, r *uncommittedAnswer, note string) bool {
 	prd, t := r.prd, r.t
-	auto := m.Config().Automation
-	policy := auto.EffectiveUncommittedWorkPolicy()
+	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy != config.UncommittedWorkPolicyOff {
 		detected, err := DetectUncommittedWork(ctx, r.dir, m.driftGit)
 		if err == nil {
-			scoped := ScopeUncommittedFiles(detected, t, EffectiveTaskWriteDirs(prd, t), r.dir, auto.EffectiveUncommittedWorkScope())
+			scoped := ScopeUncommittedFiles(detected, t, EffectiveTaskWriteDirs(prd, t), r.dir, m.effectiveUncommittedWorkScope(prd))
 			if len(scoped) > 0 {
 				m.recordUncommittedResolved(r, UncommittedOptionCommit, note+"; files are still uncommitted")
 				if policy == config.UncommittedWorkPolicyWarn {

@@ -79,8 +79,7 @@ func skippedMissingPathsNote(skipped []string) string {
 // skipped quietly when the task directory is empty or git cannot read its
 // status (not a git repository).
 func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (held bool, err error) {
-	auto := m.Config().Automation
-	policy := auto.EffectiveUncommittedWorkPolicy()
+	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
 		return false, nil
 	}
@@ -94,7 +93,7 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 		return false, nil
 	}
 
-	scope := auto.EffectiveUncommittedWorkScope()
+	scope := m.effectiveUncommittedWorkScope(prd)
 	writeDirs := EffectiveTaskWriteDirs(prd, t)
 	detect := func() ([]UncommittedFile, error) {
 		files, derr := DetectUncommittedWork(ctx, dir, m.driftGit)

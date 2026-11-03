@@ -1121,6 +1121,14 @@ type Manager struct {
 	supervisorWatchAlertMu      sync.Mutex
 	projectPolicyConcurrency    func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
 
+	// effectivePolicy is the three-tier policy resolver
+	// (config.ResolveProjectPolicy), injected by the daemon with
+	// SetEffectivePolicy; nil = unwired and every reader falls back to the
+	// daemon's autonomous.* defaults. laneFillCaps is the floor of the
+	// projects' lane_fill_* counts, (0,0) when unwired.
+	effectivePolicy atomic.Pointer[PolicyFn]
+	laneFillCaps    atomic.Pointer[laneFillPolicyCapFn]
+
 	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose  DecomposeFn
@@ -2491,7 +2499,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	prd.LastDecomposeFailure = nil // success — clear the single-use hint
 	prd.DecomposeSessionFailures = 0
 
-	settings, serr := m.EffectivePlanCoverage()
+	settings, serr := m.effectivePlanCoverage(prd)
 	if serr != nil {
 		// A plan-coverage mode that cannot be resolved is a config
 		// error; do not leave the PRD half-finalized.
@@ -2593,11 +2601,10 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 		_ = m.store.SavePRD(prd)
 	}
 	// BL407 Phase 5 — apply the daemon-wide AutoPR default at creation
-	// time, same shape as DefaultSkills above.
-	m.mu.Lock()
-	defaultAutoPR := m.cfg.DefaultAutoPR
-	m.mu.Unlock()
-	if defaultAutoPR && !prd.Git.AutoPR {
+	// time, same shape as DefaultSkills above; a project/ Automaton tier
+	// sets the default for its Automata when it does
+	// (effectiveDefaultAutoPR).
+	if defaultAutoPR := m.effectiveDefaultAutoPR(prd); defaultAutoPR && !prd.Git.AutoPR {
 		prd.Git.AutoPR = true
 		_ = m.store.SavePRD(prd)
 	}
@@ -2959,7 +2966,7 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// (reviewer outage / unparseable / skipped) never blocks. A plan review the
 	// judge held (it timed out on every backend) refuses approval in every mode,
 	// since no judge checked the plan.
-	if mode := normalizePlanReviewMode(m.cfg.PlanReviewMode); mode != PlanReviewModeOff {
+	if mode := m.effectivePlanReviewMode(prd); mode != PlanReviewModeOff {
 		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed && (mode == PlanReviewModeBlock || v.Held) {
 			msg := v.Summary
 			if cats := planReviewCategories(v.Findings); len(cats) > 0 {

@@ -135,10 +135,10 @@ func (m *Manager) taskWorktreeEnabled(prd *PRD, t *Task) bool {
 	if prd == nil || t == nil || prd.Git.Branch == "" || t.ProjectDir != "" || t.SpawnPRD {
 		return false
 	}
-	if m.readOnlyTaskSkipsLock(t) {
+	if m.readOnlyTaskSkipsLock(prd, t) {
 		return false
 	}
-	return EffectiveWorktreePerTask(m.Config().Parallel)
+	return m.effectiveWorktreePerTask(prd)
 }
 
 // ensureTaskWorktreeFor creates the task's worktree when enabled and records

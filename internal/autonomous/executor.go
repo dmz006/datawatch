@@ -334,7 +334,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err != nil {
 		return err
 	}
-	retries := m.cfg.AutoFixRetries
+	retries := m.effectiveSpawnRetries(prd)
 	if retries < 0 {
 		retries = 0
 	}
@@ -1262,7 +1262,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}()
 	// A read-only task (flagged, with the setting on) never takes the write
 	// lock, so it runs in the pool beside other tasks. Writers always lock.
-	readOnly := m.readOnlyTaskSkipsLock(t)
+	readOnly := m.readOnlyTaskSkipsLock(prd, t)
 	holdTree := func() error {
 		if treeRelease != nil {
 			return nil // already held for this executeOne (idempotent)
@@ -1628,7 +1628,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// BL447: lint against the task's own resolved dir/write scope.
 			// scope_lint decides what a hit does: enforce blocks the task,
 			// warn records it and spawns anyway, off skips the lint.
-			if mode := m.scopeLintMode(); mode != scopeLintOff {
+			if mode := m.effectiveScopeLint(prd); mode != scopeLintOff {
 				if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
 					if mode == scopeLintEnforce {
 						return fmt.Errorf("scope: %s (task not spawned)", strings.Join(problems, "; "))
