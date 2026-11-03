@@ -10805,6 +10805,20 @@ function loadComputeNodesPanel() {
           // a reserved field (alpha.23.x) that, when present, surfaces as
           // the badge tooltip. Empty for now until dispatcher persists it.
           const switchHTML = slidingSwitchHTML(safeJ, !!n.disabled, n.last_dispatch_error || '', 'computeToggleEnabled');
+          // Drain controls (drain API: POST/DELETE /api/compute/nodes/<n>/drain).
+          // State line + live held-task line when drained; denied-consumer
+          // chips when the node denies consumers; Drain button (with a small
+          // inline until/reason form) or Undrain button otherwise.
+          const encName = encodeURIComponent(n.name || '');
+          const drainState = computeDrainStateHTML(n);
+          const deniedHTML = computeDeniedConsumersHTML(n);
+          const drainBtnStyle = 'font-size:10px;padding:1px 8px;border:1px solid var(--border);background:transparent;color:var(--text2);border-radius:6px;cursor:pointer;';
+          const drainAction = n.drained
+            ? `<button style="${drainBtnStyle}" title="${escHtml(t('compute_undrain_btn_title')||'Undrain this node — resume placing work on it')}" aria-label="Undrain ${safe}" onclick="event.preventDefault();event.stopPropagation();computeUndrain(${safeJ})">${escHtml(t('compute_undrain_btn')||'Undrain')}</button>`
+            : `<button style="${drainBtnStyle}" title="${escHtml(t('compute_drain_btn_title')||'Drain this node — stop placing new work on it')}" aria-label="Drain ${safe}" onclick="event.preventDefault();event.stopPropagation();computeToggleDrainForm(${safeJ})">${escHtml(t('compute_drain_btn')||'Drain')}</button>`;
+          const drainBody = n.drained
+            ? `<div style="padding:4px 10px;font-size:10px;color:var(--text2);"><span id="drainHeld-${encName}" class="compute-drain-held"></span></div>`
+            : computeDrainFormHTML(n.name);
           // GATE alpha.36 (operator 2026-05-10): dim full row when
           // disabled (operator: visual state was unclear). aria-labels
           // + tooltip text on Edit / Detail / Delete so the icons are
@@ -10826,14 +10840,16 @@ function loadComputeNodesPanel() {
               <strong>${safe}</strong>${auto}
               ${kindBadge}
               <span style="color:var(--text2);font-size:10px;">${escHtml(n.address||'')}</span>
-              <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${computeTLSBadgeHTML(n)}${tagsHtml}
+              <span style="color:var(--text2);font-size:10px;">cap=${cap}</span>${drainState}${deniedHTML}${computeTLSBadgeHTML(n)}${tagsHtml}
               <span style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;flex-shrink:0;">
                 ${switchHTML}
+                ${drainAction}
                 <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeEditNode(${safeJ})" title="${escHtml(t('compute_edit_btn_title')||'Edit')}" aria-label="Edit ${safe}">✏️</button>
                 <button class="btn-icon" style="font-size:13px;padding:2px 6px;background:transparent;border:none;cursor:pointer;" onclick="event.preventDefault();event.stopPropagation();computeShowDetail(${safeJ})" title="${escHtml(t('compute_detail_btn_title')||'Live monitoring detail')}" aria-label="Details for ${safe}">📡</button>
                 <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:0 6px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" aria-label="Delete ${safe}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
               </span>
             </summary>
+            ${drainBody}
             <table style="width:100%;border-collapse:collapse;background:var(--bg);border-top:1px solid var(--border);">${detailRows}</table>
           </details>`;
         }).join('');
@@ -10843,12 +10859,115 @@ function loadComputeNodesPanel() {
     // narrow viewports. The actual form lives in openComputeAddPanel().
     const addForm = `<button class="btn-primary" style="font-size:12px;padding:6px 14px;margin-top:10px;" onclick="openComputeAddPanel()">+ ${escHtml(t('compute_add_title')||'Add ComputeNode')}</button>`;
     panel.innerHTML = intro + rows + addForm;
+    // Drained nodes: the list endpoint does not carry the live held-task
+    // count, so fetch each drained node's /health endpoint and fill the
+    // placeholder line ("N tasks still finishing") once it lands.
+    nodes.filter(n => n.drained && n.name).forEach(n => {
+      apiFetch('/api/compute/nodes/' + encodeURIComponent(n.name) + '/health', { method: 'GET' })
+        .then(d => {
+          const el = document.getElementById('drainHeld-' + encodeURIComponent(n.name));
+          if (el && d && typeof d.held_tasks === 'number' && d.held_tasks > 0) {
+            el.textContent = t('compute_drain_held', [d.held_tasks]) || (d.held_tasks + ' tasks still finishing');
+          }
+        })
+        .catch(() => {});
+    });
     if (typeof window._migrationBanner === 'function') window._migrationBanner(panel);
   }).catch(e => {
     panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
   });
 }
 window.loadComputeNodesPanel = loadComputeNodesPanel;
+
+// ── Compute node drain controls ──────────────────────────────────────────
+// The daemon drains a node (stop placing new work; in-flight work finishes):
+//   POST   /api/compute/nodes/<n>/drain   { until?: RFC3339, reason? }
+//   DELETE /api/compute/nodes/<n>/drain   (idempotent undrain)
+// The node list carries drained/drain_until/drain_reason/permissions;
+// the live held-task count comes from the node's /health endpoint.
+
+// State line: 'Drained until <time>' or 'Drained, no end time'. Empty
+// when the node is not drained.
+function computeDrainStateHTML(n) {
+  if (!n || !n.drained) return '';
+  let text;
+  if (n.drain_until) {
+    let when;
+    try { when = new Date(n.drain_until).toLocaleString(); } catch (e) { when = String(n.drain_until); }
+    text = t('compute_drain_until', [when]) || ('Drained until ' + when);
+  } else {
+    text = t('compute_drain_open') || 'Drained, no end time';
+  }
+  return `<span style="font-size:10px;font-weight:600;background:rgba(245,158,11,0.15);color:#b45309;padding:1px 6px;border-radius:8px;">${escHtml(text)}</span>`;
+}
+
+// Denied-consumer chips (permissions.denied_consumers); empty when the
+// node denies no consumer.
+function computeDeniedConsumersHTML(n) {
+  const denied = (n && n.permissions && n.permissions.denied_consumers) || [];
+  if (!denied.length) return '';
+  const chips = denied.map(c => `<code style="font-size:9px;">${escHtml(String(c))}</code>`).join(' ');
+  return `<span style="font-size:9px;color:var(--text2);margin-left:4px;">${escHtml(t('compute_denied')||'denied')} ${chips}</span>`;
+}
+
+// Small inline drain form for an undrained node card: optional until
+// (datetime-local) + optional reason. Hidden until the Drain button toggles
+// it; ids are per-node so several cards can hold a form at once.
+function computeDrainFormHTML(name) {
+  const id = encodeURIComponent(name);
+  const safeJ = escHtml(JSON.stringify(name));
+  const btnStyle = 'font-size:11px;padding:3px 10px;cursor:pointer;';
+  const inputStyle = 'font-size:11px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);color:var(--text);';
+  return `<div class="compute-drain-form" id="drainForm-${id}" style="display:none;padding:6px 10px;border-top:1px solid var(--border);gap:8px;align-items:flex-end;flex-wrap:wrap;">
+    <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_drain_until_label')||'Until (optional — open-ended)')}
+      <input type="datetime-local" id="drainUntil-${id}" style="${inputStyle}" /></label>
+    <label style="font-size:10px;color:var(--text2);">${escHtml(t('compute_drain_reason_label')||'Reason (optional)')}
+      <input type="text" id="drainReason-${id}" style="${inputStyle};min-width:140px;" /></label>
+    <button class="btn-primary" style="${btnStyle}" onclick="event.preventDefault();event.stopPropagation();computeSubmitDrain(${safeJ})">${escHtml(t('compute_drain_apply')||'Drain')}</button>
+    <button style="${btnStyle}background:transparent;border:1px solid var(--border);color:var(--text2);" onclick="event.preventDefault();event.stopPropagation();document.getElementById('drainForm-${id}').style.display='none'">${escHtml(t('compute_drain_cancel')||'Cancel')}</button>
+  </div>`;
+}
+window.computeDrainStateHTML = computeDrainStateHTML;
+window.computeDeniedConsumersHTML = computeDeniedConsumersHTML;
+window.computeDrainFormHTML = computeDrainFormHTML;
+
+// Toggle the node card's inline drain form.
+window.computeToggleDrainForm = function(name) {
+  const el = document.getElementById('drainForm-' + encodeURIComponent(name));
+  if (el && el.style) el.style.display = (el.style.display === 'none') ? 'flex' : 'none';
+};
+
+// Apply the drain: optional until (datetime-local → RFC3339 ISO) +
+// optional reason. Both are omitted from the body when left empty, which
+// the server treats as an open-ended drain.
+window.computeSubmitDrain = function(name) {
+  const id = encodeURIComponent(name);
+  const untilEl = document.getElementById('drainUntil-' + id);
+  const reasonEl = document.getElementById('drainReason-' + id);
+  const body = { reason: ((reasonEl && reasonEl.value) || '').trim() };
+  const rawUntil = (untilEl && untilEl.value) || '';
+  if (rawUntil) {
+    const d = new Date(rawUntil);
+    if (!isNaN(d.getTime())) body.until = d.toISOString();
+  }
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/drain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(() => {
+    showToast((t('compute_drain_ok')||'Node drained') + ' ' + name, 'success', 2000);
+    loadComputeNodesPanel();
+  }).catch(e => showError((t('compute_drain_failed')||'Drain failed'), String(e.message||e)));
+};
+
+// Undrain (server-side DELETE is idempotent). Reloads the panel on success.
+window.computeUndrain = function(name) {
+  apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/drain', { method: 'DELETE' })
+    .then(() => {
+      showToast((t('compute_undrain_ok')||'Node undrained') + ' ' + name, 'success', 2000);
+      loadComputeNodesPanel();
+    }).catch(e => showError((t('compute_undrain_failed')||'Undrain failed'), String(e.message||e)));
+};
 
 // v7.0.0-alpha.23 (Q5) — form-first edit popup for Compute Nodes + LLMs.
 // Replaces alpha.14's YAML-textarea popup. Single scrolling form with
