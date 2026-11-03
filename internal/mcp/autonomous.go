@@ -62,6 +62,7 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), resume_max_age_seconds (how old in seconds a completed task may be before it is no longer eligible for resume; 3600 = 1h default, 0 = never resume, -1 = no age limit), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
+			"snapshot_never_stage lists the path patterns the autonomous snapshot must never `git add` (an explicit empty list = nothing is protected; unset = the built-in default list). "+
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. "+
 			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks. "+
 			"default_quality_gates (BL367) is the gate config applied to new automata: enabled, test_command, timeout, block_on_regression, scope (full | touched-plus-smoke | touched; how much of the suite a gate task runs) and smoke_packages (package patterns for the touched-plus-smoke scope). "+
@@ -81,6 +82,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. " +
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. " +
 			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected. " +
+			"snapshot_never_stage sets the path patterns the autonomous snapshot must never `git add` (e.g. secret files, out-of-scope vendor trees); blank patterns are rejected, and when unset the built-in default list applies. " +
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. " +
 			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
@@ -93,6 +95,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
 		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-local-node\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
+		mcpsdk.WithArray("snapshot_never_stage", mcpsdk.Description("Path patterns the autonomous snapshot must never `git add` (e.g. '.env', 'node_modules/'). Blank patterns are rejected; an explicit empty list clears the list (nothing is protected); when unset the built-in default list applies."), mcpsdk.WithStringItems()),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithNumber("automation_triage_alert_minutes", mcpsdk.Description("Minutes an Automation may sit waiting before a triage alert is raised. Whole number >= 0; 0 turns the triage alert off, unset keeps the 30-minute default.")),
@@ -265,6 +268,14 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["task_override_statuses"]; ok {
 			body["task_override_statuses"] = req.GetStringSlice("task_override_statuses", []string{})
+		}
+	}
+	// Presence-aware like task_override_statuses above: an explicit []
+	// clears the never-stage list (no protected patterns), an absent key
+	// leaves the stored list (or the built-in defaults) untouched.
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["snapshot_never_stage"]; ok {
+			body["snapshot_never_stage"] = req.GetStringSlice("snapshot_never_stage", []string{})
 		}
 	}
 	// Plan-coverage gate — off|warn|block mode (empty = send nothing, let

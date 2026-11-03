@@ -1883,6 +1883,7 @@
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
   "settings_task_override_statuses": "LLMオーバーライドを許可するオートマトンのステータス",
+  "settings_snapshot_never_stage": "スナップショットがコミット領域に決して含めてはいけないパターン（カンマ区切り）",
   "settings_verification_timeout": "検証/ガードレールセッションのタイムアウト（秒、0=30分）",
   "settings_judge_policy": "ジャッジのバックエンド（順序付き、カンマ区切り。空 = 検証器のルーティングポリシーに従う）",
   "settings_judge_policy_help": "ジャッジ（オートマトンのガードレール、計画レビュー、その他の自律ジャッジ）が順番に試す LLM バックエンドで、各1回ずつ試行します。ジャッジは実行が制限時間に達したときだけ次のバックエンドに移ります。空（既定）の場合は検証器のルーティングポリシーに従うため、ジャッジは検証器と同じモードとバックエンドを使い、試行回数はポリシーが提示するバックエンド数になります。",

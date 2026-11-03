@@ -132,6 +132,24 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// snapshot_never_stage: the snapshot's never-stage list — path
+			// patterns the autonomous snapshot must never `git add`. Array
+			// (or null) only; blank patterns reject the whole PUT (same rule
+			// as PUT /api/config). null is absent (merge-onto-current in
+			// SetConfig) and passes; an explicit [] is valid (empty list =
+			// no protected patterns) and flows through the merge verbatim,
+			// the same convention as task_override_statuses.
+			if rawNS, ok := top["snapshot_never_stage"]; ok && string(rawNS) != "null" {
+				var patterns []string
+				if json.Unmarshal(rawNS, &patterns) != nil || patterns == nil {
+					http.Error(w, "autonomous.snapshot_never_stage: must be a list of path patterns (or null)", http.StatusBadRequest)
+					return
+				}
+				if verr := config.ValidateSnapshotNeverStage(patterns); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
 			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off);
 			// automation.triage_alert_minutes: whole minutes >= 0 (unset
 			// reads the 30-minute default, an explicit 0 turns the triage
