@@ -18,12 +18,36 @@ move it to AGENT.md and leave a cross-reference instead.
 
 **Folder hygiene** (operator-directed 2026-05-05): `docs/plans/` only holds
 dated plan docs (`YYYY-MM-DD-*.md`) ≤ 7 days old and release notes for the
-current minor version line. Everything older auto-archives to
-`historical-plans/` / `historical-releasenotes/`, enforced by
-`scripts/tidy-plans.sh`. `scripts/release-smoke.sh` runs
-`tidy-plans.sh --check` first and **aborts the release** if the folder
-needs tidying — run `scripts/tidy-plans.sh` (no flags) to do the moves,
-then commit before re-running smoke.
+current minor version line. Tidy is **link-aware** (`scripts/tidy-plans.sh`,
+plan-side logic in `scripts/plans_links.py`): a plan stays in this folder
+as long as anything still references it — an open row in this registry,
+any file under `scripts/`, a root rules file
+(AGENT.md, CLAUDE.md, any CONTEXT.md, CONTRIBUTING.md, README.md,
+SECURITY.md), or any doc under `docs/` outside `docs/plans/`. Only plans
+past the 7-day cutoff with no such references and a closed registry row
+(done / shipped / completed / merged / cancelled / landed, not vetoed by a
+negation) move to `historical-plans/`; older release notes group into
+`historical-releasenotes/<minor-version>/`. On each move, every relative
+and absolute link pointing at the plan — markdown targets and path
+mentions, in this registry and elsewhere — is rewritten to the new
+location.
+
+`scripts/check-plans-links.sh` is the broken-link gate: it scans the same
+reference surfaces and prints only the **count** of references into
+`docs/plans/` whose target no longer resolves (0 and exit 0 when clean);
+broken targets are never listed, and it takes `--quiet` to stay silent at
+zero. Registry hygiene (`scripts/plans_registry_hygiene.py`, run on every
+tidy) removes duplicate sections (first wins, later bodies folded in),
+merges all-closed tables into one, dedupes rows, trims verbose closed
+status cells, and with `--status-file PATH` (an Automaton list export,
+read as-is) corrects stale draft/not-started rows. Output everywhere is
+counts only — never a list of files.
+
+`scripts/release-smoke.sh` runs `tidy-plans.sh --check` (counts only, exit 1
+if anything would move) first and **aborts the release** if the folder
+needs tidying — run `scripts/tidy-plans.sh` (no flags) to do the moves and
+the registry hygiene, then commit before re-running smoke. `--dry-run`
+reports counts without changing anything.
 
 **PRD authoring checklist — local-environment leaks:** a PRD's specs,
 test fixtures and docs must carry no operator-machine identifiers
