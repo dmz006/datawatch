@@ -1,4 +1,6 @@
-# Checks and ship integration test
+# Checks and ship integration test (in-process, not a live daemon)
+
+This is an in-process test; no daemon was started. The live sandbox-daemon check is `docs/plans/2026-11-02-checks-and-ship-live-check.md` (settings, read routes, CLI, served PWA code). The ship step itself has not run on a live daemon.
 
 In-process test `TestChecksShipIntegration` (`cmd/datawatch/checks_ship_integration_test.go`).
 Setup: checks `pre_start_verifier` on, ship `push` and `tag` shadow. Real manager,

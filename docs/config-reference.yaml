@@ -2582,6 +2582,35 @@ autonomous:
   # still stuck after a second full bound it is moved to blocked. 0 or unset
   # falls back to the 900s default (NormalizeStuckRunningSeconds).
   stuck_running_seconds: 900
+  # Automata checks. Each mode is off, shadow (record the finding only) or on.
+  # An unknown mode is rejected. Per-project overrides live under
+  # autonomous.checks.projects.<project_dir>.
+  checks:
+    # Before a task starts: its verification script exists, is executable and
+    # starts with a shebang line.
+    pre_start_verifier: on
+    # When the pre-start verifier is on, block the start of a task whose
+    # verification script is missing (false records the finding and lets it start).
+    block_when_missing: true
+    # Plan-rule findings on a decomposed plan.
+    plan_rules: on
+    # The after-done checklist when an Automaton finishes (version files, change
+    # log, configuration reference, parity issue, registry row).
+    after_done: on
+    # The registry table compared against the plan documents.
+    registry_readme: on
+  # Ship steps for a finished release. Modes as above; shadow records the
+  # command it would run and runs nothing. Per-project overrides live under
+  # autonomous.ship.projects.<project_dir>.
+  ship:
+    push: on
+    tag: on
+    ci_watch: on
+    # Tag name template; must contain {version}.
+    tag_format: "v{version}"
+    remote: origin
+    # Workflow names the CI watch follows; empty watches all of them.
+    ci_workflows: []
   # Wall-clock cap on one task attempt, in seconds. When it expires the
   # attempt is stopped and failed with the max-attempt reason. 0 (the
   # default) means off. Recommended: 5400 (90 min).

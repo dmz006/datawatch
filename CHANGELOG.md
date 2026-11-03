@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.68.0 — Automation checks and ship steps
+
 ### Added
 
 - **Automation checks and ship steps.** The daemon now reviews an Automaton's work with four automatic checks, each `off`, `shadow` (record only) or `on` (default `on`): the pre-start verifier (a task's verification script exists, is executable and starts with a shebang line, with `autonomous.checks.block_when_missing` to block a start), the plan rules, the after-done checklist (version files, change log, configuration reference, parity issue, registry row) and the registry check. When a release is finished it carries it out with three ship steps, also `off`, `shadow` or `on`: push to the remote, create and push an annotated tag named from `autonomous.ship.tag_format`, and watch the CI runs of the pushed commit and tag, limited to `autonomous.ship.ci_workflows`. Findings and outcomes are recorded on the Automaton's triage record. Settings: `autonomous.checks.pre_start_verifier`, `plan_rules`, `after_done`, `registry_readme`, `block_when_missing`, and `autonomous.ship.push`, `tag`, `ci_watch`, `tag_format`, `remote`, `ci_workflows`.
