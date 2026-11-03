@@ -12,6 +12,7 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -594,7 +595,7 @@ func joinLines(lines []string) string {
 
 func (s *Server) toolGetConfig() mcpsdk.Tool {
 	return mcpsdk.NewTool("get_config",
-		mcpsdk.WithDescription("Get the current datawatch configuration. Returns all config sections."),
+		mcpsdk.WithDescription("Get the current datawatch configuration. Returns all config sections (section=session includes liveness_window_seconds and liveness_idle_timeout_overrides)."),
 		mcpsdk.WithString("section", mcpsdk.Description("Optional: specific section to return (e.g. 'memory', 'session', 'ollama')")),
 	)
 }
@@ -966,7 +967,11 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"autonomous.tags.registry_sync_seconds (whole seconds >= 5). "+
 			"Automata held-question keys: autonomous.questions.held_mode (off|shadow|on; default shadow), "+
 			"autonomous.questions.held_states (a JSON array of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; "+
-			"unset = all five, [] = none). A refused value returns the daemon's message."),
+			"unset = all five, [] = none). "+
+			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = the default window), "+
+			"session.liveness_idle_timeout_overrides (a JSON object of backend name to whole seconds, e.g. {\"pi\":300}, or backend=seconds pairs such as pi=300; "+
+			"0 = off for that backend; an unknown backend name is refused; an empty object clears the overrides). "+
+			"Read both back with get_config section=session. A refused value returns the daemon's message."),
 		mcpsdk.WithString("key",
 			mcpsdk.Required(),
 			mcpsdk.Description("Config key (e.g. 'detection.prompt_debounce', 'pipeline.max_parallel')"),
@@ -976,6 +981,11 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			mcpsdk.Description("Value to set"),
 		),
 	)
+}
+
+// isLivenessKey reports whether key is one of the two backend liveness settings.
+func isLivenessKey(key string) bool {
+	return key == "session.liveness_window_seconds" || key == "session.liveness_idle_timeout_overrides"
 }
 
 func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1008,6 +1018,16 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	// Route through the HTTP API for proper validation and persistence.
 	// /api/config accepts PUT (not POST).
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
+	if key == "session.liveness_idle_timeout_overrides" {
+		// A JSON object or backend=seconds pairs, sent as an object. Bad text is
+		// refused here; an unknown backend by the daemon.
+		m, err := config.ParseLivenessOverridesText(value)
+		if err != nil {
+			return toolErrorf("config_set", "config error: %v", err), nil
+		}
+		b, _ := json.Marshal(map[string]any{key: m})
+		body = string(b)
+	}
 	// Try as raw value first, then as string
 	cfgReq1, _ := http.NewRequestWithContext(context.Background(), http.MethodPut,
 		fmt.Sprintf("http://localhost:%d/api/config", s.webPort), strings.NewReader(body))
@@ -1015,6 +1035,11 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	resp, err := s.webDo(cfgReq1)
 	// Retry with quoted value when raw value was rejected (bad JSON) or on transport error.
 	needRetry := err != nil || (resp != nil && resp.StatusCode == http.StatusBadRequest)
+	// A liveness value that is valid JSON and was refused keeps the daemon's
+	// message; quoting it again would only replace that with a bad-JSON error.
+	if needRetry && err == nil && isLivenessKey(key) && (key == "session.liveness_idle_timeout_overrides" || json.Valid([]byte(value))) {
+		needRetry = false
+	}
 	if needRetry {
 		if resp != nil {
 			resp.Body.Close() //nolint:errcheck

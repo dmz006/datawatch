@@ -8015,6 +8015,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			defer resp.Body.Close() //nolint:errcheck
 			if resp.StatusCode != 200 {
+				if msg, _ := io.ReadAll(resp.Body); len(strings.TrimSpace(string(msg))) > 0 {
+					return errors.New(strings.TrimSpace(string(msg)))
+				}
 				return fmt.Errorf("API returned %d", resp.StatusCode)
 			}
 			return nil
@@ -11339,7 +11342,10 @@ func newConfigSetCmd() *cobra.Command {
 			"bare YAML edits should go through `$EDITOR ~/.datawatch/config.yaml` followed by a restart.\n\n" +
 			"Parallel task execution keys: autonomous.parallel.worktree_per_task (true|false), " +
 			"autonomous.parallel.merge_conflict_policy (additive_then_model|block|triage), " +
-			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).",
+			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
+			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
+			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
+			"an unknown backend or a non-whole-number value is refused).",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
@@ -11369,8 +11375,27 @@ func newConfigGetCmd() *cobra.Command {
 func runConfigSet(cfg *config.Config, key, value string) error {
 	url := loopbackBaseURL(cfg) + "/api/config"
 	// Try raw value first (numbers, booleans), then quoted (strings).
+	if key == "session.liveness_idle_timeout_overrides" {
+		// A JSON object or backend=seconds pairs; bad text is refused here, and
+		// an unknown backend or negative value by the daemon, both with a message.
+		m, err := config.ParseLivenessOverridesText(value)
+		if err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		b, _ := json.Marshal(map[string]any{key: m})
+		if err := putConfig(url, cfg.Server.Token, string(b)); err != nil {
+			return fmt.Errorf("config set: %w", err)
+		}
+		fmt.Printf("Set %s = %s\n", key, value)
+		return nil
+	}
 	body := fmt.Sprintf(`{"%s": %s}`, key, value)
 	if err := putConfig(url, cfg.Server.Token, body); err != nil {
+		// A liveness value that is valid JSON and was refused keeps the daemon's
+		// message; quoting it again would replace it with a bad-JSON error.
+		if isLivenessConfigKey(key) && json.Valid([]byte(value)) {
+			return fmt.Errorf("config set: %w", err)
+		}
 		bodyQuoted := fmt.Sprintf(`{"%s": "%s"}`, key, value)
 		if err2 := putConfig(url, cfg.Server.Token, bodyQuoted); err2 != nil {
 			// The quoted attempt is the one that carries a value refusal, so its
@@ -11569,6 +11594,8 @@ func newConfigShowCmd() *cobra.Command {
 			fmt.Printf("  default_project_dir:   %s\n", cfg.Session.DefaultProjectDir)
 			fmt.Printf("  max_sessions:          %d\n", cfg.Session.MaxSessions)
 			fmt.Printf("  input_idle_timeout:    %ds\n", cfg.Session.InputIdleTimeout)
+			fmt.Printf("  liveness_window_seconds:          %d (0 = default %d)\n", cfg.Session.LivenessWindowSeconds, config.DefaultLivenessWindowSeconds)
+			fmt.Printf("  liveness_idle_timeout_overrides:  %s\n", formatLivenessOverrides(cfg.Session.LivenessIdleTimeoutOverrides))
 			fmt.Printf("  tail_lines:            %d\n", cfg.Session.TailLines)
 			fmt.Printf("  auto_git_commit:       %v\n", cfg.Session.AutoGitCommit)
 			fmt.Printf("  auto_git_init:         %v\n", cfg.Session.AutoGitInit)

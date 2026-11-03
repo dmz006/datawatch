@@ -10,8 +10,10 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -132,4 +134,46 @@ func ValidateLivenessSettings(window int, overrides map[string]int, knownBackend
 		}
 	}
 	return nil
+}
+
+// ParseLivenessOverridesText reads the text forms an operator types for
+// session.liveness_idle_timeout_overrides on the CLI, MCP and chat surfaces:
+// a JSON object ({"pi":300}) or comma separated backend=seconds pairs
+// (pi=300,goose=0). An empty string is an empty map, which clears the
+// overrides. Anything else returns an error that says what was expected.
+// Backend names and negative values are checked later by
+// ValidateLivenessSettings, so every surface shares one refusal.
+func ParseLivenessOverridesText(s string) (map[string]int, error) {
+	const usage = "session.liveness_idle_timeout_overrides: %q is invalid; use a JSON object such as {\"pi\":300} or backend=seconds pairs such as pi=300,goose=0 (whole seconds, 0 = off)"
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return map[string]int{}, nil
+	}
+	out := map[string]int{}
+	if strings.HasPrefix(s, "{") {
+		var obj map[string]json.Number
+		dec := json.NewDecoder(strings.NewReader(s))
+		dec.UseNumber()
+		if err := dec.Decode(&obj); err != nil {
+			return nil, fmt.Errorf(usage, s)
+		}
+		for k, n := range obj {
+			v, err := strconv.Atoi(n.String())
+			if err != nil {
+				return nil, fmt.Errorf(usage, s)
+			}
+			out[k] = v
+		}
+		return out, nil
+	}
+	for _, part := range strings.Split(s, ",") {
+		k, v, found := strings.Cut(strings.TrimSpace(part), "=")
+		k = strings.TrimSpace(k)
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if !found || k == "" || err != nil {
+			return nil, fmt.Errorf(usage, s)
+		}
+		out[k] = n
+	}
+	return out, nil
 }
