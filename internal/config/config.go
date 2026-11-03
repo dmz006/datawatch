@@ -596,7 +596,7 @@ type Config struct {
 
 	// CostReport — knobs for the cost report (internal/costreport), the
 	// one view over recorded spend grouped by automaton, automation,
-	// backend or week. Every key is a pointer so an absent key reads
+	// backend, release or week. Every key is a pointer so an absent key reads
 	// its default while an explicit value sticks through saves and YAML
 	// round trips. See the cost_report block in docs/config-reference.yaml.
 	CostReport CostReportConfig `yaml:"cost_report,omitempty" json:"cost_report,omitempty"`
@@ -620,16 +620,16 @@ const (
 // (internal/costreport) behaves when a request does not override a knob.
 //
 //	cost_report:
-//	  default_group_by: automaton
+//	  default_group_by: automaton   # or automation, backend, release, week
 //	  default_window_days: 7
 //	  show_usd_estimates: true
 //	  week_start: monday
 //	  include_peer_spend: false
 type CostReportConfig struct {
 	// DefaultGroupBy — the grouping a request is missing its own
-	// group_by under: automaton, automation, backend or week. Default
-	// "automaton" (DefaultCostReportGroupBy); an absent key or a value
-	// outside that vocabulary reads the default.
+	// group_by under: automaton, automation, backend, release or week.
+	// Default "automaton" (DefaultCostReportGroupBy); an absent key or a
+	// value outside that vocabulary reads the default.
 	DefaultGroupBy *string `yaml:"default_group_by,omitempty" json:"default_group_by,omitempty"`
 	// DefaultWindowDays — the window, in days, the report falls back to
 	// when a request has no since bound: until minus this many days.
@@ -651,13 +651,13 @@ type CostReportConfig struct {
 }
 
 // EffectiveGroupBy returns the valid default grouping: automaton,
-// automation, backend or week. An unset key, or a set key outside that
-// vocabulary, reads the default "automaton"
+// automation, backend, release or week. An unset key, or a set key outside
+// that vocabulary, reads the default "automaton"
 // (DefaultCostReportGroupBy).
 func (c CostReportConfig) EffectiveGroupBy() string {
 	if c.DefaultGroupBy != nil {
 		switch strings.ToLower(strings.TrimSpace(*c.DefaultGroupBy)) {
-		case "automaton", "automation", "backend", "week":
+		case "automaton", "automation", "backend", "release", "week":
 			return strings.ToLower(strings.TrimSpace(*c.DefaultGroupBy))
 		}
 	}
