@@ -13266,7 +13266,7 @@ function renderServerHeaderLine() {
   const view = document.getElementById('view');
   if (!view || !view.parentNode) return null;
   const active = state.activeServer;
-  if (!active || active === 'local') _ensureLocalHostname(renderServerHeaderLine);
+  if ((!active || active === 'local') && !_localHostname) _ensureLocalHostname(renderServerHeaderLine);
   const name = serverHeaderName();
   let el = document.getElementById('server-header-line');
   if (!el) {
@@ -13276,7 +13276,7 @@ function renderServerHeaderLine() {
     el.style.cssText = 'font-size:11px;padding:3px 12px;color:var(--text2);';
     view.parentNode.insertBefore(el, view);
   }
-  el.setAttribute('data-server', (active && active !== 'local') ? active : (_localHostname || 'local'));
+  el.setAttribute('data-server', active === 'all' ? 'all' : (active && active !== 'local') ? active : (_localHostname || 'local'));
   el.textContent = t('server_header_showing', [name]) || ('Showing: ' + name);
   return el;
 }

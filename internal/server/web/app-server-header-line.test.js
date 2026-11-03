@@ -90,3 +90,21 @@ test('settings tab Showing hook also refreshes the line', () => {
   sb.settingsRefreshShowingLines();
   assert.ok(sb.__made.line.textContent.includes('peer-b'));
 });
+
+test('rendering with a cached local hostname does not self-reschedule', () => {
+  const sb = loadApp();
+  const queue = [];
+  sb.setTimeout = (fn) => { queue.push(fn); return queue.length; };
+  setServer(sb, null, 'myhost');
+  sb.renderServerHeaderLine();
+  let rounds = 0;
+  while (queue.length && rounds < 50) { queue.splice(0).forEach(f => f()); rounds++; }
+  assert.equal(queue.length, 0, 'timer loop must terminate');
+  assert.ok(rounds <= 1);
+});
+
+test('all mode sets data-server to all', () => {
+  const sb = loadApp();
+  setServer(sb, 'all', 'myhost');
+  assert.equal(sb.renderServerHeaderLine().getAttribute('data-server'), 'all');
+});
