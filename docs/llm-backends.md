@@ -447,7 +447,9 @@ goose:
   provider: anthropic         # e.g. anthropic, openai, google
   model: claude-sonnet-5    # model name accepted by the provider
 
-  # API key — literal value or ${secret:name} resolved from secrets store.
+  # API key — prefer a ${secret:name} reference, resolved from the secrets
+  # store on every session start (see howto/secrets-manager.md); a literal
+  # value still works but the reference form is preferred.
   # Injected as the provider-specific key env var (ANTHROPIC_API_KEY,
   # OPENAI_API_KEY, GOOGLE_API_KEY, or GOOSE_API_KEY for others).
   # Never logged. Omit if the key is already in the environment.

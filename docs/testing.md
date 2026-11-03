@@ -151,6 +151,16 @@ repo-relative paths or glob patterns). Its shell tests live in
 `scripts/check-no-config-copies_test.sh`
 (`bash scripts/check-no-config-copies_test.sh`).
 
+## Secret references in LLM API keys (call-time resolution)
+
+**Defect:** an LLM entry whose API key is a `${secret:name}` reference was sent to the provider as the literal text, so the provider answered 401, while a literal key worked.
+
+**Steps:** configure a fake provider server and a fake secrets store; point an entry for each adapter kind (OpenWebUI, Claude, Gemini, OpenCode API) at a `${secret:name}` reference; make one call through the dispatcher; repeat with a missing secret.
+
+**Expected:** the fake server receives the resolved secret as the bearer token or key header, never the reference text; the access is written to the audit log (JSON lines and CEF, with the secret value escaped out of the record); a missing secret fails the call with a message naming the secret and sends nothing.
+
+**Actual:** covered by `internal/inference/apikey_test.go`, `internal/inference/dispatcher_secret_test.go`, the adapter tests under `internal/inference/adapters/` and `internal/audit/secret_access_events_test.go`; all pass. Statement coverage of the touched packages is 75 to 88 percent; raising it is a follow-up. Not run against a live provider.
+
 ## Internal-Ref Leak Check
 
 - `scripts/check-no-internal-refs.sh` blocks internal tracking IDs from leaking into

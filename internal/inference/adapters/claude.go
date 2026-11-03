@@ -30,6 +30,14 @@ import (
 
 const defaultAnthropicEndpoint = "https://api.anthropic.com"
 
+// anthropicEndpoint is the base URL the adapter POSTs to when the
+// dispatch node doesn't carry an Address (cloud-kind default path).
+// It is a package-level var — not a const — so tests in the same
+// package can override it with an httptest server URL and drive the
+// resolved-reference path through the real dispatcher. Production
+// callers never reassign it.
+var anthropicEndpoint = defaultAnthropicEndpoint
+
 type Claude struct{}
 
 func (a *Claude) Kind() inference.Kind { return inference.KindClaude }
@@ -39,11 +47,20 @@ func (a *Claude) Infer(ctx context.Context, node *compute.Node, llm *inference.L
 	if apiKey == "" {
 		return inference.Response{}, fmt.Errorf("claude: api_key_ref required (set llm.api_key_ref to literal key or ${secret:name})")
 	}
+	// Defense in depth: a ${secret:name} reference is resolved into a
+	// shallow copy by the dispatcher (or equivalent callsite) before this
+	// adapter is reached. If one still shows up in APIKeyRef it must not be
+	// transmitted verbatim — the server would reject it with a 401 — so
+	// refuse, before any request is sent. The error names the LLM entry
+	// and never leaks a key or reference.
+	if strings.Contains(llm.APIKeyRef, "${secret:") {
+		return inference.Response{}, fmt.Errorf("claude: llm %q: api key is an unresolved secret reference — resolve it at the callsite before invoking the adapter", llm.Name)
+	}
 	model := inference.ResolveModel(llm, req)
 	if model == "" {
 		return inference.Response{}, fmt.Errorf("claude: no model (set llm.model or pass model_override)")
 	}
-	endpoint := defaultAnthropicEndpoint
+	endpoint := anthropicEndpoint
 	if node != nil && strings.TrimSpace(node.Address) != "" {
 		endpoint = strings.TrimRight(node.Address, "/")
 	}

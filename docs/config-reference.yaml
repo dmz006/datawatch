@@ -713,8 +713,8 @@ goose:
   provider: ""
   # Model to inject via GOOSE_MODEL (e.g. claude-sonnet-5, gpt-4o)
   model: ""
-  # API key (literal or ${secret:name}) injected as the provider-specific key env var.
-  # Resolved from secrets store at startup — never logged.
+  # API key — prefer a ${secret:name} reference (secrets store); a literal value still works.
+  # Injected as the provider-specific key env var. Never logged.
   api_key_ref: ""
   # When true, inject GOOSE_MCP__DATAWATCH__* env vars so Goose connects back
   # to this daemon as an MCP server (stdio transport, caller-session-id threaded through).

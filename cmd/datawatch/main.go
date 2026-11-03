@@ -3519,6 +3519,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		computeNodesPath := filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")
 		var computeInitErr error
 		var computeReg *compute.Registry
+		// The inference dispatcher (created inside the
+		// `if computeInitErr == nil` block below) needs call-time
+		// ${secret:name} API-key resolution. The secrets store is not
+		// constructed until further down, so the dispatcher is captured
+		// here and wired in the secrets section below.
+		var inferenceDispatcher *inference.Dispatcher
 		if encKey != nil {
 			computeReg, computeInitErr = compute.NewRegistryEncrypted(computeNodesPath, encKey)
 		} else {
@@ -3729,6 +3735,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+				inferenceDispatcher = disp
 				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
@@ -4115,6 +4122,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)
 			agentMgr.SecretsStore = secretsStore
+			// Call-time ${secret:name} API-key resolution in the inference
+			// dispatcher: the dispatcher was created above, before the
+			// secrets store existed, with its creation block already closed,
+			// so wire it here via the captured pointer. The resolution
+			// outcome (llm name, secret name, ok/missing/refused) is written
+			// to the operator audit log via the sink.
+			if inferenceDispatcher != nil {
+				inferenceDispatcher.SetSecretsStore(secretsStore, auditpkg.NewSecretAccessSink(wiredAuditLog))
+			}
 			// BL242 Phase 4 — resolve ${secret:name} refs in config fields.
 			if err := secretspkg.ResolveConfig(cfg, secretsStore); err != nil {
 				fmt.Printf("[warn] config secret ref resolution: %v\n", err)
