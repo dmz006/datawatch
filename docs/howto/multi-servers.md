@@ -180,6 +180,43 @@ you never expose the remote token to the browser directly.
 Runtime-registered servers (added via REST/MCP/CLI) are available for proxy
 routing immediately. YAML-seeded servers are also proxy-reachable.
 
+## Version skew between a primary and its peers
+
+A federated peer's daemon can run a different release than the daemon
+serving this page (the primary). The PWA makes that difference visible
+without changing behavior:
+
+- **Version-skew note on the About page.** While a peer is selected,
+  **Settings → About** reads the version from the *peer's* daemon (through
+  the local proxy). If the peer reports a different build than the primary,
+  an informational note appears under the version line: "This server is
+  running vX, a different release than vY, the one serving this page.
+  Behavior is unchanged and no reload is needed." The note is hidden while
+  the two builds match or while you are looking at the local server.
+- **Switching servers never reloads the page.** Each server's reported
+  version is recorded under that server's own key. A peer's version — even
+  a different one — is never read as an update: selecting the peer, looking
+  at its data, and switching back to local fires no reload and no prompt.
+- **The update prompt is about the primary only.** The "Update available —
+  tap to reload" banner (and the automatic reload that follows it once you
+  are idle) appears only when the same daemon serving this page reports a
+  new version, and only once per version. A peer on an older or newer
+  release can never trigger it.
+- **What the `Showing: <server>` line means.** The About, General,
+  Plugins, Comms, Compute and Automata settings tabs each carry a
+  "Showing:" line. It names the daemon whose data those tabs actually
+  display: the peer's name when a peer is selected, the local hostname when
+  you are viewing the local server. When it shows a peer's name, the rows
+  below it — version, plugins, config, comms, compute, automata — describe
+  *that* peer, not your local daemon.
+
+What to do: keep the status quo and align the versions on your own
+schedule. Both daemons keep working across the release difference, so the
+skew note is informational rather than an error. When it suits your
+rollout, upgrade whichever side is older — the peer to the primary's
+release, or the primary forward — and the note disappears the next time
+the About tab sees two matching builds.
+
 ## Troubleshooting
 
 **Test button returns red / error toast**
