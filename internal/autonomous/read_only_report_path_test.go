@@ -244,3 +244,37 @@ func TestReadOnlyStrayFileStillFails(t *testing.T) {
 		t.Errorf("error %q should name the read-only violation and the stray file", cur.Error)
 	}
 }
+
+// TestWriterTaskUnaffectedByReadOnlyCheck runs the full executor path for a
+// non-read-only (writer) task that dirties the tree: the read-only check must
+// not apply to it at all, so it finishes successfully.
+func TestWriterTaskUnaffectedByReadOnlyCheck(t *testing.T) {
+	fastTreeLockPolling(t)
+	repo := gitRepoWithDWSeed(t)
+	mgr := newRoManager(t, nil)
+	// Non-read-only task: ReportPath is irrelevant, the tree check must be
+	// skipped for it even though the tree ends dirty.
+	prd := makeReportPathPRD(t, mgr, repo, false, ".datawatch/reports/summary.md")
+
+	spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+	}
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		if err := os.WriteFile(filepath.Join(repo, "stray.txt"), []byte("x"), 0o644); err != nil {
+			t.Errorf("write stray: %v", err)
+		}
+		return VerificationResult{OK: true, Summary: "ok"}, nil
+	}
+
+	runCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	ran := make(chan error, 1)
+	go func() { ran <- mgr.Run(runCtx, prd.ID, spawn, verify) }()
+	finishRun(t, ran)
+
+	id := prd.Story[0].Tasks[0].ID
+	cur, _ := mgr.Store().GetTask(id)
+	if cur.Status != TaskCompleted {
+		t.Fatalf("status = %q, error %q; want completed (a writer task may change the tree)", cur.Status, cur.Error)
+	}
+}
