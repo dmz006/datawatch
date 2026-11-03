@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.70.1 (2026-11-03).** An LLM entry whose API key is a secret reference now works with every adapter: the key is resolved at call time, audited, and a missing secret is named. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.70.2 (2026-11-03).** The datawatch-stats installer now downloads the standalone stats archive (it fetched the main daemon archive before) and can install from a local tarball with --archive. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
