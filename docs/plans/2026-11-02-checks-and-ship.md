@@ -52,7 +52,7 @@ Four automatic checks on an Automaton's work (pre-start verifier, plan rules, af
 
 - [x] Functionality implemented.
 - [x] Unit tests added and passing (including `internal/config` tests for the new structs).
-- [x] Live test on a sandbox daemon (settings, routes, CLI, served PWA code).
+- [x] Live test on a sandbox daemon (settings, routes, CLI, served PWA code): `docs/plans/2026-11-02-checks-and-ship-live-check.md`, 25 of 25 checks. The earlier integration report (`docs/plans/reports/checks-and-ship-integration.md`) was in-process only, with no daemon, and is not the live evidence.
 - [x] CHANGELOG entry under the `v9.68.0` heading.
 - [x] `docs/config-reference.yaml`, `docs/implementation.md`, `docs/cursor-mcp.md`, `docs/mcp.md`, `docs/operations.md`, how-to, indexes.
 - [x] `docs/testing-tracker.md` section "Automata checks and ship surfaces".
