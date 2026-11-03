@@ -1557,7 +1557,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// Record which level supplied the backend before the session is
 			// spawned, so it is visible while the task runs; a later attempt
 			// overwrites it.
-			m.store.WithLock(func() { t.ExecutorSource = execSource })
+			m.store.WithLock(func() {
+				t.ExecutorSource = execSource
+				recordAdmittedWorker(t, execSource, backend, model)
+			})
 			_ = m.store.SaveTask(t)
 			run.Backend, run.Model, run.Effort, run.StartedAt = backend, model, effort, now
 			run.Escalated = escalated
@@ -2973,6 +2976,30 @@ const (
 	// failure escalation step rather than by the levels above.
 	ExecutorSourceEscalation = "escalation"
 )
+
+// recordAdmittedWorker stores the worker an attempt is admitted with on the
+// task. A task whose own backend supplied the worker (the operator's choice
+// in a review retry included) also keeps the model admission used, so the
+// persisted Backend and Model match the lease and the spawn; a worker chosen
+// by escalation or routing for this attempt only is not written to
+// Backend/Model. The caller holds the store lock.
+func recordAdmittedWorker(t *Task, source, backend, model string) {
+	t.AdmittedBackend, t.AdmittedModel = backend, model
+	if source == ExecutorSourceTask && t.Backend == backend {
+		t.Model = model
+	}
+}
+
+// admittedWorker is the worker capacity admission places a task with: the
+// pair its current attempt was admitted with when one is recorded, otherwise
+// the resolved worker. Re-admission and lease adoption use it so they never
+// re-derive a different worker than the attempt started with.
+func admittedWorker(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
+	if t.AdmittedBackend != "" {
+		return t.AdmittedBackend, t.AdmittedModel
+	}
+	return resolveTaskBackendModel(t, story, prd, auto, fallbackBackend)
+}
 
 // resolveTaskBackendModel resolves a task's effective backend and model.
 // It is resolveTaskExecutionLLM without the source.

@@ -587,7 +587,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	sessionNode, entryNodes, sessionEndpoint := m.sessionNode, m.entryNodes, m.sessionEndpoint
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
-	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
+	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return

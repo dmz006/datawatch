@@ -308,7 +308,7 @@ func (m *Manager) awaitReAdmitAs(ctx context.Context, prd *PRD, t *Task, prefix,
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
-	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
+	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return nil

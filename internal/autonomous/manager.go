@@ -3520,6 +3520,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 				// A reset ends an uncommitted-work hold: the task runs again.
 				t.UncommittedWork = nil
 				t.RetryCount = 0
+				// The next attempt is admitted afresh, from the task's current
+				// worker: drop the pair the last attempt was admitted with.
+				t.AdmittedBackend, t.AdmittedModel = "", ""
 				// A human reset starts a new count of failed attempts for the
 				// failure escalation policy, so the ladder restarts at step 1.
 				t.EscalationFailures = 0
@@ -4548,6 +4551,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	task.Backend = backend
 	task.Effort = Effort(effort)
 	task.Model = model
+	task.AdmittedBackend, task.AdmittedModel = "", ""
 	task.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
