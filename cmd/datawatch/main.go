@@ -4432,6 +4432,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
+			DuplicateSessionKeep:             acfgIn.DuplicateSessionKeep,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,

@@ -275,6 +275,10 @@ type Config struct {
 	// before the orphan sweep ends it. 0 or unset => 300
 	// (config.NormalizeOrphanGraceSeconds).
 	OrphanGraceSeconds int    `json:"orphan_grace_seconds,omitempty"`
+	// DuplicateSessionKeep mirrors autonomous.duplicate_session_keep: "older"
+	// (default) or "newer" — which live session survives when two match one
+	// task (config.NormalizeDuplicateSessionKeep).
+	DuplicateSessionKeep string `json:"duplicate_session_keep,omitempty"`
 	VerificationModel  string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
@@ -5755,7 +5759,7 @@ func (m *Manager) reconcileStuckTasks() {
 				if !completing && !startFailed {
 					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
 						// Older live matches would run beside the adopted session.
-						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id, "autonomous.boot-reconcile.duplicate", "older duplicate of the session adopted on daemon restart"), "older duplicate of the session adopted on daemon restart")
+						m.endDuplicateSessions(prd, t, id, "autonomous.boot-reconcile.duplicate", fmt.Sprintf("duplicate of the session adopted on daemon restart (keep %s)", m.duplicateSessionKeep()))
 						adoptedAny = true
 						continue
 					}

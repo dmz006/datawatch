@@ -2794,6 +2794,12 @@ type AutonomousConfig struct {
 	// unbound to any non-terminal task before the orphan sweep ends it. 0 or
 	// unset => 300 (see NormalizeOrphanGraceSeconds).
 	OrphanGraceSeconds int `yaml:"orphan_grace_seconds,omitempty" json:"orphan_grace_seconds,omitempty"`
+	// DuplicateSessionKeep picks the survivor when two or more live sessions
+	// match one task: "older" (default) keeps the older session until it ends,
+	// "newer" keeps the newer one. The other sessions are ended through the
+	// session killer, and only after their process exit is confirmed. Unset or
+	// unrecognised => "older" (see NormalizeDuplicateSessionKeep).
+	DuplicateSessionKeep string `yaml:"duplicate_session_keep,omitempty" json:"duplicate_session_keep,omitempty"`
 	// LoopDetectTurns is the worker loop-detection window (how many
 	// recent turns autonomous.DetectLoop compares). *int: nil = unset →
 	// default 3; 0 = detector OFF; n>0 = window size. Negative values are
