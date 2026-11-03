@@ -1,6 +1,13 @@
 package main
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/dmz006/datawatch/internal/config"
+)
 
 // configureRequestBody builds the PUT /api/config body for one `configure
 // <key>=<value>` chat command. true/false and values that are a complete JSON
@@ -9,7 +16,14 @@ import "encoding/json"
 // with the key and value escaped.
 func configureRequestBody(key, value string) string {
 	var val any = value
-	if value == "true" || value == "false" {
+	if key == "session.liveness_idle_timeout_overrides" {
+		// JSON object or backend=seconds pairs go out as an object. Text that
+		// parses as neither goes out as a string, which the daemon refuses with
+		// its own message.
+		if m, err := config.ParseLivenessOverridesText(value); err == nil {
+			val = m
+		}
+	} else if value == "true" || value == "false" {
 		val = json.RawMessage(value)
 	} else {
 		var n json.Number
@@ -22,4 +36,27 @@ func configureRequestBody(key, value string) string {
 		return "{}"
 	}
 	return string(b)
+}
+
+// isLivenessConfigKey reports whether key is one of the two backend liveness settings.
+func isLivenessConfigKey(key string) bool {
+	return key == "session.liveness_window_seconds" || key == "session.liveness_idle_timeout_overrides"
+}
+
+// formatLivenessOverrides renders the overrides map for `config show`:
+// "(none)" when empty, else sorted backend=seconds pairs.
+func formatLivenessOverrides(m map[string]int) string {
+	if len(m) == 0 {
+		return "(none)"
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", k, m[k]))
+	}
+	return strings.Join(parts, ",")
 }
