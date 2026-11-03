@@ -7,9 +7,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.68.0 — Task-finish snapshots stage only the task's own files
 
+The snapshot commit taken when a task finishes no longer stages stray files.
+
+- It stages only paths inside the task's declared plan and the files the task changed, honours the repository ignore rules and a new never-stage pattern list (`autonomous.snapshot_never_stage`, defaults cover scratch, temporary and local data folders).
+- Skipped files are logged with a reason (outside the plan, ignored, never-stage) and a per-reason summary. The stall-recovery commit also records them on the task result as `skipped_snapshot_paths`; the normal completion commit logs only for now.
+- The setting is on REST, MCP, the CLI, the comm channel and the web settings, with five locales, and documented in the autonomous how-to.
 
 ## v9.67.1 — Smoke checks must not copy operator configuration
 
+A smoke or live check can no longer copy the operator's configuration or data into the repository.
+
+- A decompose lint rule flags a smoke task whose plan copies configuration or credentials into the tree.
+- `scripts/check-no-config-copies.sh` fails when a changed file looks like a copy of operator configuration or credentials (backup files, `.env` files, configuration copies, key and token files). It runs in `make lint` against the remote main.
+- A smoke-check task template steers such tasks to in-process tests, temporary directories and a scratch data folder outside the repository.
+- Operator documentation describes the rule and the template.
 
 ## v9.67.0 — Cost report
 

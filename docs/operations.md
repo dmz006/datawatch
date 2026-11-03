@@ -5309,6 +5309,21 @@ The audit details carry the Automaton id, the task id when there is one, the fil
 
 ---
 
+## Checks and ship steps (what runs around an Automaton and after a release)
+
+The daemon runs four report-only checks around an Automaton's work — the pre-start verifier, the plan rules, the after-done checklist and the registry check — and, when a release is finished, three ship steps: push, tag and CI watch. Every one has a mode, `off`, `shadow` (record only) or `on` (the default), and a project can override the global values. Findings and outcomes are recorded on the Automaton's triage record and read back, newest first, from the two status reads. Neither read changes anything. The operator guide is [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md); the terms are defined in [datawatch-definitions.md](datawatch-definitions.md#checks).
+
+**The five access methods.**
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Read the checks and their findings | n/a | `datawatch autonomous checks [--prd ID] [--project-dir DIR] [--json]` | Automation view, Overview, *Automata checks* card | `GET /api/autonomous/checks[?prd_id=ID&project_dir=DIR]` | `autonomous checks [automaton-id]` |
+| Read the ship steps and their outcomes | n/a | `datawatch autonomous ship [--prd ID] [--project-dir DIR] [--json]` | Automation view, Overview, *Automata ship status* card | `GET /api/autonomous/ship[?prd_id=ID&project_dir=DIR]` | `autonomous ship [automaton-id]` |
+| Set a check mode | `autonomous.checks.pre_start_verifier`, `plan_rules`, `after_done`, `registry_readme` (each `off`, `shadow` or `on`); `autonomous.checks.block_when_missing` (`true` or `false`) | `datawatch config set autonomous.checks.plan_rules shadow` | Settings, General, Automata settings, *Checks* | `PUT /api/config` with `autonomous.checks.plan_rules` | `configure autonomous.checks.plan_rules=shadow` |
+| Set a ship step | `autonomous.ship.push`, `tag`, `ci_watch` (each `off`, `shadow` or `on`); `tag_format`, `remote`, `ci_workflows` | `datawatch config set autonomous.ship.tag shadow` | Settings, General, Automata settings, *Ship steps* | `PUT /api/config` with `autonomous.ship.tag` | `configure autonomous.ship.tag=shadow` |
+
+MCP agents use `checks_status` and `ship_status` (both read-only, the same objects as the REST reads) and `config_set` for the settings. A value other than `off`, `shadow` or `on`, a non-boolean `block_when_missing`, or a `tag_format` without the `{version}` placeholder is refused and nothing is changed. The two cards read the same routes and poll every 30 seconds.
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).

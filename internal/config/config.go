@@ -3115,6 +3115,16 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// Checks — mode of each automatic check (pre-start verifier, plan
+	// rules, after-done report, registry README report) with optional
+	// per-project overrides. See AutonomousChecksConfig.
+	Checks AutonomousChecksConfig `yaml:"checks" json:"checks"`
+
+	// Ship — policy for the push, tag and CI-watch steps after a merge
+	// (modes, tag format, remote, CI workflows) with optional per-project
+	// overrides. See AutonomousShipConfig.
+	Ship AutonomousShipConfig `yaml:"ship" json:"ship"`
+
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
 	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`
@@ -6442,6 +6452,12 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Checks.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Ship.Validate(); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.Progress.validate(); err != nil {

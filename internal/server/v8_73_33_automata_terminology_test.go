@@ -135,6 +135,12 @@ var pendingTranslationKeys = map[string]bool{
 	"uncommitted_work_banner":                     true,
 	"settings_automation_uncommitted_work_policy": true,
 	"settings_automation_uncommitted_work_scope":  true,
+	// Checks and ship status cards: English until the app translation lands.
+	"checks_card_title":     true,
+	"ship_card_title":       true,
+	"checks_ship_read_only": true,
+	"checks_failed":         true,
+	"ship_failed":           true,
 	// Lane fill eligibility settings labels: English until the app translation lands.
 	"settings_lane_fill_stale_after_hours":          true,
 	"settings_lane_fill_require_confirmed_proposal": true,

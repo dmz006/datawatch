@@ -1719,6 +1719,34 @@ The uncommitted-work check stops a task from being marked complete while its wor
 
 **The three answers** — a held task or Automaton waits on a question with the options `commit`, `discard` and `retry`, and the default `hold`, so nothing changes until you answer. `commit` stages and commits exactly the listed files that are still uncommitted, including any outside the task's declared files, then completes the task or lets the Automaton roll up again. `discard` removes exactly the listed changes (tracked files go back to the last commit, untracked files are deleted) and runs the task again; it cannot be undone. `retry` touches no file: it runs the task again, or has the Automaton look at the worktree once more. A commit or discard that cannot be done keeps the hold and raises a fresh question. See [howto/automaton-uncommitted-work.md](howto/automaton-uncommitted-work.md).
 
+### Checks
+
+The checks are four automatic, report-only reviews the daemon runs around an Automaton's work: the pre-start verifier, the plan rules, the after-done checklist and the registry check. None of them writes to a project file. Each has its own mode under `autonomous.checks.*` — `off` (not run), `shadow` (run and record the findings on the Automaton's triage record, with no alert and no block) or `on` (the default: run, record and alert, and for the pre-start verifier block a start). A project can override the global values. The findings, newest first, are shown on the **Automata checks** card in the Automation view's Overview sub-tab, by `GET /api/autonomous/checks`, the `checks_status` MCP tool, `datawatch autonomous checks [--prd ID] [--project-dir DIR] [--json]` and `autonomous checks [automaton-id]` on the comm channel. See [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md).
+
+### Pre-start verifier
+
+The pre-start verifier (`autonomous.checks.pre_start_verifier`) checks a task's verification script before the task starts: it must exist as a regular file inside the project directory (symlinks and `..` included), be executable and begin with a shebang line. A task with no verification script reads as not applicable. In `on` mode a problem blocks the task start and records why; `autonomous.checks.block_when_missing` (default on) is part of the same policy and is shown with it on the card and in the status read. In `shadow` mode the problem is only recorded. It is for the operator who wants a task that can never be verified to stop before it spends a session, not after.
+
+### Plan rules
+
+The plan rules (`autonomous.checks.plan_rules`) add advisory findings to the structural check of an Automaton's plan: a feature task with no test, a new file, function or type name that carries a tracker id, and a release task that names a fixed version number instead of the next release above main. They never fail the plan; they appear beside it. In `shadow` mode they are recorded only, in `on` mode they are also shown with the plan.
+
+### After-done checklist
+
+The after-done checklist (`autonomous.checks.after_done`) reviews a completed Automaton and records pass, fail or not applicable, with a reason, for each item: the version files agree, the change log has an entry for the release, a changed configuration key is in the configuration reference, a parity issue is referenced for a changed web surface, and a registry row exists for the plan. It only reports; it never edits a file. `shadow` records the result, `on` also alerts.
+
+### Registry check
+
+The registry check (`autonomous.checks.registry_readme`) compares the registry table in `docs/plans/README.md` with the plan documents under `docs/plans/` and reports a plan document no row links to, the same item or id listed twice, and a row whose linked file does not exist. It only reports; it never edits either file. `shadow` records the findings, `on` also alerts.
+
+### Ship steps
+
+The ship steps run when a release is finished, in this order: **push** the branch to the configured remote, create an annotated **tag** named from `autonomous.ship.tag_format` (default `v{version}`, with the version read from the release's version file) and push the tag, then the **CI watch**. Each step has its own mode under `autonomous.ship.*` — `off` (skip), `shadow` (record the exact git commands without running them) or `on` (the default: run). The step never force-pushes and refuses a working tree with uncommitted changes. `autonomous.ship.remote` (default `origin`) names the remote. The outcomes, newest first, are shown on the **Automata ship status** card in the Automation view's Overview sub-tab, by `GET /api/autonomous/ship`, the `ship_status` MCP tool, `datawatch autonomous ship` and `autonomous ship [automaton-id]` on the comm channel. See [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md).
+
+### CI watch
+
+The ship CI watch (`autonomous.ship.ci_watch`) follows the CI runs of the pushed commit and of the tag after a successful ship step, limited to the workflows named in `autonomous.ship.ci_workflows` (an empty list watches every workflow). Each ref ends as success, failure, still running or timeout. In `shadow` mode a failure is only recorded; in `on` mode a failure also raises an alert on the Automaton's triage record. It is separate from the repo CI watch (`autonomous.automation.repo_ci_watch.*`), which watches the repository's default branch on a schedule.
+
 **Lane** — one channel an Automaton can run in. There are two kinds. A **GPU lane** is one of the channels on the local model pool; which machine serves a given session is not fixed per lane, so the pool is full when every GPU lane is in use wherever it runs. A **Claude lane** runs one Automaton at a time on the Claude backend. A lane is **occupied** while work runs in it and **idle** otherwise. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane fill** — the daemon's own check that every lane stays busy. On each poll it looks at the idle lanes and the queued Automata, and decides what each idle lane should start: a decomposed Automaton that is ready, or a draft to decompose ahead. A lane that cannot take anything shows the reason it stays idle. Lane fill never merges, never judges design or difficulty, and never holds GPU work because of Claude usage limits. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).

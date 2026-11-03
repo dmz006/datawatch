@@ -32,6 +32,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automata-progress.md](howto/automata-progress.md) | Automata progress dashboard: counts by kind, rates per active day, known versus estimated work left, completion range, daily trend |
 | [howto/automata-tags.md](howto/automata-tags.md) | Nested tags for Automata and sessions: the tag tree, subtree counts, browsing with match ANY or ALL, primary tag, the attention group, session tags (own and inherited), settings |
 | [howto/automata-tag-registry.md](howto/automata-tag-registry.md) | One tag registry across federated daemons: the keeper, peers, stale copies, pending sync and merge notes |
+| [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md) | Automata checks and ship steps: the four checks, push, tag and CI watch, the off / shadow / on modes, starting in shadow, reading the status from every surface |
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
 | [howto/usage-calculator.md](howto/usage-calculator.md) | Usage calculator: within or over budget for the week, what each lane count costs, the three policies, typed readings, federation, the three PWA variants |
 | [howto/burn-guard.md](howto/burn-guard.md) | Burn guard: the ladder of admission changes when the weekly burn runs over the pace line, its settings, reading an alert, stepping back, the effort ceiling, the Claude retry limit |

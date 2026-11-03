@@ -1648,6 +1648,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if rerr := m.refuseLaunchOutsideWorktree(prd, t, taskDir); rerr != nil {
 				return rerr
 			}
+			// Pre-start verifier check: a task whose verification script is
+			// missing, not executable, shebang-less or outside the project is
+			// blocked (mode on) before any worker starts.
+			if verr := m.gateVerifierPrestart(prd, t, taskDir); verr != nil {
+				return verr
+			}
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:           t.ID,

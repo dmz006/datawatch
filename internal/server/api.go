@@ -6277,6 +6277,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_rate_tokens":                 s.cfg.Autonomous.CapacityRateTokens,
 			"capacity_rate_window_seconds":         s.cfg.Autonomous.CapacityRateWindowSeconds,
 			"ci_watch_timeout_seconds":             s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"checks":                               checksShipConfigDisplay(s.cfg)["checks"],
+			"ship":                                 checksShipConfigDisplay(s.cfg)["ship"],
 			"detail_text_cap_bytes":                s.cfg.Autonomous.DetailTextCapBytes,
 			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
@@ -7127,7 +7129,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if err := validateChecksShipPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
+	// Keep the ship step's policy in step with the live autonomous.ship config.
+	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
+	autonomous.SetChecksConfig(s.cfg.Autonomous.Checks)
 	// The question lifecycle events follow the switch at runtime: a flip
 	// attaches (or drops) the store's event sink, so no restart is needed.
 	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
@@ -8763,6 +8772,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// webhook sink and peer forwarding read these live on every call,
 			// so no restart is needed.
 			applyLifecycleNotifyKey(&cfg.Autonomous.Notify, k, v)
+		case "autonomous.checks.pre_start_verifier", "autonomous.checks.plan_rules",
+			"autonomous.checks.after_done", "autonomous.checks.registry_readme",
+			"autonomous.checks.block_when_missing", "autonomous.ship.push",
+			"autonomous.ship.tag", "autonomous.ship.ci_watch", "autonomous.ship.tag_format",
+			"autonomous.ship.remote", "autonomous.ship.ci_workflows":
+			// Validated in handlePutConfig (validateChecksShipPatch).
+			applyChecksShipKey(cfg, k, v)
 		case "autonomous.questions.enabled":
 			// Validated in handlePutConfig to a strict boolean (a non-boolean
 			// value 400s before reaching here). The /api/questions handlers

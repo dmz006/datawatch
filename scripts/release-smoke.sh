@@ -6328,6 +6328,21 @@ fi
 
 # ---------------------------------------------------------------------------
 H "92. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
+# The Automata checks and ship status reads: both answer 200 with a JSON object.
+# They are read-only and change nothing.
+if [[ "$SECTION_SKIP" != "1" ]]; then
+  for CS_ROUTE in checks ship; do
+    CS_BODY=$(curl "${curl_args[@]}" -w '\n%{http_code}' "$BASE/api/autonomous/$CS_ROUTE" 2>/dev/null || true)
+    CS_CODE=$(echo "$CS_BODY" | tail -n1)
+    CS_JSON=$(echo "$CS_BODY" | sed '$d')
+    if [[ "$CS_CODE" == "200" ]] && echo "$CS_JSON" | python3 -c 'import json,sys; assert isinstance(json.load(sys.stdin), dict)' 2>/dev/null; then
+      ok "automata $CS_ROUTE: GET /api/autonomous/$CS_ROUTE answers 200 with a JSON object"
+    else
+      ko "automata $CS_ROUTE: read returned HTTP $CS_CODE or a malformed body: $(echo "$CS_JSON" | head -c 200)"
+    fi
+  done
+fi
+
 # The lane fill read GET /api/autonomous/lane-fill carries, beside the base
 # mode, the mode in effect for each lane kind (`modes`), the effective and the
 # configured lane count for each kind (`lane_counts`), and on a refused

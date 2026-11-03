@@ -9028,6 +9028,16 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  // Checks and ship status cards (Automation Overview) and their Settings groups.
+  checks_findings_card: DOCS_DEFINITIONS + '#checks',
+  ship_status_card: DOCS_DEFINITIONS + '#ship-steps',
+  settings_checks_group: DOCS_DEFINITIONS + '#checks',
+  settings_ship_group: DOCS_DEFINITIONS + '#ship-steps',
+  settings_checks_pre_start_verifier: DOCS_DEFINITIONS + '#pre-start-verifier',
+  settings_checks_plan_rules: DOCS_DEFINITIONS + '#plan-rules',
+  settings_checks_after_done: DOCS_DEFINITIONS + '#after-done-checklist',
+  settings_checks_registry_readme: DOCS_DEFINITIONS + '#registry-check',
+  settings_ship_ci_watch: DOCS_DEFINITIONS + '#ci-watch',
   settings_parallel_task_group: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
@@ -16972,6 +16982,21 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.cleanup_mode', label: 'Automaton cleanup (off, report or on; default report)', labelKey: 'settings_automation_cleanup_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report' },
     { key: 'autonomous.automation.cleanup_retention_hours', label: 'Automaton cleanup retention (hours a finished Automaton worktree is kept before cleanup, whole number, default 24)', labelKey: 'settings_automation_cleanup_retention_hours', type: 'number', placeholder: '24', min: 1, step: 1, default: '24' },
     { key: 'autonomous.automation.cleanup_max_removals_per_pass', label: 'Automaton cleanup limit (most Automaton entries removed in one pass, whole number, default 10)', labelKey: 'settings_automation_cleanup_max_removals_per_pass', type: 'number', placeholder: '10', min: 1, step: 1, default: '10' },
+    // Checks and ship steps — each mode is off, shadow (record only) or on (default). The cards in
+    // the Automata overview read GET /api/autonomous/checks and GET /api/autonomous/ship.
+    { label: 'Checks', labelKey: 'settings_checks_group', docsKey: 'settings_checks_group', type: 'group' },
+    { key: 'autonomous.checks.pre_start_verifier', label: 'Pre-start verifier (off, shadow or on; default on)', labelKey: 'settings_checks_pre_start_verifier', docsKey: 'settings_checks_pre_start_verifier', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.checks.block_when_missing', label: 'Block a task start when its verifier is missing (default on)', labelKey: 'settings_checks_block_when_missing', type: 'toggle' },
+    { key: 'autonomous.checks.plan_rules', label: 'Plan rules check (off, shadow or on; default on)', labelKey: 'settings_checks_plan_rules', docsKey: 'settings_checks_plan_rules', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.checks.after_done', label: 'After-done checklist (off, shadow or on; default on)', labelKey: 'settings_checks_after_done', docsKey: 'settings_checks_after_done', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.checks.registry_readme', label: 'Registry check (off, shadow or on; default on)', labelKey: 'settings_checks_registry_readme', docsKey: 'settings_checks_registry_readme', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { label: 'Ship steps', labelKey: 'settings_ship_group', docsKey: 'settings_ship_group', type: 'group' },
+    { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.ci_watch', label: 'Ship CI watch (off, shadow or on; default on)', labelKey: 'settings_ship_ci_watch', docsKey: 'settings_ship_ci_watch', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    { key: 'autonomous.ship.tag_format', label: 'Ship tag format (must contain {version}, default v{version})', labelKey: 'settings_ship_tag_format', type: 'text', placeholder: 'v{version}' },
+    { key: 'autonomous.ship.remote', label: 'Ship remote (default origin)', labelKey: 'settings_ship_remote', type: 'text', placeholder: 'origin' },
+    { key: 'autonomous.ship.ci_workflows', label: 'Ship CI workflows (comma separated workflow names)', labelKey: 'settings_ship_ci_workflows', type: 'text', placeholder: 'release.yaml' },
     // Uncommitted work — what an Automaton does when a task ends with files git still sees as uncommitted in its worktree.
     // The card in the Automata overview reads GET /api/autonomous/uncommitted-work.
     { label: 'Uncommitted-work check', labelKey: 'settings_automation_uncommitted_work_group', docsKey: 'settings_uncommitted_work_check', type: 'group' },
@@ -27228,6 +27253,78 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
 };
 
+// ── Automata checks and ship status cards ────────────────────────────────────
+// checksCardHtml(status) draws GET /api/autonomous/checks: { policy:
+// {pre_start_verifier, block_when_missing, plan_rules, after_done,
+// registry_readme}, findings: [{prd_id, at, source, text}] }.
+// shipCardHtml(status) draws GET /api/autonomous/ship: { policy: {push, tag,
+// ci_watch, tag_format, remote, ci_workflows}, findings }. Both are
+// read-only: the modes are changed in the Automata settings. A missing or
+// malformed body reads as an empty card. Every value is escaped; the loader
+// owns the loading and failed states.
+const CHECKS_SHIP_MAX_FINDINGS = 20;
+
+// _checksShipHelpLink is the small help link beside a card title. It resolves
+// through docsLinkForKey so the table stays the one place a target is set.
+function _checksShipHelpLink(key) {
+  const target = docsLinkForKey(key);
+  if (!target) return '';
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('checks_ship_help_link');
+  return ` <a href="/diagrams.html#docs/${target}" target="_blank" rel="noopener noreferrer" class="docs-link checks-ship-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+
+// _checksShipModeText words an off, shadow or on value; anything else shows as given.
+function _checksShipModeText(v) {
+  const k = { off: 'checks_ship_mode_off', shadow: 'checks_ship_mode_shadow', on: 'checks_ship_mode_on' }[v];
+  return k ? t(k) : String(v == null ? '' : v);
+}
+
+function _checksShipFindingsHtml(findings) {
+  const list = Array.isArray(findings) ? findings.filter(f => f && typeof f === 'object') : [];
+  if (!list.length) return `<div class="checks-ship-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('checks_ship_no_findings'))}</div>`;
+  const shown = list.slice(0, CHECKS_SHIP_MAX_FINDINGS).map(f => {
+    const when = _triageTime(f.at);
+    return `<div class="checks-ship-finding" style="padding:4px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
+      `<span style="color:var(--text2);">${escHtml(when)} ${escHtml(String(f.prd_id || ''))} [${escHtml(String(f.source || ''))}]</span> ${escHtml(String(f.text || ''))}</div>`;
+  }).join('');
+  const more = list.length > CHECKS_SHIP_MAX_FINDINGS ? _cleanupLine(t('checks_ship_more', [list.length - CHECKS_SHIP_MAX_FINDINGS])) : '';
+  return shown + more;
+}
+
+function _checksShipCardShell(cls, titleKey, helpKey, lines, findings) {
+  const head = `<div class="cap-title">${escHtml(t(titleKey))}${_checksShipHelpLink(helpKey)}</div>`;
+  return `<div class="prd-capacity-card ${cls}" style="min-width:0;">${head}${_cleanupLine(t('checks_ship_read_only'))}${lines.join('')}${_checksShipFindingsHtml(findings)}</div>`;
+}
+
+window.checksCardHtml = function(status) {
+  const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
+  const p = (s.policy && typeof s.policy === 'object') ? s.policy : {};
+  const lines = [
+    _cleanupLine(t('checks_policy_pre_start_verifier', [_checksShipModeText(p.pre_start_verifier)])),
+    _cleanupLine(t('checks_policy_block_when_missing', [t(p.block_when_missing === false ? 'checks_ship_no' : 'checks_ship_yes')])),
+    _cleanupLine(t('checks_policy_plan_rules', [_checksShipModeText(p.plan_rules)])),
+    _cleanupLine(t('checks_policy_after_done', [_checksShipModeText(p.after_done)])),
+    _cleanupLine(t('checks_policy_registry_readme', [_checksShipModeText(p.registry_readme)])),
+  ];
+  return _checksShipCardShell('checks-card', 'checks_card_title', 'checks_findings_card', lines, s.findings);
+};
+
+window.shipCardHtml = function(status) {
+  const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
+  const p = (s.policy && typeof s.policy === 'object') ? s.policy : {};
+  const wf = Array.isArray(p.ci_workflows) ? p.ci_workflows.map(String).join(', ') : '';
+  const lines = [
+    _cleanupLine(t('ship_policy_push', [_checksShipModeText(p.push)])),
+    _cleanupLine(t('ship_policy_tag', [_checksShipModeText(p.tag)])),
+    _cleanupLine(t('ship_policy_ci_watch', [_checksShipModeText(p.ci_watch)])),
+    _cleanupLine(t('ship_policy_tag_format', [String(p.tag_format || '')])),
+    _cleanupLine(t('ship_policy_remote', [String(p.remote || '')])),
+    _cleanupLine(wf ? t('ship_policy_ci_workflows', [wf]) : t('ship_policy_ci_workflows_none')),
+  ];
+  return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings);
+};
+
 // ── Automata model request progress ──────────────────────────────────────────
 // The daemon observes the in-flight model request of a worker or verifier
 // session whose model runs on a registered compute node, so a hung request can
@@ -29821,14 +29918,16 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationChecksCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationMergePipelineLoader(), _automationOnboardingReportLoader()]);
+      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationChecksLoader(), _automationShipLoader(), _automationMergePipelineLoader(), _automationOnboardingReportLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_merge_pipeline', 'automation_onboarding_report', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
+    stop() { _automationStopLoaders(['automation_checks', 'automation_ship', 'automation_merge_pipeline', 'automation_onboarding_report', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -29919,7 +30018,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions', 'automation_onboarding_report'];
+  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work', 'automation_merge_pipeline', 'automation_held_questions', 'automation_onboarding_report', 'automation_checks', 'automation_ship'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -30169,6 +30268,27 @@ function _automationUncommittedWorkLoader() {
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
     render: status => window.uncommittedWorkCardHtml(status),
+  });
+}
+
+// _automationChecksLoader and _automationShipLoader read the checks findings
+// and the ship status on the Overview sub-tab, beside the uncommitted-work
+// card. Both are built from stored records, so they poll at the cleanup rate;
+// the failed state is the list loader's banner. The cards are read-only.
+function _automationChecksLoader() {
+  return window._listLoaders.automation_checks || listLoader({
+    key: 'automation_checks', el: 'automationChecksCard', url: '/api/autonomous/checks', pollMs: 30000,
+    failedText: msg => t('checks_failed', [msg]),
+    active: () => !!document.getElementById('automationChecksCard'),
+    render: status => window.checksCardHtml(status),
+  });
+}
+function _automationShipLoader() {
+  return window._listLoaders.automation_ship || listLoader({
+    key: 'automation_ship', el: 'automationShipCard', url: '/api/autonomous/ship', pollMs: 30000,
+    failedText: msg => t('ship_failed', [msg]),
+    active: () => !!document.getElementById('automationShipCard'),
+    render: status => window.shipCardHtml(status),
   });
 }
 
