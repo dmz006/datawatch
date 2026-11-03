@@ -2330,7 +2330,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
-	// Per-Automaton kind: feature, bug or other (empty = derive again).
+	// Per-Automaton kind: feature, bug, other or maintenance (empty = derive again).
 	case "set_kind":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -4420,7 +4420,7 @@ func derefString(p *string) string {
 	return *p
 }
 
-// unknownKindMsg is the 400 text for a kind that is not feature, bug or other.
+// unknownKindMsg is the 400 text for a kind that is not feature, bug, other or maintenance.
 func unknownKindMsg(kind string) string {
-	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug or other"
+	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug, other or maintenance"
 }

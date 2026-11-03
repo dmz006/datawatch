@@ -100,7 +100,7 @@ func TestProgressKind_SetInvalid(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown kind must be 400, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "feature, bug or other") {
+	if !strings.Contains(rec.Body.String(), "feature, bug, other or maintenance") {
 		t.Fatalf("error must name the valid kinds: %s", rec.Body.String())
 	}
 	if spy.setCalls != 0 {

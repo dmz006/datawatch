@@ -114,7 +114,7 @@ Subcommands:
   prd-add-task <id>               Add a new task to an existing story without re-running decompose
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
-  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
+  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug, other or maintenance
   shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
@@ -1685,7 +1685,7 @@ func newAutonomousPRDSetTypeCmd() *cobra.Command {
 func parseKindArg(arg string) (string, error) {
 	k, ok := autonomous.NormalizePRDKind(arg)
 	if !ok || k == "" {
-		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(arg))
+		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(arg))
 	}
 	return k, nil
 }
@@ -1693,7 +1693,7 @@ func parseKindArg(arg string) (string, error) {
 func newAutonomousPRDSetKindCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prd-set-kind <id> <feature|bug|other>",
-		Short: "Set the Automaton kind (feature, bug or other)",
+		Short: "Set the Automaton kind (feature, bug, other or maintenance)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			kind, err := parseKindArg(args[1])
