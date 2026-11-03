@@ -9,6 +9,13 @@
 // carries PushState=not_pushed plus a human-readable PushWarning and an
 // operator alert (level "warn") with the reason as body. A later
 // successful push clears the warning and records ref/SHA/timestamp.
+//
+// Secret scan: an enforce refusal (Kind=secret_found) takes the failure
+// path — its Reason is already redacted (counts, detector names,
+// file:line, fingerprints; the scanner never keeps the secret itself).
+// Shadow-mode findings on a successful push are recorded the same way
+// the failure path records an outcome: a Decision row plus a level
+// "warn" operator alert, both carrying only the redacted summary.
 package autonomous
 
 import (
@@ -41,6 +48,26 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 			At:   now,
 			Kind: "git_pushed",
 		}))
+		if len(res.SecretFindings) > 0 {
+			// Shadow-mode findings: the push went through, the PRD still
+			// records the redacted findings as a Decision row and the
+			// operator gets a "warn" alert — the same alert/audit
+			// mechanism the failure path uses, the same redacted fields
+			// (count, detector, file:line, fingerprint; never the secret).
+			summary := git.RedactedFindingsSummary(res.SecretFindings)
+			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+				At:   now,
+				Kind: "git_secret_scan_shadow",
+				Note: summary,
+			}))
+			m.mu.Lock()
+			alertSink := m.alertSink
+			m.mu.Unlock()
+			if alertSink != nil {
+				alertSink("warn", fmt.Sprintf("Automaton %s: %d pre-push secret finding(s) (shadow mode)", prd.ID, len(res.SecretFindings)), summary)
+			}
+			log.Printf("autonomous: prd %s pushed with shadow-mode secret scan findings: %s", prd.ID, summary)
+		}
 	} else {
 		now := time.Now()
 		prd.Git.PushState = PushStateNotPushed
