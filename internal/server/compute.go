@@ -365,17 +365,54 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+	now := serverNow()
+
+	// heldTasks is the number of admission-ledger leases that name this node;
+	// 0 when the server has no ledger wired.
+	heldTasks := 0
+	if s.capacityLedger != nil {
+		for _, ls := range s.capacityLedger.Snapshot().Leases {
+			if ls.Node == name {
+				heldTasks++
+			}
+		}
+	}
+
+	// deniedConsumers is the node's RBAC denial list; always a list, empty
+	// when the node denies no consumer.
+	denied := n.Permissions.DeniedConsumers
+	if denied == nil {
+		denied = []string{}
+	}
+
+	// activeWindows is each maintenance window that covers now (an open-ended
+	// window is still active); empty when none does.
+	activeWindows := []map[string]any{}
+	for _, w := range n.MaintenanceWindows {
+		if w.From.After(now) || (!w.To.IsZero() && w.To.Before(now)) {
+			continue
+		}
+		wm := map[string]any{"from": w.From.UTC().Format(time.RFC3339), "reason": w.Reason}
+		if !w.To.IsZero() {
+			wm["to"] = w.To.UTC().Format(time.RFC3339)
+		}
+		activeWindows = append(activeWindows, wm)
+	}
+
 	out := map[string]any{
-		"name":                n.Name,
-		"kind":                n.Kind,
-		"in_maintenance":      n.InMaintenance(serverNow()),
-		"declared_capacity":   n.DeclaredCapacity,
-		"scheduling_priority": n.SchedulingPriority,
-		"address":             n.Address,
-		"auto_created":        n.AutoCreated,
-		"drained":             n.Drained,
-		"drain_active":        n.DrainActive(serverNow()),
-		"drain_reason":        n.DrainReason,
+		"name":                       n.Name,
+		"kind":                       n.Kind,
+		"in_maintenance":             n.InMaintenance(now),
+		"declared_capacity":          n.DeclaredCapacity,
+		"scheduling_priority":        n.SchedulingPriority,
+		"address":                    n.Address,
+		"auto_created":               n.AutoCreated,
+		"drained":                    n.Drained,
+		"drain_active":               n.DrainActive(now),
+		"drain_reason":               n.DrainReason,
+		"held_tasks":                 heldTasks,
+		"denied_consumers":           denied,
+		"maintenance_windows_active": activeWindows,
 	}
 	if !n.DrainUntil.IsZero() {
 		out["drain_until"] = n.DrainUntil.UTC().Format(time.RFC3339)

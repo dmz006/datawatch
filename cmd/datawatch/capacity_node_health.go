@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/compute"
 )
 
@@ -108,4 +109,33 @@ func (v *nodeHealthView) gate(name, consumer string) (bool, string) {
 		return false, fmt.Sprintf("consumer %s denied", consumer)
 	}
 	return true, ""
+}
+
+// state reports name's drain, maintenance and consumer-denial state for the
+// pool snapshot; it is the ledger's Options.NodeState. Like the gate, every
+// field is evaluated at call time against the copied record, so a drain, an
+// undrain, a window opening or closing, or a permission edit takes effect
+// the next time the snapshot reads the node — no refresh tick is needed. It
+// is a plain in-memory read, as the ledger's lock rule requires. Before the
+// first refresh, and for a name the registry does not hold, it reports the
+// zero state: not drained, not in maintenance, no denials.
+func (v *nodeHealthView) state(name string) capacity.NodeState {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if !v.loaded {
+		return capacity.NodeState{}
+	}
+	n, ok := v.nodes[name]
+	if !ok {
+		return capacity.NodeState{}
+	}
+	ns := capacity.NodeState{
+		Drained:         n.DrainActive(v.now()),
+		InMaintenance:   n.InMaintenance(v.now()),
+		DeniedConsumers: append([]string(nil), n.Permissions.DeniedConsumers...),
+	}
+	if ns.Drained && !n.DrainUntil.IsZero() {
+		ns.DrainUntil = n.DrainUntil
+	}
+	return ns
 }
