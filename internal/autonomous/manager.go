@@ -229,6 +229,24 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// DecomposeLint mirrors autonomous.decompose_lint
+	// (config.DecomposeLintConfig: mode, retry budget, operator rules)
+	// consumed by the decompose-time lint hook (decompose_lint_hook.go).
+	// No omitempty, for the same round-trip reason as the PlanCoverage
+	// fields: an operator's explicit "off" mode must survive the manager
+	// Config → config.AutonomousConfig json round-trip in
+	// handleAutonomousConfig (internal/server/autonomous.go).
+	DecomposeLint config.DecomposeLintConfig `json:"decompose_lint"`
+	// TaskTemplates mirrors autonomous.task_templates
+	// (config.TaskTemplatesConfig); the decompose-lint hook applies the
+	// templates a plan starts from before its first lint pass (see
+	// decompose_lint_hook.go). No omitempty, same round-trip reason: an
+	// operator's explicit enabled=false must survive the round-trip.
+	TaskTemplates config.TaskTemplatesConfig `json:"task_templates"`
+	// DecomposeGuidance mirrors autonomous.decompose_guidance — literal
+	// guidance text or a file path the decompose prompt loads (see
+	// decompose_guidance.go). No omitempty, same round-trip reason.
+	DecomposeGuidance string `json:"decompose_guidance"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and
@@ -2665,6 +2683,11 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	// Decompose guidance (decompose_guidance.go): the operator's
+	// autonomous.decompose_guidance — literal text, or a file whose
+	// contents are the guidance — otherwise generated from the active
+	// decompose-lint rules the hook will record against. Empty = no-op.
+	prompt += m.decomposeGuidanceBlock()
 
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — a pi-family decompose session must launch with an explicit
@@ -2726,6 +2749,17 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
+		// Decompose-lint hook (decompose_lint_hook.go), between a successful
+		// parse and the shared store tail: off is a complete no-op; shadow
+		// records findings on the PRD; enforce re-runs the decomposer within
+		// decompose_lint.max_retries, feeding the current findings back into
+		// the prompt, then records what remained. The hook never fails the
+		// decompose — findings attach to the stored PRD, never fatal.
+		// decomposeStreamingCore keeps its identical call in sync.
+		t, r, s = m.decomposeLintHook(prd, t, r, s,
+			func(feedback string) (string, string, []Story, error) {
+				return m.retryDecomposeWithFeedback(prd, backend, planModel, effort, prompt+feedback)
+			})
 		// SHARED validation + store tail for the parsed plan (see
 		// validateAndStorePlan) — the single source of truth both
 		// decompose paths now call: retryable failures loop back into
@@ -2827,6 +2861,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	// Decompose guidance (decompose_guidance.go) — identical to
+	// Decompose()'s call above; one source for the block's format.
+	prompt += m.decomposeGuidanceBlock()
 
 	// Operator-reported: a PRD configured for claude-code kept running
 	// decompose against the daemon's global qwen default instead. Root
@@ -2885,6 +2922,13 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
+		// Decompose-lint hook (decompose_lint_hook.go) — identical to
+		// Decompose()'s call; see the hook's doc comment for the full
+		// off / shadow / enforce contract (never fails the decompose).
+		t, r, s = m.decomposeLintHook(prd, t, r, s,
+			func(feedback string) (string, string, []Story, error) {
+				return m.retryDecomposeWithFeedback(prd, backend, planModel2, effort, prompt+feedback)
+			})
 		// Same SHARED validation + store tail as Decompose (see
 		// validateAndStorePlan) — kept in one place rather than a second
 		// drifted copy; retry/terminal outcomes are handled identically.
