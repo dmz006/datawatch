@@ -1376,6 +1376,8 @@ func (r *Router) handleAutonomous(cmd Command) {
 		r.reply("autonomous set-kind", prettyJSON(out))
 	case "shipped", "shipped-record", "shipped_record", "record-shipped", "record_shipped":
 		r.handleAutonomousShippedVerb(args)
+	case "defect-intake", "defect_intake", "defect-batches", "defect_batches", "defect-split", "defect_split":
+		r.handleDefectQueueVerb(verb, args)
 	case "shipped-counts", "shipped_counts":
 		r.handleAutonomousShippedCountsVerb(args)
 	case "shipped-backfill", "shipped_backfill":
