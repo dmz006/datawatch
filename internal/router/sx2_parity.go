@@ -41,6 +41,23 @@ var commHTTP = &http.Client{
 	},
 }
 
+// commTruncationRefusal is the comm channel's share of the spec-write
+// truncation refusal. The daemon 400s every spec and description write whose
+// text carries the capped-view truncation marker (a copy from a capped read,
+// even one edited after the cut), and every comm verb that writes such text
+// checks it locally with the daemon's own message before sending, so the
+// refusal never depends on the round trip. It checks the title positions
+// too: the daemon's 400 covers the spec/description fields a capped view
+// cuts, and a title pasted from capped text is the same error, so the comm
+// surface is one step stricter than the daemon's field list.
+func commTruncationRefusal(verb, field, text string) (reply string, refuse bool) {
+	msg, refuse := autonomous.TruncationRefusal(field, text)
+	if !refuse || text == "" {
+		return "", false
+	}
+	return "autonomous " + verb + " failed: " + msg, true
+}
+
 // commGet calls GET <local>/<path> and returns the body.
 func (r *Router) commGet(path string, q url.Values) (string, error) {
 	if r.webPort == 0 {
@@ -893,6 +910,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
+		if msg, refuse := commTruncationRefusal("edit-task", "new_spec", newSpec); refuse {
+			r.reply("autonomous edit-task failed", msg)
+			return
+		}
 		editBody := map[string]any{"task_id": args[2], "actor": "operator"}
 		if newSpec != "" {
 			editBody["new_spec"] = newSpec
@@ -928,6 +949,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		rest := strings.TrimSpace(strings.Join(args[3:], " "))
+		if msg, refuse := commTruncationRefusal("edit-story", "new_title", rest); refuse {
+			r.reply("autonomous edit-story failed", msg)
+			return
+		}
 		body, _ := json.Marshal(map[string]string{"story_id": args[2], "new_title": rest, "actor": "operator"})
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_story", string(body))
 		if err != nil {
@@ -941,6 +966,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		title := strings.TrimSpace(strings.Join(args[2:], " "))
+		if msg, refuse := commTruncationRefusal("add-story", "title", title); refuse {
+			r.reply("autonomous add-story failed", msg)
+			return
+		}
 		body, _ := json.Marshal(map[string]string{"title": title, "actor": "operator"})
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/add_story", string(body))
 		if err != nil {
@@ -973,6 +1002,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 		title := strings.TrimSpace(strings.Join(rest, " "))
 		if title == "" {
 			r.reply("autonomous add-task failed", "usage: autonomous add-task <prd-id> <story-id> [read_only=true|false] <title…>")
+			return
+		}
+		if msg, refuse := commTruncationRefusal("add-task", "title", title); refuse {
+			r.reply("autonomous add-task failed", msg)
 			return
 		}
 		addBody := map[string]any{"story_id": args[2], "title": title, "actor": "operator"}
@@ -1234,6 +1267,10 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		spec := strings.TrimSpace(strings.Join(args[1:], " "))
+		if msg, refuse := commTruncationRefusal("create", "spec", spec); refuse {
+			r.reply("autonomous create failed", msg)
+			return
+		}
 		body := map[string]any{"spec": spec}
 		raw, _ := json.Marshal(body)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds", string(raw))
@@ -1475,7 +1512,12 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous template-create", "usage: autonomous template-create <title> <spec…>")
 			return
 		}
-		raw, _ := json.Marshal(map[string]any{"title": args[1], "spec": strings.Join(args[2:], " ")})
+		spec := strings.Join(args[2:], " ")
+		if msg, refuse := commTruncationRefusal("template-create", "spec", spec); refuse {
+			r.reply("autonomous template-create failed", msg)
+			return
+		}
+		raw, _ := json.Marshal(map[string]any{"title": args[1], "spec": spec})
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/templates", string(raw))
 		if err != nil {
 			r.reply("autonomous template-create failed", err.Error())
@@ -1489,7 +1531,12 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous template-update", "usage: autonomous template-update <id> <title> <spec…>")
 			return
 		}
-		raw, _ := json.Marshal(map[string]any{"title": args[2], "spec": strings.Join(args[3:], " ")})
+		spec := strings.Join(args[3:], " ")
+		if msg, refuse := commTruncationRefusal("template-update", "spec", spec); refuse {
+			r.reply("autonomous template-update failed", msg)
+			return
+		}
+		raw, _ := json.Marshal(map[string]any{"title": args[2], "spec": spec})
 		out, err := r.commJSON(http.MethodPut, "/api/autonomous/templates/"+args[1], string(raw))
 		if err != nil {
 			r.reply("autonomous template-update failed", err.Error())
