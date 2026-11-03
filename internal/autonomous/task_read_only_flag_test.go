@@ -172,3 +172,68 @@ func TestNormalizeReadOnlyTasksClearsContradictions(t *testing.T) {
 		t.Fatalf("flags after normalize = %v %v %v, want true false false", got[0].ReadOnly, got[1].ReadOnly, got[2].ReadOnly)
 	}
 }
+
+func TestPlanningPromptsTellThePlannerAboutReportPath(t *testing.T) {
+	prompts := map[string]string{"PlanningPrompt": PlanningPrompt, "PlanningPromptSession": PlanningPromptSession}
+	for name, p := range prompts {
+		if !strings.Contains(p, planReadOnlyFlagRuleBullet) {
+			t.Errorf("%s lacks the read_only rule bullet", name)
+		}
+		if !strings.Contains(p, `"report_path"`) {
+			t.Errorf("%s schema lacks the report_path field", name)
+		}
+	}
+	if !strings.Contains(planReadOnlyFlagRuleBullet, `report_path`) {
+		t.Error("the read_only bullet must mention report_path")
+	}
+	if !strings.Contains(planReadOnlyFlagRuleBullet, ".datawatch/reports/") {
+		t.Error("the read_only bullet must name .datawatch/reports/ as the report location")
+	}
+	if !strings.Contains(planReadOnlyFlagRuleBullet, "keeps \"files\" empty") {
+		t.Error("the read_only bullet must say a report task keeps files empty")
+	}
+	if strings.Contains(planReadOnlyFlagRuleBullet, "%") {
+		t.Error("the read_only bullet must not contain a percent sign: the tooled prompt goes through fmt.Sprintf")
+	}
+}
+
+func TestParsePlanningPreservesReportPath(t *testing.T) {
+	raw := `{"title":"T","stories":[{"title":"S","tasks":[
+		{"title":"Audit","spec":"READ-ONLY: audit","read_only":true,"report_path":".datawatch/reports/audit.md"},
+		{"title":"Write code","spec":"edit things","files":["a.go"]}]}]}`
+	_, stories, err := ParsePlanning(raw)
+	if err != nil {
+		t.Fatalf("ParsePlanning: %v", err)
+	}
+	if got := stories[0].Tasks[0].ReportPath; got != ".datawatch/reports/audit.md" {
+		t.Errorf("report_path dropped by the parser: got %q", got)
+	}
+	if !stories[0].Tasks[0].ReadOnly {
+		t.Error("read_only true was dropped by the parser")
+	}
+	if got := stories[0].Tasks[1].ReportPath; got != "" {
+		t.Errorf("an absent report_path parsed as %q", got)
+	}
+}
+
+func TestNormalizeReadOnlyTasksKeepsAndClearsReportPath(t *testing.T) {
+	const rp = ".datawatch/reports/gate.md"
+	stories := []Story{{Tasks: []Task{
+		{Title: "gate", ReadOnly: true, ReportPath: rp},
+		{Title: "liar", ReadOnly: true, FilesPlanned: []string{"a.go"}, ReportPath: rp},
+		{Title: "writer", ReportPath: rp},
+	}}}
+	if n := normalizeReadOnlyTasks(stories); n != 1 {
+		t.Fatalf("cleared %d flags, want 1", n)
+	}
+	got := stories[0].Tasks
+	if !got[0].ReadOnly || got[0].ReportPath != rp {
+		t.Errorf("read-only task: flags/path = %v %q, want true %q", got[0].ReadOnly, got[0].ReportPath, rp)
+	}
+	if got[1].ReadOnly || got[1].ReportPath != "" {
+		t.Errorf("contradictory task: flags/path = %v %q, want false and no report_path", got[1].ReadOnly, got[1].ReportPath)
+	}
+	if got[2].ReadOnly || got[2].ReportPath != "" {
+		t.Errorf("writer task: flags/path = %v %q, want false and no report_path", got[2].ReadOnly, got[2].ReportPath)
+	}
+}

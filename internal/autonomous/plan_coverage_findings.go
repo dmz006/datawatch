@@ -79,8 +79,14 @@
 //     (planWriteTaskVerbs) must declare the files it will change in
 //     FilesPlanned; FilesGenerated is verification output and does not
 //     satisfy the rule. The rule is waived for a read-only task (first
-//     spec line starts with planReadOnlyMarker), a smoke or final_gate
-//     task, and a task whose title holds a planGateTitlePhrases phrase.
+//     spec line starts with planReadOnlyMarker or the read_only flag is
+//     set), a task declaring a report_path instead, a smoke or final_gate
+//     task, and a task whose title holds a planGateTitlePhrases phrase;
+//
+//  8. report path on a writer — report_path is only valid on a read-only
+//     task (read_only flag set, or the spec's first line starts with
+//     planReadOnlyMarker); a task with a non-empty report_path that is
+//     not read-only is a finding.
 package autonomous
 
 import (
@@ -119,6 +125,10 @@ const (
 	// empty, and which is not read-only, smoke, final_gate or a gate
 	// or check task by title.
 	FindingWriteTaskWithoutFiles = "write_task_without_files"
+	// FindingReportPathOnWriterTask — a task with a non-empty report_path
+	// that is not read-only (read_only flag or spec READ-ONLY marker);
+	// report_path is only valid on a read_only task.
+	FindingReportPathOnWriterTask = "report_path_on_writer_task"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -653,6 +663,7 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 		for _, t := range s.Tasks {
 			verb, ok := writeVerbOf(t.Title)
 			if !ok || len(t.FilesPlanned) > 0 || specIsReadOnly(t.Spec) ||
+				t.ReadOnly || t.ReportPath != "" ||
 				t.Kind == TaskKindSmoke || t.Kind == TaskKindFinalGate ||
 				titleIsGateTask(t.Title) {
 				continue
@@ -662,7 +673,23 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 				StoryID: s.ID,
 				TaskID:  t.ID,
 				Detail: "task " + t.ID + " title " + strconv.Quote(t.Title) + " starts with write verb " + verb +
-					" but declares no files; add the files it will change to its files list, or make the first line of its spec READ-ONLY: <reason>",
+					" but declares no files; add the files it will change to its files list, declare a report_path under .datawatch/reports/, or make the first line of its spec READ-ONLY: <reason>",
+			})
+		}
+	}
+
+	// --- Rule 8: report_path is only valid on read-only tasks. ---
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			if t.ReportPath == "" || t.ReadOnly || specIsReadOnly(t.Spec) {
+				continue
+			}
+			add(StructuralFinding{
+				Kind:    FindingReportPathOnWriterTask,
+				StoryID: s.ID,
+				TaskID:  t.ID,
+				Detail: "task " + t.ID + " sets report_path " + strconv.Quote(t.ReportPath) +
+					" but is not read-only; report_path is only valid on a read_only task (its report belongs under .datawatch/reports/)",
 			})
 		}
 	}
