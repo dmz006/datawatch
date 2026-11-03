@@ -1123,6 +1123,13 @@ type Task struct {
 	// the dispatch loop before the session spawns and overwritten by each
 	// later attempt.
 	ExecutorSource string `json:"executor_source,omitempty"`
+	// AdmittedBackend and AdmittedModel are the worker the current attempt was
+	// admitted with: the pair capacity admission, the lease and the spawn used,
+	// after escalation, burn-guard routing and model qualification. Re-admission
+	// and lease adoption read them so they place the task exactly where the
+	// attempt was admitted. A requeue or reset clears them.
+	AdmittedBackend string `json:"admitted_backend,omitempty"`
+	AdmittedModel   string `json:"admitted_model,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for

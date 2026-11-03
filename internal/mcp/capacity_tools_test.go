@@ -112,6 +112,31 @@ func TestAutonomousConfigSet_CapacityFields(t *testing.T) {
 	}
 }
 
+func TestAutonomousConfigSet_CapacityFallthrough(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = nil
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	for _, want := range []bool{true, false} {
+		if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_fallthrough": want})); err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := got["capacity_fallthrough"]; !ok || v != want {
+			t.Fatalf("want capacity_fallthrough=%v forwarded, body=%v", want, got)
+		}
+	}
+	// Absent -> not sent, so an unrelated write cannot reset it.
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_enabled": true})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["capacity_fallthrough"]; ok {
+		t.Fatalf("capacity_fallthrough sent when not given: %v", got)
+	}
+}
+
 // B124 — verification_backends must be sent whenever the caller
 // explicitly mentions it, including an empty array to clear a
 // previously-set list. The old len(arr)>0 check dropped the key from

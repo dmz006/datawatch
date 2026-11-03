@@ -99,6 +99,23 @@ func TestApplyConfigPatch_CapacityKeys(t *testing.T) {
 	}
 }
 
+func TestApplyConfigPatch_CapacityFallthrough(t *testing.T) {
+	cfg := &config.Config{}
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.capacity_fallthrough": true})
+	if !cfg.Autonomous.CapacityFallthrough {
+		t.Fatal("capacity_fallthrough=true not applied")
+	}
+	// A non-bool value is ignored, not coerced.
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.capacity_fallthrough": "no"})
+	if !cfg.Autonomous.CapacityFallthrough {
+		t.Fatal("non-bool value must leave capacity_fallthrough unchanged")
+	}
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.capacity_fallthrough": false})
+	if cfg.Autonomous.CapacityFallthrough {
+		t.Fatal("capacity_fallthrough=false not applied")
+	}
+}
+
 func TestEffectiveReservedInteractiveDefaults(t *testing.T) {
 	if got := (config.SessionConfig{MaxSessions: 10}).EffectiveReservedInteractive(); got != 1 {
 		t.Fatalf("default with max 10 = %d, want 1", got)

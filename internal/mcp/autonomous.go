@@ -178,6 +178,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("task_no_progress_seconds", mcpsdk.Description("Seconds one task attempt may go without progress (0 = off, the default; recommended 1800)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithBoolean("capacity_fallthrough", mcpsdk.Description("Pool fall-through: when a task's requested LLM pool is full, admit it on another idle allowed pool (default false)")),
 		mcpsdk.WithBoolean("capacity_strict_node_limit", mcpsdk.Description("Strict per-node limit: verifier and resumed workers never over-admit a compute node (default true; false restores the earlier behaviour)")),
 		mcpsdk.WithBoolean("capacity_count_pool_by_node", mcpsdk.Description("Count an LLM pool by node: sessions piled on one node use at most that node's limit of the pool (default true)")),
 		mcpsdk.WithBoolean("capacity_adopt_before_admit", mcpsdk.Description("After a restart, admit resumed workers before any new work (default true)")),
@@ -562,6 +563,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		body["task_no_progress_seconds"] = int(v)
 	}
 	if args := req.GetArguments(); args != nil {
+		if _, ok := args["capacity_fallthrough"]; ok {
+			body["capacity_fallthrough"] = req.GetBool("capacity_fallthrough", false)
+		}
 		if _, ok := args["capacity_enabled"]; ok {
 			body["capacity_enabled"] = req.GetBool("capacity_enabled", true)
 		}

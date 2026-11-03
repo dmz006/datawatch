@@ -1863,3 +1863,10 @@ Operator, 2026-11-02, quoted: "Claude at 20%". The calculator records 20% at Mon
 ## Reading 2026-11-02 18:21 EST: 22%, stay at one lane
 
 Operator, 2026-11-02, quoted: "Claude at 22%". The calculator records 22% at Mon 18:21 (5.57 days left, pace line 20.4, 1.6 points ahead, down from 2.1 at the 14:00 reading). Recent burn is 11.1 points per 24 hours (projected end 83.6%, within budget); the week average is 15.4 points per 24 hours (107.6%, over budget), and at the week average the allowance would run out Sat 20:08, about 12 hours before the reset. The token tally estimated 22.2 for the same moment, within a quarter of a point. No instruction came with the reading, so the cap stays at one Claude lane with the second lane closed.
+
+## Shipped: explicit-backend admission and pool fall-through (2026-11-03)
+
+- A retry with an explicit backend and model is admitted against that backend's pool. The admitted pair is stored on the task and reused by re-admission and lease adoption; the wait reason names the requested pool.
+- `autonomous.capacity_fallthrough` (default false) lets a worker task whose requested pool is full take another allowed backend and model that is idle now. Off, a task waits for its own pool. It is exposed on config, REST, MCP, CLI help, chat `configure` and the PWA settings, and a fall-through is recorded in the `autonomous_capacity_admitted` audit entry.
+- The wait timeout counts from the first admissible request.
+- Operator text: `docs/howto/automata-capacity.md`.

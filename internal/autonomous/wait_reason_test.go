@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -255,5 +256,53 @@ func TestWaitReason_AwaitDecisionTextAndPredicate(t *testing.T) {
 	// The two await sub-reasons stay distinct.
 	if IsAwaitExternalWaitReason("await_decision: q-1") {
 		t.Error("an await_decision reason must not read as await_external")
+	}
+}
+
+func TestNameRequestedPool(t *testing.T) {
+	pools := []string{"llm:qwen"}
+	cases := []struct{ name, reason string }{
+		{"multi-node", "waiting for nodes n1, n2: n1: unhealthy; n2: pool node:n2 full (1/1, held by x)"},
+		{"pool-full", "pool host full (1/1, held by x,y)"},
+		{"node-busy", "waiting for node n1: 1/1 engines in use, held by x,y"},
+		{"other-pool-prefix", "pool llm:qwen-2 full (1/1, held by x)"},
+		{"rate-ceiling", "pool host rate ceiling: requests 3/3 in 1m0s, resets at 2026-11-03T10:00:00Z"},
+	}
+	for _, c := range cases {
+		got := nameRequestedPool(c.reason, pools)
+		if !strings.Contains(got, "requested pool llm:qwen") || !strings.HasPrefix(got, c.reason) {
+			t.Errorf("%s: not named: %q", c.name, got)
+		}
+		if ClassifyWaitReason(got) != ClassifyWaitReason(c.reason) || ClassifyWaitReason(got) == "" && c.name != "multi-node" {
+			t.Errorf("%s: classification %q vs %q", c.name, ClassifyWaitReason(got), ClassifyWaitReason(c.reason))
+		}
+		if a, b := WaitReasonHolders(got), WaitReasonHolders(c.reason); strings.Join(a, "|") != strings.Join(b, "|") {
+			t.Errorf("%s: holders %v vs %v", c.name, a, b)
+		}
+	}
+	full := "pool llm:qwen full (1/1, held by x)"
+	if nameRequestedPool(full, pools) != full {
+		t.Error("a reason already naming the requested pool must be unchanged")
+	}
+	pf := nameRequestedPool("pool host full (2/3, held by a,b)", pools)
+	if p, u, l, ok := parsePoolWait(pf); !ok || p != "host" || u != 2 || l != 3 {
+		t.Errorf("parsePoolWait on named reason: %v %d %d %v", p, u, l, ok)
+	}
+	nb := nameRequestedPool("waiting for node n1: 1/1 engines in use, held by x", pools)
+	if n, u, l, ok := parseNodeWait(nb); !ok || n != "n1" || u != 1 || l != 1 {
+		t.Errorf("parseNodeWait on named reason: %v %d %d %v", n, u, l, ok)
+	}
+	if _, _, _, _, at, ok := parseRateCeilingWait(nameRequestedPool("pool host rate ceiling: requests 3/3 in 1m0s, resets at 2026-11-03T10:00:00Z", pools)); !ok || at.IsZero() {
+		t.Error("rate ceiling reset lost after naming")
+	}
+	if nameRequestedPool(full, nil) != full {
+		t.Error("no pools: unchanged")
+	}
+}
+
+func TestWaitReasonHolderIgnoresRequestedPoolNote(t *testing.T) {
+	r := nameRequestedPool("waiting for node n1: node busy, held by sess-a", []string{"llm:qwen"})
+	if got := waitReasonHolder(WaitCauseNodeBusy, r); got != "sess-a" {
+		t.Fatalf("holder = %q, want sess-a (reason %q)", got, r)
 	}
 }

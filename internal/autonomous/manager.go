@@ -554,6 +554,9 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityFallthrough admits a task on another idle allowed pool when its
+	// requested pool is full (default off; mirrors config.AutonomousConfig).
+	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`
 	// Node over-admission switches (nil = on) and the restart adoption wait
 	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
 	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
@@ -1083,11 +1086,14 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu          sync.Mutex
-	cfg         Config
-	store       *Store
-	automations *AutomationStore
-	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	mu sync.Mutex
+	// capacityWaitSpent is the queue time each task's current admission has
+	// used against the capacity wait bound (capacity.go).
+	capacityWaitSpent map[string]time.Duration
+	cfg               Config
+	store             *Store
+	automations       *AutomationStore
+	repoCIWatch       *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
@@ -1331,6 +1337,11 @@ type Manager struct {
 	// capacityChoices lists the candidate compute nodes of a backend+model
 	// when its LLM entry pools two or more (nil = single-node behaviour).
 	capacityChoices CapacityChoicesFn
+	// capacityAlternates lists the other allowed backend+model pairs a task may
+	// fall through to (see Config.CapacityFallthrough); fallthroughs records the
+	// pair each fallen-through task was admitted on, keyed by task id.
+	capacityAlternates CapacityAlternatesFn
+	fallthroughs       map[string]CapacityAlternate
 	// sessionNode names the compute node an adopted session runs on.
 	sessionNode SessionNodeFn
 	// entryNodes counts the compute nodes an LLM entry lists (nil = unknown).
@@ -3529,6 +3540,9 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 				// A reset ends an uncommitted-work hold: the task runs again.
 				t.UncommittedWork = nil
 				t.RetryCount = 0
+				// The next attempt is admitted afresh, from the task's current
+				// worker: drop the pair the last attempt was admitted with.
+				t.AdmittedBackend, t.AdmittedModel = "", ""
 				// A human reset starts a new count of failed attempts for the
 				// failure escalation policy, so the ladder restarts at step 1.
 				t.EscalationFailures = 0
@@ -4597,6 +4611,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	task.Backend = backend
 	task.Effort = Effort(effort)
 	task.Model = model
+	task.AdmittedBackend, task.AdmittedModel = "", ""
 	task.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
@@ -5588,7 +5603,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := resolveTaskBackendModel(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
+					backend, _ := admittedWorker(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
 					if backend == "" {
 						backend = "unknown"
 					}

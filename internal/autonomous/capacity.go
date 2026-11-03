@@ -248,6 +248,33 @@ func (m *Manager) capacityOn() bool {
 	return m.capacity != nil && m.capacityKeys != nil && (m.cfg.CapacityEnabled == nil || *m.cfg.CapacityEnabled)
 }
 
+// capacityWaitRemaining is bound less the queue time this task's current
+// admission has already used.
+func (m *Manager) capacityWaitRemaining(taskID string, bound time.Duration) time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return bound - m.capacityWaitSpent[taskID]
+}
+
+func (m *Manager) addCapacityWaitSpent(taskID string, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.capacityWaitSpent == nil {
+		m.capacityWaitSpent = map[string]time.Duration{}
+	}
+	m.capacityWaitSpent[taskID] += d
+}
+
+// resetCapacityWait ends a task's admission: the next one gets a full bound.
+func (m *Manager) resetCapacityWait(taskID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.capacityWaitSpent, taskID)
+}
+
 func (m *Manager) capacityWait() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -347,10 +374,38 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
-	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+	// requested is the pool(s) the task asked for; a fall-through swaps pools
+	// to the alternate, but a wait reason still names what was requested.
+	requested := pools
+	m.setFallthrough(t.ID, nil)
+	var fell *CapacityAlternate
+	var fromPools []string
+	if role == capacity.RoleWorker {
+		if alt, altReq := m.pickFallthrough(led, req, backend, model); alt != nil {
+			fell, fromPools = alt, pools
+			req, pools = altReq, altReq.Pools
+		}
+	}
+	// A worker's capacity bound is one budget for the whole admission: time
+	// already spent queued by an earlier acquireLease of this admission (the
+	// node-load failover re-enters here) counts against it, so re-entering
+	// does not start a fresh window. It starts counting here, once the request
+	// is admissible (the pools resolved and the request about to be queued),
+	// and uses the audit recorder's clock so tests can drive it.
+	bound := m.capacityWait()
+	if role == capacity.RoleWorker {
+		bound = m.capacityWaitRemaining(t.ID, bound)
+		if bound <= 0 {
+			return fmt.Errorf("capacity: %w", capacity.ErrWaitTimeout)
+		}
+		entered := rec.Now()
+		defer func() { m.addCapacityWaitSpent(t.ID, rec.Now().Sub(entered)) }()
+	}
+	err := led.Acquire(ctx, req, bound, func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		if !waited {
 			waitStart = rec.Now()
 		}
+		reason = nameRequestedPool(reason, requested)
 		// The ledger reports every change of reason text (a holder joining a
 		// pool, a count moving); the audit log records only a change of cause.
 		if cause := ClassifyWaitReason(reason); !waited || cause != lastCause {
@@ -362,6 +417,12 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	})
 	switch {
 	case err == nil:
+		if fell != nil {
+			m.setFallthrough(t.ID, fell)
+			note := fmt.Sprintf("fell through from %s/%s to %s/%s: requested pool full, alternate idle", backend, model, fell.Backend, fell.Model)
+			rec.AdmissionFallthrough(t.ID, prd.ID, fromPools, pools, note)
+			log.Printf("[autonomous] prd=%s task=%s %s", prd.ID, t.ID, note)
+		}
 		if waited {
 			rec.AdmissionAdmitted(t.ID, waitStart, pools)
 			m.clearWaiting(t)
@@ -587,7 +648,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	sessionNode, entryNodes, sessionEndpoint := m.sessionNode, m.entryNodes, m.sessionEndpoint
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
-	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
+	backend, model := admittedWorker(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return
@@ -885,4 +946,74 @@ func (m *Manager) capacityRetrySpawn(t *Task, spawn SpawnFn) SpawnFn {
 			}
 		}
 	}
+}
+
+// CapacityAlternate is another backend and model a task may be admitted on
+// when its requested pool is full and Config.CapacityFallthrough is on.
+type CapacityAlternate struct {
+	Backend string
+	Model   string
+}
+
+// CapacityAlternatesFn lists the other allowed backend and model pairs for a
+// task requested on backend and model, in preference order.
+type CapacityAlternatesFn func(backend, model string) []CapacityAlternate
+
+// SetCapacityAlternates wires the fall-through alternates resolver. Nil (the
+// default) leaves fall-through inert even when the setting is on.
+func (m *Manager) SetCapacityAlternates(fn CapacityAlternatesFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.capacityAlternates = fn
+}
+
+// fallthroughOf returns the alternate the task was admitted on, if any.
+func (m *Manager) fallthroughOf(taskID string) (CapacityAlternate, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	alt, ok := m.fallthroughs[taskID]
+	return alt, ok
+}
+
+func (m *Manager) setFallthrough(taskID string, alt *CapacityAlternate) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if alt == nil {
+		delete(m.fallthroughs, taskID)
+		return
+	}
+	if m.fallthroughs == nil {
+		m.fallthroughs = map[string]CapacityAlternate{}
+	}
+	m.fallthroughs[taskID] = *alt
+}
+
+// pickFallthrough returns the first alternate whose pools the ledger would
+// grant now, with its request, when the requested pools cannot be granted.
+// Off, no resolver, or room on the requested pools: nil.
+func (m *Manager) pickFallthrough(led *capacity.Ledger, base capacity.Request, backend, model string) (*CapacityAlternate, capacity.Request) {
+	m.mu.Lock()
+	on, altFn, keysFn, choicesFn := m.cfg.CapacityFallthrough, m.capacityAlternates, m.capacityKeys, m.capacityChoices
+	m.mu.Unlock()
+	if !on || altFn == nil || keysFn == nil || led.WouldGrant(base) {
+		return nil, base
+	}
+	for _, alt := range altFn(backend, model) {
+		if alt.Backend == backend && alt.Model == model {
+			continue
+		}
+		pools, node := keysFn(alt.Backend, alt.Model)
+		if len(pools) == 0 {
+			continue
+		}
+		req := base
+		req.Pools, req.Node, req.Model = pools, node, alt.Model
+		req.NodeChoices = nodeChoicesFor(choicesFn, alt.Backend, alt.Model)
+		req.Refresh = m.placementRefresh(req, alt.Backend, alt.Model, nil)
+		if led.WouldGrant(req) {
+			a := alt
+			return &a, req
+		}
+	}
+	return nil, base
 }

@@ -161,7 +161,15 @@ ledger, syncs limits every 10 s from `session.max_sessions`/`reserved_interactiv
 compute node `max_concurrent_sessions` and LLM `max_inflight`, reaps leaked leases and
 raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
+`autonomous.capacity_fallthrough`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
+
+Pool fall-through: `autonomous.capacity_fallthrough` (bool, default false). When on and a task's
+requested pools cannot be granted now (`Ledger.WouldGrant`) while another allowed backend/model
+for the same task can, `acquireLease` admits it there (`internal/autonomous/capacity.go`,
+alternates from `Manager.SetCapacityAlternates`), the executor spawns on that pair, and the
+`autonomous_capacity_admitted` audit entry carries `fall_through`, `from_pools`, `to_pools` and a
+readable note. When off, a task always waits for its own pool, explicit backend or not.
 
 Node placement rules (`internal/capacity/ledger.go`, wired in `cmd/datawatch/capacity_wiring.go`;
 each switch is read at call time, so a change applies to the next admission with no restart,

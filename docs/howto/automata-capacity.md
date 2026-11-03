@@ -265,6 +265,57 @@ pool set than the worker's, the hand-off is refused and the verifier is
 admitted separately with its own lease; a second slot is never stacked on
 top of the first.
 
+## Retries with an explicit backend and model
+
+When you retry a task and pick a backend and model yourself (a review
+retry, a reset with a chosen LLM), capacity admission uses exactly that
+pair. The task takes its slot in **that backend's pool** (`llm:<name>`,
+plus the node pool the model lives on), not in the pool of the Automaton's
+default worker. The pair it was admitted with is kept on the task, so
+re-admission after a restart and lease adoption place it on the same pool
+again instead of working the worker out a second time. A worker chosen
+only for one attempt by escalation or routing is not written back to the
+task's own backend and model.
+
+The wait reason names the pool the task asked for. A retry pinned to
+`claude-code` while that pool is full reads
+`pool llm:claude-code full (2/2, held by t-3f9a1c, t-8b20de)`, never the
+name of some other pool.
+
+The wait timeout (`autonomous.capacity_wait_timeout_seconds`) counts from
+the first admissible request, that is from the moment the task asks the
+ledger for its pool. Time spent before that (waiting on dependencies, an
+unstarted or paused Automaton, a tree lock) does not use up the timeout.
+
+### Pool fall-through
+
+By default a task always waits for its own pool, explicit backend or not.
+Turn on `autonomous.capacity_fallthrough` (default off) and a worker task
+whose requested pool cannot be granted right now is admitted on another
+allowed backend and model that has room, instead of waiting. The first
+alternate the ledger would grant wins, in preference order. If the
+requested pool has room, or no alternate does, nothing changes and the task
+waits as usual. Only worker tasks fall through; verifiers do not.
+
+A task that fell through leaves an `autonomous_capacity_admitted` audit
+entry carrying `fall_through`, `from_pools`, `to_pools` and a note such as
+`fell through from claude-code/sonnet to ollama/qwen: requested pool full,
+alternate idle`.
+
+Set it on any surface:
+
+```bash
+# CLI
+datawatch autonomous config-set '{"capacity_fallthrough":true}'
+# REST
+curl -X PUT /api/config -d '{"autonomous.capacity_fallthrough": true}'
+# MCP: autonomous_config_set with capacity_fallthrough=true
+# Chat channels
+configure autonomous.capacity_fallthrough=true
+# PWA: Settings, Automata capacity, "Pool fall-through"
+# YAML: autonomous.capacity_fallthrough: true (under autonomous:)
+```
+
 ## Decompose waits for capacity
 
 The planning (decompose) call is capacity-gated the same way task spawns
@@ -949,6 +1000,10 @@ or cleared a back-off by hand: `datawatch audit --action
 - **Tasks wait although nothing seems to run.** Your own interactive
   sessions count against the `host` pool. Check `datawatch capacity` for
   the holders, or lower `session.reserved_interactive`.
+- **A retry on a chosen backend never moves.** With
+  `capacity_fallthrough` off (the default) it waits for that backend's
+  pool. Turn the setting on if you would rather it run on another idle
+  allowed pool.
 - **Wait timeout errors.** Raise `capacity_wait_timeout_seconds`, add
   capacity, or lower the number of Automata running at once.
 - **Turning it off.** Set `autonomous.capacity_enabled: false`; tasks

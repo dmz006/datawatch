@@ -2801,6 +2801,10 @@ type AutonomousConfig struct {
 	RoleScanIntervalSeconds int `yaml:"role_scan_interval_seconds,omitempty" json:"role_scan_interval_seconds,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds one capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `yaml:"capacity_wait_timeout_seconds,omitempty" json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityFallthrough: when a task's requested pool is full while another
+	// allowed pool for the same task is idle, admit it on that other pool and
+	// audit the fall-through. Default false: a task waits for its own pool.
+	CapacityFallthrough bool `yaml:"capacity_fallthrough,omitempty" json:"capacity_fallthrough,omitempty"`
 	// CapacityStrictNodeLimit: a compute node never runs more sessions than its
 	// limit through admission — verifier and resumed (adopted) workers that land
 	// on a full node are held outside its pool yet still count against it. Unset
