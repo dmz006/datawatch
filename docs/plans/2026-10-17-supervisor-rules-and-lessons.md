@@ -716,3 +716,12 @@ Rules:
 3. Set the worker backend before approval; it is locked once the Automaton runs.
 4. A started stage cannot be reshaped: build it parallel from the start, with a normal Automaton as its entry member.
 5. The merge helper needs the changelog body at `../body-<id>.md`; check the changelog and README after every merge.
+
+### Lesson 2026-11-03: set the backend before approving, and never let a helper set it for you
+
+Why: my approve helper ran the PRD LLM setter with the local model after every approval, which silently replaced the cloud backend I had set on three defects. Once an Automaton runs, its backend is locked; the only way back was to cancel the Automaton (which wedged the Automation that held it as entry), reset it to draft and re-plan it.
+
+Rules:
+1. Set the worker backend, model, effort and planning profile on a draft, before the first decompose and before approval. Approval helpers must not set them (the helper now sets them only when asked).
+2. Check the backend on the Automaton after approving, before an Automation starts it.
+3. If a backend must change after approval: stop the Automation first, cancel and reset the Automaton to draft, change it, plan again. The planner re-queue defect (`9e4d0001`) is meant to remove this.
