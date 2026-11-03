@@ -2730,6 +2730,14 @@ type AutonomousConfig struct {
 	// omitempty, for the same round-trip reason as JudgePolicy: an explicit 0
 	// must reach the saved config.
 	JudgeSizeThresholdLines int `yaml:"judge_size_threshold_lines" json:"judge_size_threshold_lines"`
+	// JudgeVerdictCacheEnabled controls the per-commit judge verdict cache:
+	// when on (the default), a judge that completes a pass or block verdict
+	// on a (commit sha, judge policy, rules) triple replays that verdict
+	// from the cache instead of running the judge again, and a judge that
+	// timed out or otherwise did not finish is never cached. Unset (nil)
+	// reads true — see NormalizeJudgeVerdictCacheEnabled; an explicit false
+	// must round-trip, so the pointer is never collapsed.
+	JudgeVerdictCacheEnabled *bool `yaml:"judge_verdict_cache_enabled,omitempty" json:"judge_verdict_cache_enabled,omitempty"`
 	// SessionIdleTimeoutSeconds bounds one autonomous worker or verifier
 	// session: a session sitting in waiting_input/idle with no live child
 	// process for longer than this is an infra failure. 0 or unset => 900
