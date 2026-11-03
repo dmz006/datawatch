@@ -95,9 +95,11 @@ func (src managerCostSource) Records(opts costreport.SourceOptions) (*costreport
 
 // ShippedUnits implements costreport.ShippedSource: every PRD and
 // Automation the daemon knows shipped (MergedAt recorded), for
-// group_by=release. Empty when the manager is not wired.
+// group_by=release. The unit list is non-nil even when empty (the
+// contract ShippedResult documents); when the manager is not wired it is
+// empty and the engine's release rows all land under "unreleased".
 func (src managerCostSource) ShippedUnits() (*costreport.ShippedResult, error) {
-	res := &costreport.ShippedResult{}
+	res := &costreport.ShippedResult{Units: []costreport.ShippedUnit{}}
 	if src.auto == nil {
 		return res, nil
 	}
