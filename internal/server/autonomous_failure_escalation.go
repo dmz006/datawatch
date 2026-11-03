@@ -107,6 +107,10 @@ func (s *Server) handleResolveTaskReview(w http.ResponseWriter, r *http.Request,
 	if req.Actor == "" {
 		req.Actor = "operator"
 	}
+	if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+		http.Error(w, msg, http.StatusBadRequest)
+		return
+	}
 	if !s.writeMissingAutomatonOrTask(w, id, req.TaskID) {
 		return
 	}
