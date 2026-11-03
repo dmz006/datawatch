@@ -1,6 +1,7 @@
-# Parity issue draft: automation checks and ship steps
+# [sync] Automation checks and ship steps
 
-Title: [sync] Automation checks and ship steps
+Parent release: the release that carries this change (the merge helper sets the number at merge).
+Filing: to be filed against dmz006/datawatch-app at merge, by the merge step. **Not filed yet.**
 
 ## Body
 
