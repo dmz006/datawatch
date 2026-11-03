@@ -3,6 +3,7 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -78,5 +79,43 @@ func TestAcquireLease_ChargesQueuedTime(t *testing.T) {
 	}
 	if got := m.capacityWaitRemaining(queued.ID, 100*time.Second); got != 60*time.Second {
 		t.Fatalf("remaining = %v, want 60s after 40s queued", got)
+	}
+}
+
+// The reason a queued worker shows, on the task record and in the audit log,
+// names the pool its explicit backend asked for, and still classifies and
+// parses as the ledger's own reason.
+func TestAcquireLease_WaitReasonNamesRequestedPool(t *testing.T) {
+	m, _, led := capFixtureFakeClock(t, 1)
+	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"llm:qwen", "node:n1"}, "n1" })
+	ac := newAuditCapture()
+	m.SetCapacityAudit(ac.recorder())
+	prd := newPRDWithTasks(t, m, 2)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	holder, queued := cur.Story[0].Tasks[0], cur.Story[0].Tasks[1]
+	if err := led.Acquire(context.Background(), capNodeReq(holder.ID, prd.ID), 0, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- m.acquireLease(context.Background(), cur, &queued, "opencode", "", capacity.RoleWorker, nil, "")
+	}()
+	capWaitUntil(t, func() bool {
+		snap, ok := m.Store().TaskSnapshot(queued.ID)
+		return ok && snap.Status == TaskWaitingCapacity && snap.WaitReason != ""
+	})
+	snap, _ := m.Store().TaskSnapshot(queued.ID)
+	if !strings.Contains(snap.WaitReason, "requested pool llm:qwen") {
+		t.Fatalf("task wait reason does not name the requested pool: %q", snap.WaitReason)
+	}
+	if got := ClassifyWaitReason(snap.WaitReason); got != WaitCauseNodeBusy {
+		t.Fatalf("classified %q, want node busy (reason %q)", got, snap.WaitReason)
+	}
+	if got := waitReasonHolder(WaitCauseNodeBusy, snap.WaitReason); got != holder.ID {
+		t.Fatalf("holder = %q, want %q", got, holder.ID)
+	}
+	led.Release(holder.ID)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }
