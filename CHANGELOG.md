@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The default Automaton read returns the specs whole, and writes refuse capped copies.** `GET /api/autonomous/prds/{id}` (and `detail=tasks`) now caps only the heavy output fields — PRD `memory_report`, task `error`, `prior_attempt_hint`, `start_failure_tail[]`, `attempt_refs[]`, verdict and verifier text — to `autonomous.detail_text_cap_bytes` (default 4096; 0 = default, negative = off). The Automaton `spec`, every story `description` and every task `spec` are always returned whole, so a capped reply can be read and saved back verbatim; each cut field still ends with the `…[truncated: kept N of M bytes]` marker, is listed in the record's `truncated` array with the URL of the full text, and the uncapped text remains one request away at `?full=1` or `GET …/prds/{id}/outputs`. Every spec and description write (REST, CLI and MCP) now refuses (400) text containing that truncation marker anywhere — a copy pasted from a capped view, even if edited after the cut — with a message that names the field and points at the level whose read returns the full text.
+
 ## v9.67.0 — Cost report
 
 ### Added
