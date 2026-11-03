@@ -889,12 +889,34 @@ func IsWorkspaceLockError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "workspace lock:")
 }
 
+// ErrLaunchRefusedDraining marks a spawn that was refused because the daemon
+// that received it is draining (shutting down). The worker never started and
+// the task did not get an attempt, so it is a wait, never a failure.
+var ErrLaunchRefusedDraining = errors.New("launch refused: daemon is draining")
+
+// drainingRefusalText is the part of session.ErrDaemonDraining's message that
+// survives when the refusal comes back as an HTTP 500 body from a peer node.
+const drainingRefusalText = "daemon is shutting down"
+
+// IsLaunchRefusedDraining reports whether err is a launch refused by a draining
+// daemon: the typed session.ErrDaemonDraining, ErrLaunchRefusedDraining, or the
+// same message arriving as plain text (an HTTP 500 body).
+func IsLaunchRefusedDraining(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, session.ErrDaemonDraining) || errors.Is(err, ErrLaunchRefusedDraining) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), drainingRefusalText)
+}
+
 // isSpawnWaitError reports whether a spawn error is a refusal to wait out
 // (a full session cap, a workspace-lock collision, the global cooldown or the
 // capacity wait timeout) rather than a worker that failed to start. These are
 // never infrastructure failures.
 func isSpawnWaitError(err error) bool {
-	return IsCapacityError(err) || IsWorkspaceLockError(err) ||
+	return IsCapacityError(err) || IsWorkspaceLockError(err) || IsLaunchRefusedDraining(err) ||
 		errors.Is(err, session.ErrGlobalCooldown) || errors.Is(err, capacity.ErrWaitTimeout)
 }
 
@@ -913,7 +935,8 @@ func (m *Manager) capacityRetrySpawn(t *Task, spawn SpawnFn) SpawnFn {
 		for {
 			sr, err := spawn(ctx, req)
 			cooldown := errors.Is(err, session.ErrGlobalCooldown)
-			if !IsCapacityError(err) && !IsWorkspaceLockError(err) && !cooldown {
+			draining := IsLaunchRefusedDraining(err)
+			if !IsCapacityError(err) && !IsWorkspaceLockError(err) && !cooldown && !draining {
 				if waited {
 					m.clearWaiting(t)
 				}
@@ -931,6 +954,9 @@ func (m *Manager) capacityRetrySpawn(t *Task, spawn SpawnFn) SpawnFn {
 				}
 				if cooldown {
 					return sr, fmt.Errorf("capacity: %w: %s", capacity.ErrWaitTimeout, reason)
+				}
+				if draining {
+					return sr, fmt.Errorf("draining: %w: %v", capacity.ErrWaitTimeout, err)
 				}
 				return sr, fmt.Errorf("capacity: %w: %v", capacity.ErrWaitTimeout, err)
 			}
