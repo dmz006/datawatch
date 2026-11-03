@@ -1406,15 +1406,7 @@ be a `fork` or a nested Automation and activation now enters the entry by kind a
 lifecycle table shows. The unreleased **return-to-draft** adds the same operation on all
 four control surfaces (row updates in the table): REST `POST /api/automations/{id}/return_to_draft`,
 MCP `automation_return_to_draft`, CLI `automation return-to-draft <id>`, comm
-`automation return-to-draft <id>`; no PWA surface yet (the PWA row below is unchanged for
-this operation). The three remaining surfaces are intentionally excluded for this change: **Android** —
-it consumes the new operation only through the REST endpoint, so no app code changes in this change;
-the companion-app parity issue that would surface `return-to-draft` in Android is still not filed (see
-the row). **iPhone/iOS** — same: it reaches the operation through REST, needs no app-side change here,
-and its parity issue is also still not filed. **YAML/config** — entry-kind activation and
-return-to-draft are runtime control operations on an Automation record, not settings, so they add no
-config surface; Automation objects remain runtime data in `automations.jsonl`, consistent with this
-row. The rest of the
+`automation return-to-draft <id>`; entry-kind activation changes no surface at all, because every surface already calls the same activate endpoint and only the coordinator's entry handling differs. The four remaining surfaces are intentionally excluded for this change, for a stated reason each: **PWA** — the Automation tab lists, shows the pipeline-strip detail and offers create/edit, but it has no return-to-draft control, and adding one means new PWA UI plus locale keys in all five bundles, which is PWA work planned in a later PWA phase, not part of this docs/API change (the PWA row below is unchanged for this operation). **Android** — it consumes return-to-draft only through the REST endpoint, so this change needs no Android code; surfacing the operation in the app UI is tracked separately as the companion-app parity issue on the row. **iPhone/iOS** — the same: it reaches the operation through REST, needs no app-side change here, and its UI surfacing is tracked as the companion-app parity issue on the row. **YAML/config** — entry-kind activation and return-to-draft are runtime control operations on an Automation record, not settings, so they add no config surface; Automation objects remain runtime data in `automations.jsonl`, consistent with this row. The rest of the
 table is still the plan for Phases 3-7, and the table below remains accurate as written, with the
 corrections in the rows themselves. Every surface follows AGENT.md's
 Configuration Accessibility Rule and the full parity-surface set.
