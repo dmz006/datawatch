@@ -2071,15 +2071,55 @@ K8s tests require a `kind` cluster named `testing` with the `datawatch-e2e` imag
 `harbor.dmzs.com` is unreachable even after `kind load`. Set it explicitly in every
 test pod spec.
 
-### Stale plan files (TS-557 / smoke check)
+### Plans folder hygiene: link-aware tidy (TS-557 / smoke check)
 
-`release-smoke.sh --check` fails when stale plan files exist under `docs/plans/` (files
-that were never moved to `historical-plans/`). TS-557 verifies this. If it fails, run:
+`docs/plans/` tidying is **link-aware**, driven by `scripts/tidy-plans.sh`
+(plan-side logic in `scripts/plans_links.py`, registry logic in
+`scripts/plans_registry_hygiene.py`; python3, standard library only; idempotent).
+
+**Link-aware keep rule:** a dated plan (`YYYY-MM-DD-*.md`) stays in `docs/plans/` as
+long as anything still references it — an open (unclosed) registry row in
+`docs/plans/README.md`, any file under `scripts/`, a root rules file (AGENT.md,
+CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, DATAWATCH-CONTEXT.md, README.md,
+SECURITY.md), or any doc under `docs/` outside `docs/plans/`. Only plans that are
+past the age cutoff (`--days`, default 7), carry **no** such references, and have a
+closed registry row move to `docs/plans/historical-plans/`. A row is closed when its
+text carries a completion marker (done / shipped / completed / merged / cancelled /
+landed) not vetoed by a negation ("not done", "not started"); anything else is
+open and keeps its plan in place.
+
+**Link rewriting on move:** when a plan is archived, every relative and absolute
+link pointing at it — markdown link targets and path mentions alike, in the
+registry rows and elsewhere — is rewritten in place to the new location, so
+references never dangle.
+
+**Broken-link check:** `scripts/check-plans-links.sh` scans the same reference
+surfaces (scripts/, root rules files, docs/, excluding test-fixture heredocs)
+and prints only the count of references into `docs/plans/` whose target no
+longer resolves. Exits 0 with a count of 0 when every target resolves;
+non-zero when any target is missing. Broken targets are never listed —
+counts only. `--quiet` keeps it silent when the count is zero.
+
+**Registry hygiene** runs on every tidy (skippable with `--no-hygiene`):
+duplicate sections are removed (first occurrence wins, later bodies folded in),
+all-closed tables merge into one, duplicate rows are deduped (first occurrence
+kept), verbose closed status cells are trimmed to one line, and — with
+`--status-file PATH` (an Automaton list export, read as-is, no daemon, no gh)
+— stale draft/not-started rows are corrected from the export.
+
+**Counts-only output:** every command reports counts (plans kept, plans
+archived, links rewritten, hygiene deltas) — never a list of files.
+
+**Usage / release gate:**
 ```bash
-bash scripts/tidy-plans.sh
+bash scripts/tidy-plans.sh          # do the moves + registry hygiene
+bash scripts/tidy-plans.sh --dry-run   # counts only, change nothing
+bash scripts/tidy-plans.sh --check     # counts only, exit 1 if anything would move
 ```
-This moves completed/obsolete plans to `historical-plans/`. Check after any sprint that
-creates plan files. TS-557 was fixed by tidying BL370/380/382.
+`scripts/release-smoke.sh` runs `tidy-plans.sh --check` first and **aborts the
+release** if the folder needs tidying (TS-557 verifies this); run
+`scripts/tidy-plans.sh` (no flags) to do the moves, then commit before re-running
+smoke. Check after any sprint that creates plan files.
 
 ### Config state isolation between tests
 
