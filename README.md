@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.67.0 (2026-11-02).** One cost report over the data already kept, per Automaton, Automation, backend and week, on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.69.0 (2026-11-03).** The daemon reviews an Automaton's work with four automatic checks and carries out the ship steps (push, tag, CI watch), each off, shadow or on. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
