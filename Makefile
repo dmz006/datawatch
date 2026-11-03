@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs check-leaks leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
+.PHONY: build clean clean-test-tmp install lint check-security-ignore-writes check-tmux check-test-daemons check-leftover-daemons check-go-pins check-internal-refs check-leaks check-no-config-copies leak-patterns-init check-no-identity-wipe codeql-local test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -275,6 +275,12 @@ check-internal-refs:
 check-leaks:
 	bash scripts/check-no-local-leaks.sh .
 
+# Fails when a changed file looks like a copy of operator configuration or
+# credentials (backups, .env files, config copies, key files). Compares the
+# branch with the remote main; untracked files count too.
+check-no-config-copies:
+	bash scripts/check-no-config-copies.sh origin/main
+
 # Seed .leak-patterns.local: created from the template when absent (an
 # existing file is never overwritten), then names of every federation peer,
 # compute node, observer peer and pool host the local daemon knows are
@@ -290,7 +296,7 @@ check-no-identity-wipe:
 check-security-ignore-writes:
 	bash scripts/check-no-direct-ignore-writes.sh
 
-lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-no-identity-wipe check-security-ignore-writes check-leaks
+lint: check-tmux check-test-daemons check-service-scope check-go-pins check-internal-refs check-no-identity-wipe check-security-ignore-writes check-leaks check-no-config-copies
 	golangci-lint run ./...
 
 # Local, non-uploading CodeQL run compared with GitHub's alerts. Long running
