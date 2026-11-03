@@ -864,7 +864,7 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary, tasks or full (default: the daemon's full view)")
+	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary (no spec text), tasks (task statuses) or full (default: the daemon's full view). full returns the PRD spec, every story description and every task spec whole and uncut — read full before editing a spec; edits carrying a capped view's truncation marker are refused here and by the daemon")
 	return cmd
 }
 
@@ -968,6 +968,15 @@ func newAutonomousPRDEditCmd() *cobra.Command {
 		Short: "Edit PRD title + spec (non-running PRDs only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if spec != "" {
+				// Text copied out of a capped view carries the truncation
+				// marker and is not the full spec: refuse it with the daemon's
+				// own wording before anything reaches the wire (the 400 says
+				// the same).
+				if msg, refuse := autonomous.TruncationRefusal("spec", spec); refuse {
+					return fmt.Errorf("%s", msg)
+				}
+			}
 			body := map[string]any{"actor": "operator"}
 			if title != "" {
 				body["title"] = title
@@ -979,7 +988,7 @@ func newAutonomousPRDEditCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&title, "title", "", "New PRD title")
-	cmd.Flags().StringVar(&spec, "spec", "", "New PRD spec (full replacement)")
+	cmd.Flags().StringVar(&spec, "spec", "", "New PRD spec (full replacement) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	return cmd
 }
 
@@ -1175,7 +1184,7 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to rewrite (required)")
-	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec)")
+	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
@@ -1188,6 +1197,15 @@ func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly boo
 	roSet := cmd.Flags().Changed("read-only")
 	if newSpec == "" && !roSet {
 		return nil, fmt.Errorf("nothing to edit: pass --spec and/or --read-only")
+	}
+	if newSpec != "" {
+		// Text copied out of a capped view carries the truncation
+		// marker and is not the full spec: refuse it with the daemon's
+		// own wording before anything reaches the wire (the 400 says the
+		// same).
+		if msg, refuse := autonomous.TruncationRefusal("new_spec", newSpec); refuse {
+			return nil, fmt.Errorf("%s", msg)
+		}
 	}
 	body := map[string]any{"task_id": taskID, "actor": "operator"}
 	if newSpec != "" {
@@ -1206,13 +1224,22 @@ func newAutonomousPRDEditStoryCmd() *cobra.Command {
 		Short: "Rewrite a story's title/description before approving",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
+			if newDescription != "" {
+				// Text copied out of a capped view carries the truncation
+				// marker and is not the full description: refuse it with the
+				// daemon's own wording before anything reaches the wire
+				// (the 400 says the same).
+				if msg, refuse := autonomous.TruncationRefusal("new_description", newDescription); refuse {
+					return fmt.Errorf("%s", msg)
+				}
+			}
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "new_title": newTitle, "new_description": newDescription, "actor": "operator"})
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/edit_story", body)
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to rewrite (required)")
 	cmd.Flags().StringVar(&newTitle, "title", "", "new title (empty = keep unchanged)")
-	cmd.Flags().StringVar(&newDescription, "description", "", "new description (empty = keep unchanged)")
+	cmd.Flags().StringVar(&newDescription, "description", "", "new description (empty = keep unchanged) — the full description text: to edit the existing description, read it first (prd-get's default full view returns the whole description, uncut); a description carrying a capped view's truncation marker is refused here and by the daemon")
 	_ = cmd.MarkFlagRequired("story")
 	return cmd
 }
