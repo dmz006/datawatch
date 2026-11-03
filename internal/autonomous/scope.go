@@ -303,6 +303,11 @@ func LintPlanScope(prd *PRD, stories []Story) []string {
 		out = append(out, LintTaskScope(prd, "story '"+s.Title+"'", s.Description, s.FilesPlanned)...)
 		for _, t := range s.Tasks {
 			out = append(out, LintTaskScopeFor(prd, &t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned)...) // BL447
+			// Smoke/live-check config lint: a smoke task may not instruct the
+			// worker to copy operator configuration or data into the repo.
+			// Runs in the same plan-lint path and honours the scope_lint
+			// mode via the caller (planScopeWarnings).
+			out = append(out, LintSmokeConfig(t.Title, t.Spec, t.Kind)...)
 		}
 	}
 	return out
