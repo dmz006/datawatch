@@ -6263,6 +6263,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_fallthrough":                 s.cfg.Autonomous.CapacityFallthrough,
 			"capacity_strict_node_limit":           s.cfg.Autonomous.CapacityStrictNodeLimitOn(),
 			"capacity_count_pool_by_node":          s.cfg.Autonomous.CapacityCountPoolByNodeOn(),
 			"capacity_adopt_before_admit":          s.cfg.Autonomous.CapacityAdoptBeforeAdmitOn(),
@@ -8961,6 +8962,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_adoption_wait_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityAdoptionWaitSeconds = n
+			}
+		case "autonomous.capacity_fallthrough":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.CapacityFallthrough = b
 			}
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

@@ -2229,6 +2229,10 @@ autonomous:
   capacity_enabled: true
   # Longest a task may wait for capacity before failing (seconds). Default 14400.
   capacity_wait_timeout_seconds: 14400
+  # Pool fall-through (default false). When a task's requested LLM pool is full
+  # and another allowed backend/model can take it now, admit it there instead
+  # of waiting. Off = a task always waits for its own pool.
+  capacity_fallthrough: false
   # Node over-admission rules (all default true; false restores the earlier
   # behaviour). capacity_strict_node_limit: a session adopted onto a full node
   # (a resumed worker, or a verifier) is held outside the node's pool yet still

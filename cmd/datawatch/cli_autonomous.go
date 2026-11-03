@@ -622,6 +622,7 @@ earlier behaviour):
 
   capacity_strict_node_limit      verifier and resumed workers never over-admit a node
   capacity_count_pool_by_node     an LLM pool counts the sessions on each node up to that node's limit
+  capacity_fallthrough            admit a task on another idle allowed pool when its own is full (default false)
   capacity_adopt_before_admit     after a restart, resumed workers are admitted before new work
   capacity_adoption_wait_seconds  longest wait for that adoption (default 30; negative values are rejected)
 
