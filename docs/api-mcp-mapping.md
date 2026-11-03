@@ -396,6 +396,7 @@ and the billing-group label on LLM entries (`llm_add` / `llm_update`
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
 | `POST /api/restart` | `restart_daemon` | Complete | |
+| `GET /api/autonomous/restart-interruptions` | `restart_interruptions` | Complete | the running tasks (executing worker, running tests or verifying) and the live sessions a restart now would interrupt, with ids and counts, plus the restart policy (`autonomous.restart_policy`) in force; `launch_draining` is true while a drain holds new tasks back. Read-only; needs the autonomous read capability. CLI `datawatch autonomous restart-interruptions [--json]`, comm `autonomous restart-interruptions`. `POST /api/restart` and `restart_daemon` apply the policy and return the same counts |
 | `POST /api/update` | — | Not in MCP | Binary update — security-sensitive, must be human-initiated |
 | — | `stop_all_sessions` | MCP only | Kill all running sessions |
 | — | `memory_reindex` | MCP only | Re-embed all memories |
