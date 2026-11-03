@@ -49,6 +49,39 @@ func TestCapacityText_CommReplyShowsReasons(t *testing.T) {
 	}
 }
 
+func TestCapacityText_CommReplyShowsBurnGuardRung(t *testing.T) {
+	// The comm channel renders /api/capacity through the same
+	// FormatCapacityText as the CLI: a burn-guard flag prints its rung with
+	// its reason, and the reset time keeps the daemon's own offset.
+	autonomous.CapacityTextClock = func() time.Time {
+		return time.Date(2026, 11, 1, 12, 0, 0, 0, time.FixedZone("EDT", -4*3600))
+	}
+	t.Cleanup(func() { autonomous.CapacityTextClock = time.Now })
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/capacity" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(`{"pools":[],"leases":[],"waiting":[],
+"backoff":[{"backend":"claude-code","until":"2026-11-01T14:00:00-04:00","reason":"usage cap hit","rung":"hold_claude","reset_known":true},
+{"backend":"ollama","until":"2026-11-01T15:00:00Z","reason":"rate limited","reset_known":true}],
+"budgets":[],"tasks":{"waiting":[],"running":[]}}`))
+	}))
+	defer srv.Close()
+
+	r := loopbackRouter(t, srv)
+	got := captureSends(r, func() { r.handleCapacity() })
+	for _, want := range []string{
+		"claude-code: resets 2026-11-01T14:00:00-04:00 (burn guard rung hold_claude: usage cap hit)",
+		"ollama: resets 2026-11-01T15:00:00Z (rate limited)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q in reply:\n%s", want, got)
+		}
+	}
+}
+
 func TestCapacity_CommReplyShowsNodeUsage(t *testing.T) {
 	autonomous.CapacityTextClock = func() time.Time { return time.Date(2026, 10, 22, 17, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { autonomous.CapacityTextClock = time.Now })

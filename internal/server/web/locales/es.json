@@ -2127,6 +2127,7 @@
   "capacity_card_backoff_title": "Espera por límite de uso",
   "capacity_card_backoff_resets": "Se restablece",
   "capacity_card_backoff_reset_unknown": "hora de restablecimiento desconocida",
+  "capacity_card_backoff_rung": "nivel de guardián de gasto",
   "capacity_card_budget_title": "Presupuestos de LLM",
   "capacity_card_budget_estimate": "La parte de la asignación es una estimación basada en el plan, no un valor medido",
   "capacity_card_holders": "Titulares",

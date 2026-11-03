@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +136,78 @@ func TestBackoff_MaxBackoffDeadlineFromConfig(t *testing.T) {
 	clk.Advance(time.Minute)
 	if ok, _ := b.Blocked("claude-code"); ok {
 		t.Error("max back-off must expire after BackoffMaxWaitMinutes")
+	}
+}
+
+// TestBackoff_RungSerialisesOnHoldSetOnly covers the ladder-rung field:
+// SetWithRung (the burn guard's hold_claude hold) puts the rung name and the
+// reason text on the same entry, while SetWithReset (a rate-limit flag) and
+// Set (operator) leave it out of the JSON entirely. The fixed clock sits in a
+// non-UTC zone so a regression that compares zones or drops the zone survives
+// in the serialised until.
+func TestBackoff_RungSerialisesOnHoldSetOnly(t *testing.T) {
+	zone := time.FixedZone("IST", 5*3600+30*60)
+	now := time.Date(2026, 10, 22, 20, 0, 0, 0, zone)
+	mk := func() *Backoff {
+		b := NewBackoff()
+		b.Clock = func() time.Time { return now }
+		return b
+	}
+
+	until := now.Add(15 * time.Minute)
+
+	hold := mk()
+	hold.SetWithRung("claude-code", until, "burn guard: weekly burn projects over the pace line", "burn_guard", true, "hold_claude")
+	rate := mk()
+	rate.SetWithReset("claude-code", until, "rate-limit — reset 20:15", BackoffSourceRateLimit, true)
+	op := mk()
+	op.Set("claude-code", until, "paused by operator", BackoffSourceOperator)
+
+	decodes := func(b *Backoff) map[string]any {
+		raw, err := json.Marshal(b.Live())
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		var out []map[string]any
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if len(out) != 1 {
+			t.Fatalf("Live() = %v, want one entry", out)
+		}
+		return out[0]
+	}
+
+	if got := decodes(hold); got["rung"] != "hold_claude" || got["reason"] != "burn guard: weekly burn projects over the pace line" {
+		t.Errorf("hold entry = %v, want rung hold_claude with its reason text", got)
+	}
+	for name, b := range map[string]*Backoff{"rate_limit": rate, "operator": op} {
+		got := decodes(b)
+		if _, present := got["rung"]; present {
+			t.Errorf("%s entry = %v, want no rung key", name, got)
+		}
+	}
+
+	// The entry struct keeps the deadline in the caller's (non-UTC) zone and
+	// Blocked still respects it from the fixed clock. The Blocked message
+	// renders the deadline in the entry's zone; the free-form reason text
+	// itself lives on the entry (and in the serialised output above).
+	if e := hold.Live()[0]; !e.Until.Equal(until) || e.Rung != "hold_claude" {
+		t.Errorf("Live()[0] = %+v, want until %s with rung hold_claude", e, until)
+	}
+	if blocked, reason := hold.Blocked("claude-code"); !blocked || !strings.Contains(reason, "backed off until 20:15 IST") {
+		t.Errorf("hold Blocked = (%v, %q), want blocked with the IST deadline", blocked, reason)
+	}
+	if ratelimit := rate.Live()[0]; ratelimit.Rung != "" {
+		t.Errorf("rate-limit Entry.Rung = %q, want empty", ratelimit.Rung)
+	}
+	// Re-setting with SetWithReset (a later rate limit on the same backend)
+	// must drop the rung, matching what the burn guard releases.
+	hold.SetWithReset("claude-code", until.Add(time.Minute), "rate-limit — reset 20:30", BackoffSourceRateLimit, true)
+	{
+		got := decodes(hold)
+		if _, present := got["rung"]; present {
+			t.Errorf("entry after SetWithReset = %v, want no rung key", got)
+		}
 	}
 }

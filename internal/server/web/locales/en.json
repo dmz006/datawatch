@@ -2127,6 +2127,7 @@
   "capacity_card_backoff_title": "Usage back-off",
   "capacity_card_backoff_resets": "Resets",
   "capacity_card_backoff_reset_unknown": "reset time unknown",
+  "capacity_card_backoff_rung": "burn guard rung",
   "capacity_card_budget_title": "LLM budgets",
   "capacity_card_budget_estimate": "The allocation share is an estimate derived from the plan tier, not a measured figure",
   "capacity_card_holders": "Holders",

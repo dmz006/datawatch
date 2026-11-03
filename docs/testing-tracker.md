@@ -1942,6 +1942,20 @@ Four automatic report-only checks (pre-start verifier, plan rules, after-done ch
 
 ---
 
+## Burn guard back-off: hold deadline, daemon-zone times and the rung — `GET /api/capacity` gains `rung`
+
+The capacity view's back-off line for a backend held by the burn guard now ends when the guard steps back or at the next window boundary (it showed a reset one year ahead), shows its time in the daemon's time zone, and names the guard rung and reason.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Guard wiring — hold deadline and rung stored on the back-off | **Yes** (`cmd/datawatch/burn_guard_wiring_test.go`, `internal/autonomous/backoff_test.go`) | Not run on a live daemon | Fixed clock, non-UTC zone | |
+| REST — `GET /api/capacity` back-off entry carries `rung`, `reason` and a zone-correct end | **Yes** (`internal/server/capacity_test.go`, `burn_guard_test.go`) | Not run on a live daemon | Fake manager | |
+| MCP — `usage_backoff` status shows the same fields | **Yes** (`internal/mcp/usage_backoff_test.go`) | Not run | Tool call round trip | |
+| Comm channel and CLI — capacity text names the rung | **Yes** (`internal/router/capacity_text_test.go`, `internal/autonomous/capacity_format_test.go`) | Not run | Formatter tests | |
+| Web — capacity card shows the rung (one new locale key, five locales) | Partly (locale guard) | Not run in a browser story | English placeholders in de, es, fr and ja | Browser story is a follow-up; the rate-limit back-off path still stores its reset time in the message's own zone (low severity, follow-up) |
+
+---
+
 ## Snapshot staging scope — new `autonomous.snapshot_never_stage` and `skipped_snapshot_paths`
 
 The task-finish snapshot commit stages only paths inside the task's declared plan, honours the repository ignore rules and a configurable never-stage pattern list, and reports what it skipped. The skip record on the task result is currently written by the stall-recovery commit path only; the normal completion commit logs its skips.

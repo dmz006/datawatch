@@ -211,8 +211,18 @@ Internal loops (reaper, limit sync) use plain `Snapshot`.
 
 Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
 that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
-Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_backend`;
-`off` disables only the automatic path) and `autonomous.backoff_max_wait_minutes`
+Each entry carries `backend`, `until`, `reason` (the free-form text), `source`
+(`rate_limit` | `operator` | `burn_guard`) and `reset_known`; a flag set by a ladder
+rung (the burn guard's `hold_claude` hold, via `Backoff.SetWithRung`) additionally
+carries `rung` with the rung's name — omitted in the JSON on plain rate-limit and
+operator entries, so older clients read the legacy fields unchanged. On the capacity
+response (`GET /api/capacity`) the `backoff` array mirrors the same fields plus
+`rung`, and `until` is rendered in the daemon's own zone. Usage-backoff status
+(`/api/usage-backoff`, the `usage_backoff` field of the autonomous status) reuses the
+entry view directly, so `rung` appears there too. The `capacity_status` MCP tool
+description names `rung` beside `reset_known`. Config: `autonomous.usage_backoff`
+(`pause_backend` | `off`, default `pause_backend`; `off` disables only the automatic
+path) and `autonomous.backoff_max_wait_minutes`
 (default 60; whole minutes, a value below 1 is treated as 60). Operator surfaces:
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md`.
