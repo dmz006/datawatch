@@ -2012,6 +2012,21 @@ type SessionConfig struct {
 	// declaring a session is waiting for input (seconds)
 	InputIdleTimeout int `yaml:"input_idle_timeout"`
 
+	// LivenessWindowSeconds is the liveness window (seconds) for print-mode
+	// backends (family names ending in "-prompt"). Unset or 0 means the
+	// built-in default (DefaultLivenessWindowSeconds, 120); callers must use
+	// LivenessWindowSecondsEffective() rather than reading this raw.
+	LivenessWindowSeconds int `yaml:"liveness_window_seconds,omitempty" json:"liveness_window_seconds,omitempty"`
+
+	// LivenessIdleTimeoutOverrides overrides the input-idle timeout (seconds)
+	// per backend. Keys are backend family names ("pi" matches "pi-prompt");
+	// full backend names also match. An empty map means the global
+	// session.input_idle_timeout applies. Callers must use
+	// LivenessInputIdleTimeoutEffective(backend) rather than reading this raw:
+	// print-mode backends default to off (0), interactive backends to the
+	// global timeout (default 10).
+	LivenessIdleTimeoutOverrides map[string]int `yaml:"liveness_idle_timeout_overrides,omitempty" json:"liveness_idle_timeout_overrides,omitempty"`
+
 	// TailLines is the default number of lines returned by tail command
 	TailLines int `yaml:"tail_lines"`
 
