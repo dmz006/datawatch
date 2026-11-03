@@ -1,7 +1,7 @@
 # Automata checks and ship steps: plan
 
 **Date:** 2026-11-02
-**Version:** set at merge time. The merge helper (`scripts/merge-branches-bump-version.sh`) sets the next version above main; this plan names no number and adds no versioned changelog heading. `Version` in `cmd/datawatch/main.go` and `internal/server/api.go` is bumped together by that helper.
+**Version:** 9.68.0. `Version` in `cmd/datawatch/main.go` and `internal/server/api.go` is bumped together, and the CHANGELOG carries a `v9.68.0` heading. If the merge helper renumbers above main, it updates all of these together.
 **Design record:** the proposals index in `docs/plans/README.md`.
 **Parity issue:** `docs/plans/parity-issues/checks-and-ship.md`, filed at merge (not filed yet)
 **How-to:** `docs/howto/automata-checks-and-ship.md`
@@ -33,7 +33,7 @@ Four automatic checks on an Automaton's work (pre-start verifier, plan rules, af
 | 6 | In-process integration test (`TestChecksShipIntegration`) | Done |
 | 7 | Live sandbox-daemon check of settings, routes, CLI and served PWA code | Done, 25 of 25; the ship step and the pre-start block are not run on a live daemon (they need a model-driven run) |
 | 8 | Docs: config reference, implementation, MCP lists, indexes, how-to, testing tracker section | Done |
-| 9 | Version bump, release changelog heading, datawatch-app parity issue | At merge, by the merge helper; the issue is not filed yet |
+| 9 | Version bump, release changelog heading, datawatch-app parity issue | Version 9.68.0 and the changelog heading done; the parity issue is filed at merge (not filed yet) |
 
 ## Parity surface
 
@@ -53,9 +53,9 @@ Four automatic checks on an Automaton's work (pre-start verifier, plan rules, af
 - [x] Functionality implemented.
 - [x] Unit tests added and passing (including `internal/config` tests for the new structs).
 - [x] Live test on a sandbox daemon (settings, routes, CLI, served PWA code).
-- [x] CHANGELOG entry under Unreleased.
+- [x] CHANGELOG entry under the `v9.68.0` heading.
 - [x] `docs/config-reference.yaml`, `docs/implementation.md`, `docs/cursor-mcp.md`, `docs/mcp.md`, `docs/operations.md`, how-to, indexes.
 - [x] `docs/testing-tracker.md` section "Automata checks and ship surfaces".
 - [x] Locales in five languages.
-- [ ] Version bump and release changelog heading: at merge.
+- [x] Version bump to 9.68.0 and release changelog heading.
 - [ ] datawatch-app parity issue filed: at merge.
