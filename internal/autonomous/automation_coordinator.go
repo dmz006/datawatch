@@ -69,8 +69,12 @@ type Coordinator struct {
 	// episode already alerted.
 	now      func() time.Time
 	idleTick time.Duration
-	idleStop chan struct{}
-	alerted  map[string]time.Time
+	// idleTickHook is a test seam: the idle loop calls it first in every
+	// ticker tick when it is not nil. Production code never sets it.
+	idleTickHook func()
+	idleStop     chan struct{}
+	idleDone     chan struct{}
+	alerted      map[string]time.Time
 
 	// repo CI watch (see repo_ci_watch_poll.go). repoCIWatchLastPoll is
 	// the Coordinator's own last-poll instant: the pass only runs when
@@ -154,7 +158,8 @@ func (c *Coordinator) Start() {
 		cancelChild()
 	}
 	c.idleStop = make(chan struct{})
-	go c.idleLoop(c.idleStop, c.idleTick)
+	c.idleDone = make(chan struct{})
+	go c.idleLoop(c.idleStop, c.idleTick, c.idleDone)
 	c.openLaneFill()
 	c.laneFillStop = make(chan struct{})
 	c.laneFillDone = make(chan struct{})
@@ -178,9 +183,12 @@ func (c *Coordinator) Stop() {
 	c.mu.Lock()
 	cancel := c.cancel
 	c.cancel = nil
+	idleDone := c.idleDone
 	if c.idleStop != nil {
 		close(c.idleStop)
 		c.idleStop = nil
+		// idleDone is left set so a second or concurrent Stop caller waits
+		// on the same channel; once closed it returns at once.
 	}
 	laneFillDone := c.laneFillDone
 	if c.laneFillStop != nil {
@@ -191,6 +199,9 @@ func (c *Coordinator) Stop() {
 	c.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if idleDone != nil {
+		<-idleDone
 	}
 	if laneFillDone != nil {
 		<-laneFillDone

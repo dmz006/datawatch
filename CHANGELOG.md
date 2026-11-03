@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Daemon shutdown no longer can panic in the round-two operator-question alert fan-out.** When the daemon stopped while a round-two question alert was being delivered, the final alert write could interleave with the shutdown wait that guarantees every alert had landed, and under load the exit path could panic with `WaitGroup is reused before previous Wait has returned`. The notify path and the shutdown wait are now serialized by a gate, so a notify started before the stop finishes and a notify started after it is also awaited, while the wait still blocks for the in-flight alert write to land; a regression test drives the race window deterministically and asserts the wait returns only after the write.
+
+- **Autonomous mode shutdown no longer removes a worker's temp directory while a pass is still writing.** The coordinator's stop used to return immediately even when the background idle pass cycle (triage, retro and cleanup sweeps) was still running, so a worker in the middle of a pass could crash at daemon exit with `remove <session temp dir>: directory not empty`. The coordinator now blocks its stop until the in-flight pass cycle has fully finished, and a regression test starts the coordinator on a one-millisecond tick, blocks the first pass on an injected hook, and asserts that the stop cannot return before that pass completes.
+
+### Changed
+
+- **The round-five deflake findings report is complete and is the single tracked record of the work.** It now carries the under-load iteration-count-300 before/after evidence for both halves (the question fan-out and the autonomous shutdown), the autonomous half resolves with the fix now present on this branch plus its regression test, and the scratch root-level result file it once referenced was folded into the report itself, keeping the repository root clean. Reuse audit — both fixes extend the existing question-raise notify pipeline (`notifyQuestionRaised` / `WaitQuestionNotifies`) and the autonomous coordinator lifecycle (`Start` / `Stop`); no new primitives were introduced.
+
 ## v9.62.2 — Repository tidy and a plain-English README
 
 ### Changed
