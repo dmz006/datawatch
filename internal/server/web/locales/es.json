@@ -766,6 +766,7 @@
   "about_mcp_tools_none": "no tools exposed",
   "about_mcp_tools_count_suffix": "tools exposed",
   "about_mcp_tools_unavailable": "unavailable",
+  "about_version_skew_note": "Este servidor ejecuta v%1$s, una versión distinta de v%2$s, la que sirve esta página. El comportamiento no cambia y no es necesario recargar.",
   "config_viewer_title": "Config Viewer",
   "config_viewer_refresh": "Refresh",
   "config_viewer_edit": "Edit",
