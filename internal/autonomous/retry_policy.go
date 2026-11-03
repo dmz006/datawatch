@@ -368,7 +368,25 @@ func orContentCategory(category string) string {
 // the caller to treat exactly as it does today (TaskBlocked/story
 // block/PRDBlocked — Phase 1 does not change that terminal behavior,
 // only how many chances a purely mechanical failure gets first).
+//
+// Per-commit verdict cache (judge_verdict_cache.go): before the judge
+// runs, a completed pass/block verdict already recorded for exactly this
+// (commit sha, judge policy, rules) triple is replayed instead; after the
+// judge completes, a successful verdict is stored under that triple. A
+// timed-out or otherwise unfinished judge is never cached, and with the
+// cache disabled the behavior is byte-for-byte the pre-cache loop.
 func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
+	if v, ok := m.judgeVerdictCacheHit(prd, inv); ok {
+		return v, nil
+	}
+	v, err := m.runGuardrailInfraRetry(ctx, prd, inv, fn)
+	m.judgeVerdictCacheRecord(prd, inv, v, err)
+	return v, err
+}
+
+// runGuardrailInfraRetry is the retry loop itself; the public entry
+// runGuardrailWithInfraRetry adds the verdict cache around it.
+func (m *Manager) runGuardrailInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
 	attempt := 0
 	for {
 		v, err := fn(ctx, inv)

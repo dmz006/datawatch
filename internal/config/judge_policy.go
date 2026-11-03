@@ -51,3 +51,24 @@ func (p VerifierPolicyConfig) ForJudge(judgeBackends []string) VerifierPolicyCon
 	p.Backends = list
 	return p
 }
+
+// JudgeVerdictCacheEnabledDefault is the effective value of
+// autonomous.judge_verdict_cache_enabled when the key is not set: the
+// per-commit judge verdict cache is ON by default, so a completed pass
+// or block verdict for a (commit sha, judge policy, rules) triple is
+// replayed from the cache instead of re-running the judge. Only an
+// explicit false turns it off; a timed-out or otherwise unfinished judge
+// is never cached regardless.
+const JudgeVerdictCacheEnabledDefault = true
+
+// NormalizeJudgeVerdictCacheEnabled resolves the
+// autonomous.judge_verdict_cache_enabled flag. A nil (unset) value reads
+// JudgeVerdictCacheEnabledDefault (true); a non-nil pointer reads the
+// operator's stored value, so an explicit false round-trips as false and
+// never silently reverts to the default.
+func NormalizeJudgeVerdictCacheEnabled(enabled *bool) bool {
+	if enabled == nil {
+		return JudgeVerdictCacheEnabledDefault
+	}
+	return *enabled
+}

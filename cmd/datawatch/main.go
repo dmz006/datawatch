@@ -4408,6 +4408,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
 			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
 			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
+			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
@@ -6470,6 +6471,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Per-commit judge verdict cache (judge_verdict_cache.go): replay a
+			// completed pass/block verdict for a (commit, judge policy, rules)
+			// triple instead of re-running the judge. The live
+			// autonomous.judge_verdict_cache_enabled (unset = on, per
+			// NormalizeJudgeVerdictCacheEnabled) gates it, so a runtime config set
+			// is honored without a restart.
+			amgr.SetJudgeVerdictCacheEnabled(func() bool {
+				return config.NormalizeJudgeVerdictCacheEnabled(liveAutonomousConfig().JudgeVerdictCacheEnabled)
+			})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
@@ -10911,7 +10921,7 @@ func runStatus(cfg *config.Config) error {
 	if len(sessions) == 0 {
 		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
 		if err == nil {
-		defer func() { _ = store.Close() }()
+			defer func() { _ = store.Close() }()
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
 					FullID:        s.FullID,
