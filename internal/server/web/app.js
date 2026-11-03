@@ -10222,6 +10222,16 @@ function renderSettingsView() {
             <div class="settings-label">${t('settings_version')||'Version'}</div>
             <div class="settings-value" id="aboutVersion">—</div>
           </div>
+          <!-- Version-skew note: shown only while viewing a federated peer's
+               About page whose daemon runs a different release than the one
+               serving this page. Informational only — never the update banner,
+               never touches _onDaemonVersionChange. -->
+          <div id="aboutVersionSkewNote" style="display:none;padding:0 0 8px;font-size:12px;color:var(--text2);"></div>
+          <!-- Which server the rows above actually describe. Peer name when a
+               federated peer is selected, local hostname otherwise. -->
+          <div class="settings-row">
+            <div class="settings-label" id="aboutShowingServer" style="color:var(--text2);font-size:12px;">—</div>
+          </div>
           <div class="settings-row">
             <div class="settings-label">${t('settings_update')||'Update'}</div>
             <div class="settings-value" id="aboutUpdate">
@@ -13096,14 +13106,35 @@ function loadVersionInfo() {
   // or a selected remote peer) is actually active.
   apiFetch('/api/health')
     .then(data => {
+      loadAboutShowingServer();
       if (!data) return;
       const el = document.getElementById('aboutVersion');
       if (el) {
         const ver = data.version || '?';
         el.innerHTML = `<a href="https://github.com/dmz006/datawatch/releases/tag/v${encodeURIComponent(ver)}" target="_blank" rel="noopener" style="color:var(--accent2);">v${escHtml(ver)}</a>`;
       }
+      // Version-skew note: only when a federated peer is selected and its
+      // daemon (the proxied /api/health version) differs from the daemon
+      // serving this page (state._daemonVersion). Informational note only --
+      // not the update banner, and deliberately NOT _onDaemonVersionChange.
+      const noteEl = document.getElementById('aboutVersionSkewNote');
+      if (noteEl) {
+        const active = state.activeServer;
+        const isPeer = !!active && active !== 'local' && active !== 'all';
+        const peerVer = data.version || '';
+        const localVer = state._daemonVersion || '';
+        if (isPeer && peerVer && localVer && peerVer !== localVer) {
+          noteEl.style.display = '';
+          noteEl.innerHTML = escHtml(t('about_version_skew_note', [peerVer, localVer])
+            || `This server is running v${peerVer}, a different release than v${localVer}, the one serving this page. Behavior is unchanged and no reload is needed.`);
+        } else {
+          noteEl.style.display = 'none';
+          noteEl.innerHTML = '';
+        }
+      }
     })
     .catch(e => {
+      loadAboutShowingServer();
       const el = document.getElementById('aboutVersion');
       const msg = _fedMsg(e, null);
       if (el && msg) el.innerHTML = `<span style="color:var(--error);">${escHtml(msg)}</span>`;
@@ -13113,6 +13144,19 @@ function loadVersionInfo() {
   loadAboutOrphanedTmux();
   loadAboutFinishedOneShots();
 }
+
+// About tab "Showing:" line — which server the About rows above actually
+// describe. A federated peer's own name when one is selected; the local
+// hostname label (when known) when viewing the local server.
+function loadAboutShowingServer() {
+  const el = document.getElementById('aboutShowingServer');
+  if (!el) return;
+  const active = state.activeServer;
+  const isPeer = !!active && active !== 'local' && active !== 'all';
+  const name = isPeer ? active : (_localHostname || (t('server_local_label') || 'this server'));
+  el.textContent = t('about_showing_server', [name]) || ('Showing: ' + name);
+}
+window.loadAboutShowingServer = loadAboutShowingServer;
 
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
