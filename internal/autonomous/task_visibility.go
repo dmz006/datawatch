@@ -48,6 +48,14 @@ type TaskWaitView struct {
 	// of the task id. Both are added beside, never instead of, the id fields.
 	Readable string `json:"readable,omitempty"`
 	ShortID  string `json:"short_id,omitempty"`
+	// Priority is the Automaton's capacity-queue priority (higher first); 0 =
+	// no priority set, which renders exactly as before (omitempty).
+	Priority int `json:"priority,omitempty"`
+	// PrioritySource labels where the priority came from: "explicit" (the
+	// operator pinned it), "kind" (the priority_by_kind table) or
+	// "default" (nothing set; reads 0). Empty when the Automaton carries no
+	// priority record at all.
+	PrioritySource string `json:"priority_source,omitempty"`
 }
 
 // TaskHoldView is one running task in the status and capacity responses:
@@ -92,6 +100,8 @@ type visPRD struct {
 	id, title, projectDir, branch string
 	status                        PRDStatus
 	tasks                         []visTask
+	priority                      int
+	prioritySource                string
 }
 
 // snapshotVisibility copies the live PRDs' tasks out of the store.
@@ -107,7 +117,8 @@ func (m *Manager) snapshotVisibility() []visPRD {
 			default:
 				return
 			}
-			v := visPRD{id: p.ID, title: p.Title, projectDir: p.ProjectDir, branch: p.Git.Branch, status: p.Status}
+			v := visPRD{id: p.ID, title: p.Title, projectDir: p.ProjectDir, branch: p.Git.Branch, status: p.Status,
+				priority: p.Priority, prioritySource: p.PrioritySource}
 			for i := range p.Story {
 				for j := range p.Story[i].Tasks {
 					t := &p.Story[i].Tasks[j]
@@ -242,6 +253,7 @@ func (m *Manager) waitingTaskView(p visPRD, t *visTask, waiters map[string]capac
 		Cause: cause, Reason: reason, Since: since,
 		ResetsAt: waitResetsAt(cause, reason, bo, cooldownFn, budgets),
 		Holder:   waitReasonHolder(cause, reason),
+		Priority: p.priority, PrioritySource: p.prioritySource,
 	}
 }
 
@@ -251,6 +263,7 @@ func (m *Manager) waitingTaskView(p visPRD, t *visTask, waiters map[string]capac
 func queuedTaskView(p visPRD, t *visTask, byID map[string]*visTask, ahead int) (TaskWaitView, bool) {
 	w := TaskWaitView{
 		TaskID: t.id, PRDID: p.id, PRDTitle: p.title, TaskTitle: t.title, Since: t.updatedAt,
+		Priority: p.priority, PrioritySource: p.prioritySource,
 	}
 	var unfinished []string
 	for _, dep := range t.dependsOn {
