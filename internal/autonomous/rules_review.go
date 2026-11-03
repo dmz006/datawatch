@@ -70,7 +70,8 @@ func (m *Manager) rulesReviewSuffix(prd *PRD) string {
 		" you can see what actually changed and what the rules actually say." +
 		" Report every rule you find violated or skipped, not just the" +
 		" first one you notice. A clean pass is a real possibility — do not" +
-		" invent an issue just to have something to report."
+		" invent an issue just to have something to report." +
+		m.generatedArtefactReviewText(prd)
 }
 
 // presentRulesContextFiles returns whichever of the configured rules/
