@@ -153,14 +153,16 @@ Behaviours worth knowing:
 - **Re-selecting the active server is a no-op.** Tapping the chip that is
   already active does not reload the view, refetch data or reset scroll
   position and filters.
-- **Back to \<hostname\>.** While a remote server is active, an explicit
-  **Back to \<hostname\>** control (where \<hostname\> is this daemon's own
-  name) returns you to local data in one tap, without hunting for the
-  **Local** chip.
-- **Showing: \<hostname\> header line.** Every page carries a
-  **Showing: \<hostname\>** line in its header naming the server whose data
-  is on screen, so you always know whether you are looking at local or
-  remote data.
+- **Back to \<hostname\>.** When a remote server cannot be reached and
+  no sessions are loaded, the error panel offers an explicit
+  **Back to \<hostname\>** button (where \<hostname\> is this daemon's own
+  name) that returns you to local data in one tap. It appears only in that
+  unreachable-server state, not on every view; otherwise use the **Local**
+  chip.
+- **Showing: \<name\> header line.** Every page carries a
+  **Showing: \<name\>** line above the view naming the server whose data
+  is on screen: the server's hostname, or **All servers** in all-servers
+  mode.
 
 ## All-servers (aggregated) mode
 

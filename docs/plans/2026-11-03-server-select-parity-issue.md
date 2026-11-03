@@ -8,8 +8,8 @@ Not yet filed; file it with the merge that ships the PWA change.
 The PWA server picker (per-tab chip bar) changes in three ways:
 
 - Re-selecting the already-active server does nothing.
-- A remote server view gains an explicit "Back to <hostname>" control.
-- Every page header shows a "Showing: <hostname>" line.
+- When a remote server is unreachable, its error panel gains an explicit "Back to <hostname>" button.
+- Every page shows a "Showing: <name>" line (hostname, or "All servers" in all-servers mode).
 
 ## Parity surface
 
@@ -19,8 +19,8 @@ equivalent of each:
 | Changed behaviour (PWA) | Expected mobile equivalent |
 |---|---|
 | Re-selecting the active server is a no-op (no refetch, no reset of scroll or filters) | Tapping the already-selected server in the server switcher does nothing: no reload, no navigation, no state reset |
-| Explicit "Back to <hostname>" control while a remote server is active | A visible "Back to <hostname>" action on every screen while a remote server is selected, returning to the local daemon in one tap |
-| "Showing: <hostname>" line in every page header | A "Showing: <hostname>" line in each screen's header or subtitle naming the server whose data is displayed (local hostname or the selected remote) |
+| "Back to <hostname>" button in the unreachable-remote error panel (shown only when the remote cannot be reached and no sessions are loaded) | The same button in the mobile error state for an unreachable remote server, returning to the local daemon in one tap; not a persistent control |
+| "Showing: <name>" line on every page | A "Showing: <name>" line in each screen's header or subtitle naming the server whose data is displayed (hostname, or "All servers" in all-servers mode) |
 
 ```
 PWA:                internal/server/web (server chip bar, page header)
@@ -35,9 +35,9 @@ implementation in this branch is the reference.
 
 1. Select a remote server, then select it again: no network request fires
    and the view state is unchanged.
-2. With a remote server active, the "Back to <hostname>" control is visible;
+2. With a remote server unreachable, the error state shows "Back to <hostname>";
    using it returns to local data.
-3. Every screen shows "Showing: <hostname>" and it updates when the server
+3. Every screen shows "Showing: <name>" and it updates when the server
    changes.
 
 ## Context / links
