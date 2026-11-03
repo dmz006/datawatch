@@ -94,3 +94,25 @@ func TestDropGeneratedTasks_GateAndSmokeNeverDropped(t *testing.T) {
 		t.Fatal("final_gate/smoke must be kept")
 	}
 }
+
+func TestClassifyGeneratedTask_CodeTasksNamingArtefactsKept(t *testing.T) {
+	for _, title := range []string{
+		"Add a changelog parser to the CLI",
+		"Add tracker rows to the status table",
+		"Fix the gate report renderer",
+		"Implement the registry row sorter",
+	} {
+		if k, ok := ClassifyGeneratedTask(title, "", nil); ok {
+			t.Fatalf("%q classified as %s", title, k)
+		}
+	}
+	if _, ok := ClassifyGeneratedTask("Fix the scanner", "", []string{"docs/plans/reports/x.md"}); ok {
+		t.Fatal("title not naming an artefact must be kept")
+	}
+	if _, ok := ClassifyGeneratedTask("Write the gate report", "Edit internal/x/render.go too", nil); ok {
+		t.Fatal("spec naming source files must be kept")
+	}
+	if k, ok := ClassifyGeneratedTask("Update CHANGELOG.md for the release", "", []string{"CHANGELOG.md"}); !ok || k != genartifacts.ChangelogDraft {
+		t.Fatal("changelog task should classify")
+	}
+}

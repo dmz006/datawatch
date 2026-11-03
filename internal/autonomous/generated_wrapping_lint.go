@@ -33,29 +33,58 @@ type generatedKindInfo struct {
 var generatedKindTable = map[genartifacts.Kind]generatedKindInfo{
 	genartifacts.GateReport: {
 		noun: "the gate report", key: "gate_report",
-		title:   regexp.MustCompile(`(?i)\bgate[- ]report\b`),
+		title:   genNounTitle(`gate[- ]reports?`),
 		pathHit: func(p string) bool { return strings.HasPrefix(p, "docs/plans/reports/") },
 	},
 	genartifacts.ChangelogDraft: {
 		noun: "the changelog entry", key: "changelog_draft",
-		title:   regexp.MustCompile(`(?i)\bchangelog\b`),
+		title:   genNounTitle(`(?:changelog(?:\.md)?(?:\s+(?:entry|entries|draft|section|line))?)`),
 		pathHit: func(p string) bool { return strings.EqualFold(p, "CHANGELOG.md") },
 	},
 	genartifacts.ParityDraft: {
 		noun: "the datawatch-app parity draft", key: "parity_draft",
-		title:   regexp.MustCompile(`(?i)\bparity[- ](?:issue|draft)s?\b|\bdatawatch-app parity\b`),
+		title:   genNounTitle(`(?:datawatch-app\s+)?parity\s+(?:issues?|drafts?)(?:\s+text)?`),
 		pathHit: func(p string) bool { return strings.HasPrefix(p, "docs/plans/parity-issues/") },
 	},
 	genartifacts.TrackerRows: {
 		noun: "the testing-tracker rows", key: "tracker_rows",
-		title:   regexp.MustCompile(`(?i)\btesting[- ]tracker\b|\btracker rows?\b`),
+		title:   genNounTitle(`(?:testing[- ]tracker(?:\.md)?\s+rows?|testing[- ]tracker|tracker\s+rows?)`),
 		pathHit: func(p string) bool { return p == "docs/testing-tracker.md" },
 	},
 	genartifacts.RegistryRow: {
 		noun: "the registry row", key: "registry_row",
-		title:   regexp.MustCompile(`(?i)\bregistry rows?\b|\bplans? registry\b|\bplans? index\b`),
+		title:   genNounTitle(`(?:(?:plans?\s+)?registry\s+rows?|plans?\s+(?:registry|index)(?:\s+row)?)`),
 		pathHit: func(p string) bool { return p == "docs/plans/README.md" },
 	},
+}
+
+// genNounTitle builds an anchored whole-title matcher: a write verb, optional
+// determiner/adjective, the artefact noun phrase, and at most a trailing
+// "for ..." clause or an "in/to <path>" target. A title that continues with
+// any other word ("changelog parser", "gate report renderer", "tracker rows
+// to the status table") describes code work and does not match.
+func genNounTitle(noun string) *regexp.Regexp {
+	return regexp.MustCompile(`(?i)^\s*[a-z]+\s+(?:(?:the|a|an|new|generated)\s+)*` + noun +
+		`(?:\s+(?:for|of)\s+.+|\s+(?:in|to|into)\s+\S*(?:/|\.md)\S*)?\s*\.?\s*$`)
+}
+
+// genSpecCodeRe flags a spec that names source files: such a task also
+// changes code and is not a whole-artefact task.
+var genSpecCodeRe = regexp.MustCompile(`(?i)\b[\w./-]+\.(?:go|js|ts|tsx|py|rs|java|sh|css|html|ya?ml|json|sql)\b`)
+
+func genTitleHasArtefactVerb(title string) bool {
+	if titleStartsWithWriteVerb(title) {
+		return true
+	}
+	f := strings.Fields(title)
+	if len(f) == 0 {
+		return false
+	}
+	switch strings.ToLower(f[0]) {
+	case "draft", "generate", "record", "file", "append", "prepare":
+		return true
+	}
+	return false
 }
 
 func normalizeGenPath(p string) string {
@@ -76,26 +105,12 @@ func generatedKindOfPath(p string) (genartifacts.Kind, bool) {
 }
 
 // ClassifyGeneratedTask reports the artefact kind a task exists to produce.
-// A task qualifies only when its whole purpose is the artefact: every listed
-// file is a target of one kind, or (no files listed) the title is a write verb
-// naming that artefact. A task that lists any other file, or targets several
-// kinds, is part of a larger change and is not recognised.
+// A task qualifies only when its whole purpose is the artefact: the title is
+// a write verb plus the artefact noun and nothing else, the spec names no
+// source files, and every listed file (if any) is a target of that same kind.
+// Anything else is part of a larger change and is not recognised.
 func ClassifyGeneratedTask(title, spec string, files []string) (genartifacts.Kind, bool) {
-	if len(files) > 0 {
-		var kind genartifacts.Kind
-		for i, f := range files {
-			k, ok := generatedKindOfPath(f)
-			if !ok {
-				return "", false
-			}
-			if i > 0 && k != kind {
-				return "", false
-			}
-			kind = k
-		}
-		return kind, true
-	}
-	if !titleStartsWithWriteVerb(title) {
+	if !genTitleHasArtefactVerb(title) || genSpecCodeRe.MatchString(spec) {
 		return "", false
 	}
 	var found genartifacts.Kind
@@ -108,6 +123,13 @@ func ClassifyGeneratedTask(title, spec string, files []string) (genartifacts.Kin
 	}
 	if n != 1 {
 		return "", false
+	}
+	// Every listed file must be a target of the same kind the title names.
+	for _, f := range files {
+		k, ok := generatedKindOfPath(f)
+		if !ok || k != found {
+			return "", false
+		}
 	}
 	return found, true
 }
