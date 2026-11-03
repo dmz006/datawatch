@@ -106,7 +106,7 @@ func TestBurnGuardHoldDeadlineTracksResetAndZone(t *testing.T) {
 		t.Fatalf("entries = %d, want 1", len(es))
 	}
 	e := es[0]
-	next, err := server.UsageCalculatorSettings(cfg.Usage.Calculator).Reset.NextReset(now)
+	next, err := server.UsageCalculatorSettings(cfg.Usage).Reset.NextReset(now)
 	if err != nil {
 		t.Fatalf("reset spec does not resolve: %v", err)
 	}

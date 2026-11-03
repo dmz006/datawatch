@@ -171,7 +171,7 @@ func (a burnGuardAdmission) holdDeadline(now time.Time) (time.Time, bool) {
 	if a.cfg == nil {
 		return until, false
 	}
-	reset, err := server.UsageCalculatorSettings(a.cfg.Usage.Calculator).Reset.NextReset(now)
+	reset, err := server.UsageCalculatorSettings(a.cfg.Usage).Reset.NextReset(now)
 	if err != nil {
 		return until, false
 	}
