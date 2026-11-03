@@ -82,8 +82,7 @@ func TestPRDDetailCapTruncatesWithMarker(t *testing.T) {
 	task := got.Story[0].Tasks[0]
 
 	for name, text := range map[string]string{
-		"prd spec": got.Spec, "memory report": got.MemoryReport, "story description": got.Story[0].Description,
-		"task spec": task.Spec, "task error": task.Error, "hint": task.PriorAttemptHint,
+		"memory report": got.MemoryReport, "task error": task.Error, "hint": task.PriorAttemptHint,
 		"tail": task.StartFailureTail[0], "ref": task.AttemptRefs[0],
 		"raw judge": task.Verification.RawJudge, "issue": task.Verification.Issues[0],
 	} {
@@ -97,24 +96,45 @@ func TestPRDDetailCapTruncatesWithMarker(t *testing.T) {
 			t.Errorf("%s: prefix damaged", name)
 		}
 	}
+	// The write-back fields come back whole and unmarked, so a capped reply
+	// can be read and saved back verbatim.
+	if got.Spec != prd.Spec || strings.Contains(got.Spec, "[truncated") {
+		t.Error("prd spec must be returned whole with no marker")
+	}
+	if got.Story[0].Description != prd.Story[0].Description || strings.Contains(got.Story[0].Description, "[truncated") {
+		t.Error("story description must be returned whole with no marker")
+	}
+	if task.Spec != prd.Story[0].Tasks[0].Spec || strings.Contains(task.Spec, "[truncated") {
+		t.Error("task spec must be returned whole with no marker")
+	}
+	for _, list := range [][]autonomous.TruncatedField{got.Truncated, got.Story[0].Truncated, task.Truncated} {
+		for _, f := range list {
+			if strings.HasPrefix(f.Field, "spec") || f.Field == "description" {
+				t.Errorf("write-back field %q listed in truncated: %+v", f.Field, f)
+			}
+		}
+	}
 	if task.StartFailureTail[1] != "short" || got.Story[0].Tasks[1].Spec != "small spec" {
 		t.Error("short fields must be untouched")
 	}
-	if len(task.Truncated) != 7 {
-		t.Fatalf("task truncated notes = %d, want 7: %+v", len(task.Truncated), task.Truncated)
+	if len(task.Truncated) != 6 {
+		t.Fatalf("task truncated notes = %d, want 6: %+v", len(task.Truncated), task.Truncated)
 	}
 	for _, f := range task.Truncated {
 		if f.Ref != "/api/autonomous/prds/cap00001/tasks/t1/outputs" || f.Bytes <= f.Kept || f.Kept <= 0 {
 			t.Errorf("bad note %+v", f)
 		}
 	}
-	if len(got.Truncated) != 2 || got.Truncated[0].Ref != "/api/autonomous/prds/cap00001/outputs" {
+	if len(got.Truncated) != 1 || got.Truncated[0].Field != "memory_report" || got.Truncated[0].Ref != "/api/autonomous/prds/cap00001/outputs" {
 		t.Errorf("prd notes: %+v", got.Truncated)
 	}
 	if len(got.Story[0].Tasks[1].Truncated) != 0 {
 		t.Error("untruncated task must carry no notes")
 	}
-	if rr.Body.Len() > 200<<10 {
+	// Three 100 KiB write-back fields now pass whole, plus the capped heavy
+	// fields at about 4 KiB each — the reply stays far below the full
+	// stored size.
+	if rr.Body.Len() > 400<<10 {
 		t.Errorf("capped reply is %d bytes", rr.Body.Len())
 	}
 }
@@ -190,10 +210,14 @@ func TestPRDDetailCapConfigAndOff(t *testing.T) {
 	if off.Spec != capTestPRD().Spec || len(off.Truncated) != 0 {
 		t.Error("cap off: spec must be returned whole")
 	}
-	// 0 means the 4 KiB default; the 100 KiB fields are cut near it.
+	// 0 means the 4 KiB default: the write-back field stays whole, while the
+	// heavy fields are still cut near it.
 	def := prdDetailDecode(t, prdDetailGet(t, prdDetailServer(prd, 0), "/api/autonomous/prds/cap00001"))
-	if n := len(def.Spec); n < autonomous.DefaultDetailTextCap || n > autonomous.DefaultDetailTextCap+80 {
-		t.Errorf("default cap: spec is %d bytes", n)
+	if def.Spec != capTestPRD().Spec || strings.Contains(def.Spec, "[truncated") {
+		t.Error("default cap: spec must be returned whole")
+	}
+	if n := len(def.MemoryReport); n < autonomous.DefaultDetailTextCap || n > autonomous.DefaultDetailTextCap+80 {
+		t.Errorf("default cap: memory report is %d bytes, want about %d", n, autonomous.DefaultDetailTextCap)
 	}
 	// detail=tasks reads the same cap for the error text.
 	var tv autonomous.TasksView
@@ -221,13 +245,17 @@ func TestPRDDetailCapListSummaryDoesNotReadHeavyFields(t *testing.T) {
 }
 
 func TestPRDDetailCapUTF8Boundary(t *testing.T) {
-	prd := &autonomous.PRD{ID: "cap00002", Spec: strings.Repeat("é", 5000)}
+	big := strings.Repeat("é", 5000)
+	prd := &autonomous.PRD{ID: "cap00002", Spec: big, MemoryReport: big}
 	for max := 1000; max < 1004; max++ {
 		out := autonomous.CapPRDText(prd, max)
-		if !strings.Contains(out.Spec, "[truncated") {
+		if out.Spec != big {
+			t.Fatal("spec must not be capped")
+		}
+		if !strings.Contains(out.MemoryReport, "[truncated") {
 			t.Fatal("expected a cut")
 		}
-		body := out.Spec[:strings.Index(out.Spec, "\n…[truncated")]
+		body := out.MemoryReport[:strings.Index(out.MemoryReport, "\n…[truncated")]
 		if len(body) > max || strings.ContainsRune(body, '�') || !json.Valid([]byte(`"`+body+`"`)) {
 			t.Errorf("max %d: bad cut of %d bytes", max, len(body))
 		}
@@ -235,10 +263,11 @@ func TestPRDDetailCapUTF8Boundary(t *testing.T) {
 }
 
 func TestPRDDetailCapEditTaskRejectsTruncatedSpec(t *testing.T) {
-	prd := capTestPRD()
-	s := prdDetailServer(prd, 4096)
-	got := prdDetailDecode(t, prdDetailGet(t, s, "/api/autonomous/prds/cap00001"))
-	body, _ := json.Marshal(map[string]string{"task_id": "t1", "new_spec": got.Story[0].Tasks[0].Spec})
+	// The spec itself is no longer capped in a reply, but a spec copied from
+	// another capped view (marker pasted in, text added after it) is refused.
+	marked := "copied spec text\n…[truncated: kept 12 of 5000 bytes] operator notes after the cut"
+	body, _ := json.Marshal(map[string]string{"task_id": "t1", "new_spec": marked})
+	s := prdDetailServer(capTestPRD(), 4096)
 	rr := httptest.NewRecorder()
 	s.handleAutonomousPRDs(rr, httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/cap00001/edit_task", strings.NewReader(string(body))))
 	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), "truncation marker") {

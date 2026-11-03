@@ -11,8 +11,8 @@ import (
 const DefaultDetailTextCap = 4096
 
 // TruncatedField names one text field the default detail reply cut short.
-// Field is a path such as "spec", "tasks.start_failure_tail[0]" or
-// "verification.raw_judge", Bytes is the stored length, Kept is how many
+// Field is a path such as "memory_report", "error", "start_failure_tail[0]"
+// or "verification.raw_judge", Bytes is the stored length, Kept is how many
 // bytes the reply kept, and Ref is the URL of the full text.
 type TruncatedField struct {
 	Field string `json:"field"`
@@ -36,11 +36,12 @@ func ResolveDetailTextCap(configured int) int {
 // truncationMarker starts the marker capText appends to a cut field.
 const truncationMarker = "\n…[truncated: kept "
 
-// HasTruncationMarker reports whether s ends with the marker of a capped
-// field, so a write can refuse text copied from a capped view.
+// HasTruncationMarker reports whether s carries the marker of a capped
+// field, so a write can refuse text copied from a capped view. The marker is
+// conclusive anywhere in the text: a copy pasted from a capped view and
+// edited after the cut is still a copy of a capped field, not the original.
 func HasTruncationMarker(s string) bool {
-	i := strings.LastIndex(s, truncationMarker)
-	return i >= 0 && strings.HasSuffix(s, " bytes]") && !strings.Contains(s[i+1:], "\n")
+	return strings.Contains(s, truncationMarker)
 }
 
 // capText returns s cut to at most max bytes on a rune boundary, with a
@@ -109,8 +110,12 @@ func OutputsRef(prdID, taskID string) string {
 	return "/api/autonomous/prds/" + prdID + "/tasks/" + taskID + "/outputs"
 }
 
-// CapPRDText returns a copy of prd whose long text fields are cut to max
-// bytes each (see TruncatedField). prd itself, and so the stored record, is
+// CapPRDText returns a copy of prd whose heavy output fields are cut to max
+// bytes each (see TruncatedField). The fields a write-back edit can carry
+// back whole — the PRD spec, each story description and each task spec — are
+// never cut, so a capped reply can always be read and saved back verbatim;
+// memory_report, task error, verdicts, start_failure_tail, raw judge and
+// sibling output text keep the cap. prd itself, and so the stored record, is
 // never modified: every slice and pointer the cap touches is copied first.
 // max <= 0 returns prd unchanged. A nil prd yields nil.
 func CapPRDText(prd *PRD, max int) *PRD {
@@ -119,7 +124,6 @@ func CapPRDText(prd *PRD, max int) *PRD {
 	}
 	out := *prd
 	pc := &capper{max: max, ref: OutputsRef(prd.ID, "")}
-	pc.str("spec", &out.Spec)
 	pc.str("memory_report", &out.MemoryReport)
 	out.Truncated = pc.hits
 
@@ -128,7 +132,6 @@ func CapPRDText(prd *PRD, max int) *PRD {
 	for si := range out.Story {
 		st := &out.Story[si]
 		sc := &capper{max: max, ref: pc.ref}
-		sc.str("description", &st.Description)
 		st.Verdicts = sc.verdicts("verdicts", st.Verdicts)
 		st.Truncated = sc.hits
 		if len(st.Tasks) == 0 {
@@ -143,10 +146,10 @@ func CapPRDText(prd *PRD, max int) *PRD {
 	return &out
 }
 
-// capTask caps t in place; t must be a copy.
+// capTask caps t's heavy output fields in place; t must be a copy. t.Spec
+// is the write-back field and is returned whole, unmarked.
 func capTask(t *Task, max int) {
 	c := &capper{max: max, ref: OutputsRef(t.PRDID, t.ID)}
-	c.str("spec", &t.Spec)
 	c.str("error", &t.Error)
 	c.str("prior_attempt_hint", &t.PriorAttemptHint)
 	t.StartFailureTail = c.strs("start_failure_tail", t.StartFailureTail)
