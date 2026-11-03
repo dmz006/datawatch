@@ -69,7 +69,7 @@ func TestRegistryReadmeUnreadable(t *testing.T) {
 
 func TestRegistryReadmeWritesNothing(t *testing.T) {
 	d := writeRegistryTree(t, regHead+"| 1 | BL1 | done | - |\n", "2026-10-02-orphan.md")
-	CheckRegistryReadme(d)
+	_, _ = CheckRegistryReadme(d)
 	es, _ := os.ReadDir(filepath.Join(d, "docs", "plans"))
 	if len(es) != 2 {
 		t.Fatalf("directory changed: %d entries", len(es))

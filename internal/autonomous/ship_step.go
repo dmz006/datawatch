@@ -172,9 +172,7 @@ func (m *Manager) recordShipStep(prd *PRD, p ShipPolicy, r ShipResult) {
 	if r.Tag != "" {
 		lines = append(lines, "tag "+r.Tag)
 	}
-	for _, c := range r.Commands {
-		lines = append(lines, c)
-	}
+	lines = append(lines, r.Commands...)
 	lines = append(lines, r.Notes...)
 	mode := p.Push
 	if mode == config.ChecksModeOff {

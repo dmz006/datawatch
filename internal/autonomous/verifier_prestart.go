@@ -77,7 +77,7 @@ func CheckVerifierPrestart(projectDir, script string) PrestartResult {
 	if err != nil {
 		return problem("verification script %q cannot be opened: %v", script, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	head, _ := bufio.NewReader(f).Peek(2)
 	if string(head) != "#!" {
 		return problem("verification script %q has no shebang line", script)
