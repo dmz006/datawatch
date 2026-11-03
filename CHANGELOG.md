@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.70.1 — Secret references in LLM API keys are resolved at call time
+
+An LLM entry whose API key is a `${secret:name}` reference now works with every adapter.
+
+- The key reference is resolved from the secrets store at call time, for the OpenWebUI, Claude, Gemini and OpenCode API adapters. Before, the reference text itself was sent as the bearer token and the provider answered 401.
+- Every resolution is written to the audit log (JSON lines and CEF), without the secret value.
+- A missing secret fails the call with a message that names the secret, and nothing is sent.
+- The secrets how-to and the LLM registry how-to describe keeping keys out of configuration files.
+
 ## v9.70.0 — Explicit retry backend honoured by capacity admission
 
 A task retried with an explicit backend now waits on the pool it asked for, and says so.
