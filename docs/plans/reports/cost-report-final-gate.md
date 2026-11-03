@@ -23,7 +23,7 @@ ref check, version match and the live smoke evidence all pass.
 | `go test ./...` (full suite) | **FAIL** | single failing package, see below; every other package `ok` |
 | `node --check internal/server/web/app.js` | **PASS** | node v24.15.0 |
 | `node --test internal/server/web/*.test.js` | **PASS** | tests 2026, pass 2026, fail 0, skipped/todo 0, 2.8 s |
-| `golangci-lint run ./...` | **FAIL** | golangci-lint present at `/home/dmz/go/bin/golangci-lint`; 4 issues (`errcheck: 4`), rc 1 |
+| `golangci-lint run ./...` | **FAIL** | golangci-lint present at `/home/<user>/go/bin/golangci-lint`; 4 issues (`errcheck: 4`), rc 1 |
 | `bash scripts/check-no-internal-refs.sh` | **PASS** | "✓ PASS: no internal refs in user-facing surfaces." |
 | `bash scripts/check-no-local-leaks.sh` | **FAIL** | 6 "home" findings, all inside the tracked `tmp/live-smoke/` directory; rc 1 |
 | Version match (main.go vs api.go) | **PASS** | `cmd/datawatch/main.go:123` and `internal/server/api.go:205` both `var Version = "9.66.0"` |
