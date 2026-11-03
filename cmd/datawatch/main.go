@@ -7295,6 +7295,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					amgr.SetSupervisorWatchNodeView(computeReg)
 				}
 				amgr.SetSupervisorWatchSessionLookup(mgr.GetSession)
+				// The silence check reuses the session package's own
+				// liveness signal: a verdict on each working session
+				// (ClassifyLiveness via Manager.LivenessVerdictFor) is
+				// authoritative over the worktree signals; no verdict and
+				// the check falls back exactly as before.
+				amgr.SetSupervisorWatchLiveness(autonomouspkg.SessionSupervisorWatchLiveness{Verdict: mgr.LivenessVerdictFor})
 			}
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and

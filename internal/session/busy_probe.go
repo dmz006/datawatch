@@ -248,6 +248,28 @@ func (m *Manager) livenessVerdictFor(sess *Session, now time.Time) LivenessVerdi
 	return ClassifyLiveness(in)
 }
 
+// LivenessVerdictFor applies the liveness rule (ClassifyLiveness) to the
+// session at id — full id or short id, the same lookup GetSession applies —
+// and the caller's now, and reports the verdict with true. An unknown or
+// missing session reports (LivenessNoOpinion, false): the caller has no
+// verdict to work with and keeps its own fallback. A session with no
+// recorded backend family (legacy records) likewise reports no verdict:
+// the rule cannot say what kind of worker it is applied to, and reading
+// that as death would flip the caller's judgement on a record the rule
+// is not about. This is the exported entry point for other packages (the
+// autonomous supervisor watch) that want the same liveness signal the
+// busy probe and gap watcher use.
+func (m *Manager) LivenessVerdictFor(id string, now time.Time) (LivenessVerdict, bool) {
+	if m == nil || m.store == nil {
+		return LivenessNoOpinion, false
+	}
+	sess, ok := m.GetSession(id)
+	if !ok || sess == nil || sess.BackendFamily == "" {
+		return LivenessNoOpinion, false
+	}
+	return m.livenessVerdictFor(sess, now), true
+}
+
 // applyBusyProbe makes a Running or WaitingInput session Running when its
 // backend is visibly working, and reports whether it did. Claude-code uses
 // the pane busy probe; every other recorded family uses the liveness rule

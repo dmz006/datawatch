@@ -11,11 +11,18 @@
 //     of its repository (worktree_not_registered);
 //
 //   - an Automaton with a task in progress or verifying has gone
-//     silent (worktree_silent): its newest activity — the newest
-//     modification time of any non-`.git` file in the worktree, plus
-//     the newest worker transcript or log file the existing session
-//     code already knows for that session — is older than the watch's
-//     silence window (SupervisorWatchConfig.EffectiveSilentMinutes).
+//     silent (worktree_silent): first the session package's own
+//     liveness signal (internal/session/ClassifyLiveness, reused by
+//     this check through the SupervisorWatchLivenessSource adapter in
+//     supervisor_watch_liveness.go) decides it — a worker verdict
+//     running is never silent, a stalled worker (dead, or alive and
+//     silent beyond the liveness window) is silent, a worker at a real
+//     prompt is waiting, not silent; when no session verdict is
+//     available the check falls back to the worktree's newest activity
+//     (the newest non-`.git` file change, plus the newest worker
+//     transcript or log file the existing session code already knows
+//     for the working sessions) against the watch's silence window
+//     (SupervisorWatchConfig.EffectiveSilentMinutes).
 //
 // Like the host checks (supervisor_watch_host.go) and the work
 // checks (supervisor_watch_work.go), the checks are pure over their
@@ -125,15 +132,26 @@ func (a SessionSupervisorWatchSessionLogger) SessionLogPath(sessionID string) (s
 // SupervisorWatchWorktree runs the worktree checks. It holds the
 // injected filesystem and clock views, the view of the session
 // records' log files, the watch config (the only place the silence
-// window's default is applied, via EffectiveSilentMinutes), and the
+// window's default is applied, via EffectiveSilentMinutes), the
 // registered base repository: the base of the repository this fleet
 // runs in, taken from the configuration — the one absolute path the
 // checks may use, the same base repository the manager's worktree
-// integrity check reads (cfg.WorktreeBaseRepo).
+// integrity check reads (cfg.WorktreeBaseRepo). Liveness (optional,
+// supervisor_watch_liveness.go) is the view of the session package's
+// own liveness verdicts; when it yields verdicts for an Automaton's
+// working sessions, CheckSilent trusts them before it reads any
+// worktree signal.
 type SupervisorWatchWorktree struct {
 	FS       SupervisorWatchWorktreeFS
 	Clock    SupervisorWatchClock
 	Sessions SupervisorWatchSessionLogger
+	// Liveness is the worker-session liveness verdict source
+	// (SupervisorWatchLivenessSource, supervisor_watch_liveness.go).
+	// Nil (or a source with no verdicts) keeps CheckSilent on its
+	// worktree-signal behaviour; a source with verdicts makes them
+	// authoritative for that Automaton. Nil is legal — an unwired
+	// source never changes behaviour.
+	Liveness SupervisorWatchLivenessSource
 	Config   SupervisorWatchConfig
 	BaseRepo string
 }
@@ -273,17 +291,29 @@ func (w *SupervisorWatchWorktree) CheckNotRegistered(prds []*PRD) []SupervisorWa
 }
 
 // CheckSilent returns one worktree_silent finding per running
-// Automaton that has a task in progress or verifying whose newest
-// activity is older than the silence window in effect
-// (config.EffectiveSilentMinutes — the only place the 60-minute
-// default is applied). "Activity" is the newest of: the newest
-// modification time of any non-`.git` file in the worktree, and the
-// newest worker transcript or log file the existing session code
-// already knows for the session of a task the Automaton is working
-// on (SessionSupervisorWatchSessionLogger). An Automaton with no
-// task in progress or verifying is not expected to be active and
-// never raises; so does the check when it could observe no activity
-// at all (unknown, no finding).
+// Automaton that has a task in progress or verifying and is silent.
+// Silence is judged in two tiers:
+//
+//  1. the session liveness verdicts: when the Liveness source
+//     (supervisor_watch_liveness.go) reports verdicts for the
+//     Automaton's working sessions (their worker and verifier
+//     sessions), those verdicts are authoritative — a session reported
+//     running is never silent, one reported stalled (dead process, or
+//     alive and silent beyond the liveness window) makes the Automaton
+//     silent, and one at a real prompt is waiting for input, which is
+//     not silence;
+//
+//  2. the worktree signals (the fallback, and the whole judgement when
+//     no verdict is available): the newest activity — the newest
+//     modification time of any non-`.git` file in the worktree, plus
+//     the newest worker transcript or log file the existing session code
+//     already knows for a working session — is older than the silence
+//     window (SupervisorWatchConfig.EffectiveSilentMinutes, the only
+//     place the window's default is applied).
+//
+// An Automaton with no task in progress or verifying is not expected to
+// be active and never raises; so does the check when it could observe no
+// activity at all (unknown, no finding).
 //
 // The comparison is strictly "older than the window": activity
 // exactly at the window's edge is still expected, so a poll at the
@@ -299,6 +329,21 @@ func (w *SupervisorWatchWorktree) CheckSilent(prds []*PRD) []SupervisorWatchFind
 		if !supervisorWatchWorktreeHasActiveWork(p) {
 			continue // no task in progress or verifying: silence is expected
 		}
+		// Tier 1 — the session liveness verdicts, when available. A
+		// verdict is authoritative: running never reads as silent, a
+		// stalled worker is silent, a worker at a real prompt is
+		// waiting for input (not silence).
+		if w.Liveness != nil {
+			if decided, silent := supervisorWatchLivenessDecision(p, w.Liveness, now); decided {
+				if silent {
+					out = append(out, supervisorWatchWorktreeFinding(SupervisorWatchWorktreeSilent, p.ID))
+				}
+				continue
+			}
+		}
+		// Tier 2 — the worktree signals, the fallback when no verdict is
+		// available (source unwired, session unknown, or the classifier
+		// reports no opinion for every working session).
 		dir := filepath.Clean(p.ProjectDir)
 		var newest time.Time
 		if t, ok, err := w.FS.NewestNonGitChange(dir); err != nil {
@@ -340,6 +385,57 @@ func (w *SupervisorWatchWorktree) CheckSilent(prds []*PRD) []SupervisorWatchFind
 		}
 	}
 	return out
+}
+
+// supervisorWatchLivenessDecision aggregates the session liveness
+// verdicts (SupervisorWatchLivenessSource) for p's working sessions —
+// the worker and verifier sessions of its tasks in progress or
+// verifying, the same sessions CheckSilent would read log activity
+// for — and returns (true, silent) when the verdicts decide the
+// silence question. A session the source reports no verdict for is
+// skipped; when every working session is skipped the verdicts carry
+// no information and the decision falls through (false, false) to the
+// worktree-signal fallback. The verdicts, in priority order:
+//
+//   - any session running → never silent (fresh liveness outranks
+//     whatever the worktree's files show);
+//
+//   - else any session stalled → silent (a dead process, or alive and
+//     silent beyond the liveness window, on a working session is
+//     exactly the silence being watched for);
+//
+//   - else (only sessions at a real prompt) → not silent: a worker
+//     waiting for input is where it is expected to be while working.
+func supervisorWatchLivenessDecision(p *PRD, src SupervisorWatchLivenessSource, now time.Time) (decided bool, silent bool) {
+	verdicts := map[session.LivenessVerdict]bool{}
+	for i := range p.Story {
+		for j := range p.Story[i].Tasks {
+			t := &p.Story[i].Tasks[j]
+			if t == nil || (t.Status != TaskInProgress && t.Status != TaskVerifying) {
+				continue
+			}
+			for _, sid := range []string{t.SessionID, t.VerifierSessionID} {
+				if strings.TrimSpace(sid) == "" {
+					continue
+				}
+				v, ok := src.WorkerVerdict(sid, now)
+				if !ok || v == session.LivenessNoOpinion {
+					continue // no verdict for this session: not information
+				}
+				verdicts[v] = true
+			}
+		}
+	}
+	if len(verdicts) == 0 {
+		return false, false // no verdict at all: fall back to the worktree
+	}
+	if verdicts[session.LivenessRunning] {
+		return true, false
+	}
+	if verdicts[session.LivenessStalled] {
+		return true, true
+	}
+	return true, false // waiting for input only: not silence
 }
 
 // supervisorWatchWorktreeHasActiveWork reports whether p has at least

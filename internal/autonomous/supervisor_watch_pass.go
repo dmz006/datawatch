@@ -114,6 +114,7 @@ func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*
 	nodes := m.supervisorWatchNodes
 	baseRepo := m.cfg.WorktreeBaseRepo
 	sess := m.supervisorWatchSess
+	liveness := m.supervisorWatchLiveness
 	findingsFn := m.supervisorWatchFindings
 	m.mu.Unlock()
 
@@ -151,6 +152,7 @@ func (m *Manager) supervisorWatchRawFindings(cfg SupervisorWatchConfig, prds []*
 			cfg,
 			baseRepo,
 		)
+		wt.Liveness = liveness
 		out = append(out, wt.CheckNoGomod(prds)...)
 		out = append(out, wt.CheckNotRegistered(prds)...)
 		out = append(out, wt.CheckSilent(prds)...)
@@ -550,6 +552,25 @@ func (m *Manager) SetSupervisorWatchSessionLookup(fn func(id string) (*session.S
 	} else {
 		m.supervisorWatchSess = SessionSupervisorWatchSessionLogger{GetSession: fn}
 	}
+	m.mu.Unlock()
+}
+
+// SetSupervisorWatchLiveness wires the worktree silence check's view
+// of the session package's own liveness verdicts (the adapter in
+// supervisor_watch_liveness.go, asking the session package's liveness
+// classifier, ClassifyLiveness, for a verdict on each working session).
+// When it yields verdicts for an Automaton's working sessions,
+// CheckSilent trusts them before its worktree-signal fallback; when it
+// yields none, the check's behaviour is exactly what it was before the
+// source was wired. In production this is the session manager's
+// LivenessVerdictFor (cmd/datawatch). Nil restores "no verdict source"
+// — the worktree signals decide alone.
+func (m *Manager) SetSupervisorWatchLiveness(src SupervisorWatchLivenessSource) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.supervisorWatchLiveness = src
 	m.mu.Unlock()
 }
 
