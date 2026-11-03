@@ -6423,6 +6423,13 @@ func validateLoaded(cfg *Config) error {
 			return fmt.Errorf("autonomous.plan_tier_allocation_usd: tier %q value %v must be a finite number >= 0", tier, usd)
 		}
 	}
+	// usage.billing: per-provider billing profiles (billing_profile.go) —
+	// unknown mode, negative or non-finite monthly_price, a bad reset
+	// weekday or time, an unknown allowance unit and an empty provider key
+	// are all refused at validation.
+	if err := validateBillingProfiles(cfg); err != nil {
+		return err
+	}
 	if err := cfg.Autonomous.VerifierPolicy.Validate(); err != nil {
 		return fmt.Errorf("autonomous.%w", err)
 	}
