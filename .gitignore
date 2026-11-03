@@ -103,3 +103,6 @@ tmp-sandbox/
 
 # Local list of pool names the supervisor watch skips (never committed).
 .supervisor-watch-skip
+
+# Gate run logs (test/lint output captured during final gates; never committed).
+.gate-run/
