@@ -20,8 +20,14 @@
 //                      Direct StateComplete transition.
 //
 // Plus the watcher: any Running session whose LastChannelEventAt is older
-// than the configured gap (default 15 s) flips to WaitingInput. This is the
-// universal fallback for backends with no structural idle signal.
+// than the input-idle timeout for its backend flips to WaitingInput. That
+// timeout resolves per backend through the config accessors: an explicit
+// override wins, print-mode backends default to off (silence alone never
+// decides them), and interactive families get the global input-idle
+// timeout; opencode-acp keeps its longer silence floor. Before the flip, the
+// liveness rule governs every recorded non-claude-code family: a dead
+// process stalls the session (StateStalled, never WaitingInput), and a live
+// process with fresh writes stays Running with LastChannelEventAt refreshed.
 //
 // PWA-side: the LastChannelEventAt timestamp is broadcast as part of the
 // Session payload so the UI can render an amber "stale comms" badge after
@@ -215,11 +221,25 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 	// Busy probe, recovery pass: a delivered one-shot worker that went
 	// WaitingInput while its pane still shows work returns to Running. Running
 	// first, so the gap pass below sees the refreshed LastChannelEventAt.
+	// For liveness-rule families the same tick also notices a worker whose
+	// process died while the record was still open: that is Stalled, never
+	// WaitingInput.
 	for _, sess := range m.store.List() {
 		if sess == nil || sess.State != StateWaitingInput || !sess.OneShot {
 			continue
 		}
 		if !m.TaskDelivered(sess.FullID) {
+			continue
+		}
+		if livenessRuleApplies(sess.BackendFamily) && m.tmux != nil &&
+			m.livenessVerdictFor(sess, now) == LivenessStalled {
+			sess.State = StateStalled
+			sess.UpdatedAt = now
+			_ = m.store.Save(sess)
+			if m.onStateChange != nil {
+				m.onStateChange(sess, StateWaitingInput)
+			}
+			m.debugf("ChannelStateWatcher: %s WaitingInput → Stalled (liveness rule, family %s)", sess.FullID, sess.BackendFamily)
 			continue
 		}
 		m.applyBusyProbe(sess.FullID, now)
@@ -240,14 +260,52 @@ func (m *Manager) runChannelStateWatcherTick(now time.Time, gap time.Duration) {
 		// would never fire even when LCE was minutes stale. LCE only.
 		ref := sess.LastChannelEventAt
 		sessGap := gap
+		idleOff := false
+		if m.cfg != nil && sess.BackendFamily != "" {
+			// Per-backend input-idle timeout (LivenessInputIdleTimeoutEffective):
+			// an explicit override wins; a print-mode backend with no override
+			// gets 0 — off — headless runs never wait for input, so silence
+			// alone must not decide their state; an interactive family gets
+			// the global input-idle timeout.
+			sec := m.cfg.LivenessInputIdleTimeoutEffective(sess.BackendFamily)
+			if sec == 0 {
+				idleOff = true
+			} else {
+				sessGap = time.Duration(sec) * time.Second
+			}
+		}
 		if sess.BackendFamily == "opencode-acp" && sessGap < acpSilenceGap {
 			// ACP reports idle explicitly (session.status idle / session.idle), and a
 			// slow model can be silent for well over 15 s mid-turn. The fallback
 			// only guards a dropped event stream.
 			sessGap = acpSilenceGap
+			idleOff = false
 		}
-		if now.Sub(ref) < sessGap {
+		if !idleOff && now.Sub(ref) < sessGap {
 			continue
+		}
+		// The liveness rule is the first decision for every recorded
+		// non-claude-code family: a dead process with the record still open
+		// is a stalled session, never a waiting one; live and writing stays
+		// Running with LastChannelEventAt refreshed, restarts the gap, and
+		// the next silence check is a full gap later.
+		if livenessRuleApplies(sess.BackendFamily) && m.tmux != nil {
+			switch m.livenessVerdictFor(sess, now) {
+			case LivenessRunning:
+				m.markChannelEventAt(sess.FullID, EventRunning, now)
+				continue
+			case LivenessStalled:
+				sess.State = StateStalled
+				sess.UpdatedAt = now
+				_ = m.store.Save(sess)
+				if m.onStateChange != nil {
+					m.onStateChange(sess, StateRunning)
+				}
+				m.debugf("ChannelStateWatcher: %s Running → Stalled (liveness rule, family %s)", sess.FullID, sess.BackendFamily)
+				continue
+			}
+			// LivenessWaitingInput and LivenessNoOpinion both fall through to
+			// the universal flip below.
 		}
 		// Busy probe, gap pass: a silent but working pane keeps the session
 		// Running. applyBusyProbe refreshes LastChannelEventAt, so the gap

@@ -214,3 +214,99 @@ func TestBusyProbe_WatcherLeavesOtherBackendsAlone(t *testing.T) {
 		t.Errorf("non claude-code session with busy pane: %s (want WaitingInput)", got.State)
 	}
 }
+
+// TestBusyProbe_NonClaudeFamiliesUseLiveness pins the liveness-rule dispatch
+// of applyBusyProbe for recorded non-claude-code families: live and
+// writing flips a waiting one-shot back to Running, at a real prompt it is
+// not busy, dead is not busy, and an unrecorded family is outside the rule
+// entirely.
+func TestBusyProbe_NonClaudeFamiliesUseLiveness(t *testing.T) {
+	ts := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+
+	// Live and writing (fresh activity): the waiting one-shot returns
+	// to Running and the event time refreshes.
+	mgr, fake := newBusyProbeManager(t)
+	sess := busyProbeSession(t, mgr, "pi-live", StateWaitingInput, "pi-prompt")
+	sess.LastChannelEventAt = ts.Add(-2 * time.Second)
+	_ = mgr.store.Save(sess)
+	fake.Pane[sess.TmuxSession] = busyPaneFrame
+	mgr.paneChildFn = func(string) bool { return true }
+
+	if !mgr.applyBusyProbe(sess.FullID, ts) {
+		t.Fatalf("live+writing pi-prompt: applyBusyProbe returned false")
+	}
+	got, _ := mgr.store.Get(sess.FullID)
+	if got.State != StateRunning {
+		t.Errorf("live+writing pi-prompt: %s (want Running)", got.State)
+	}
+	if !got.LastChannelEventAt.Equal(ts) {
+		t.Errorf("live+writing pi-prompt: LastChannelEventAt = %v, want %v", got.LastChannelEventAt, ts)
+	}
+
+	// A live interactive session is busy the same way.
+	mgr2, fake2 := newBusyProbeManager(t)
+	sess2 := busyProbeSession(t, mgr2, "pi-live-i", StateWaitingInput, "pi")
+	sess2.LastChannelEventAt = ts.Add(-2 * time.Second)
+	_ = mgr2.store.Save(sess2)
+	fake2.Pane[sess2.TmuxSession] = busyPaneFrame
+	mgr2.paneChildFn = func(string) bool { return true }
+
+	if !mgr2.applyBusyProbe(sess2.FullID, ts) {
+		t.Fatalf("live+writing pi: applyBusyProbe returned false")
+	}
+	got2, _ := mgr2.store.Get(sess2.FullID)
+	if got2.State != StateRunning {
+		t.Errorf("live+writing pi: %s (want Running)", got2.State)
+	}
+
+	// At a real prompt the verdict is WaitingInput, which is not busy:
+	// the probe leaves both a waiting and a running session alone.
+	mgr3, fake3 := newBusyProbeManager(t)
+	atw := busyProbeSession(t, mgr3, "pi-at-prompt", StateWaitingInput, "pi-prompt")
+	fake3.Pane[atw.TmuxSession] = idleClaudePane
+	mgr3.paneChildFn = func(string) bool { return true }
+	if mgr3.applyBusyProbe(atw.FullID, ts) {
+		t.Fatalf("at-prompt: applyBusyProbe returned true")
+	}
+	got3, _ := mgr3.store.Get(atw.FullID)
+	if got3.State != StateWaitingInput {
+		t.Errorf("at-prompt: %s (want WaitingInput)", got3.State)
+	}
+
+	atr := busyProbeSession(t, mgr3, "pi-at-prompt-running", StateRunning, "pi")
+	fake3.Pane[atr.TmuxSession] = idleClaudePane
+	if mgr3.applyBusyProbe(atr.FullID, ts) {
+		t.Errorf("interactive at a real prompt: applyBusyProbe returned true")
+	}
+	got4, _ := mgr3.store.Get(atr.FullID)
+	if got4.State != StateRunning {
+		t.Errorf("interactive at a real prompt: %s (want Running, left alone)", got4.State)
+	}
+
+	// Dead process: not busy, whatever the pane shows and whatever the
+	// state is.
+	mgr4, fake4 := newBusyProbeManager(t)
+	dead := busyProbeSession(t, mgr4, "pi-dead", StateWaitingInput, "pi-prompt")
+	dead.LastChannelEventAt = ts.Add(-2 * time.Second)
+	_ = mgr4.store.Save(dead)
+	fake4.Pane[dead.TmuxSession] = busyPaneFrame
+	// newBusyProbeManager's child check already reports no child process.
+	if mgr4.applyBusyProbe(dead.FullID, ts) {
+		t.Fatalf("dead pi-prompt: applyBusyProbe returned true")
+	}
+	got5, _ := mgr4.store.Get(dead.FullID)
+	if got5.State != StateWaitingInput {
+		t.Errorf("dead pi-prompt: %s (want WaitingInput, unchanged)", got5.State)
+	}
+
+	// An unrecorded family is outside the rule entirely: no probe at all.
+	mgr5, _ := newBusyProbeManager(t)
+	unrec := busyProbeSession(t, mgr5, "unrec", StateWaitingInput, "")
+	if mgr5.applyBusyProbe(unrec.FullID, ts) {
+		t.Fatalf("unrecorded family: applyBusyProbe returned true")
+	}
+	got6, _ := mgr5.store.Get(unrec.FullID)
+	if got6.State != StateWaitingInput {
+		t.Errorf("unrecorded family: %s (want WaitingInput, unchanged)", got6.State)
+	}
+}
