@@ -705,3 +705,14 @@ Rules:
 3. Every defect or tuning finding gets a member the day it is found, and recurring mistakes become decompose lint rules and task templates.
 4. Before editing a spec, check its size; if the read shows a truncation marker, rebuild the spec from the saved attachment or the registry, never from the marked text.
 5. `datawatch automation get <id>` prints a table; use `--json` for the raw response. That was not a bug.
+
+### Lesson 2026-11-03: do not close the record of a merged Automaton that is a member of an active Automation
+
+Why: after merging the smoke-check lint I cancelled its Automaton record, as the old procedure says. It was the entry member of the active maintenance Automation, which then went blocked and could not be skipped, resumed or returned to draft, so the next members never started. The Automation had to be cancelled and recreated.
+
+Rules:
+1. For a member of an active Automation, let the Automation finish the member (or skip it before the merge). Cancel the record only for a standalone Automaton.
+2. A blocked Automation cannot be edited, skipped or resumed; recreate it. The entry-member defect (`72d90001`) covers returning a never-started blocked Automation to draft.
+3. Set the worker backend before approval; it is locked once the Automaton runs.
+4. A started stage cannot be reshaped: build it parallel from the start, with a normal Automaton as its entry member.
+5. The merge helper needs the changelog body at `../body-<id>.md`; check the changelog and README after every merge.
