@@ -1568,6 +1568,123 @@ func (a *API) SetScanConfig(body map[string]any) error {
 	return nil
 }
 
+// ── decompose-lint — config read/replace + per-PRD endpoints ─────────────
+
+// decomposeLintConfigKeys are the only keys a decompose-lint config
+// patch may carry. Unknown keys are a rejection, never a silent drop:
+// these blocks are full-replaces, and a typo'd key would otherwise
+// look like it took effect.
+var decomposeLintConfigKeys = map[string]bool{
+	"decompose_lint":     true,
+	"task_templates":     true,
+	"decompose_guidance": true,
+}
+
+// DecomposeLintConfig is the live config snapshot the decompose-lint
+// GET endpoint serves: the autonomous.decompose_lint sub-config, the
+// autonomous.task_templates sub-config, and the
+// autonomous.decompose_guidance string, as one object:
+//
+//	{"decompose_lint": {...}, "task_templates": {...},
+//	 "decompose_guidance": "..."}
+func (a *API) DecomposeLintConfig() any {
+	a.M.mu.Lock()
+	defer a.M.mu.Unlock()
+	return map[string]any{
+		"decompose_lint":     a.M.cfg.DecomposeLint,
+		"task_templates":     a.M.cfg.TaskTemplates,
+		"decompose_guidance": a.M.cfg.DecomposeGuidance,
+	}
+}
+
+// SetDecomposeLintConfig validates the supplied block(s) and replaces
+// them in the live config atomically. Accepted keys:
+//
+//   - "decompose_lint": a full config.DecomposeLintConfig object
+//     (mode, max_retries, rules, disabled_rules); validated via
+//     DecomposeLintConfig.Validate — legal mode, unique well-shaped
+//     rule ids, legal severities, non-empty messages, compiling regexes.
+//   - "task_templates": a full config.TaskTemplatesConfig object
+//     (enabled, templates, projects); validated via
+//     TaskTemplatesConfig.Validate.
+//   - "decompose_guidance": the literal guidance string.
+//
+// Each present key replaces its whole block (omitted keys are left
+// untouched — same partial-PUT semantics as the scan-config endpoint).
+// Every supplied block is validated before any of them is applied, so
+// a bad value never leaves a half-updated config.
+func (a *API) SetDecomposeLintConfig(body map[string]any) error {
+	if body == nil {
+		return fmt.Errorf("empty patch: supply at least one of decompose_lint, task_templates, decompose_guidance")
+	}
+	for k := range body {
+		if !decomposeLintConfigKeys[k] {
+			return fmt.Errorf("unknown key %q: valid keys are decompose_lint, task_templates, decompose_guidance", k)
+		}
+	}
+	var lint *config.DecomposeLintConfig
+	var tpl *config.TaskTemplatesConfig
+	var guidance *string
+	if raw, ok := body["decompose_lint"]; ok {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return fmt.Errorf("decompose_lint: %v", err)
+		}
+		cl := config.DecomposeLintConfig{}
+		if err := json.Unmarshal(b, &cl); err != nil {
+			return fmt.Errorf("decompose_lint must be an object: %v", err)
+		}
+		if err := cl.Validate(); err != nil {
+			return err
+		}
+		lint = &cl
+	}
+	if raw, ok := body["task_templates"]; ok {
+		b, err := json.Marshal(raw)
+		if err != nil {
+			return fmt.Errorf("task_templates: %v", err)
+		}
+		ct := config.TaskTemplatesConfig{}
+		if err := json.Unmarshal(b, &ct); err != nil {
+			return fmt.Errorf("task_templates must be an object: %v", err)
+		}
+		if err := ct.Validate(); err != nil {
+			return err
+		}
+		tpl = &ct
+	}
+	if raw, ok := body["decompose_guidance"]; ok {
+		s, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("decompose_guidance must be a string")
+		}
+		guidance = &s
+	}
+	a.M.mu.Lock()
+	defer a.M.mu.Unlock()
+	if lint != nil {
+		a.M.cfg.DecomposeLint = *lint
+	}
+	if tpl != nil {
+		a.M.cfg.TaskTemplates = *tpl
+	}
+	if guidance != nil {
+		a.M.cfg.DecomposeGuidance = *guidance
+	}
+	return nil
+}
+
+// DecomposeLintDryRun is the read-only decompose-lint over one PRD's
+// STORED stories — the same engine the decompose-time hook uses
+// (EffectiveRules + LintTasks) — as the POST
+// /api/autonomous/prds/{id}/decompose-lint endpoint serves. It never
+// mutates the PRD, never resolves templates and never calls the
+// decomposer; it reports what the check would record right now, in
+// whatever mode is configured.
+func (a *API) DecomposeLintDryRun(prdID string) (any, error) {
+	return a.M.LintPRD(prdID)
+}
+
 func (a *API) CreateFixPRD(prdID string) (any, error) {
 	prd, err := a.M.CreateFixPRD(prdID)
 	if err == nil && prd != nil {

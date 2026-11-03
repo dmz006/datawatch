@@ -891,6 +891,13 @@ type AutonomousAPI interface {
 	GetScanResult(prdID string) (any, bool)
 	GetScanConfig() any
 	SetScanConfig(body map[string]any) error
+	// decompose-lint — live config read (autonomous.decompose_lint /
+	// task_templates / decompose_guidance), validated replace, and the
+	// per-PRD read-only dry run. Stored findings ride on GetPRD
+	// (PRD.DecomposeLint).
+	DecomposeLintConfig() any
+	SetDecomposeLintConfig(body map[string]any) error
+	DecomposeLintDryRun(prdID string) (any, error)
 	CreateFixPRD(prdID string) (any, error)
 	ProposeRuleEdits(prdID string) (any, error)
 

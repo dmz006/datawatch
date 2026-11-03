@@ -167,6 +167,9 @@ func (f *fakeOrchAutonomous) RunScan(string) (any, error)          { return nil,
 func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)     { return nil, false }
 func (f *fakeOrchAutonomous) GetScanConfig() any                   { return nil }
 func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error   { return nil }
+func (f *fakeOrchAutonomous) DecomposeLintConfig() any             { return nil }
+func (f *fakeOrchAutonomous) SetDecomposeLintConfig(map[string]any) error { return nil }
+func (f *fakeOrchAutonomous) DecomposeLintDryRun(string) (any, error)     { return nil, nil }
 func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)     { return nil, nil }
 func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) ListAutomatonTypes() []any            { return nil }
