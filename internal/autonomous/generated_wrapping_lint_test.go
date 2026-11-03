@@ -116,3 +116,50 @@ func TestClassifyGeneratedTask_CodeTasksNamingArtefactsKept(t *testing.T) {
 		t.Fatal("changelog task should classify")
 	}
 }
+
+func TestGeneratedArtefactGuidance_EnabledKinds(t *testing.T) {
+	g := GeneratedArtefactGuidance(config.GeneratedArtefacts{}.Effective())
+	for _, k := range generatedKindOrder {
+		if !strings.Contains(g, generatedKindTable[k].noun) {
+			t.Fatalf("missing %s: %s", k, g)
+		}
+	}
+	if !strings.Contains(g, "at most one combined documentation task") {
+		t.Fatal(g)
+	}
+}
+
+func TestGeneratedArtefactGuidance_KindOffAllowed(t *testing.T) {
+	off := false
+	g := GeneratedArtefactGuidance(config.GeneratedArtefacts{ChangelogDraft: &off}.Effective())
+	if strings.Contains(g, "changelog entry") || !strings.Contains(g, "the gate report") {
+		t.Fatal(g)
+	}
+}
+
+func TestLintCombinedDocs(t *testing.T) {
+	three := []Story{{Tasks: []Task{
+		gwTask("a", "Write the how-to", "", []string{"docs/howto/a.md"}),
+		gwTask("b", "Update operator docs", "", []string{"docs/ops.md"}),
+		gwTask("c", "Add definition docs", "", []string{"docs/def.md"}),
+		gwTask("d", "Add code", "", []string{"x.go"}),
+	}}}
+	w := LintCombinedDocs(three)
+	if len(w) != 1 || !strings.Contains(w[0], "a (") || !strings.Contains(w[0], "b (") || !strings.Contains(w[0], "c (") || strings.Contains(w[0], "d (") {
+		t.Fatalf("%v", w)
+	}
+	one := []Story{{Tasks: []Task{gwTask("a", "Write the how-to", "", []string{"docs/howto/a.md"}), gwTask("d", "Add code", "", []string{"x.go"})}}}
+	if w := LintCombinedDocs(one); len(w) != 0 {
+		t.Fatalf("%v", w)
+	}
+}
+
+func TestBuiltinTemplatesNoGeneratedKind(t *testing.T) {
+	for _, tm := range builtinTaskTemplates {
+		for _, k := range generatedKindOrder {
+			if generatedKindTable[k].title.MatchString(tm.Title) {
+				t.Fatalf("%s contains %s task", tm.Title, k)
+			}
+		}
+	}
+}
