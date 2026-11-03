@@ -272,3 +272,22 @@ func (w *BudgetRolloverWatcher) Observe(statuses []BudgetStatus) {
 		}
 	}
 }
+
+// AdmissionFallthrough records that a task was admitted on an alternate pool
+// because its requested pool was full. It reuses the admitted action with
+// fall_through details so the audit action set stays unchanged.
+func (r *CapacityAudit) AdmissionFallthrough(taskID, prdID string, fromPools, toPools []string, note string) {
+	names := r.admissionNames(taskID, prdID, note)
+	r.Record(AuditActorAutonomous, audit.ActionCapacityAdmitted, taskID, map[string]any{
+		"fall_through": true,
+		"from_pools":   sortedPools(fromPools),
+		"to_pools":     sortedPools(toPools),
+		"pools":        sortedPools(toPools),
+		"note":         note,
+		"prd_id":       prdID,
+		"task_id":      taskID,
+		"task_title":   titleOrUntitled(names.TaskTitle, shortID(taskID)),
+		"prd_title":    titleOrUntitled(names.PRDTitle, shortID(prdID)),
+		"readable":     names.Readable,
+	})
+}

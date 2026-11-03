@@ -4419,6 +4419,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
+			CapacityFallthrough:              acfgIn.CapacityFallthrough,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).

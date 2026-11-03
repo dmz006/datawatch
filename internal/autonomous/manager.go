@@ -554,6 +554,9 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityFallthrough admits a task on another idle allowed pool when its
+	// requested pool is full (default off; mirrors config.AutonomousConfig).
+	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`
 	// Node over-admission switches (nil = on) and the restart adoption wait
 	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
 	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
@@ -1322,6 +1325,11 @@ type Manager struct {
 	// capacityChoices lists the candidate compute nodes of a backend+model
 	// when its LLM entry pools two or more (nil = single-node behaviour).
 	capacityChoices CapacityChoicesFn
+	// capacityAlternates lists the other allowed backend+model pairs a task may
+	// fall through to (see Config.CapacityFallthrough); fallthroughs records the
+	// pair each fallen-through task was admitted on, keyed by task id.
+	capacityAlternates CapacityAlternatesFn
+	fallthroughs       map[string]CapacityAlternate
 	// sessionNode names the compute node an adopted session runs on.
 	sessionNode SessionNodeFn
 	// entryNodes counts the compute nodes an LLM entry lists (nil = unknown).
