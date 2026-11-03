@@ -21,6 +21,8 @@ type SessionInfo struct {
 	ProjectDir string
 	CreatedAt  time.Time
 	Alive      bool
+	// TmuxSession is the session's tmux session name; empty when it has none.
+	TmuxSession string
 }
 
 // SetSessionListerFn wires the session lister used by reconcileStuckTasks to

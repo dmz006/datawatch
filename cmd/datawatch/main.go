@@ -7099,7 +7099,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				for _, s := range mgr.ListSessions() {
 					out = append(out, autonomouspkg.SessionInfo{
 						ID: s.FullID, Name: s.Name, TaskID: s.TaskID, PRDID: s.PRDID, Task: s.Task,
-						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt,
+						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt, TmuxSession: s.TmuxSession,
 						Alive: s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled,
 					})
 				}
