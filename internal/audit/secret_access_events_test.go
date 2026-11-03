@@ -217,7 +217,7 @@ func TestSecretAccessSink(t *testing.T) {
 
 	// A nil log sink is a silent no-op — a missing audit log must never be
 	// an error path in the dispatcher.
-	var nilSink SecretAccessReporter = NewSecretAccessSink(nil)
+	nilSink := SecretAccessReporter(NewSecretAccessSink(nil))
 	nilSink("claude-main", "ANTHROPIC_API_KEY", "ok")
 
 	// The reporter type is a plain three-string function, so the inference
