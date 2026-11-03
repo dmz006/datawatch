@@ -85,7 +85,10 @@ session:
   # liveness: seconds the liveness rule watches a print-mode backend (a family
   # name ending in -prompt, e.g. pi-prompt) before considering it stalled.
   # 0 (or absent) = built-in default 120. Never read the raw value; callers
-  # resolve it via Config.LivenessWindowSecondsEffective().
+  # resolve it via Config.LivenessWindowSecondsEffective(). 0 means "use the
+  # default", not "no window". Negative values are refused.
+  # Carried by: this YAML, REST (GET/PUT /api/config), MCP config_set,
+  # CLI `datawatch config set`, comm `configure`, and web Settings.
   liveness_window_seconds: 120
   # liveness: per-backend input-idle timeout (seconds) overrides. Keys are
   # backend family names ("pi" matches "pi-prompt"); full backend names also
@@ -94,6 +97,10 @@ session:
   # backends keep the global default of 10. Resolve via
   # Config.LivenessInputIdleTimeoutEffective(backend), which is the only
   # correct reader: raw zero values here do not mean "unset".
+  # An explicit 0 for a key means off (not unset). Unknown backend names are
+  # refused on every surface; negative values are refused. Carried by the same
+  # surfaces as liveness_window_seconds (YAML, REST, MCP config_set, CLI
+  # `config set`, comm `configure`, web Settings).
   # Example: {pi: 30, goose: 0, claude-code: 25}
   liveness_idle_timeout_overrides: {}
   # Default number of output lines returned by tail/status commands

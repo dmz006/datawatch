@@ -55,3 +55,16 @@ Counts: 9 4 4 1
 real prompt = 4 — `pi`, `opencode`, `goose`, `ollama`; families not
 applicable = 1 — `opencode-acp`; busy-probe-already-used = 0, that gate
 belongs to `claude-code` and is not one of the audited families.)
+
+## Liveness config surfaces gate
+
+- Packages: 5 passed, 0 failed
+- Go tests: 6446 passed, 0 failed
+- Node tests: 1982 passed, 0 failed
+- Checks (docs-sync, no-internal-refs, TS-844.sh syntax, TS-844.mjs syntax, build): 5 passed, 0 failed
+- YAML: round-trip test present yes
+- REST: round-trip test present yes
+- MCP: round-trip test present yes
+- CLI: round-trip test present yes
+- comm: round-trip test present yes
+- web: round-trip test present no

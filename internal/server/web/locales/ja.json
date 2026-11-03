@@ -1246,6 +1246,11 @@
   "session_chip_done": "完了",
   "session_chip_waiting": "待機中",
   "session_chip_stalled": "滞止中",
+  "session_chip_running": "実行中",
+  "session_chip_rate_limited": "レート制限中",
+  "session_chip_complete": "完了",
+  "session_chip_failed": "失敗",
+  "session_chip_killed": "強制終了",
   "session_chrome": "Chrome統合",
   "session_compute_ref_title": "v7 コンピュートノード",
   "session_detail_cancel_schedule": "スケジュールをキャンセル",
@@ -1768,6 +1773,10 @@
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_liveness_window_label": "生存確認ウィンドウ(秒)",
+  "settings_session_liveness_window_hint": "実行中のセッションが出力なしで何秒経過したら滞止と見なすか。0 または空欄で既定値(120)を使用します。",
+  "settings_session_liveness_overrides_label": "バックエンド別のアイドルタイムアウト",
+  "settings_session_liveness_overrides_hint": "バックエンド名と秒数の JSON オブジェクト(例: {\"pi\": 300})。0 でそのバックエンドのアイドルタイムアウトを無効にします。",
   "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
   "settings_session_task_delivery_attempts": "Task delivery attempts",
   "settings_session_store_flush_interval": "セッションストアの書き込み遅延 (ms、0 = 即時)",
@@ -3426,5 +3435,6 @@
   "cost_report_column_units": "数量",
   "cost_report_points_value": "%1$s pt",
   "cost_report_share_value": "%1$s %",
-  "cost_report_group_release": "リリース"
+  "cost_report_group_release": "リリース",
+  "settings_liveness_overrides_invalid": "Enter a JSON object of names to whole seconds, e.g. {\"pi\": 300}"
 }

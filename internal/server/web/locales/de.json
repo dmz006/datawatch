@@ -1246,6 +1246,11 @@
   "session_chip_done": "Fertig",
   "session_chip_waiting": "Wartend",
   "session_chip_stalled": "Stagniert",
+  "session_chip_running": "Läuft",
+  "session_chip_rate_limited": "Ratenbegrenzt",
+  "session_chip_complete": "Abgeschlossen",
+  "session_chip_failed": "Fehlgeschlagen",
+  "session_chip_killed": "Beendet",
   "session_chrome": "Chrome-Integration",
   "session_compute_ref_title": "v7 Compute-Knoten",
   "session_detail_cancel_schedule": "Zeitplan abbrechen",
@@ -1768,6 +1773,10 @@
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_liveness_window_label": "Liveness-Fenster (Sek.)",
+  "settings_session_liveness_window_hint": "Wie viele Sekunden ohne Ausgabe, bevor eine laufende Sitzung als stagniert gilt. 0 oder leer verwendet den Standard (120).",
+  "settings_session_liveness_overrides_label": "Liveness-Leerlaufzeiten je Backend",
+  "settings_session_liveness_overrides_hint": "JSON-Objekt aus Backend-Name und Sekunden, z. B. {\"pi\": 300}. 0 schaltet die Leerlaufzeit für dieses Backend aus.",
   "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
   "settings_session_task_delivery_attempts": "Task delivery attempts",
   "settings_session_store_flush_interval": "Verzögerung beim Schreiben des Sitzungsspeichers (ms; 0 = sofort)",
@@ -3426,5 +3435,6 @@
   "cost_report_column_units": "Einheiten",
   "cost_report_points_value": "%1$s P.",
   "cost_report_share_value": "%1$s %",
-  "cost_report_group_release": "Release"
+  "cost_report_group_release": "Release",
+  "settings_liveness_overrides_invalid": "Enter a JSON object of names to whole seconds, e.g. {\"pi\": 300}"
 }

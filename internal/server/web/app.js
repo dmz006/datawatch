@@ -3151,14 +3151,14 @@ function renderSessionsView() {
   const llmBtnLabel = llmActiveLabel ? `LLM: ${escHtml(llmActiveLabel)}` : `LLM (${llmCount})`;
   // State badges — every real state, not just buckets.
   const realStateChips = [
-    {key: 'all',          label: 'All',          color: 'var(--text2)'},
-    {key: 'running',      label: 'Running',      color: 'var(--success,#10b981)'},
-    {key: 'waiting_input',label: 'Waiting',      color: 'var(--warning,#f59e0b)'},
-    {key: 'stalled',      label: 'Stalled',      color: 'var(--error,#ef4444)'},
-    {key: 'rate_limited', label: 'Rate-limited', color: 'var(--error,#ef4444)'},
-    {key: 'complete',     label: 'Complete',     color: 'var(--text2)'},
-    {key: 'failed',       label: 'Failed',       color: 'var(--error,#ef4444)'},
-    {key: 'killed',       label: 'Killed',       color: 'var(--text2)'},
+    {key: 'all',          label: t('session_chip_all'),          color: 'var(--text2)'},
+    {key: 'running',      label: t('session_chip_running'),      color: 'var(--success,#10b981)'},
+    {key: 'waiting_input',label: t('session_chip_waiting'),      color: 'var(--warning,#f59e0b)'},
+    {key: 'stalled',      label: t('session_chip_stalled'),      color: 'var(--error,#ef4444)'},
+    {key: 'rate_limited', label: t('session_chip_rate_limited'), color: 'var(--error,#ef4444)'},
+    {key: 'complete',     label: t('session_chip_complete'),     color: 'var(--text2)'},
+    {key: 'failed',       label: t('session_chip_failed'),       color: 'var(--error,#ef4444)'},
+    {key: 'killed',       label: t('session_chip_killed'),       color: 'var(--text2)'},
   ];
   const stateCounts = {};
   realStateChips.forEach(c => {
@@ -16702,6 +16702,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
     { key: 'session.store_side_file_cap_kb', label: 'Automaton store side-file threshold (KB)', labelKey: 'settings_session_store_side_file_cap_kb', helpKey: 'settings_session_store_side_file_cap_kb_help', type: 'number', placeholder: '64' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
+    { key: 'session.liveness_window_seconds', label: 'Liveness window (sec)', labelKey: 'settings_session_liveness_window_label', hintKey: 'settings_session_liveness_window_hint', type: 'number', placeholder: '120' },
+    { key: 'session.liveness_idle_timeout_overrides', label: 'Liveness idle timeouts by backend', labelKey: 'settings_session_liveness_overrides_label', hintKey: 'settings_session_liveness_overrides_hint', type: 'json_map', placeholder: '{"pi": 300}' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
     { key: 'session.default_project_dir', label: 'Default project dir', type: 'dir_browse' },
@@ -18228,6 +18230,17 @@ function loadGeneralConfig() {
                 onchange="saveGeneralField('${f.key}', this.value)" />
               ${_hint && _hint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_hint)}</div>` : ''}
             </div>`;
+          } else if (f.type === 'json_map') {
+            // Map of name -> number, edited as a JSON object and saved as an object.
+            const _mapObj = (val && typeof val === 'object') ? val : {};
+            const _mapText = Object.keys(_mapObj).length ? JSON.stringify(_mapObj) : '';
+            html += `<div class="settings-row" style="justify-content:space-between;flex-wrap:wrap;">
+              <div class="settings-label">${escHtml(fLabel)}</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(_mapText)}"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveJSONMapSetting('${f.key}', this)" />
+              ${_fieldHintHTML(f)}
+            </div>`;
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -18762,6 +18775,22 @@ function saveGeneralConfigPut(key, value) {
 
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
+}
+
+// saveJSONMapSetting saves a name -> whole-number map field. The box holds a
+// JSON object; an empty box clears the map. Anything else is reported and
+// nothing is sent.
+function saveJSONMapSetting(key, el) {
+  const text = String(el && el.value ? el.value : '').trim();
+  if (text === '') { saveGeneralConfigPut(key, {}); return; }
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { obj = null; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj) ||
+      !Object.values(obj).every(v => Number.isInteger(v) && v >= 0)) {
+    showToast(t('settings_liveness_overrides_invalid') || 'Enter a JSON object of names to whole seconds, e.g. {"pi": 300}', 'error');
+    return;
+  }
+  saveGeneralConfigPut(key, obj);
 }
 
 // savePromptNumberSetting saves a UI prompt handling numeric setting once

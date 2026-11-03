@@ -1,6 +1,11 @@
 package config
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestLivenessWindowSecondsDefault(t *testing.T) {
 	cfg := DefaultConfig()
@@ -113,5 +118,63 @@ func TestLivenessInputIdleTimeoutOverrideMap(t *testing.T) {
 	cfg.Session.LivenessIdleTimeoutOverrides = map[string]int{"claude-code": 0}
 	if got := cfg.LivenessInputIdleTimeoutEffective("claude-code"); got != 0 {
 		t.Errorf("interactive override to 0: got %d, want 0", got)
+	}
+}
+
+func TestLivenessValidateSettings(t *testing.T) {
+	known := []string{"claude-code", "pi", "pi-prompt", "goose-prompt"}
+	cases := []struct {
+		name      string
+		window    int
+		overrides map[string]int
+		wantErr   string // substring; "" means valid
+	}{
+		{"unset", 0, nil, ""},
+		{"window ok", 90, nil, ""},
+		{"window negative", -1, nil, "liveness_window_seconds"},
+		{"family key", 0, map[string]int{"pi": 30}, ""},
+		{"full name key", 0, map[string]int{"pi-prompt": 0}, ""},
+		{"interactive name", 0, map[string]int{"claude-code": 5}, ""},
+		{"goose family via prompt", 0, map[string]int{"goose": 7}, ""},
+		{"unknown key", 0, map[string]int{"nope": 5}, `"nope"`},
+		{"negative override", 0, map[string]int{"pi": -3}, "pi"},
+	}
+	for _, tc := range cases {
+		err := ValidateLivenessSettings(tc.window, tc.overrides, known)
+		if tc.wantErr == "" && err != nil {
+			t.Errorf("%s: unexpected error %v", tc.name, err)
+		}
+		if tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+			t.Errorf("%s: err = %v, want substring %q", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func TestLivenessYAMLRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := DefaultConfig()
+	cfg.Session.LivenessWindowSeconds = 75
+	cfg.Session.LivenessIdleTimeoutOverrides = map[string]int{"pi": 0, "goose-prompt": 45}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	for _, want := range []string{"liveness_window_seconds: 75", "liveness_idle_timeout_overrides:"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("saved YAML lacks %q:\n%s", want, raw)
+		}
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Session.LivenessWindowSeconds != 75 {
+		t.Errorf("window = %d, want 75", got.Session.LivenessWindowSeconds)
+	}
+	if v, ok := got.Session.LivenessIdleTimeoutOverrides["pi"]; !ok || v != 0 {
+		t.Errorf("pi override = %d,%v, want explicit 0", v, ok)
+	}
+	if got.Session.LivenessIdleTimeoutOverrides["goose-prompt"] != 45 {
+		t.Errorf("goose-prompt override = %v", got.Session.LivenessIdleTimeoutOverrides)
 	}
 }

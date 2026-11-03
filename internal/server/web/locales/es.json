@@ -1246,6 +1246,11 @@
   "session_chip_done": "Hechas",
   "session_chip_waiting": "En espera",
   "session_chip_stalled": "Estancado",
+  "session_chip_running": "En ejecución",
+  "session_chip_rate_limited": "Límite de tasa",
+  "session_chip_complete": "Completada",
+  "session_chip_failed": "Fallida",
+  "session_chip_killed": "Terminada",
   "session_chrome": "Integración con Chrome",
   "session_compute_ref_title": "Nodo de cómputo v7",
   "session_detail_cancel_schedule": "Cancelar programación",
@@ -1768,6 +1773,10 @@
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_liveness_window_label": "Ventana de actividad (s)",
+  "settings_session_liveness_window_hint": "Segundos sin salida antes de que una sesión en ejecución se considere estancada. 0 o vacío usa el valor predeterminado (120).",
+  "settings_session_liveness_overrides_label": "Tiempos de inactividad por backend",
+  "settings_session_liveness_overrides_hint": "Objeto JSON de nombre de backend a segundos, p. ej. {\"pi\": 300}. 0 desactiva el tiempo de inactividad para ese backend.",
   "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
   "settings_session_task_delivery_attempts": "Task delivery attempts",
   "settings_session_store_flush_interval": "Retraso de escritura del almacén de sesiones (ms; 0 = inmediata)",
@@ -3426,5 +3435,6 @@
   "cost_report_column_units": "Unidades",
   "cost_report_points_value": "%1$s pts",
   "cost_report_share_value": "%1$s %",
-  "cost_report_group_release": "release"
+  "cost_report_group_release": "release",
+  "settings_liveness_overrides_invalid": "Enter a JSON object of names to whole seconds, e.g. {\"pi\": 300}"
 }

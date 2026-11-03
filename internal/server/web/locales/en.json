@@ -1212,6 +1212,11 @@
   "session_chip_done": "Done",
   "session_chip_waiting": "Waiting",
   "session_chip_stalled": "Stalled",
+  "session_chip_running": "Running",
+  "session_chip_rate_limited": "Rate-limited",
+  "session_chip_complete": "Complete",
+  "session_chip_failed": "Failed",
+  "session_chip_killed": "Killed",
   "session_compute_ref_title": "v7 Compute Node",
   "session_detail_cancel_schedule": "Cancel schedule",
   "session_detail_delete_body": "This removes the session record from the server. Tracking data on disk is preserved. This cannot be undone.",
@@ -1802,6 +1807,10 @@
   "settings_acknowledge_unauthenticated": "Acknowledge unauthenticated listeners",
   "settings_acknowledge_unauthenticated_help": "Silences the startup warning for listeners reachable without authentication; changes no listener.",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_liveness_window_label": "Liveness window (sec)",
+  "settings_session_liveness_window_hint": "How many seconds without output before a running session counts as stalled. 0 or empty uses the default (120).",
+  "settings_session_liveness_overrides_label": "Liveness idle timeouts by backend",
+  "settings_session_liveness_overrides_hint": "JSON object of backend name to seconds, e.g. {\"pi\": 300}. 0 turns the idle timeout off for that backend.",
   "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
   "settings_session_task_delivery_attempts": "Task delivery attempts",
   "settings_session_store_flush_interval": "Session store write delay (ms; 0 = write through)",
@@ -3426,5 +3435,6 @@
   "cost_report_column_units": "Units",
   "cost_report_points_value": "%1$s pts",
   "cost_report_share_value": "%1$s%",
-  "cost_report_group_release": "release"
+  "cost_report_group_release": "release",
+  "settings_liveness_overrides_invalid": "Enter a JSON object of names to whole seconds, e.g. {\"pi\": 300}"
 }
