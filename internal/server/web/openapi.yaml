@@ -3583,6 +3583,157 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "404": {description: "Unknown Automation id"}
         "503": {description: "autonomous disabled"}
+  /api/autonomous/defects/intake:
+    post:
+      summary: Route one incoming defect
+      description: |
+        Decides whether the defect is a tiny fix, joins an open draft batch of
+        its project and area, or starts a new batch, applies that decision and
+        logs it. When the tiny-fix lane refuses a change that looked eligible,
+        `tiny_fix_refusal` carries the reason and the defect goes to a batch.
+      operationId: autonomousDefectIntake
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, title, project]
+              properties:
+                id: {type: string}
+                title: {type: string}
+                project: {type: string}
+                description: {type: string}
+                files: {type: array, items: {type: string}}
+                kind: {type: string, enum: [test_only, docs_only, script_only, rule_tweak, lint_tweak]}
+                area: {type: string}
+                priority: {type: integer}
+      responses:
+        "200":
+          description: The intake decision
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [route, reason]
+                properties:
+                  route: {type: string, enum: [tiny_fix, open_batch, new_batch]}
+                  reason: {type: string}
+                  batch_id: {type: string}
+                  tiny_fix_refusal: {type: string}
+        "400": {description: "Missing id, title or project, or invalid JSON"}
+        "409": {description: "Defect queue disabled for the project"}
+        "503": {description: "Defect queue unavailable"}
+  /api/autonomous/defects/batches:
+    get:
+      summary: List open defect batches
+      description: Open batches with the story-to-defect mapping of each. Read-only.
+      operationId: autonomousDefectBatches
+      tags: [Autonomous]
+      parameters:
+        - name: project
+          in: query
+          required: false
+          schema: {type: string}
+      responses:
+        "200":
+          description: Open batches
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [batches, total]
+                properties:
+                  total: {type: integer}
+                  batches:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, project, status, size, stories]
+                      properties:
+                        id: {type: string}
+                        project: {type: string}
+                        area: {type: string}
+                        status: {type: string}
+                        size: {type: integer}
+                        stories:
+                          type: array
+                          items:
+                            type: object
+                            required: [story_id, defect_id]
+                            properties:
+                              story_id: {type: string}
+                              defect_id: {type: string}
+                              title: {type: string}
+        "503": {description: "Defect queue unavailable"}
+  /api/autonomous/defects/batches/{id}/split:
+    post:
+      summary: Split a story out of a defect batch
+      description: Moves one story into its own new Automaton and returns that Automaton's id.
+      operationId: autonomousDefectBatchSplit
+      tags: [Autonomous]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id]
+              properties:
+                story_id: {type: string}
+      responses:
+        "200":
+          description: The new Automaton
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [automaton_id, batch_id, story_id]
+                properties:
+                  automaton_id: {type: string}
+                  batch_id: {type: string}
+                  story_id: {type: string}
+        "400": {description: "Missing story_id or invalid JSON"}
+        "404": {description: "Unknown batch or story"}
+        "503": {description: "Defect queue unavailable"}
+  /api/autonomous/defects/tiny-fix/check:
+    post:
+      summary: Check whether a change is a tiny fix
+      description: |
+        Classifies the change against the tiny-fix criteria and runs the
+        operator-visible re-check. Creates nothing.
+      operationId: autonomousDefectTinyFixCheck
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files, kind]
+              properties:
+                files: {type: array, minItems: 1, items: {type: string}}
+                kind: {type: string}
+                project: {type: string}
+      responses:
+        "200":
+          description: Eligibility and the reason
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eligible, reason]
+                properties:
+                  eligible: {type: boolean}
+                  reason: {type: string}
+                  refused_paths: {type: array, items: {type: string}}
+        "400": {description: "Empty files, missing kind, or invalid JSON"}
   /api/autonomous/shipped/counts:
     get:
       summary: Per-status counts under the shipped-state surface

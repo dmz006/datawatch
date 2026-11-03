@@ -491,6 +491,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// Defect queue backend + intake decision log (defect_queue.go); nil until
+	// SetDefectQueue wires them, and the defect endpoints answer 503 then.
+	defectQueue DefectQueueBackend
+	defectLog   autonomous.IntakeLog
+
 	// requestWatch reads the in-flight model request observations; nil until
 	// SetRequestWatch wires it, and the request-watch route answers 503 then.
 	requestWatch    requestwatch.Reader

@@ -450,6 +450,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// autonomous.shipped settings; shipped is a status-like bucket only while
 	// enabled + count_separately hold, and never moves a stored status.
 	apiMux.HandleFunc("/api/autonomous/shipped/counts", api.handleAutonomousShippedCounts)
+	// Defect queue: intake, open batches, split-out, tiny-fix check.
+	apiMux.HandleFunc("/api/autonomous/defects/intake", api.handleDefectIntake)
+	apiMux.HandleFunc("/api/autonomous/defects/batches", api.handleDefectBatches)
+	apiMux.HandleFunc("/api/autonomous/defects/batches/", api.handleDefectBatchSplit)
+	apiMux.HandleFunc("/api/autonomous/defects/tiny-fix/check", api.handleDefectTinyFixCheck)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
