@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.73.2 — Peer view no longer reloads to the primary
+
+Opening a federated peer in the web UI no longer reloads the page back to the primary.
+
+- The page tracks the daemon version per server. An update counts only when the same server reports a different version than it did before. Switching to a peer never triggers the update banner or a reload.
+- A peer on a different release shows a version-skew note on its About page.
+- Every About sub-page and Settings tab was audited with a peer selected and with the primary selected (`docs/plans/reports/version-skew-audit.md`); pages that read the primary's data in peer view were fixed to read the selected server's data and name it.
+- Five locales for the new text, operator docs on version skew between a primary and its peers, and a browser story (TS-845) that checks the flow on the sandbox.
+
 ## v9.73.1 — Liveness settings on every surface
 
 The session liveness settings are now on every surface, and the state chips use locale keys.

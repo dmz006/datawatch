@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.73.1 (2026-11-03).** The session liveness settings are now on the config routes, MCP, the CLI, the comm channel and the web settings, and the state chips use locale keys. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.73.2 (2026-11-03).** Opening a federated peer in the web UI no longer reloads the page back to the primary: the daemon version is tracked per server and a peer on another release shows a version-skew note. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
