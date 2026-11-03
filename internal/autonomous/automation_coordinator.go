@@ -502,6 +502,9 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 		c.audit(au.action, au.details)
 	}
 	for _, n := range eff.notes {
+		if n.note == "" {
+			continue // the entry path has no advance note to record
+		}
 		c.memberDecision(n.prdID, n.note)
 	}
 	for _, id := range eff.touched {
@@ -951,66 +954,58 @@ func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automa
 		if entry == nil {
 			return nil, fmt.Errorf("automation %s has no entry member", id)
 		}
-		name, _, _ := c.prdState(entry.PRDID)
-		mode, status := c.startGate(entry.PRDID)
-		var reason string
-		if mode == "" {
-			reason = fmt.Sprintf("next member %s is %s", name, status)
+		// The entry member enters through the same stepper path (stepper.enter)
+		// as every later member, dispatched by the member's kind: a PRD started
+		// through its own gate (Run when approved, Resume when paused), a
+		// nested Automation by activating its child, a fork fired over its
+		// branches in sorted order through their own gates with the paired
+		// join evaluated. A gate that refuses a start leaves the Automation
+		// paused, blocked or held with the cursor on the member, and the
+		// starter is never called.
+		snap := c.snapshotMembers(a)
+		dryEff := &stepEffects{details: map[string]any{"automation_id": a.ID}}
+		{
+			st := &stepper{a: cloneAutomation(a), snap: snap, eff: dryEff, now: c.now()}
+			st.enter(automationMember(st.a, st.a.EntryMemberID))
+			st.finalize()
 		}
-		// The same budget gate that guards every later member guards the entry
-		// member: a refused entry leaves the Automation paused, blocked or held
-		// with the cursor on it, and the starter is never called.
-		var verdict BudgetVerdict
-		if reason == "" {
-			verdict = c.m.budgetVerdictFor(a, entry)
-		}
-		release := c.beginStart(entry.PRDID, reason == "" && !verdict.Gate)
-		var beff *budgetEffect
-		updated, err := c.m.automations.Update(a.ID, a.Version, func(a *Automation) error {
+		releases := c.beginStarts(dryEff.starts)
+		var (
+			eff      *stepEffects
+			curEntry *AutomationMember
+		)
+		updated, err := c.m.automations.Update(a.ID, a.Version, func(cur *Automation) error {
 			now := c.now()
-			beff = nil
-			a.Status = AutomationActive
-			a.StartedAt = &now
-			addCursor(a, a.EntryMemberID)
-			note := "activated by " + actor
-			if reason != "" {
-				a.Status = AutomationBlocked
-				a.IdleSince = &now
-				note = reason
-			} else if verdict.Gate {
-				beff = applyBudgetGate(a, entry, verdict, now, false)
-				if beff.action == BudgetActionBlocked {
-					note = beff.reason
-				}
-			} else if m := automationMember(a, a.EntryMemberID); m != nil {
-				m.Status = MemberRunning
-				m.StartedAt = &now
-			}
-			a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "activate", Actor: actor, Note: note}))
+			cur.Status = AutomationActive
+			cur.StartedAt = &now
+			cur.Decisions = trimDecisions(append(cur.Decisions, Decision{At: now, Kind: "activate", Actor: actor, Note: "activated by " + actor}))
+			eff = &stepEffects{details: map[string]any{"automation_id": cur.ID}}
+			curEntry = automationMember(cur, cur.EntryMemberID)
+			st := &stepper{a: cur, snap: snap, eff: eff, now: now}
+			st.enter(curEntry)
+			st.finalize()
 			return nil
 		})
 		if err != nil {
-			release()
+			releaseAll(releases)
 			if strings.HasPrefix(err.Error(), "409") && !strings.Contains(err.Error(), "only a draft") {
 				continue
 			}
 			return nil, err
 		}
+		reason := eff.blocked
+		entryName := curEntry.ID
+		if info := snap[curEntry.ID]; info.name != "" {
+			entryName = info.name
+		}
 		c.audit("automation_activate", map[string]any{
-			"automation_id": updated.ID, "actor": actor, "entry": entry.ID, "reason": reason,
+			"automation_id": updated.ID, "actor": actor, "entry": curEntry.ID, "reason": reason,
 		})
-		c.memberDecision(entry.PRDID, fmt.Sprintf("automation %s activated; entry member %s", updated.ID, name))
-		if reason != "" {
-			c.blocked(updated, reason, map[string]any{"to": entry.ID})
-			return updated, nil
+		if curEntry.PRDID != "" {
+			c.memberDecision(curEntry.PRDID, fmt.Sprintf("automation %s activated; entry member %s", updated.ID, entryName))
 		}
-		if beff != nil {
-			release()
-			c.budgetBlockedAlert(updated, beff, entry.ID)
-			return updated, nil
-		}
-		c.startMember(updated.ID, entry.ID, entry.PRDID, name, mode == "resume")
-		release()
+		c.afterAdvance(updated, eff)
+		releaseAll(releases)
 		final, _ := c.m.automations.Get(updated.ID)
 		if final == nil {
 			final = updated
