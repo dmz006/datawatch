@@ -2517,6 +2517,16 @@ type CostRateConfig struct {
 	OutPerK float64 `yaml:"out_per_k" json:"out_per_k"`
 }
 
+// DefaultSnapshotNeverStage — the path patterns the autonomous snapshot
+// and automatic-staging paths must never stage by default (applied when
+// snapshot_never_stage is unset): scratch and temp directories plus local
+// data folders. An entry ending in "/" names a directory (everything under
+// it is refused); any other entry is a shell-style glob matched against
+// the candidate file name (see internal/gitguard's Keep patterns).
+var DefaultSnapshotNeverStage = []string{
+	"scratch/", "tmp/", "temp/", ".tmp/", "data/", ".data/", "*.tmp",
+}
+
 // AutonomousConfig (BL24+BL25) — operator knobs for LLM-driven Automata
 // planning. Mirrors internal/autonomous.Config; copied here so
 // YAML loading + REST /api/config exposure don't pull in the package.
@@ -2871,6 +2881,22 @@ type AutonomousConfig struct {
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
+	// SnapshotNeverStage lists path patterns the autonomous snapshot and
+	// automatic-staging paths (the refs/datawatch/attempts attempt snapshots
+	// and the other automatic commits) must never stage: an entry ending in
+	// "/" names a directory (every file under it is refused) while any other
+	// entry is a shell-style glob matched against the candidate's file name
+	// (e.g. "*.tmp"). The default list covers scratch, temp and local data
+	// folders (see DefaultSnapshotNeverStage). Unset (nil) reads the
+	// default; an explicitly empty list disables every never-stage rule,
+	// so the nil and empty states must not be conflated
+	// (see EffectiveSnapshotNeverStage). No `omitempty`, deliberately,
+	// same round-trip reason as VerificationBackends above: handleAutonomousConfig
+	// round-trips the live config through json.Marshal + json.Unmarshal
+	// before persisting, and omitempty on a slice would elide an explicit
+	// "clear this list" so the operator's intent to disable the rules never
+	// reached the saved config.
+	SnapshotNeverStage []string `yaml:"snapshot_never_stage" json:"snapshot_never_stage"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRDs. MaxRecursionDepth
 	// caps the parent→child chain length; 0 disables recursion.
@@ -3334,6 +3360,32 @@ func loadShipped(cfg *Config) error {
 // An unset (nil) PreserveAttemptWork means true.
 func (a AutonomousConfig) PreserveAttemptWorkEnabled() bool {
 	return a.PreserveAttemptWork == nil || *a.PreserveAttemptWork
+}
+
+// EffectiveSnapshotNeverStage returns the never-stage patterns in effect:
+// the configured list (an explicitly empty list disables every never-stage
+// rule), or DefaultSnapshotNeverStage when unset (nil). Every call site
+// resolves the default through this accessor, so none hard-codes one.
+func (a AutonomousConfig) EffectiveSnapshotNeverStage() []string {
+	if a.SnapshotNeverStage == nil {
+		return DefaultSnapshotNeverStage
+	}
+	return a.SnapshotNeverStage
+}
+
+// ValidateSnapshotNeverStage runs the one structural check every
+// snapshot_never_stage entry must pass: non-empty after trimming, the same
+// check the security_workflows load path performs. Unset (nil) and an
+// explicit empty list are both legal; malformed glob syntax is not an
+// error (a pattern that path.Match rejects is treated as simply never
+// matching, exactly like gitguard's IgnorePatterns).
+func ValidateSnapshotNeverStage(patterns []string) error {
+	for _, p := range patterns {
+		if strings.TrimSpace(p) == "" {
+			return errors.New("autonomous.snapshot_never_stage: patterns must be non-empty")
+		}
+	}
+	return nil
 }
 
 // ValidateDriftMode accepts the two legal autonomous.drift_mode values,
@@ -5805,10 +5857,16 @@ func DefaultConfig() *Config {
 			DetailTextCapBytes:      4096,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
-			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
-			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
-			UndeclaredEditMode:      "warn",
-			ScopeLint:               ScopeLintEnforce,
+			// The never-stage list ships populated (scratch, temp and local
+			// data folders). A nil list is saved as an empty list (the field
+			// has no omitempty), and a reload reads an empty list as "never-
+			// stage rules disabled" — only an operator's explicit empty list
+			// may mean none, while an omitted key keeps this default.
+			SnapshotNeverStage: append([]string(nil), DefaultSnapshotNeverStage...),
+			BlockOnFileDrift:   false,   // opt-in strict drift enforcement
+			DriftMode:          "block", // pre-existing drift blocks by default; "warn" for flag-only
+			UndeclaredEditMode: "warn",
+			ScopeLint:          ScopeLintEnforce,
 			Automation: AutonomousAutomationConfig{
 				AgentInsertPolicy:  AgentInsertPolicyAllow,
 				TriageAlertMinutes: intPtr(DefaultAutomationTriageAlertMinutes), CreateSearchMode: CreateSearchModeShadow, CreateSearchThreshold: float64Ptr(DefaultAutomationCreateSearchThreshold), MergePendingMode: MergePendingModeOff, MergePendingAlertMinutes: intPtr(DefaultAutomationMergePendingAlertMinutes), MergedMemberPolicy: MergedMemberPolicyCompleted,
@@ -6372,6 +6430,9 @@ func validateLoaded(cfg *Config) error {
 			t, DefaultAutomationMergePendingAlertMinutes)
 	}
 	if err := validateRepoCIWatch(cfg.Autonomous.Automation.RepoCIWatch); err != nil {
+		return err
+	}
+	if err := ValidateSnapshotNeverStage(cfg.Autonomous.SnapshotNeverStage); err != nil {
 		return err
 	}
 	if err := validateSecurityFailure(cfg.Autonomous.Automation.SecurityFailure); err != nil {
