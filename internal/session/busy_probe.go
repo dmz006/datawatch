@@ -248,6 +248,67 @@ func (m *Manager) livenessVerdictFor(sess *Session, now time.Time) LivenessVerdi
 	return ClassifyLiveness(in)
 }
 
+// LivenessVerdictFor is the verdict half of LivenessAssessmentFor: the
+// same lookup, the same caller facts, the same StallOthers semantics, and
+// the same no-verdict answers — without the alive-and-silent fact.
+func (m *Manager) LivenessVerdictFor(id string, now time.Time) (LivenessVerdict, bool) {
+	v, _, ok := m.LivenessAssessmentFor(id, now)
+	return v, ok
+}
+
+// LivenessAssessmentFor applies the liveness rule (ClassifyLiveness, via
+// AssessLiveness) to the session at id — full id or short id, the same
+// lookup GetSession applies — and the caller's now, and reports the
+// verdict with the alive-and-silent fact, both with true. An unknown or
+// missing session reports (LivenessNoOpinion, false, false): the caller
+// has no assessment to work with and keeps its own fallback. A session
+// with no recorded backend family (legacy records) likewise reports
+// nothing: the rule cannot say what kind of worker it is applied to, and
+// reading that as death would flip the caller's judgement on a record the
+// rule is not about.
+//
+// This is the exported entry point for cross-package consumers (the
+// autonomous supervisor watch's silence check) and differs from the
+// manager's internal verdict path (livenessVerdictFor, the busy probe and
+// gap watcher) in one deliberate way: it passes StallOthers=true, so the
+// caller's consent to reporting silent non-claude-code interactive
+// backends as stalled is explicit to this view. Consequences of that view:
+//
+//   - an alive, silent print-mode or interactive non-claude-code worker is
+//     reported LivenessStalled — silence for the silence check;
+//
+//   - an alive, silent claude-code worker keeps its LivenessRunning verdict
+//     (rule (f) — the busy probe's and the gap watcher's semantics are
+//     untouched); the silence is reported in the AliveSilent fact, which
+//     the silence check reads as silence and the busy probe never sees.
+//
+// The fact plumbing itself is unchanged: process-alive through the pane
+// child check, the freshest observable activity, and whether the pane
+// shows a real input prompt.
+func (m *Manager) LivenessAssessmentFor(id string, now time.Time) (LivenessVerdict, bool, bool) {
+	if m == nil || m.store == nil {
+		return LivenessNoOpinion, false, false
+	}
+	sess, ok := m.GetSession(id)
+	if !ok || sess == nil || sess.BackendFamily == "" {
+		return LivenessNoOpinion, false, false
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	a := AssessLiveness(LivenessInput{
+		BackendFamily: sess.BackendFamily,
+		PrintMode:     IsPromptBackend(sess.BackendFamily),
+		ProcessAlive:  m.paneProcessAlive(sess),
+		LastActivity:  m.sessionLastActivity(sess),
+		Now:           now,
+		Window:        m.livenessWindowFor(sess.BackendFamily),
+		AtPrompt:      m.paneAtPrompt(sess),
+		StallOthers:   true, // the cross-package view consents to stalling silent others
+	})
+	return a.Verdict, a.AliveSilent, true
+}
+
 // applyBusyProbe makes a Running or WaitingInput session Running when its
 // backend is visibly working, and reports whether it did. Claude-code uses
 // the pane busy probe; every other recorded family uses the liveness rule

@@ -163,3 +163,142 @@ func TestBackendLiveness_WindowDefault(t *testing.T) {
 		})
 	}
 }
+
+// TestLivenessAssessment_AliveSilent pins the alive-and-silent fact: the
+// worker's process is alive, the pane is not at an input prompt, and the
+// last activity is beyond the liveness window. This is the case the
+// supervisor watch's silence check (internal/autonomous) is built around —
+// "alive and silent beyond the liveness window" must read as silence —
+// and it lands on different verdicts per family. Under the production
+// assessment view (LivenessAssessmentFor passes StallOthers=true):
+// claude-code keeps its running verdict (busy-probe semantics, rule (f))
+// and the silence rides in AliveSilent; every other family reports it
+// stalled outright.
+func TestLivenessAssessment_AliveSilent(t *testing.T) {
+	silent := livenessNow.Add(-livenessWindow - time.Second)
+	cases := []struct {
+		family      string
+		printMode   bool
+		stallOthers bool
+		wantVerdict LivenessVerdict
+		wantSilent  bool
+	}{
+		{"claude-code", false, true, LivenessRunning, true},
+		{"claude-code", false, false, LivenessRunning, true}, // fact is independent of the opt-in
+		{"pi", false, true, LivenessStalled, true},
+		{"pi", false, false, LivenessNoOpinion, true}, // verdict defers to the gap watcher; the fact stands
+		{"goose", false, true, LivenessStalled, true},
+		{"ollama", false, true, LivenessStalled, true},
+		{"openwebui", false, true, LivenessStalled, true},
+		{"pi-prompt", true, true, LivenessStalled, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.family+"/stall="+boolName(tc.stallOthers), func(t *testing.T) {
+			in := baseLivenessInput(tc.family)
+			in.PrintMode = tc.printMode
+			in.ProcessAlive = true
+			in.LastActivity = silent
+			in.StallOthers = tc.stallOthers
+			got := AssessLiveness(in)
+			if got.Verdict != tc.wantVerdict || got.AliveSilent != tc.wantSilent {
+				t.Errorf("AssessLiveness(%+v) = %+v, want {Verdict:%v AliveSilent:%v}", in, got, tc.wantVerdict, tc.wantSilent)
+			}
+		})
+	}
+}
+
+// TestLivenessAssessment_NotSilent pins the negative side: writing, at an
+// input prompt, and the dead cases leave AliveSilent false in every family
+// — the fact is "alive and silent", so none of those is the silence the
+// silence check is watching for, whatever the verdict says.
+func TestLivenessAssessment_NotSilent(t *testing.T) {
+	families := []struct {
+		family    string
+		printMode bool
+	}{
+		{"claude-code", false},
+		{"pi", false},
+		{"goose", false},
+		{"pi-prompt", true},
+	}
+	for _, f := range families {
+		t.Run(f.family, func(t *testing.T) {
+			mk := func(stallOthers bool) LivenessInput {
+				in := baseLivenessInput(f.family)
+				in.PrintMode = f.printMode
+				in.StallOthers = stallOthers
+				return in
+			}
+			// The "at a real prompt" case: interactive backends report waiting
+			// input, but print-mode backends never carry a real input prompt,
+			// so AtPrompt is ignored for them and silence wins.
+			atPromptWant := LivenessWaitingInput
+			if f.printMode {
+				atPromptWant = LivenessStalled
+			}
+			cases := []struct {
+				name        string
+				stallOthers bool
+				mutate      func(in *LivenessInput)
+				wantVerdict LivenessVerdict
+			}{
+				{"alive and writing", true, func(in *LivenessInput) {
+					in.ProcessAlive = true
+					in.LastActivity = livenessNow.Add(-time.Second)
+				}, LivenessRunning},
+				{"alive at the window edge", true, func(in *LivenessInput) {
+					in.ProcessAlive = true
+					in.LastActivity = livenessNow.Add(-livenessWindow) // boundary: still within
+				}, LivenessRunning},
+				{"at a real prompt", true, func(in *LivenessInput) {
+					in.ProcessAlive = true
+					in.LastActivity = livenessNow.Add(-time.Minute)
+					in.AtPrompt = true
+				}, atPromptWant},
+				{"dead", true, func(in *LivenessInput) {
+					in.ProcessAlive = false
+					in.LastActivity = livenessNow.Add(-time.Minute)
+				}, LivenessStalled},
+				{"dead at a prompt", true, func(in *LivenessInput) {
+					in.ProcessAlive = false
+					in.AtPrompt = true
+				}, LivenessStalled},
+			}
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					in := mk(tc.stallOthers)
+					tc.mutate(&in)
+					got := AssessLiveness(in)
+					if got.Verdict != tc.wantVerdict || got.AliveSilent {
+						t.Errorf("AssessLiveness(%+v) = %+v, want {Verdict:%v AliveSilent:false}", in, got, tc.wantVerdict)
+					}
+				})
+			}
+		})
+	}
+}
+
+// TestLivenessAssessment_NoActivity — an alive worker with no observed
+// activity at all (zero LastActivity) is alive and silent, in every family
+// and opt-in.
+func TestLivenessAssessment_NoActivity(t *testing.T) {
+	for _, stallOthers := range []bool{false, true} {
+		t.Run("stall="+boolName(stallOthers), func(t *testing.T) {
+			in := baseLivenessInput("pi-prompt")
+			in.PrintMode = true
+			in.ProcessAlive = true
+			in.StallOthers = stallOthers
+			got := AssessLiveness(in)
+			if !got.AliveSilent || got.Verdict != LivenessStalled {
+				t.Errorf("AssessLiveness(no activity) = %+v, want {Verdict:%v AliveSilent:true}", got, LivenessStalled)
+			}
+		})
+	}
+}
+
+func boolName(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
+}

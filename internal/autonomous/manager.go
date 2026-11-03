@@ -1108,6 +1108,7 @@ type Manager struct {
 	supervisorWatchTmuxCfg      string
 	supervisorWatchNodes        SupervisorWatchNodeLister
 	supervisorWatchSess         SupervisorWatchSessionLogger
+	supervisorWatchLiveness     SupervisorWatchLivenessSource
 	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
 	supervisorWatchAlerted      map[string]bool
 	supervisorWatchAlertMu      sync.Mutex
