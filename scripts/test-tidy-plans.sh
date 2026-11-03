@@ -17,8 +17,10 @@
 #   * the links check fails on a broken link and passes when clean
 #   * tidy output contains counts only (never a file list)
 #   * registry hygiene: duplicate sections folded, closed tables merged,
-#     duplicate rows dropped, verbose closed rows trimmed, stale draft
-#     rows corrected from a --status-file list (and --dry-run changes nothing)
+#     duplicate rows dropped, verbose closed rows cut to a one-line
+#     summary, stale draft rows corrected from a --status-file list,
+#     hygiene output is counts only, and a second hygiene run changes
+#     nothing (and --dry-run changes nothing)
 #
 # Usage:
 #   scripts/test-tidy-plans.sh            run all cases (default)
@@ -376,6 +378,13 @@ EOF
   case "$reg" in *'…'*) ok "hygiene trim: ellipsis present" ;; *) fail "hygiene trim: ellipsis present" ;; esac
   case "$reg" in *'verbose-token-040'*) fail "hygiene trim: tail text removed" ;; *) ok "hygiene trim: tail text removed" ;; esac
   case "$reg" in *'verbose-token-001'*) ok "hygiene trim: head text kept" ;; *) fail "hygiene trim: head text kept" ;; esac
+  # the trimmed row must be exactly one table row (a one-line summary):
+  # one line that is a row, mentions the head token, and ends with the ellipsis cell
+  local one_line
+  one_line=$(printf '%s\n' "$reg" | grep -cE '^\| *1 *\|.*verbose-token-001.*…' ) || true
+  [ "${one_line:-0}" -eq 1 ] \
+    && ok "hygiene trim: closed row became a one-line summary" \
+    || fail "hygiene trim: closed row became a one-line summary (matching rows: $one_line)"
 }
 
 case_hygiene_stale_corrected() {
