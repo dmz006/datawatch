@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.71.2 — Burn guard back-off shows the right end time and the rung
+
+The back-off line for a backend held by the burn guard is now correct and says why.
+
+- The hold ends when the guard steps back or at the next window boundary. It had shown a reset one year ahead.
+- Times are stored and shown in the daemon's time zone.
+- The capacity view, the MCP status, the CLI and the comm channel name the guard rung and its reason next to the back-off, and the web capacity card shows the rung.
+
 ## v9.71.1 — Billing test helper no longer double-unescapes
 
 A CodeQL double-escaping alert in the usage billing test helper is fixed (the `&amp;` replacement now runs last); no behaviour change.

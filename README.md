@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.71.1 (2026-11-03).** A test helper in the usage billing tests no longer double-unescapes (a CodeQL alert); no behaviour change. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.71.2 (2026-11-03).** The burn guard's back-off now ends when the guard steps back, shows its time in the daemon's zone, and names the guard rung and reason on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
