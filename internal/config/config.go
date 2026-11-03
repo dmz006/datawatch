@@ -2730,6 +2730,13 @@ type AutonomousConfig struct {
 	// omitempty, for the same round-trip reason as JudgePolicy: an explicit 0
 	// must reach the saved config.
 	JudgeSizeThresholdLines int `yaml:"judge_size_threshold_lines" json:"judge_size_threshold_lines"`
+	// JudgeStrongBackend names the strong judge backend a large diff is
+	// routed to first when the changed-line count exceeds
+	// JudgeSizeThresholdLines (see config.JudgeSizeStrongFirst). Empty (the
+	// default) resolves to the last entry of JudgePolicy; a value not in
+	// the judge policy leaves the policy order unchanged. No omitempty,
+	// for the same round-trip reason as JudgePolicy.
+	JudgeStrongBackend string `yaml:"judge_strong_backend" json:"judge_strong_backend"`
 	// JudgeVerdictCacheEnabled controls the per-commit judge verdict cache:
 	// when on (the default), a judge that completes a pass or block verdict
 	// on a (commit sha, judge policy, rules) triple replays that verdict

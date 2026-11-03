@@ -4408,6 +4408,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
 			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
 			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
+			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
 			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
@@ -6438,9 +6439,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
 			gcfg := liveAutonomousConfig()
 			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
-			// Size rule: a large diff routes the judge to claude-code first. A
-			// pinned unit backend keeps its own behaviour and is not measured.
-			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, req, func(id string) (*autonomouspkg.PRD, bool) {
+			// Size rule: a large diff routes the judge to the configured strong
+			// backend first (autonomous.judge_strong_backend; empty = the judge
+			// policy's last entry). The choice is made once per run and the
+			// decision sentence rides every pick's reason, so the verdict and the
+			// review state can report a reroute. A pinned unit backend keeps its
+			// own behaviour and is not measured.
+			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, gcfg.JudgeStrongBackend, req, func(id string) (*autonomouspkg.PRD, bool) {
 				if autonomousMgrRef == nil {
 					return nil, false
 				}

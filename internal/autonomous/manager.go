@@ -229,6 +229,11 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
+	// the strong judge backend a large diff is routed to first, empty = the
+	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
+	// omitempty, same round-trip reason as JudgeSizeThresholdLines.
+	JudgeStrongBackend string `json:"judge_strong_backend"`
 	// JudgeVerdictCacheEnabled mirrors autonomous.judge_verdict_cache_enabled
 	// in config. A nil (unset) pointer means enabled — the normalizer
 	// config.NormalizeJudgeVerdictCacheEnabled is the single source of the
