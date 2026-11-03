@@ -68,6 +68,13 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => { stopAll(); process.exit(130); });
 }
 
+let insecureAgent;
+try {
+  const { Agent } = await import('undici');
+  insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
+} catch { /* fall back to env override below */ }
+if (!insecureAgent) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
 function freePort() {
   return new Promise((resolve, reject) => {
     const s = net.createServer();
@@ -111,12 +118,14 @@ async function startDaemon(bin, name, hostname, token) {
   });
   child.unref();
   daemons.push(child);
-  const base = `http://127.0.0.1:${ports.http}`;
+  // The HTTP port 307-redirects everything (except a few loopback paths) to
+  // the self-signed TLS port, so probe and talk to the TLS port directly.
+  const base = `https://127.0.0.1:${ports.tls}`;
   const deadline = Date.now() + 45000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`sandbox daemon ${name} exited early (see ${log})`);
     try {
-      const r = await fetch(`${base}/api/health`);
+      const r = await fetch(`${base}/api/health`, { dispatcher: insecureAgent });
       if (r.ok) return { base, tlsBase: `https://127.0.0.1:${ports.tls}`, token, ports, hostname };
     } catch { /* not up yet */ }
     await new Promise((r) => setTimeout(r, 300));
@@ -137,12 +146,13 @@ runPerfStory(async (page) => {
   const peer = await startDaemon(bin, 'peer', PEER, 'ts846-peer-token');
 
   // Register the second daemon as a federated peer on the primary. The peer's
-  // plain-HTTP port is used for the proxy hop: the proxy verifies certificates
-  // and the sandbox TLS certificate is self-signed.
+  // TLS port is used for the proxy hop with tls_skip_verify, because the
+  // sandbox certificate is self-signed.
   const reg = await fetch(`${primary.base}/api/servers`, {
+    dispatcher: insecureAgent,
     method: 'POST',
     headers: { Authorization: `Bearer ${primary.token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: PEER, url: peer.base, token: peer.token, enabled: true, federated: true, capabilities: ['full-control'] }),
+    body: JSON.stringify({ name: PEER, url: peer.base, token: peer.token, enabled: true, tls_skip_verify: true, federated: true, capabilities: ['full-control'] }),
   });
   check(reg.ok, `registering the peer on the primary failed: HTTP ${reg.status}`);
 
