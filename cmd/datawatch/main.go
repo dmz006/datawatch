@@ -8781,6 +8781,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		Version:             Version,
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
+		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		RestartFn: func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
@@ -14349,6 +14350,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		Version:             Version,
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
+		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

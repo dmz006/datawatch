@@ -1069,6 +1069,20 @@ Per-backend enable/disable + setup for the original adapter system. Each backend
 
 Per-backend per-model input + output token rates the daemon multiplies session token counts by to compute `EstCostUSD`. Adjust if a backend's billing changed or you negotiated a custom rate. Values default to public list pricing on first run.
 
+#### Cost Report
+
+A **token-first report of model token spend over a window and a grouping**: for each group it counts the sessions and shows **tokens in / tokens out first**, and a **USD estimate where and only where configured [cost rates](#cost-rates-usd--1k-tokens) cover every backend in the group** — where a rate is missing, the row shows tokens and no dollar figure (`rate_configured` is `false`); it never invents a number. Dollar figures are estimates at configured rates, not invoices. The four groupings are `automaton` (default), `automation`, `backend` and `week` (weeks start at `cost_report.week_start`, Monday or Sunday); the window takes `since`/`until` (RFC3339 or `YYYY-MM-DD`), an absent `until` being now and an absent `since` the daemon's `cost_report.default_window_days` (7). The figures rest on a 31-day ledger of recorded sessions, which the report body states as `retention_days`; spend older than the ledger is visible only through lifetime totals (`lifetime_fallback`). `cost_report.include_peer_spend` (default `false`) admits spend federation peers reported; `cost_report.show_usd_estimates` (default `true`) drops the dollar figures everywhere when off. One engine serves every surface — CLI, comm channel, MCP, REST, PWA — so the same window and grouping give the same rows on all of them.
+
+The **Cost report** dashboard card (help link target: `#cost-report`) renders that report next to the live cost card, with three controls:
+
+- **Group by** — `automaton`, `automation`, `backend` or `week`; the `default` choice leaves the grouping to the daemon's `cost_report.default_group_by` setting.
+- **Window (days)** — how far back the report reaches; blank leaves the window to the daemon's `cost_report.default_window_days` setting.
+- **Refresh** — re-requests `GET /api/cost/report` with the current controls.
+
+Rendering rules: token counts (in/out) are shown first, for every group; a USD figure appears **only** where the report carries one (a group counts toward a USD estimate only while it has a rate configured — cost rates above — under the `cost_report.show_usd_estimates` setting, and the card also shows the daemon's retention line, e.g. *Figures rest on the last 31 days of recorded sessions*, plus a note when some figures fall back to lifetime rates). The card never invents a USD number for a group the daemon did not price.
+
+**Settings** (`cost_report` group in PWA settings): `default_group_by`, `default_window_days`, `show_usd_estimates`, `week_start` (Monday or Sunday for the `week` grouping) and `include_peer_spend`.
+
 #### Detection filters
 
 Prompt patterns + completion patterns the daemon scans tmux output for. **Prompt patterns** trigger `WaitingInput` when matched (e.g. `❯`, `$ `). **Completion patterns** trigger `Complete` (e.g. `DATAWATCH_COMPLETE:`). Per-deployment overrides; the global defaults work for most setups.

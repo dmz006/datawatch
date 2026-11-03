@@ -166,6 +166,40 @@ func (r *Router) handleCostCmd(cmd Command) {
 	r.reply("cost", body)
 }
 
+// handleCostReportCmd serves "cost report [group_by=<g>] [since=<t>] [until=<t>]"
+// by GET /api/cost/report — the same engine endpoint as the
+// `datawatch cost report` CLI and the /api/cost/report REST surface, so the
+// report logic lives in exactly one place; the handler only translates the
+// chat tokens into query parameters and relays the JSON back.
+func (r *Router) handleCostReportCmd(cmd Command) {
+	const usage = "usage: cost report [group_by=<automaton|automation|backend|week>] [since=<RFC3339|YYYY-MM-DD>] [until=<RFC3339|YYYY-MM-DD>]"
+	q := url.Values{}
+	for _, tok := range strings.Fields(cmd.Text) {
+		k, v, ok := strings.Cut(tok, "=")
+		if !ok {
+			r.reply("cost report failed", usage)
+			return
+		}
+		switch k {
+		case "group_by":
+			q.Set("group_by", v)
+		case "since":
+			q.Set("since", v)
+		case "until":
+			q.Set("until", v)
+		default:
+			r.reply("cost report failed", usage)
+			return
+		}
+	}
+	body, err := r.commGet("/api/cost/report", q)
+	if err != nil {
+		r.reply("cost report failed", err.Error())
+		return
+	}
+	r.reply("cost report", body)
+}
+
 func (r *Router) handleCooldown(cmd Command) {
 	switch cmd.CooldownVerb {
 	case "status", "":

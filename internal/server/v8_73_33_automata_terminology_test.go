@@ -114,6 +114,9 @@ var pendingTranslationKeys = map[string]bool{
 	// Supervisor watch settings label: English placeholder until the app
 	// translation lands.
 	"settings_supervisor_watch_silent_minutes": true,
+	// Cost report card group label: the value names "Automaton" and ships as
+	// the English placeholder until the app translation lands.
+	"cost_report_group_automaton": true,
 	// The question quality and queue preview settings labels ship as the
 	// English text in the four non-English bundles until the app translation
 	// lands.

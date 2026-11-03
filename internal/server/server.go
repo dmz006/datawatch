@@ -409,6 +409,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cost/aggregated", api.handleAggregatedCost)                        // BL317 — Dashboard "all servers" mode
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)                                  // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)                                  // BL6 — operator override
+	apiMux.HandleFunc("/api/cost/report", api.handleCostReport)                                // cost report engine (internal/costreport)
 	// Sprint S4 (v3.8.0) — messaging + UI polish.
 	apiMux.HandleFunc("/api/splash/logo", api.handleSplashLogo)        // BL69
 	apiMux.HandleFunc("/api/splash/info", api.handleSplashInfo)        // BL69
