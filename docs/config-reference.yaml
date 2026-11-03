@@ -1641,6 +1641,43 @@ autonomous:
     gpu_mode: ""
     claude_mode: ""
 
+  # Checks: mode of each automatic check. Every key is a mode:
+  #   off    the check is not run.
+  #   shadow the check runs and its findings are recorded through the triage
+  #          record; nothing is alerted and nothing is blocked.
+  #   on     the check runs, records, alerts and, for pre_start_verifier,
+  #          blocks a task start.
+  # A mode value is matched without regard to case; an unknown value is
+  # rejected with an error naming the key. An unset key reads its default.
+  #
+  # pre_start_verifier: off | shadow | on. Default on. Runs the task's
+  #   verification script before the task starts; on blocks the start when it
+  #   fails.
+  # block_when_missing: true | false. Default true. With pre_start_verifier on,
+  #   a task that has no verification script is blocked too; false lets it
+  #   start.
+  # plan_rules: off | shadow | on. Default on. Checks a plan against the rules;
+  #   findings only, never blocks.
+  # after_done: off | shadow | on. Default on. Report-only check after a task
+  #   reports done.
+  # registry_readme: off | shadow | on. Default on. Report-only check of the
+  #   registry README; never rewrites a row.
+  # projects: map keyed by project directory. Each entry may set any of the
+  #   keys above (pre_start_verifier, block_when_missing, plan_rules,
+  #   after_done, registry_readme); a key left out inherits the global value.
+  #   An empty map (the default) means every project follows the global values.
+  checks:
+    pre_start_verifier: on
+    block_when_missing: true
+    plan_rules: on
+    after_done: on
+    registry_readme: on
+    projects: {}
+    # projects:
+    #   /path/to/project:
+    #     pre_start_verifier: shadow
+    #     after_done: off
+
   # Infrastructure retry: a task that fails because the machinery around it
   # failed (not because of its own work) is retried on a back-off schedule and
   # the failure is not counted against the task. Every key is settable at
