@@ -1,5 +1,7 @@
 // Comm-channel verbs for Automations: "automation activate <id>" starts a
-// draft Automation; "automation list" and "automation get <id>" read them;
+// draft Automation; "automation return-to-draft <id>" returns a blocked
+// Automation (no member started) to the draft the operator can still edit;
+// "automation list" and "automation get <id>" read them;
 // pause, resume, cancel, skip, insert, remove, edges and approve are the
 // operator controls on a running one, and set-llm and set-verification-llm
 // set its LLMs. Sibling of cmd/datawatch/cli_automation.go
@@ -26,7 +28,7 @@ import (
 )
 
 const (
-	automationUsage = "usage: automation activate <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
+	automationUsage = "usage: automation activate <id> | return-to-draft <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
 		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
@@ -64,7 +66,7 @@ const (
 // AutomationCommVerbs lists the verbs handled by the switch in
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
-	return []string{"activate", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
+	return []string{"activate", "return-to-draft", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
 		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
 }
 
@@ -84,6 +86,18 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			"/api/automations/"+url.PathEscape(args[1])+"/activate", `{"actor":"comm"}`)
 		if err != nil {
 			r.send("automation activate error: " + err.Error())
+			return
+		}
+		r.send(resp)
+	case "return-to-draft":
+		if len(args) < 2 {
+			r.send("usage: automation return-to-draft <id>")
+			return
+		}
+		resp, err := r.commJSON(http.MethodPost,
+			"/api/automations/"+url.PathEscape(args[1])+"/return_to_draft", `{"actor":"comm"}`)
+		if err != nil {
+			r.send("automation return-to-draft error: " + err.Error())
 			return
 		}
 		r.send(resp)
@@ -210,7 +224,7 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, return-to-draft, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
 	}
 }
 

@@ -62,7 +62,7 @@ func TestAutomationCmdListGetUsageAndErrors(t *testing.T) {
 		!strings.Contains(resp[0], "list") || !strings.Contains(resp[0], "get <id>") {
 		t.Errorf("bare automation response = %v", resp)
 	}
-	if resp := r.HandleTestMessage("automation nope"); len(resp) == 0 || !strings.Contains(resp[0], "Try: activate, list, get") {
+	if resp := r.HandleTestMessage("automation nope"); len(resp) == 0 || !strings.Contains(resp[0], "Try: activate, return-to-draft, list, get") {
 		t.Errorf("unknown-subcommand response = %v", resp)
 	}
 	if resp := r.HandleTestMessage("automation get nope"); len(resp) == 0 ||

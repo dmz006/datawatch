@@ -213,6 +213,9 @@ func (f *fakeOrchAutonomous) GetAutomation(string) (any, bool) { return nil, fal
 func (f *fakeOrchAutonomous) ActivateAutomation(string, string, int64) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) ReturnAutomationToDraft(string, string, int64) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) RecordPRDShipped(string, string, time.Time, string, string) (any, error) {
 	return nil, nil
 }

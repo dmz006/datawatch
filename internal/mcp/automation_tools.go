@@ -9,6 +9,7 @@
 //   automation_delete — delete an Automation
 //   automation_import_graph — convert an orchestrator graph to a draft Automation
 //   automation_activate — start a draft Automation
+//   automation_return_to_draft — return a blocked Automation to draft
 //   automation_set_llm / automation_set_verification_llm — Automation LLM defaults
 //   automation_set_decision_assistant — optional local-model decision assistant
 
@@ -216,6 +217,40 @@ func (s *Server) handleAutomationActivate(_ context.Context, req mcpsdk.CallTool
 		body["reason"] = v
 	}
 	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/activate", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+// ── automation_return_to_draft ─────────────────────────────────────────
+
+func (s *Server) toolAutomationReturnToDraft() mcpsdk.Tool {
+	return mcpsdk.NewTool("automation_return_to_draft",
+		mcpsdk.WithDescription("Return a blocked Automation — one that went blocked before any member started — back to the draft the operator can still edit. Every member is pending again, and activating it afterwards runs it as if it had never started. Refused with a conflict if the Automation is not blocked, is blocked on anything else, or already started a member."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The Automation ID to return to draft.")),
+		mcpsdk.WithNumber("expected_version", mcpsdk.Description("The Automation version you read (automation_get). The call is refused with a conflict if the record moved since. Omit it to skip the check.")),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who is acting (recorded in the audit trail). Defaults to operator.")),
+	)
+}
+
+func (s *Server) handleAutomationReturnToDraft(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("error: id is required"), nil
+	}
+	body := map[string]any{}
+	if v, present := req.GetArguments()["expected_version"]; present {
+		version, ok := controlVersion(v)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: expected_version must be a number"), nil
+		}
+		body["expected_version"] = version
+	}
+	if v := req.GetString("actor", ""); v != "" {
+		body["actor"] = v
+	}
+	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/return_to_draft", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
@@ -749,7 +784,7 @@ func AutomationToolNames() []string {
 	s := &Server{}
 	tools := []mcpsdk.Tool{
 		s.toolAutomationList(), s.toolAutomationGet(), s.toolAutomationMergedMembers(), s.toolAutomationCreate(),
-		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(),
+		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(), s.toolAutomationReturnToDraft(),
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),

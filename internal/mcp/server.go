@@ -730,6 +730,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationUpdate(), tracked(s.handleAutomationUpdate))
 	mcpSrv.AddTool(s.toolAutomationDelete(), tracked(s.handleAutomationDelete))
 	mcpSrv.AddTool(s.toolAutomationActivate(), tracked(s.handleAutomationActivate))
+	mcpSrv.AddTool(s.toolAutomationReturnToDraft(), tracked(s.handleAutomationReturnToDraft))
 	mcpSrv.AddTool(s.toolAutomationImportGraph(), tracked(s.handleAutomationImportGraph))
 	mcpSrv.AddTool(s.toolAutomationPause(), tracked(s.handleAutomationPause))
 	mcpSrv.AddTool(s.toolAutomationResume(), tracked(s.handleAutomationResume))
@@ -1440,6 +1441,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationUpdate, "automation_update"},
 		{s.toolAutomationDelete, "automation_delete"},
 		{s.toolAutomationActivate, "automation_activate"},
+		{s.toolAutomationReturnToDraft, "automation_return_to_draft"},
 		{s.toolAutomationImportGraph, "automation_import_graph"},
 		{s.toolAutomationPause, "automation_pause"},
 		{s.toolAutomationResume, "automation_resume"},
