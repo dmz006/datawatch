@@ -53,6 +53,9 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 		// handleClusterCompletion handles their PR instead.
 		return
 	}
+	// Ship step: push, tag and push the tag per the project's ship policy.
+	// Failures are recorded on the triage record and never fail the PRD.
+	m.runShipStep(prd)
 	if prd.Git.Branch == "" || !prd.Git.AutoPR {
 		return
 	}
