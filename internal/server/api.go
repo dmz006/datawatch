@@ -5801,6 +5801,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
 		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
 		"pin_check_seconds": s.cfg.PinCheckSeconds,
+		// cost_report — the cost report engine knobs (internal/costreport);
+		// each key reads its default while absent.
+		"cost_report": map[string]interface{}{
+			"default_group_by":    s.cfg.CostReport.EffectiveGroupBy(),
+			"default_window_days": s.cfg.CostReport.EffectiveWindowDays(),
+			"show_usd_estimates":  s.cfg.CostReport.EffectiveShowUSDEstimates(),
+			"week_start":          s.cfg.CostReport.EffectiveWeekStart(),
+			"include_peer_spend":  s.cfg.CostReport.EffectiveIncludePeerSpend(),
+		},
 		"server": map[string]interface{}{
 			"enabled":                        s.cfg.Server.Enabled,
 			"host":                           s.cfg.Server.Host,
@@ -7375,6 +7384,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.NotifyExclude = splitCSV(s)
 			}
+		// cost_report.* — the cost report engine knobs (internal/costreport);
+		// each sticks as the pointer field, so an absent key reads the default.
+		case "cost_report.default_group_by":
+			if str := toString(v); str != "" {
+				cfg.CostReport.DefaultGroupBy = &str
+			}
+		case "cost_report.default_window_days":
+			if n, ok := toInt(v); ok {
+				cfg.CostReport.DefaultWindowDays = &n
+			}
+		case "cost_report.show_usd_estimates":
+			b := toBool(v)
+			cfg.CostReport.ShowUSDEstimates = &b
+		case "cost_report.week_start":
+			if str := toString(v); str != "" {
+				cfg.CostReport.WeekStart = &str
+			}
+		case "cost_report.include_peer_spend":
+			b := toBool(v)
+			cfg.CostReport.IncludePeerSpend = &b
 		// dashboard.hide_inactive_cards — explicit true/false both stick;
 		// an absent key (never PUT) reads the default, true.
 		case "dashboard.hide_inactive_cards":

@@ -3304,6 +3304,43 @@ results:
   # always at least 1. Changing it applies from the next posted result.
   schedule_history_limit: 20
 
+# ── Cost report ──
+# Knobs for the cost report (internal/costreport): one view over the
+# spend the daemon already records (tokens per session, plus a USD
+# estimate where a rate is configured for the backend), grouped over a
+# since/until window by one of four group_bys.
+# Tokens come first: a row's usd_estimate is present only when a rate is
+# configured for every backend in that row (see cost_rates above);
+# otherwise the field is absent and rate_configured is false.
+cost_report:
+  # default_group_by: grouping a report request that names none is
+  # built under. Allowed values and their meaning:
+  # automaton: group by the owning automaton
+  # automation: group by the owning automation (the automation that ran the work)
+  # backend: group by backend family
+  # week: group by week, using week_start below
+  # Default: automaton. Unset or an unrecognized value reads automaton.
+  default_group_by: automaton
+  # default_window_days: the window, in days, the report falls back to
+  # when a request has no since bound: until minus this many days.
+  # (until itself falls back to now.) Default: 7. Values below 1 read
+  # the default.
+  default_window_days: 7
+  # show_usd_estimates: whether rows may carry a usd_estimate at all,
+  # on top of a rate being configured for the row's backends. Default
+  # true. Set false for a tokens-only report even where rates exist.
+  show_usd_estimates: true
+  # week_start: the day that starts a week for group_by: week reports
+  # (row keys are the week-start date in UTC, YYYY-MM-DD).
+  # monday: week runs Monday 00:00 to Sunday 23:59 (default)
+  # sunday: week runs Sunday 00:00 to Saturday 23:59
+  # Unset or any other value reads monday.
+  week_start: monday
+  # include_peer_spend: whether rows also include spend recorded by
+  # federation peers that opted into reporting it to this daemon.
+  # Default false: peer spend is excluded from the report.
+  include_peer_spend: false
+
 # ── Onboarding report ──
 # The Automation onboarding report: what is configured, what is missing and
 # what to try next. Read from the PWA card, `datawatch automation

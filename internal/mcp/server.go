@@ -64,9 +64,10 @@ import (
 
 // Server wraps the MCP server with session manager access.
 type Server struct {
-	hostname string
-	manager  *session.Manager
-	cfg      *config.MCPConfig
+	hostname      string
+	manager       *session.Manager
+	cfg           *config.MCPConfig
+	costReportCfg config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
 	fallbackToken       string
 	dataDir             string
@@ -295,6 +296,10 @@ type Options struct {
 	// opening unconditionally, so a daemon that protects REST doesn't
 	// leave MCP SSE's full tool catalog open by omission.
 	FallbackToken string
+	// CostReportCfg is the daemon's cost_report block (internal/costreport);
+	// the cost_report tool serves costreport.Build over the recorded
+	// sessions with this config as its defaults.
+	CostReportCfg config.CostReportConfig
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -318,6 +323,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		version:             opts.Version,
 		latestVersion:       opts.LatestVersion,
 		fallbackToken:       opts.FallbackToken,
+		costReportCfg:       opts.CostReportCfg,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -558,6 +564,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))                     // BL6
 	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                         // BL6
 	mcpSrv.AddTool(s.toolCostRates(), tracked(s.handleCostRates))                         // BL6
+	mcpSrv.AddTool(s.toolCostReport(), tracked(s.handleCostReport))                       // cost report (internal/costreport)
 	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                       // BL9
 	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))           // GH#201
 	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                           // BL37

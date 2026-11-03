@@ -225,6 +225,13 @@ retired `variant` falls back to `all` with one log line. All keys are settable a
 value), comm `configure usage.calculator.<key>=<value>`, the generic `config_set` tool and
 CLI `datawatch config set`. The PWA Settings fields are a later change.
 
+Cost report settings (`internal/config/config.go`, `CostReportConfig`): the `cost_report` block. An unset or unrecognised value reads its default.
+- `default_group_by` — how a report with no grouping is built: `automaton`, `automation`, `backend` or `week` (default `automaton`).
+- `default_window_days` — the window when a request names no start, 1 or more (default `7`).
+- `show_usd_estimates` — show dollar figures for subscription backends as labelled estimates at API rates (default `true`).
+- `week_start` — the first day of the week for the `week` grouping (default `monday`).
+- `include_peer_spend` — include spend recorded on federation peers (default `false`).
+
 Burn guard settings (`internal/config/burn_guard.go`): the `usage.burn_guard` block. An invalid
 saved value falls back to its default with a logged warning, as `normalizeUsageCalculator` does.
 - `enabled` — guard on or off (default `true`).

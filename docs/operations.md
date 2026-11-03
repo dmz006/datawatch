@@ -667,6 +667,19 @@ not through the config keys.
 
 See [howto/burn-guard.md](howto/burn-guard.md).
 
+### Cost report
+
+The cost report is a token-first report of the daemon's recorded sessions: for a window and a grouping it counts the sessions and shows tokens in/out first, and a USD estimate only where configured cost rates cover every backend in the group (tokens only, and `rate_configured` false, where a rate is missing). It estimates from rates you configure; it never bills, and where no rate covers a group there is no figure, not a zero. The four groupings are `automaton` (the default), `automation`, `backend` and `week` (weeks start at `week_start`, Monday or Sunday). An absent `until` is now; an absent `since` is `default_window_days` back (7). The figures rest on the 31-day ledger of recorded sessions — spend older than that is visible only through lifetime totals (`retention_days` and `lifetime_fallback` in the report body). With `include_peer_spend: false` (the default) the report shows your daemon's spend and not what federation peers report. Keys live under `cost_report.`: `default_group_by` (`automaton`), `default_window_days` (7), `show_usd_estimates` (true), `week_start` (`monday`), `include_peer_spend` (false). Settings apply without a restart; a bad value through a write surface is refused naming the key, and a bad value written by hand into the YAML reads the default. The operator guide is [howto/cost-report.md](howto/cost-report.md).
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch cost report [--group-by automaton\|automation\|backend\|week] [--since <t>] [--until <t>] [--format json]`; `datawatch config set cost_report.<key> <value>` |
+| **Web UI** | The **Cost report** card on the dashboard; Settings → Cost Report for the five keys |
+| **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}`; the block reads back on `GET /api/config` |
+| **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
+| **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
+
 ### Verifier node limit
 
 Verifier runs take a lease on the same node pool as the worker they check, and a compute node that hosts a local engine gets its pool limit from its slot count (see "Compute-node queue" below), which is the node's `session_slots` when set, otherwise one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node that hosts no local engine keeps its `max_concurrent_sessions` limit. A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.
