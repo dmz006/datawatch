@@ -796,7 +796,11 @@ never cut. To get everything:
 `detail=tasks` applies the same cap to the heavy task output text. Every spec and
 description write refuses (400) text containing the truncation marker — the marker is
 refused anywhere in the text, so even a copy edited after the cut is still a copy — and
-the CLI and the MCP tools report the same refusal. The list (`GET /api/autonomous/prds`)
+the CLI (`autonomous prd create`/`edit`/`edit-task`/`edit-story`), the MCP
+`autonomous_prd_*` tools, and the comm verbs — `autonomous create`, `edit-task`,
+`edit-story`, `add-story`, `add-task`, `template-create`, `template-update`, and the
+review verb's `retry` path — refuse the same text with the same operator-facing message,
+before the request reaches the daemon. The list (`GET /api/autonomous/prds`)
 never reads these fields.
 
 ---

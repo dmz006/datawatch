@@ -138,6 +138,12 @@ func (r *Router) handleAutonomousReviewTask(args []string) {
 			return
 		}
 	}
+	if spec, ok := body["spec"].(string); ok {
+		if msg, refuse := commTruncationRefusal("review-task", "spec", spec); refuse {
+			r.reply(label+" failed", msg)
+			return
+		}
+	}
 	raw, _ := json.Marshal(body)
 	out, err := r.commJSON("POST", "/api/autonomous/prds/"+args[0]+"/resolve_task_review", string(raw))
 	if err != nil {
