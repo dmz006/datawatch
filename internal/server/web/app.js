@@ -2809,6 +2809,7 @@ function navigate(view, sessionId, fromPopstate) {
     headerIdentityBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
   }
 
+  renderServerHeaderLine(); // shared shell: every page gets the stable server line
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     if (state.activeSession !== sessionId) _clearImageAttachment();
@@ -13243,8 +13244,44 @@ window.loadAboutShowingServer = loadAboutShowingServer;
 function settingsRefreshShowingLines() {
   const label = settingsShowingLabel();
   document.querySelectorAll('[data-showing-line] .settings-label').forEach(el => { el.textContent = label; });
+  renderServerHeaderLine();
 }
 window.settingsRefreshShowingLines = settingsRefreshShowingLines;
+
+// Stable server header line -- one element (#server-header-line) shown on
+// every page (Sessions, Automata, About, Settings tabs, Alerts, ...). It
+// lives as a sibling BEFORE #view, so the pages' innerHTML re-renders can
+// never drop it; navigate() (the shared page shell) and selectServer()
+// both call renderServerHeaderLine(), so no page can omit it.
+// Peer selected -> peer name; 'all' -> all-servers label; otherwise the
+// local hostname (via _ensureLocalHostname).
+function serverHeaderName() {
+  const active = state.activeServer;
+  if (active === 'all') return t('server_header_all') || 'All servers';
+  if (active && active !== 'local') return active;
+  return _localHostname || (t('server_local_label') || 'this server');
+}
+function renderServerHeaderLine() {
+  if (typeof document === 'undefined') return null;
+  const view = document.getElementById('view');
+  if (!view || !view.parentNode) return null;
+  const active = state.activeServer;
+  if (!active || active === 'local') _ensureLocalHostname(renderServerHeaderLine);
+  const name = serverHeaderName();
+  let el = document.getElementById('server-header-line');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'server-header-line';
+    el.className = 'server-header-line';
+    el.style.cssText = 'font-size:11px;padding:3px 12px;color:var(--text2);';
+    view.parentNode.insertBefore(el, view);
+  }
+  el.setAttribute('data-server', (active && active !== 'local') ? active : (_localHostname || 'local'));
+  el.textContent = t('server_header_showing', [name]) || ('Showing: ' + name);
+  return el;
+}
+window.serverHeaderName = serverHeaderName;
+window.renderServerHeaderLine = renderServerHeaderLine;
 
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
@@ -20453,6 +20490,7 @@ function selectServer(name) {
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
   state.activeServer = target;
   loadServers();
+  renderServerHeaderLine();
   if (state.activeServer !== prev) {
     state.sessions = [];
     state.channelReady = {};
