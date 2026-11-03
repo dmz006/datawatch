@@ -562,7 +562,26 @@ usage:
 | **REST API** | `PUT /api/config` with `{"usage.calculator.<key>": value}`; `GET /api/usage/advice` |
 | **Comm channel** | `configure usage.calculator.<key>=<value>`; `usage advice` |
 
-See [howto/usage-calculator.md](howto/usage-calculator.md). The burn guard settings (`usage.burn_guard.*`: `enabled`, `interval_minutes`, `margin_points`, `ladder`, `step_back`, the two cache prices, `refit_on_reading`, `retry_limit_claude`) are set the same way, from the Burn guard card in the Web UI, `datawatch usage burn-guard config`, `PUT /api/usage/burn-guard/config`, the `burn_guard_config_set` MCP tool or `configure usage.burn_guard.<key>=<value>`; see [howto/burn-guard.md](howto/burn-guard.md).
+See [howto/usage-calculator.md](howto/usage-calculator.md). The burn guard settings (`usage.burn_guard.*`: `enabled`, `interval_minutes`, `margin_points`, `ladder`, `step_back`, the two cache prices, `refit_on_reading`, `retry_limit_claude`) are set the same way, from the Burn guard card in the Web UI, `datawatch usage burn-guard config`, `PUT /api/usage/burn-guard/config`, the `burn_guard_config_set` MCP tool or `configure usage.burn_guard.<key>=<value>`; see [howto/burn-guard.md](howto/burn-guard.md). The cost report needs no setup to read: it reports the sessions already recorded, over your provider's configured [cost rates](datawatch-definitions.md#cost-rates-usd--1k-tokens) where you set them, and every group without a rate simply shows tokens. When you do set defaults, the keys live under `cost_report.`: `default_group_by` (`automaton`), `default_window_days` (7), `show_usd_estimates` (true), `week_start` (`monday`), `include_peer_spend` (false).
+
+```yaml
+cost_report:
+  default_group_by: automaton
+  default_window_days: 7
+  show_usd_estimates: true
+  week_start: monday
+  include_peer_spend: false
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `cost_report.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch cost report [--group-by …] [--since …] [--until …] [--format json]`; `datawatch config set cost_report.<key> <value>` |
+| **Web UI** | The **Cost report** card on the dashboard; Settings → Cost Report for the five defaults |
+| **REST API** | `GET /api/cost/report?group_by=<g>&since=<t>&until=<t>`; `PUT /api/config` with `{"cost_report.<key>": value}` |
+| **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
+
+See [howto/cost-report.md](howto/cost-report.md).
 
 ## Troubleshooting
 
