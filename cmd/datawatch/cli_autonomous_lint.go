@@ -49,7 +49,7 @@ func lintDo(method, path string, body []byte) ([]byte, error) {
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if tok := daemonToken(); tok != "" {
-		req.Header.Set("Authorization", "BEARER "+tok)
+		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	resp, err := daemonClient().Do(req)
 	if err != nil {

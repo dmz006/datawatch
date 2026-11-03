@@ -55,7 +55,7 @@ const lintNoRecord = `{"prd_id": "p9", "decompose_lint": null}`
 
 // lintCLICall is one recorded request to the fake daemon.
 type lintCLICall struct {
-	method, path, body string
+	method, path, body, auth string
 }
 
 // lintCLIDaemon runs a fake daemon that records every request and answers
@@ -70,7 +70,7 @@ func newLintCLIDaemon(t *testing.T, handler func(w http.ResponseWriter, r *http.
 	d := &lintCLIDaemon{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
-		d.calls = append(d.calls, lintCLICall{method: r.Method, path: r.URL.Path, body: string(raw)})
+		d.calls = append(d.calls, lintCLICall{method: r.Method, path: r.URL.Path, body: string(raw), auth: r.Header.Get("Authorization")})
 		handler(w, r, raw)
 	}))
 	t.Cleanup(srv.Close)
@@ -80,6 +80,19 @@ func newLintCLIDaemon(t *testing.T, handler func(w http.ResponseWriter, r *http.
 	if err := writeReloadTestConfig(tmp+"/.datawatch/config.yaml", "server:\n  port: "+u.Port()+"\n"); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
+	// Every daemon API surface expects the exact "Bearer <token>" form
+	// (fedAuthMiddleware does strings.TrimPrefix(auth, "Bearer ")), so the
+	// fake records the Authorization header on each call and fails on
+	// anything else — a wrong prefix in lintDo would 401 against the real
+	// daemon and is caught here.
+	t.Setenv("DATAWATCH_TOKEN", "linttok")
+	t.Cleanup(func() {
+		for i, c := range d.calls {
+			if c.auth != "Bearer linttok" {
+				t.Errorf("call %d sent Authorization %q, want \"Bearer linttok\"", i, c.auth)
+			}
+		}
+	})
 	return d
 }
 
