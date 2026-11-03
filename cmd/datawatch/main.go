@@ -5563,10 +5563,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 											summary = session.ExtractCompletionSummary(tail)
 										}
 										pg := session.NewProjectGit(taskDir)
-										// Bound unscoped staging to this run's own changes.
+										// Bound unscoped staging to this run's own changes,
+										// and honour the autonomous never-stage patterns.
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
+										pg.SetNeverStagePatterns(cfg.Autonomous.EffectiveSnapshotNeverStage())
 										// Verification has passed, so the commit may carry the
 										// session's commit token.
 										mgr.AuthorizeCommit(s.FullID, pg)
@@ -5585,6 +5587,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										}
 										if cerr != nil {
 											return cerr
+										}
+										for _, sk := range pg.LastStagingSkipped() {
+											log.Printf("[autonomous] verifier commit: left %q unstaged (%s)", sk.Path, sk.Reason)
 										}
 										if sha != "" && autonomousMgrRef != nil {
 											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
