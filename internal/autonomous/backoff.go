@@ -39,6 +39,10 @@ type Entry struct {
 	// operator) named, false when it is only the maximum back-off applied
 	// because the rate-limit message carried no reset time.
 	ResetKnown bool `json:"reset_known"`
+	// Rung names the ladder rung that set this flag (for example the burn
+	// guard's hold_claude hold). It is empty on rate-limit and operator
+	// entries, which older clients still read without it.
+	Rung string `json:"rung,omitempty"`
 }
 
 // Backoff is a goroutine-safe in-memory registry of per-backend back-off
@@ -79,13 +83,22 @@ func (b *Backoff) Set(backend string, until time.Time, reason string, source str
 
 // SetWithReset is Set with an explicit flag for whether until is a known
 // reset time (false when it is the maximum back-off applied for lack of one).
+// It sets no rung.
 func (b *Backoff) SetWithReset(backend string, until time.Time, reason string, source string, resetKnown bool) {
+	b.SetWithRung(backend, until, reason, source, resetKnown, "")
+}
+
+// SetWithRung is SetWithReset for a flag set by one rung of a ladder: the
+// entry carries that rung's name (for example the burn guard's
+// hold_claude hold) while the free-form text stays in Reason. An empty rung
+// behaves like SetWithReset.
+func (b *Backoff) SetWithRung(backend string, until time.Time, reason string, source string, resetKnown bool, rung string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.entries == nil {
 		b.entries = map[string]Entry{}
 	}
-	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown}
+	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown, Rung: rung}
 }
 
 // Clear removes the flag for backend and reports whether one existed.

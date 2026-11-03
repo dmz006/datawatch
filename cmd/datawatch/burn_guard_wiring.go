@@ -13,6 +13,7 @@ import (
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/burnguard"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -148,7 +149,7 @@ func (a burnGuardAdmission) HoldNewWork(backend string, on bool) error {
 		now = a.now
 	}
 	until, resetKnown := a.holdDeadline(now())
-	a.bo.SetWithReset(backend, until.In(time.Local), "burn guard: weekly burn projects over the pace line", burnGuardBackoffSource, resetKnown)
+	a.bo.SetWithRung(backend, until.In(time.Local), "burn guard: weekly burn projects over the pace line", burnGuardBackoffSource, resetKnown, burnguard.RungHoldClaude)
 	return nil
 }
 

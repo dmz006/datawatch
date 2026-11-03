@@ -307,12 +307,15 @@ type capacityWaiterJSON struct {
 
 // capacityBackoffJSON is one active usage back-off flag in the capacity
 // response. ResetKnown is false when Until is only the maximum back-off
-// applied because the rate-limit message named no reset time.
+// applied because the rate-limit message named no reset time. Rung names
+// the ladder rung that set the flag (burn guard hold_claude hold) and is
+// omitted on rate-limit and operator entries.
 type capacityBackoffJSON struct {
 	Backend    string    `json:"backend"`
 	Until      time.Time `json:"until"`
 	Reason     string    `json:"reason"`
 	ResetKnown bool      `json:"reset_known"`
+	Rung       string    `json:"rung,omitempty"`
 }
 
 // taskVisibilityProvider is the optional autonomous-manager capability that
@@ -407,7 +410,7 @@ func (s *Server) capacityBackoff() []capacityBackoffJSON {
 		// The deadline is shown in the daemon's own zone: the flag may have
 		// been set from a reset in another zone, and the surfaces show local time.
 		local := e.Until.In(time.Local)
-		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown})
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: local, Reason: e.Reason, ResetKnown: e.ResetKnown, Rung: e.Rung})
 	}
 	return out
 }
