@@ -20395,11 +20395,13 @@ function loadServers() {
   // Fetch server list, health, and config (for the sandbox-origin PWA
   // link below) in parallel.
   Promise.all([
-    // Proxy-aware (version-skew audit): _apiPath routes the Servers card
-    // to the selected peer (no-op for local/all).
-    fetch(_apiPath('/api/servers'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch(_apiPath('/api/servers/health'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
-    fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    // The Servers card always lists the LOCAL daemon's registered servers
+    // (never the selected peer's proxied list): it is where an operator picks
+    // a peer and returns to local, so it must still show the peer, its active
+    // marker and the back-to-local control while that peer is selected.
+    fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([servers, health, cfg]) => {
     if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
@@ -20413,6 +20415,8 @@ function loadServers() {
     const sandboxPort = cfg && cfg.server && cfg.server.proxy_sandbox_port;
     const pwaOrigin = sandboxPort ? `${location.protocol}//${location.hostname}:${sandboxPort}` : '';
     state.proxySandboxOrigin = pwaOrigin; // reused by _showRemotePWAViewer
+    // The server-store handler answers {servers: [...]}; the legacy static list is a bare array.
+    if (!Array.isArray(servers)) servers = Array.isArray(servers.servers) ? servers.servers : [];
     if (servers.length === 0) { el.textContent = t('servers_none_available') || 'No servers available.'; return; }
     // Build health lookup: name → health info
     const healthMap = {};
