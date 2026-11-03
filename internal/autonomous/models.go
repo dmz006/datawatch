@@ -1264,6 +1264,18 @@ type Task struct {
 	FilesTouched   []string `json:"files_touched,omitempty"`
 	FilesGenerated []string `json:"files_generated,omitempty"`
 
+	// SnapshotSkipped — files the session's staging commit (or the attempt
+	// snapshot pass) REFUSED to stage, each with the staging guard's reason
+	// (never-stage, ignored, outside-plan, outside-root, size, ignore-dir,
+	// pattern), from the LAST staging pass on this task (last write wins).
+	// Advisory evidence: the guard is the boundary between the worker's tree
+	// and the tree the commit claims, so a file here never appears in
+	// FilesTouched (staged + committed). Populated by
+	// Manager.RecordTaskSkippedSnapshotPaths from the skip list the session
+	// commit helper returns (ProjectGit.LastStagingSkipped, recorded by
+	// stageChanges). Paths are repo-relative, as reported by the guard.
+	SkippedSnapshotPaths []SnapshotSkippedPath `json:"skipped_snapshot_paths,omitempty"`
+
 	// ReadOnly marks a task that only reads the tree. When the
 	// autonomous.parallel.read_only_tasks key is on, such a task skips
 	// the tree lock (see EffectiveReadOnlyTasks).
@@ -1338,6 +1350,17 @@ type Task struct {
 type UndeclaredEdit struct {
 	Path         string `json:"path"`
 	LinesChanged int    `json:"lines_changed"`
+}
+
+// SnapshotSkippedPath records one candidate file a staging pass (session
+// automatic commit or attempt snapshot) refused to add, and the staging
+// guard's reason for the refusal: "never-stage" (autonomous
+// snapshot_never_stage pattern), "ignored" (repo ignore rules),
+// "outside-plan" (outside the declared write scope), or a gitguard policy
+// reason ("outside-root", "size", "ignore-dir", "pattern").
+type SnapshotSkippedPath struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // NudgeEventForSession returns the latest nudge recorded for the given session

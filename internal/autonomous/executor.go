@@ -21,8 +21,10 @@ import (
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/tooling"
 )
 
@@ -3225,4 +3227,90 @@ func (m *Manager) savePRDOwn(prd *PRD) error {
 		m.mu.Unlock()
 	}
 	return err
+}
+
+// --- Recording the staging-guard skip list on the task result -------------
+//
+// The session commit helpers (internal/session.ProjectGit: CommitSessionWork,
+// CommitTaskWork, PostSessionCommit) return the list of candidate files the
+// staging guard refused to add and keep it readable afterwards via
+// ProjectGit.LastStagingSkipped. The autonomous attempt-snapshot path
+// (SnapshotAttemptWork) applies the same guard (gitguard.Policy.Keep) to
+// its candidates. These helpers populate Task.SkippedSnapshotPaths from
+// either skip list and render the counts-only gate report line for it.
+
+// TaskSnapshotSkippedFrom converts the skip list returned by the session
+// commit helpers (session.StagingSkip) into task result entries, preserving
+// order. nil or empty input stays nil so the field keeps omitempty and the
+// JSON stays clean when the guard skipped nothing. Never logs paths: they
+// are recorded on the task, and the gate reports below are counts-only.
+func TaskSnapshotSkippedFrom(skipped []session.StagingSkip) []SnapshotSkippedPath {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]SnapshotSkippedPath, 0, len(skipped))
+	for _, sk := range skipped {
+		out = append(out, SnapshotSkippedPath{Path: sk.Path, Reason: sk.Reason})
+	}
+	return out
+}
+
+// TaskSnapshotSkippedFromGuard does the same conversion for the skip list
+// returned by the autonomous attempt-snapshot path (gitguard.Skip, whose
+// file field is named File).
+func TaskSnapshotSkippedFromGuard(skipped []gitguard.Skip) []SnapshotSkippedPath {
+	if len(skipped) == 0 {
+		return nil
+	}
+	out := make([]SnapshotSkippedPath, 0, len(skipped))
+	for _, sk := range skipped {
+		out = append(out, SnapshotSkippedPath{Path: sk.File, Reason: sk.Reason})
+	}
+	return out
+}
+
+// stagingGuardCounts renders a skip list's reasons as the counts-only gate
+// report: one "reason=count" pair per distinct reason, sorted so the line is
+// stable, e.g. "ignored=1, never-stage=2, size=3". By construction it never
+// contains a path name — the report is exactly the counts per the staging
+// guard's per-reason classification. Empty input gives "".
+func stagingGuardCounts(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	counts := make(map[string]int)
+	for _, r := range reasons {
+		counts[r]++
+	}
+	sorted := make([]string, 0, len(counts))
+	for r := range counts {
+		sorted = append(sorted, r)
+	}
+	sort.Strings(sorted)
+	parts := make([]string, 0, len(sorted))
+	for _, r := range sorted {
+		parts = append(parts, fmt.Sprintf("%s=%d", r, counts[r]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// TaskSnapshotSkippedCounts is the gate report for a session commit
+// helper's skip list: counts per reason only ("ignored=1, never-stage=2"),
+// no path names, "" when nothing was skipped.
+func TaskSnapshotSkippedCounts(skipped []session.StagingSkip) string {
+	reasons := make([]string, 0, len(skipped))
+	for _, sk := range skipped {
+		reasons = append(reasons, sk.Reason)
+	}
+	return stagingGuardCounts(reasons)
+}
+
+// TaskSnapshotSkippedGuardCounts is the gate report for the attempt-snapshot
+// path's skip list (gitguard.Skip): same counts-only format.
+func TaskSnapshotSkippedGuardCounts(skipped []gitguard.Skip) string {
+	reasons := make([]string, 0, len(skipped))
+	for _, sk := range skipped {
+		reasons = append(reasons, sk.Reason)
+	}
+	return stagingGuardCounts(reasons)
 }

@@ -5591,6 +5591,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										for _, sk := range pg.LastStagingSkipped() {
 											log.Printf("[autonomous] verifier commit: left %q unstaged (%s)", sk.Path, sk.Reason)
 										}
+										// Record the staging-guard skip list on the task result
+										// (advisory evidence; last staging pass wins).
+										if autonomousMgrRef != nil {
+											if skipped := pg.LastStagingSkipped(); len(skipped) > 0 {
+												if rerr := autonomousMgrRef.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID, autonomouspkg.TaskSnapshotSkippedFrom(skipped)); rerr != nil {
+													log.Printf("[autonomous] verifier: RecordTaskSkippedSnapshotPaths(%s/%s): %v", task.PRDID, task.ID, rerr)
+												}
+											}
+										}
 										if sha != "" && autonomousMgrRef != nil {
 											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
 												log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)

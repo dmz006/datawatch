@@ -29,7 +29,9 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 		return "", rerr
 	}
 	if home, herr := gitguard.InHome(dir, nil); herr == nil && home {
-		fmt.Printf("[autonomous] WARNING: attempt snapshot is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep snapshots small\n", dir)
+		// Placeholder, not the path: this warning must not print the home
+		// directory into logs.
+		fmt.Printf("[autonomous] WARNING: attempt snapshot is running in the user's home directory <home> — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep snapshots small\n")
 	}
 
 	tmpDir, err := os.MkdirTemp("", "attempt-snapshot-")
@@ -79,6 +81,11 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 	}
 	if len(skipped) > 0 {
 		fmt.Printf("[autonomous] attempt snapshot in %s skipped %d file(s) by the staging guard (%s)\n", dir, len(skipped), snapshotSkipSummary(skipped))
+		// Gate report: counts per reason only. By construction this line
+		// never contains a path name — just the guard's per-reason counts.
+		if rep := TaskSnapshotSkippedGuardCounts(skipped); rep != "" {
+			fmt.Printf("[autonomous] attempt snapshot gate report: %d file(s) skipped by the staging guard (%s)\n", len(skipped), rep)
+		}
 	}
 	if p.RefuseReason(len(kept)) != "" {
 		return "", fmt.Errorf("attempt snapshot refused in %s: %d candidate file(s), %d to stage, exceeds the limit of %d (MaxStagedFiles); no ref was created", dir, len(candidates), len(kept), p.MaxStagedFiles)
