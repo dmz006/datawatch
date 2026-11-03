@@ -86,9 +86,14 @@ The full record is kept for the row and fetched again only when the
 Automaton's revision changes, so opening and closing a row does not re-download
 it, and a running Automaton you are watching updates when it changes.
 
-Very long text inside a record (verifier transcripts, task output) is capped
-in the record shown on the card and marked as cut. The complete text is one
-more request away through the outputs route described in the paging guide.
+Very long output text inside a record (verifier transcripts, task output,
+verdicts) is capped in the record shown on the card: each cut field carries a
+truncation marker and is named in the record's `truncated` list with a ref to
+the full copy. The spec, the story descriptions and the task specs are always
+shown whole — what you read is what you can save back, and a save that still
+carries a truncation marker is refused (400) because it is a copy, not the
+original. The complete output text is one more request away through the
+outputs route described in the paging guide.
 
 ## Children
 

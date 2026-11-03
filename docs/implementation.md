@@ -275,10 +275,14 @@ pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardra
 (or an Automaton's own PRD-level guardrails); the list is empty by default.
 
 `autonomous.detail_text_cap_bytes` (default 4096; 0 = default, negative = off) caps each
-long text field in the default `GET /api/autonomous/prds/{id}` reply
-(`internal/autonomous/prd_view_cap.go`, `CapPRDText`). Capped fields end with a
+heavy output text field (PRD `memory_report`, task `error`, `prior_attempt_hint`,
+`start_failure_tail[]`, `attempt_refs[]`, verdict and verification text) in the default
+`GET /api/autonomous/prds/{id}` reply
+(`internal/autonomous/prd_view_cap.go`, `CapPRDText`). The PRD `spec`, every story
+description and every task spec are always returned whole. Capped fields end with a
 `[truncated ...]` marker and are listed in the record's `truncated` array with the URL of the
-full text. The store is never cut. `?full=1` returns the whole record, and
+full text, and every spec/description write refuses (400) text carrying the marker
+(`autonomous.TruncationRefusal`). The store is never cut. `?full=1` returns the whole record, and
 `GET /api/autonomous/prds/{id}/outputs` (optionally `?task=<id>`, or
 `/tasks/{task_id}/outputs`) returns the heavy fields byte for byte. The list summary
 (`BuildSummaryView`) does not read these fields.

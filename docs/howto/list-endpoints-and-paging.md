@@ -121,9 +121,15 @@ curl -sS "$DW/api/autonomous/prds?limit=50&cursor=$NEXT"
 | One Automaton, with the heavy text fields capped | `GET /api/autonomous/prds/{id}` |
 | The heavy text of an Automaton (checks, results, outputs, verifier transcript) | `GET /api/autonomous/prds/{id}/outputs` |
 
-The capped by-id form keeps each long text field under a 4 KB cap and marks
-what it cut (`truncated` lists the field names; each cut field carries a ref
-to the full copy), so the body stays small even on a 13 MB Automaton.
+The capped by-id form cuts only the heavy output fields (task error, verifier
+transcript, verdicts, start-failure tails) to a per-field 4 KB cap
+(`autonomous.detail_text_cap_bytes`) and marks what it cut: each cut field
+carries a truncation marker and is listed in `truncated` with a ref to the
+full copy. The spec, the story descriptions and the task specs are always
+returned whole, so a capped reply can be edited and saved back verbatim — and
+if you try to save text that still carries a truncation marker, the edit
+endpoint refuses it (400), because it is a copy, not the original. So the body
+stays small even on a 13 MB Automaton.
 
 ## The Automation and alert lists
 
