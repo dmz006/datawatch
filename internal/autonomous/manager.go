@@ -2492,6 +2492,13 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	prd.LastDecomposeFailure = nil // success — clear the single-use hint
 	prd.DecomposeSessionFailures = 0
 
+	// Drop tasks whose whole purpose is an artefact the change record
+	// generates, so coverage and scope lint see the plan that will run.
+	var genDropNotes []string
+	if kept, notes := m.dropGeneratedPlanTasks(s); len(notes) > 0 {
+		s, prd.Story, genDropNotes = kept, kept, notes
+	}
+
 	settings, serr := m.EffectivePlanCoverage()
 	if serr != nil {
 		// A plan-coverage mode that cannot be resolved is a config
@@ -2526,7 +2533,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
-	prd.ScopeWarnings = m.planScopeWarnings(prd, s)
+	prd.ScopeWarnings = append(m.planScopeWarnings(prd, s), genDropNotes...)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
