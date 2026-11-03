@@ -39,9 +39,9 @@ func TestSnapshotNeverStageDefaults(t *testing.T) {
 	}
 	// DefaultConfig must hand out a fresh copy, not the package variable:
 	// mutating one config must not rewrite the defaults.
-	d = append(d, "extra/")
+	d[0] = "mutated/"
 	cfg2 := DefaultConfig().Autonomous.SnapshotNeverStage
-	if len(cfg2) != len(DefaultSnapshotNeverStage) {
+	if len(cfg2) != len(DefaultSnapshotNeverStage) || cfg2[0] == "mutated/" {
 		t.Fatalf("second DefaultConfig() list = %v; DefaultConfig leaked the mutated slice", cfg2)
 	}
 }
