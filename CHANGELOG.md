@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.73.1 — Liveness settings on every surface
+
+The session liveness settings are now on every surface, and the state chips use locale keys.
+
+- `session.liveness_window_seconds` and `session.liveness_idle_timeout_overrides` are on the config read and write routes, MCP, the CLI, the comm channel and the web settings, with validation, hints and five locales, and in the config reference and operations docs.
+- The sessions state filter chips use locale keys, and a browser story covers the Stalled chip.
+- Known gap: the web test checks the locale lookups, the hints and the input checks, not a value round trip through the web fields.
+
 ## v9.73.0 — Session state follows the real process for print-mode backends
 
 Sessions of print-mode backends (such as pi) no longer show "waiting for input" for their whole run.
