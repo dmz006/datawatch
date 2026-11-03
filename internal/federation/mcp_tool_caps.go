@@ -440,6 +440,7 @@ var MCPToolCap = map[string]string{
 	"profile_update":                 CapConfigWrite,
 	"project_alias_delete":           CapConfigWrite,
 	"project_list":                   CapConfigRead,
+	"project_policy_effective":       CapConfigRead,
 	"project_summary":                CapConfigRead,
 	"project_upsert":                 CapConfigWrite,
 	"proxy_config_get":               CapConfigRead,

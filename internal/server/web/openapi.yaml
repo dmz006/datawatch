@@ -6996,13 +6996,84 @@ paths:
       summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    dir: {type: string}
+                    default_backend: {type: string}
+                    description: {type: string}
+                    policy: {$ref: "#/components/schemas/ProjectPolicy"}
     post:
       summary: Upsert a project alias
       operationId: projectsUpsert
       tags: [Singletons]
-      requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
-      responses: {"200": {description: OK}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, dir]
+              properties:
+                name: {type: string, description: "Project alias"}
+                dir: {type: string, description: "Absolute directory"}
+                default_backend: {type: string}
+                description: {type: string}
+                policy:
+                  description: The per-project policy tier (optional); unset keys inherit from the daemon tier.
+                  $ref: "#/components/schemas/ProjectPolicy"
+      responses:
+        "200": {description: OK}
+        "400":
+          description: name or dir missing, dir not absolute, or a policy field holds a value the key does not know — the body names the offending field
+          content: {"text/plain": {schema: {type: string}}}
+  /api/projects/{name}/policy/effective:
+    get:
+      summary: Effective policy for one project
+      description: |
+        Resolves every policy setting for the project across the three tiers —
+        the Automaton's own overrides, the project's policy block, and the
+        daemon defaults — and returns each setting with the value in force
+        and the tier (`automaton`, `project` or `daemon`) that supplied it.
+        Pass `?automaton=\<id\>` to resolve with that Automaton's own policy
+        fields; omitted, every setting resolves from the project and daemon
+        tiers.
+      operationId: projectsPolicyEffective
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: automaton, in: query, required: false, schema: {type: string}, description: "Automaton ID whose own policy fields act as the top tier"}
+      responses:
+        "200":
+          description: The resolved policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  automaton: {type: string, description: "The Automaton ID passed in, or absent"}
+                  policy:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        value: {description: "The value in force; the shape follows the setting"}
+                        source: {type: string, enum: [automaton, project, daemon]}
+        "404":
+          description: The project does not exist, or (with `?automaton=`) the Automaton does not
+          content: {"text/plain": {schema: {type: string}}}
+        "503":
+          description: Autonomations are not available, so the Automaton tier cannot be resolved
+          content: {"text/plain": {schema: {type: string}}}
   /api/templates:
     get:
       summary: List session-start templates
@@ -9702,6 +9773,35 @@ components:
         model: {type: string, description: "Worker model. Needs a backend."}
         effort: {type: string, description: "Effort level: low, medium, high, max, quick, normal or thorough. Empty inherits the task's effort."}
         attempts: {type: integer, minimum: 1, description: "Failed attempts this step covers. Default 1."}
+    ProjectPolicy:
+      description: "The per-project policy tier (`projects.<name>.policy`), sitting between the daemon-wide autonomous defaults and the per-Automaton overrides. Every key is optional: an unset key inherits the daemon tier, and a set key must hold a value the field knows, so a wrong value fails validation with the field named rather than silently meaning its neighbour."
+      type: object
+      properties:
+        plan_coverage_check: {type: string, enum: [off, warn, block], description: "Plan coverage check mode"}
+        plan_coverage_min_ratio: {type: number, exclusiveMinimum: 0, maximum: 1, description: "Minimum plan-coverage ratio; 1 requires full coverage"}
+        plan_review_mode: {type: string, enum: [off, warn, block], description: "Plan review mode"}
+        scope_lint: {type: string, enum: [off, warn, enforce], description: "Scope-lint mode"}
+        retry_policy:
+          type: object
+          description: "Per-category auto-retry budget (infra, content, scope, policy); a category outside that set is a validation error. Non-nil replaces the daemon's map wholesale."
+          additionalProperties: {type: integer, minimum: 0}
+        retry_ceiling_total: {type: integer, minimum: 0, description: "Caps auto-retries summed across a whole Automaton's lifecycle"}
+        auto_fix_retries: {type: integer, minimum: 0, description: "Per-verifier-failure re-prompt budget"}
+        infra_retry_escalate_after: {type: integer, minimum: 0, description: "Infra-failure count after which a task stops auto-retrying and is held"}
+        failure_escalation: {$ref: "#/components/schemas/FailureEscalationPolicy"}
+        default_auto_pr: {type: boolean, description: "Turns auto-PR on or off for this project's Automata"}
+        max_concurrent_tasks: {type: integer, minimum: 1}
+        plan_tier_max_inflight:
+          type: object
+          description: "Per-plan-tier inflight caps; a negative budget is a validation error"
+          additionalProperties: {type: integer, minimum: 0}
+        lane_fill_gpu_lanes: {type: integer, minimum: 0, description: "0 turns the GPU lane kind off"}
+        lane_fill_claude_lanes: {type: integer, minimum: 0, description: "0 turns the Claude lane kind off"}
+        uncommitted_work_policy: {type: string, enum: [hold, warn, off], description: "What the post-verification uncommitted-work check does"}
+        uncommitted_work_scope: {type: string, enum: [task_files, worktree], description: "Which files that check covers"}
+        burn_guard_ask_on_change: {type: boolean, description: "True asks one open question per guard-rung change, false alerts only"}
+        parallel_read_only_tasks: {type: boolean, description: "Read-only tasks skip the tree lock"}
+        parallel_worktree_per_task: {type: boolean, description: "Each parallel task runs in its own worktree"}
     ReviewNeededEntry:
       description: "A task held for operator review, as listed in an Automaton summary. Only the identity, the failure count and the last worker are included, never the spec or the attempt report."
       type: object
