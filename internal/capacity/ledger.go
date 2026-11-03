@@ -55,6 +55,11 @@ type Request struct {
 	Priority int      // higher first
 	Pools    []string // all must have room (all-or-nothing)
 	Node     string   // primary compute node, for model affinity
+	// Consumer is the consumer kind the work uses (session_spawn,
+	// agent_spawn, council or ask), passed to Options.NodeGate when the
+	// ledger checks whether a node may take the request. An empty Consumer
+	// means no consumer check.
+	Consumer string
 	// NodeChoices lists compute nodes that can serve the request. With two or
 	// more entries the ledger picks the node at dispatch time: least loaded
 	// first (the node pool's used count over its limit, an unlimited pool
@@ -280,8 +285,8 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure, NodeHealthy) is invoked while the ledger lock is
-// held. Each must therefore be a fast in-memory read: it must never call back
+// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate) is invoked
+// while the ledger lock is held. Each must therefore be a fast in-memory read: it must never call back
 // into the ledger (Snapshot, Held, LeaseOf, Limit, Acquire and the like, which
 // would deadlock) or into the autonomous manager, never do network, file or
 // process I/O, and never block on a lock that a ledger caller could hold (or
@@ -311,7 +316,23 @@ type Options struct {
 	// of a multi-node request for which it returns false is skipped, as an
 	// excluded node is, and the waiting reason names it as unhealthy. Nil means
 	// every node is healthy. Called under the lock: an in-memory read only.
+	// When NodeGate is set it decides its place in the candidate loop; a
+	// single-node request is blocked by NodeGate, not by this hook.
 	NodeHealthy func(name string) bool
+	// NodeGate reports whether a compute node may take the request's work for
+	// the given consumer kind (see Request.Consumer; an empty consumer means
+	// no consumer check). For a multi-node request a candidate for which it
+	// returns false is skipped, as an unhealthy node is, and its waiting
+	// reason is the returned reason verbatim, for example "gpu-box-1: drained"
+	// or "gpu-box-1: consumer session_spawn denied". For a single-node request
+	// (Node set, fewer than two NodeChoices) it is checked before the pool
+	// check, and a refusal blocks it with "waiting for node <name>: <reason>",
+	// for example "waiting for node gpu-box-1: drained". A drained node keeps
+	// its running leases: the gate only refuses new work, it never releases a
+	// holder, so holders still count in Held. Nil falls back to NodeHealthy
+	// (reason "unhealthy"); both nil means every node is open. Called under
+	// the lock: an in-memory read only.
+	NodeGate func(node, consumer string) (ok bool, reason string)
 	// StrictNodeLimit, CountPoolByNode and AdoptBeforeAdmit gate the three
 	// node over-admission rules. Each is read at call time, under the ledger
 	// lock, so it must be a fast in-memory read (see the LOCK RULE). Nil means
@@ -677,11 +698,30 @@ func (l *Ledger) rankedLocked(req Request) []NodeChoice {
 // fits it returns req unchanged and a reason naming every candidate and what
 // blocks it. The order and the block check read the same usage figures under
 // one lock hold, so the node chosen is one the check passed.
+// nodeGateLocked reports whether node may take new work for the request's
+// consumer now: NodeGate when set (its reason verbatim), else the legacy
+// NodeHealthy hook ("unhealthy" when it refuses), else every node is open.
+func (l *Ledger) nodeGateLocked(node, consumer string) (bool, string) {
+	if l.opt.NodeGate != nil {
+		ok, reason := l.opt.NodeGate(node, consumer)
+		return ok, reason
+	}
+	if l.opt.NodeHealthy != nil && !l.opt.NodeHealthy(node) {
+		return false, "unhealthy"
+	}
+	return true, ""
+}
+
 func (l *Ledger) resolveLocked(req Request) (Request, string) {
 	if why := l.adoptionPendingLocked(); why != "" {
 		return req, why
 	}
 	if !req.multiNode() {
+		if req.Node != "" && l.opt.NodeGate != nil {
+			if ok, why := l.opt.NodeGate(req.Node, req.Consumer); !ok {
+				return req, fmt.Sprintf("waiting for node %s: %s", req.Node, why)
+			}
+		}
 		return req, l.blockReasonLocked(req)
 	}
 	ranked := l.rankedLocked(req)
@@ -697,8 +737,8 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 	for _, c := range ranked {
 		name := c.Name
 		names = append(names, name)
-		if l.opt.NodeHealthy != nil && !l.opt.NodeHealthy(name) {
-			parts = append(parts, name+": unhealthy")
+		if ok, why := l.nodeGateLocked(name, req.Consumer); !ok {
+			parts = append(parts, name+": "+why)
 			continue
 		}
 		bound := req.withNode(name)
