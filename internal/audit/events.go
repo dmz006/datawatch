@@ -222,4 +222,16 @@ const (
 	// ActionUIPromptEscalationWithdrawn — a still-open escalation question
 	// was withdrawn because its prompt cleared or its session ended.
 	ActionUIPromptEscalationWithdrawn = "ui_prompt_escalation_withdrawn"
+
+	// ActionLLMSecretAccess — one call-time LLM API key secret resolution
+	// was made. Emitted for EVERY attempt, success or failure: outcome
+	// "ok" (the secret resolved and was handed to the caller), "missing"
+	// (no secret is set for that LLM entry) or "refused" (resolution was
+	// declined or could not be authorised). Subject: the LLM entry name.
+	// Details (names only, never values): llm_name (the LLM entry name),
+	// secret_name (the secret's name), outcome (ok, missing or refused).
+	// The entry never carries the secret value or the literal key — the
+	// constructor accepts names and the outcome only, so a secret value has
+	// no path into the log.
+	ActionLLMSecretAccess = "llm_secret_access"
 )
