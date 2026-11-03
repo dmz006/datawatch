@@ -78,21 +78,6 @@ var checksModeKeys = []string{
 	"autonomous.ship.push", "autonomous.ship.tag", "autonomous.ship.ci_watch",
 }
 
-// isChecksShipKey reports whether k is one of the checks or ship settings.
-func isChecksShipKey(k string) bool {
-	switch k {
-	case "autonomous.checks.block_when_missing", "autonomous.ship.tag_format",
-		"autonomous.ship.remote", "autonomous.ship.ci_workflows":
-		return true
-	}
-	for _, m := range checksModeKeys {
-		if m == k {
-			return true
-		}
-	}
-	return false
-}
-
 // validateChecksShipPatch refuses the whole PUT when a checks or ship value
 // is invalid: modes must be off, shadow or on; block_when_missing a boolean;
 // tag_format must contain the version placeholder; ci_workflows a list.

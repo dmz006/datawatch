@@ -90,10 +90,7 @@ func BuildChecksStatus(recs []*TriageRecord, prdID, projectDir string) ChecksSta
 	p := ChecksPolicyFor(projectDir)
 	return ChecksStatus{
 		PRDID: prdID, ProjectDir: projectDir,
-		Policy: ChecksPolicyView{
-			PreStartVerifier: p.PreStartVerifier, BlockWhenMissing: p.BlockWhenMissing,
-			PlanRules: p.PlanRules, AfterDone: p.AfterDone, RegistryReadme: p.RegistryReadme,
-		},
+		Policy:   ChecksPolicyView(p),
 		Findings: CollectStatusFindings(recs, prdID, ChecksFindingSources),
 	}
 }
