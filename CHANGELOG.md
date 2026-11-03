@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`install/install-stats.sh` gains `--archive PATH`.** The stats installer can now install `datawatch-stats` from a local tarball with no download and no latest-version fetch: the version is taken from `--version` when given, otherwise read out of the archive filename when it matches `datawatch(-stats)?_X.Y.Z_`, otherwise the built-in fallback version with a warning. The archive may be either the standalone `datawatch-stats_*` release asset or a legacy main `datawatch_*` archive — the binary is located by name either way.
+
+### Fixed
+
+- **The stats installer now resolves `datawatch-stats` against the release's standalone archive.** `install/install-stats.sh` previously only knew the main `datawatch_<version>_linux_<arch>.tar.gz` archive, so it broke on releases that publish `datawatch-stats` as its own goreleaser asset. It now downloads the standalone `datawatch-stats_*` archive first and falls back to the legacy main archive when the standalone one is missing or lacks the binary, and it names the archive actually tried when it cannot find the binary in either. A new Go test, `tests/ci/install_stats_archive_test.go`, cross-checks the installer's archive names against the goreleaser asset configuration so the two cannot silently drift apart again.
+
 ## v9.67.0 — Cost report
 
 ### Added
