@@ -2448,7 +2448,12 @@ paths:
   /api/autonomous/prds/{id}/set_priority:
     post:
       summary: Set a PRD's capacity-queue priority
-      description: Higher priority PRDs are admitted first when compute capacity is contended. Default 0.
+      description: >-
+        Higher priority PRDs are admitted first when compute capacity is
+        contended. Default 0. The response is the updated Automaton and
+        carries priority plus priority_source ("explicit") — an explicitly
+        pinned priority always wins over the kind table for that Automaton.
+        A non-integer value is refused with 400.
       operationId: autonomousPRDSetPriority
       tags: [Autonomous]
       parameters:
@@ -3140,6 +3145,25 @@ paths:
         deleted, on the Automaton branch against its merge base, lock files left
         out) above which the judges try `claude-code` first, default 400; 0 turns
         the size rule off.
+        `priority_by_kind` is the kind → capacity-queue priority table:
+        kind name → integer, higher values line up closer to the front.
+        Shipped defaults: bug=80, maintenance=70, feature=20, other=0
+        (the fallback row for a kind with no row of its own; an
+        installation may name kinds of its own). Read here — always the
+        effective table, operator entries layered onto the shipped
+        defaults — and writable here or via PUT /api/config
+        (autonomous.priority_by_kind). Integer values only: a non-number,
+        a value with a fraction part, a negative, or a boolean is refused
+        with 400 and a clear message, and so is an empty kind name. An
+        empty table ({}) is a valid "clear my edits" edit and leaves the
+        shipped defaults in effect. A priority pinned on a single Automaton
+        (set_priority) always wins for that Automaton.
+        `defect_intake_automation` (string, empty by default) names the
+        Automation that new kind:bug defect filings are recorded under;
+        empty means the filing is recorded, not filed into any Automation.
+        Writable here or via PUT /api/config
+        (autonomous.defect_intake_automation); a present non-string is
+        refused with 400.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
         The `automation` object carries the search-before-create settings:

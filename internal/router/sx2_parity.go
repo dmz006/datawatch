@@ -682,12 +682,47 @@ func (r *Router) handleAutonomous(cmd Command) {
 			if k == "autonomous.scope_lint" {
 				k = "scope_lint"
 			}
+			if k == "autonomous.priority_by_kind" {
+				k = "priority_by_kind"
+			}
+			if k == "autonomous.defect_intake_automation" {
+				k = "defect_intake_automation"
+			}
 			if k == "scope_lint" {
 				if err := config.ValidateScopeLint(v); err != nil {
 					r.reply("autonomous config-set failed", err.Error())
 					return
 				}
 			}
+			// priority_by_kind — the kind → capacity-priority table (higher
+			// values line up closer to the front). Validated with the same shared
+			// parser every surface uses: integer values (a non-number, a number
+			// with a fraction part and a negative value are all refused with a
+			// clear message) and non-empty kind keys; the shipped kind names and
+			// an installation's own are all accepted. Accepted as kind=value pairs
+			// (e.g. priority_by_kind=bug=90,maintenance=50) or a quoted JSON
+			// object; an empty value clears the stored table back to the daemon's
+			// defaults; omitting the key leaves it alone. The daemon repeats the
+			// same check over the wire object.
+			if k == "priority_by_kind" {
+				table, perr := autonomous.ParsePriorityByKindValue(v)
+				if perr != nil {
+					r.reply("autonomous config-set failed", perr.Error())
+					return
+				}
+				cfgMap["priority_by_kind"] = table
+				continue
+			}
+			// defect_intake_automation — the Automation name new kind:bug
+			// filings are recorded under. Any string is accepted (each
+			// installation chooses its own name); the empty string clears it
+			// — the filing is then recorded, not filed into an Automation.
+			// The daemon repeats the string check over the wire object.
+			if k == "defect_intake_automation" {
+				cfgMap[k] = strings.TrimSpace(v)
+				continue
+			}
+
 			switch {
 			case v == "true":
 				cfgMap[k] = true
