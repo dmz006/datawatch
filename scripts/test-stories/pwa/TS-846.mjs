@@ -180,11 +180,14 @@ runPerfStory(async (page) => {
   }, null, { timeout: 60000 });
   await p.evaluate(() => { window.navigate('sessions'); });
   await p.waitForFunction((n) => {
-    return window.state && Array.isArray(state.servers ? (state.servers.servers || state.servers) : null)
+    return typeof state !== 'undefined' && Array.isArray(state.servers ? (state.servers.servers || state.servers) : null)
       && (state.servers.servers || state.servers).some((s) => s.name === n);
   }, PEER, { timeout: 30000 });
   await p.evaluate(() => window._ensureLocalHostname && window._ensureLocalHostname());
   await p.waitForFunction((h) => document.querySelector('.server-picker-bar') && document.body.innerText.indexOf(h) !== -1, LOCAL_HOST, { timeout: 30000 });
+  // Startup toasts (e.g. the v7 migration notice) can sit over the controls the
+  // story clicks; let clicks pass through the toast layer.
+  await p.addStyleTag({ content: '.toast-container, .toast-container * { pointer-events: none !important; }' });
   await p.evaluate(() => { window.__ts846Marker = 'ts846'; });
 
   const marker = () => p.evaluate('window.__ts846Marker');
@@ -214,6 +217,14 @@ runPerfStory(async (page) => {
         const s = document.querySelector(`.settings-section[data-group="${tb}"]`);
         return !!s && s.style.display !== 'none';
       }, tab, { timeout: 15000 });
+      // The "Showing:" line is filled in asynchronously (placeholder "—" first).
+      await p.waitForFunction((tb) => {
+        const el = tb === 'about'
+          ? document.getElementById('aboutShowingServer')
+          : document.querySelector(`[data-showing-line="${tb}"] .settings-label`);
+        const txt = el ? el.textContent.trim() : '';
+        return !!txt && txt !== '—';
+      }, tab, { timeout: 15000 }).catch(() => {});
       const line = await p.evaluate((tb) => {
         const el = tb === 'about'
           ? document.getElementById('aboutShowingServer')
@@ -259,9 +270,12 @@ runPerfStory(async (page) => {
     await p.evaluate(() => { window.navigate('settings'); });
     for (const tab of SETTINGS_TABS) {
       await p.evaluate((tb) => window.switchSettingsTab(tb), tab);
+      // The Servers card lives in a collapsible section that starts collapsed.
+      await p.evaluate(() => { const sec = document.getElementById('settings-sec-servers'); if (sec) sec.style.display = ''; });
       const found = await p.waitForFunction(() => {
         const el = document.getElementById('serverStatus');
-        return !!el && el.querySelector('button[onclick^="selectServer("]');
+        const btn = el && el.querySelector('button[onclick^="selectServer("]');
+        return !!btn && btn.offsetParent !== null;
       }, null, { timeout: 4000 }).then(() => true).catch(() => false);
       if (found) return;
     }
