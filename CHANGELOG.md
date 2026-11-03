@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.74.0 — Restarts keep running Automaton work
+
+A daemon restart no longer throws away running Automaton work, and the restart can wait for a quiet moment.
+
+- A launch refused because the daemon is shutting down is not an attempt. The task goes back to waiting and launches again after the restart.
+- After a restart a live worker session is adopted instead of replaced, keeping its attempt number. A worktree with uncommitted changes owned by a live session is never reset.
+- When two live sessions match one task the older is kept (`autonomous.duplicate_session_keep`: `older` or `newer`); the other is ended only after its exit is confirmed, and the decision is recorded on the task and in the audit log.
+- Each attempt records its session and why it ended, so a restart can be told from a failure.
+- New `autonomous.restart_policy`: `immediate` (default), `wait_quiet` (with `restart_quiet_timeout_seconds` and `restart_on_timeout`) or `drain`. Every restart reports how many running tasks and live sessions it interrupts, and `GET /api/autonomous/restart-interruptions` reads the count without restarting.
+- On REST, MCP, the CLI (`datawatch autonomous restart-interruptions`), the comm channel and the config file, with docs and a counts-only gate report.
+
 ## v9.73.2 — Peer view no longer reloads to the primary
 
 Opening a federated peer in the web UI no longer reloads the page back to the primary.

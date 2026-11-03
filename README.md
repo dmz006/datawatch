@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.73.2 (2026-11-03).** Opening a federated peer in the web UI no longer reloads the page back to the primary: the daemon version is tracked per server and a peer on another release shows a version-skew note. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.74.0 (2026-11-03).** A daemon restart no longer discards running Automaton work: live workers are adopted, and a restart policy can wait for a quiet moment or drain first. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
