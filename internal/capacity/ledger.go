@@ -241,6 +241,12 @@ type PoolStatus struct {
 	Limit    int    `json:"limit"` // 0 = unlimited
 	External int    `json:"external"`
 	Held     int    `json:"held"`
+	// Drained and DrainUntil are the node pool's drain state, reported by
+	// Options.NodeState; a non-node pool or an undrained node leaves them
+	// unset (zero). A drained pool still shows its Held count: the tasks
+	// still holding it.
+	Drained    bool      `json:"drained,omitempty"`
+	DrainUntil time.Time `json:"drain_until,omitzero"`
 	// Overflow counts adopted leases running on this node beyond its limit (see
 	// Lease.NodeOverflow). They are not in Held, so Held+External never exceeds
 	// Limit, but they occupy the node: admission counts Held+External+Overflow.
@@ -269,6 +275,17 @@ type Status struct {
 	Waiting []Waiter     `json:"waiting"`
 }
 
+// NodeState is the state of one compute node as the daemon knows it: its
+// drain, maintenance and consumer-denial state. The daemon fills it from a
+// copied node record and the ledger reads it through Options.NodeState while
+// building a snapshot; the value, not a reference, is what travels.
+type NodeState struct {
+	Drained         bool
+	DrainUntil      time.Time
+	InMaintenance   bool
+	DeniedConsumers []string
+}
+
 // Clock supplies the time source the ledger uses for wait deadlines, poll
 // ticks and grant ordering. Tests inject a fake; production uses the real clock.
 type Clock interface {
@@ -285,8 +302,9 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate) is invoked
-// while the ledger lock is held. Each must therefore be a fast in-memory read: it must never call back
+// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState)
+// is invoked while the ledger lock is held. Each must therefore be a fast
+// in-memory read: it must never call back
 // into the ledger (Snapshot, Held, LeaseOf, Limit, Acquire and the like, which
 // would deadlock) or into the autonomous manager, never do network, file or
 // process I/O, and never block on a lock that a ledger caller could hold (or
@@ -335,6 +353,13 @@ type Options struct {
 	// (reason "unhealthy"); both nil means every node is open. Called under
 	// the lock: an in-memory read only.
 	NodeGate func(node, consumer string) (ok bool, reason string)
+	// NodeState reports a compute node's drain, maintenance and
+	// consumer-denial state for the node:<name> pool in a snapshot. Called
+	// under the lock from Snapshot, once per node pool, so the LOCK RULE
+	// applies: an in-memory read only, against state copied elsewhere. Nil
+	// means the snapshot reports no node state; non-node pools are never
+	// queried either way.
+	NodeState func(name string) NodeState
 	// StrictNodeLimit, CountPoolByNode and AdoptBeforeAdmit gate the three
 	// node over-admission rules. Each is read at call time, under the ledger
 	// lock, so it must be a fast in-memory read (see the LOCK RULE). Nil means
@@ -1273,6 +1298,14 @@ func (l *Ledger) Snapshot() Status {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
 		if node, ok := strings.CutPrefix(p, "node:"); ok {
 			ps.Overflow = len(l.overflowLocked(node))
+			if l.opt.NodeState != nil {
+				if ns := l.opt.NodeState(node); ns.Drained {
+					ps.Drained = true
+					if !ns.DrainUntil.IsZero() {
+						ps.DrainUntil = ns.DrainUntil
+					}
+				}
+			}
 		}
 		if l.opt.External != nil {
 			ps.External = l.opt.External(p)
@@ -1302,7 +1335,10 @@ func (l *Ledger) Snapshot() Status {
 
 // FormatPools renders one line per pool: used/limit with holders (readable
 // forms when the pool carries them, otherwise the raw ids), or a
-// "none configured" line when there are no pools.
+// "none configured" line when there are no pools. A drained node pool shows
+// "drained until <time>" (or just "drained" when the drain is open-ended)
+// beside the figures, and "N task(s) still finishing" when it is drained and
+// still holds leases.
 func FormatPools(pools []PoolStatus) string {
 	var b strings.Builder
 	if len(pools) == 0 {
@@ -1314,6 +1350,20 @@ func FormatPools(pools []PoolStatus) string {
 			lim = fmt.Sprintf("%d", p.Limit)
 		}
 		fmt.Fprintf(&b, "%s: %d/%s", p.Name, p.Held+p.External, lim)
+		if p.Drained {
+			if p.DrainUntil.IsZero() {
+				b.WriteString(" drained")
+			} else {
+				fmt.Fprintf(&b, " drained until %s", p.DrainUntil.UTC().Format(time.RFC3339))
+			}
+		}
+		if p.Drained && p.Held > 0 {
+			plural := "s"
+			if p.Held == 1 {
+				plural = ""
+			}
+			fmt.Fprintf(&b, " (%d task%s still finishing)", p.Held, plural)
+		}
 		if p.External > 0 {
 			fmt.Fprintf(&b, " (%d external)", p.External)
 		}
