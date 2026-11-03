@@ -16948,6 +16948,32 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_scoped_requirements', label: 'Plan coverage: count only scope and constraint sentences (default on)', labelKey: 'settings_plan_coverage_scoped_requirements', helpKey: 'settings_plan_coverage_scoped_requirements_help', type: 'toggle', default: true },
     { key: 'autonomous.plan_coverage_requirement_sections', label: 'Plan coverage: requirement section names (comma separated)', labelKey: 'settings_plan_coverage_requirement_sections', helpKey: 'settings_plan_coverage_requirement_sections_help', type: 'text', placeholder: 'scope,constraints' },
     { key: 'autonomous.plan_coverage_min_requirement_chars', label: 'Plan coverage: shortest requirement in characters (0 uses the default)', labelKey: 'settings_plan_coverage_min_requirement_chars', helpKey: 'settings_plan_coverage_min_requirement_chars_help', type: 'number', min: 0, placeholder: '30' },
+    // Decompose lint (task 4f3f) — rule-based planning-quality review of
+    // decomposed Automaton task graphs. Stored via the dedicated
+    // GET/PUT /api/autonomous/decompose-lint/config endpoints (NOT
+    // /api/config); settingsDecomposeLintLoad / settingsDecomposeLintSave
+    // handle that, and the daemon's 400 rule-validation body is surfaced
+    // as in-card feedback on save.
+    { label: 'Decompose lint', labelKey: 'settings_decompose_lint_group', type: 'group' },
+    {
+      key: 'autonomous.decompose_lint',
+      label: 'Decompose lint (review decomposed tasks)',
+      labelKey: 'settings_decompose_lint',
+      type: 'decompose_lint',
+      modeOptions: ['off', 'shadow', 'enforce'],
+      modeDefault: 'off',
+      modeLabelKey: 'settings_decompose_lint_mode',
+      maxRetriesDefault: 1,
+      maxRetriesMin: 0,
+      maxRetriesMax: 5,
+      maxRetriesLabelKey: 'settings_decompose_lint_max_retries',
+      taskTemplatesDefault: false,
+      taskTemplatesLabelKey: 'settings_decompose_lint_task_templates',
+      guidanceLabelKey: 'settings_decompose_lint_guidance',
+      rulesLabelKey: 'settings_decompose_lint_rules',
+      rulesHelpKey: 'settings_decompose_lint_rules_help',
+      saveKey: 'settings_decompose_lint_save',
+    },
     // Per-backend usage back-off — while one of a backend's sessions is
     // rate-limited, autonomous dispatch to that backend waits until the
     // parsed reset time (or the max back-off when the message has none).
@@ -18187,6 +18213,53 @@ function loadGeneralConfig() {
                 onchange="saveGeneralField('${f.key}', this.value)" />
               ${_hint && _hint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_hint)}</div>` : ''}
             </div>`;
+          } else if (f.type === 'decompose_lint') {
+            // Decompose-lint settings card (task 4f3f). The values live in
+            // autonomous/decompose_lint.go and are stored via PUT
+            // /api/autonomous/decompose-lint/config — not /api/config, so
+            // nothing here goes through saveGeneralField.
+            const pid = 'dlc-' + f.key.replace(/\W+/g, '-');
+            const dlModes = f.modeOptions || ['off', 'shadow', 'enforce'];
+            const dlMin = f.maxRetriesMin !== undefined ? f.maxRetriesMin : 0;
+            const dlMax = f.maxRetriesMax !== undefined ? f.maxRetriesMax : 5;
+            const dlLbl = 'font-size:12px;color:var(--text2);';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(fLabel)}</div>
+              <div style="display:flex;flex-direction:column;gap:8px;margin-top:4px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span style="${dlLbl}">${escHtml(t(f.modeLabelKey) || 'Mode (off | shadow | enforce)')}</span>
+                  <select id="${pid}-mode" class="form-select" style="max-width:150px;">
+                    ${dlModes.map(m => `<option value="${escHtml(m)}">${escHtml(m)}</option>`).join('')}
+                  </select>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span style="${dlLbl}">${escHtml(t(f.maxRetriesLabelKey) || 'Max retries (0-5, default 1)')}</span>
+                  <input id="${pid}-maxretries" type="number" min="${dlMin}" max="${dlMax}" step="1" class="form-input" style="width:80px;margin-top:0;" />
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                  <span style="${dlLbl}" title="Enables the daemon task decomposition templates">${escHtml(t(f.taskTemplatesLabelKey) || 'Task templates')}</span>
+                  <label class="toggle-switch" style="margin:0;flex-shrink:0;">
+                    <input type="checkbox" id="${pid}-tasktemplates" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <span style="${dlLbl}">${escHtml(t(f.guidanceLabelKey) || 'Decompose guidance')}</span>
+                  <textarea id="${pid}-guidance" rows="3" class="form-input" style="margin-top:0;resize:vertical;font-size:11px;"></textarea>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:4px;">
+                  <span style="${dlLbl}">${escHtml(t(f.rulesLabelKey) || 'Rules (JSON)')} <span style="font-weight:400;font-size:10px;">${escHtml(t(f.rulesHelpKey) || '')}</span></span>
+                  <textarea id="${pid}-rules" rows="6" class="form-input" style="margin-top:0;resize:vertical;font-family:var(--mono,monospace);font-size:11px;"></textarea>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <button class="btn-primary" style="font-size:12px;padding:4px 12px;" onclick="settingsDecomposeLintSave('${pid}')">${escHtml(t(f.saveKey) || 'Save')}</button>
+                  <span id="${pid}-feedback" style="font-size:11px;"></span>
+                </div>
+              </div>
+            </div>`;
+            // Populate once the card is in the DOM (GET the current config
+            // from the dedicated endpoint; silent on daemons without it).
+            setTimeout(() => { if (window.settingsDecomposeLintLoad) window.settingsDecomposeLintLoad(pid); }, 0);
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -18387,7 +18460,105 @@ function _failureEscalationStepsText(steps) {
   }).join(',');
 }
 
-// _parseFailureEscalationSteps reads the compact text form into a steps array.
+// ── Decompose-lint settings card (task 4f3f) ──────────────────────────────────
+// The decompose-lint values live in autonomous/decompose_lint.go and are
+// stored via the dedicated endpoints (NOT /api/config):
+//   GET /api/autonomous/decompose-lint/config — current config; on a new
+//     daemon the rules list is the full default pack.
+//   PUT /api/autonomous/decompose-lint/config — validate + store; a
+//     non-recoverable rule (unknown type/severity, empty id, bad value)
+//     returns a 400 whose body is the daemon's rule-validation error text.
+// settingsDecomposeLintLoad(pid) populates the editor; settingsDecomposeLintSave(
+// pid) collects it, accepts a rules array or {rules, disabled_rules}, issues
+// the PUT, and displays either the success line or the daemon's 400 text in
+// the card's feedback slot (validation feedback from the PUT).
+function settingsDecomposeLintLoadCore(pid) {
+  apiFetch('/api/autonomous/decompose-lint/config').then(cfg => {
+    if (!document.getElementById(pid)) return; // view changed while loading
+    cfg = cfg || {};
+    const dl = cfg.decompose_lint || {};
+    const tt = cfg.task_templates || {};
+    const modeEl = document.getElementById(pid + '-mode');
+    if (modeEl) modeEl.value = String(dl.mode || 'off');
+    const mrEl = document.getElementById(pid + '-maxretries');
+    if (mrEl) mrEl.value = (dl.max_retries !== undefined && dl.max_retries !== null) ? dl.max_retries : 1;
+    const tEl = document.getElementById(pid + '-tasktemplates');
+    if (tEl) tEl.checked = !!tt.enabled;
+    const gEl = document.getElementById(pid + '-guidance');
+    if (gEl) gEl.value = String(cfg.decompose_guidance || '');
+    const rEl = document.getElementById(pid + '-rules');
+    if (rEl) {
+      const doc = { rules: Array.isArray(dl.rules) ? dl.rules : [] };
+      if (Array.isArray(dl.disabled_rules) && dl.disabled_rules.length) doc.disabled_rules = dl.disabled_rules;
+      rEl.value = JSON.stringify(doc, null, 2);
+    }
+  }).catch(() => { /* endpoint exists on daemons with decompose lint — stay silent */ });
+}
+window.settingsDecomposeLintLoad = function (pid) { settingsDecomposeLintLoadCore(pid); };
+
+window.settingsDecomposeLintSave = function (pid) {
+  const val = id => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
+  };
+  const chk = id => {
+    const el = document.getElementById(id);
+    return !!(el && el.checked);
+  };
+  const setFeedback = (msg, isError) => {
+    const el = document.getElementById(pid + '-feedback');
+    if (!el) return;
+    el.style.color = isError ? 'var(--error,#ef4444)' : 'var(--success,#22c55e)';
+    el.textContent = msg || '';
+  };
+
+  // Rules editor: a JSON array of rule objects, or {rules, disabled_rules}.
+  // Empty text = don't send rules (daemon keeps its current ones).
+  const rulesText = String(val(pid + '-rules') || '').trim();
+  let rules = [], disabledRules = [];
+  if (rulesText && rulesText !== '{}') {
+    let parsed;
+    try { parsed = JSON.parse(rulesText); }
+    catch (e) {
+      setFeedback((t('settings_decompose_lint_rules_invalid') || 'Rules must be valid JSON') + ' — ' + ((e && e.message) || String(e)), true);
+      return;
+    }
+    if (Array.isArray(parsed)) rules = parsed;
+    else if (parsed && typeof parsed === 'object') {
+      rules = Array.isArray(parsed.rules) ? parsed.rules : [];
+      disabledRules = Array.isArray(parsed.disabled_rules) ? parsed.disabled_rules : [];
+    } else {
+      setFeedback(t('settings_decompose_lint_rules_invalid') || 'Rules must be valid JSON (a rules array, or {rules, disabled_rules})', true);
+      return;
+    }
+  }
+
+  const maxRet = parseInt(val(pid + '-maxretries'), 10);
+  if (Number.isNaN(maxRet)) {
+    setFeedback('max retries must be a number (0-5)', true);
+    return;
+  }
+  const body = {
+    decompose_lint: { mode: String(val(pid + '-mode') || 'off'), max_retries: maxRet },
+    task_templates: { enabled: chk(pid + '-tasktemplates') },
+    decompose_guidance: String(val(pid + '-guidance') || ''),
+  };
+  if (rules.length) body.decompose_lint.rules = rules;
+  if (disabledRules.length) body.decompose_lint.disabled_rules = disabledRules;
+
+  apiFetch('/api/autonomous/decompose-lint/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+    .then(() => setFeedback((t('settings_decompose_lint_saved') || 'Decompose lint config saved'), false))
+    .catch(err => {
+      // apiFetch rejects non-OK responses with the daemon's response body as
+      // the error message — that is the rule-validation error text this card
+      // must show (validation feedback from the PUT).
+      setFeedback((t('settings_decompose_lint_error') || 'Save failed:') + ' ' + ((err && err.message) || String(err)), true);
+    });
+};// _parseFailureEscalationSteps reads the compact text form into a steps array.
 // Empty text yields []. It throws on an item the server would refuse.
 function _parseFailureEscalationSteps(text) {
   const src = String(text || '').trim();
@@ -24611,6 +24782,10 @@ function _renderDetailContent(prd) {
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
   window.loadDecisionLineCard(prd.id);
+  // Decompose-lint findings panel (task 4f3f): last recorded run for this
+  // Automaton + dry-run recheck, under the plan coverage block. Silent on
+  // daemons without the endpoint (the slot stays hidden).
+  if (typeof window._loadPRDDecomposeLint === 'function') window._loadPRDDecomposeLint(prd.id || '');
   _tagsLoad().then(() => _renderDetailTagRow(prd));
   if (mergeSlot) window.loadMergeStatus().then(byId => {
     const el = document.getElementById('prdMergeBadge');
@@ -28312,6 +28487,116 @@ function _prdPlanCoverageBlock(prd) {
 }
 window._prdPlanCoverageBlock = _prdPlanCoverageBlock;
 
+// ── Decompose-lint findings panel (task 4f3f) — per-Automaton detail view ────
+// Sits under the plan coverage block in the Automaton detail header and shows
+// the last recorded decompose-lint run for this Automaton (GET
+// /api/autonomous/prds/{id}/decompose-lint) with severity badges
+// (blocking / warning) + a count summary, plus a "Dry run" button (POST on the
+// same path) which re-checks the latest decomposition without recording it.
+// The slot hides itself entirely on daemons without the endpoint.
+function _dlSeverityBadge(sev) {
+  const blocking = String(sev || '').toLowerCase() === 'block';
+  const color = blocking ? 'var(--error,#ef4444)' : 'var(--warning,#f59e0b)';
+  const label = blocking ? (t('prd_dl_severity_block') || 'blocking') : (t('prd_dl_severity_warn') || 'warning');
+  return `<span style="font-size:9px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;padding:1px 6px;border-radius:8px;background:${color};color:#fff;">${escHtml(label)}</span>`;
+}
+
+function _dlFindingRow(f) {
+  const where = [f.story, f.task].map(s => String(s || '').trim()).filter(Boolean).join(' » ');
+  const matched = String(f.matched || '').trim();
+  return `<tr>
+    <td style="padding:3px 8px 3px 0;white-space:nowrap;vertical-align:top;">${_dlSeverityBadge(f.severity)}</td>
+    <td style="vertical-align:top;">
+      <code style="font-size:10px;color:var(--accent);">${escHtml(f.rule_id || '')}</code>
+      ${where ? ` <span style="color:var(--text2);font-size:10px;">${escHtml(where)}</span>` : ''}
+      <div style="color:var(--text2);font-size:11px;margin-top:2px;">${escHtml(String(f.message || '').slice(0, 240))}</div>
+      ${matched ? `<div style="font-family:var(--mono,monospace);font-size:10px;color:var(--text2);margin-top:2px;" title="${escHtml(matched)}">${escHtml(matched.slice(0, 120))}${matched.length > 120 ? '…' : ''}</div>` : ''}
+    </td>
+  </tr>`;
+}
+
+function _dlChips(findings) {
+  const list = Array.isArray(findings) ? findings : [];
+  if (!list.length) return '';
+  const blocking = list.filter(f => String(f.severity) === 'block').length;
+  const warning = list.length - blocking;
+  const parts = [];
+  if (blocking) parts.push(`<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;background:var(--error,#ef4444);color:#fff;">${blocking} ${escHtml(t('prd_dl_severity_block') || 'blocking')}</span>`);
+  if (warning) parts.push(`<span style="font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;background:var(--warning,#f59e0b);color:#fff;">${warning} ${escHtml(t('prd_dl_severity_warn') || 'warning')}</span>`);
+  return parts.join('');
+}
+
+function _dlPanel(prdId, subtitle, chipsHtml, findings, alertMsg) {
+  const alertHtml = alertMsg
+    ? `<div style="margin-top:8px;font-size:11px;color:var(--error,#ef4444);background:rgba(239,68,68,0.1);border:1px solid var(--error,#ef4444);border-radius:4px;padding:6px 10px;">${escHtml(alertMsg)}</div>`
+    : '';
+  return `
+    <div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;background:var(--bg);">
+      <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:13px;font-weight:700;">${escHtml(t('prd_dl_title') || 'Decompose lint')}</span>
+        ${subtitle ? `<span style="font-size:11px;color:var(--text2);">${escHtml(subtitle)}</span>` : ''}
+        ${chipsHtml ? `<span style="display:inline-flex;gap:4px;align-items:center;">${chipsHtml}</span>` : ''}
+        <span style="flex:1;min-width:0;"></span>
+        <button class="output-tab" style="padding:3px 10px;font-size:11px;" onclick="_dlRunDryRun(${escHtml(JSON.stringify(prdId))})">${escHtml(t('prd_dl_dryrun') || 'Dry run')}</button>
+      </div>
+      <div style="padding:8px 14px;">
+        ${(findings && findings.length) ? `<table style="width:100%;border-collapse:collapse;">${findings.map(_dlFindingRow).join('')}</table>`
+                                         : `<div style="font-size:11px;color:var(--success,#22c55e);">${escHtml(t('prd_dl_clean') || 'no findings — the decomposition passed the decompose lint rules')}</div>`}
+        ${alertHtml}
+      </div>
+    </div>`;
+}
+
+function _loadPRDDecomposeLintCore(prdId) {
+  const slot = document.getElementById('prdDecomposeLintSlot');
+  if (!slot) return;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/decompose-lint')
+    .then(rec => {
+      const s = document.getElementById('prdDecomposeLintSlot');
+      if (!s) return; // view changed while loading
+      if (!rec || !rec.decompose_lint) {
+        // No recorded run yet for this Automaton — the panel still offers a
+        // dry run so the operator can check the latest decomposition.
+        s.innerHTML = _dlPanel(prdId, t('prd_dl_none') || 'no recorded run yet for this Automaton', '', [], null);
+      } else {
+        const dl = rec.decompose_lint;
+        const findings = Array.isArray(dl.decompose_lint_findings) ? dl.decompose_lint_findings
+          : (Array.isArray(dl.findings) ? dl.findings : []);
+        s.innerHTML = _dlPanel(prdId, String(dl.mode || (dl.record_seq !== undefined ? 'run #' + dl.record_seq : '')), _dlChips(findings), findings, null);
+      }
+      s.style.display = '';
+    })
+    .catch(() => { /* endpoint exists on daemons with decompose lint — keep the slot hidden */ });
+}
+window._loadPRDDecomposeLint = function (prdId) { _loadPRDDecomposeLintCore(prdId); };
+
+window._dlRunDryRun = function (prdId) {
+  const slot = document.getElementById('prdDecomposeLintSlot');
+  if (!slot) return;
+  slot.style.display = '';
+  slot.innerHTML = `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;padding:10px 14px;background:var(--bg);font-size:11px;color:var(--text2);">${escHtml(t('prd_dl_running') || 'Running decompose lint...')} <span style="color:var(--text2);">…</span></div>`;
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/decompose-lint', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  })
+    .then(report => {
+      const s = document.getElementById('prdDecomposeLintSlot');
+      if (!s) return;
+      const dlr = (report && report.decompose_lint_report) || {};
+      const findings = Array.isArray(dlr.findings) ? dlr.findings : [];
+      s.style.display = '';
+      s.innerHTML = _dlPanel(prdId, t('prd_dl_dryrun_done') || 'Dry run (not recorded)', _dlChips(findings), findings, null);
+    })
+    .catch(err => {
+      const s = document.getElementById('prdDecomposeLintSlot');
+      if (!s) return;
+      const msg = (err && err.message) || String(err);
+      s.style.display = '';
+      s.innerHTML = _dlPanel(prdId, t('prd_dl_dryrun_done') || 'Dry run (not recorded)', '', [], msg);
+    });
+};
+
 // Pure payload builder (exported for pin tests): acknowledgment requires
 // a non-empty note — returns null when the note is empty after trim, so
 // the caller never posts a blank note.
@@ -28550,6 +28835,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
       ${_prdPlanCoverageBlock(prd)}
+      <div id="prdDecomposeLintSlot" class="prd-plan-coverage" style="display:none;margin-top:8px;"></div>
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
