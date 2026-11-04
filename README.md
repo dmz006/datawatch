@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.90.1 (2026-11-04).** Writes to stored Automata, stories and tasks now run under the store lock, fixing a daemon crash in the store's deep copy. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.90.2 (2026-11-04).** The version check now treats the supervisor status script as a no-behavior-change file. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

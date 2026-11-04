@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.90.2 — Version check exempts the supervisor status script
+
+The CI version-bump check no longer fails on edits to `scripts/v10-status.py`.
+
+- **The change.** `scripts/v10-status.py`, the supervisor's progress report, joins `scripts/supervisor-watch.py` in the version check's list of files that change no daemon behaviour. A change to the report's lane count (now two GPU lanes and one Claude lane) failed the check on main.
+
 ## v9.90.1 — Fix the daemon crash from unlocked writes to stored Automata
 
 The daemon crash from writes to a stored Automaton made without the store lock is fixed, and the race tests now pass.
