@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.84.1 (2026-11-04).** Adoption after a restart no longer drops the node lease of a task on a local-engine backend whose model name does not resolve. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.84.2 (2026-11-04).** The agent-base container scan passes again: the libexpat denial-of-service finding is accepted for 30 days with a trace. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

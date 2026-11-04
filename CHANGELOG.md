@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.84.2 — Accept the libexpat finding in agent-base for 30 days
+
+The agent-base container scan passes again.
+
+- Trivy reported CVE-2026-113351 (HIGH, libexpat1 2.5.0-1+deb12u5, no fixed version) in the agent-base image and the container build step failed on it in every Release run since. It is accepted for 30 days with the same trace as the earlier libexpat finding: only git links libexpat, through git-http-push, which datawatch never runs.
+- The entry expires 2026-12-04; re-check the Debian security tracker for a bookworm fix at each release and remove the entry when one ships.
+
 ## v9.84.1 — A restart keeps the node lease of a pi-prompt task
 
 A restart no longer drops the node lease of a pi-prompt task.
