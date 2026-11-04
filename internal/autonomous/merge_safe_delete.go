@@ -73,6 +73,12 @@ type SafeDeleteReport struct {
 	Held []SafeDeleteHeld  `json:"held"`
 	// HeldDirty counts safe-by-state branches held for uncommitted changes.
 	HeldDirty int `json:"held_dirty"`
+	// ComputedAt is when the report was computed (RFC 3339, UTC).
+	// Set by the safe-to-delete cache; emitted always.
+	ComputedAt string `json:"computed_at"`
+	// Stale is true when the report is older than the cache lifetime;
+	// emitted always (false for reports served fresh).
+	Stale bool `json:"stale"`
 }
 
 // sdPlan is one candidate Automaton branch after filtering out base and the
