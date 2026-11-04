@@ -74,6 +74,9 @@
       <div class="splash-title">datawatch</div>
       <div class="splash-subtitle">AI Orchestration</div>
       <div class="splash-version">%%DW_VERSION%%</div>
+      <!-- Previous version line — hidden by default; app.js fills it in and
+           shows it only when the daemon version changed since last splash. -->
+      <div class="splash-version-prev" id="splashVersionPrev" style="display:none"></div>
       <!-- GH#172 D59 — status line (Android already has this). Default
            text for a fresh page load; app.js updates it to "Connected"
            once the WebSocket opens, same moment the fade-out starts. -->

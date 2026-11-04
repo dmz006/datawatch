@@ -1928,6 +1928,7 @@
   "session_action_unmute": "Unmute notifications",
   "settings_replay_splash": "↻ Replay splash",
   "splash_status_connected": "Connected",
+  "splash_version_previous": "以前のバージョン %1$s",
   "prd_action_permission": "Permission",
   "prd_permission_mode_title": "オートマトンの権限モード",
   "prd_permission_mode_hint": "このオートマトンの下で生成されるタスクの claude-code --permission-mode のデフォルト値。各タスクで上書きしない限り継承されます。",
