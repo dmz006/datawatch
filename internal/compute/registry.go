@@ -152,6 +152,25 @@ func (r *Registry) Update(n *Node) error {
 	return r.persistLocked()
 }
 
+// RecordBackendVersion stamps a version probe result onto the named
+// Node and persists it. Returns ErrNotFound if absent. Used by the
+// save-time wiring in internal/server so operators can see the
+// captured backend version in the node detail payload.
+func (r *Registry) RecordBackendVersion(name string, vr VersionResult) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	cp := *n
+	cp.RecordBackendVersion(vr)
+
+	cp.UpdatedAt = time.Now().UTC()
+	r.nodes[name] = &cp
+	return r.persistLocked()
+}
+
 // Delete removes the named Node. Returns ErrNotFound if absent.
 func (r *Registry) Delete(name string) error {
 	r.mu.Lock()

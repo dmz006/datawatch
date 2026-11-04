@@ -314,6 +314,16 @@ type Node struct {
 	CreatedAt   time.Time `yaml:"created_at,omitempty" json:"created_at,omitempty"`
 	UpdatedAt   time.Time `yaml:"updated_at,omitempty" json:"updated_at,omitempty"`
 	AutoCreated bool      `yaml:"auto_created,omitempty" json:"auto_created,omitempty"`
+
+	// Backend version capture (save-time version probe, see
+	// version_probe.go). BackendVersion is the normalized semver core
+	// the backend reported ("0.5.14" for Ollama, "27.1.1" for Docker);
+	// when the backend reports a non-semver string the verbatim value
+	// is kept instead. VersionProbedAt is when the observation was
+	// made. Empty = never probed (e.g. kind with no version source).
+	VersionBackend  string    `yaml:"version_backend,omitempty" json:"version_backend,omitempty"`
+	BackendVersion  string    `yaml:"backend_version,omitempty" json:"backend_version,omitempty"`
+	VersionProbedAt time.Time `yaml:"version_probed_at,omitempty" json:"version_probed_at,omitempty"`
 }
 
 // HardwareSpec captures auto-detectable + operator-overridable hardware
