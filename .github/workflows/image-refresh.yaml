@@ -313,14 +313,14 @@ jobs:
         # matrix, so this job cleans up after itself. Runs even if an
         # earlier build/scan step failed.
         #
-        # --paginate prints one JSON array per page; jq cannot parse that as
-        # a single document ("Expected separator between values"). There is
-        # no flag to fold the pages into one outer array: `--slurp` does not
-        # exist in gh 2.46.0 (current cli/cli release as of this writing),
-        # and passing it exits nonzero with "unknown flag". So the pages are
-        # handed to `jq -s`, which collects the separate pages into one
-        # array, and the [.[][]] filter flattens them into a single version
-        # list. Each attempt's stderr is captured to a mktemp file so a
+        # --paginate prints one JSON array per page; jq cannot parse that
+        # as a single document ("Expected separator between values").
+        # There is no flag to fold the pages into one outer array:
+        # `--slurp` is not a gh api flag (the installed gh exits nonzero
+        # with "unknown flag: --slurp"), so the pages are handed to
+        # `jq -s`, which collects the separate pages into one array, and
+        # the [.[][]] filter flattens them into a single version list.
+        # Each attempt's stderr is captured to a mktemp file so a
         # both-endpoint failure can be reported with its real error line
         # instead of being masked as an empty `[]`.
         if: always()

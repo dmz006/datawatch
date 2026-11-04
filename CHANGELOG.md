@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- The image-refresh cleanup step, the ghcr-cleanup listing and the dismissed-alerts watch now parse the paged GitHub API output instead of failing with a JSON parse error.
+- The image-refresh cleanup step, the ghcr-cleanup listing and the dismissed-alerts watch called `gh api` with a `--slurp` flag that does not exist in gh, so every call failed with "unknown flag" and no versions or alerts were ever listed. They now page with `--paginate` and fold the pages with `jq -s` / a concatenated-JSON parse, and their tests run against a fake `gh` that rejects unknown flags the way the real binary does.
 
 ## v9.71.0 — Billing profiles for the usage calculator and the cost report
 
