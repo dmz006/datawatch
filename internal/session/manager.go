@@ -4873,6 +4873,9 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 			m.pushAfterCommit(current, sha)
 		}
 	}
+	// The staging pass ran even if the commit itself failed, so record
+	// what it left unstaged in either case (last staging pass wins).
+	current.StagingSkipped = projGit.LastStagingSkipped()
 	for _, sk := range projGit.LastStagingSkipped() {
 		fmt.Printf("[datawatch] completion commit: left %q unstaged (%s)\n", sk.Path, sk.Reason)
 	}
