@@ -1,5 +1,7 @@
 package autonomous
 
+import "fmt"
+
 // JudgeTimeoutCategory is the verdict category of a judge that hit its time
 // limit on every backend in its judge policy, one attempt each. It is neither
 // "infra" (the judge is not re-run as a whole) nor "content" (no content
@@ -59,4 +61,35 @@ func judgeHoldHeld(prd *PRD) bool {
 		}
 	}
 	return false
+}
+
+// reviewBlockHoldText returns the hold reason for an Automaton waiting in
+// needs_review because its completion rules review blocked and no corrective
+// task is on the way (the fix task could not be created, the retries are
+// spent, or auto-fix is off). Empty when nothing holds it. A fix_task_created
+// record is not a hold: that corrective story runs normally. Lane fill must
+// not approve and run a held Automaton by itself, since nothing would change
+// before the same review blocked again.
+func reviewBlockHoldText(prd *PRD) string {
+	o := prd.RulesReviewOutcome
+	if o == nil || NormalizePRDStatus(prd.Status) != PRDNeedsReview {
+		return ""
+	}
+	var why string
+	switch o.Action {
+	case RulesReviewActionFixTaskFailed:
+		why = "the corrective task could not be created"
+	case RulesReviewActionRetriesSpent:
+		why = "its automatic fix attempts are used up"
+	case RulesReviewActionAutoFixDisabled:
+		why = "automatic fixing is turned off"
+	default:
+		return ""
+	}
+	n := len(o.Findings)
+	noun := "findings"
+	if n == 1 {
+		noun = "finding"
+	}
+	return fmt.Sprintf("its completion review blocked it with %d %s and %s; add a corrective task and approve it", n, noun, why)
 }
