@@ -58,7 +58,7 @@ def _placement_skip_nodes():
 
 PLACEMENT_SKIP_NODES = _placement_skip_nodes()
 # Deliberately held PRDs (operator or build manager decision, with the reason in the registry).
-ACKED_RUNS = {40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
+ACKED_RUNS = {41833726032, 41827384648, 41821649568, 40316827946, 40293597613, 40320408404, 40366394552, 40366382818, 40425238678}  # 41833726032, 41827384648 and 41821649568 are Release runs for 9.84.1, 9.84.0 and 9.83.1 whose agent-base container step failed on the Trivy libexpat finding CVE-2026-113351, accepted in 9.84.2 (row 325); the binary release succeeded. # owasp-zap: only the "attach reports to release" step failed on a GitHub API rate limit; the scan passed (registry row 209); 40320408404 failed the version bump check on a script-only commit, fixed by exempting this script in 9.19.3; 40366394552 and 40366382818 are CodeQL Analyze (actions) runs that end red at the result upload with no error shown, tracked in BL625 (row 212); 40425238678 is CodeQL rejecting the workflow upload because GitHub default setup is also enabled (operator decision pending)
 # The operator chose (2026-10-30): GitHub default CodeQL setup stays and the CodeQL workflow now only gates on open alerts,
 # so a red CodeQL run on main is a real finding and must be reported.
 CODEQL_CONFLICT_KNOWN = False
@@ -418,8 +418,11 @@ def main(argv=None):
 
     # CI on main and tags
     ci = sh("gh run list --limit 20 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
+    # The Release run takes about an hour and is pushed out of the 20 newest runs by the others, so
+    # read the last few Release runs on their own (a failed container step went unseen for days).
+    rel = sh("gh run list --workflow release.yaml --limit 4 --json workflowName,conclusion,status,databaseId,headBranch,displayTitle,createdAt", 30)
     try:
-        for r in json.loads(ci):
+        for r in json.loads(ci) + (json.loads(rel) if rel.strip().startswith("[") else []):
             if r["workflowName"] == "Release CI Summary":
                 continue
             if not (r["headBranch"] == "main" or r["headBranch"].startswith("v")):
