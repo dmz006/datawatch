@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **The safe-to-delete read is fast to repeat and honest about its age.** Each repository's report is now kept in the daemon's memory for 60 seconds: a read within that lifetime returns the stored result at once with no git work, and a read past it still returns at once, marked `stale`, while at most one 60-second-bounded background refresh runs — a refresh that fails keeps the last good report, so the read never hard-fails for usable data. Every result carries `computed_at` (when the stored result was made), and the report's `safe` entries carry `dirty_check_skipped` when the worktree's uncommitted-changes check was skipped because the branch's Automaton is running. A computation that outlasts the 3-second threshold is counted once and logged once, and the counters read on the system stats as `safe_delete_last_ms`, `safe_delete_slow_reports` and `safe_delete_refresh_failures`. No new configuration: the lifetime, the refresh bound and the threshold are code constants read as `safeDeleteCacheTTL`, `safeDeleteRefreshTimeout` and `safeDeleteSlowWarn`.
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.
