@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.87.0 — Configurable decompose lint, task templates and guidance
+
+Decompose output is now linted against a configurable rule pack, and task templates and guidance shape the plan.
+
+- **Decompose lint.** After a decompose, a rule pack checks the planned tasks (seven built-in rules: five that block, two that warn; operators can add rules, replace one by id or disable one). Modes: `off`, `shadow` (default: one pass, findings recorded, nothing re-run) and `enforce` (blocking findings are fed back for a re-run). The retry budget defaults to 2 (0 records without retrying, maximum 5, only blocking findings are retried).
+- **Task templates.** Built-in templates for recurring tasks are applied at decompose time (idempotent, with slots and `depends_on`), and can be turned on or off per project.
+- **Decompose guidance.** The planner gets guidance as literal text, as an existing readable file, or generated from the rules as a fallback.
+- On REST, MCP, the CLI, the comm channel, the config file and the web settings, with five locales and an operator how-to. Known gap: no stats counters yet for lint runs and findings.
+
 ## v9.86.0 — Automation view in six sub-tabs
 
 The Automation view is split into six sub-tabs, with an Inbox that counts what is waiting on you.

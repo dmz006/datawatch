@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.86.0 (2026-11-04).** The Automation view is split into six sub-tabs (Inbox with a count badge, Automations, Resources, Progress and cost, Setup and policy, Housekeeping). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.87.0 (2026-11-04).** Decompose output is linted against a configurable rule pack (off, shadow or enforce), task templates are applied at decompose time, and the planner gets guidance. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
