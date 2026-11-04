@@ -17,6 +17,7 @@ type CommandRecord struct {
 var (
 	recorderMu sync.RWMutex
 	recorderFn func(CommandRecord)
+	recordNow  = time.Now
 )
 
 // SetRecorder registers the trace recorder hook; nil clears it. The hook
@@ -38,4 +39,12 @@ func emitRecord(rec CommandRecord) {
 		defer func() { _ = recover() }()
 		fn(rec)
 	}()
+}
+
+// ReportExit tells the recorder that a command the daemon started in a
+// session finished with the given exit code, taken from the daemon's own
+// session record. It is non-blocking and a no-op without a recorder.
+func ReportExit(session, command string, code int, start time.Time) {
+	c := code
+	emitRecord(CommandRecord{Session: session, Command: command, ExitCode: &c, Start: start})
 }

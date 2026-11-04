@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/dmz006/datawatch/internal/llm"
 )
@@ -90,6 +89,6 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
 		return err
 	}
-	emitRecord(CommandRecord{Session: tmuxSession, Command: cmd, Start: time.Now()})
+	emitRecord(CommandRecord{Session: tmuxSession, Command: cmd, Start: recordNow()})
 	return nil
 }
