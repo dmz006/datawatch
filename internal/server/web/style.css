@@ -7343,3 +7343,18 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > .obs-fluid { flex: 1 1 100%; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
+
+/* Count badge on the Automation Inbox sub-tab: everything waiting on the operator. */
+.automation-subtab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
