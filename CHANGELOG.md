@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.80.0 — Defect queue: batches and a tiny-fix lane
+
+Related defects can now share one Automaton, and a tiny fix gets a one-task lane.
+
+- **Defect queue.** An intake step routes each incoming defect to the tiny-fix lane, to an open batch for its area, or to a new batch, and records the decision in `defect_intake_decisions.jsonl`. A batch is one Automaton with one story per defect plus a shared gate, documentation, changelog and parity-or-locale task, so a bug no longer costs a full set of wrapping tasks. A failed story can be split out into its own Automaton.
+- **Tiny-fix lane.** A classifier admits only small, code-or-test-only changes and refuses anything operator-visible (it then falls back to batching and records the refusal).
+- **Settings.** `autonomous.defect_queue.*` (batch size cap, allow unrelated, tiny-fix limits) on REST, MCP (`autonomous_defect_*` tools), the CLI, the comm channel, the config file and the web settings, with five locales and an operator how-to.
+- It sits beside the existing defect intake (`autonomous.defect_intake_automation`), which is unchanged.
+- Known gap: batches stay in draft until decomposed; there is no close-batch step yet, and no live daemon round trip was recorded.
+
 ## v9.79.0 — Review-timed-out state and size-aware judge routing
 
 A review that times out is now a clear hold you can retry or reroute, and big changes go to a stronger judge first.
