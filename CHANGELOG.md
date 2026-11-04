@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.82.1 — Generated-artefact template path built from the fixed kind list
+
+A kind that arrives in a request can no longer shape the generated-artefact template path.
+
+- CodeQL flagged `go/path-injection` in the generated-artefact renderer: the override template path was built from the requested kind. The path is now built from the matching entry of the fixed kind list, and an unknown kind yields no path and an error.
+- A unit test covers an unknown kind and the path of every known kind.
+
 ## v9.82.0 — Generated wrapping for changes
 
 The change record and its artefacts are now generated for you instead of being planned as tasks.

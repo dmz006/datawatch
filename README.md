@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.82.0 (2026-11-04).** The change record and its changelog, parity, tracker, registry and gate artefacts are generated instead of planned as tasks, with seven switches and an audited regenerate action. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.82.1 (2026-11-04).** A requested artefact kind can no longer shape the template path (CodeQL path-injection finding fixed). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
