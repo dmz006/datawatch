@@ -766,6 +766,12 @@ A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel
 
 ---
 
+### Generated artefacts
+
+The seven `autonomous.generated_artefacts` switches (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) decide which documents an Automaton drafts from its change record when it completes. Unset means on. Change one with `datawatch config set autonomous.generated_artefacts.gate_report false`, `PUT /api/config`, `config_set`, the comm channel or Settings > Automata > "Generated artefacts"; a change reaches a running daemon without a restart. Turning `change_record` off leaves the other artefacts with nothing to draw from. A file a person edited is never overwritten. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
+
+---
+
 ### Merge pipeline
 
 Each project has a merge pipeline: the ordered steps that take finished branches to shipped. The daemon picks it from the project's repository file (`.datawatch/merge-pipeline.yaml` by default), else a record it keeps for the project, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` (`record` by default) says what is used when the file is unusable. Read what is in effect, and why, with `datawatch autonomous merge-pipeline show`, the `autonomous_merge_pipeline_get` tool, the chat verb `autonomous merge-pipeline` or Settings > Automation > Merge pipeline. Check a pipeline without saving it with `validate`; a pipeline that does not validate is refused with every problem named. On a conflict, `conflict_policy` (default `mechanical_and_model`) resolves additive hunks mechanically, then asks the `conflict_model` (a registry entry; empty means none) for the rest. The proposal is worked out in a scratch worktree and kept only if the pipeline's test step passes on it; otherwise the project is unchanged and the operator is asked. A pipeline that bumps the version needs `version_files`. The operator guide is [howto/merge-pipeline.md](howto/merge-pipeline.md).

@@ -123,3 +123,7 @@ Each is asked separately, with a recommendation, when its phase is about to star
 | iPhone | yes | same issues |
 
 This plan document itself changes no code and no surface.
+
+## Status
+
+- Generated wrapping (change record and the five drafted artefacts: gate report, changelog draft, parity draft, tracker rows, registry row): built, unit-tested and documented in [howto/generated-artefacts.md](../howto/generated-artefacts.md); not yet validated on a live daemon. The datawatch-app parity issue is drafted in `docs/plans/parity-issues/generated-artefacts.md` and is filed by the supervisor at merge. Tracked in the [plans index](README.md).

@@ -191,7 +191,7 @@ func TestStoreRoundTrip(t *testing.T) {
 	if _, err := Load(dir, "missing"); err == nil {
 		t.Error("missing must fail")
 	}
-	os.WriteFile(filepath.Join(dir, "change-records", "junk.json"), []byte("{"), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "change-records", "junk.json"), []byte("{"), 0o600)
 	if _, err := Load(dir, "junk"); err == nil {
 		t.Error("corrupt must fail")
 	}
@@ -210,14 +210,14 @@ func TestGitDiff(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	write := func(n, s string) { os.WriteFile(filepath.Join(dir, n), []byte(s), 0o600) }
+	write := func(n, s string) { _ = os.WriteFile(filepath.Join(dir, n), []byte(s), 0o600) }
 	run("init", "-q")
 	write("keep.txt", "one\n")
 	write("gone.txt", "bye\n")
 	run("add", ".")
 	run("commit", "-qm", "base")
 	write("keep.txt", "one\ntwo\n")
-	os.Remove(filepath.Join(dir, "gone.txt"))
+	_ = os.Remove(filepath.Join(dir, "gone.txt"))
 	write("new_test.go", "package x\nfunc TestNew(t *testing.T) {}\n")
 	run("add", "-A")
 	g := GitDiff{Dir: dir, Base: "HEAD"}
