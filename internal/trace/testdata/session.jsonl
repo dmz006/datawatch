@@ -1,0 +1,4 @@
+{"session_id":"s1","task_id":"t1","backend":"claude-code","kind":"tool_call","name":"Bash","arg_summary":"go test ./...","timestamp":"2026-01-02T03:04:05Z"}
+{"session_id":"s1","task_id":"t1","backend":"claude-code","kind":"tool_result","name":"Bash","outcome":"ok","duration_ms":1200,"timestamp":"2026-01-02T03:04:06Z"}
+{"session_id":"s1","task_id":"t1","backend":"claude-code","kind":"model_request","name":"sonnet","tokens_in":900,"tokens_out":120,"timestamp":"2026-01-02T03:04:07Z"}
+{"session_id":"s1","task_id":"t1","backend":"claude-code","kind":"loop_warning","name":"repeat","timestamp":"2026-01-02T03:04:08Z"}
