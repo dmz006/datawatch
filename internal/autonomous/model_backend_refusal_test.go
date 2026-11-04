@@ -128,13 +128,13 @@ func TestModelBackendRefusalSetPRDLLMLeavesRecordUnchanged(t *testing.T) {
 	before := takeRefusalSnapshot(t, m, prd.ID)
 
 	// The new backend is pi, and the model in the call is a bare Claude alias.
-	_, err := m.SetPRDLLM(prd.ID, strp("pi"), nil, strp("claude-haiku-5-5"), nil, nil, "test")
+	_, _, err := m.SetPRDLLM(prd.ID, strp("pi"), nil, strp("claude-haiku-5-5"), nil, nil, "test")
 	assertRefused(t, err)
 	assertSnapshotUnchanged(t, before, takeRefusalSnapshot(t, m, prd.ID))
 
 	// A call that sets only a field the pair does not depend on is not
 	// refused, even though the record's own pair is a valid one.
-	if _, err := m.SetPRDLLM(prd.ID, nil, strp("high"), nil, nil, nil, "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prd.ID, nil, strp("high"), nil, nil, nil, "test"); err != nil {
 		t.Fatalf("effort-only SetPRDLLM refused: %v", err)
 	}
 }
@@ -145,7 +145,7 @@ func TestModelBackendRefusalDecompositionModelNotChecked(t *testing.T) {
 
 	// decomposition_model belongs to the planning backend, which is
 	// resolved separately, so a bare Claude name there is not refused.
-	if _, err := m.SetPRDLLM(prd.ID, nil, nil, nil, nil, strp("claude-opus-5-5"), "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prd.ID, nil, nil, nil, nil, strp("claude-opus-5-5"), "test"); err != nil {
 		t.Fatalf("decomposition-only SetPRDLLM refused: %v", err)
 	}
 }

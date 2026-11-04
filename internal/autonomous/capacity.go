@@ -564,7 +564,11 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	}
 	defer led.Release(holder)
 	m.clearPRDWaitReason(prd.ID)
-	return m.decompose(req)
+	// Planning requeue (planning_requeue.go): the PRD's decomposition pair
+	// can change while this admission was queued — the queue entry is
+	// retargeted onto this pool — so the execution must carry the pair the
+	// PRD holds NOW, not the one resolved before the capacity wait.
+	return m.decompose(m.planningRequestAtGrant(prd, req))
 }
 
 // decomposePools drops the "host" pool from a decompose lease. The

@@ -28,6 +28,7 @@ func (f *fakeOrchAutonomous) CreatePRD(string, string, string, string, string) (
 func (f *fakeOrchAutonomous) GetPRD(string) (any, bool)     { return nil, false }
 func (f *fakeOrchAutonomous) ListPRDs() []any               { return nil }
 func (f *fakeOrchAutonomous) Decompose(string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) RestartPlanning(string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) Run(string) error              { return nil }
 func (f *fakeOrchAutonomous) Cancel(string) error           { return nil }
 func (f *fakeOrchAutonomous) ListLearnings() []any          { return nil }

@@ -35,7 +35,7 @@ func TestBL321_Decompose_UsesDecompositionProfile_OverGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(perPRDProfile), sp(""), "test")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(perPRDProfile), sp(""), "test")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestBL321_Decompose_PRDProfileOverridesGlobal_BothNonEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
-	if _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(perPRD), sp(""), "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(perPRD), sp(""), "test"); err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
 

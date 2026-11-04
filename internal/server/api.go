@@ -748,6 +748,10 @@ type AutonomousAPI interface {
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
+	// Planning requeue (planning_requeue.go): decompose re-requested while
+	// the Automaton is already planning — re-queue the queued planning run
+	// on the current pool, or explain why the run was left alone.
+	RestartPlanning(id string) (any, error)
 	// BL328 — async decompose with per-story callback. Used by the
 	// SSE-streaming handler. The callback is called for each story as
 	// it becomes available; index is 0-based, total is total story count.

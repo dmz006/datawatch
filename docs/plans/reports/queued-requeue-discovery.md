@@ -244,3 +244,36 @@ Shared rule: **planning and workers use ONE requeue primitive, and it already ex
 - `Approve` (`manager.go:2954`) is a review gate, not a decompose path.
 - Restart-decompose and reset-to-draft-while-planning: section 3. Manager-side cancel of queued capacity requests: `errCancelledWhileWaiting` `capacity.go:28`, `errDecomposeCancelled` `:48` (section 5). How `autonomous.*` settings reach the config API: section 8.
 - Comm-channel surfaces exist for every setter (section 6); the PWA has no PRD-level wait-reason render.
+
+## 12. Changed files — planning requeue implementation (this worktree)
+
+Feature: changing the decomposition profile/model of a planning (or queued) Automaton now
+retargets the queued planner on the ledger to the new pool (`requeued`), leaves an already
+started run alone and stores the value for the next run (`deferred_to_next_run`), or
+confirms nothing moved (`unchanged`). `SetPRDLLM` returns the outcome; the decompose
+handler re-queues on restart while queued; the wait reason always names the current
+profile's pool. Built on `capacity.Ledger.Retarget` per section 10 (one primitive, planner
+holder `"plan:"+prd.ID`, `RolePlanner`, `decomposePools`).
+
+New:
+- `internal/autonomous/planning_requeue.go` — `PlanningOutcome` (`requeued` / `deferred_to_next_run` / `unchanged`), `PlanningRequeueResult` (old/new backend, model, pools + human reason), `plannerPairFor`, `plannerPoolsFor`, `requeuePlanningRun` (shared requeue path used by the worker story too), `planningRequestAtGrant` (the run that executes after the capacity grant re-resolves backend/model from the PRD's CURRENT record, so the execution carries the pair the queue entry was retargeted onto — falls back to the captured pair when the current pair is unresolvable or unpinned, the same admission rule `requeuePlanningRun` applies), `API.RestartPlanning` manager-side, `plannerWaitReason`, decision note. Ordering: a live lease (started run) is detected BEFORE the pool-math short-circuit, so a started run is always `deferred_to_next_run`; time comes from the ledger's injected `capacity.Clock` only.
+- `internal/autonomous/planning_requeue_test.go` — `TestPlanningRequeue_QueuedRun_RetargetsToNewPool`, `_RetargetedRunExecutesWithNewPair` (the retargeted waiter, once its new pool frees up, runs the decompose with the NEW backend AND model — mutation-verified: without the admission-pair fix it executes with the pre-wait pair), `_TwoChanges_SingleQueueEntry` (exactly one live queue entry, no leaked capacity, and the admission executes the LATEST pair), `_NoMoveIsUnchanged`, `_StartedRunDeferred`, `_RestartWhileQueued`, `TestSplitSetLLMOut_PlanningRoundsTrip`. Fixtures inject `fakeCapClock` (`capacity.Clock` dependency); the ledger admits only on `Release`/`Retarget` dispatch, so nothing depends on wall-clock polls. Note `Ledger.SetLimit(pool, 0)` means UNLIMITED, so "busy pools" are simulated by holding each pool's single slot with busy consumers.
+- `internal/server/planning_requeue_helper.go` — `writeAutonomousPlanningResult` (reply `{prd, planning}` / view `planning`, mirroring `writeAutonomousResultOverride`).
+
+Changed (non-test):
+- `internal/autonomous/capacity.go` — `decomposeAdmitted` executes `m.decompose(m.planningRequestAtGrant(prd, req))` at the admission grant: the decompose request that runs carries the PRD's CURRENT decomposition pair (a queued entry may have been retargeted onto this pool mid-wait), not the pair resolved before the wait.
+- `internal/autonomous/manager.go` — `SetPRDLLM` now returns `(*PRD, *PlanningRequeueResult, error)` and calls `requeuePlanningRun` when the decomposition pair changes; `RestartPlanning` for the decompose/restart path.
+- `internal/autonomous/api.go` — `SetLLMOut.Planning`, `API.SetPRDLLM` forwards the new value, `SplitSetLLMOut` returns `(any, *LLMOverrideResult, *PlanningRequeueResult)`, `API.RestartPlanning` + `AutonomousAPI` entry (MCP/CLI/comm unchanged: they see the 2-value API).
+- `internal/autonomous/prd_view.go` — `WriteView.Planning any`.
+- `internal/server/api.go` — wiring for the planning outcome.
+- `internal/server/autonomous.go` — `set_llm` handler captures the third `SplitSetLLMOut` value (nil-safe type assertion, typed-nil guarded) and writes the planning object.
+- `internal/server/autonomous_decompose.go` — decompose handler re-queues a queued planner on the CURRENT pool via `RestartPlanning` (requirement d) and surfaces the explanation for a started run.
+- `internal/server/autonomous_view.go` — planning-result JSON writer plumbing.
+
+Changed (tests, signature updates for 3-value `SetPRDLLM` / 3-value `SplitSetLLMOut`):
+- `internal/autonomous/automation_planning_test.go`, `bl320_decomp_profile_test.go`, `bl321_decomp_priority_test.go`, `bl416_guardrail_llm_setter_test.go`, `decompose_streaming_model_test.go`, `lane_fill_coordinator_test.go`, `model_backend_refusal_test.go`, `set_prd_llm_fields_test.go`
+- `internal/server/orchestrator_enrich_test.go`, `set_llm_fields_preserved_test.go`
+
+Verification: `go vet ./...` clean; full `go test ./internal/... -count=1` green (11078 tests /
+93 packages); targeted `go test ./internal/autonomous/ -run 'TestPlanningRequeue|TestSplitSetLLMOut'
+-count=1` all PASS. No version bump, no `gh`, no daemon start.

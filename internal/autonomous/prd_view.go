@@ -16,6 +16,11 @@ type WriteView struct {
 	KilledSessions     int         `json:"killed_sessions,omitempty"`
 	Message            string      `json:"message"`
 	Override           any         `json:"override,omitempty"`
+	// Planning — the planning-requeue outcome for PRD-level set_llm calls
+	// that touched decomposition_profile / decomposition_model (nil on
+	// every other write; zero-valued so omitempty on a nil *PlanningRequeueResult
+	// is not a concern, it is only ever set to a non-nil pointer).
+	Planning any `json:"planning,omitempty"`
 }
 
 // BuildWriteView builds a WriteView for prd after a change to one task or
