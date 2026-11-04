@@ -31,6 +31,7 @@ Legend:
 | Session list + status | ✅ | ✅ | ✅ (three-way parity release, 2026-10-04) |
 | WebSocket session window (default-view rows on connect, one `session_state` per change, paged history over REST) | ✅ | ❌ pending the datawatch-app issue | ❌ pending the datawatch-app issue |
 | Start / stop / kill session | ✅ | ✅ | ✅ |
+| Completion review outcome (`rules_review_outcome` on the attention list and Automaton view; `autonomous.auto_fix_retries`; REST, MCP, CLI, comm channel, YAML all covered) | ✅ | ❌ owed, datawatch-app issue filed at merge | ❌ owed, datawatch-app issue filed at merge |
 | Session output streaming | ✅ | ✅ | ✅ |
 | Settings — General | ✅ | ✅ | ✅ |
 | Settings — LLM backends | ✅ | ✅ | ✅ |
