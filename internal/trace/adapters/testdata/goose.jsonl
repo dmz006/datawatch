@@ -1,0 +1,6 @@
+{"working_dir":"/w","input_tokens":0,"output_tokens":0}
+{"role":"assistant","created":1767323045,"content":[{"type":"toolRequest","id":"g1","toolCall":{"status":"success","value":{"name":"developer__shell","arguments":{"command":"ls"}}}}]}
+{"role":"user","created":1767323048,"content":[{"type":"toolResponse","id":"g1","toolResult":{"status":"success"}}]}
+{"role":"assistant","created":1767323049,"content":[{"type":"toolRequest","id":"g2","toolCall":{"status":"success","value":{"name":"developer__text_editor","arguments":{"path":"a"}}}}]}
+{"role":"user","created":1767323050,"content":[{"type":"toolResponse","id":"g2","toolResult":{"status":"error"}}]}
+{"created":1767323051,"input_tokens":300,"output_tokens":40}
