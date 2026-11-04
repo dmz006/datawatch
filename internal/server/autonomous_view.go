@@ -34,6 +34,38 @@ func (s *Server) writeAutonomousResult(w http.ResponseWriter, r *http.Request, p
 	}
 }
 
+// writeAutonomousResultOverride is the LLM-override-write variant of
+// writeAutonomousResult: when override is non-nil (a call accepted in
+// queued mode, override_queued_tasks enabled at a locked Automaton status),
+// the reply carries it in override — in the full view as {"prd": …,
+// "override": …}, in the compact view inside the write view — while a nil
+// override keeps the exact bare-PRD / write-view replies every other write
+// uses.
+func (s *Server) writeAutonomousResultOverride(w http.ResponseWriter, r *http.Request, prd any, override any, taskID, storyID, message string) {
+	if override == nil {
+		s.writeAutonomousResult(w, r, prd, taskID, storyID, message)
+		return
+	}
+	switch view := r.URL.Query().Get("view"); view {
+	case "", "full":
+		writeJSONOK(w, struct {
+			PRD      any `json:"prd"`
+			Override any `json:"override"`
+		}{PRD: prd, Override: override})
+	case "compact":
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "compact view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		v := autonomous.BuildWriteView(p, taskID, storyID, message)
+		v.Override = override
+		writeJSONOK(w, v)
+	default:
+		http.Error(w, "invalid view: accepted values are full, compact", http.StatusBadRequest)
+	}
+}
+
 // writeAutonomousCancelResult writes the reply for the DELETE cancel route.
 // view=compact returns the write view for prd and carries killed, the number
 // of sessions the cancel stopped, in killed_sessions. Any other view keeps

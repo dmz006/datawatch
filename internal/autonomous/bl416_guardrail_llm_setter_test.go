@@ -174,7 +174,7 @@ func TestBL416_SetTaskLLM_LeavesGuardrailIntact(t *testing.T) {
 	if _, err := m.SetPRDGuardrailLLM(prd.ID, strp("ollama"), strp("qwen3:8b"), "test"); err != nil {
 		t.Fatalf("SetPRDGuardrailLLM: %v", err)
 	}
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", "", "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", "", "test"); err != nil {
 		t.Fatalf("SetTaskLLM: %v", err)
 	}
 	if _, err := m.SetPRDLLM(prd.ID, sp(""), sp(""), sp(""), sp(""), sp(""), "test"); err != nil {

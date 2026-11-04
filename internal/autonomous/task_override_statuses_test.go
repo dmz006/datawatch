@@ -39,10 +39,10 @@ func TestTaskOverride_DefaultAcceptsBlocked(t *testing.T) {
 	storyID := prd.Story[0].ID
 	taskID := prd.Story[0].Tasks[0].ID
 
-	if _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
 		t.Errorf("SetTaskLLM on blocked: %v", err)
 	}
-	if _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err != nil {
+	if _, _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err != nil {
 		t.Errorf("SetStoryLLM on blocked: %v", err)
 	}
 	if _, err := m.SetTaskGuardrailLLM(prd.ID, taskID, overrideStr("ollama"), nil, "op"); err != nil {
@@ -58,9 +58,15 @@ func TestTaskOverride_DefaultAcceptsBlocked(t *testing.T) {
 
 func TestTaskOverride_DefaultRefusesRunning(t *testing.T) {
 	m, prd := overrideFixture(t, PRDRunning, nil)
+	// This test pins the classic refusal, so opt the manager out of the
+	// new queued-task behavior (enabled by default, nil reads as true):
+	// with the enabled default, an override on a locked Automaton would now
+	// go through for tasks that have not started.
+	off := false
+	m.cfg.OverrideQueuedTasks = &off
 	taskID := prd.Story[0].Tasks[0].ID
 
-	_, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op")
+	_, _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op")
 	if err == nil {
 		t.Fatal("SetTaskLLM on running should be refused by default")
 	}
@@ -74,11 +80,13 @@ func TestTaskOverride_DefaultRefusesRunning(t *testing.T) {
 
 func TestTaskOverride_CustomListNarrowsToBlocked(t *testing.T) {
 	cfg := DefaultConfig()
+	off := false
 	cfg.TaskOverrideStatuses = []string{"blocked"}
+	cfg.OverrideQueuedTasks = &off // pin the classic refusal; the new default (enabled) would accept not-started tasks at locked statuses
 	m, prd := overrideFixture(t, PRDCancelled, &cfg)
 	storyID := prd.Story[0].ID
 
-	if _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err == nil {
+	if _, _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err == nil {
 		t.Error("SetStoryLLM on cancelled should be refused when list is [blocked]")
 	}
 
@@ -86,7 +94,7 @@ func TestTaskOverride_CustomListNarrowsToBlocked(t *testing.T) {
 	if err := m.Store().SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
-	if _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err != nil {
+	if _, _, err := m.SetStoryLLM(prd.ID, storyID, "ollama", "", "m", "op"); err != nil {
 		t.Errorf("SetStoryLLM on blocked should succeed: %v", err)
 	}
 }
@@ -97,7 +105,7 @@ func TestTaskOverride_CustomListAddsRunning(t *testing.T) {
 	m, prd := overrideFixture(t, PRDRunning, &cfg)
 	taskID := prd.Story[0].Tasks[0].ID
 
-	if _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
 		t.Errorf("SetTaskLLM on running should succeed when listed: %v", err)
 	}
 }
@@ -115,7 +123,7 @@ func TestTaskOverride_PRDLevelStaysLocked(t *testing.T) {
 		t.Errorf("SetPRDVerificationLLM on blocked must stay locked; got %v", err)
 	}
 
-	if _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m", "op"); err != nil {
 		t.Errorf("SetTaskLLM on blocked should succeed while PRD-level is locked: %v", err)
 	}
 }

@@ -420,6 +420,17 @@ func (a *API) SetConfig(v any) error {
 			}
 		}
 	}
+	// override_queued_tasks is write-validated the same way: on every
+	// write path (REST partial merge, MCP autonomous_config_set, comm
+	// channel) a present key must be a JSON boolean, so "true" or 3.0
+	// land as errors instead of a silently skipped field. json.Unmarshal
+	// into a bool refuses everything but true/false.
+	if override, present := gateProbe["override_queued_tasks"]; present {
+		var bo bool
+		if json.Unmarshal(override, &bo) != nil {
+			return fmt.Errorf("autonomous.override_queued_tasks: must be a JSON boolean (true or false)")
+		}
+	}
 	// failure_escalation is checked the same way as the per-Automaton and
 	// per-task overrides: an out-of-range value or a malformed step is refused
 	// before anything is merged. An omitted key leaves the current policy.
@@ -1126,22 +1137,51 @@ func (a *API) InstantiateTemplate(templateID string, vars map[string]string, act
 	return newPRD, err
 }
 
-// BL381 — per-story LLM override.
+// BL381 — per-story LLM override. out is the PRD; the queued-mode override
+// result (nil outside that mode — see Manager.SetStoryLLM) travels along in
+// the returned pair's second element for surfaces that surface it.
 func (a *API) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error) {
-	out, err := a.M.SetStoryLLM(prdID, storyID, backend, effort, model, actor)
+	out, override, err := a.M.SetStoryLLM(prdID, storyID, backend, effort, model, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		if override != nil {
+			return SetLLMOut{PRD: out, Override: override}, nil
+		}
 	}
 	return out, err
 }
 
 // BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error) {
-	out, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
+	out, override, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		if override != nil {
+			return SetLLMOut{PRD: out, Override: override}, nil
+		}
 	}
 	return out, err
+}
+
+// SetLLMOut pairs the updated PRD with the queued-mode override result
+// (changed / left_alone). It is returned only on calls accepted in queued
+// mode (override_queued_tasks enabled at a locked status); every other call
+// returns the bare PRD exactly as before, so existing clients that read the
+// full view keep their shape in the classic flow.
+type SetLLMOut struct {
+	PRD      *PRD
+	Override *LLMOverrideResult
+}
+
+// SplitSetLLMOut unwraps an LLM override write's reply: a SetLLMOut hands
+// back its PRD and its override result; anything else is passed through
+// with a nil result, so non-queued replies (PRD, test doubles) keep working
+// unchanged.
+func SplitSetLLMOut(v any) (any, *LLMOverrideResult) {
+	if o, ok := v.(SetLLMOut); ok {
+		return o.PRD, o.Override
+	}
+	return v, nil
 }
 
 // ResolveTaskReview is the operator's decision on a task held for review (see

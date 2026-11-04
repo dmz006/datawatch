@@ -4427,6 +4427,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			SnapshotNeverStage:               append([]string(nil), acfgIn.SnapshotNeverStage...),
 			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
 			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			OverrideQueuedTasks:              acfgIn.OverrideQueuedTasks,
 			PlanningEffort:                   acfgIn.PlanningEffort,
 			VerificationEffort:               acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds:           acfgIn.PlanningTimeoutSeconds,
