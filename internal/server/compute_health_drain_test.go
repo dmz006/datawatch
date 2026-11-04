@@ -62,7 +62,7 @@ func TestNodeHealthDrainFields(t *testing.T) {
 	srv, _ := newHealthDrainServer(t, nil)
 	srv.capacityLedger = led
 
-	code, out := drainRequest(t, srv, http.MethodPost, "/api/compute/nodes/gpu-m/drain",
+	code, _ := drainRequest(t, srv, http.MethodPost, "/api/compute/nodes/gpu-m/drain",
 		`{"until":"`+fixedHealthClock.Add(time.Hour).Format(time.RFC3339)+`","reason":"maintenance"}`)
 	if code != http.StatusOK {
 		t.Fatalf("drain: got %d, want 200", code)
