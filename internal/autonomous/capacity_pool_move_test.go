@@ -20,6 +20,7 @@ func poolMoveRig(t *testing.T, keys func(string, string) ([]string, string)) (*M
 	task := &cur.Story[0].Tasks[0]
 	task.SessionID = "live-sess"
 	task.ComputeNode = "datawatch"
+	task.Backend = "claude-code" // a hosted backend by default; tests of local engines override it
 	_ = m.Store().SaveTask(task)
 	return m, led, cur, task
 }
