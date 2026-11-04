@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.77.0 — Priority by kind and defect intake
+
+Automata now get a priority from their kind, and a defect can be filed straight into a bugs stage.
+
+- New `autonomous.priority_by_kind` table gives each Automaton a capacity priority by kind (shipped defaults: bug 80, maintenance 70, feature 20, other 0). An explicit priority always wins, even 0, and each Automaton shows where its priority came from (`priority_source`).
+- New `autonomous.defect_intake_automation` names the Automation that takes new `kind: bug` filings. They are offered to that Automation's bugs stage through the member insert. It is empty by default; an unset value records "not configured" and nothing is offered.
+- On REST (`GET`/`PUT /api/config`, with validation), MCP, the CLI, the comm channel, the config file and the web settings, with five locales and priority-source badges in the web UI.
+- Operator how-to: priority by kind and defect intake.
+
 ## v9.76.0 — Secret scan before daemon push
 
 The daemon can scan a branch for secrets before it pushes, and the push can be refused.

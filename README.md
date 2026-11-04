@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.76.0 (2026-11-03).** The daemon can scan a branch for secrets before pushing it: shadow by default, enforce to refuse the push, with allow lists and an operator how-to. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.77.0 (2026-11-03).** Automata get a capacity priority from their kind, and defects can be filed into a configured bugs stage, with the source of each priority shown. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
