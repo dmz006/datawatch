@@ -35,7 +35,9 @@ Command: `go test ./...` (the full suite, run in the background and waited for t
 
 Run 1 result: pass. 83 packages reported `ok`, 12 had no test files, 0 failed, exit 0. This run started before the lint fix below and overlapped it by a few minutes.
 
-Run 2 result: pass, exact command `go test -count=1 ./...` after the lint fix. 83 packages `ok`, 12 with no test files, 0 failed, exit 0. Run 2 is the one that covers the final tree.
+Run 2 result: pass, exact command `go test -count=1 ./...` after the lint fix. 83 packages `ok`, 12 with no test files, 0 failed, exit 0.
+
+Run 3 result (the closing re-run on the final tree, `go test ./...`): one failure, exit 1. 82 packages `ok`, 12 with no test files, 1 failed: `tests/ci`, `TestDaemonCleanupHelper/InterruptSighup` ("driver did not end within 30s on mode wait"). Cause: a 30 second timing window in a process-signal test of the daemon cleanup helper, missed while the whole suite was running in parallel; the test does not touch the model routing code. Re-run alone, `go test -count=1 ./tests/ci/`: pass (`ok`, 69.9s). No file was changed for it. It passed in runs 1 and 2 and on the isolated re-run, so it is recorded here as a load-sensitive timing flake, not as a pass of run 3.
 
 Counts for the feature's own groups, from `-v` runs against the final tree:
 
@@ -65,7 +67,11 @@ Result: pass. No daemon cleanup violations.
 
 ## bash scripts/check-docs-sync.sh
 
-Result: pass. `docs/` and `internal/server/web/docs` are in sync.
+Run 1 result: fail. The embedded copies were behind `docs/`: `plans/2026-10-31-model-routing-final-gate-report.md` and `plans/2026-10-31-model-routing-live-check.md` had drifted.
+
+Fix: `make sync-docs` re-copied the docs into the embedded tree (the live check re-run also rewrote its own report).
+
+Run 2 result: pass. `docs/` and `internal/server/web/docs` are in sync.
 
 ## bash scripts/check-howto-coverage.sh
 
