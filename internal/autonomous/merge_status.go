@@ -130,12 +130,35 @@ func (m *Manager) MergeStatus() MergeStatus {
 }
 
 // MergeSafeToDelete reports which Automaton branches and worktrees are safe to
-// delete, over the configured worktree base repo. It only reads.
+// delete, over the configured worktree base repo. It only reads. The report
+// is served through a short-lived in-memory cache (safeDeleteCache) keyed by
+// the repository path, so repeated reads do not re-run the git work.
 func (m *Manager) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, error) {
 	repo := m.Config().WorktreeBaseRepo
 	if repo == "" {
 		return SafeDeleteReport{Safe: []SafeDeleteEntry{}, Held: []SafeDeleteHeld{}}, ErrMergeNoBaseRepo
 	}
+	c := m.safeDeleteCacheOrInit()
+	return c.get(ctx, repo)
+}
+
+// safeDeleteCacheOrInit returns the manager's safe-to-delete report cache,
+// creating it (and wiring its compute to the real git-backed report) on
+// first use. createSafeDeleteCache can be replaced in tests.
+func (m *Manager) safeDeleteCacheOrInit() *safeDeleteCache {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.safeDeleteCache == nil {
+		c := newSafeDeleteCache()
+		c.compute = m.safeDeleteCompute
+		m.safeDeleteCache = c
+	}
+	return m.safeDeleteCache
+}
+
+// safeDeleteCompute is the production compute behind the safe-to-delete
+// cache: it resolves the base branch and runs the read-only git report.
+func (m *Manager) safeDeleteCompute(ctx context.Context, repo string) (SafeDeleteReport, error) {
 	git := NewMergeGitRunner()
 	probe := &managerWorktreeProbe{m: m}
 	return SafeToDeleteReport(ctx, git, repo, resolveMergeBase(ctx, git, repo), SafeDeleteOptions{
