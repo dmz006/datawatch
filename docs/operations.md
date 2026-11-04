@@ -5030,7 +5030,7 @@ The security workflow set is read from `autonomous.automation.repo_ci_watch.secu
 | MCP | `security_failure_list` (read-only; `repo` / `status` filters) | same list as the GET route |
 | CLI | `datawatch autonomous security-failure [--repo …] [--status …] [--json]` | table: repository, ref, workflow, run, status, dependency, advisory, recommendation, action; without `--status` only open reports (watch status neither `green` nor `superseded`) |
 | Comm channel | `autonomous security-failure [run-id]` (alias `security_failure`) | with no argument, the open reports as the CLI table; with a run id, the full report of that run, or a not-found reply |
-| PWA | Automata tab → Automation view → Chains sub-tab, the **Security failure** card beside the triage card | one block per report; refreshes every few seconds; hidden if the endpoint is unavailable |
+| PWA | Automata tab → Automation view → Inbox sub-tab, the **Security failure** card beside the triage card | one block per report; refreshes every few seconds; hidden if the endpoint is unavailable |
 
 **Accepting a risk is the operator's act.** The coordinator never writes a suppression: it does not touch `security/accepted-risks.yml`, the generated `.trivyignore` or the generated container table in `docs/security-review.md`. To accept a risk, add the entry to `security/accepted-risks.yml` and run `make security-registry-gen`, which validates the registry and regenerates both generated files. `make lint` runs `scripts/check-no-direct-ignore-writes.sh`, which fails when either generated file differs from what the registry produces. The coordinator never reruns a security run, in any mode, and never cancels or deletes one. It never resumes or restarts the Automaton it stopped.
 
@@ -5071,7 +5071,7 @@ Every key is read live; a bad value is refused on every write path (unknown mode
 | MCP | `supervisor_watch_list` (read-only, no arguments) | same body as the GET route; an argument is refused |
 | CLI | `datawatch autonomous supervisor-watch [--json]` | the mode, the last poll, one line per finding (kind, state, last seen, the operator line), then the comparison summary |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | the same lines as the CLI; no arguments |
-| PWA | Automation view → Chains sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
+| PWA | Automation view → Inbox sub-tab, the **Supervisor watch** card | mode, last-poll age, up to twenty open findings, the comparison line; refreshes every 30 s; hidden if the endpoint is unavailable |
 
 ### Supervisor watch monitoring
 
@@ -5186,7 +5186,7 @@ Set them with `datawatch config set autonomous.automation.merge_pending_mode sha
 | MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
 | CLI | `datawatch autonomous merge [--json]` | `datawatch autonomous safe-to-delete [--json]` |
 | Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
-| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card on the Automation Overview sub-tab, refreshed every 60 seconds |
+| PWA | Merge badge on a finished Automaton's detail view and on its Automation card (`pending` and `needs_look` only) | Safe-to-delete card on the Automation Housekeeping sub-tab, refreshed every 60 seconds |
 | Mobile/wear | The same REST contract, documented in `docs/api/mobile-surface.md` | Same |
 
 Both reads are GET-only (any other method is 405), answer 503 while Automata are disabled, and need the autonomous read capability when called by a federated peer. The merge state is served from the daemon's last comparison, so a read never runs git and an Automaton not compared yet reads `unknown`. The full field documentation and JSON shapes are in `docs/api/autonomous.md` (section *Merge state and safe-to-delete report*), and the walk-through for reading them is in `docs/howto/automation-tab.md`.
@@ -5232,7 +5232,7 @@ Set them with `datawatch config set autonomous.automation.cleanup_mode on`, `PUT
 | MCP | `autonomous_cleanup_status` |
 | CLI | `datawatch autonomous cleanup [--json]` |
 | Comm channel | `autonomous cleanup` |
-| PWA | **Cleanup** card on the Automation Overview sub-tab, refreshed every 30 seconds |
+| PWA | **Cleanup** card on the Automation Housekeeping sub-tab, refreshed every 30 seconds |
 | Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It serves the daemon's in-memory status, so a read never runs git or scans a disk; the status is also saved to `cleanup_status.json` beside the other autonomous stores so the last run survives a restart. Each pass reports its `mode`, `last_run`, `removed`, `would_remove`, `skipped`, `failed`, `bytes_freed`, `last_error` and the owner-versus-net split; the status adds the two disk readings, `disk_alert_percent`, `disk_alert` and `last_disk_alert_at`. The full field documentation is in `docs/api/openapi.yaml`.
@@ -5280,7 +5280,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 | MCP | `autonomous_uncommitted_work` (read-only; optional `automaton` argument) |
 | CLI | `datawatch autonomous uncommitted-work [--automaton <id>] [--json]` |
 | Comm channel | `autonomous uncommitted-work [automaton-id]` |
-| PWA | **Automata uncommitted work** card on the Automation Overview sub-tab, refreshed every 30 seconds; a chip on a held task; a banner on a held Automaton |
+| PWA | **Automata uncommitted work** card on the Automation Housekeeping sub-tab, refreshed every 30 seconds; a chip on a held task; a banner on a held Automaton |
 | Mobile/wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It is built from the hold records stored on each task and Automaton and runs no git command. It returns `policy`, `scope` and `held`, a list that is empty (never null) when nothing is held; each entry has `automaton_id`, `name`, `task_id`, `task_title` (absent for a whole-worktree hold), `kind` (`task` or `worktree`), `files`, `outside_scope`, `reason`, `question_id` and `held_at`. The hold also appears as `uncommitted_work` on the held task in the task list and on the Automaton summary. The full field documentation is in `docs/api/openapi.yaml`.
@@ -5352,7 +5352,7 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 | MCP | `autonomous_request_watch` (read-only; optional `session` and `automaton` arguments) |
 | CLI | `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` |
 | Comm channel | `autonomous request-watch [session <id> \| automaton <id>]` |
-| Web UI | **Automata model request progress** card on the Automation Overview sub-tab, refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
+| Web UI | **Automata model request progress** card on the Automation Setup and policy sub-tab, refreshed every 10 seconds; a chip on each watched session row, the session detail header and the task row |
 
 The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
 
@@ -5694,7 +5694,7 @@ The daemon raises its own [operator question](#operator-questions) when an Autom
 |--------|-----|
 | **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `questions:` → `held_mode: shadow`, `held_states: [...]` |
 | **CLI** | `datawatch config set autonomous.questions.held_mode on`; report: `datawatch question held [--prd <id>] [--state <held state id>] [--json]` |
-| **Web UI** | Settings → Autonomous Automata planning (held-question mode + held states, next to the operator-question rows); the *Held-question* card on the Automation view (Chains sub-tab) shows the mode badge, the open held entries with their recommendations and, in shadow, the would-be holds |
+| **Web UI** | Settings → Autonomous Automata planning (held-question mode + held states, next to the operator-question rows); the *Held-question* card on the Automation view (Inbox sub-tab) shows the mode badge, the open held entries with their recommendations and, in shadow, the would-be holds |
 | **REST API** | `PUT /api/config` with `{"autonomous.questions.held_mode": "on"}`; report `GET /api/autonomous/held-questions[?prd_id=<id>&state=<held state id>]` (read-only, 405 on non-GET) |
 | **Comm channel** | `configure autonomous.questions.held_mode=on`; `question held [prd <id> \| state <held state id>]` (read-only); answer with `question answer <id> <option> [quote…]` |
 | **MCP** | `config_set` with keys `autonomous.questions.held_mode` / `.held_states`; report `autonomous_held_questions` (optional `prd_id`, `state`); answer with `question_answer` |
