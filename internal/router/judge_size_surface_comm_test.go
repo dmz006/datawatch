@@ -50,7 +50,7 @@ func TestJudgeSizeSurfaceCommShowReportsKey(t *testing.T) {
 	if got.method != http.MethodGet || got.path != "/api/autonomous/config" {
 		t.Fatalf("request = %s %s", got.method, got.path)
 	}
-	if !strings.Contains(out, "judge_size_threshold_lines") || !strings.Contains(out, "250") || strings.Contains(out, "enabled") {
+	if !strings.Contains(out, "judge_size_threshold_lines") || !strings.Contains(out, "250") || strings.Contains(out, `"enabled"`) {
 		t.Errorf("reply should report the size threshold with the judge settings only: %q", out)
 	}
 }

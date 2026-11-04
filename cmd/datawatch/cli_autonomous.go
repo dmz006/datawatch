@@ -339,8 +339,11 @@ func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
 // the judges follow the verifier routing policy) and --judge-timeout-seconds (the
 // time limit; a negative value is rejected before anything is sent) and
 // --judge-size-threshold-lines (the changed-line count above which the judges
-// route by change size; 0 turns the rule off, and a negative value is rejected).
-// A flag that was not given adds no key to body.
+// route by change size; 0 turns the rule off, and a negative value is rejected),
+// --judge-strong-backend (the strong backend a large diff routes to first; an
+// explicit empty value resolves to the last judge-policy entry) and
+// --judge-verdict-cache (the per-commit verdict cache; explicit false turns it
+// off). A flag that was not given adds no key to body.
 func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 	if cmd.Flags().Changed("judge-policy") {
 		s, _ := cmd.Flags().GetString("judge-policy")
@@ -359,6 +362,14 @@ func applyAutonomousJudgeFlags(cmd *cobra.Command, body map[string]any) error {
 			return fmt.Errorf("--judge-size-threshold-lines must be >= 0")
 		}
 		body["judge_size_threshold_lines"] = n
+	}
+	if cmd.Flags().Changed("judge-strong-backend") {
+		s, _ := cmd.Flags().GetString("judge-strong-backend")
+		body["judge_strong_backend"] = s
+	}
+	if cmd.Flags().Changed("judge-verdict-cache") {
+		b, _ := cmd.Flags().GetBool("judge-verdict-cache")
+		body["judge_verdict_cache_enabled"] = b
 	}
 	return nil
 }
@@ -600,13 +611,19 @@ plan review and other autonomous judges) try. --judge-policy is an ordered comma
 list, one attempt per backend; an empty value clears it, and the judges then
 follow the verifier routing policy. --judge-timeout-seconds is the time limit
 for one judge run (default 1800 = 30 minutes; 0 = default; the wait for a
-capacity slot does not count):
+capacity slot does not count). --judge-strong-backend names the strong backend
+a large diff routes to first when the size rule fires (empty = the last entry
+of the judge policy), and --judge-verdict-cache turns the per-commit verdict
+cache off (on by default: pass/block verdicts replay on judged commits, and a
+verified commit is held on a judge timeout instead of re-run):
 
   datawatch autonomous config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
 
   judge_policy                    ordered judge backends (empty = follow the verifier routing policy)
   judge_timeout_seconds           time limit for one judge run (default 1800)
   judge_size_threshold_lines      changed-line count above which the judges route by change size (default 400; 0 = off)
+  judge_strong_backend            strong backend large diffs route to first (empty = the last entry of the judge policy)
+  judge_verdict_cache_enabled     per-commit verdict cache (default true; false re-judges every verified commit fresh)
 
 Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
 the default; negative values are rejected):
@@ -694,6 +711,8 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().String("judge-policy", "", "Ordered comma list of judge backends, one attempt each (empty = follow the verifier routing policy)")
 	cmd.Flags().Int("judge-timeout-seconds", 0, "Time limit in seconds for one judge run (0 = default 1800 = 30m)")
 	cmd.Flags().Int("judge-size-threshold-lines", 400, "Changed-line count above which the judges route by change size (whole number; 0 = rule off)")
+	cmd.Flags().String("judge-strong-backend", "", "Strong judge backend a large diff routes to first when the size rule fires (empty = the last entry of the judge policy)")
+	cmd.Flags().Bool("judge-verdict-cache", true, "Per-commit judge verdict cache, on by default (false re-judges every verified commit fresh)")
 	addVerifierPolicyFlags(cmd)
 	return cmd
 }
@@ -853,6 +872,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 				prettyPrint(body)
 			}
 			if line := prdPushLine(body); line != "" {
+				fmt.Println(line)
+			}
+			if line := prdReviewLine(body); line != "" {
 				fmt.Println(line)
 			}
 			if line := prdParallelLine(body); line != "" {
