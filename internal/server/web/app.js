@@ -3850,11 +3850,10 @@ function sessionCard(sess, idx, total) {
 
   const showCheckbox = state.selectMode && !isActive;
   const isSelected = state.selectedSessions.has(fullId);
-  // Capacity-queue priority: hidden at the default 0, shown when non-zero.
-  const prioNum = Number(sess.priority);
-  const prioBadge = (Number.isFinite(prioNum) && Math.trunc(prioNum) !== 0)
-    ? `<span class="priority-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text);background:var(--bg3,#1f2937);font-weight:600;" title="${escHtml(t('session_priority_badge_tip'))}">${escHtml(t('session_priority_badge', [String(Math.trunc(prioNum))]))}</span>`
-    : '';
+  // Capacity-queue priority: hidden at the default 0, shown when non-zero,
+  // with the source that set it (explicit | kind | default) beside the
+  // value when the session carries one.
+  const prioBadge = priorityBadgeHtml(sess.priority, sess.priority_source);
 
   return `
     <div class="session-card ${stateClass}${isSelected ? ' selected' : ''}" draggable="${!showCheckbox}" data-full-id="${escHtml(fullId)}"
@@ -14211,6 +14210,32 @@ window.prdrPlanReviewReRun = function(id, btn) {
   });
 };
 
+// priorityBadgeHtml renders the capacity-queue priority together with the
+// source that set it when the object carries one (explicit | kind |
+// default — see internal/autonomous/priority_by_kind.go):
+//   "Priority 80 · kind"
+// A non-zero priority without a source renders exactly as before
+// ("Priority N"), and neither present shows nothing, so bodies without a
+// capacity-priority record are unchanged. The value is always escaped and
+// a missing or non-numeric priority never reaches the markup.
+function priorityBadgeHtml(priority, source) {
+  const n = Number(priority);
+  const hasVal = Number.isFinite(n) && String(priority == null ? '' : priority).trim() !== '';
+  const src = (typeof source === 'string') ? source.trim().toLowerCase() : '';
+  const style = 'font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text);background:var(--bg3,#1f2937);font-weight:600;margin-left:8px;white-space:nowrap;display:inline-block;vertical-align:middle;';
+  if (!src) {
+    // No source on record: legacy behavior — hidden at the default 0.
+    if (!hasVal || Math.trunc(n) === 0) return '';
+    const valStr = String(Math.trunc(n));
+    return `<span class="priority-badge" style="${style}" title="${escHtml(t('session_priority_badge_tip'))}">${escHtml(t('session_priority_badge', [valStr]))}</span>`;
+  }
+  // Source known: show the value (0 when the body omits it — a priority
+  // pinned to 0 omits the field) and how it was set.
+  const valStr = hasVal ? String(Math.trunc(n)) : '0';
+  const srcLabel = t('priority_source_' + src) || src;
+  return `<span class="priority-badge" style="${style}" title="${escHtml(t('priority_source_tip', [srcLabel]) || srcLabel)}">${escHtml(t('priority_source_badge', [valStr, srcLabel]))}</span>`;
+}
+
 function renderPRDRow(prd, opts) {
   const panel = !!(opts && opts.panel);
   const id = prd.id || '';
@@ -14300,7 +14325,7 @@ function renderPRDRow(prd, opts) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${shippedChipHtml(prd) || statusPill(prd.status)}${renderPrdPushState(prd)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}${priorityBadgeHtml(prd.priority, prd.priority_source)}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -17232,6 +17257,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },
     { key: 'autonomous.capacity_rate_tokens', label: 'Rate ceiling per LLM: tokens per window (0 = none)', labelKey: 'capacity_rate_tokens_label', type: 'number', min: 0, placeholder: '0' },
     { key: 'autonomous.capacity_rate_window_seconds', label: 'Rate ceiling window (sec, 0 = 3600)', labelKey: 'capacity_rate_window_seconds_label', type: 'number', min: 0, placeholder: '3600' },
+    // Capacity-queue priority: the kind → priority table (higher first) and
+    // the Automation that new kind-bug defect filings flow into. The table
+    // edits as kind=priority text pairs, which the daemon parses on save;
+    // an empty value clears it back to the shipped defaults.
+    { key: 'autonomous.priority_by_kind', label: 'Capacity priority by kind (kind=priority pairs; higher runs first; empty = shipped defaults)', labelKey: 'settings_priority_by_kind', type: 'priority_by_kind', placeholder: 'bug=80, maintenance=70, feature=20, other=0', hintKey: 'settings_priority_by_kind_hint' },
+    { key: 'autonomous.defect_intake_automation', label: 'Defect intake Automation (Automation name for kind-bug defect filings; empty = off)', labelKey: 'settings_defect_intake_automation', type: 'text', placeholder: 'my-defect-triage', hintKey: 'settings_defect_intake_automation_hint' },
     // v5.26.16 — operator-reported: backend fields should be the
     // same dropdown as the New PRD modal (enabled+available, no
     // shell), with a paired model dropdown that refreshes on backend
@@ -18337,6 +18368,19 @@ function _fieldHintHTML(f) {
   return `<div style="flex-basis:100%;font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(v)}</div>`;
 }
 
+// _priorityByKindTableText renders the kind → priority table in the compact
+// text form the daemon accepts on save: kind=priority pairs, comma
+// separated, alphabetized for stable display across reloads (the server
+// serializes Go maps without a fixed order).
+function _priorityByKindTableText(val) {
+  if (val == null) return '';
+  if (typeof val === 'string') return val.trim();
+  if (typeof val !== 'object') return String(val);
+  return Object.keys(val).sort()
+    .map(k => `${k}=${val[k]}`)
+    .join(', ');
+}
+
 function loadGeneralConfig() {
   // Settings-tab federation pass (2026-10-08): all three were raw,
   // non-proxy-aware fetch()es with a silently-swallowed failure.
@@ -18651,6 +18695,20 @@ function loadGeneralConfig() {
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
                 onchange="saveJSONMapSetting('${f.key}', this)" />
               ${_fieldHintHTML(f)}
+            </div>`;
+          } else if (f.type === 'priority_by_kind') {
+            // The config GET returns the kind → priority table as an object
+            // (effective values, so shipped defaults show when unset); the
+            // field edits the compact text form (kind=priority pairs) the
+            // daemon parses on save. Empty clears the table back to the
+            // shipped defaults.
+            const _pbkHint = f.hintKey ? t(f.hintKey) : '';
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+              <input type="text" class="form-input general-cfg-input" value="${escHtml(_priorityByKindTableText(val))}"
+                ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                onchange="saveGeneralField('${f.key}', this.value)" />
+              ${_pbkHint && _pbkHint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:4px;">${escHtml(_pbkHint)}</div>` : ''}
             </div>`;
           } else if (f.type === 'textarea') {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
@@ -25596,7 +25654,8 @@ function capacityWaitingHtml(waiting, now) {
     // read_reason resolves the holders it names; reason is the raw text.
     const reason = w.read_reason || w.reason || '';
     const head = [holder, prd].filter(Boolean).join(' · ');
-    return `<div class="prd-capacity-wait" style="min-width:0;overflow-wrap:anywhere;" title="${escHtml(reason)}">&#9203; ${head}${head ? ' · ' : ''}${escHtml(capacityFmtWait(w.since, now))}${reason ? ` — ${escHtml(reason)}` : ''}</div>`;
+    const prioChip = priorityBadgeHtml(w.priority, w.priority_source);
+    return `<div class="prd-capacity-wait" style="min-width:0;overflow-wrap:anywhere;" title="${escHtml(reason)}">&#9203; ${head}${prioChip}${head ? ' · ' : ''}${escHtml(capacityFmtWait(w.since, now))}${reason ? ` — ${escHtml(reason)}` : ''}</div>`;
   });
   return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` + rows.join('');
 }

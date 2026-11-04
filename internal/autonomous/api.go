@@ -8,6 +8,7 @@
 package autonomous
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -463,6 +464,56 @@ func (a *API) SetConfig(v any) error {
 	if err := json.Unmarshal(raw, &watchProbe); err == nil && watchProbe.RequestWatch != nil {
 		if verr := watchProbe.RequestWatch.Validate(); verr != nil {
 			return verr
+		}
+	}
+	// priority_by_kind — the kind→capacity-priority table (see
+	// priority_by_kind.go). Every write path (REST /api/autonomous/config,
+	// MCP autonomous_config_set, comm-channel config-set) lands here, so
+	// one probe gives them all the same rules: integer values only, non-
+	// empty kind keys; accepted shapes are an object ({"bug":80}), the same
+	// object quoted as a string, or "kind=value[,kind=value]". A non-
+	// integer value is refused with a clear message; an omitted key leaves
+	// the current table alone. The accepted string forms normalize to the
+	// object form before the merge, so the config field (map[string]int)
+	// always sees a valid table.
+	var kindProbe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &kindProbe); err == nil {
+		if b, present := kindProbe["priority_by_kind"]; present {
+			var pv any
+			dec := json.NewDecoder(bytes.NewReader(b))
+			dec.UseNumber()
+			if uerr := dec.Decode(&pv); uerr != nil {
+				return fmt.Errorf("autonomous.priority_by_kind: %v", uerr)
+			}
+			table, verr := ParsePriorityByKindValue(pv)
+			if verr != nil {
+				return verr
+			}
+			// Store the EFFECTIVE table — the accepted entries layered over
+			// the shipped defaults (config.EffectivePriorityByKind
+			// semantics, the same mapping main.go applies at boot). The
+			// manager's table is always "the one in effect": a cleared
+			// table ({}) therefore reads the daemon defaults at runtime
+			// instead of dropping bug to 0 until the next restart, and
+			// clearing one kind to 0 (e.g. {"feature":0}) keeps that zero
+			// while the rest keep their effective values.
+			for k, v := range config.DefaultPriorityByKindMap() {
+				if _, ok := table[k]; !ok {
+					table[k] = v
+				}
+			}
+			if enc, merr := json.Marshal(table); merr == nil {
+				kindProbe["priority_by_kind"] = enc
+				if full, ferr := json.Marshal(kindProbe); ferr == nil {
+					raw = full
+				}
+			}
+		}
+		if b, present := kindProbe["defect_intake_automation"]; present {
+			var di string
+			if json.Unmarshal(b, &di) != nil && string(b) != "null" {
+				return fmt.Errorf("autonomous.defect_intake_automation: must be a string (the Automation name; the empty string clears it)")
+			}
 		}
 	}
 	cfg := a.M.Config()

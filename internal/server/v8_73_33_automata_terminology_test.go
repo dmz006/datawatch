@@ -35,7 +35,17 @@ var perLocaleWrongWord = map[string]*regexp.Regexp{
 // isAutomationObjectKey reports whether a locale key belongs to the
 // Automation object rather than the Automaton feature.
 func isAutomationObjectKey(key string) bool {
-	return key == "nav_automation" || strings.HasPrefix(key, "automation_")
+	if key == "nav_automation" || strings.HasPrefix(key, "automation_") {
+		return true
+	}
+	// These two settings fields name the Automation object specifically -- the
+	// named Automation that receives kind-bug defect filings -- not the
+	// Automaton unit of work. Their de/es/fr/ja values therefore legitimately
+	// carry the localized Automatisierung/automatización/automatisation/
+	// オートメーション wording (AGENT.md Automation addendum; the guard-narrowing
+	// that the Terminology Rule reserves).
+	return key == "settings_defect_intake_automation" ||
+		key == "settings_defect_intake_automation_hint"
 }
 
 // pendingTranslationKeys lists keys whose de/es/fr/ja value is, by the
@@ -203,6 +213,8 @@ func TestLocales_AutomationKeyExemptionIsNarrow(t *testing.T) {
 		{"automata_status_draft", false},
 		{"nav_automata", false},
 		{"automationish", false},
+		{"settings_defect_intake_automation", true},
+		{"settings_defect_intake_automation_hint", true},
 	}
 	for _, c := range cases {
 		if got := isAutomationObjectKey(c.key); got != c.want {

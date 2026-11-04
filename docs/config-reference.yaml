@@ -1767,6 +1767,24 @@ autonomous:
     #     push: shadow
     #     remote: upstream
     #     ci_workflows: [release]
+  # Priority by kind (autonomous.priority_by_kind): the priority a work
+  # item gets, by the kind of work it is. The shipped table is
+  # bug: 80, maintenance: 70, feature: 20, other: 0. A kind you set here
+  # overrides its shipped value (a zero you set means no priority), and any
+  # kind of your own that is not in the shipped table is kept as written;
+  # kinds you leave out fall back to their shipped value. It is a starting
+  # ranking, not a fixed rule — adjust it to fit how you queue work.
+  # priority_by_kind:
+  #   bug: 80
+  #   maintenance: 70
+  #   feature: 20
+  #   other: 0
+  #
+  # Defect intake automation (autonomous.defect_intake_automation): the name
+  # of the Automaton in this installation that takes defect intake on. The
+  # default is empty, on purpose — each installation names its own, and the
+  # daemon ships no opinion about which one that is.
+  # defect_intake_automation: ""
 
   # Infrastructure retry: a task that fails because the machinery around it
   # failed (not because of its own work) is retried on a back-off schedule and

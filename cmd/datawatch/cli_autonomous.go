@@ -85,6 +85,8 @@ Subcommands:
                                   config-set --judge-policy qwen,claude-code --judge-timeout-seconds 1800
                                   config-set '{"resume_max_age_seconds":1800}'
                                   config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
+                                  config-set '{"priority_by_kind":{"bug":90,"maintenance":50}}' (kind→queue-priority table; 0 = back of the queue; {} clears the table; defaults bug=80 maintenance=70 feature=20 other=0)
+                                  config-set '{"defect_intake_automation":"MyAutomation"}' (Automation for new kind:bug filings; "" clears it)
   verifier-policy                 Show the global verifier routing policy
   verifier-policy-set             Set it by flag (--verifier-policy-mode, --verifier-policy-backends, ...)
   prd-set-verifier-policy <id>    Override verifier routing for one Automaton (--mode, --backends)
@@ -114,7 +116,7 @@ Subcommands:
   prd-add-task <id>               Add a new task to an existing story without re-running decompose
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
-  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug or other
+  prd-set-kind <id> <kind>        Set the Automaton kind: feature, bug, other or maintenance
   shipped record <id> --release R --commit C  Record the shipped state (--at, --source, --automation optional)
   prd-set-lane-preference <id> gpu|claude|any  Set which lane an Automaton may take
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
@@ -598,6 +600,24 @@ tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/-
       Ties each subscription plan tier (pro | max_5x | max_20x | api) to an
       inflight cap (0 = unlimited). An explicit per-LLM max_inflight > 0 wins
       over the tier cap; clear the table with {}.
+
+kind → capacity-queue priority table (autonomous.priority_by_kind): where an
+Automaton lines up while waiting for capacity depends on its PRD's kind — the
+higher the number, the closer to the front. Shipped rows: bug=80 (fast lane
+for fixes), maintenance=70, feature=20, other=0 (the fallback row for a kind
+with no row of its own; an installation may name its own kinds).
+  datawatch autonomous config-set '{"priority_by_kind":{"bug":90,"maintenance":50}}'
+      Integer priorities (0 or greater) only — a non-number, a fraction or a
+      boolean is refused with a clear message. A priority pinned directly on a
+      PRD (autonomous_prd_set_priority / prd-set-priority) always wins for that
+      PRD. Clear the table back to the daemon defaults with {}.
+
+defect intake Automation (autonomous.defect_intake_automation): the Automation
+that new kind:bug defect filings are recorded under (empty by default — each
+installation chooses its own; a filing without one is recorded, not filed
+anywhere):
+  datawatch autonomous config-set '{"defect_intake_automation":"MyAutomation"}'
+      Pass "" to clear it back to the unset state.
 
 Judge routing, which chooses the backends the judges (Automaton guardrail,
 plan review and other autonomous judges) try. --judge-policy is an ordered comma
@@ -1717,7 +1737,7 @@ func newAutonomousPRDSetTypeCmd() *cobra.Command {
 func parseKindArg(arg string) (string, error) {
 	k, ok := autonomous.NormalizePRDKind(arg)
 	if !ok || k == "" {
-		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(arg))
+		return "", fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(arg))
 	}
 	return k, nil
 }
@@ -1725,7 +1745,7 @@ func parseKindArg(arg string) (string, error) {
 func newAutonomousPRDSetKindCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prd-set-kind <id> <feature|bug|other>",
-		Short: "Set the Automaton kind (feature, bug or other)",
+		Short: "Set the Automaton kind (feature, bug, other or maintenance)",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			kind, err := parseKindArg(args[1])

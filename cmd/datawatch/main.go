@@ -4465,6 +4465,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			CapacityFallthrough:              acfgIn.CapacityFallthrough,
+			// priority_by_kind (autonomous.priority_by_kind): the
+			// kind→capacity-priority table ResolvePriority resolves against.
+			// Wired as the EFFECTIVE table (shipped defaults bug=80,
+			// maintenance=70, feature=20, other=0 with the operator's
+			// autonomous.priority_by_kind entries layered on top), so a
+			// pristine daemon still assigns kind priorities; runtime
+			// replacement goes through Manager.SetPriorityByKind.
+			PriorityByKind: acfgIn.EffectivePriorityByKind(),
+			// Defect intake (autonomous.defect_intake_automation): the name
+			// of the Automation this installation takes kind-bug filings on;
+			// empty by default — filings are then recorded not_configured.
+			DefectIntakeAutomation: acfgIn.DefectIntakeAutomation,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -6586,6 +6598,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					PathPatterns: al.Paths,
 					Fingerprints: al.Fingerprints,
 				}
+			})
+			// Defect intake (autonomous.defect_intake_automation):
+			// when an Automaton is filed with kind bug and the setting names
+			// an Automation, it is offered to that Automation's bugs stage
+			// through the member insert (defectIntakeAdapter, below — BL431's
+			// held PendingInsert on a non-draft Automation). The name is read
+			// live on every offer, so a runtime config set applies with no
+			// restart; the outcome (offered / not_configured / skipped / error)
+			// is recorded on the Automaton for the surfaces to show.
+			amgr.SetDefectIntake(&defectIntakeAdapter{
+				amgr:           amgr,
+				automationName: func() string { return liveAutonomousConfig().DefectIntakeAutomation },
 			})
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles

@@ -59,7 +59,7 @@ func TestProgressKindCLI_SetKindNormalizesCase(t *testing.T) {
 func TestProgressKindCLI_SetKindRejectsUnknownBeforeSending(t *testing.T) {
 	for _, bad := range []string{"chore", ""} {
 		path, _, err := runKindCmd(t, newAutonomousPRDSetKindCmd(), []string{"p1", bad})
-		if err == nil || !strings.Contains(err.Error(), "feature, bug or other") {
+		if err == nil || !strings.Contains(err.Error(), "feature, bug, other or maintenance") {
 			t.Errorf("%q: expected a clear error, got %v", bad, err)
 		}
 		if path != "" {
@@ -98,7 +98,7 @@ func TestProgressKindCLI_CreateOmitsKindByDefault(t *testing.T) {
 
 func TestProgressKindCLI_CreateRejectsUnknownKindBeforeSending(t *testing.T) {
 	path, _, err := runKindCmd(t, newAutonomousPRDCreateCmd(), []string{"Add paging", "--kind", "chore"})
-	if err == nil || !strings.Contains(err.Error(), "feature, bug or other") {
+	if err == nil || !strings.Contains(err.Error(), "feature, bug, other or maintenance") {
 		t.Errorf("expected a clear error, got %v", err)
 	}
 	if path != "" {

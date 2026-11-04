@@ -370,6 +370,37 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// priority_by_kind — the same API-boundary rule as the tier table:
+			// the whole value validates before SetConfig merges it into the
+			// live manager. Integer values only (a non-numeric, fractional or
+			// boolean value is refused with a clear message) and non-empty
+			// kind keys; any kind name is accepted — the shipped kinds plus an
+			// installation's own. An empty object is a valid "clear the table"
+			// edit and passes; null is absent (merge-onto-current in SetConfig)
+			// and passes.
+			if rawKind, ok := top["priority_by_kind"]; ok {
+				var rawKindValue any
+				if json.Unmarshal(rawKind, &rawKindValue) != nil {
+					http.Error(w, "priority_by_kind: expected an object (kind -> integer priority)",
+						http.StatusBadRequest)
+					return
+				}
+				if _, verr := autonomous.ParsePriorityByKindValue(rawKindValue); verr != nil {
+					http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+			// defect_intake_automation — an Automation name (the empty string
+			// clears it, so filings are recorded, not guessed into an
+			// Automation); a present non-string is a 400. null is absent and
+			// passes.
+			if rawDI, ok := top["defect_intake_automation"]; ok && string(rawDI) != "null" {
+				var di string
+				if json.Unmarshal(rawDI, &di) != nil {
+					http.Error(w, "defect_intake_automation: must be a string (the Automation name; the empty string clears it)", http.StatusBadRequest)
+					return
+				}
+			}
 			// drift_mode accepts only "block" or "warn"; reject the whole
 			// PUT before SetConfig merges a bad value into the live
 			// manager (a null value is absent and passes through below).
@@ -2376,7 +2407,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
-	// Per-Automaton kind: feature, bug or other (empty = derive again).
+	// Per-Automaton kind: feature, bug, other or maintenance (empty = derive again).
 	case "set_kind":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -4524,7 +4555,7 @@ func derefString(p *string) string {
 	return *p
 }
 
-// unknownKindMsg is the 400 text for a kind that is not feature, bug or other.
+// unknownKindMsg is the 400 text for a kind that is not feature, bug, other or maintenance.
 func unknownKindMsg(kind string) string {
-	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug or other"
+	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug, other or maintenance"
 }

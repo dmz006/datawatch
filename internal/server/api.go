@@ -6268,6 +6268,15 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// tier -> notional dollar allocation per budget window; empty
 			// object when nothing is declared.
 			"plan_tier_allocation_usd": planTierAllocationForDisplay(s.cfg.Autonomous.PlanTierAllocationUSD),
+			// kind -> capacity-priority table — the EFFECTIVE entries, so an
+			// unset table shows the shipped defaults (bug=80, maintenance=70,
+			// feature=20, other=0) instead of blanks. An entry a PRD kind has
+			// no row of its own for falls back to the "other" row.
+			"priority_by_kind": priorityByKindForDisplay(s.cfg.Autonomous),
+			// Automation that new kind:bug filings are recorded under; an
+			// empty string means not configured (recorded, not guessed).
+			// Deliberately empty by default: each installation chooses its own.
+			"defect_intake_automation": s.cfg.Autonomous.DefectIntakeAutomation,
 			"execution_backend":        s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":              s.cfg.Autonomous.PlanningEffort,
@@ -6925,6 +6934,25 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_tier_max_inflight"]; ok {
 		if _, verr := parsePlanTierTable(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// kind -> capacity-priority table: same whole-PUT rejection. Integer
+	// values only (non-numeric, fractional and boolean values are refused
+	// with a clear message) and non-empty kind keys; any kind name is
+	// accepted — the shipped kinds plus an installation's own.
+	if v, ok := patch["autonomous.priority_by_kind"]; ok {
+		if _, verr := autonomous.ParsePriorityByKindValue(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// defect_intake_automation: an Automation name (or the empty string to
+	// clear it); anything else is a client error rather than a stored junk
+	// value.
+	if v, ok := patch["autonomous.defect_intake_automation"]; ok {
+		if _, okS := v.(string); !okS && v != nil {
+			http.Error(w, "autonomous.defect_intake_automation: must be a string (the Automation name; the empty string clears it)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -8869,6 +8897,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if table, verr := parsePlanTierTable(v); verr == nil {
 				cfg.Autonomous.PlanTierMaxInflight = table
 			}
+		case "autonomous.priority_by_kind":
+			// kind -> capacity-priority table (autonomous.priority_by_kind).
+			// Accepted shapes: a JSON object ({"bug":80}), the same object
+			// arriving as a string (CLI `config set` and the comm-channel
+			// `configure` verb quote their values), or `kind=priority` pairs.
+			// Non-integer values and empty kind keys are rejected loudly by
+			// ParsePriorityByKindValue; handlePutConfig runs the same check
+			// before apply, so a bad value never reaches here. An empty table
+			// is a valid clear (it round-trips: the field has no omitempty).
+			if table, verr := autonomous.ParsePriorityByKindValue(v); verr == nil {
+				cfg.Autonomous.PriorityByKind = table
+			}
+		case "autonomous.defect_intake_automation":
+			// Automation name for new kind:bug filings; the empty string
+			// clears it so filings are recorded, not guessed into an
+			// Automation.
+			if str, okS := v.(string); okS {
+				cfg.Autonomous.DefectIntakeAutomation = strings.TrimSpace(str)
+			}
 		case planTierAllocationKey:
 			// tier -> notional dollar allocation (whole table). Validated in
 			// handlePutConfig; a value that fails the check here is left
@@ -10454,6 +10501,19 @@ func planTierTableForDisplay(table map[string]int) map[string]int {
 		return map[string]int{}
 	}
 	return table
+}
+
+// priorityByKindForDisplay renders the kind → capacity-priority table in
+// GET /api/config. It displays the EFFECTIVE entries — the operator's
+// overrides layered onto the shipped defaults — so an unset table shows its
+// safe defaults (bug=80, maintenance=70, feature=20, other=0) instead of
+// blanks. Never returns nil, so the JSON is an object, not null.
+func priorityByKindForDisplay(a config.AutonomousConfig) map[string]int {
+	m := a.EffectivePriorityByKind()
+	if m == nil {
+		return map[string]int{}
+	}
+	return m
 }
 
 // parsePlanTierTable validates a value destined for

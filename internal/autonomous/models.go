@@ -403,7 +403,12 @@ type PRD struct {
 	// Kind classifies the work as "feature", "bug" or "other"; empty means
 	// derive at read time (old records keep working). See EffectiveKind.
 	Kind   string   `json:"kind,omitempty"`
-	Skills []string `json:"skills,omitempty"`
+
+	// DefectIntake records the defect-intake outcome when this Automaton
+	// was filed kind bug (defect_intake.go): one of the DefectIntake* outcome
+	// constants. nil = the intake path never ran for this record.
+	DefectIntake *DefectIntakeRecord `json:"defect_intake,omitempty"`
+	Skills       []string            `json:"skills,omitempty"`
 	// LanePreference says which kind of lane suits this Automaton: "gpu" or
 	// "claude". Empty means any lane. See NormalizeLanePreference.
 	LanePreference string `json:"lane_preference,omitempty"`
@@ -530,6 +535,12 @@ type PRD struct {
 	// Priority orders this PRD's tasks in the capacity wait queue (higher
 	// first; default 0).
 	Priority int `json:"priority,omitempty"`
+	// PrioritySource records where Priority was resolved from for this PRD:
+	// "explicit" (SetPRDPriority, even when 0), "kind" (resolved from the
+	// priority_by_kind table by the PRD's kind — see
+	// ResolvePriority/PrioritySource constants in priority_by_kind.go), or
+	// "default" (no explicit value and no table entry).
+	PrioritySource string `json:"priority_source,omitempty"`
 
 	// BL386 Phase 1 — warm-start seeding. When Enabled, the executor
 	// seeds each spawned task's session-local scope from project-shared,

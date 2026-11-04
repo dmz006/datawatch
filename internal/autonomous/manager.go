@@ -274,7 +274,7 @@ type Config struct {
 	// live task worker session may stay unbound to any non-terminal task
 	// before the orphan sweep ends it. 0 or unset => 300
 	// (config.NormalizeOrphanGraceSeconds).
-	OrphanGraceSeconds int    `json:"orphan_grace_seconds,omitempty"`
+	OrphanGraceSeconds int `json:"orphan_grace_seconds,omitempty"`
 	// DuplicateSessionKeep mirrors autonomous.duplicate_session_keep: "older"
 	// (default) or "newer" — which live session survives when two match one
 	// task (config.NormalizeDuplicateSessionKeep).
@@ -287,7 +287,7 @@ type Config struct {
 	RestartPolicy              string `json:"restart_policy,omitempty"`
 	RestartQuietTimeoutSeconds int    `json:"restart_quiet_timeout_seconds,omitempty"`
 	RestartOnTimeout           string `json:"restart_on_timeout,omitempty"`
-	VerificationModel  string `json:"verification_model,omitempty"`
+	VerificationModel          string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (guardrail_model.go):
@@ -569,6 +569,21 @@ type Config struct {
 	// CapacityFallthrough admits a task on another idle allowed pool when its
 	// requested pool is full (default off; mirrors config.AutonomousConfig).
 	CapacityFallthrough bool `json:"capacity_fallthrough,omitempty"`
+	// PriorityByKind is the kind→capacity-priority table used by
+	// ResolvePriority (priority_by_kind.go): an Automaton without an
+	// explicit priority gets the value of its effective kind —
+	// feature, bug, other or maintenance — from this map, falling back to
+	// the "other" entry. Main wiring supplies the effective table
+	// (shipped defaults + operator's autonomous.priority_by_kind); nil or
+	// empty means every unresolved priority reads 0.
+	PriorityByKind map[string]int `json:"priority_by_kind,omitempty"`
+	// DefectIntakeAutomation mirrors autonomous.defect_intake_automation:
+	// the name of the Automation this installation takes defect intake on
+	// (defect_intake.go). Deliberately empty by default: each installation
+	// chooses its own; an empty value means a kind-bug filing is recorded
+	// not_configured and nothing is offered — the manager never guesses an
+	// Automation.
+	DefectIntakeAutomation string `json:"defect_intake_automation,omitempty"`
 	// Node over-admission switches (nil = on) and the restart adoption wait
 	// (0 = 30s); they mirror config.AutonomousConfig, whose copy the ledger reads.
 	CapacityStrictNodeLimit     *bool `json:"capacity_strict_node_limit,omitempty"`
@@ -887,7 +902,7 @@ func DefaultConfig() Config {
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
-		SnapshotNeverStage:   append([]string(nil), config.DefaultSnapshotNeverStage...),
+		SnapshotNeverStage:  append([]string(nil), config.DefaultSnapshotNeverStage...),
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
@@ -1135,7 +1150,12 @@ type Manager struct {
 	sessionTags SessionTagCounter
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
-	tagEventFn func(TagEvent)
+	// defect intake (defect_intake.go): the DefectIntake implementation; the
+	// name of the Automation that takes kind-bug filings lives in
+	// m.cfg.DefectIntakeAutomation (autonomous.defect_intake_automation).
+	// Guarded by mu.
+	tagEventFn   func(TagEvent)
+	defectIntake DefectIntake
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
@@ -2634,6 +2654,26 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 		prd.Git.AutoPR = true
 		_ = m.store.SavePRD(prd)
 	}
+	// Resolve the initial capacity-queue priority from the kind table
+	// when nothing was set explicitly: the effective kind (feature, bug,
+	// other or maintenance) picks its entry from
+	// autonomous.priority_by_kind, falling back to the "other" entry.
+	// SetPRDPriority still outranks this; the source is recorded on the
+	// record so the choice stays auditable.
+	if prio, src := ResolvePriority(prd, m.PriorityByKind()); src != PrioritySourceExplicit {
+		if prd.Priority != prio || prd.PrioritySource != src {
+			prd.Priority = prio
+			prd.PrioritySource = src
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+		}
+	}
+	// Defect intake (defect_intake.go): an Automaton filed with kind bug is
+	// offered to the Automation named by autonomous.defect_intake_automation
+	// when that setting is set; the outcome (offered / not_configured /
+	// skipped / error) is recorded on the Automaton (prd.DefectIntake).
+	// Never fails the filing.
+	m.intakeDefect(prd)
 	return prd, nil
 }
 
@@ -6289,15 +6329,40 @@ func (m *Manager) SetPRDGitPush(prdID, policy string) (*PRD, error) {
 	return prd, m.store.SavePRD(prd)
 }
 
-// SetPRDPriority sets the PRD's capacity-queue priority.
+// SetPRDPriority sets the PRD's capacity-queue priority. The value is
+// recorded as explicitly set (PrioritySource "explicit"), so it outranks
+// the priority_by_kind table even when n is 0.
 func (m *Manager) SetPRDPriority(prdID string, n int) error {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	prd.Priority = n
+	prd.PrioritySource = PrioritySourceExplicit
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
+}
+
+// SetPriorityByKind replaces the kind→priority table used by
+// ResolvePriority (runtime config entry; main.go's boot-time wiring
+// starts from the effective autonomous.priority_by_kind table). A nil
+// argument clears the table, after which every unresolved priority reads
+// 0.
+func (m *Manager) SetPriorityByKind(table map[string]int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.PriorityByKind = table
+}
+
+// PriorityByKind returns a copy of the current kind→priority table (a map
+// value copy of the key/value pairs held in the config snapshot).
+func (m *Manager) PriorityByKind() map[string]int {
+	cfg := m.Config()
+	out := make(map[string]int, len(cfg.PriorityByKind))
+	for k, v := range cfg.PriorityByKind {
+		out[k] = v
+	}
+	return out
 }
 
 // kindSetAttempts bounds how often SetPRDKind retries after another writer
@@ -6311,7 +6376,7 @@ const kindSetAttempts = 3
 func (m *Manager) SetPRDKind(prdID, kind string) error {
 	k, ok := NormalizePRDKind(kind)
 	if !ok {
-		return fmt.Errorf("unknown Automaton kind %q: use feature, bug or other", strings.TrimSpace(kind))
+		return fmt.Errorf("unknown Automaton kind %q: use feature, bug, other or maintenance", strings.TrimSpace(kind))
 	}
 	for attempt := 0; attempt < kindSetAttempts; attempt++ {
 		rev, found := m.store.PRDRev(prdID)

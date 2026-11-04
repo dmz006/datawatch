@@ -220,11 +220,16 @@ type Lease struct {
 
 // Waiter is a queued request as reported by Snapshot.
 type Waiter struct {
-	Holder string    `json:"holder"`
-	PRDID  string    `json:"prd_id"`
-	Pools  []string  `json:"pools"`
-	Since  time.Time `json:"since"`
-	Reason string    `json:"reason"`
+	Holder string   `json:"holder"`
+	PRDID  string   `json:"prd_id"`
+	Pools  []string `json:"pools"`
+	// Priority is the request's queue priority (higher first); 0 renders
+	// exactly as before (omitempty). The owner's priority source (explicit,
+	// kind, default) rides on the PRD's own record and queue views; the
+	// ledger only knows the number.
+	Priority int       `json:"priority,omitempty"`
+	Since    time.Time `json:"since"`
+	Reason   string    `json:"reason"`
 	// Nodes lists the candidate nodes a waiter with NodeChoices may be placed on.
 	Nodes []string `json:"nodes,omitempty"`
 	// HoldName is the operator-readable form of Holder ("" = unresolved; the
@@ -1289,7 +1294,7 @@ func (l *Ledger) Snapshot() Status {
 		}
 	}
 	for _, w := range l.waiters {
-		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
+		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Priority: w.req.Priority, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
 		for _, p := range w.req.allPools() {
 			names[p] = true
 		}

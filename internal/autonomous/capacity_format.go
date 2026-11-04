@@ -123,15 +123,17 @@ func FormatCapacityText(body []byte) (string, error) {
 	case len(c.Tasks.Waiting) > 0:
 		fmt.Fprintf(&b, "Queued tasks (%d):\n", len(c.Tasks.Waiting))
 		for _, w := range c.Tasks.Waiting {
-			fmt.Fprintf(&b, "  %s: %s - waiting %s\n",
+			fmt.Fprintf(&b, "  %s: %s - waiting %s%s\n",
 				taskLine(w.Readable, w.ShortID, w.TaskTitle, w.TaskID, firstNonEmpty(w.PRDTitle, w.PRDID)),
-				firstNonEmpty(w.ReadableReason, w.Reason), waitedFor(now, w.Since))
+				firstNonEmpty(w.ReadableReason, w.Reason), waitedFor(now, w.Since),
+				waiterPrioritySuffix(w.Priority, w.PrioritySource))
 		}
 	case len(c.Waiting) > 0:
 		fmt.Fprintf(&b, "Waiting (%d):\n", len(c.Waiting))
 		for _, w := range c.Waiting {
-			fmt.Fprintf(&b, "  %s (PRD %s) %s: %s\n",
-				holderDisplay(w.HolderName, w.Holder), w.PRDID, waitedFor(now, w.Since), w.Reason)
+			fmt.Fprintf(&b, "  %s (PRD %s) %s: %s%s\n",
+				holderDisplay(w.HolderName, w.Holder), w.PRDID, waitedFor(now, w.Since), w.Reason,
+				waiterPrioritySuffix(w.Priority, ""))
 		}
 	default:
 		b.WriteString("Queued tasks: none\n")
@@ -210,6 +212,20 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// waiterPrioritySuffix renders a queued entry's priority for the text view:
+// " (priority 80, kind)". An entry with no priority at all (0, no source)
+// renders nothing, exactly as before; the ledger waiter fallback carries the
+// number without a source, which prints as the safe default.
+func waiterPrioritySuffix(priority int, source string) string {
+	if priority == 0 && source == "" {
+		return ""
+	}
+	if source == "" {
+		source = PrioritySourceDefault
+	}
+	return fmt.Sprintf(" (priority %d, %s)", priority, source)
 }
 
 // capacityPoolsForText folds each pool entry down to the base PoolStatus, and

@@ -67,6 +67,9 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. "+
 			"gate_disagreement (default \"warn\") covers verifier/quality-gate disagreement: when the verifier passed a task but the quality gate found a regression, \"warn\" records task.gate_disagreement and a PRD decision-log entry and the task still completes, while \"block\" fails the task with a \"gate_disagreement: …\" error. An invalid gate never blocks. "+
 			"default_quality_gates (BL367) is the gate config applied to new automata: enabled, test_command, timeout, block_on_regression, scope (full | touched-plus-smoke | touched; how much of the suite a gate task runs) and smoke_packages (package patterns for the touched-plus-smoke scope). "+
+			"priority_by_kind (kind → integer table) sets how high in the capacity queue an automaton waits per PRD kind — the higher the number, the closer to the front; unset rows read the daemon defaults bug=80, maintenance=70, feature=20, other=0 (the last is the fallback row for any kind with no row of its own). "+
+			"A priority set directly on a PRD (the autonomous_prd_set_priority tool) wins for that PRD no matter what the table says, and every queued entry carries its priority plus priority_source (explicit | kind | default) naming the rule that set it. "+
+			"defect_intake_automation (string, empty by default) names the Automation that new kind:bug defect filings are recorded under; empty means the filing is recorded, not filed into any Automation. "+
 			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task."),
 	)
 }
@@ -141,6 +144,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("plan_coverage_requirement_sections", mcpsdk.Description("Comma-separated spec section names scanned for numbered requirements (default: scope,constraints; empty = that same default)")),
 		mcpsdk.WithNumber("plan_coverage_min_requirement_chars", mcpsdk.Description("Minimum characters a numbered line needs to be treated as a requirement (whole number >= 0; 0 = the 30-character default)")),
 		mcpsdk.WithString("plan_tier_max_inflight", mcpsdk.Description("Subscription plan tier inflight caps — tiers pro|max_5x|max_20x|api mapped to integer >= 0 (0 = unlimited). A PRD (or LLM) on a tier is admission-capped by that tier's value unless it or its LLM carries an explicit max_inflight > 0, which wins. Accepts a JSON object (e.g. {\"max_5x\":2}) or tier=value pairs (e.g. 'max_5x=2,api=0').")),
+		mcpsdk.WithString("priority_by_kind", mcpsdk.Description("Kind → capacity-priority table (autonomous.priority_by_kind): the PRD kind names (bug, maintenance, feature, or your installation's own kind names) mapped to an integer >= 0. The higher the number, the closer to the front of the capacity queue; the shipped rows are bug=80 (fast lane for fixes), maintenance=70, feature=20, other=0 (the fallback row for a kind with no row of its own) — give a kind its own row to move it. A priority set directly on a PRD (the autonomous_prd_set_priority tool) always wins for that PRD, and every queued entry carries its priority plus priority_source (explicit | kind | default) naming the rule that set it. Accepts a JSON object (e.g. {\"bug\":90}) or kind=value pairs (e.g. 'bug=90,maintenance=50'); integer values only — a non-number, a fraction or a boolean is refused with a clear message. An empty value clears the table back to the daemon defaults; omit the argument to leave the stored table unchanged.")),
+		mcpsdk.WithString("defect_intake_automation", mcpsdk.Description("The Automation that new kind:bug defect filings flow into (autonomous.defect_intake_automation). Empty by default (each installation chooses its own; a filing without one is recorded, not filed anywhere). Pass the empty string to clear it back to the unset state.")),
 		mcpsdk.WithString("plan_tier_allocation_usd", mcpsdk.Description("Notional dollar allocation per subscription plan tier (autonomous.plan_tier_allocation_usd) — tiers pro|max_5x|max_20x|api mapped to a number >= 0 (0 = not declared). It only feeds the allocation_pct estimate on a budget, which is informational and never blocks. A JSON object (e.g. {\"max_5x\":100}) replaces the whole table; tier=value pairs (e.g. 'pro=20,max_5x=100') set just those tiers and leave the others alone.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
@@ -391,6 +396,34 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			return toolError("autonomous_config_set", err), nil
 		}
 		body["plan_tier_max_inflight"] = table
+	}
+	// priority_by_kind — the kind → capacity-priority table (kind → integer).
+	// It is a table in the REST surface, so parse the tool's string argument to
+	// an object here through the shared validator: non-integer values, empty
+	// kind keys and the like are refused with a clear message before anything
+	// is written, and the /api/autonomous/config PUT guard rejects the same
+	// way. Presence-aware: an explicit empty string clears the table (the
+	// daemon defaults then apply); omitting the argument leaves the stored
+	// table unchanged.
+	if args := req.GetArguments(); args != nil {
+		if pkb, ok := args["priority_by_kind"]; ok {
+			str, isString := pkb.(string)
+			if !isString {
+				return toolError("autonomous_config_set", fmt.Errorf("priority_by_kind must be a string: a JSON object (kind → integer priority, e.g. {\"bug\":90}) or kind=value pairs (e.g. 'bug=90,maintenance=50')")), nil
+			}
+			table, err := parsePriorityByKindTable(str)
+			if err != nil {
+				return toolError("autonomous_config_set", err), nil
+			}
+			body["priority_by_kind"] = table
+		}
+		if di, ok := args["defect_intake_automation"]; ok {
+			str, isString := di.(string)
+			if !isString {
+				return toolError("autonomous_config_set", fmt.Errorf("defect_intake_automation must be a string (the Automation name; the empty string clears it)")), nil
+			}
+			body["defect_intake_automation"] = strings.TrimSpace(str)
+		}
 	}
 	// plan_tier_allocation_usd lives in the daemon config, not the Automata
 	// manager config, so it goes through the config endpoint (object form =
@@ -1701,6 +1734,16 @@ func (s *Server) handleAutonomousPRDChildren(_ context.Context, req mcpsdk.CallT
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+// parsePriorityByKindTable parses the priority_by_kind tool argument into the
+// kind → integer table the REST PUT expects. It runs through the shared
+// autonomous.ParsePriorityByKindValue so the MCP, REST and daemon surfaces
+// all reject exactly the same values (integer values only — a non-number,
+// a fraction, a boolean or out-of-range priority, and an empty kind key,
+// are all refused with a clear message).
+func parsePriorityByKindTable(v string) (map[string]int, error) {
+	return autonomous.ParsePriorityByKindValue(v)
 }
 
 // parseTierInflightTable parses the plan_tier_max_inflight tool argument into

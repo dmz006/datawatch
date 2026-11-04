@@ -9,17 +9,19 @@ import (
 
 // Kinds an Automaton can carry. An empty PRD.Kind means "derive at read time".
 const (
-	PRDKindFeature = "feature"
-	PRDKindBug     = "bug"
-	PRDKindOther   = "other"
+	PRDKindFeature     = "feature"
+	PRDKindBug         = "bug"
+	PRDKindOther       = "other"
+	PRDKindMaintenance = "maintenance"
 )
 
-// NormalizePRDKind trims and lower-cases s. ok is true for the three kinds and
-// for the empty string (which means "not set").
+// NormalizePRDKind trims and lower-cases s. ok is true for the recognized
+// kinds (feature, bug, other, maintenance) and for the empty string (which
+// means "not set").
 func NormalizePRDKind(s string) (string, bool) {
 	k := strings.ToLower(strings.TrimSpace(s))
 	switch k {
-	case "", PRDKindFeature, PRDKindBug, PRDKindOther:
+	case "", PRDKindFeature, PRDKindBug, PRDKindOther, PRDKindMaintenance:
 		return k, true
 	}
 	return k, false

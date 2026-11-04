@@ -4802,6 +4802,53 @@ fi
 rm -rf "$NAV_EVD"
 
 # ---------------------------------------------------------------------------
+H "79b. Autonomous priority-by-kind + defect-intake settings (PWA)"
+# Renders the two new automated-settings rows on the PWA Settings (Automata
+# tab — autonomous.priority_by_kind, the kind → capacity-queue priority table,
+# and autonomous.defect_intake_automation, the Automation that new kind-bug
+# defect filings are offered to) and verifies the config contract the fields
+# write (PUT /api/config, the GET /api/config read back effective, a non-integer
+# table refused with 400 and nothing stored, an empty value clearing the table
+# back to the shipped defaults bug=80, maintenance=70, feature=20, other=0, and
+# the intake name round-tripping and clearing). Runs the TS-841 story through
+# the PWA runner's priority-source group (`node run-all.mjs --group
+# priority-source`). Needs node and the PWA story directory; the runner's
+# dependencies are installed if missing. SMOKE_PRIORITY_SOURCE=0 skips the
+# whole section.
+PWA_DIR="$SMOKE_DIR/test-stories/pwa"
+PSRC_EVD="$TMPD/priority-source-evidence$$"
+PSRC_OUT_FILE="$TMPD/priority-source-out.$$"
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  : # SMOKE_ONLY excludes this section
+elif [[ "${SMOKE_PRIORITY_SOURCE:-1}" == "0" ]]; then
+  skip "priority-source: disabled by SMOKE_PRIORITY_SOURCE=0"
+elif [[ ! -d "$PWA_DIR" || ! -f "$PWA_DIR/lib.mjs" ]]; then
+  skip "priority-source: PWA story directory not found"
+elif ! command -v node >/dev/null 2>&1; then
+  skip "priority-source: node not found"
+elif [[ ! -d "$PWA_DIR/node_modules" ]]; then
+  (cd "$PWA_DIR" && npm ci --silent --no-fund --no-audit) || ko "priority-source: npm ci failed"
+  [[ -d "$PWA_DIR/node_modules" ]] || ko "priority-source: npm ci reported success but no node_modules"
+fi
+if [[ -d "$PWA_DIR/node_modules" && "${SMOKE_PRIORITY_SOURCE:-1}" != "0" ]]; then
+  PSRC_TO_BIN="$(command -v timeout 2>/dev/null || true)"
+  PSRC_RESULT="ok"
+  if [[ -n "$PSRC_TO_BIN" ]]; then
+    env -u TMUX -u TMUX_TMPDIR "$PSRC_TO_BIN" "${SMOKE_PRIORITY_SOURCE_TIMEOUT:-600}" node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+  else
+    env -u TMUX -u TMUX_TMPDIR node "$PWA_DIR/run-all.mjs" --group priority-source >"$PSRC_OUT_FILE" 2>&1
+  fi
+  PSRC_RC=$?
+  if [[ $PSRC_RC -eq 0 ]]; then
+    ok "PWA shows the priority-by-kind + defect-intake settings rows and the config contract verifies (write/read/refuse/clear)"
+  else
+    ko "PWA priority-source story failed (run-all.mjs rc=$PSRC_RC): $(tail -5 "$PSRC_OUT_FILE" | tr '\n' ' ' | head -c 400)"
+  fi
+fi
+rm -rf "$PSRC_EVD"
+SMOKE_PASS=$((SMOKE_PASS+1))
+
+# ---------------------------------------------------------------------------
 H "80. Daemon restart matrix - in-flight work survives a restart (strict)"
 # Runs scripts/restart-matrix.sh --strict, one state at a time, for the rows
 # that must survive a daemon restart (worker-node-placement among them: two
