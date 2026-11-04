@@ -81,15 +81,17 @@ func (m *Manager) StartShippedBackfill(enabled bool) {
 // survives a restart. It never fails, blocks, or retries anything — a gate
 // we cannot trust warns only.
 func (m *Manager) markGateInvalid(prdID string, prd *PRD, reason string) {
-	prd.QualityGateStatus = "invalid"
-	prd.QualityGateInvalidReason = reason
-	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-		At:    time.Now(),
-		Kind:  "quality_gate_invalid",
-		Actor: "autonomous",
-		Note:  reason,
-	}))
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.QualityGateStatus = "invalid"
+		prd.QualityGateInvalidReason = reason
+		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "quality_gate_invalid",
+			Actor: "autonomous",
+			Note:  reason,
+		}))
+		prd.UpdatedAt = time.Now()
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] %s markGateInvalid: save: %v", prdID, err)
 	}
@@ -2080,10 +2082,12 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 							}
 						}
 						m.adoptCapacity(prd, t)
-						t.Status = TaskInProgress
-						t.AdoptedSession = true
-						t.WaitReason = ""
-						t.UpdatedAt = time.Now()
+						m.store.WithLock(func() {
+							t.Status = TaskInProgress
+							t.AdoptedSession = true
+							t.WaitReason = ""
+							t.UpdatedAt = time.Now()
+						})
 						reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
 						log.Printf("[autonomous] boot-resume: re-admitted await-external task %s on live session %s for prd=%s (no retry counted)", t.ID, t.SessionID, prd.ID)
 						continue
@@ -2097,8 +2101,10 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					// its lease and mark it adopted so executeOne waits instead
 					// of spawning.
 					m.adoptCapacity(prd, t)
-					t.AdoptedSession = true
-					t.UpdatedAt = time.Now()
+					m.store.WithLock(func() {
+						t.AdoptedSession = true
+						t.UpdatedAt = time.Now()
+					})
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
 					log.Printf("[autonomous] boot-resume: adopted task %s (in_progress) on live session %s for prd=%s, capacity lease re-adopted", t.ID, t.SessionID, prd.ID)
 					continue
@@ -2106,8 +2112,10 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					// Finished while the daemon was down: verify from the
 					// recorded output; keep the session id, no kill.
 					m.adoptCapacity(prd, t)
-					t.Status = TaskVerifying
-					t.UpdatedAt = time.Now()
+					m.store.WithLock(func() {
+						t.Status = TaskVerifying
+						t.UpdatedAt = time.Now()
+					})
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
 					log.Printf("[autonomous] boot-resume: task %s (in_progress) finished while daemon was down (session %s), moved to verifying for prd=%s", t.ID, t.SessionID, prd.ID)
 					continue
@@ -2158,12 +2166,15 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 						}
 					}
 					now := time.Now()
-					t.Status = TaskCompleted
-					t.CompletedAt = &now
-					t.Error = ""
-					oldSession := t.SessionID
-					t.SessionID = ""
-					t.UpdatedAt = now
+					var oldSession string
+					m.store.WithLock(func() {
+						t.Status = TaskCompleted
+						t.CompletedAt = &now
+						t.Error = ""
+						oldSession = t.SessionID
+						t.SessionID = ""
+						t.UpdatedAt = now
+					})
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
 					completedCount++
 					log.Printf("[autonomous] boot-resume: completed task %s (was %s) for prd=%s from recorded ok verification", t.ID, prevStatus, prd.ID)
@@ -2184,10 +2195,12 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			now := time.Now()
 			oldSession := t.SessionID
 			m.releaseCapacity(t.ID)
-			t.SessionID = ""
-			t.Status = TaskPending
-			t.Error = ""
-			t.UpdatedAt = now
+			m.store.WithLock(func() {
+				t.SessionID = ""
+				t.Status = TaskPending
+				t.Error = ""
+				t.UpdatedAt = now
+			})
 			reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
 			log.Printf("[autonomous] boot-resume: reset task %s (was %s) for prd=%s", t.ID, prevStatus, prd.ID)
 		}
@@ -2196,19 +2209,21 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 		return
 	}
 	now := time.Now()
-	prd.UpdatedAt = now
-	// Auditable verification of the orphaned-verifying resolutions: record how
-	// many verifying tasks completed from a recorded ok verdict vs how many
-	// were re-queued for retry. Guarded so a PRD saved twice in the same boot
-	// pass never carries two verifying_resolution entries.
-	if completedCount+requeuedCount > 0 && !decisionKindExists(prd, verifyingResolution) {
-		prd.Decisions = append(prd.Decisions, Decision{
-			At:    now,
-			Kind:  verifyingResolution,
-			Actor: "autonomous",
-			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
-		})
-	}
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		// Auditable verification of the orphaned-verifying resolutions: record how
+		// many verifying tasks completed from a recorded ok verdict vs how many
+		// were re-queued for retry. Guarded so a PRD saved twice in the same boot
+		// pass never carries two verifying_resolution entries.
+		if completedCount+requeuedCount > 0 && !decisionKindExists(prd, verifyingResolution) {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:    now,
+				Kind:  verifyingResolution,
+				Actor: "autonomous",
+				Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			})
+		}
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
 		return
@@ -2276,11 +2291,13 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 				}
 			}
 			oldStatus, oldSession := t.Status, t.SessionID
-			t.Status = TaskPending
-			t.Error = ""
-			t.SessionID = ""
-			t.RetryCount = 0
-			t.UpdatedAt = now
+			m.store.WithLock(func() {
+				t.Status = TaskPending
+				t.Error = ""
+				t.SessionID = ""
+				t.RetryCount = 0
+				t.UpdatedAt = now
+			})
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				m.emitTaskSession(prd, t, oldSession)
@@ -2289,18 +2306,23 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 		}
 		// Reset stories that are not completed back to pending.
 		s := &prd.Story[si]
-		if s.Status != StoryCompleted {
-			s.Status = StoryPending
-		}
+		m.store.WithLock(func() {
+			if s.Status != StoryCompleted {
+				s.Status = StoryPending
+			}
+		})
 	}
-	old := prd.Status
-	prd.Status = PRDRunning
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:    now,
-		Kind:  "boot_resume_recovery",
-		Actor: "autonomous",
-		Note:  "PRDFailed auto-recovered: all tasks reset to pending after daemon restart",
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDRunning
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    now,
+			Kind:  "boot_resume_recovery",
+			Actor: "autonomous",
+			Note:  "PRDFailed auto-recovered: all tasks reset to pending after daemon restart",
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
@@ -2615,14 +2637,17 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 // needs_review with the decompose Decision + scope warnings, runs the
 // BL268 persist-check, and removes the scratch decompose artifact.
 func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, title string, s []Story) (*PRD, error) {
-	prd.LastDecomposeFailure = nil // success — clear the single-use hint
-	prd.DecomposeSessionFailures = 0
+	m.store.WithLock(func() {
+		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		prd.DecomposeSessionFailures = 0
+	})
 
 	// Drop tasks whose whole purpose is an artefact the change record
 	// generates, so coverage and scope lint see the plan that will run.
 	var genDropNotes []string
 	if kept, notes := m.dropGeneratedPlanTasks(s); len(notes) > 0 {
-		s, prd.Story, genDropNotes = kept, kept, notes
+		s, genDropNotes = kept, notes
+		m.store.WithLock(func() { prd.Story = kept })
 	}
 
 	settings, serr := m.EffectivePlanCoverage()
@@ -2638,7 +2663,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	m.recordPlanCoverage(prd, s, settings)
 
 	if title != "" {
-		prd.Title = title
+		m.store.WithLock(func() { prd.Title = title })
 	}
 	// BL191 Q1: operator review/approve gate. Status lands in needs_review
 	// rather than active/running. Approve / Reject / RequestRevision are
@@ -2648,19 +2673,23 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	// an operator can still see + correct it). Never clobbers explicit
 	// per-task overrides; no-op unless smoke_verification_backend /
 	// smoke_verification_model are set. See ApplySmokeVerificationOverrides.
-	ApplySmokeVerificationOverrides(prd, m.cfg.SmokeVerificationBackend, m.cfg.SmokeVerificationModel)
-	reviewOld := prd.Status
-	prd.Status = PRDNeedsReview
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:            time.Now(),
-		Kind:          "decompose",
-		Backend:       backend,
-		PromptChars:   len(prompt),
-		ResponseChars: len(raw),
-		Actor:         "autonomous",
+	scopeWarnings := append(m.planScopeWarnings(prd, s), genDropNotes...)
+	scopeWarnings = append(scopeWarnings, LintCombinedDocs(s)...)
+	var reviewOld PRDStatus
+	m.store.WithLock(func() {
+		ApplySmokeVerificationOverrides(prd, m.cfg.SmokeVerificationBackend, m.cfg.SmokeVerificationModel)
+		reviewOld = prd.Status
+		prd.Status = PRDNeedsReview
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:            time.Now(),
+			Kind:          "decompose",
+			Backend:       backend,
+			PromptChars:   len(prompt),
+			ResponseChars: len(raw),
+			Actor:         "autonomous",
+		})
+		prd.ScopeWarnings = scopeWarnings
 	})
-	prd.ScopeWarnings = append(m.planScopeWarnings(prd, s), genDropNotes...)
-	prd.ScopeWarnings = append(prd.ScopeWarnings, LintCombinedDocs(s)...)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -2724,7 +2753,7 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	defaults := append([]string{}, m.cfg.DefaultSkills...)
 	m.mu.Unlock()
 	if len(defaults) > 0 {
-		prd.Skills = defaults
+		m.store.WithLock(func() { prd.Skills = defaults })
 		_ = m.store.SavePRD(prd)
 	}
 	// BL407 Phase 5 — apply the daemon-wide AutoPR default at creation
@@ -2733,7 +2762,7 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	defaultAutoPR := m.cfg.DefaultAutoPR
 	m.mu.Unlock()
 	if defaultAutoPR && !prd.Git.AutoPR {
-		prd.Git.AutoPR = true
+		m.store.WithLock(func() { prd.Git.AutoPR = true })
 		_ = m.store.SavePRD(prd)
 	}
 	// Resolve the initial capacity-queue priority from the kind table
@@ -2744,9 +2773,11 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	// record so the choice stays auditable.
 	if prio, src := ResolvePriority(prd, m.PriorityByKind()); src != PrioritySourceExplicit {
 		if prd.Priority != prio || prd.PrioritySource != src {
-			prd.Priority = prio
-			prd.PrioritySource = src
-			prd.UpdatedAt = time.Now()
+			m.store.WithLock(func() {
+				prd.Priority = prio
+				prd.PrioritySource = src
+				prd.UpdatedAt = time.Now()
+			})
 			_ = m.store.SavePRD(prd)
 		}
 	}
@@ -3126,51 +3157,55 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		}
 	}
 	now := time.Now()
-	old := prd.Status
-	prd.Status = PRDApproved
-	// BL427 — fired after the save below.
-	emitApproved := func() { m.emitPRDStatus(prd, old, lastDecision(prd, "approve"), nil) }
-	prd.ApprovedBy = actor
-	prd.ApprovedAt = &now
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "approve", Actor: actor, Note: note})
-	// Phase 3 (v5.26.61) — when per_story_approval is on, transition
-	// every pending/freshly-decomposed story to "awaiting_approval"
-	// so the runner skips them until the operator approves each via
-	// POST .../approve_story. Stories already in a non-pending state
-	// (in_progress / completed / blocked / failed) are left alone.
-	if m.cfg.PerStoryApproval {
-		for si := range prd.Story {
-			if prd.Story[si].Status == "" || prd.Story[si].Status == StoryPending {
-				prd.Story[si].Status = StoryAwaitingApproval
-				prd.Story[si].UpdatedAt = now
-			}
-		}
-	}
-	// BL406 Phase 5 — same shape, at task granularity: when
-	// GuidedModeSource resolves to "operator" (the original BL384
-	// intent, now actually built — or "council" falling back since
-	// BL405 Phase 8 doesn't exist yet), transition every pending task
-	// to awaiting_approval so the runner skips them until the operator
-	// approves each via ApproveTask. Independent of PerStoryApproval —
-	// a PRD can use either, both, or neither gate.
+	guidedByOperator := m.resolveGuidedModeSource(prd) == GuidedModeOperator
+	perStoryApproval := m.cfg.PerStoryApproval
+	var old PRDStatus
 	var gated []pendingTaskEvent
-	if m.resolveGuidedModeSource(prd) == GuidedModeOperator {
-		for si := range prd.Story {
-			for ti := range prd.Story[si].Tasks {
-				t := &prd.Story[si].Tasks[ti]
-				if t.Status == "" || t.Status == TaskPending {
-					gated = append(gated, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
-					t.Status = TaskAwaitingApproval
-					t.UpdatedAt = now
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDApproved
+		prd.ApprovedBy = actor
+		prd.ApprovedAt = &now
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "approve", Actor: actor, Note: note})
+		// Phase 3 (v5.26.61) — when per_story_approval is on, transition
+		// every pending/freshly-decomposed story to "awaiting_approval"
+		// so the runner skips them until the operator approves each via
+		// POST .../approve_story. Stories already in a non-pending state
+		// (in_progress / completed / blocked / failed) are left alone.
+		if perStoryApproval {
+			for si := range prd.Story {
+				if prd.Story[si].Status == "" || prd.Story[si].Status == StoryPending {
+					prd.Story[si].Status = StoryAwaitingApproval
+					prd.Story[si].UpdatedAt = now
 				}
 			}
 		}
-	}
+		// BL406 Phase 5 — same shape, at task granularity: when
+		// GuidedModeSource resolves to "operator" (the original BL384
+		// intent, now actually built — or "council" falling back since
+		// BL405 Phase 8 doesn't exist yet), transition every pending task
+		// to awaiting_approval so the runner skips them until the operator
+		// approves each via ApproveTask. Independent of PerStoryApproval —
+		// a PRD can use either, both, or neither gate.
+		if guidedByOperator {
+			for si := range prd.Story {
+				for ti := range prd.Story[si].Tasks {
+					t := &prd.Story[si].Tasks[ti]
+					if t.Status == "" || t.Status == TaskPending {
+						gated = append(gated, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+						t.Status = TaskAwaitingApproval
+						t.UpdatedAt = now
+					}
+				}
+			}
+		}
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
-	emitApproved()
+	// BL427 — fired after the save.
+	m.emitPRDStatus(prd, old, lastDecision(prd, "approve"), nil)
 	m.emitPendingTaskEvents(prd, gated, nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -3187,11 +3222,14 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q already completed; nothing to reject", prdID)
 	}
 	now := time.Now()
-	old := prd.Status
-	prd.Status = PRDRejected
-	prd.RejectionReason = reason
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "reject", Actor: actor, Note: reason})
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDRejected
+		prd.RejectionReason = reason
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "reject", Actor: actor, Note: reason})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3218,11 +3256,14 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q status %q does not accept revisions", prdID, prd.Status)
 	}
 	now := time.Now()
-	old := prd.Status
-	prd.Status = PRDRevisionsAsked
-	prd.RevisionsRequested++
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "request_revision", Actor: actor, Note: note})
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDRevisionsAsked
+		prd.RevisionsRequested++
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "request_revision", Actor: actor, Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3247,23 +3288,26 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q is archived and cannot be reset", id)
 	}
 	now := time.Now()
-	old := prd.Status
-	prd.Status = PRDDraft
-	prd.Story = nil
-	prd.ApprovedBy = ""
-	prd.ApprovedAt = nil
-	prd.RejectionReason = ""
-	// A reset starts a fresh decompose streak: the no-output counter and
-	// its terminal hint must not carry into the next attempt.
-	prd.DecomposeSessionFailures = 0
-	if prd.LastDecomposeFailure != nil && prd.LastDecomposeFailure.Source == "decompose-session" {
-		prd.LastDecomposeFailure = nil
-	}
-	prd.UpdatedAt = now
-	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-		At: now, Kind: "reset_to_draft", Actor: actor,
-		Note: fmt.Sprintf("reset from %s by %s", prd.Status, actor),
-	}))
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDDraft
+		prd.Story = nil
+		prd.ApprovedBy = ""
+		prd.ApprovedAt = nil
+		prd.RejectionReason = ""
+		// A reset starts a fresh decompose streak: the no-output counter and
+		// its terminal hint must not carry into the next attempt.
+		prd.DecomposeSessionFailures = 0
+		if prd.LastDecomposeFailure != nil && prd.LastDecomposeFailure.Source == "decompose-session" {
+			prd.LastDecomposeFailure = nil
+		}
+		prd.UpdatedAt = now
+		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+			At: now, Kind: "reset_to_draft", Actor: actor,
+			Note: fmt.Sprintf("reset from %s by %s", prd.Status, actor),
+		}))
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3290,10 +3334,13 @@ func (m *Manager) Archive(id string) (*PRD, error) {
 		return prd, nil // idempotent
 	}
 	now := time.Now()
-	old := prd.Status
-	prd.Status = PRDArchived
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: "operator"})
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDArchived
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: "operator"})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3390,14 +3437,16 @@ func (m *Manager) SetPRDProfiles(id, projectProfile, clusterProfile string) erro
 			return fmt.Errorf("cluster profile %q not found", clusterProfile)
 		}
 	}
-	prd.ProjectProfile = projectProfile
-	prd.ClusterProfile = clusterProfile
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:    time.Now(),
-		Kind:  "set_profiles",
-		Actor: "operator",
-		Note:  fmt.Sprintf("project=%q cluster=%q", projectProfile, clusterProfile),
+	m.store.WithLock(func() {
+		prd.ProjectProfile = projectProfile
+		prd.ClusterProfile = clusterProfile
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "set_profiles",
+			Actor: "operator",
+			Note:  fmt.Sprintf("project=%q cluster=%q", projectProfile, clusterProfile),
+		})
 	})
 	return m.store.SavePRD(prd)
 }
@@ -3418,11 +3467,13 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 	if actor == "" {
 		actor = "operator"
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:    time.Now(),
-		Kind:  "edit",
-		Actor: actor,
-		Note:  fmt.Sprintf("title=%q spec_chars=%d", title, len(spec)),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "edit",
+			Actor: actor,
+			Note:  fmt.Sprintf("title=%q spec_chars=%d", title, len(spec)),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -3475,51 +3526,63 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / blocked / failed (scope-lint tasks only) accept task edits", prdID, prd.Status)
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				ts := prd.Story[si].Tasks[ti].Status
-				if ts == TaskCompleted {
-					return nil, fmt.Errorf("task %q is completed; completed task specs are immutable", taskID)
-				}
-				if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked {
-					if ts == "" {
-						ts = TaskPending
+	var editErr error
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					ts := prd.Story[si].Tasks[ti].Status
+					if ts == TaskCompleted {
+						editErr = fmt.Errorf("task %q is completed; completed task specs are immutable", taskID)
+						return
 					}
-					return nil, fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
-				}
-				if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
-					return nil, fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
-				}
-				if newSpec != "" {
-					prd.Story[si].Tasks[ti].Spec = newSpec
-				}
-				if readOnly != nil {
-					prd.Story[si].Tasks[ti].ReadOnly = *readOnly
-				}
-				if reportPath != "" {
-					readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly || (readOnly != nil && *readOnly)
-					if !readOnlyAfter {
-						return nil, fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
+					if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked {
+						if ts == "" {
+							ts = TaskPending
+						}
+						editErr = fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
+						return
 					}
-					prd.Story[si].Tasks[ti].ReportPath = reportPath
+					if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
+						editErr = fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
+						return
+					}
+					if newSpec != "" {
+						prd.Story[si].Tasks[ti].Spec = newSpec
+					}
+					if readOnly != nil {
+						prd.Story[si].Tasks[ti].ReadOnly = *readOnly
+					}
+					if reportPath != "" {
+						readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly || (readOnly != nil && *readOnly)
+						if !readOnlyAfter {
+							editErr = fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
+							return
+						}
+						prd.Story[si].Tasks[ti].ReportPath = reportPath
+					}
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
 				}
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
+	})
+	if editErr != nil {
+		return nil, editErr
 	}
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "edit_task", Actor: actor,
-		Note: editTaskNote(taskID, newSpec, readOnly, reportPath),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "edit_task", Actor: actor,
+			Note: editTaskNote(taskID, newSpec, readOnly, reportPath),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -3534,9 +3597,11 @@ func (m *Manager) RepairDependsOn(prdID, actor string) (*PRD, error) {
 	if err != nil {
 		return nil, err
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "repair_depends_on", Actor: actor,
-		Note: "resolved DependsOn titles to real story/task IDs",
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "repair_depends_on", Actor: actor,
+			Note: "resolved DependsOn titles to real story/task IDs",
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -3866,12 +3931,14 @@ func (m *Manager) RecordUnmodifiedRetry(prdID, taskID, note string) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	now := time.Now()
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:    now,
-		Kind:  "unmodified_retry_completed",
-		Actor: "autonomous",
-		Note:  fmt.Sprintf("task=%s unmodified retry completed verification script passed (%s)", taskID, note),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    now,
+			Kind:  "unmodified_retry_completed",
+			Actor: "autonomous",
+			Note:  fmt.Sprintf("task=%s unmodified retry completed verification script passed (%s)", taskID, note),
+		})
 	})
 	return m.store.SavePRD(prd)
 }
@@ -3910,13 +3977,17 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 					}
 				}
 				if t.Status != TaskCompleted && t.Status != TaskCancelled {
-					cancelled = append(cancelled, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
-					t.Status = TaskCancelled
-					t.UpdatedAt = now
+					m.store.WithLock(func() {
+						cancelled = append(cancelled, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+						t.Status = TaskCancelled
+						t.UpdatedAt = now
+					})
 				}
 			}
-			prd.Story[si].Status = StoryCancelled
-			prd.Story[si].UpdatedAt = now
+			m.store.WithLock(func() {
+				prd.Story[si].Status = StoryCancelled
+				prd.Story[si].UpdatedAt = now
+			})
 			found = true
 			break
 		}
@@ -3928,8 +3999,10 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	if reason != "" {
 		note += ": " + reason
 	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_story", Actor: actor, Note: note})
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_story", Actor: actor, Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3995,8 +4068,10 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	if reason != "" {
 		note += ": " + reason
 	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_task", Actor: actor, Note: note})
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "cancel_task", Actor: actor, Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4032,9 +4107,11 @@ func (m *Manager) AddStory(prdID, title, description, actor string) (*PRD, error
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "add_story", Actor: actor,
-		Note: fmt.Sprintf("story=%s title=%q", story.ID, title),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "add_story", Actor: actor,
+			Note: fmt.Sprintf("story=%s title=%q", story.ID, title),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4056,9 +4133,11 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "remove_story", Actor: actor,
-		Note: fmt.Sprintf("story=%s", storyID),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "remove_story", Actor: actor,
+			Note: fmt.Sprintf("story=%s", storyID),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4113,18 +4192,20 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	}
 	prd, _ = m.store.GetPRD(prdID)
 	if readOnly || reportPath != "" {
-		for si := range prd.Story {
-			for ti := range prd.Story[si].Tasks {
-				if prd.Story[si].Tasks[ti].ID == task.ID {
-					if readOnly {
-						prd.Story[si].Tasks[ti].ReadOnly = true
-					}
-					if reportPath != "" {
-						prd.Story[si].Tasks[ti].ReportPath = reportPath
+		m.store.WithLock(func() {
+			for si := range prd.Story {
+				for ti := range prd.Story[si].Tasks {
+					if prd.Story[si].Tasks[ti].ID == task.ID {
+						if readOnly {
+							prd.Story[si].Tasks[ti].ReadOnly = true
+						}
+						if reportPath != "" {
+							prd.Story[si].Tasks[ti].ReportPath = reportPath
+						}
 					}
 				}
 			}
-		}
+		})
 	}
 	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
 	if len(dependsOn) > 0 {
@@ -4136,9 +4217,11 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	if reportPath != "" {
 		note += fmt.Sprintf(" report_path=%s", reportPath)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "add_task", Actor: actor,
-		Note: note,
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "add_task", Actor: actor,
+			Note: note,
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4162,9 +4245,11 @@ func (m *Manager) RemoveTask(prdID, storyID, taskID, actor string) (*PRD, error)
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "remove_task", Actor: actor,
-		Note: fmt.Sprintf("story=%s task=%s", storyID, taskID),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "remove_task", Actor: actor,
+			Note: fmt.Sprintf("story=%s task=%s", storyID, taskID),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4182,30 +4267,34 @@ func (m *Manager) EditStory(prdID, storyID, newTitle, newDescription, actor stri
 		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept story edits", prdID, prd.Status)
 	}
 	found := false
-	for si := range prd.Story {
-		if prd.Story[si].ID == storyID {
-			if newTitle != "" {
-				prd.Story[si].Title = newTitle
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			if prd.Story[si].ID == storyID {
+				if newTitle != "" {
+					prd.Story[si].Title = newTitle
+				}
+				// Description is optional — empty newDescription clears it
+				// only when the operator explicitly passes a sentinel; we
+				// treat empty-string as "leave unchanged" so a title-only
+				// edit doesn't accidentally drop the description.
+				if newDescription != "" {
+					prd.Story[si].Description = newDescription
+				}
+				prd.Story[si].UpdatedAt = time.Now()
+				found = true
+				break
 			}
-			// Description is optional — empty newDescription clears it
-			// only when the operator explicitly passes a sentinel; we
-			// treat empty-string as "leave unchanged" so a title-only
-			// edit doesn't accidentally drop the description.
-			if newDescription != "" {
-				prd.Story[si].Description = newDescription
-			}
-			prd.Story[si].UpdatedAt = time.Now()
-			found = true
-			break
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "edit_story", Actor: actor,
-		Note: fmt.Sprintf("story=%s title_chars=%d desc_chars=%d", storyID, len(newTitle), len(newDescription)),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "edit_story", Actor: actor,
+			Note: fmt.Sprintf("story=%s title_chars=%d desc_chars=%d", storyID, len(newTitle), len(newDescription)),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4234,21 +4323,25 @@ func (m *Manager) SetStoryProfile(prdID, storyID, profile, actor string) (*PRD, 
 		}
 	}
 	found := false
-	for si := range prd.Story {
-		if prd.Story[si].ID == storyID {
-			prd.Story[si].ExecutionProfile = profile
-			prd.Story[si].UpdatedAt = time.Now()
-			found = true
-			break
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			if prd.Story[si].ID == storyID {
+				prd.Story[si].ExecutionProfile = profile
+				prd.Story[si].UpdatedAt = time.Now()
+				found = true
+				break
+			}
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_story_profile", Actor: actor,
-		Note: fmt.Sprintf("story=%s profile=%q", storyID, profile),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_story_profile", Actor: actor,
+			Note: fmt.Sprintf("story=%s profile=%q", storyID, profile),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4273,29 +4366,33 @@ func (m *Manager) ApproveStory(prdID, storyID, actor string) (*PRD, error) {
 	}
 	now := time.Now()
 	found := false
-	for si := range prd.Story {
-		if prd.Story[si].ID == storyID {
-			prd.Story[si].Approved = true
-			prd.Story[si].ApprovedBy = actor
-			prd.Story[si].ApprovedAt = &now
-			prd.Story[si].RejectedReason = ""
-			// Transition awaiting_approval → pending so the runner
-			// picks it up. Other states left alone.
-			if prd.Story[si].Status == StoryAwaitingApproval {
-				prd.Story[si].Status = StoryPending
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			if prd.Story[si].ID == storyID {
+				prd.Story[si].Approved = true
+				prd.Story[si].ApprovedBy = actor
+				prd.Story[si].ApprovedAt = &now
+				prd.Story[si].RejectedReason = ""
+				// Transition awaiting_approval → pending so the runner
+				// picks it up. Other states left alone.
+				if prd.Story[si].Status == StoryAwaitingApproval {
+					prd.Story[si].Status = StoryPending
+				}
+				prd.Story[si].UpdatedAt = now
+				found = true
+				break
 			}
-			prd.Story[si].UpdatedAt = now
-			found = true
-			break
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: "approve_story", Actor: actor,
-		Note: fmt.Sprintf("story=%s", storyID),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: "approve_story", Actor: actor,
+			Note: fmt.Sprintf("story=%s", storyID),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4322,48 +4419,52 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	now := time.Now()
 	found := false
 	emitPending := func() {}
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
-			if t.ID == taskID {
-				t.Approved = true
-				t.ApprovedBy = actor
-				t.ApprovedAt = &now
-				t.RejectedReason = ""
-				// Transition awaiting_approval → pending so the runner
-				// picks it up. Other states left alone.
-				if t.Status == TaskAwaitingApproval {
-					t.Status = TaskPending
-					// BL427 — fired after the SavePRD below succeeds.
-					emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID == taskID {
+					t.Approved = true
+					t.ApprovedBy = actor
+					t.ApprovedAt = &now
+					t.RejectedReason = ""
+					// Transition awaiting_approval → pending so the runner
+					// picks it up. Other states left alone.
+					if t.Status == TaskAwaitingApproval {
+						t.Status = TaskPending
+						// BL427 — fired after the SavePRD below succeeds.
+						emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
+					}
+					// Operator-approved a blocked task: release it back to
+					// pending for re-run (matching checkForeignFileDrift's
+					// blocked state). Clear the stale error from the blocked
+					// attempt. The PRD itself is left in PRDBlocked — the
+					// existing run path decides the PRD status transition; we
+					// never auto-run anything from here.
+					if t.Status == TaskBlocked {
+						t.Status = TaskPending
+						t.Error = ""
+						emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, lastDecision(prd, "approve_task"), nil) }
+					}
+					t.UpdatedAt = now
+					found = true
+					break
 				}
-				// Operator-approved a blocked task: release it back to
-				// pending for re-run (matching checkForeignFileDrift's
-				// blocked state). Clear the stale error from the blocked
-				// attempt. The PRD itself is left in PRDBlocked — the
-				// existing run path decides the PRD status transition; we
-				// never auto-run anything from here.
-				if t.Status == TaskBlocked {
-					t.Status = TaskPending
-					t.Error = ""
-					emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, lastDecision(prd, "approve_task"), nil) }
-				}
-				t.UpdatedAt = now
-				found = true
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: "approve_task", Actor: actor,
-		Note: fmt.Sprintf("task=%s", taskID),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: "approve_task", Actor: actor,
+			Note: fmt.Sprintf("task=%s", taskID),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4386,23 +4487,27 @@ func (m *Manager) RejectStory(prdID, storyID, actor, reason string) (*PRD, error
 	}
 	now := time.Now()
 	found := false
-	for si := range prd.Story {
-		if prd.Story[si].ID == storyID {
-			prd.Story[si].Status = StoryBlocked
-			prd.Story[si].Approved = false
-			prd.Story[si].RejectedReason = reason
-			prd.Story[si].UpdatedAt = now
-			found = true
-			break
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			if prd.Story[si].ID == storyID {
+				prd.Story[si].Status = StoryBlocked
+				prd.Story[si].Approved = false
+				prd.Story[si].RejectedReason = reason
+				prd.Story[si].UpdatedAt = now
+				found = true
+				break
+			}
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: "reject_story", Actor: actor,
-		Note: fmt.Sprintf("story=%s reason=%q", storyID, reason),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: "reject_story", Actor: actor,
+			Note: fmt.Sprintf("story=%s reason=%q", storyID, reason),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4451,21 +4556,25 @@ func (m *Manager) SetStoryFiles(prdID, storyID string, files []string, actor str
 		files = files[:50]
 	}
 	found := false
-	for si := range prd.Story {
-		if prd.Story[si].ID == storyID {
-			prd.Story[si].FilesPlanned = files
-			prd.Story[si].UpdatedAt = time.Now()
-			found = true
-			break
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			if prd.Story[si].ID == storyID {
+				prd.Story[si].FilesPlanned = files
+				prd.Story[si].UpdatedAt = time.Now()
+				found = true
+				break
+			}
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_story_files", Actor: actor,
-		Note: fmt.Sprintf("story=%s n=%d", storyID, len(files)),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_story_files", Actor: actor,
+			Note: fmt.Sprintf("story=%s n=%d", storyID, len(files)),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4488,26 +4597,30 @@ func (m *Manager) SetTaskFiles(prdID, taskID string, files []string, actor strin
 		files = files[:50]
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].FilesPlanned = files
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].FilesPlanned = files
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_files", Actor: actor,
-		Note: fmt.Sprintf("task=%s n=%d", taskID, len(files)),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_files", Actor: actor,
+			Note: fmt.Sprintf("task=%s n=%d", taskID, len(files)),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4529,23 +4642,27 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 		files = files[:50]
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].FilesTouched = files
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].FilesTouched = files
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -4569,23 +4686,27 @@ func (m *Manager) RecordTaskSkippedSnapshotPaths(prdID, taskID string, skipped [
 		skipped = skipped[:50]
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].SkippedSnapshotPaths = skipped
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].SkippedSnapshotPaths = skipped
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -4601,23 +4722,27 @@ func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].RecordAttemptCommit(sha)
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].RecordAttemptCommit(sha)
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -4631,25 +4756,29 @@ func (m *Manager) RecordTaskNudge(prdID, taskID, sessionID string, at time.Time)
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
-			if t.ID == taskID {
-				t.NudgeCount++
-				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, SessionID: sessionID, Outcome: NudgeOutcomeSent})
-				t.UpdatedAt = at
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID == taskID {
+					t.NudgeCount++
+					t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, SessionID: sessionID, Outcome: NudgeOutcomeSent})
+					t.UpdatedAt = at
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = at
+	m.store.WithLock(func() {
+		prd.UpdatedAt = at
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -4713,10 +4842,12 @@ func (m *Manager) RecordTaskNudgeOutcome(prdID, taskID, sessionID, outcome strin
 				if sessionID == "" || ev.SessionID != sessionID {
 					continue
 				}
-				ev.Outcome = outcome
-				now := time.Now()
-				t.UpdatedAt = now
-				prd.UpdatedAt = now
+				m.store.WithLock(func() {
+					ev.Outcome = outcome
+					now := time.Now()
+					t.UpdatedAt = now
+					prd.UpdatedAt = now
+				})
 				return m.store.SavePRD(prd)
 			}
 			return fmt.Errorf("no nudge recorded for session %q on task %q", sessionID, taskID)
@@ -4735,24 +4866,28 @@ func (m *Manager) RecordTaskDeliveryFailure(prdID, taskID string, reason string,
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
-			if t.ID == taskID {
-				t.DeliveryFailureEvents = append(t.DeliveryFailureEvents, DeliveryFailureEvent{At: at, Reason: reason})
-				t.UpdatedAt = at
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID == taskID {
+					t.DeliveryFailureEvents = append(t.DeliveryFailureEvents, DeliveryFailureEvent{At: at, Reason: reason})
+					t.UpdatedAt = at
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = at
+	m.store.WithLock(func() {
+		prd.UpdatedAt = at
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -4789,16 +4924,18 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if err != nil {
 		return nil, err
 	}
-	story.Backend = backend
-	story.Effort = Effort(effort)
-	story.Model = model
-	story.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_story_llm", Actor: actor,
-		Note: fmt.Sprintf("story=%s backend=%s effort=%s model=%s", storyID, backend, effort, model),
+	m.store.WithLock(func() {
+		story.Backend = backend
+		story.Effort = Effort(effort)
+		story.Model = model
+		story.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_story_llm", Actor: actor,
+			Note: fmt.Sprintf("story=%s backend=%s effort=%s model=%s", storyID, backend, effort, model),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4834,17 +4971,19 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	if err != nil {
 		return nil, err
 	}
-	task.Backend = backend
-	task.Effort = Effort(effort)
-	task.Model = model
-	task.AdmittedBackend, task.AdmittedModel = "", ""
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_llm", Actor: actor,
-		Note: fmt.Sprintf("task=%s backend=%s effort=%s model=%s", taskID, backend, effort, model),
+	m.store.WithLock(func() {
+		task.Backend = backend
+		task.Effort = Effort(effort)
+		task.Model = model
+		task.AdmittedBackend, task.AdmittedModel = "", ""
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_llm", Actor: actor,
+			Note: fmt.Sprintf("task=%s backend=%s effort=%s model=%s", taskID, backend, effort, model),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -4909,17 +5048,19 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 			}
 		}
 	}
-	if backend != nil {
-		task.GuardrailBackend = *backend
-	}
-	if model != nil {
-		task.GuardrailModel = *model
-	}
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_guardrail_llm", Actor: actor,
-		Note: fmt.Sprintf("task=%s guardrail_backend=%s guardrail_model=%s", taskID, task.GuardrailBackend, task.GuardrailModel),
+	m.store.WithLock(func() {
+		if backend != nil {
+			task.GuardrailBackend = *backend
+		}
+		if model != nil {
+			task.GuardrailModel = *model
+		}
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_guardrail_llm", Actor: actor,
+			Note: fmt.Sprintf("task=%s guardrail_backend=%s guardrail_model=%s", taskID, task.GuardrailBackend, task.GuardrailModel),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4938,11 +5079,13 @@ func (m *Manager) SetMemorySeed(prdID string, cfg MemorySeedConfig, actor string
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.MemorySeed = cfg
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_memory_seed", Actor: actor,
-		Note: fmt.Sprintf("enabled=%v max_per_scope=%d", cfg.Enabled, cfg.MaxPerScope),
+	m.store.WithLock(func() {
+		prd.MemorySeed = cfg
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_memory_seed", Actor: actor,
+			Note: fmt.Sprintf("enabled=%v max_per_scope=%d", cfg.Enabled, cfg.MaxPerScope),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -4970,11 +5113,13 @@ func (m *Manager) SetPermissionMode(prdID, mode, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.PermissionMode = mode
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_permission_mode", Actor: actor,
-		Note: fmt.Sprintf("permission_mode=%s", mode),
+	m.store.WithLock(func() {
+		prd.PermissionMode = mode
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_permission_mode", Actor: actor,
+			Note: fmt.Sprintf("permission_mode=%s", mode),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5006,11 +5151,13 @@ func (m *Manager) SetPRDThinkingLevel(prdID, level, actor string) (*PRD, error) 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.ThinkingLevel = level
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_thinking_level", Actor: actor,
-		Note: fmt.Sprintf("thinking_level=%s", level),
+	m.store.WithLock(func() {
+		prd.ThinkingLevel = level
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_thinking_level", Actor: actor,
+			Note: fmt.Sprintf("thinking_level=%s", level),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5035,21 +5182,25 @@ func (m *Manager) SetStoryThinkingLevel(prdID, storyID, level, actor string) (*P
 		return nil, err
 	}
 	found := false
-	for i := range prd.Story {
-		if prd.Story[i].ID == storyID {
-			prd.Story[i].ThinkingLevel = level
-			prd.Story[i].UpdatedAt = time.Now()
-			found = true
-			break
+	m.store.WithLock(func() {
+		for i := range prd.Story {
+			if prd.Story[i].ID == storyID {
+				prd.Story[i].ThinkingLevel = level
+				prd.Story[i].UpdatedAt = time.Now()
+				found = true
+				break
+			}
 		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_story_thinking_level", Actor: actor,
-		Note: fmt.Sprintf("story=%s thinking_level=%s", storyID, level),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_story_thinking_level", Actor: actor,
+			Note: fmt.Sprintf("story=%s thinking_level=%s", storyID, level),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5074,26 +5225,30 @@ func (m *Manager) SetTaskThinkingLevel(prdID, taskID, level, actor string) (*PRD
 		return nil, err
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].ThinkingLevel = level
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].ThinkingLevel = level
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+					break
+				}
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
-		}
-	}
+	})
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_thinking_level", Actor: actor,
-		Note: fmt.Sprintf("task=%s thinking_level=%s", taskID, level),
+	m.store.WithLock(func() {
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_thinking_level", Actor: actor,
+			Note: fmt.Sprintf("task=%s thinking_level=%s", taskID, level),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5134,9 +5289,11 @@ func (m *Manager) Pause(prdID, actor string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q status %q is not running; only a running PRD can be paused", prdID, prd.Status)
 	}
 	old := prd.Status
-	prd.Status = PRDPaused
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "pause", Actor: actor})
+	m.store.WithLock(func() {
+		prd.Status = PRDPaused
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "pause", Actor: actor})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5158,9 +5315,11 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
 	}
 	old := prd.Status
-	prd.Status = PRDRunning
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "resume", Actor: actor})
+	m.store.WithLock(func() {
+		prd.Status = PRDRunning
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "resume", Actor: actor})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5182,10 +5341,12 @@ func (m *Manager) ResumeParked(prdID, actor, note string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	m.mu.Lock()
-	status := prd.Status
-	parked := status == PRDBlocked && isBootParked(prd)
-	m.mu.Unlock()
+	var status PRDStatus
+	var parked bool
+	m.store.WithLock(func() {
+		status = prd.Status
+		parked = status == PRDBlocked && isBootParked(prd)
+	})
 	if !parked {
 		return nil, fmt.Errorf("prd %q status %q cannot be resumed this way; only a blocked PRD parked by the boot-resume gate can (status %q)", prdID, status, PRDBlocked)
 	}
@@ -5198,12 +5359,12 @@ func (m *Manager) ResumeParked(prdID, actor, note string) (*PRD, error) {
 		}
 	}
 	live := liveWorkerSessions(prd, h)
-	m.mu.Lock()
-	prd.Status = PRDRunning
-	prd.BlockedReason = ""
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "resume", Actor: actor, Note: note})
-	m.mu.Unlock()
+	m.store.WithLock(func() {
+		prd.Status = PRDRunning
+		prd.BlockedReason = ""
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "resume", Actor: actor, Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5237,11 +5398,13 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.MemoryHarvest = cfg
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_memory_harvest", Actor: actor,
-		Note: fmt.Sprintf("enabled=%v promote_to=%s max=%d", cfg.Enabled, cfg.PromoteTo, cfg.Max),
+	m.store.WithLock(func() {
+		prd.MemoryHarvest = cfg
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_memory_harvest", Actor: actor,
+			Note: fmt.Sprintf("enabled=%v promote_to=%s max=%d", cfg.Enabled, cfg.PromoteTo, cfg.Max),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5275,25 +5438,27 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	if err != nil {
 		return nil, err
 	}
-	if backend != nil {
-		prd.Backend = *backend
-	}
-	if effort != nil {
-		prd.Effort = Effort(*effort)
-	}
-	if model != nil {
-		prd.Model = *model
-	}
-	if decompositionProfile != nil {
-		prd.DecompositionProfile = *decompositionProfile
-	}
-	if decompositionModel != nil {
-		prd.DecompositionModel = *decompositionModel
-	}
-	prd.UpdatedAt = time.Now()
-	// Decision-log note lists ONLY the fields included in this call:
-	// a pointer to "" shows the field as cleared (empty value), a nil
-	// field is not mentioned at all.
+	m.store.WithLock(func() {
+		if backend != nil {
+			prd.Backend = *backend
+		}
+		if effort != nil {
+			prd.Effort = Effort(*effort)
+		}
+		if model != nil {
+			prd.Model = *model
+		}
+		if decompositionProfile != nil {
+			prd.DecompositionProfile = *decompositionProfile
+		}
+		if decompositionModel != nil {
+			prd.DecompositionModel = *decompositionModel
+		}
+		prd.UpdatedAt = time.Now()
+		// Decision-log note lists ONLY the fields included in this call:
+		// a pointer to "" shows the field as cleared (empty value), a nil
+		// field is not mentioned at all.
+	})
 	var parts []string
 	for _, p := range []struct {
 		name string
@@ -5310,11 +5475,13 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 		}
 	}
 	note := strings.Join(parts, " ")
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
-		Note: note,
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_prd_llm", Actor: actor,
+			Note: note,
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5338,16 +5505,18 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	if err := checkLevelPair(prdID, backend, model, prd.GuardrailBackend, prd.GuardrailModel); err != nil {
 		return nil, err
 	}
-	if backend != nil {
-		prd.GuardrailBackend = *backend
-	}
-	if model != nil {
-		prd.GuardrailModel = *model
-	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_prd_guardrail_llm", Actor: actor,
-		Note: fmt.Sprintf("guardrail_backend=%s guardrail_model=%s", prd.GuardrailBackend, prd.GuardrailModel),
+	m.store.WithLock(func() {
+		if backend != nil {
+			prd.GuardrailBackend = *backend
+		}
+		if model != nil {
+			prd.GuardrailModel = *model
+		}
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_prd_guardrail_llm", Actor: actor,
+			Note: fmt.Sprintf("guardrail_backend=%s guardrail_model=%s", prd.GuardrailBackend, prd.GuardrailModel),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -5551,15 +5720,17 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 	if err != nil {
 		return nil, err
 	}
-	applyVerificationLLM(&task.VerificationBackend, &task.VerificationModel, &task.VerificationEffort, backend, model, effort)
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_verification_llm", Actor: actor,
-		Note: fmt.Sprintf("task=%s verification_backend=%s verification_model=%s verification_effort=%s",
-			taskID, task.VerificationBackend, task.VerificationModel, task.VerificationEffort),
+	m.store.WithLock(func() {
+		applyVerificationLLM(&task.VerificationBackend, &task.VerificationModel, &task.VerificationEffort, backend, model, effort)
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_verification_llm", Actor: actor,
+			Note: fmt.Sprintf("task=%s verification_backend=%s verification_model=%s verification_effort=%s",
+				taskID, task.VerificationBackend, task.VerificationModel, task.VerificationEffort),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5600,15 +5771,17 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 	if err != nil {
 		return nil, err
 	}
-	applyVerificationLLM(&story.VerificationBackend, &story.VerificationModel, &story.VerificationEffort, backend, model, effort)
-	story.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_story_verification_llm", Actor: actor,
-		Note: fmt.Sprintf("story=%s verification_backend=%s verification_model=%s verification_effort=%s",
-			storyID, story.VerificationBackend, story.VerificationModel, story.VerificationEffort),
+	m.store.WithLock(func() {
+		applyVerificationLLM(&story.VerificationBackend, &story.VerificationModel, &story.VerificationEffort, backend, model, effort)
+		story.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_story_verification_llm", Actor: actor,
+			Note: fmt.Sprintf("story=%s verification_backend=%s verification_model=%s verification_effort=%s",
+				storyID, story.VerificationBackend, story.VerificationModel, story.VerificationEffort),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5638,14 +5811,16 @@ func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *st
 	if err != nil {
 		return nil, err
 	}
-	applyVerificationLLM(&prd.VerificationBackend, &prd.VerificationModel, &prd.VerificationEffort, backend, model, effort)
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_prd_verification_llm", Actor: actor,
-		Note: fmt.Sprintf("verification_backend=%s verification_model=%s verification_effort=%s",
-			prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort),
+	m.store.WithLock(func() {
+		applyVerificationLLM(&prd.VerificationBackend, &prd.VerificationModel, &prd.VerificationEffort, backend, model, effort)
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_prd_verification_llm", Actor: actor,
+			Note: fmt.Sprintf("verification_backend=%s verification_model=%s verification_effort=%s",
+				prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -5690,33 +5865,35 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 	if err != nil {
 		return nil, err
 	}
-	newPRD.Title = subst(tmpl.Title)
-	newPRD.TemplateOf = tmpl.ID
-	newPRD.LanePreference = tmpl.LanePreference
-	newPRD.VerificationBackend = tmpl.VerificationBackend
-	newPRD.VerificationModel = tmpl.VerificationModel
-	newPRD.VerificationEffort = tmpl.VerificationEffort
-	// Copy stories with substitutions applied to per-task specs.
-	for _, st := range tmpl.Story {
-		st2 := st
-		tasks2 := make([]Task, 0, len(st.Tasks))
-		for _, t := range st.Tasks {
-			t2 := t
-			t2.Spec = subst(t.Spec)
-			t2.Title = subst(t.Title)
-			tasks2 = append(tasks2, t2)
+	m.store.WithLock(func() {
+		newPRD.Title = subst(tmpl.Title)
+		newPRD.TemplateOf = tmpl.ID
+		newPRD.LanePreference = tmpl.LanePreference
+		newPRD.VerificationBackend = tmpl.VerificationBackend
+		newPRD.VerificationModel = tmpl.VerificationModel
+		newPRD.VerificationEffort = tmpl.VerificationEffort
+		// Copy stories with substitutions applied to per-task specs.
+		for _, st := range tmpl.Story {
+			st2 := st
+			tasks2 := make([]Task, 0, len(st.Tasks))
+			for _, t := range st.Tasks {
+				t2 := t
+				t2.Spec = subst(t.Spec)
+				t2.Title = subst(t.Title)
+				tasks2 = append(tasks2, t2)
+			}
+			st2.Tasks = tasks2
+			newPRD.Story = append(newPRD.Story, st2)
 		}
-		st2.Tasks = tasks2
-		newPRD.Story = append(newPRD.Story, st2)
-	}
-	if len(newPRD.Story) > 0 {
-		// Pre-decomposed from template — land in needs_review so operator
-		// can confirm before Run.
-		newPRD.Status = PRDNeedsReview
-	}
-	newPRD.Decisions = append(newPRD.Decisions, Decision{
-		At: time.Now(), Kind: "template_instantiate", Actor: actor,
-		Note: fmt.Sprintf("from=%s vars=%d", tmpl.ID, len(resolved)),
+		if len(newPRD.Story) > 0 {
+			// Pre-decomposed from template — land in needs_review so operator
+			// can confirm before Run.
+			newPRD.Status = PRDNeedsReview
+		}
+		newPRD.Decisions = append(newPRD.Decisions, Decision{
+			At: time.Now(), Kind: "template_instantiate", Actor: actor,
+			Note: fmt.Sprintf("from=%s vars=%d", tmpl.ID, len(resolved)),
+		})
 	})
 	if err := m.store.SavePRD(newPRD); err != nil {
 		return nil, err
@@ -6030,21 +6207,25 @@ func (m *Manager) reconcileStuckTasks() {
 					// The session is gone, so the task's node lease is freed here
 					// rather than left for the periodic reaper.
 					m.releaseCapacity(t.ID)
-					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
-					t.Status = TaskCompleted
-					t.CompletedAt = &now
-					t.Error = ""
-					t.SessionID = ""
-					t.UpdatedAt = now
+					m.store.WithLock(func() {
+						reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+						t.Status = TaskCompleted
+						t.CompletedAt = &now
+						t.Error = ""
+						t.SessionID = ""
+						t.UpdatedAt = now
+					})
 				} else {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 						prd.ID, t.ID, t.Status, t.SessionID)
 					m.releaseCapacity(t.ID)
-					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
-					t.Status = TaskPending
-					t.Error = ""
-					t.SessionID = ""
-					t.UpdatedAt = now
+					m.store.WithLock(func() {
+						reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+						t.Status = TaskPending
+						t.Error = ""
+						t.SessionID = ""
+						t.UpdatedAt = now
+					})
 				}
 				changed = true
 			}
@@ -6053,27 +6234,29 @@ func (m *Manager) reconcileStuckTasks() {
 			continue
 		}
 		now := time.Now()
-		prd.UpdatedAt = now
-		if changed {
-			prd.Decisions = append(prd.Decisions, Decision{
-				At:    now,
-				Kind:  "boot_reconcile",
-				Actor: "autonomous",
-				Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
-			})
-		}
-		// Auditable verification of the orphaned-verifying resolutions: record
-		// how many verifying tasks completed from a recorded ok verdict vs how
-		// many were re-queued for retry. Guarded so a PRD saved twice in the
-		// same boot pass never carries two verifying_resolution entries.
-		if verdictCompleted+verdictRequeued > 0 && !decisionKindExists(prd, verifyingResolution) {
-			prd.Decisions = append(prd.Decisions, Decision{
-				At:    now,
-				Kind:  verifyingResolution,
-				Actor: "autonomous",
-				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
-			})
-		}
+		m.store.WithLock(func() {
+			prd.UpdatedAt = now
+			if changed {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At:    now,
+					Kind:  "boot_reconcile",
+					Actor: "autonomous",
+					Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
+				})
+			}
+			// Auditable verification of the orphaned-verifying resolutions: record
+			// how many verifying tasks completed from a recorded ok verdict vs how
+			// many were re-queued for retry. Guarded so a PRD saved twice in the
+			// same boot pass never carries two verifying_resolution entries.
+			if verdictCompleted+verdictRequeued > 0 && !decisionKindExists(prd, verifyingResolution) {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At:    now,
+					Kind:  verifyingResolution,
+					Actor: "autonomous",
+					Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				})
+			}
+		})
 		if err := m.store.SavePRD(prd); err != nil {
 			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
 		} else {
@@ -6322,8 +6505,10 @@ func (m *Manager) SetPRDType(prdID, typ string) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.Type = typ
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.Type = typ
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6333,19 +6518,21 @@ func (m *Manager) SetPRDGuidedMode(prdID string, guided bool) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.GuidedMode = guided
-	// BL406 Phase 5 — B111's real fix. migrateGuidedMode applies this same
-	// rule at store-load time; applying it live here too means toggling
-	// the checkbox actually gates tasks immediately, not only after the
-	// next daemon restart reloads the PRD from disk.
-	if guided {
-		if prd.GuidedModeSource == "" {
-			prd.GuidedModeSource = GuidedModeOperator
+	m.store.WithLock(func() {
+		prd.GuidedMode = guided
+		// BL406 Phase 5 — B111's real fix. migrateGuidedMode applies this same
+		// rule at store-load time; applying it live here too means toggling
+		// the checkbox actually gates tasks immediately, not only after the
+		// next daemon restart reloads the PRD from disk.
+		if guided {
+			if prd.GuidedModeSource == "" {
+				prd.GuidedModeSource = GuidedModeOperator
+			}
+		} else {
+			prd.GuidedModeSource = ""
 		}
-	} else {
-		prd.GuidedModeSource = ""
-	}
-	prd.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6355,8 +6542,10 @@ func (m *Manager) SetPRDSkills(prdID string, skills []string) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.Skills = skills
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.Skills = skills
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6370,8 +6559,10 @@ func (m *Manager) SetPRDConcurrency(prdID string, n int) error {
 	if n < 0 {
 		n = 0
 	}
-	prd.MaxConcurrentTasks = n
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.MaxConcurrentTasks = n
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6384,8 +6575,10 @@ func (m *Manager) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure b
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.ContinueOnStoryFailure = &continueOnFailure
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.ContinueOnStoryFailure = &continueOnFailure
+		prd.UpdatedAt = time.Now()
+	})
 	return prd, m.store.SavePRD(prd)
 }
 
@@ -6409,8 +6602,10 @@ func (m *Manager) SetPRDNotifyEvents(prdID string, kinds []string) (*PRD, error)
 	oldList := prd.NotifyEvents
 	next := NormalizeNotifyEvents(kinds)
 	changed := strings.Join(oldList, ",") != strings.Join(next, ",")
-	prd.NotifyEvents = next
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.NotifyEvents = next
+		prd.UpdatedAt = time.Now()
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -6439,9 +6634,11 @@ func (m *Manager) SetPRDGit(prdID string, autoPR bool, baseBranch string) (*PRD,
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.Git.AutoPR = autoPR
-	prd.Git.BaseBranch = baseBranch
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.Git.AutoPR = autoPR
+		prd.Git.BaseBranch = baseBranch
+		prd.UpdatedAt = time.Now()
+	})
 	return prd, m.store.SavePRD(prd)
 }
 
@@ -6494,8 +6691,10 @@ func (m *Manager) SetPRDGitPush(prdID, policy string) (*PRD, error) {
 			return nil, fmt.Errorf("invalid push-on-complete policy %q (allowed: never, branch, default_branch)", policy)
 		}
 	}
-	prd.Git.PushOnComplete = want
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.Git.PushOnComplete = want
+		prd.UpdatedAt = time.Now()
+	})
 	return prd, m.store.SavePRD(prd)
 }
 
@@ -6507,9 +6706,11 @@ func (m *Manager) SetPRDPriority(prdID string, n int) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.Priority = n
-	prd.PrioritySource = PrioritySourceExplicit
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.Priority = n
+		prd.PrioritySource = PrioritySourceExplicit
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6589,14 +6790,19 @@ func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {
 	if err := ValidateScopeDirs(writeDirs); err != nil {
 		return err
 	}
-	if readDirs != nil {
-		prd.ReadDirs = cleanDirs(readDirs)
-	}
-	if writeDirs != nil {
-		prd.WriteDirs = cleanDirs(writeDirs)
-	}
-	prd.ScopeWarnings = m.planScopeWarnings(prd, prd.Story)
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		if readDirs != nil {
+			prd.ReadDirs = cleanDirs(readDirs)
+		}
+		if writeDirs != nil {
+			prd.WriteDirs = cleanDirs(writeDirs)
+		}
+	})
+	scopeWarnings := m.planScopeWarnings(prd, prd.Story)
+	m.store.WithLock(func() {
+		prd.ScopeWarnings = scopeWarnings
+		prd.UpdatedAt = time.Now()
+	})
 	return m.store.SavePRD(prd)
 }
 
@@ -6612,7 +6818,7 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.QualityGates = &pipeline.QualityGateConfig{
+	gates := &pipeline.QualityGateConfig{
 		Enabled:           enabled,
 		TestCommand:       testCommand,
 		Timeout:           timeout,
@@ -6620,26 +6826,31 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 		Scope:             scope,
 		SmokePackages:     smokePackages,
 	}
+	m.store.WithLock(func() { prd.QualityGates = gates })
 	// Re-validate whenever the gate command changes: run it once as a
 	// baseline in the PRD's project dir (skipped when the PRD has no dir)
 	// and record the verdict. An invalid baseline is stored with its plain
 	// reason and logs a warning; it never fails this call or blocks work.
-	if status, reason := m.checkGateBaseline(prd.ProjectDir, *prd.QualityGates); status == "invalid" {
-		prd.QualityGateStatus = "invalid"
-		prd.QualityGateInvalidReason = reason
-		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-			At:    time.Now(),
-			Kind:  "quality_gate_invalid",
-			Actor: "operator",
-			Note:  reason,
-		}))
+	if status, reason := m.checkGateBaseline(prd.ProjectDir, *gates); status == "invalid" {
+		m.store.WithLock(func() {
+			prd.QualityGateStatus = "invalid"
+			prd.QualityGateInvalidReason = reason
+			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+				At:    time.Now(),
+				Kind:  "quality_gate_invalid",
+				Actor: "operator",
+				Note:  reason,
+			}))
+		})
 		log.Printf("[autonomous] prd=%s WARNING: quality-gate baseline invalid (%s) — gate will warn only, never block a task", prdID, reason)
 	} else {
 		// "valid" (or nothing to check / no dir): drop any stale verdict.
-		prd.QualityGateStatus = ""
-		prd.QualityGateInvalidReason = ""
+		m.store.WithLock(func() {
+			prd.QualityGateStatus = ""
+			prd.QualityGateInvalidReason = ""
+		})
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() { prd.UpdatedAt = time.Now() })
 	return prd, m.store.SavePRD(prd)
 }
 
@@ -6651,12 +6862,14 @@ func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, per
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.GuardrailProfile = profile
-	prd.PerTaskGuardrails = perTask
-	prd.PerStoryGuardrails = perStory
-	prd.PerPRDGuardrails = perPRD
-	prd.BlockOnFileDrift = blockOnFileDrift
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.GuardrailProfile = profile
+		prd.PerTaskGuardrails = perTask
+		prd.PerStoryGuardrails = perStory
+		prd.PerPRDGuardrails = perPRD
+		prd.BlockOnFileDrift = blockOnFileDrift
+		prd.UpdatedAt = time.Now()
+	})
 	return prd, m.store.SavePRD(prd)
 }
 
@@ -6801,12 +7014,14 @@ func (m *Manager) SetPRDRetryPolicy(prdID, profile string, policy map[string]int
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.RetryProfile = profile
-	prd.RetryPolicy = policy
-	prd.RetryCeilingTotal = ceilingTotal
-	prd.ContentAutoFixEnabled = contentAutoFixEnabled
-	prd.AutoFixSkipApproval = autoFixSkipApproval
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.RetryProfile = profile
+		prd.RetryPolicy = policy
+		prd.RetryCeilingTotal = ceilingTotal
+		prd.ContentAutoFixEnabled = contentAutoFixEnabled
+		prd.AutoFixSkipApproval = autoFixSkipApproval
+		prd.UpdatedAt = time.Now()
+	})
 	return prd, m.store.SavePRD(prd)
 }
 

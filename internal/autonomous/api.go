@@ -186,7 +186,7 @@ func (a *API) resumeRunningPRDs() {
 			// A PRD stuck in planning means the daemon was restarted while
 			// decomposeFnSession was running. The goroutine is gone; reset to
 			// draft so the operator can re-trigger decompose.
-			prd.Status = PRDDraft
+			a.M.store.WithLock(func() { prd.Status = PRDDraft })
 			if a.M.store.SavePRD(prd) == nil {
 				a.M.emitPRDStatus(prd, status, nil, nil)
 			}
@@ -307,7 +307,13 @@ func (a *API) gateBootResume(prd *PRD, prior PRDStatus) (dec bootResumeDecision,
 	maxAge := a.M.cfg.ResumeMaxAgeSeconds
 	a.M.mu.Unlock()
 	now = time.Now()
-	dec = decideBootResume(prd, now, maxAge, a.M.bootResumeHooks())
+	// Read a snapshot: the live PRD is written under the store lock by any
+	// run already started in this boot pass.
+	view := prd
+	if snap, ok := a.M.Store().SnapshotPRD(prd.ID); ok {
+		view = snap
+	}
+	dec = decideBootResume(view, now, maxAge, a.M.bootResumeHooks())
 	if dec.resume {
 		return dec, now, false
 	}
@@ -315,7 +321,7 @@ func (a *API) gateBootResume(prd *PRD, prior PRDStatus) (dec bootResumeDecision,
 	if err := a.M.parkPRDForBootResume(prd, prior, dec.reason); err != nil {
 		fmt.Printf("[autonomous] boot-resume: prd=%s park save failed: %v\n", prd.ID, err)
 	}
-	a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now, LiveSessions: liveWorkerSessions(prd, a.M.bootResumeHooks())})
+	a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now, LiveSessions: liveWorkerSessions(view, a.M.bootResumeHooks())})
 	return dec, now, true
 }
 
@@ -664,9 +670,9 @@ func (a *API) prdStatus(id string) (PRDStatus, bool) {
 	if !ok {
 		return "", false
 	}
-	a.M.mu.Lock()
-	defer a.M.mu.Unlock()
-	return p.Status, true
+	var st PRDStatus
+	a.M.Store().WithLock(func() { st = p.Status })
+	return st, true
 }
 
 // runnableStatus reports whether the PRD is in a state Manager.Run accepts.
@@ -751,17 +757,17 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 		return false, fmt.Errorf("prd %q not found", id)
 	}
 	// Re-read after prep, which may have changed status (PRDFailed -> PRDRunning).
-	a.M.mu.Lock()
-	old := prd.Status
+	var old PRDStatus
+	a.M.Store().WithLock(func() {
+		old = prd.Status
+		if old == PRDApproved || old == PRDActive {
+			prd.Status = PRDRunning
+		}
+	})
 	if old != PRDApproved && old != PRDActive && old != PRDRunning {
-		a.M.mu.Unlock()
 		release()
 		return false, fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, old)
 	}
-	if old != PRDRunning {
-		prd.Status = PRDRunning
-	}
-	a.M.mu.Unlock()
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		release()
 		return false, err
@@ -784,9 +790,16 @@ func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
 				if p, ok := a.M.Store().GetPRD(id); ok {
 					// If cancelled by operator, leave status as cancelled.
 					// Otherwise revert to PRDApproved so they can retry.
-					if p.Status != PRDCancelled {
-						old := p.Status
-						p.Status = PRDApproved
+					var old PRDStatus
+					var revert bool
+					a.M.Store().WithLock(func() {
+						if p.Status != PRDCancelled {
+							revert = true
+							old = p.Status
+							p.Status = PRDApproved
+						}
+					})
+					if revert {
 						if a.M.Store().SavePRD(p) == nil {
 							a.M.emitPRDStatus(p, old, nil, nil)
 						}
@@ -881,13 +894,18 @@ func (a *API) Cancel(id string) error {
 	}
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
-	old := prd.Status
-	prd.Status = PRDCancelled
+	var old PRDStatus
+	a.M.Store().WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDCancelled
+	})
 	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
 	// no trace in prd.Decisions — an operator (or a future session) had no
 	// way to tell whether/when/why a PRD was cancelled versus failing on
 	// its own. Log it the same way.
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "cancel", Actor: "operator"})
+	a.M.Store().WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "cancel", Actor: "operator"})
+	})
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
