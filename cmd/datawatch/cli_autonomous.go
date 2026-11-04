@@ -926,7 +926,7 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			// skipped_snapshot_paths ("left unstaged: <task> N (reason=count, ...)");
 			// the detailed path list stays in the raw JSON above.
 			for _, line := range autonomous.RenderSkippedSnapshotLines(body) {
-				fmt.Fprintln(out, line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			return nil
 		},
