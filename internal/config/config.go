@@ -3244,6 +3244,11 @@ type AutonomousConfig struct {
 	// worker or retries. An unset key reads its default. See
 	// RequestWatchConfig.
 	RequestWatch RequestWatchConfig `yaml:"request_watch,omitempty" json:"request_watch,omitempty"`
+	// ModelRouting — whether a worker pinned to a model that no registered
+	// node serves is refused early, how long a node's served models are
+	// cached, and how an unreadable node counts. An unset key reads its
+	// default. See ModelRoutingConfig.
+	ModelRouting ModelRoutingConfig `yaml:"model_routing,omitempty" json:"model_routing,omitempty"`
 
 	// BL369 — prompt injection guard. When InjectionGuard is true, user-
 	// supplied PRD/task specs are scanned for known injection phrases at
@@ -6722,6 +6727,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Session.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.ModelRouting.Validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {

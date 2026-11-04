@@ -224,6 +224,18 @@ func nodeChoicesFor(fn CapacityChoicesFn, backend, model string) []capacity.Node
 // drops "host"). m.mu is held only to read the functions, never across the
 // ledger's call, since the ledger invokes Refresh under its own lock.
 func (m *Manager) placementRefresh(base capacity.Request, backend, model string, trim func([]string) []string) func() capacity.Request {
+	return m.placementRefreshPinned(base, backend, model, trim, "", nil)
+}
+
+// placementRefreshPinned is placementRefresh for a request that may be pinned
+// to one compute node. With a non-empty pin every call recomputes which nodes
+// are excluded from the candidates read at that moment, so a node that joins
+// the candidates while the request waits is excluded too; failover is the
+// caller's own exclude list and is always kept. When the pin stops being
+// honourable while the request waits (the node left the candidates), the
+// request is made unplaceable rather than granted on another node. An empty
+// pin behaves exactly as placementRefresh.
+func (m *Manager) placementRefreshPinned(base capacity.Request, backend, model string, trim func([]string) []string, pin string, failover []string) func() capacity.Request {
 	return func() capacity.Request {
 		m.mu.Lock()
 		keysFn, choicesFn := m.capacityKeys, m.capacityChoices
@@ -238,6 +250,13 @@ func (m *Manager) placementRefresh(base capacity.Request, backend, model string,
 		}
 		cur.Pools, cur.Node = pools, node
 		cur.NodeChoices = nodeChoicesFor(choicesFn, backend, model)
+		if pin != "" {
+			pinned, err := applyNodePin(cur, pin, failover)
+			if err != nil {
+				return unplaceableRequest(cur, pin)
+			}
+			cur = pinned
+		}
 		return cur
 	}
 }
@@ -395,14 +414,27 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	req := capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role, Consumer: consumerSessionSpawn,
 	}
-	req.Refresh = m.placementRefresh(req, backend, model, nil)
+	// A pinned worker may only be placed on its node. A pin that cannot be
+	// honoured fails the admission here, naming the node, so the task never
+	// runs elsewhere.
+	pin := m.workerNodePin(prd, t, role)
+	if pin != "" {
+		pinned, perr := applyNodePin(req, pin, exclude)
+		if perr != nil {
+			return perr
+		}
+		req = pinned
+	}
+	req.Refresh = m.placementRefreshPinned(req, backend, model, nil, pin, exclude)
 	// requested is the pool(s) the task asked for; a fall-through swaps pools
 	// to the alternate, but a wait reason still names what was requested.
 	requested := pools
 	m.setFallthrough(t.ID, nil)
 	var fell *CapacityAlternate
 	var fromPools []string
-	if role == capacity.RoleWorker {
+	// A pinned worker never falls through: the alternate backend would be
+	// placed without the pin.
+	if role == capacity.RoleWorker && pin == "" {
 		if alt, altReq := m.pickFallthrough(led, req, backend, model); alt != nil {
 			fell, fromPools = alt, pools
 			req, pools = altReq, altReq.Pools

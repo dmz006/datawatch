@@ -2091,6 +2091,82 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+	// Pin a task's worker to a compute node; an empty node clears the pin.
+	case "set_task_node":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID string `json:"task_id"`
+			Node   string `json:"node"`
+			Actor  string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		pinner, ok := s.autonomousMgr.(nodePinAPI)
+		if !ok {
+			http.Error(w, "node pinning is not available", http.StatusServiceUnavailable)
+			return
+		}
+		updated, err := pinner.SetTaskNode(id, req.TaskID, req.Node, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), nodePinErrStatus(err))
+			return
+		}
+		s.audit(r.Context(), "set_task_node", "automaton", id, map[string]any{"task_id": req.TaskID, "node": req.Node})
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+	// Pin a story's tasks to a compute node; an empty node clears the pin.
+	case "set_story_node":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			StoryID string `json:"story_id"`
+			Node    string `json:"node"`
+			Actor   string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		pinner, ok := s.autonomousMgr.(nodePinAPI)
+		if !ok {
+			http.Error(w, "node pinning is not available", http.StatusServiceUnavailable)
+			return
+		}
+		updated, err := pinner.SetStoryNode(id, req.StoryID, req.Node, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), nodePinErrStatus(err))
+			return
+		}
+		s.audit(r.Context(), "set_story_node", "automaton", id, map[string]any{"story_id": req.StoryID, "node": req.Node})
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	// Failure escalation override on the Automaton (empty task_id) or on one
 	// task. Body: {task_id?, policy: {enabled?, max_failures?, steps?} | null,
 	// actor?}; a null policy clears the override at that level.

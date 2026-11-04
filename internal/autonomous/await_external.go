@@ -316,7 +316,16 @@ func (m *Manager) awaitReAdmitAs(ctx context.Context, prd *PRD, t *Task, prefix,
 	req := capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: pools, Node: node, NodeChoices: nodeChoicesFor(choicesFn, backend, model), PreferNode: prefer, Model: model, Role: capacity.RoleWorker, Consumer: consumerSessionSpawn,
 	}
-	req.Refresh = m.placementRefresh(req, backend, model, nil)
+	// A pinned worker resumes on its pinned node only.
+	pin := m.workerNodePin(prd, t, capacity.RoleWorker)
+	if pin != "" {
+		pinned, perr := applyNodePin(req, pin, nil)
+		if perr != nil {
+			return perr
+		}
+		req = pinned
+	}
+	req.Refresh = m.placementRefreshPinned(req, backend, model, nil, pin, nil)
 	err := led.Acquire(ctx, req, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		m.setWaiting(t, prefix+" — "+reason)
 	})

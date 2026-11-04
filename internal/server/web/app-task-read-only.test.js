@@ -42,9 +42,9 @@ test('the edit button hands the current read-only state to the dialog', () => {
   const sb = loadApp({});
   const html = sb.renderTask(prd, story, { id: 't1', title: 'Run gate', spec: 'x', read_only: true }, true);
   const decoded = html.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&');
-  assert.match(decoded, /openPRDEditTaskModal\([^)]*,true\)/);
+  assert.match(decoded, /openPRDEditTaskModal\([^)]*,true(,"[^"]*")?\)/);
   const plain = sb.renderTask(prd, story, { id: 't2', title: 'Write', spec: 'x' }, true).replace(/&quot;/g, '"');
-  assert.match(plain, /openPRDEditTaskModal\([^)]*,false\)/);
+  assert.match(plain, /openPRDEditTaskModal\([^)]*,false(,"[^"]*")?\)/);
 });
 
 test('the read-only field is a labelled checkbox that reflects the current state', () => {

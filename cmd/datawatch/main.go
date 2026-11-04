@@ -7133,6 +7133,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
+			// Pin-time model check: refuse (or warn on) a worker or verifier
+			// model that no registered node serves.
+			wireModelRouting(cfg, amgr, httpServer)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed

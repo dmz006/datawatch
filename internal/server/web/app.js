@@ -9043,6 +9043,15 @@ const DOCS_LINKS_BY_KEY = {
   shipped_chip: DOCS_DEFINITIONS + '#shipped',
   merged_member_policy: DOCS_DEFINITIONS + '#merged-member-policy',
   plan_coverage_filters: DOCS_DEFINITIONS + '#plan-coverage-filters',
+  // Model routing: the Served models card opens datawatch-definitions.md#model-routing and
+  // each of the six autonomous.model_routing.* settings opens its own section of that page.
+  model_routing_served_models_title: DOCS_DEFINITIONS + '#model-routing',
+  'autonomous.model_routing.refusal_mode': DOCS_DEFINITIONS + '#model-routing-refusal-mode',
+  'autonomous.model_routing.served_models_cache_seconds': DOCS_DEFINITIONS + '#served-models-cache-age',
+  'autonomous.model_routing.verifier_follows_worker_node': DOCS_DEFINITIONS + '#verifier-follows-the-workers-node',
+  'autonomous.model_routing.unknown_node_policy': DOCS_DEFINITIONS + '#unreachable-node-policy',
+  'autonomous.model_routing.probe_timeout_seconds': DOCS_DEFINITIONS + '#node-probe-timeout',
+  'autonomous.model_routing.alert_on_refusal': DOCS_DEFINITIONS + '#model-routing-refusal-alert',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -11037,6 +11046,7 @@ function loadComputeNodesPanel() {
             </summary>
             ${drainBody}
             <table style="width:100%;border-collapse:collapse;background:var(--bg);border-top:1px solid var(--border);">${detailRows}</table>
+            ${window.servedModelsBlockHtml(n.name)}
           </details>`;
         }).join('');
     // GATE alpha.36 (operator 2026-05-10): Add ComputeNode is now a
@@ -11059,6 +11069,7 @@ function loadComputeNodesPanel() {
         .catch(() => {});
     });
     if (typeof window._migrationBanner === 'function') window._migrationBanner(panel);
+    window.loadServedModels(false);
   }).catch(e => {
     panel.innerHTML = '<em style="color:var(--error);">'+escHtml(String(e.message||e))+'</em>';
   });
@@ -14493,7 +14504,7 @@ function renderStory(prd, story) {
   const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
   const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
-  const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')},${JSON.stringify({verification_backend:story.verification_backend||'',verification_model:story.verification_model||'',verification_effort:String(story.verification_effort||'')})})`;
+  const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')},${JSON.stringify({verification_backend:story.verification_backend||'',verification_model:story.verification_model||'',verification_effort:String(story.verification_effort||'')})},${JSON.stringify(story.pinned_node || '')})`;
   // Operator-requested: structural edits (add/remove a story or task)
   // without re-running decompose. Only offered while editable — the same
   // gate the manager enforces server-side (needs_review/revisions_asked/
@@ -14560,7 +14571,7 @@ function renderStory(prd, story) {
     <div class="prd-story-card-header" onclick="_prdToggleStory('${escHtml(storyID)}')" title="${isExpanded ? 'Collapse story' : 'Expand story'}">
       <span class="prd-story-chevron">${chevron}</span>
       <strong class="prd-story-title">${escHtml(story.title || storyID)}</strong>
-      ${statusPill}${profPill}${llmPill}
+      ${statusPill}${profPill}${llmPill}${window.modelRoutingPinBadgeHtml(story)}
       <span class="prd-story-header-spacer"></span>
       ${cancelStoryBtn}${arBtns}${editIcons}
     </div>
@@ -14904,7 +14915,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')},${JSON.stringify(!!task.read_only)},${JSON.stringify(task.pinned_node || '')})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -15099,7 +15110,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
+      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.modelRoutingPinBadgeHtml(task)}${window.uncommittedWorkChipHtml(task)}${window.requestWatchChipHtml(task.model_request)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${readOnlyBadge}${mergeStateBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -16253,10 +16264,10 @@ function _prdTaskReadOnlyFieldHTML(inputID, checked) {
       <div style="font-size:10px;color:var(--text2);">${escHtml(t('prd_task_read_only_hint')||'This task changes no files, so it may run alongside other tasks without the tree lock.')}</div>`;
 }
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly) {
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir, currentReadOnly, currentPinnedNode) {
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
-  ensureLLMModelLists().then(() => {
+  Promise.all([ensureLLMModelLists(), window.modelRoutingNodesLoad()]).then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
       <strong>${t('prd_edit_task_title_prefix')||'Edit task'} ${escHtml(taskID)}</strong>
@@ -16273,6 +16284,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       </div>
       ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
       ${_prdTaskReadOnlyFieldHTML('prdEditReadOnly', !!currentReadOnly)}
+      ${window.modelRoutingPinFieldHtml('prdEditPinNode', currentPinnedNode)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -16317,10 +16329,14 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         body: JSON.stringify(Object.assign({ task_id: taskID, actor: 'operator' }, verif)),
       }));
     }
-    if (calls.length === 0) { _prdCloseModal(); return; }
+    // The node pin goes last: the server checks the pinned node against the model the task now uses.
+    const pinNode = window.modelRoutingPinValue('prdEditPinNode');
+    const pinChanged = pinNode !== null && pinNode !== (currentPinnedNode || '');
+    if (calls.length === 0 && !pinChanged) { _prdCloseModal(); return; }
     Promise.all(calls)
+      .then(() => pinChanged ? window.modelRoutingSavePin(prdID, 'task', taskID, pinNode) : null)
       .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
-      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 6000));
   });
   // Populate the model dropdown for the current backend now that
   // the modal is mounted in the DOM.
@@ -16444,8 +16460,8 @@ window.openPRDAddTaskModal = openPRDAddTaskModal;
 // BL381 — per-story LLM override modal. Mirrors openPRDEditTaskModal's LLM
 // section; calls set_story_llm. Available in needs_review + revisions_asked
 // + cancelled (see renderStory's editable gate).
-function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel, currentVerif) {
-  ensureLLMModelLists().then(() => {
+function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel, currentVerif, currentPinnedNode) {
+  Promise.all([ensureLLMModelLists(), window.modelRoutingNodesLoad()]).then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
       <strong>${t('prd_set_story_llm_title')||'Story LLM override'}</strong>
@@ -16459,6 +16475,7 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdStoryLLMEffort', currentEffort || '', '')}</div>
         <div id="prdStoryLLMModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdStoryLLMModelInner"></div></div>
       </div>
+      ${window.modelRoutingPinFieldHtml('prdStoryPinNode', currentPinnedNode)}
       ${_prdVerifLLMSectionHTML('prdStoryVerif', currentVerif, 'prd_verif_llm_story_hint', 'Which LLM judges this story\'s tasks — empty inherits the Automaton, then the global verification setting. Tasks with their own verification LLM keep it.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -16484,10 +16501,14 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
         body: JSON.stringify(Object.assign({ story_id: storyID, actor: 'operator' }, verif)),
       }));
     }
-    if (calls.length === 0) { _prdCloseModal(); return; }
+    // The node pin goes last: the server checks the pinned node against the model the story now uses.
+    const pinNode = window.modelRoutingPinValue('prdStoryPinNode');
+    const pinChanged = pinNode !== null && pinNode !== (currentPinnedNode || '');
+    if (calls.length === 0 && !pinChanged) { _prdCloseModal(); return; }
     Promise.all(calls)
+      .then(() => pinChanged ? window.modelRoutingSavePin(prdID, 'story', storyID, pinNode) : null)
       .then(() => { showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
-      .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
+      .catch(err => showToast('Save failed: ' + String(err), 'error', 6000));
   });
   refreshLLMModelField('prdStoryLLMModelWrap', 'prdStoryLLMModelInner', 'prdStoryLLMBackend', currentModel || '');
   refreshLLMModelField('prdStoryVerifModelWrap', 'prdStoryVerifModelInner', 'prdStoryVerifBackend', (currentVerif || {}).verification_model || '');
@@ -17612,6 +17633,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.request_watch.raise_alert', label: 'Raise an alert at the threshold (on by default)', labelKey: 'settings_request_watch_raise_alert', hintKey: 'settings_request_watch_raise_alert_hint', docsKey: 'autonomous.request_watch.raise_alert', type: 'toggle' },
     { key: 'autonomous.request_watch.raise_question', label: 'Raise a question at the threshold (on by default)', labelKey: 'settings_request_watch_raise_question', hintKey: 'settings_request_watch_raise_question_hint', docsKey: 'autonomous.request_watch.raise_question', type: 'toggle' },
     { key: 'autonomous.request_watch.remediation_options', label: 'Remediation options offered in the question (comma separated, default all four)', labelKey: 'settings_request_watch_remediation_options', hintKey: 'settings_request_watch_remediation_options_hint', docsKey: 'autonomous.request_watch.remediation_options', type: 'text', placeholder: 'keep_waiting, end_worker, retry_other_backend, unload_reload_model', csv: true },
+    // Model routing — which compute node serves the model a task asks for. The refusal mode
+    // and the unreachable-node policy are choices; the daemon validates the numbers.
+    { key: 'autonomous.model_routing.refusal_mode', label: 'Model routing refusal mode (refuse or warn, default refuse)', labelKey: 'settings_model_routing_refusal_mode', hintKey: 'settings_model_routing_refusal_mode_hint', docsKey: 'autonomous.model_routing.refusal_mode', type: 'select', options: ['refuse', 'warn'], optionLabelKeys: { refuse: 'settings_model_routing_refusal_refuse', warn: 'settings_model_routing_refusal_warn' }, default: 'refuse' },
+    { key: 'autonomous.model_routing.served_models_cache_seconds', label: 'Served models cache age (seconds, whole number, 0 reads the node every time, default 300)', labelKey: 'settings_model_routing_cache_seconds', hintKey: 'settings_model_routing_cache_seconds_hint', docsKey: 'autonomous.model_routing.served_models_cache_seconds', type: 'number', placeholder: '300', min: 0, step: 1, default: '300' },
+    { key: 'autonomous.model_routing.verifier_follows_worker_node', label: 'Verifier follows the worker node (on by default)', labelKey: 'settings_model_routing_verifier_follows', hintKey: 'settings_model_routing_verifier_follows_hint', docsKey: 'autonomous.model_routing.verifier_follows_worker_node', type: 'toggle' },
+    { key: 'autonomous.model_routing.unknown_node_policy', label: 'Unreachable node policy (assume_serves or assume_not, default assume_serves)', labelKey: 'settings_model_routing_unknown_node_policy', hintKey: 'settings_model_routing_unknown_node_policy_hint', docsKey: 'autonomous.model_routing.unknown_node_policy', type: 'select', options: ['assume_serves', 'assume_not'], optionLabelKeys: { assume_serves: 'settings_model_routing_policy_assume_serves', assume_not: 'settings_model_routing_policy_assume_not' }, default: 'assume_serves' },
+    { key: 'autonomous.model_routing.probe_timeout_seconds', label: 'Node probe timeout (seconds, whole number, minimum 1, default 8)', labelKey: 'settings_model_routing_probe_timeout', hintKey: 'settings_model_routing_probe_timeout_hint', docsKey: 'autonomous.model_routing.probe_timeout_seconds', type: 'number', placeholder: '8', min: 1, step: 1, default: '8' },
+    { key: 'autonomous.model_routing.alert_on_refusal', label: 'Alert when a run is refused for its model (on by default)', labelKey: 'settings_model_routing_alert', hintKey: 'settings_model_routing_alert_hint', docsKey: 'autonomous.model_routing.alert_on_refusal', type: 'toggle' },
     { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     { key: 'autonomous.questions.enabled', label: 'Operator questions for Automata (off by default)', labelKey: 'settings_automata_questions_enabled', type: 'toggle' },
     { key: 'autonomous.questions.notify_messaging', label: 'Notify on question asked and answered (on by default)', labelKey: 'settings_automata_questions_notify_messaging', type: 'toggle' },
@@ -27247,6 +27276,109 @@ function _mergePipelineLoadLists() {
     window._mergePipelineProjects = (Array.isArray(d) ? d : []).map(p => (p && (p.name || p.alias)) || (typeof p === 'string' ? p : '')).filter(Boolean);
   }).catch(() => {});
 }
+// ── Model routing ───────────────────────────────────────────────────────────
+// Served models: the compute node view shows, per node, the models the node
+// serves right now (GET /api/compute/served-models), how old that reading is,
+// a Refresh button that reads the node again, and a muted note for a node
+// whose models cannot be read. Node pin: the task and story editors carry a
+// Pin to node select (POST set_task_node or set_story_node), and a row shows a
+// small badge while pinned_node is set. Every value from the server is
+// escaped, so a hostile model or node name renders as text.
+function _modelRoutingNote(text, title) {
+  return `<div class="served-models-note" style="color:var(--text2);font-style:italic;font-size:11px;overflow-wrap:anywhere;"${title ? ` title="${escHtml(title)}"` : ''}>${escHtml(text)}</div>`;
+}
+// servedModelsTitleHtml is the card title with its help link.
+window.servedModelsTitleHtml = function() {
+  return `<strong style="font-size:11px;">${escHtml(t('model_routing_served_models_title'))}</strong>${defsLink('model_routing_served_models_title')}`;
+};
+// servedModelsNodeHtml renders the body of one node's block from one entry of
+// the nodes list. An entry the server could not read (known is false) shows
+// the muted note instead of an empty list, so "serves nothing" and "unknown"
+// stay different things.
+window.servedModelsNodeHtml = function(entry) {
+  const e = (entry && typeof entry === 'object') ? entry : {};
+  const refresh = `<button type="button" class="btn-secondary served-models-refresh" style="font-size:10px;padding:1px 6px;margin-left:auto;" onclick="event.preventDefault();event.stopPropagation();loadServedModels(true)">${escHtml(t('model_routing_refresh'))}</button>`;
+  const head = `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">${window.servedModelsTitleHtml()}${refresh}</div>`;
+  let body;
+  if (e.disabled) {
+    body = _modelRoutingNote(t('model_routing_node_disabled'));
+  } else if (!e.known) {
+    body = _modelRoutingNote(t('model_routing_unknown_node'), e.error ? String(e.error) : '');
+  } else {
+    const models = Array.isArray(e.models) ? e.models : [];
+    const age = e.cached ? t('model_routing_age', [Number(e.age_seconds) || 0]) : t('model_routing_fresh');
+    const ageHtml = `<div class="served-models-age" style="color:var(--text2);font-size:10px;margin-top:3px;">${escHtml(age)}</div>`;
+    body = models.length
+      ? `<div class="served-models-list" style="display:flex;flex-wrap:wrap;gap:3px;">${models.map(m => `<code style="font-size:10px;background:var(--bg);border:1px solid var(--border);padding:1px 4px;border-radius:6px;overflow-wrap:anywhere;">${escHtml(String(m))}</code>`).join('')}</div>${ageHtml}`
+      : `${_modelRoutingNote(t('model_routing_served_models_empty'))}${ageHtml}`;
+  }
+  return head + body;
+};
+// servedModelsBlockHtml is the placeholder a node row carries until the read
+// fills it in.
+window.servedModelsBlockHtml = function(nodeName) {
+  return `<div class="served-models-block" data-node="${escHtml(String(nodeName || ''))}" style="padding:6px 10px;border-top:1px solid var(--border);">${_modelRoutingNote('…')}</div>`;
+};
+// loadServedModels reads the served models once and fills every block on the
+// page; refresh=true asks the daemon to read the nodes again instead of using
+// its cache.
+window.loadServedModels = function(refresh) {
+  const blocks = Array.from(document.querySelectorAll('.served-models-block'));
+  if (!blocks.length) return Promise.resolve(null);
+  const url = '/api/compute/served-models' + (refresh ? '?refresh=true' : '');
+  return Promise.resolve(apiFetch(url)).then(d => {
+    const byNode = {};
+    ((d && d.nodes) || []).forEach(n => { if (n && n.node) byNode[n.node] = n; });
+    blocks.forEach(b => { b.innerHTML = window.servedModelsNodeHtml(byNode[b.dataset.node] || { known: false }); });
+    return d;
+  }).catch(e => {
+    blocks.forEach(b => { b.innerHTML = _modelRoutingNote(t('model_routing_served_models_failed', [String((e && e.message) || e)])); });
+    return null;
+  });
+};
+
+// modelRoutingNodesLoad resolves with the registered compute nodes, from the
+// cache the LLM forms already keep.
+window.modelRoutingNodesLoad = function() {
+  return Promise.resolve(window._loadComputeNodesCache());
+};
+// modelRoutingPinFieldHtml is the Pin to node select: a none choice first,
+// then every registered node. A node that is pinned but no longer registered
+// stays in the list so the pin can be seen and cleared.
+window.modelRoutingPinFieldHtml = function(selectId, current) {
+  const names = (window._computeNodesCache || []).map(n => n && n.name).filter(Boolean);
+  const cur = current ? String(current) : '';
+  if (cur && !names.includes(cur)) names.push(cur);
+  const opts = [`<option value=""${cur ? '' : ' selected'}>${escHtml(t('model_routing_pin_node_none'))}</option>`]
+    .concat(names.map(n => `<option value="${escHtml(n)}"${n === cur ? ' selected' : ''}>${escHtml(n)}</option>`));
+  return `<div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(t('model_routing_pin_node_label'))}</label>
+        <select id="${escHtml(selectId)}" class="form-select">${opts.join('')}</select>
+        <div style="font-size:10px;color:var(--text2);">${escHtml(t('model_routing_pin_node_hint'))}</div>
+      </div>`;
+};
+// modelRoutingPinValue is the chosen node name, '' for none, null when the
+// field is not on the page.
+window.modelRoutingPinValue = function(selectId) {
+  const el = document.getElementById(selectId);
+  return el ? String(el.value || '') : null;
+};
+// modelRoutingSavePin posts the pin. A refusal the server returns rejects the
+// promise with its message, and the editor shows it in its usual error toast.
+window.modelRoutingSavePin = function(prdID, unit, id, node) {
+  const story = unit === 'story';
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + (story ? '/set_story_node' : '/set_task_node'), {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(Object.assign({ node, actor: 'operator' }, story ? { story_id: id } : { task_id: id })),
+  });
+};
+// modelRoutingPinBadgeHtml is the small badge on a task or story row while it
+// is pinned to a node.
+window.modelRoutingPinBadgeHtml = function(item) {
+  if (!item || typeof item !== 'object' || !item.pinned_node) return '';
+  const node = String(item.pinned_node);
+  return `<span class="prd-task-llm-badge model-routing-pin-badge" title="${escHtml(t('model_routing_pinned_title', [node]))}">${escHtml(t('model_routing_pinned_badge', [node]))}</span>`;
+};
 
 // ── Triage card ─────────────────────────────────────────────────────────────
 // triageCardHtml(record) turns one triage record — the single self-contained

@@ -339,6 +339,10 @@ type Server struct {
 
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
+	// servedModels reads and caches what each compute node serves; modelHostCheck
+	// answers the served-models route's model check. Both are nil until wired.
+	servedModels   *compute.ServedModelsCache
+	modelHostCheck autonomous.ModelHostCheckFn
 
 	// Per-node usage cache for the node:<name> capacity pools. Lazily
 	// created by (s *Server) nodeUsageCache(); see node_usage.go.
@@ -6294,14 +6298,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_timeout_seconds": s.cfg.Autonomous.VerificationTimeoutSeconds,
 			// Judge routing: an empty judge_policy means the judges follow the verifier routing policy;
 			// the time limit shows its 30-minute default; the size threshold is the stored value (0 = off).
-			"judge_policy":                 judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
-			"judge_timeout_seconds":        config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
-			"judge_size_threshold_lines":   s.cfg.Autonomous.JudgeSizeThresholdLines,
+			"judge_policy":               judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
+			"judge_timeout_seconds":      config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
+			"judge_size_threshold_lines": s.cfg.Autonomous.JudgeSizeThresholdLines,
 			// Strong-first judge routing: the named strong backend (empty =
 			// the last judge-policy entry) and the per-commit verdict cache
 			// flag (unset reads the default, true).
-			"judge_strong_backend":        s.cfg.Autonomous.JudgeStrongBackend,
-			"judge_verdict_cache_enabled": config.NormalizeJudgeVerdictCacheEnabled(s.cfg.Autonomous.JudgeVerdictCacheEnabled),
+			"judge_strong_backend":         s.cfg.Autonomous.JudgeStrongBackend,
+			"judge_verdict_cache_enabled":  config.NormalizeJudgeVerdictCacheEnabled(s.cfg.Autonomous.JudgeVerdictCacheEnabled),
 			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
@@ -6481,6 +6485,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Effective, not raw: all eleven request watch values with the
 			// defaults filled in; remediation_options is the list in effect.
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
+			// Effective, not raw: an unset key shows its default.
+			"model_routing": modelRoutingConfigSurface(s.cfg.Autonomous.ModelRouting),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -7074,6 +7080,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// known remediation option ids and real booleans. One bad value among its
 	// eleven keys refuses the whole PUT with a message naming the key.
 	if err := validateRequestWatchPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The model routing block is checked as a whole too: one bad value among
+	// its six keys refuses the whole PUT. A whole-block object is first
+	// expanded into the dotted keys.
+	if err := expandModelRoutingBlock(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validateModelRoutingPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9665,6 +9682,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// validateBillingPatch. The cost report and the usage calculator
 			// read the live block, so the change applies with no restart.
 			if applyBillingPatchKey(cfg, k, v) {
+				continue
+			}
+			// autonomous.model_routing.refusal_mode,
+			// .served_models_cache_seconds, autonomous.model_routing.verifier_follows_worker_node,
+			// .unknown_node_policy, .probe_timeout_seconds and .alert_on_refusal;
+			// the values were checked by validateModelRoutingPatch.
+			if applyModelRoutingPatch(cfg, k, v) {
 				continue
 			}
 			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>

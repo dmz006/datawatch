@@ -32,6 +32,10 @@ Subcommands:
   infra-retries [automaton-id] [--limit N] [--json]
                                   Infrastructure retries: the retry policy in effect and the tasks retried
                                   or held because the machinery around them failed, newest first
+  prd-set-task-node <automaton-id> --task <task-id> --node <node>
+                                  Pin one task to a compute node; an empty --node clears the pin
+  prd-set-story-node <automaton-id> --story <story-id> --node <node>
+                                  Pin every task of one story to a compute node; an empty --node clears it
   triage [--automation ID] [--prd ID] [--status failed|blocked] [--json]
                                   Triage read: the failed and blocked Automata waiting for operator triage,
                                   newest first, beside the alert threshold — the same text the comm verb
@@ -190,6 +194,8 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousPRDSetTaskNodeCmd(),
+		newAutonomousPRDSetStoryNodeCmd(),
 		newAutonomousFailureEscalationCmd(),
 		newAutonomousResolveReviewCmd(),
 		newAutonomousPRDSetThinkingLevelCmd(),

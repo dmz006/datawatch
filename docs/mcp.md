@@ -353,6 +353,56 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
   A `limit` outside 1 to 1000 is refused with the daemon's message. Needs the autonomous read capability when called by a federated peer.
 - **`onboarding_report`** — read the onboarding report: what is configured (backends, models, projects, comm channels, memory, merge pipeline), what is missing, and what to try next with a how-to link for each step. `format` is `text` (the default, rendered by the same function as the REST route, the CLI and the comm verb) or `json` (the REST body). Read-only; says so when `onboarding_report.enabled` is off. Same data as `GET /api/automation/onboarding-report`.
+- **`compute_served_models`** — read which models each compute node serves right now. Without arguments it lists every enabled node with its served models and whether the list could be read. Give `model` (and optionally `node` and `backend`) to also get the answer to "would this node accept this model?" — the same check an Automaton makes when a task or story is pinned to a node, so the two never disagree. A node's list is kept for `autonomous.model_routing.served_models_cache_seconds` (default 300); `refresh=true` reads it from the node again. Read-only. Needs the compute read capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `node` | no | Limit the answer to one compute node name |
+  | `model` | no | A model name to check against the node's served list |
+  | `backend` | no | The LLM backend the model would run on, used together with `model` |
+  | `refresh` | no | `true` reads the served list from the node now instead of using the kept copy |
+
+  ```
+  compute_served_models()
+  compute_served_models(node="gpu1", model="qwen3:27b", backend="pi-prompt", refresh=true)
+  ```
+
+- **`autonomous_prd_set_task_node`** — pin one task of an Automaton to a compute node, so its worker runs there. An empty `node` clears the pin and the task goes back to normal node choice. A node that does not serve the task's model is refused, or only warned about, according to `autonomous.model_routing.refusal_mode`. The verification job follows the worker's node unless `autonomous.model_routing.verifier_follows_worker_node` is `false`. Needs the Automata write capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `prd_id` | yes | Automaton ID |
+  | `task_id` | yes | Task ID |
+  | `node` | no | Compute node name to pin the task to; empty clears the pin |
+
+  ```
+  autonomous_prd_set_task_node(prd_id="a1b2c3d4", task_id="t1", node="gpu1")
+  autonomous_prd_set_task_node(prd_id="a1b2c3d4", task_id="t1", node="")
+  ```
+
+- **`autonomous_prd_set_story_node`** — pin every task of one story of an Automaton to a compute node. An empty `node` clears the pin. A task's own node pin wins over the story's. The same model check applies. Needs the Automata write capability when called by a federated peer.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `prd_id` | yes | Automaton ID |
+  | `story_id` | yes | Story ID |
+  | `node` | no | Compute node name to pin the story to; empty clears the pin |
+
+  ```
+  autonomous_prd_set_story_node(prd_id="a1b2c3d4", story_id="s1", node="gpu2")
+  ```
+
+  The routing behaviour is set with six keys under `autonomous.model_routing.*`, either with `config_set` (for example `config_set(key="autonomous.model_routing.refusal_mode", value="warn")`) or with the `model_routing_*` arguments of `autonomous_config_set`. They are read with `get_config`, under `autonomous.model_routing`; `autonomous_config_get` does not return them. The daemon names the valid values in a refusal.
+
+  | Argument | Sets | Type and default |
+  |----------|------|------|
+  | `model_routing_refusal_mode` | `autonomous.model_routing.refusal_mode` | `refuse` (default) or `warn` |
+  | `model_routing_served_models_cache_seconds` | `autonomous.model_routing.served_models_cache_seconds` | whole number >= 0, default 300; 0 reads from the node every time |
+  | `model_routing_verifier_follows_worker_node` | `autonomous.model_routing.verifier_follows_worker_node` | boolean, default true |
+  | `model_routing_unknown_node_policy` | `autonomous.model_routing.unknown_node_policy` | `assume_serves` (default) or `assume_not`: how a node whose models cannot be read counts |
+  | `model_routing_probe_timeout_seconds` | `autonomous.model_routing.probe_timeout_seconds` | whole number >= 1, default 8 |
+  | `model_routing_alert_on_refusal` | `autonomous.model_routing.alert_on_refusal` | boolean, default true |
+
 - **`autonomous_infra_retries`** — read the infrastructure retry state: the retry policy in effect (`enabled`, `max_tries`, `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents`, `raise_question`) and the tasks of Automata that were retried, or are held, because the machinery around them failed rather than their own work. Each task carries its Automaton, `retry_count`, `max_tries`, the `retries[]` history, and `held` with `held_cause` and `question_id` when it waits for the operator. The most recently retried task comes first. Read-only; returns the same object as `GET /api/autonomous/infra-retries`.
 
   | Parameter | Required | Description |

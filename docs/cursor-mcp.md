@@ -141,6 +141,9 @@ Selected core tools:
 | `autonomous_overlap_search` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's `title` and `spec`, best match first, with the threshold and mode in force; optional `limit` (1 to 50, default 10); read-only |
 | `autonomous_lane_fill_status` | Read the lane fill status: lanes, idle state, recent planner decisions and idle alerts; optional `limit` (1 to 1000, default 50) |
 | `autonomous_prd_set_lane_preference` | Set an Automaton's lane to `gpu`, `claude` or `any` (empty means `any`); takes `id` and `lane_preference` |
+| `compute_served_models` | Read which models each compute node serves; optional `node`, `model`, `backend` and `refresh` (true reads the node again); with `model` it also says whether the node would accept it |
+| `autonomous_prd_set_task_node` | Pin one task of an Automaton to a compute node; takes `prd_id`, `task_id` and `node` (empty clears the pin) |
+| `autonomous_prd_set_story_node` | Pin every task of one story of an Automaton to a compute node; takes `prd_id`, `story_id` and `node` (empty clears the pin) |
 | `autonomous_infra_retries` | Read the infrastructure retry state: the retry policy in effect and the tasks retried or held because of an infrastructure failure, most recent first; optional `automaton` and `limit` (1 to 1000, default 50) |
 | `autonomous_defect_intake` | Route one defect through the defect queue to the tiny-fix lane, an open draft batch or a new batch; takes `id`, `title`, `project` and optional `description`, `files`, `kind`, `area`, `priority`; returns `route`, `reason` and `batch_id` |
 | `autonomous_defect_batches` | List the open defect batches with the story-to-defect mapping of each; optional `project` |

@@ -1082,6 +1082,25 @@ paths:
         eleven values in effect under `autonomous.request_watch` (an unset key shows its
         default and `remediation_options` is the list in effect, keep_waiting first) and
         the watcher picks up changes on its next poll without a restart.
+        `autonomous.model_routing.refusal_mode` (`refuse` or `warn`, default `refuse`;
+        whether a worker pinned to a model that no node serves is turned away or only
+        warned about),
+        `autonomous.model_routing.served_models_cache_seconds` (whole number >= 0,
+        default 300; how long a node's list of served models is kept; 0 reads it from
+        the node every time),
+        `autonomous.model_routing.verifier_follows_worker_node` (true|false, default
+        true; the verifier runs on the node its worker ran on),
+        `autonomous.model_routing.unknown_node_policy` (`assume_serves` or
+        `assume_not`, default `assume_serves`; how a node whose models cannot be read
+        counts),
+        `autonomous.model_routing.probe_timeout_seconds` (whole number >= 1, default 8;
+        how long a read of a node's models may take) and
+        `autonomous.model_routing.alert_on_refusal` (true|false, default true; raise an
+        alert when a worker is turned away). The block can also be sent whole as an
+        object under `autonomous.model_routing`. A bad model routing value rejects the
+        whole PUT with 400 naming the key and nothing is written. GET returns all six
+        values in effect under `autonomous.model_routing` and a change applies without
+        a restart.
         `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
         claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
         list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
@@ -2328,6 +2347,81 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
+
+  /api/compute/served-models:
+    get:
+      summary: Models each compute node serves
+      description: |
+        Lists what every registered compute node serves, read from the node
+        itself (Ollama and OpenCode nodes at `/api/tags`, OpenWebUI nodes at
+        `/api/v1/models`). Answers are remembered for
+        `autonomous.model_routing.served_models_cache_seconds` (default 300; 0
+        reads the node every time) and the age of a remembered answer is
+        reported. A node whose models cannot be read is listed with
+        `known: false` and the reason in `error`. A disabled node is listed with
+        `disabled: true` and is never read.
+
+        With `model`, the answer also carries a `check`: whether any node serves
+        that model. It comes from the same check an Automaton uses when a model
+        or a node is pinned, so this answer and a refused pin always agree. The
+        check honours `autonomous.model_routing.unknown_node_policy` for nodes
+        whose models cannot be read. With `node` as well, only that node is
+        checked.
+      operationId: computeServedModels
+      tags: [Compute]
+      parameters:
+        - {name: node, in: query, required: false, description: List one node only. An unknown name is a 404., schema: {type: string}}
+        - {name: model, in: query, required: false, description: "Check whether a node serves this model (for example ollama/qwen3.8:27b). Adds the check object to the answer.", schema: {type: string}}
+        - {name: backend, in: query, required: false, description: "Backend the model would run on. A backend that does not run on a compute node makes the check not applicable. Only used with model.", schema: {type: string}}
+        - {name: refresh, in: query, required: false, description: "true reads every node now instead of using remembered answers, and replaces them.", schema: {type: boolean}}
+      responses:
+        "200":
+          description: The served models of each node, and the model check when model was given
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  cache_seconds: {type: integer, minimum: 0, description: "How long a node's answer is remembered, from autonomous.model_routing.served_models_cache_seconds"}
+                  refusal_mode: {type: string, enum: [refuse, warn], description: "What a pin does when no node serves its model, from autonomous.model_routing.refusal_mode"}
+                  nodes:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        node: {type: string}
+                        kind: {type: string, description: "Node kind, for example ollama"}
+                        models: {type: array, items: {type: string}, description: Model names the node serves. Empty when unknown or disabled.}
+                        known: {type: boolean, description: "False when the models could not be read"}
+                        cached: {type: boolean, description: "True when the answer came from a remembered read"}
+                        age_seconds: {type: integer, minimum: 0, description: "Age of a remembered answer; 0 for a fresh read"}
+                        fetched_at: {type: string, format: date-time, description: "When the node was read. Empty for a disabled node"}
+                        error: {type: string, description: "Why the models could not be read. Empty when known"}
+                        disabled: {type: boolean, description: "Present and true for a disabled node, which is not read"}
+                  check:
+                    type: object
+                    description: Present only when model was given.
+                    properties:
+                      model: {type: string}
+                      applicable: {type: boolean, description: "False when the backend does not run on a compute node. Nothing is refused then"}
+                      refused: {type: boolean, description: "True when no node serves the model"}
+                      node_unknown: {type: boolean, description: "True when the node argument is not a registered node"}
+                      served_by: {type: array, items: {type: string}, description: Nodes that serve the model, or are assumed to under unknown_node_policy.}
+                      checked:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            node: {type: string}
+                            state: {type: string, enum: [serves, not_serving, unknown]}
+                            reason: {type: string}
+                      message: {type: string, description: "For a refusal, names the model and the nodes checked"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the compute read capability}
+        "404": {description: The node named in node is not registered}
+        "405": {description: Method not allowed}
+        "503": {description: The compute registry or the served-models cache is not available}
 
   /api/compute/nodes/{name}:
     get:
@@ -4135,6 +4229,67 @@ paths:
                 guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
+  /api/autonomous/prds/{id}/set_task_node:
+    post:
+      summary: Pin a task to a compute node
+      description: |
+        Makes a task's worker run on the named compute node, or clears the pin
+        when `node` is empty. The node must be registered and must serve the
+        model the task resolves to. When it does not, what happens follows
+        `autonomous.model_routing.refusal_mode`: `refuse` (the default) rejects
+        the pin with 400 and a message that names the model and the node, `warn`
+        applies the pin and records a warning in the Automaton's decision log. A
+        node that is not registered is always rejected. Accepted under the same
+        status rule as `set_task_llm` (`autonomous.task_override_statuses`). The
+        task then carries `pinned_node`. Applied pins are audit-logged and
+        appended to the Automaton's decision log.
+      operationId: autonomousPRDSetTaskNode
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [task_id]
+              properties:
+                task_id: {type: string}
+                node: {type: string, description: "Compute node name. Empty clears the pin"}
+                actor: {type: string, description: "Who made the change. Defaults to operator"}
+      responses:
+        "200": {description: The updated Automaton}
+        "400": {description: "task_id missing, the task is unknown, the status does not allow the change, or the pin was refused because the node is not registered or does not serve the model"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+        "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/set_story_node:
+    post:
+      summary: Pin a story to a compute node
+      description: |
+        Makes the workers of every task in a story that has no pin of its own run
+        on the named compute node, or clears the story's pin when `node` is empty.
+        The rules, the refusal and the warning are those of `set_task_node`; the
+        model checked is the one the story's tasks resolve to. The story then
+        carries `pinned_node`.
+      operationId: autonomousPRDSetStoryNode
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id]
+              properties:
+                story_id: {type: string}
+                node: {type: string, description: "Compute node name. Empty clears the pin"}
+                actor: {type: string, description: "Who made the change. Defaults to operator"}
+      responses:
+        "200": {description: The updated Automaton}
+        "400": {description: "story_id missing, the story is unknown, the status does not allow the change, or the pin was refused because the node is not registered or does not serve the model"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+        "405": {description: Method not allowed}
   /api/autonomous/prds/{id}/set_verifier_policy:
     post:
       summary: Set an Automaton's verifier policy override
