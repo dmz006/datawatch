@@ -8450,6 +8450,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SupervisorWatchFindingsWouldAlert = sw.FindingsWouldAlert
 				s.SupervisorWatchFindingsAlerted = sw.FindingsAlerted
 				s.SupervisorWatchAgreedDays = sw.AgreedDays
+				// Safe-to-delete report stats.
+				sd := amgrRef.SafeDeleteStats()
+				s.SafeDeleteLastMS = sd.LastDurationMs
+				s.SafeDeleteSlowReports = sd.SlowReports
+				s.SafeDeleteRefreshFailures = sd.RefreshFailures
 			})
 		}
 		// Burn guard stats in the WS broadcast and the Prometheus collector.

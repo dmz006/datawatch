@@ -20,6 +20,11 @@ const safeDeleteCacheTTL = 60 * time.Second
 // report.
 const safeDeleteRefreshTimeout = 60 * time.Second
 
+// safeDeleteSlowWarn is the duration a safe-to-delete computation may take
+// before it is counted as a slow report and a single warning line is
+// logged (duration, threshold and worktree count — never names or paths).
+const safeDeleteSlowWarn = 3 * time.Second
+
 // safeDeleteCacheEntry is one cached report plus the clock time it was
 // computed at (the value reported as computed_at).
 type safeDeleteCacheEntry struct {
@@ -47,6 +52,9 @@ type safeDeleteCache struct {
 	entries    map[string]safeDeleteCacheEntry
 	inflight   map[string]*safeDeleteColdCall
 	refreshing map[string]bool // one background refresh per repository
+
+	statsMu sync.Mutex
+	stats   SafeDeleteStats
 }
 
 func newSafeDeleteCache() *safeDeleteCache {
@@ -118,10 +126,12 @@ func (c *safeDeleteCache) get(ctx context.Context, repo string) (SafeDeleteRepor
 		return winner.report, nil
 	}
 
+	start := c.now()
 	report, err := c.compute(ctx, repo)
 	computedAt := c.now().UTC()
 	stamped := report
 	stamped.ComputedAt = computedAt.Format(time.RFC3339)
+	c.recordResult(start, computedAt, report, err)
 	c.mu.Lock()
 	if c.inflight[repo] == call {
 		// Still the registered computation: publish a successful result
@@ -145,15 +155,56 @@ func (c *safeDeleteCache) startRefresh(repo string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), safeDeleteRefreshTimeout)
 		defer cancel()
+		start := c.now()
 		report, err := c.compute(ctx, repo)
+		finished := c.now().UTC()
+		c.recordResult(start, finished, report, err)
 		c.mu.Lock()
 		c.refreshing[repo] = false
 		if err == nil {
-			c.entries[repo] = safeDeleteCacheEntry{report: report, computedAt: c.now().UTC()}
+			c.entries[repo] = safeDeleteCacheEntry{report: report, computedAt: finished}
 		}
 		c.mu.Unlock()
 		if err != nil {
 			log.Printf("[autonomous] safe-to-delete cache refresh: repo %q: %v", repo, err)
 		}
 	}()
+}
+
+// statsSnapshot returns a copy of the cache's counters.
+func (c *safeDeleteCache) statsSnapshot() SafeDeleteStats {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+	return c.stats
+}
+
+// recordResult updates the cache counters for one finished computation
+// (cold or background): a success counts as a refresh and records its
+// completion time and worktree count, a failure counts as a refresh
+// failure, the duration of the most recent computation is always kept, and
+// a computation longer than safeDeleteSlowWarn counts as a slow report and
+// is logged exactly once — with the duration in milliseconds, the
+// threshold and the worktree count, never the repository, branch or
+// worktree paths.
+func (c *safeDeleteCache) recordResult(start, end time.Time, report SafeDeleteReport, err error) {
+	dur := end.Sub(start)
+	c.statsMu.Lock()
+	if err == nil {
+		c.stats.Refreshes++
+		c.stats.LastComputedAt = end
+		c.stats.Worktrees = len(report.Safe) + len(report.Held)
+	} else {
+		c.stats.RefreshFailures++
+	}
+	c.stats.LastDurationMs = dur.Milliseconds()
+	slow := dur > safeDeleteSlowWarn
+	if slow {
+		c.stats.SlowReports++
+	}
+	worktrees := c.stats.Worktrees
+	c.statsMu.Unlock()
+	if slow {
+		log.Printf("[autonomous] safe-to-delete computation took %d ms, above the %s warning threshold (%d worktrees)",
+			dur.Milliseconds(), safeDeleteSlowWarn, worktrees)
+	}
 }
