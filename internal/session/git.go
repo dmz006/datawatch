@@ -73,8 +73,8 @@ func (g *ProjectGit) LastStagingSkipped() []StagingSkip {
 // "outside-root") from internal/gitguard. Skipping is the safe direction:
 // a wrong skip only leaves a file unstaged; a missed skip is a leak.
 type StagingSkip struct {
-	Path   string
-	Reason string
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // NewProjectGit creates a new ProjectGit for the given directory, bounded

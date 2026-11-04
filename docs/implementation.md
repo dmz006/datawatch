@@ -563,7 +563,7 @@ The guard enforces these rules:
 
 8. **Non-project directories.** Automatic commits are refused when the directory is the home directory, a filesystem root, or a directory with no repository and no project marker. The refusal writes one audit line and is not retried. The operator fix is described in [operations.md](operations.md#automatic-commit-refused-in-a-non-project-directory).
 
-On the session commit path (pre-session snapshot and completion commit), the candidates are additionally filtered to the task's declared write scope (skipped with reason `outside-plan`) and checked against the `autonomous.snapshot_never_stage` patterns (reason `never-stage`) and the repository's ignore rules (reason `ignored`); each refusal is logged; the stall-recovery commit also records the pass on the task result as `skipped_snapshot_paths` (the normal completion commit logs only). The operator view of the scope, the setting and the skip record is [howto/autonomous.md](howto/autonomous.md).
+On the session commit path (pre-session snapshot and completion commit), the candidates are additionally filtered to the task's declared write scope (skipped with reason `outside-plan`) and checked against the `autonomous.snapshot_never_stage` patterns (reason `never-stage`) and the repository's ignore rules (reason `ignored`); each refusal is logged; the staging pass is recorded on the task result as `skipped_snapshot_paths` by the normal completion commit, the stall-recovery commit and the attempt snapshot path. The operator view of the scope, the setting and the skip record is [howto/autonomous.md](howto/autonomous.md).
 
 ### Message Routing
 

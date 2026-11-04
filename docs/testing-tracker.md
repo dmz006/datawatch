@@ -2026,7 +2026,7 @@ The capacity view's back-off line for a backend held by the burn guard now ends 
 
 ## Snapshot staging scope — new `autonomous.snapshot_never_stage` and `skipped_snapshot_paths`
 
-The task-finish snapshot commit stages only paths inside the task's declared plan, honours the repository ignore rules and a configurable never-stage pattern list, and reports what it skipped. The skip record on the task result is currently written by the stall-recovery commit path only; the normal completion commit logs its skips.
+The task-finish snapshot commit stages only paths inside the task's declared plan, honours the repository ignore rules and a configurable never-stage pattern list, and reports what it skipped. The skip record on the task result is written by the normal completion commit, the stall-recovery commit and the attempt snapshot path, and is shown on the PWA, CLI and comm channel surfaces alongside MCP and REST.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -2034,7 +2034,11 @@ The task-finish snapshot commit stages only paths inside the task's declared pla
 | REST config — `GET`/`PUT /api/config` report and persist the key | **Yes** (`internal/server/snapshot_never_stage_config_surfaces_test.go`) | Not run on a live daemon | Round trip through the config handlers | |
 | MCP — `config_set` / `get_config` accept and return the key | **Yes** (`internal/mcp/snapshot_never_stage_test.go`) | Not run on a live daemon | Tool call round trip | |
 | Staging guard — outside-plan, ignored and never-stage skips | **Yes** (`internal/session/git_test.go`) | Not run on a live daemon | Temporary repositories | |
-| `skipped_snapshot_paths` on the task result | Partly (recovery commit path) | Not run | Recorded by the stall-recovery commit only | Normal completion commit logs only; follow-up defect filed |
+| `skipped_snapshot_paths` on the task result — normal completion commit | **Yes** (`internal/session/manager_staging_skipped_test.go`) | Not run on a live daemon | Temporary repositories, fakes | |
+| `skipped_snapshot_paths` on the task result — stall-recovery commit and attempt snapshot path | **Yes** (`internal/autonomous/attempt_snapshot_gateskip_test.go`, `cmd/datawatch/attempt_preserve_skips_test.go`) | Not run on a live daemon | Temporary repositories, fakes | The attempt snapshot stores its skip list on the task result before the worker is stopped |
+| PWA — skipped-snapshot record shown on the task | **Yes** (`internal/server/web/app-skipped-snapshot-paths.test.js`) | Not run in a browser story | node:test (`node --test internal/server/web/`), loads `app.js` in a browser stub | One chip per entry; only entries with a path render |
+| CLI — `prd-get` renders the skip list (per-task "left unstaged" lines) | **Yes** (`cmd/datawatch/prd_skipped_snapshot_lines_test.go`) | Not run | Fake daemon | Same record as MCP and REST |
+| Comm channel — per-task "left unstaged" line | **Yes** (`internal/router/skipped_snapshot_comm_test.go`) | Not run | Fake manager | Counts-first line per task with skips |
 
 ---
 

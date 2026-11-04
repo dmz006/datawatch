@@ -5736,6 +5736,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
 						}
 					}
+					// Best-effort: record the files the completion commit left
+					// unstaged on the task's snapshot record. Never fails
+					// verification (same posture as RecordTaskAttemptCommit).
+					if len(s.StagingSkipped) > 0 && autonomousMgrRef != nil {
+						if rerr := autonomousMgrRef.RecordTaskSkippedSnapshotPaths(task.PRDID, task.ID, autonomouspkg.TaskSnapshotSkippedFrom(s.StagingSkipped)); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskSkippedSnapshotPaths(%s/%s): %v", task.PRDID, task.ID, rerr)
+						}
+					}
 				}
 				if doneVerdict != nil {
 					return *doneVerdict, nil

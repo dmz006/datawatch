@@ -784,6 +784,12 @@ func (r *Router) handleAutonomous(cmd Command) {
 		if line := reviewStateStatusLine(out); line != "" {
 			reply += "\n" + line
 		}
+		// Counts-first line per task with a non-empty skipped_snapshot_paths
+		// ("left unstaged: <task> N (reason=count, ...)"); the detailed
+		// path list stays in the raw JSON above.
+		if lines := autonomous.RenderSkippedSnapshotLines([]byte(out)); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
+		}
 		r.reply("autonomous get", reply)
 	case "decompose":
 		if len(args) < 2 {

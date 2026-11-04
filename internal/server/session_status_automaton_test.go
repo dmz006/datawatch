@@ -59,6 +59,10 @@ func automatonStatusPRD(spec string) *autonomous.PRD {
 				FilesPlanned:     []string{"a.go"},
 				FilesTouched:     []string{"a.go", "b.go"},
 				ForeignFileDrift: []string{"x.go"},
+				SkippedSnapshotPaths: []autonomous.SnapshotSkippedPath{
+					{Path: "secrets/.env", Reason: "never-stage"},
+					{Path: "build/out.bin", Reason: "size"},
+				},
 			}, {
 				ID: "t2", StoryID: "s1", Title: "Task two", Status: autonomous.TaskStatus("pending"),
 			}},
@@ -136,6 +140,18 @@ func TestSessionStatusAutomaton_PopulatedFromTask(t *testing.T) {
 	if g["pre_task_sha"] != "abc123" || len(g["files_planned"].([]any)) != 1 ||
 		len(g["files_touched"].([]any)) != 2 || len(g["foreign_file_drift"].([]any)) != 1 {
 		t.Errorf("git=%v", g)
+	}
+	skip := g["skipped_snapshot_paths"].([]any)
+	if len(skip) != 2 {
+		t.Fatalf("git.skipped_snapshot_paths=%v want 2 entries", skip)
+	}
+	se := skip[0].(map[string]any)
+	if se["path"] != "secrets/.env" || se["reason"] != "never-stage" {
+		t.Errorf("skipped[0]=%v", se)
+	}
+	se2 := skip[1].(map[string]any)
+	if se2["path"] != "build/out.bin" || se2["reason"] != "size" {
+		t.Errorf("skipped[1]=%v", se2)
 	}
 	decs := a["decisions"].([]any)
 	if len(decs) != 10 {

@@ -897,7 +897,7 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 		Use:   "prd-get <id>",
 		Short: "Fetch one PRD with its story+task tree",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
 			path := "/api/autonomous/prds/" + args[0]
 			if detail != "" {
 				path += "?" + url.Values{"detail": {detail}}.Encode()
@@ -906,20 +906,27 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			out := c.OutOrStdout()
 			if len(body) > 0 {
 				prettyPrint(body)
 			}
 			if line := prdPushLine(body); line != "" {
-				fmt.Println(line)
+				fmt.Fprintln(out, line)
 			}
 			if line := prdReviewLine(body); line != "" {
 				fmt.Println(line)
 			}
 			if line := prdParallelLine(body); line != "" {
-				fmt.Println(line)
+				fmt.Fprintln(out, line)
 			}
 			for _, line := range prdTaskMergeLines(body) {
-				fmt.Println(line)
+				fmt.Fprintln(out, line)
+			}
+			// Counts-first line per task with a non-empty
+			// skipped_snapshot_paths ("left unstaged: <task> N (reason=count, ...)");
+			// the detailed path list stays in the raw JSON above.
+			for _, line := range autonomous.RenderSkippedSnapshotLines(body) {
+				fmt.Fprintln(out, line)
 			}
 			return nil
 		},

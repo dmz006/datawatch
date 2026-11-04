@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -156,5 +157,44 @@ func TestRecordTaskSkippedSnapshotPaths_PostSpawnNoLock(t *testing.T) {
 	if err := m.RecordTaskSkippedSnapshotPaths(prd.ID, "missing",
 		[]SnapshotSkippedPath{{Path: "x", Reason: "size"}}); err == nil {
 		t.Fatal("expected error for unknown task")
+	}
+}
+
+// TestTaskSkippedSnapshotPaths_JSONShape — the raw JSON surface (REST read,
+// PWA, MCP) carries the field: a Task with skips marshals to the
+// skipped_snapshot_paths array of {path, reason}, and omits it entirely
+// when nothing was skipped (omitempty).
+func TestTaskSkippedSnapshotPaths_JSONShape(t *testing.T) {
+	tk := Task{
+		ID: "t1",
+		SkippedSnapshotPaths: []SnapshotSkippedPath{
+			{Path: "a.log", Reason: "ignored"},
+			{Path: "b.tmp", Reason: "size"},
+		},
+	}
+	b, err := json.Marshal(tk)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	skipped, ok := m["skipped_snapshot_paths"].([]any)
+	if !ok || len(skipped) != 2 {
+		t.Fatalf("skipped_snapshot_paths = %v, want 2 entries: %s", m["skipped_snapshot_paths"], b)
+	}
+	first, _ := skipped[0].(map[string]any)
+	if first["path"] != "a.log" || first["reason"] != "ignored" {
+		t.Fatalf("first entry = %v, want {path:a.log reason:ignored}", first)
+	}
+
+	empty := Task{ID: "t2"}
+	eb, err := json.Marshal(empty)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(eb), "skipped_snapshot_paths") {
+		t.Fatalf("empty task must omit the field: %s", eb)
 	}
 }
