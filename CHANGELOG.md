@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.85.2 — Merge pipeline card empty state for a missing project
+
+The Merge pipeline card no longer shows "project is required" as an error.
+
+- **Structured refusal.** When no project is chosen and no merge base repository is set, the daemon's pipeline read answers 400 with a structured body (`code: project_required`) that names the project parameter and the `worktree_base_repo` setting. The MCP tool and the CLI surface the same refusal in plain words.
+- **Card empty state.** The Merge pipeline card on the Automation Overview treats that refusal as an empty state, with a clear message, a project choice and a link to the `worktree_base_repo` help, instead of the "Could not load the merge pipeline" banner. Any other failure still shows the banner. Five locales.
+- A browser story (TS-847) checks the empty state, and the release smoke check gains a section for it. How-to and docs updated.
+
 ## v9.85.1 — Paged GitHub listings read correctly in the image cleanup steps
 
 The image-refresh and ghcr cleanup steps now read paged GitHub package listings correctly.

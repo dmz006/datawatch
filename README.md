@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.85.1 (2026-11-04).** The image-refresh cleanup, ghcr cleanup and dismissed-alerts watch fold paged gh api listings correctly and report real listing errors. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.85.2 (2026-11-04).** The Merge pipeline card shows a clear empty state with a project choice instead of a 'project is required' error. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
