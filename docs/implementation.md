@@ -2104,6 +2104,32 @@ Operator view: `docs/howto/automaton-parallel-tasks.md`. Terms: "Read-only tasks
 - **Surfaces:** `PUT /api/config` with the dotted keys, the MCP `autonomous_config_set` arguments `parallel_*`, the CLI and chat `configure`, the web app Settings rows (each with a definitions help link in `DOCS_LINKS_BY_KEY`), the task merge badge and the Parallel execution card.
 - **Tests:** `internal/config/parallel_policy_test.go`, `internal/autonomous/parallel_config_test.go`, `parallel_metrics_test.go`, `internal/mcp/parallel_config_test.go`, `internal/router/parallel_config_surface_test.go`, `cmd/datawatch/parallel_config_cli_test.go`, and the web tests `app-parallel-task-merge.test.js` and `app-parallel-metrics.test.js`.
 
+## Read-only tasks and report paths
+
+Operator-facing description of what a read-only task may do and where its
+results land. Governed by the existing setting
+`autonomous.parallel.read_only_tasks` (default `true`; see the parallel
+section above) — no new config key is introduced here.
+
+- **A read-only task changes no files.** A task flagged `read_only` runs
+  without the per-tree write lock and with no commit step. When it finishes,
+  the tree-dirty check fails the task if the tree is changed at all.
+- **The one allowed write: a report file.** The task may declare a
+  `report_path`, which must be repo-relative, clean, and under
+  `.datawatch/reports/`; it may write that single file and nothing else.
+  The tree-dirty check excludes exactly that one path and still fails the
+  task on any other change. An empty `report_path` is valid: the task writes
+  nothing and the tree must be untouched. A `report_path` on a task that is
+  not flagged `read_only` is rejected.
+- **Where `report_path` is set:** the planner (task decomposition), the
+  edit-task surface and the add-task surface all accept `report_path`. A
+  rejected edit or add mutates nothing.
+- **Gate reports write counts only.** A gate that reports to a path writes
+  exactly three lines, `passed=<n>`, `failed=<n>`, `skipped=<n>`, in that
+  order, each followed by a newline, and no other text — never the
+  gate's output text. Counts may not be negative. The parent directory is
+  created as needed (mode 0755) and the report file is written mode 0644.
+
 ## Search-before-create (autonomous.automation.create_search_mode, autonomous.automation.create_search_threshold)
 
 - **Config keys:** `autonomous.automation.create_search_mode` (string: `off`, `shadow` default, `on`) and `autonomous.automation.create_search_threshold` (number in the open-closed interval (0, 1]; unset reads `DefaultAutomationCreateSearchThreshold` (0.5)) on `config.AutonomousAutomationConfig` in `internal/config/config.go`, with the exported validators `ValidateCreateSearchMode` / `ValidateCreateSearchThreshold` and the effective getters `EffectiveCreateSearchMode` / `EffectiveCreateSearchThreshold`. A mode outside `off`/`shadow`/`on` is refused (400 on the write paths, an error on config load in `validateLoaded`); a threshold that is zero, negative, above 1, non-finite or non-numeric is refused the same way.
