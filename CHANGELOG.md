@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.83.0 — Skipped snapshot paths recorded on every finish path
+
+A task's list of files the snapshot left out is now recorded on every finish path and shown everywhere.
+
+- **Skip record on every path.** The `skipped_snapshot_paths` record (files the snapshot deliberately did not stage, with a reason and a count) is now written by the normal completion commit, the stall-recovery commit and the attempt snapshot path, not only one of them.
+- **Shown on every surface.** The Automaton detail view carries it, the CLI and the comm channel print a counts-first "left unstaged" line, and the web task row shows a skipped-snapshot chip with the reasons. Five locales.
+- Operator docs now state which paths write the record.
+
 ## v9.82.1 — Generated-artefact template path built from the fixed kind list
 
 A kind that arrives in a request can no longer shape the generated-artefact template path.
