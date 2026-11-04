@@ -1753,6 +1753,22 @@ The uncommitted-work check stops a task from being marked complete while its wor
 
 **Tag registry keeper** — the one daemon that holds the shared tag registry for a federation. The keeper is named by `autonomous.tags.registry_keeper`: on a peer it is the name of the keeper peer, and on the keeper it is the keeper's own name. A peer keeps a cached copy and forwards its tag edits to the keeper; when the keeper is unreachable the peer shows its last copy as stale. See [howto/automata-tag-registry.md](howto/automata-tag-registry.md).
 
+### Project automation policy
+
+**Project automation policy** — the middle tier of the three policy tiers the daemon resolves every Automaton setting through: **Automaton** (its own override) over **project** over **daemon** defaults. The project tier is the per-project entry stored under `projects.<name>.policy` in `datawatch.yaml`, and it is the only tier that travels with the repository. It is edited in the PWA Settings → Automata → **Project policy** panel, through `project_upsert` with the `policy` argument on MCP, or with `POST /api/projects` on REST. A project field that is absent is *unset*: it inherits whatever is below it, and it is a project decision, not a copy of the daemon default. See [howto/project-automation-policy.md](howto/project-automation-policy.md) for the walkthrough.
+
+**Precedence badge** — the chip next to each setting in the Project policy panel that names the tier the *effective* value came from: **Automaton**, **Project** or **Daemon**. The panel asks for the project's name and, optionally, an Automaton's id; with both, it shows the resolution with all three tiers in play from `GET /api/projects/{name}/policy/effective?automaton=<id>`, the `project_policy_effective` MCP tool, or `datawatch projects policy <name> [--automaton <id>]` on the CLI. Reading the effective value is always safe; only a write to the project tier or the Automaton tier changes anything.
+
+**Policy field** — one row of the Project policy panel, one key of the project policy object. The panel groups the fields the same way this section does. All fields are optional: omit one and it falls through to the tier below.
+
+- **Plan checks** — `plan_coverage_check` (`off`, `warn` or `block`; what the plan requirement-coverage gate does to a short plan), `plan_coverage_min_ratio` (the ratio a plan must reach; a number in `(0, 1]`), `plan_review_mode` (`off`, `warn` or `block`, the plan-quality review gate) and `scope_lint` (`off`, `warn` or `enforce`). These apply to every Automaton that plans inside this project before any Automaton's own settings are consulted.
+- **Retry & escalation** — `retry_policy` (the per-category retry budgets, a whole number of attempts from 0 up for each of `infra`, `content`, `scope` and `policy`; a category left out of the map keeps the tier below it for that category only), `retry_ceiling_total` (a cap on the retries the daemon spends across all categories, an integer ≥ 0), `auto_fix_retries` (how many times an auto-fix run may be retried, an integer ≥ 0), `infra_retry_escalate_after` (after how many infrastructure retries a task may escalate instead of retrying, an integer ≥ 0 where 0 reads as *never, keep retrying*) and `failure_escalation` (the escalation level the daemon reaches when a task's retries are spent: the tier, its backend/model/effort, and how many attempts each step gets).
+- **Git defaults** — `default_auto_pr` (whether a task may open a pull request without asking per task), `parallel_read_only_tasks` (whether read-only tasks may run in parallel) and `parallel_worktree_per_task` (whether each parallel task gets its own worktree).
+- **Lane limits** — `max_concurrent_tasks` (the project's total in-flight task cap, an integer ≥ 1), `plan_tier_max_inflight` (per plan tier, how many Automata may be in flight at once) and `lane_fill_gpu_lanes` / `lane_fill_claude_lanes` (how many GPU and Claude lanes this project may hold from the pools, integers ≥ 0 where 0 reads as *no preference, use the daemon's own cap*).
+- **Other recent keys** — `uncommitted_work_policy` and `uncommitted_work_scope` (see [Uncommitted-work check](#uncommitted-work-check); set here they bind every Automaton that commits its own work inside this project), and `burn_guard_ask_on_change` (whether a burn-guard change for a task in this project is a confirmation question to the operator or a silent write).
+
+A value the panel cannot parse — a non-whole number, a word outside the field's vocabulary, an out-of-range ratio — is refused when saved with the reason in the panel; nothing half-written is kept. Clearing a field (the *inherit (clear)* action) deletes that key from the project tier, which is not the same as setting the daemon default: it puts the tier below back in play and the badge moves.
+
 ### Infrastructure retry
 
 **Infrastructure failure** — a task attempt that ended because the machinery around the task broke, not because the work was wrong. The task never got a fair attempt, so the daemon does not count it as a failed attempt. Only four classes count, and nothing else is ever treated this way:
@@ -2057,6 +2073,7 @@ Automata + orchestration:
 - [`howto/decompose-async.md`](howto/decompose-async.md) — async decompose: 202 + SSE story stream + Last-Event-ID resume (v8.2.0)
 - [`howto/autonomous-review-approve.md`](howto/autonomous-review-approve.md) — PRD lifecycle gate
 - [`howto/automata-orchestrator.md`](howto/automata-orchestrator.md) — multi-Automata graphs with guardrails
+- [`howto/project-automation-policy.md`](howto/project-automation-policy.md) — the project tier of policy: precedence, field-by-field reference, set & clear from the PWA panel
 - [`howto/pipeline-chaining.md`](howto/pipeline-chaining.md) — DAG pipelines with before/after gates
 
 Infrastructure:
