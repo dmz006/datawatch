@@ -181,11 +181,11 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 		if fellBack {
 			countOut, cerr := git.Run(ctx, baseRepo, "rev-list", "--count", base+".."+branch)
 			if cerr != nil {
-				p.err = fmt.Errorf("Automaton merge compare: rev-list: %v: %s", cerr, strings.TrimSpace(countOut))
+				p.err = fmt.Errorf("automaton merge compare: rev-list: %v: %s", cerr, strings.TrimSpace(countOut))
 			} else {
 				n, convErr := strconv.Atoi(strings.TrimSpace(countOut))
 				if convErr != nil {
-					p.err = fmt.Errorf("Automaton merge compare: rev-list count: %v: %s", convErr, strings.TrimSpace(countOut))
+					p.err = fmt.Errorf("automaton merge compare: rev-list count: %v: %s", convErr, strings.TrimSpace(countOut))
 				} else {
 					p.ahead = n
 				}

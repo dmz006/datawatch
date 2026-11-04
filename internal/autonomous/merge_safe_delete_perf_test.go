@@ -185,13 +185,6 @@ func (f *sdPerfFake) totalCalls() int {
 	return len(f.calls)
 }
 
-// callCount returns how many times the exact key was called.
-func (f *sdPerfFake) callCount(key string) int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.perKey[key]
-}
-
 // counts returns a snapshot of the budget counters.
 func (f *sdPerfFake) countsSnap() map[string]int {
 	f.mu.Lock()
