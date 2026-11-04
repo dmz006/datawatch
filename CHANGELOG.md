@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.85.1 — Paged GitHub listings read correctly in the image cleanup steps
+
+The image-refresh and ghcr cleanup steps now read paged GitHub package listings correctly.
+
+- `gh api --paginate` prints one JSON array per page, which `jq` cannot read as a single document. The image-refresh cleanup step, the ghcr-cleanup listing and the dismissed-alerts watch now fold the pages with `jq -s` and flatten them into one list before using it.
+- A listing endpoint that answers with an error object (not found, no permission) no longer passes as an empty list: it falls through to the next endpoint, and a failure on both endpoints is reported with its real error line instead of being hidden.
+- The workflow steps count what they checked, found, deleted and failed to list or delete, so a throwaway-image cleanup that did nothing is visible.
+- Tests run against a fake `gh` that rejects unknown flags the way the real binary does, with two recorded pages of package versions, and a unit test covers the dismissed-alerts paging. Both are part of `make test`.
+
 ## v9.85.0 — Fast, cached safe-to-delete report
 
 The safe-to-delete report is fast to repeat and honest about its age.
