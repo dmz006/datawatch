@@ -99,3 +99,16 @@ func TestPoolMove_NodeTakingBackendKeepsNodeLease(t *testing.T) {
 		t.Fatalf("lease = %+v, want node datawatch", ls)
 	}
 }
+
+// A node-less backend ignores even the node its live session reports.
+func TestPoolMove_AdoptIgnoresSessionReportedNodeForNodelessBackend(t *testing.T) {
+	m, led, prd, task := poolMoveRig(t, claudeKeys)
+	m.SetSessionNode(func(id string) string { return "datawatch" })
+	m.adoptCapacity(prd, task)
+	if got := nodeHeld(led, "node:datawatch"); got != 0 {
+		t.Fatalf("node:datawatch Held = %d, want 0", got)
+	}
+	if ls := led.LeaseOf(task.ID); ls == nil || ls.Node != "" {
+		t.Fatalf("lease = %+v, want no node", ls)
+	}
+}

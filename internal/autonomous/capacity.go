@@ -718,21 +718,14 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	choices := nodeChoicesFor(choicesFn, backend, model)
-	sessionReports := ""
-	if sessionNode != nil && t.SessionID != "" {
-		sessionReports = sessionNode(t.SessionID)
-	}
 	if node == "" && len(choices) == 0 && (entryNodes == nil || entryNodes(backend, model) == 0) {
 		// The backend takes no local compute node (claude-code, say). A node
 		// recorded while the task ran on another backend is stale: ignore it,
-		// drop it from the task so it is not re-used. A node the live session
-		// itself reports is direct evidence and still wins (below).
+		// drop it from the task so it is not re-used. The node the live session
+		// reports is ignored too: a backend that takes no node holds none.
 		if t.ComputeNode != "" {
 			t.ComputeNode = ""
 			m.store.MutateTask(t.ID, func(st *Task) { st.ComputeNode = "" })
-		}
-		if sessionReports != "" {
-			goto adopt
 		}
 		base := poolsWithoutNodes(pools)
 		if ls := led.LeaseOf(t.ID); ls != nil && ls.Node != "" {
@@ -743,7 +736,6 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		}, t.SessionID, VerifyHolder(t.ID))
 		return
 	}
-adopt:
 	node = adoptedNode(t, sessionNode, node, entryNodes, backend, model)
 	unknown := node == "" && nodeExpected(entryNodes, len(choices), backend, model)
 	if unknown {
