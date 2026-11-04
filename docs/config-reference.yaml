@@ -3356,6 +3356,65 @@ onboarding_report:
   # channels, memory, merge_pipeline. Default empty. An unknown id is ignored.
   disabled_checks: []
 
+# ── Projects: per-project automation policy ──
+# The middle tier of the three policy tiers the daemon resolves every Automaton
+# setting through: Automaton over project over daemon defaults. A project with
+# no policy at all reads exactly like it did before policies existed, because
+# every key below is optional and inherits the daemon's own value when absent.
+# A key that is set wins for every Automaton in that project unless the Automaton
+# overrides the same key. Read the effective value with
+# `datawatch projects policy show <name> --effective`, the project_policy_effective
+# MCP tool, or GET /api/projects/{name}/policy/effective (with ?automaton=<id>
+# to include the top tier). See docs/howto/project-automation-policy.md.
+projects:
+  # One entry per project alias. `dir` is the project directory; `policy` is
+  # optional and the block below shows every key the daemon validates.
+  core-api:
+    dir: ~/projects/core-api
+    policy:
+      # ── Plan checks (apply before any Automaton's own settings) ──
+      # plan_coverage_check: what the coverage gate does to a short plan:
+      #   off: let every plan through (daemon default)
+      #   warn: leave the plan as-is, name the shortfall
+      #   block: refuse to accept the plan
+      plan_coverage_check: warn
+      # plan_coverage_min_ratio: coverage ratio a plan must reach; in (0, 1].
+      plan_coverage_min_ratio: 0.85
+      # plan_review_mode: plan-quality review gate: off | warn | block.
+      # plan_review_mode: warn
+      # scope_lint: task-scope lint: off | warn | enforce.
+      # scope_lint: enforce
+      # ── Retry & escalation ──
+      # retry_policy: per-category retry budgets, whole number of attempts >= 0
+      # for each of infra, content, scope, policy. A category left out keeps
+      # the daemon's number for that category only.
+      retry_policy:
+        infra: 2
+        # content: 1
+        # scope: 0
+        # policy: 0
+      # retry_ceiling_total: cap across all of a task's categories; >= 0.
+      # auto_fix_retries: retries an auto-fix run may get; 0 turns auto-fix off.
+      # infra_retry_escalate_after: after how many infra retries a task may escalate
+      # instead of retrying; 0 reads as never, keep retrying.
+      # failure_escalation: the escalation level reached when a task's retries are
+      # spent (tier, backend/model/effort, attempts per step).
+      # ── Git defaults ──
+      # default_auto_pr: whether a task may open a PR without asking per task.
+      # parallel_read_only_tasks: whether read-only tasks may run in parallel.
+      # parallel_worktree_per_task: whether each parallel task gets its own worktree.
+      # ── Lane limits ──
+      # max_concurrent_tasks: the project's in-flight task cap; >= 1.
+      max_concurrent_tasks: 4
+      # plan_tier_max_inflight: per plan tier, Automata in flight at once (map).
+      # lane_fill_gpu_lanes / lane_fill_claude_lanes: lanes the project may hold
+      # from the pools; 0 reads as no preference (daemon caps apply).
+      # ── Others ──
+      # uncommitted_work_policy: hold | ask | discard (hold = daemon default).
+      # uncommitted_work_scope: commit | worktree (worktree = default, stricter).
+      # burn_guard_ask_on_change: confirmation question (true) or silent write
+      # (false, daemon default) for burn-guard changes to this project's tasks.
+
 # ── Auto-Update ──
 # Automatic self-update configuration.
 update:

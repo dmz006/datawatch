@@ -680,6 +680,19 @@ The cost report is a token-first report of the daemon's recorded sessions: for a
 | **MCP** | `cost_report` (read-only); `config_set` with `key: cost_report.<key>` |
 | **Comm channel** | `cost report [group_by=<g>] [since=<t>] [until=<t>]`; `configure cost_report.<key>=<value>` |
 
+### Project automation policy
+
+The project automation policy is the per-project tier of the three policy tiers the daemon resolves every Automaton setting through: an Automaton's own settings over **the project** over the daemon's defaults. The block lives under `projects.<alias>.policy` in `~/.datawatch/config.yaml`, and it is optional per key — an absent key inherits the daemon's own value, so a project with no policy reads exactly as before, and nothing changes until you set a key. The keys cover the plan checks (`plan_coverage_check`, `plan_coverage_min_ratio`, `plan_review_mode`, `scope_lint`), retry & escalation (`retry_policy`, `retry_ceiling_total`, `auto_fix_retries`, `infra_retry_escalate_after`, `failure_escalation`), git defaults (`default_auto_pr`, `parallel_read_only_tasks`, `parallel_worktree_per_task`), lane limits (`max_concurrent_tasks`, `plan_tier_max_inflight`, `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`), and `uncommitted_work_policy` / `uncommitted_work_scope` and `burn_guard_ask_on_change`. Timeouts, cadences, backend and model selection and the worktree base stay daemon-wide until a per-project form is asked for. A value the daemon refuses is refused with the reason and lands nowhere, and a write never touches the daemon tier. The operator guide is [howto/project-automation-policy.md](howto/project-automation-policy.md).
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `projects.<alias>.policy.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch projects policy show <name> [--effective] [--automaton <id>]`; `datawatch projects policy set <name> <key> <value>`; `datawatch projects policy unset <name> <key>` |
+| **Web UI** | Settings → Automata → **Project policy**: one row per key with the effective value, a precedence badge (Automaton / Project / Daemon) and a set / *inherit (clear)* control |
+| **REST API** | `GET /api/projects` (stored block on each entry); `GET /api/projects/{name}/policy/effective?automaton=<id>` (every setting with value and source tier); `POST /api/projects` with the `policy` field (validated upsert) |
+| **MCP** | `project_upsert` with the `policy` argument; `project_policy_effective(name)` with the optional `automaton` argument |
+| **Comm channel** | `project policy <name> [automaton]` (read) |
+
 ### Verifier node limit
 
 Verifier runs take a lease on the same node pool as the worker they check, and a compute node that hosts a local engine gets its pool limit from its slot count (see "Compute-node queue" below), which is the node's `session_slots` when set, otherwise one slot per GPU when the observer reports GPU data and `autonomous.max_engines_per_node` (default 1) when it does not, capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). A node that hosts no local engine keeps its `max_concurrent_sessions` limit. A node with one GPU therefore runs one verifier at a time, and a verification can queue behind another task's lease.
