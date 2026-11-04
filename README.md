@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.75.1 (2026-11-03).** Choosing a federated peer in the web UI stays on that peer, re-selecting it does nothing, and every page shows which server it is reading. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.76.0 (2026-11-03).** The daemon can scan a branch for secrets before pushing it: shadow by default, enforce to refuse the push, with allow lists and an operator how-to. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

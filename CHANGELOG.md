@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.76.0 — Secret scan before daemon push
+
+The daemon can scan a branch for secrets before it pushes, and the push can be refused.
+
+- New `git.secret_scan` settings: `mode` (`off`, `shadow` default, `enforce`), `detectors` (private key, AWS access key, GitHub token, generic token, Slack token), and allow lists by path and by fingerprint.
+- Shadow mode records findings and lets the push go; enforce mode refuses a push with a finding that is not allow-listed. Findings name the detector, file and line and a fingerprint, never the secret.
+- On REST (`GET`/`PUT /api/config`), MCP (`secret_scan_config_get` and `secret_scan_config_set`), the generic config surfaces, the config file and the web settings, with five locales and an operator how-to.
+- A misspelt detector name or a malformed fingerprint is refused on write, so the gate cannot be weakened by a typo.
+- Follow-up Automaton files the remaining unit tests, audit log entries, stats counters and a live smoke check.
+
 ## v9.75.1 — Peer selection stays on the chosen peer
 
 Choosing a federated peer in the web UI now stays on that peer, and every page says which server it shows.
