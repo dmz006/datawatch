@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.84.0 — Completion review block recovery
+
+A blocked completion review no longer leaves an Automaton stuck.
+
+- **Fix task or hold.** A content block now creates a fix task from the findings and runs it, up to `autonomous.auto_fix_retries` (default 1, 0 turns it off). If the fix task cannot be created, or the retries are spent, the Automaton is held in `needs_review` with the reason or findings attached. A held Automaton accepts add-task and a re-run, so a corrective task can be added by hand.
+- **New `rules_review_outcome` field.** The attention list (`GET /api/autonomous/attention`, `autonomous_attention_list`, the CLI and chat `attention`) and the Automaton view show the action taken, the findings and the retries spent, with the findings and action in the web attention list and Automaton view.
+- On REST, MCP, the CLI, the comm channel, the config file and the web UI, with five locales and an operator how-to.
+
 ## v9.83.1 — Node leases follow pool moves and wait reasons stay current
 
 Two capacity fixes: a task that moves between pools no longer holds the node lease of its old pool, and the wait reason of a queued task is always current.
