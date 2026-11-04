@@ -1183,7 +1183,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if !ok {
 		return nil
 	}
-	applyParallelMetrics(prd)
+	// prd is the shared stored pointer; mutate under the store lock
+	// (same discipline as the memory-report write below).
+	m.store.WithLock(func() { applyParallelMetrics(prd) })
 	m.recordProgressMilestone(prd.ID)
 	// BL387 Phase 3 — fire auto-report asynchronously on completion.
 	m.mu.Lock()

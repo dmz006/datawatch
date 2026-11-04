@@ -37,56 +37,67 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 	if reason == "" {
 		reason = string(res.Kind)
 	}
+	id := prd.ID
 	if res.Pushed || res.NothingToPush {
 		now := time.Now()
-		prd.Git.PushState = PushStatePushed
-		prd.Git.PushedRef = res.Ref
-		prd.Git.PushedSHA = res.SHA
-		prd.Git.PushedAt = &now
-		prd.Git.PushWarning = ""
-		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-			At:   now,
-			Kind: "git_pushed",
-		}))
-		if len(res.SecretFindings) > 0 {
-			// Shadow-mode findings: the push went through, the PRD still
-			// records the redacted findings as a Decision row and the
-			// operator gets a "warn" alert — the same alert/audit
-			// mechanism the failure path uses, the same redacted fields
-			// (count, detector, file:line, fingerprint; never the secret).
-			summary := git.RedactedFindingsSummary(res.SecretFindings)
+		// prd is the shared stored pointer (Store.GetPRD); mutate under the
+		// store lock. SavePRD also takes Store.mu (non-reentrant), so it stays
+		// out of the closure.
+		var shadowSummary string
+		m.store.WithLock(func() {
+			prd.Git.PushState = PushStatePushed
+			prd.Git.PushedRef = res.Ref
+			prd.Git.PushedSHA = res.SHA
+			prd.Git.PushedAt = &now
+			prd.Git.PushWarning = ""
 			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 				At:   now,
-				Kind: "git_secret_scan_shadow",
-				Note: summary,
+				Kind: "git_pushed",
 			}))
+			if len(res.SecretFindings) > 0 {
+				// Shadow-mode findings: the push went through, the PRD still
+				// records the redacted findings as a Decision row (count,
+				// detector, file:line, fingerprint; never the secret).
+				shadowSummary = git.RedactedFindingsSummary(res.SecretFindings)
+				prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+					At:   now,
+					Kind: "git_secret_scan_shadow",
+					Note: shadowSummary,
+				}))
+			}
+		})
+		if len(res.SecretFindings) > 0 {
+			// The operator gets a "warn" alert, the same alert mechanism the
+			// failure path uses.
 			m.mu.Lock()
 			alertSink := m.alertSink
 			m.mu.Unlock()
 			if alertSink != nil {
-				alertSink("warn", fmt.Sprintf("Automaton %s: %d pre-push secret finding(s) (shadow mode)", prd.ID, len(res.SecretFindings)), summary)
+				alertSink("warn", fmt.Sprintf("Automaton %s: %d pre-push secret finding(s) (shadow mode)", prd.ID, len(res.SecretFindings)), shadowSummary)
 			}
-			log.Printf("autonomous: prd %s pushed with shadow-mode secret scan findings: %s", prd.ID, summary)
+			log.Printf("autonomous: prd %s pushed with shadow-mode secret scan findings: %s", prd.ID, shadowSummary)
 		}
 	} else {
 		now := time.Now()
-		prd.Git.PushState = PushStateNotPushed
-		prd.Git.PushWarning = "not pushed: " + reason
-		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-			At:   now,
-			Kind: "git_not_pushed",
-			Note: reason,
-		}))
+		m.store.WithLock(func() {
+			prd.Git.PushState = PushStateNotPushed
+			prd.Git.PushWarning = "not pushed: " + reason
+			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+				At:   now,
+				Kind: "git_not_pushed",
+				Note: reason,
+			}))
+		})
 		m.mu.Lock()
 		alertSink := m.alertSink
 		m.mu.Unlock()
 		if alertSink != nil {
-			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", prd.ID), reason)
+			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", id), reason)
 		}
-		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", prd.ID, policy, reason)
+		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", id, policy, reason)
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() { prd.UpdatedAt = time.Now() })
 	if err := m.store.SavePRD(prd); err != nil {
-		log.Printf("autonomous: prd %s saving push state: %v", prd.ID, err)
+		log.Printf("autonomous: prd %s saving push state: %v", id, err)
 	}
 }

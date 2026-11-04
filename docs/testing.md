@@ -2489,3 +2489,14 @@ All runs below are from the repository root, on this tree, with `TMUX` and `TMUX
 ### Live check — still owed
 
 A run on a running sandbox daemon (a real task moved between pools, and a restart adoption hold ending while the capacity card is open) has not been done and is not claimed above. The tracker row for this feature is `Validated=No` for the same reason.
+## Failure escalation retry prompt test flake (2026-11-04)
+
+### BUG: the executor wrote the stored PRD without the store lock while a test polled it
+
+| Field | Details |
+|-------|---------|
+| **Description** | `TestFailureEscalation_RetryPromptCarriesEarlierReports` failed in CI on a docs-only commit and passed on rerun, and the whole autonomous package failed with it. Cause found: the test polls the Automaton through `Store.SnapshotPRD`, which copies the stored PRD under the store lock, while the executor goroutine wrote to the same stored PRD without that lock in two places — `Manager.recordPushOutcome` (push state, decisions, updated time, written after each completed task) and `applyParallelMetrics` (completion metrics, written right after the Automaton is marked completed); the race detector reported it, and the test then failed. No ordering, clock or shared temp directory was involved (each test owns its own temp directories). Fix: both writes now run inside `Store.WithLock`; two regression tests in `internal/autonomous/store_lock_writes_test.go` cover them. |
+| **Steps** | From the repository root, with `TMUX` and `TMUX_TMPDIR` removed: run `.datawatch/verify/retry-prompt-flake-loop.sh 50` (reproduction loop: race detector, count 50, three modes — `GOMAXPROCS=1`, `GOMAXPROCS=1` with CPU load, and default `GOMAXPROCS` with CPU load) and the targeted test run `go test -race -count=1 -v -run 'TestFailureEscalation_RetryPromptCarriesEarlierReports$' ./internal/autonomous/`. Before the fix (observed while triaging, same loop, 50 runs per mode): failed runs 7, 6 and 9 and race reports 24, 22 and 36 across the three modes. |
+| **Expected** | The loop shows 0 failed runs and 0 race reports in all three modes, and the targeted test passes under the race detector. |
+| **Actual** | The targeted test passes under `-race`. After the fix, the loop was run three times: the final two runs show 0 failed runs and 0 race reports in all three modes, as did about 1500 further runs of the two flaky-mode tests and the `TestStoreLockedWrites` regression pair under the heaviest mode; the first run had one one-off anomaly (1 failed run, 4 race reports in the default-`GOMAXPROCS`-with-CPU-load mode) that did not reproduce in any later run. |
+| **Result** | PASS |
