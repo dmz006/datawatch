@@ -3358,6 +3358,7 @@ paths:
                         shared_terms: {type: array, items: {type: string}, description: "At most five shared terms"}
                         reason: {type: string, description: "One sentence of operator copy"}
                         read_hint: {type: string, description: "How to read the underlying item"}
+      "400": {description: "No spec, a lane preference outside the vocabulary, or a spec carrying the capped-view truncation marker (a copy from a capped view)"}
   /api/autonomous/prds/{id}:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
@@ -3397,6 +3398,20 @@ paths:
         finished one. The `decisions` array is the Automaton's decision log, each
         entry shaped as AutomatonDecisionLogEntry; its entries for operator
         decisions carry `question_id`, `answer_id` and `decision_state`.
+
+        Field caps: the Automaton `spec`, every story `description` and every
+        task `spec` are always returned whole at every detail level. The heavy
+        output fields — PRD `memory_report`, task `error`, `prior_attempt_hint`,
+        `start_failure_tail[]`, `attempt_refs[]`, verdict and verifier text — are
+        capped to `autonomous.detail_text_cap_bytes` (default 4096 bytes;
+        0 = default, negative = off). A cut field ends with the
+        `…[truncated: kept N of M bytes]` marker and is named in the record's
+        `truncated` array together with the URL of the full text. The uncapped
+        text is one request away: `GET /api/autonomous/prds/{id}?full=1` or
+        `GET /api/autonomous/prds/{id}/outputs` (and
+        `GET /api/autonomous/prds/{id}/tasks/{task_id}/outputs` for one task).
+        Text carrying that marker anywhere is refused by every spec and
+        description write below — read the full text and edit that.
       operationId: autonomousPRDGet
       tags: [Autonomous]
       parameters:
@@ -3427,6 +3442,32 @@ paths:
                   killed_session_ids: {type: array, items: {type: string}, description: "Session IDs a kill was attempted on; always an array, [] when none"}
                   kill_errors: {type: object, additionalProperties: {type: string}, description: "Present only when a kill failed; session ID -> error"}
                   memory_strategy: {type: string, description: "Hard delete only: keep | purge | archive"}
+    patch:
+      summary: Edit a PRD's title and/or spec
+      description: |
+        Edits the PRD-level `title` and/or `spec` on a PRD that is not running;
+        an omitted field is left unchanged. Accepted while the Automaton is
+        needs_review, revisions_asked or cancelled; a running Automaton is
+        rejected. A `spec` that carries the capped-view truncation marker
+        (`…[truncated: kept N of M bytes]`) — a copy pasted from a capped view,
+        even one edited after the cut — is refused with 400. Read the full text
+        (`?full=1` or `GET …/prds/{id}/outputs`) and edit that.
+      operationId: autonomousPRDEdit
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, description: "New title; omit to keep the current title"}
+                spec: {type: string, description: "New spec text; omit to keep the current spec"}
+                actor: {type: string, description: "Defaults to operator"}
+      responses:
+        "200": {description: Updated PRD}
+        "400": {description: "Neither title nor spec given, a spec carrying the truncation marker (a capped copy), or the Automaton is not editable"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/plan_coverage/acknowledge:
     post:
       summary: Acknowledge the PRD's failing plan-coverage report
@@ -3640,7 +3681,9 @@ paths:
         when `autonomous.parallel.read_only_tasks` is on. The same status gates as a
         spec edit apply to both fields: needs_review, revisions_asked and cancelled
         Automata, and a blocked Automaton's failed or blocked task. A completed task
-        is immutable.
+        is immutable. A `new_spec` that carries the capped-view truncation marker — a
+        copy pasted from a capped view, even one edited after the cut — is refused
+        before anything is stored.
       operationId: autonomousPRDEditTask
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -3653,12 +3696,12 @@ paths:
               required: [task_id]
               properties:
                 task_id: {type: string, description: Task to edit}
-                new_spec: {type: string, description: "New spec text; omit to keep the current spec"}
+                new_spec: {type: string, description: "New spec text; omit to keep the current spec. Refused if it carries the capped-view truncation marker (a copy from a capped view)"}
                 read_only: {type: boolean, description: "Mark (true) or clear (false) the read-only flag; omit to leave it unchanged"}
                 actor: {type: string, description: "Defaults to operator"}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: "Missing task_id, neither new_spec nor read_only given, truncated spec, locked Automaton or task, or unknown task"}
+        "400": {description: "Missing task_id, neither new_spec nor read_only given, a new_spec carrying the capped-view truncation marker (a capped copy), a locked Automaton or task, or unknown task"}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/add_task:
     post:
@@ -3686,7 +3729,65 @@ paths:
                 actor: {type: string, description: "Defaults to operator"}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: Missing story_id or title, unknown dependency, or locked Automaton}
+        "400": {description: "Missing story_id or title, unknown dependency, a title or spec carrying the capped-view truncation marker (a capped copy), or a locked Automaton"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/edit_story:
+    post:
+      summary: Edit a story's title and/or description
+      description: |
+        Rewrites a story's `new_title` and/or `new_description`. At least one is
+        required; an omitted field is left unchanged. Accepted while the
+        Automaton is needs_review, revisions_asked or cancelled. A
+        `new_description` that carries the capped-view truncation marker — a copy
+        pasted from a capped view, even one edited after the cut — is refused
+        with 400. Read the full text (`?full=1` or `GET …/prds/{id}/outputs`)
+        and edit that.
+      operationId: autonomousPRDEditStory
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [story_id]
+              properties:
+                story_id: {type: string, description: Story to edit}
+                new_title: {type: string, description: "New title; omit to keep the current title"}
+                new_description: {type: string, description: "New description; omit to keep the current description"}
+                actor: {type: string, description: "Defaults to operator"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "Missing story_id, neither new_title nor new_description given, a description carrying the truncation marker (a capped copy), or a locked Automaton"}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/add_story:
+    post:
+      summary: Add a story to a PRD
+      description: |
+        Appends a story (title plus optional description) without re-running
+        decompose. Allowed while the Automaton is needs_review, revisions_asked
+        or cancelled. A `description` that carries the capped-view truncation
+        marker — a copy pasted from a capped view, even one edited after the cut
+        — is refused with 400. Read the full text (`?full=1` or
+        `GET …/prds/{id}/outputs`) and edit that.
+      operationId: autonomousPRDAddStory
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title]
+              properties:
+                title: {type: string}
+                description: {type: string, description: "Optional description"}
+                actor: {type: string, description: "Defaults to operator"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: "Missing title, a description carrying the truncation marker (a capped copy), or a locked Automaton"}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/set_failure_escalation:
     post:
@@ -3760,11 +3861,67 @@ paths:
                 actor: {type: string, description: "Who made the decision; defaults to operator."}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: "The action or a change is not valid, or the body could not be read"}
+        "400": {description: "The action or a change is not valid, a spec carrying the capped-view truncation marker (a capped copy), or the body could not be read"}
         "403": {description: "Caller lacks the autonomous:write capability"}
         "404": {description: "No Automaton, or no task with that ID in it"}
         "409": {description: "The task is not held for review"}
         "501": {description: "The daemon does not offer failure escalation operations"}
+  /api/autonomous/templates:
+    post:
+      summary: Create a PRD template
+      description: |
+        Saves a reusable PRD definition (title plus spec) that operators can
+        instantiate later into a draft Automaton. A `spec` that carries the
+        capped-view truncation marker — a copy pasted from a capped view, even
+        one edited after the cut — is refused with 400. Read the full text
+        (`?full=1` or `GET …/prds/{id}/outputs`) and edit that.
+      operationId: autonomousTemplateCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, spec]
+              properties:
+                title: {type: string}
+                spec: {type: string}
+      responses:
+        "200": {description: Created template}
+        "400": {description: "Missing title or spec, or a spec carrying the truncation marker (a capped copy)"}
+  /api/autonomous/templates/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    get:
+      summary: Fetch one PRD template
+      operationId: autonomousTemplateGet
+      tags: [Autonomous]
+      responses:
+        "200": {description: Template}
+        "404": {description: Unknown template}
+    put:
+      summary: Update a PRD template's title and/or spec
+      description: |
+        Updates the template's `title` and/or `spec`; an omitted field is left
+        unchanged. A `spec` that carries the capped-view truncation marker — a
+        copy pasted from a capped view, even one edited after the cut — is
+        refused with 400. Read the full text (`?full=1` or
+        `GET …/prds/{id}/outputs`) and edit that.
+      operationId: autonomousTemplateUpdate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: {type: string, description: "New title; omit to keep the current title"}
+                spec: {type: string, description: "New spec; omit to keep the current spec"}
+      responses:
+        "200": {description: Updated template}
+        "400": {description: "Neither title nor spec given, or a spec carrying the truncation marker (a capped copy)"}
+        "404": {description: Unknown template}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings

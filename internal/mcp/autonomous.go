@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/pipeline"
 
@@ -836,7 +837,7 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Fetch one automaton. The detail argument picks how much comes back; the default is summary. "+
 			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
 			"tasks: everything in summary, plus each task's status, error and verification summary. "+
-			"full: everything, including specs and logs. "+
+			"full: everything, including specs and logs; the PRD spec, every story description and every task spec always come back whole and uncut at full — that is the level to read from before editing them, and an edit carrying a capped view's truncation marker is refused — while summary and tasks deliberately carry no spec text. "+
 			"Parallel execution metrics are reported at every detail level once the automaton has completed: total_tasks, read_only_tasks and speedup (the sum of the task durations divided by the wall-clock time); full also carries concurrent_tasks, wall_clock_seconds and serial_seconds. "+
 			"The automaton's git push state is reported at every detail level: summary and tasks carry push_state (pushed / not_pushed) and, for a refused push, the push reason (push_warning) at the top level; full carries the full git object with push_state plus the pushed ref, sha and time (pushed) or the push reason (not_pushed). "+
 			"full also exposes plan_coverage — the plan-requirement coverage gate report stored at decompose time: the settings the PRD was pinned to (mode + min_ratio), the report (covered/missing/weak requirement counts, each unmatched requirement with its verdict), any findings (structural findings), and the operator acknowledgment ack {by, at, note, fingerprint} when one exists. Absent when no report was recorded yet. "+
@@ -1078,15 +1079,23 @@ func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsd
 
 func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_edit_task",
-		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving (needs_review / revisions_asked) or after cancelling. BL421: also works on a blocked PRD for the failed/blocked task that halted it — edit, then autonomous_prd_reset_task to retry without re-decomposing. Completed tasks are immutable in every status."),
+		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving (needs_review / revisions_asked) or after cancelling. BL421: also works on a blocked PRD for the failed/blocked task that halted it — edit, then autonomous_prd_reset_task to retry without re-decomposing. Completed tasks are immutable in every status. Pass the full spec text: read the existing spec first with the full detail level (autonomous_prd_get, detail=full, which returns task specs whole and uncut); a new_spec carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
-		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only)")),
+		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only) — the full spec text: read the existing spec first from autonomous_prd_get with detail=full, which returns task specs whole and uncut; a spec carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)")),
 		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
+	// Text copied out of a capped view carries the truncation marker and
+	// is not the full spec: refuse it with the daemon's own wording before
+	// it is sent (the 400 says the same).
+	if newSpec := req.GetString("new_spec", ""); newSpec != "" {
+		if msg, refuse := autonomous.TruncationRefusal("new_spec", newSpec); refuse {
+			return toolErrorf("autonomous_prd_edit_task", "%s", msg), nil
+		}
+	}
 	editBody := map[string]any{
 		"task_id":  req.GetString("task_id", ""),
 		"new_spec": req.GetString("new_spec", ""),
@@ -1105,15 +1114,23 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousPRDEditStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_edit_story",
-		mcpsdk.WithDescription("Rewrite a story's title/description before approving."),
+		mcpsdk.WithDescription("Rewrite a story's title/description before approving. Pass the full description text: read the existing description first with the full detail level (autonomous_prd_get, detail=full, which returns story descriptions whole and uncut); a new_description carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to rewrite")),
 		mcpsdk.WithString("new_title", mcpsdk.Description("New title (leave empty to keep unchanged)")),
-		mcpsdk.WithString("new_description", mcpsdk.Description("New description (leave empty to keep unchanged)")),
+		mcpsdk.WithString("new_description", mcpsdk.Description("New description (leave empty to keep unchanged) — the full description text: read the existing description first from autonomous_prd_get with detail=full, which returns story descriptions whole and uncut; a description carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditStory(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
+	// Text copied out of a capped view carries the truncation marker and
+	// is not the full description: refuse it with the daemon's own wording
+	// before it is sent (the 400 says the same).
+	if newDescription := req.GetString("new_description", ""); newDescription != "" {
+		if msg, refuse := autonomous.TruncationRefusal("new_description", newDescription); refuse {
+			return toolErrorf("autonomous_prd_edit_story", "%s", msg), nil
+		}
+	}
 	body, _ := json.Marshal(map[string]string{
 		"story_id":        req.GetString("story_id", ""),
 		"new_title":       req.GetString("new_title", ""),

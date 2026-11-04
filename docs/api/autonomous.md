@@ -779,21 +779,29 @@ a poll that finds nothing new costs a header exchange only. `full=1` has no ETag
 
 ### Capped text in the by-id GET
 
-`GET /api/autonomous/prds/{id}` cuts each long text field (Automaton `spec` and
-`memory_report`, story `description`, task `spec`, `error`, `prior_attempt_hint`,
-`start_failure_tail[]`, `attempt_refs[]`, `verification.raw_judge`, `verification.summary`,
+`GET /api/autonomous/prds/{id}` cuts only the heavy output fields (PRD
+`memory_report`, task `error`, `prior_attempt_hint`, `start_failure_tail[]`,
+`attempt_refs[]`, `verification.raw_judge`, `verification.summary`,
 `verification.issues[]`, and verdict text) to `autonomous.detail_text_cap_bytes` (default
 4096). A cut field ends with `\n…[truncated: kept N of M bytes]`, and the record carries a
 `truncated` array of `{field, bytes, kept, ref}` where `ref` is the URL of the full text.
-The store is never cut. To get everything:
+The Automaton `spec`, every story `description` and every task `spec` are always
+returned whole, so a capped reply can be read and saved back verbatim. The store is
+never cut. To get everything:
 
 - `?full=1` returns the record uncapped, as before.
 - `GET /api/autonomous/prds/{id}/outputs` returns the heavy fields of every task, uncapped;
   `?task=<task_id>` or `GET /api/autonomous/prds/{id}/tasks/{task_id}/outputs` returns one
   task (404 for an unknown task).
 
-`detail=tasks` applies the same cap to the task `error`. `POST .../edit_task` refuses a
-`new_spec` that still ends with a truncation marker. The list (`GET /api/autonomous/prds`)
+`detail=tasks` applies the same cap to the heavy task output text. Every spec and
+description write refuses (400) text containing the truncation marker — the marker is
+refused anywhere in the text, so even a copy edited after the cut is still a copy — and
+the CLI (`autonomous prd create`/`edit`/`edit-task`/`edit-story`), the MCP
+`autonomous_prd_*` tools, and the comm verbs — `autonomous create`, `edit-task`,
+`edit-story`, `add-story`, `add-task`, `template-create`, `template-update`, and the
+review verb's `retry` path — refuse the same text with the same operator-facing message,
+before the request reaches the daemon. The list (`GET /api/autonomous/prds`)
 never reads these fields.
 
 ---

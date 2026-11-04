@@ -537,3 +537,24 @@ func TestNotifyEvents_ConfigureKeyReachesConfigWrite(t *testing.T) {
 		t.Errorf("expected success reply, got:\n%s", out)
 	}
 }
+
+// TestSx2_Comm_TruncationRefusal covers the comm channel's local share of the
+// spec-write truncation refusal: marked text is refused before it is sent,
+// with the daemon's own message; clean and empty text passes.
+func TestSx2_Comm_TruncationRefusal(t *testing.T) {
+	capped := "do the thing\n…[truncated: kept 40 of 900 bytes] and more"
+	msg, refuse := commTruncationRefusal("edit-task", "new_spec", capped)
+	if !refuse {
+		t.Fatal("expected a refusal for text carrying the truncation marker")
+	}
+	want := "autonomous edit-task failed: new_spec: contains a truncation marker — it was copied from a capped view; read the full text and edit that"
+	if msg != want {
+		t.Fatalf("refusal message = %q, want %q", msg, want)
+	}
+	if _, refuse := commTruncationRefusal("create", "spec", "a whole spec, no cap"); refuse {
+		t.Fatal("unmarked text must not be refused")
+	}
+	if msg, refuse := commTruncationRefusal("edit-task", "new_spec", ""); refuse {
+		t.Fatalf("empty optional value must never refuse: %q", msg)
+	}
+}

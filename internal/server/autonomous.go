@@ -500,6 +500,14 @@ func (s *Server) handleAutonomousStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSONOK(w, s.autonomousMgr.Status())
 }
 
+// truncationRefusal is the refusal every spec and description write handler
+// reports for text carrying the capped-view truncation marker; it delegates
+// to autonomous.TruncationRefusal, the single source shared with the CLI and
+// the MCP tools, so a refusal reads identically client-side and in the 400.
+func truncationRefusal(field, value string) (string, bool) {
+	return autonomous.TruncationRefusal(field, value)
+}
+
 // handleAutonomousPRDs — GET (list) / POST (create) on the collection,
 // plus GET/DELETE/POST {id}[/{action}] on subpaths.
 func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
@@ -563,6 +571,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			if strings.TrimSpace(req.Spec) == "" {
 				http.Error(w, "spec required", http.StatusBadRequest)
+				return
+			}
+			if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+				http.Error(w, msg, http.StatusBadRequest)
 				return
 			}
 			// v5.26.19 — at least one work-source must be specified.
@@ -895,6 +907,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
+			if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
 			updated, err := s.autonomousMgr.EditPRDFields(id, req.Title, req.Spec, req.Actor)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -1197,8 +1213,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "task_id and at least one of new_spec / read_only required", http.StatusBadRequest)
 			return
 		}
-		if autonomous.HasTruncationMarker(req.NewSpec) {
-			http.Error(w, "new_spec ends with a truncation marker: it was copied from a capped view; fetch the full text with ?full=1 or GET .../outputs and edit that", http.StatusBadRequest)
+		if msg, refuse := truncationRefusal("new_spec", req.NewSpec); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		if req.Actor == "" {
@@ -1237,6 +1253,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "story_id and at least one of new_title / new_description required", http.StatusBadRequest)
 			return
 		}
+		if msg, refuse := truncationRefusal("new_description", req.NewDescription); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
@@ -1271,6 +1291,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.Title == "" {
 			http.Error(w, "title required", http.StatusBadRequest)
+			return
+		}
+		if msg, refuse := truncationRefusal("description", req.Description); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		if req.Actor == "" {
@@ -1337,6 +1361,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.StoryID == "" || req.Title == "" {
 			http.Error(w, "story_id and title required", http.StatusBadRequest)
+			return
+		}
+		if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		if req.Actor == "" {
@@ -3168,6 +3196,14 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 				http.Error(w, "title and spec required", http.StatusBadRequest)
 				return
 			}
+			if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
+			if msg, refuse := truncationRefusal("description", req.Description); refuse {
+				http.Error(w, msg, http.StatusBadRequest)
+				return
+			}
 			tmpl, err := s.autonomousMgr.CreateTemplate(req.Title, req.Description, req.Spec, req.Type, req.Tags)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -3241,6 +3277,14 @@ func (s *Server) handleAutonomousTemplates(w http.ResponseWriter, r *http.Reques
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if msg, refuse := truncationRefusal("spec", req.Spec); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
+			return
+		}
+		if msg, refuse := truncationRefusal("description", req.Description); refuse {
+			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}
 		tmpl, err := s.autonomousMgr.UpdateTemplate(id, req.Title, req.Description, req.Spec, req.Type, req.Tags)
