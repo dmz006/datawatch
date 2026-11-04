@@ -7561,6 +7561,22 @@ paths:
       operationId: ollamaStats
       tags: [Singletons]
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
+  /api/git/secret-scan/stats:
+    get:
+      summary: Pre-push secret-scan counters plus the effective git.secret_scan mode
+      description: |
+        In-memory counters since daemon start (reset on restart). `mode` is
+        the effective `git.secret_scan.mode` (off, shadow or enforce — unset
+        defaults to shadow); `stats` carries `runs`, `findings`,
+        `shadow_reports`, `refusals`, `last_run_at` and `last_refusal_at`
+        (RFC 3339; `0001-01-01T00:00:00Z` when never recorded).
+        Read-only; needs the health capability when called by a federation peer.
+      operationId: gitSecretScanStats
+      tags: [Singletons]
+      responses:
+        "200": {description: OK}
+        "403": {description: Caller lacks the health capability}
+        "405": {description: Method not allowed (GET only)}
 
   /api/questions:
     get:

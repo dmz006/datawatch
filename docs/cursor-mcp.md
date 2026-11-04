@@ -219,3 +219,4 @@ This enables fully autonomous AI workflows that delegate coding tasks to
 datawatch-managed AI sessions on your development machines.
 
 - `secret_scan_config_get` / `secret_scan_config_set` — read and change the push-time secret scan (`git.secret_scan`); the setter validates the mode, detector names and fingerprints.
+- `secret_scan_stats` — read the daemon's pre-push secret-scan counters (`runs`, `findings`, `shadow_reports`, `refusals`, `last_run_at`, `last_refusal_at`) plus the effective `git.secret_scan` mode; proxies `GET /api/git/secret-scan/stats`. Counters are in-memory since daemon start and reset on restart.

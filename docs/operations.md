@@ -1421,12 +1421,17 @@ the daemon has never scanned.
 
 | Surface | How |
 |---------|-----|
+| **REST (dedicated)** | `GET /api/git/secret-scan/stats` — `{mode, stats: {runs, findings, shadow_reports, refusals, last_run_at, last_refusal_at}}`; `mode` is the effective `git.secret_scan.mode`, and the counters are in-memory since daemon start (reset on restart). Read-only; needs the health read capability from a federation peer |
 | **REST** | `GET /api/stats` — `secret_scan` block with the fields above (absent when the daemon never scanned) |
-| **MCP** | the `get_stats` tool, which proxies `GET /api/stats` |
+| **MCP** | `secret_scan_stats` for the counters (mirrors the dedicated endpoint, no parameters); `secret_scan_config_get` / `secret_scan_config_set` for the config; the `get_stats` tool, which proxies `GET /api/stats` |
 | **Web UI** | N/A — there is no dedicated card; the Monitor tab does not render this block (a Prometheus counter and a PWA card are intentionally not provided in this change) |
 | **Comm channel** | N/A — the `stats` command reports its fixed CPU/memory/disk/session summary only and does not include this block |
 
 ```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/git/secret-scan/stats
+# {"mode":"shadow","stats":{"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+#  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}}
+
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/stats | \
   jq '.secret_scan'
 # {"runs":4,"findings":1,"shadow_reports":1,"refusals":0,

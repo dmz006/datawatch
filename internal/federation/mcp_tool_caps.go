@@ -508,6 +508,7 @@ var MCPToolCap = map[string]string{
 	"secrets_vault_status":        CapSecretsList,
 	"secret_scan_config_get":      CapConfigRead,
 	"secret_scan_config_set":      CapConfigWrite,
+	"secret_scan_stats":           CapHealthRead,
 	"send_input":                  CapSessionsInput,
 	"send_saved_command":          CapSessionsInput,
 	"server_add":                  CapFederationWrite,

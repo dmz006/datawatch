@@ -2204,3 +2204,15 @@ datawatch mcp --sse
 ```
 
 - **`secret_scan_config_get`** / **`secret_scan_config_set`** — read and change the push-time secret scan (`git.secret_scan`: `mode` off, shadow or enforce; `detectors`; `allow_list_paths`; `allow_list_fingerprints`). The setter refuses an unknown mode, an unknown detector name or a malformed fingerprint, and honours `allow_self_config`. See [secret scan push gate](howto/secret-scan-push-gate.md).
+- **`secret_scan_stats`** — read the daemon's pre-push secret-scan counters with the effective `git.secret_scan` mode (off, shadow or enforce — unset defaults to shadow). Read-only: it proxies `GET /api/git/secret-scan/stats`, so it changes nothing and runs no scan, push or judge. The counters are in-memory since daemon start and reset on daemon restart.
+
+  **Parameters**: none.
+
+  **Returns** the REST body as-is — `mode`, plus `stats` with `runs` (scans that executed), `findings`, `shadow_reports` (shadow-mode findings, the push proceeded) and `refusals` (enforce-mode refusals), and `last_run_at` / `last_refusal_at` (RFC 3339, the zero time `0001-01-01T00:00:00Z` when never recorded). Needs the health read capability when called by a federation peer.
+
+  ```
+  secret_scan_stats()
+  # {"mode":"shadow","stats":{"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+  #  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}}
+  ```
+

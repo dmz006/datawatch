@@ -512,6 +512,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// Pre-push secret scan (git.secret_scan) — MCP surface parity (v9.0.0).
 	mcpSrv.AddTool(s.toolSecretScanConfigGet(), tracked(s.handleSecretScanConfigGet))
 	mcpSrv.AddTool(s.toolSecretScanConfigSet(), tracked(s.handleSecretScanConfigSet))
+	mcpSrv.AddTool(s.toolSecretScanStats(), tracked(s.handleSecretScanStats))
 
 	// v5.27.10 (BL216) — channel bridge introspection.
 	mcpSrv.AddTool(s.toolChannelInfo(), tracked(s.handleChannelInfo))
