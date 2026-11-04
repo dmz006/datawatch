@@ -286,7 +286,7 @@ const (
 
 	// v7.0.0 S1 — ComputeNode registry.
 	//   "compute"                              → list nodes
-	//   "compute node {list,get,add,update,delete,health,detail} ..."
+	//   "compute node {list,get,add,update,delete,health,detail,drain,undrain} ..."
 	CmdCompute CommandType = "compute"
 
 	// v7.0.0 S2 — LLM-inference registry.

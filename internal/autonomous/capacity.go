@@ -27,6 +27,17 @@ type CapacityChoicesFn func(backend, model string) []capacity.NodeChoice
 
 var errCancelledWhileWaiting = errors.New("task cancelled while waiting for capacity")
 
+// consumerSessionSpawn names this consumer on every capacity request the
+// autonomous manager makes for task placement: workers, planners, adopt and
+// re-admission. It is the "session_spawn" name the compute nodes understand
+// (see internal/compute/node.go): every placement here lands as a session
+// Automaton itself spawns, and that is the consumer the node's drain and
+// permission rules are written against. An empty consumer on the ledger means
+// "no consumer check", so naming the consumer here turns the node's RBAC denials
+// into a refusal reason in the wait reason instead of silently granting a
+// slot.
+const consumerSessionSpawn = "session_spawn"
+
 // errDecomposeCancelled is returned by decomposeAdmitted when the operator
 // cancels (or rejects) the PRD while its planner is still queued on
 // capacity. The two decompose retry loops (Decompose, decomposeStreamingCore)
@@ -371,7 +382,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 	var waitStart time.Time
 	var lastCause WaitCause
 	req := capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, ExcludeNodes: exclude, PreferNode: prefer, Model: model, Role: role, Consumer: consumerSessionSpawn,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
 	// requested is the pool(s) the task asked for; a fall-through swaps pools
@@ -533,7 +544,7 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	}
 	holder := "plan:" + prd.ID
 	lreq := capacity.Request{
-		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner,
+		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, NodeChoices: choices, Model: model, Role: capacity.RolePlanner, Consumer: consumerSessionSpawn,
 	}
 	lreq.Refresh = m.placementRefresh(lreq, backend, model, decomposePools)
 	err := led.Acquire(context.Background(), lreq, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
@@ -666,7 +677,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		}
 	}
 	led.Adopt(capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: poolsWithoutNodes(pools), Node: node, NodeChoices: choices, Model: model, NodeUnknown: unknown, Consumer: consumerSessionSpawn,
 	}, t.SessionID, VerifyHolder(t.ID))
 }
 

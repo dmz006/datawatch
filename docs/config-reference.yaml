@@ -3202,6 +3202,9 @@ orchestrator:
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
 
 # ── Compute pin keeper ──
+# Node drain state (drained, drain_until, drain_reason) is runtime state kept in
+# nodes.json, not in this file; set it with `datawatch compute node drain` and
+# `undrain`, the REST routes, the MCP tools or the Compute page.
 # Per-node model pins live on each compute node (compute_nodes[].node_pinned_model
 # and allow_model_swap; set with `datawatch compute node add|update`). The
 # keeper below is the one global setting. Runbook: docs/operations.md →

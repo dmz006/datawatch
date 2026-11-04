@@ -70,6 +70,7 @@ More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/au
 - Add any computer, GPU machine or cluster as a place to run models
 - Name a model and list backups for when a machine is busy
 - Browse models that fit your hardware
+- Drain a machine for maintenance so it takes no new work while running work finishes (`datawatch compute node drain` and `undrain`)
 
 More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md)
 

@@ -163,6 +163,42 @@ func (r *Registry) Delete(name string) error {
 	return r.persistLocked()
 }
 
+// SetDrain sets or clears the drain state of the named Node under the
+// registry lock and persists through the same save path the other node
+// mutators use. now is a parameter so tests can use fixed times:
+//
+//   - drained=true marks the node drained. If until is non-zero it
+//     bounds the drain (expired drains read as not active but the stored
+//     fields are kept). A non-zero until that is not after now is
+//     rejected with a clear error, so the caller gets a definite answer
+//     for a past end time.
+//   - drained=false (undrain) clears Drained, DrainUntil and DrainReason.
+//
+// InMaintenance and AllowsConsumer behaviour is unchanged by draining.
+func (r *Registry) SetDrain(name string, drained bool, until time.Time, now time.Time, reason string) error {
+	if drained && !until.IsZero() && !until.After(now) {
+		return fmt.Errorf("compute node %q: drain_until %s must be after now %s", name,
+			until.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n, ok := r.nodes[name]
+	if !ok {
+		return ErrNotFound
+	}
+	if drained {
+		n.Drained = true
+		n.DrainUntil = until
+		n.DrainReason = reason
+	} else {
+		n.Drained = false
+		n.DrainUntil = time.Time{}
+		n.DrainReason = ""
+	}
+	n.UpdatedAt = now
+	return r.persistLocked()
+}
+
 // EnsureFromStatsPeer is the auto-create path: when a datawatch-stats
 // peer push arrives and no matching Node exists, create one with
 // sensible defaults (kind=remote, max_concurrent_models=1, etc.).

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/capacity"
 )
 
 // WaitCause names why a task is waiting.
@@ -29,6 +31,11 @@ const (
 	// WaitCauseRateCeiling is a wait on a pool's rolling-window rate ceiling
 	// (requests or tokens per window).
 	WaitCauseRateCeiling WaitCause = "rate_ceiling"
+	// WaitCauseNodeDrainedOrDenied is the multi-node wait in which the node
+	// gate refused every candidate — each drained, in maintenance, or the
+	// consumer denied — rather than merely full. It is recognised by the
+	// ledger's AllCandidatesGatePrefix and the text is shown unchanged.
+	WaitCauseNodeDrainedOrDenied WaitCause = "node_drained_or_denied"
 )
 
 const (
@@ -70,6 +77,8 @@ func ClassifyWaitReason(reason string) WaitCause {
 		return WaitCauseBudget
 	case strings.HasPrefix(r, globalCooldownPrefix):
 		return WaitCauseGlobalCooldown
+	case strings.Contains(r, capacity.AllCandidatesGatePrefix):
+		return WaitCauseNodeDrainedOrDenied
 	case strings.HasPrefix(r, nodeBusyPrefix):
 		return WaitCauseNodeBusy
 	case strings.HasPrefix(r, backoffPrefix) && strings.Contains(r, backoffInfix):

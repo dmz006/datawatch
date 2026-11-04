@@ -4300,6 +4300,31 @@ The `GET /api/capacity` response lists each `node:<name>` pool with its
 is bounded by `autonomous.capacity_wait_timeout_seconds`, and it needs
 capacity admission on (`autonomous.capacity_enabled`, on by default).
 
+### Draining a node for maintenance
+
+Before touching a node — a kernel or driver update, an Ollama upgrade, a
+reboot — drain it, so that while the work already running there finishes, no
+new work lands on the node:
+
+```sh
+datawatch compute node drain gpu-1 --until 2026-11-04T06:00:00Z --reason "Ollama upgrade"
+# maintenance…
+datawatch compute node undrain gpu-1
+```
+
+The same operation is on REST (`POST` / `DELETE /api/compute/nodes/gpu-1/drain`),
+MCP (`compute_node_drain` / `compute_node_undrain`), the comm channel
+(`compute node drain gpu-1 until=… reason=…`) and the **Compute** page of the
+PWA. While a node is drained it takes no new work — the placement gate skips
+drained, consumer-denied and maintenance nodes and the wait reason says so
+(`drained`) — while its running work completes; the `node:gpu-1` pool in
+`GET /api/capacity` reports `drained` alongside the tasks still holding it.
+A drain given an end time ends on its own when it passes; an open-ended drain
+stays until an explicit undrain. The state lives in the node registry
+(`~/.datawatch/compute/nodes.json`), not in `config.yaml`. The full how-to,
+with every surface, is [howto/compute-nodes.md → Draining a node for
+maintenance](howto/compute-nodes.md#draining-a-node-for-maintenance).
+
 ### Node placement and restart ordering
 
 Three rules keep a compute node from running more sessions than its limit and
