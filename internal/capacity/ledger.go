@@ -913,12 +913,7 @@ func (l *Ledger) dispatchLocked() {
 	}
 	now := l.opt.Clock.Now()
 	for _, w := range l.waiters {
-		if w.req.Refresh != nil {
-			cur := w.req.Refresh()
-			w.req.Pools, w.req.Node = cur.Pools, cur.Node
-			w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
-		}
-		w.req = w.req.withoutStaleNode()
+		l.refreshWaiterLocked(w)
 	}
 	for _, w := range l.orderLocked(now) {
 		bound, why := l.resolveLocked(w.req)
@@ -928,6 +923,17 @@ func (l *Ledger) dispatchLocked() {
 		}
 		l.grantLocked(w, bound, now)
 	}
+}
+
+// refreshWaiterLocked applies the waiter's Request.Refresh and drops a stale
+// Node, the first half of a dispatch pass.
+func (l *Ledger) refreshWaiterLocked(w *waiter) {
+	if w.req.Refresh != nil {
+		cur := w.req.Refresh()
+		w.req.Pools, w.req.Node = cur.Pools, cur.Node
+		w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
+	}
+	w.req = w.req.withoutStaleNode()
 }
 
 // Replan re-runs every waiter's Request.Refresh and dispatches at once. The
@@ -999,6 +1005,7 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 		}
 		deadline = l.opt.Clock.After(remaining)
 	}
+	reported := reason
 	if onWait != nil {
 		onWait(reason)
 	}
@@ -1024,7 +1031,6 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 				return context.Canceled
 			}
 			l.mu.Lock()
-			prev := w.reason
 			l.dispatchLocked()
 			cur := w.reason
 			tick = l.opt.Clock.After(l.pollWaitLocked(w))
@@ -1034,8 +1040,14 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 				return nil
 			default:
 			}
-			if cur != prev && onWait != nil {
-				onWait(cur)
+			// Compare with the last reason REPORTED, not the one the ledger
+			// held before this pass: Snapshot may have refreshed it between
+			// ticks.
+			if cur != reported {
+				reported = cur
+				if onWait != nil {
+					onWait(cur)
+				}
 			}
 		}
 	}
@@ -1365,6 +1377,11 @@ func (l *Ledger) Snapshot() Status {
 		}
 	}
 	for _, w := range l.waiters {
+		// Recompute the reason as a dispatch pass would (refresh, then
+		// resolve) without granting, reordering or recording rate use, so a
+		// read between passes never reports a stale reason.
+		l.refreshWaiterLocked(w)
+		_, w.reason = l.resolveLocked(w.req)
 		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Priority: w.req.Priority, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
 		for _, p := range w.req.allPools() {
 			names[p] = true
