@@ -14592,6 +14592,21 @@ function renderTask(prd, story, task, editable) {
          ${taskTouched.map(f => _fileChip(f)).join('')}
        </div>`
     : '';
+  // Snapshot skips — paths the worker left unstaged (per-skip reason),
+  // recorded by the executor from the post-task snapshot's skip list.
+  // Rendered as path + reason chips, not clickable file chips: the files
+  // were intentionally left untouched, so there is no provenance to view
+  // beyond the reason they were skipped.
+  const _skippedSnap = (task.skipped_snapshot_paths || []).filter(p => p && typeof p === 'object' && p.path);
+  const filesS = _skippedSnap.length
+    ? `<div class="prd-task-skipped-snapshot">
+         <span class="prd-task-skipped-snapshot-label">${escHtml(t('prd_skipped_snapshot_label')||'Left unstaged:')}</span>
+         ${_skippedSnap.map(p => {
+           const reasonHtml = p.reason ? `<span class="prd-task-skipped-reason">(${escHtml(p.reason)})</span>` : '';
+           return `<span class="prd-task-skipped-chip" title="${escHtml(p.path + (p.reason ? ' \u2014 ' + p.reason : ''))}">${escHtml(p.path)}${reasonHtml}</span>`;
+         }).join(' ')}
+       </div>`
+    : '';
   const filesG = _renderFilesGeneratedRow(task.files_generated, task.verification_script, _projDir, 'prd-task-generated', 'prd-task-generated-label');
   // v8.23.0 — error + verification details in expanded view.
   const errRow = task.error
@@ -14623,6 +14638,7 @@ function renderTask(prd, story, task, editable) {
     ${window.uncommittedWorkTaskHtml(task)}
     ${filesP}
     ${filesT}
+    ${filesS}
     ${filesG}
   </div>`;
 
