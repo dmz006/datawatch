@@ -786,6 +786,29 @@ When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold
 
 A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; the refusal names the key and the valid values. A bad value written by hand into `config.yaml` is not checked on load: a try limit below 1 reads as 3, an unknown `exhausted_action` reads as `hold`, a negative delay waits no time and an unknown class is never retried. Changes made through the write surfaces apply at once, with no restart.
 
+### Completion review block recovery
+
+When an Automaton's work is done, the completion review judges it against the operator's rules before it is reported finished. A block whose problem is with the work itself is content: `autonomous.auto_fix_retries` (default 1, 0 turns it off) is the number of content auto-fix retries each Automaton gets. Each retry is one corrective task created from the review's findings; the retry budget is consumed only after that task exists, and the total retry ceiling (`autonomous.retry_ceiling_total`) applies on top of the per-category budgets.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.auto_fix_retries` |
+| **CLI** | `datawatch config set autonomous.auto_fix_retries 3` |
+| **Web UI** | Settings → General → Autonomous → "Auto-fix retries"; the Auto-fix retries input on each Automaton's Overview |
+| **REST API** | `PUT /api/config` with `{"autonomous.auto_fix_retries": 3}`; reads back under `autonomous.auto_fix_retries` on `GET /api/config` and in the autonomous config |
+| **Comm channel** | `configure autonomous.auto_fix_retries=3` |
+| **MCP** | `autonomous_config_set` with `auto_fix_retries: 3` |
+
+A bad value is never applied: a negative whole number (for example -2) or non-numeric text is refused and not written — the response is still ok and `GET /api/config` answers with the previous value; the comm channel replies the refusal message when the daemon names one, otherwise the same silent no-op as REST. A hand-written `config.yaml` value that is not a whole number is rejected on load, and a negative whole number that does ship through the YAML is treated as 0, which turns content auto-fix off.
+
+**The three outcomes.** When the completion review blocks a done Automaton for content, one of these happens:
+
+1. **A fix task is created.** A corrective story and task are synthesized on the same Automaton from the review's findings, one retry is consumed, and the Automaton runs on with the new work. If the corrective story sits under an approval hold (auto-approval off), the Automaton waits in `needs_review` until the approval is given.
+2. **A fix task could not be created.** The corrective story or task could not be synthesized. The Automaton is held in `needs_review` with the findings attached — not blocked and not running. A blocked Automaton would reject the structural edit, so the hold is the state that lets the operator fix it: read the findings, add a corrective task with the normal add-task call, approve it and let it run.
+3. **The retries are spent.** All `autonomous.auto_fix_retries` corrective tasks have already run and the review still blocks. The Automaton is again held in `needs_review` with the findings attached. The manual path is unaffected by the budget: the operator or supervisor adds the corrective task with the normal add-task call and approves it; only the automatic fixing is capped at `auto_fix_retries` retries.
+
+In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not running: the review's findings are attached so the operator sees what was found, and lane fill does not self-approve and auto-run a held Automaton — an approval is what moves it along.
+
 
 ### Model routing
 

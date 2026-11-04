@@ -59,7 +59,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -313,6 +313,11 @@ type PRD struct {
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// RulesReviewOutcome is the structured record of the last completion
+	// rules review that blocked this automaton: the findings, the recovery
+	// action taken and the retry budget. It is set by the completion rollup
+	// when the rules review blocks and cleared when a later review passes.
+	RulesReviewOutcome *RulesReviewOutcome `json:"rules_review_outcome,omitempty"`
 	// WaitReason is a plain sentence saying why the PRD's planner is queued
 	// on capacity (which pool is full) while a decompose waits for admission.
 	// Same convention as Task.WaitReason for waiting tasks; empty unless the

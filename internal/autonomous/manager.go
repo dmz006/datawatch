@@ -343,7 +343,16 @@ type Config struct {
 	// live executor before the stuck-running watchdog re-fires its rollup once,
 	// then blocks it. 0 or unset => 900 (config.NormalizeStuckRunningSeconds).
 	StuckRunningSeconds int `json:"stuck_running_seconds,omitempty"`
-	AutoFixRetries      int `json:"auto_fix_retries,omitempty"`
+	// AutoFixRetries — the content auto-fix retries per Automaton (0 turns
+	// content auto-fix off). Each retry is one corrective task created from
+	// the completion review's findings; the retry budget is consumed only
+	// after that task exists. When the retries are spent (or auto-fix is
+	// off) and the completion review still blocks, the Automaton is set to
+	// needs_review with the findings attached — not blocked, not running —
+	// so the operator or supervisor adds a corrective task with the normal
+	// add-task call and approves it. The total retry ceiling
+	// (RetryCeilingTotal) also applies on top of this budget.
+	AutoFixRetries int `json:"auto_fix_retries,omitempty"`
 
 	// TaskMaxAttemptSeconds and TaskNoProgressSeconds mirror the
 	// autonomous.task_max_attempt_seconds / task_no_progress_seconds config
@@ -1537,6 +1546,10 @@ type Manager struct {
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
+
+	// synthesizeFn — test seam for the rules review rollup's corrective
+	// work creation. Nil uses synthesizeCorrectiveWork.
+	synthesizeFn func(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error)
 
 	// gitPushConfigFn — when set, returns the daemon's live push-on-complete
 	// settings (git.push_on_complete, git.push_remote). Read on every use of

@@ -3567,5 +3567,18 @@
   "prd_generated_kind_changelog_draft": "Brouillon du changelog",
   "prd_generated_kind_parity_draft": "Brouillon de parité",
   "prd_generated_kind_tracker_rows": "Lignes du suivi",
-  "prd_generated_kind_registry_row": "Ligne du registre"
+  "prd_generated_kind_registry_row": "Ligne du registre",
+  "rules_review_action_fix_task_created": "La revue de fin a bloqué cet automate ; une tâche de correction a été créée",
+  "rules_review_action_fix_task_failed": "La revue de fin a bloqué cet automate ; la création de la tâche de correction a échoué",
+  "rules_review_action_retries_spent": "La revue de fin a bloqué cet automate ; toutes les tentatives de correction automatique sont épuisées",
+  "rules_review_action_auto_fix_disabled": "La revue de fin a bloqué cet automate ; la correction automatique est désactivée",
+  "rules_review_action_unknown": "La revue de fin a bloqué cet automate",
+  "rules_review_retries_of": "Tentatives de correction utilisées : %1$d sur %2$d",
+  "rules_review_findings_title": "Constats (%1$d)",
+  "rules_review_findings_more": "+%1$d de plus",
+  "rules_review_next_fix_task_failed": "Suite : ajoutez vous-même une tâche de correction, puis approuvez l'automate et lancez-le.",
+  "rules_review_next_retries_spent": "Suite : ajoutez une tâche qui traite les constats, puis approuvez l'automate et lancez-le.",
+  "rules_review_next_auto_fix_disabled": "Suite : ajoutez une tâche qui traite les constats (ou augmentez les tentatives de correction dans les paramètres), puis approuvez l'automate et lancez-le.",
+  "settings_auto_fix_retries": "Tentatives de correction automatique",
+  "settings_auto_fix_retries_help": "Combien de fois une revue de fin bloquée peut créer une tâche de correction. Une fois les tentatives épuisées, l'automate passe en needs_review pour l'opérateur."
 }

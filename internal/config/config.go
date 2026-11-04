@@ -3070,7 +3070,15 @@ type AutonomousConfig struct {
 	// so the next attempt can build on them. Nil (unset) means true; use
 	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.
 	PreserveAttemptWork *bool `yaml:"preserve_attempt_work,omitempty" json:"preserve_attempt_work,omitempty"`
-	// AutoFixRetries — how many times to re-prompt on verifier failure.
+	// AutoFixRetries — the content auto-fix retries per Automaton (0 turns
+	// content auto-fix off). Each retry is one corrective task created from
+	// the completion review's findings; the retry budget is consumed only
+	// after that task exists. When the completion review still blocks and
+	// the retries are spent (or auto-fix is off), the Automaton is set to
+	// needs_review with the findings attached — not blocked, not running —
+	// so the operator or supervisor adds a corrective task with the normal
+	// add-task call and approves it. The total retry ceiling
+	// (RetryCeilingTotal) also applies on top of this budget.
 	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192. Raise for large

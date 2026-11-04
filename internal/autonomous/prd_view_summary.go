@@ -59,16 +59,20 @@ type SummaryView struct {
 	Backend string `json:"backend,omitempty"`
 	// Tags and PrimaryTagID are always present, so a tag browser reads the
 	// same shape for an untagged Automaton as for a tagged one.
-	Tags             []string       `json:"tags"`
-	PrimaryTagID     string         `json:"primary_tag_id"`
-	Cost             float64        `json:"cost"`
-	ParentPRDID      string         `json:"parent_prd_id,omitempty"`
-	Priority         int            `json:"priority,omitempty"`
-	IsTemplate       bool           `json:"is_template,omitempty"`
-	AutomationID     string         `json:"automation_id,omitempty"`
-	BlockedReason    string         `json:"blocked_reason,omitempty"`
-	QualityGateState string         `json:"quality_gate_status,omitempty"`
-	TaskStatusCounts map[string]int `json:"task_status_counts"`
+	Tags          []string `json:"tags"`
+	PrimaryTagID  string   `json:"primary_tag_id"`
+	Cost          float64  `json:"cost"`
+	ParentPRDID   string   `json:"parent_prd_id,omitempty"`
+	Priority      int      `json:"priority,omitempty"`
+	IsTemplate    bool     `json:"is_template,omitempty"`
+	AutomationID  string   `json:"automation_id,omitempty"`
+	BlockedReason string   `json:"blocked_reason,omitempty"`
+	// RulesReviewOutcome is the structured record of the last blocked
+	// completion rules review (findings and recovery action), copied from
+	// the PRD. It is omitted when there is none.
+	RulesReviewOutcome *RulesReviewOutcome `json:"rules_review_outcome,omitempty"`
+	QualityGateState   string              `json:"quality_gate_status,omitempty"`
+	TaskStatusCounts   map[string]int      `json:"task_status_counts"`
 	// ReviewNeeded lists the tasks held for operator review (status
 	// review_needed), in story order. It is omitted when none is held.
 	ReviewNeeded []ReviewNeededEntry `json:"review_needed,omitempty"`
@@ -142,17 +146,18 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Shipped:         prd.IsShipped(),
 		EffectiveStatus: PRDEffectiveDisplayStatus(prd, true),
 
-		Type:             prd.Type,
-		Backend:          prd.Backend,
-		Tags:             summaryTagIDs(prd.TagIDs),
-		PrimaryTagID:     prd.PrimaryTagID,
-		ParentPRDID:      prd.ParentPRDID,
-		Priority:         prd.Priority,
-		IsTemplate:       prd.IsTemplate,
-		AutomationID:     prd.AutomationID,
-		BlockedReason:    prd.BlockedReason,
-		QualityGateState: prd.QualityGateStatus,
-		TaskStatusCounts: make(map[string]int),
+		Type:               prd.Type,
+		Backend:            prd.Backend,
+		Tags:               summaryTagIDs(prd.TagIDs),
+		PrimaryTagID:       prd.PrimaryTagID,
+		ParentPRDID:        prd.ParentPRDID,
+		Priority:           prd.Priority,
+		IsTemplate:         prd.IsTemplate,
+		AutomationID:       prd.AutomationID,
+		BlockedReason:      prd.BlockedReason,
+		RulesReviewOutcome: prd.RulesReviewOutcome,
+		QualityGateState:   prd.QualityGateStatus,
+		TaskStatusCounts:   make(map[string]int),
 
 		// The Automaton's effective notify-events view, set by the API
 		// fill on the copy this summary was built from. Nil (omitted) when

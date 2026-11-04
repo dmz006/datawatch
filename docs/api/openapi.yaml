@@ -2706,7 +2706,10 @@ paths:
         plus every Automaton with a task held for operator review. The statuses
         field names the attention statuses in force: blocked, needs_review and
         paused by default, so a paused Automaton is in the group. Each item is an
-        Automaton summary view and carries blocked_reason.
+        Automaton summary view and carries blocked_reason. An Automaton held in
+        needs_review by a blocked completion rules review is listed even when
+        needs_review is not an attention status, until its rules_review_outcome
+        is cleared; the item carries that outcome.
       operationId: autonomousAttention
       tags: [Autonomous]
       responses:
@@ -7515,6 +7518,30 @@ components:
         state: {type: string, enum: [blocked, review_held, revision_requested, awaiting_decision, pending_insert], description: The held state the note records}
         recommended_option: {type: string, enum: [hold, retry, retry_stronger, change_spec, cancel, approve_insert, reject_insert, resume], description: "The option the note settled on; empty when the note carries none"}
         at: {type: string, format: date-time, description: When the note was written}
+    RulesReviewOutcome:
+      type: object
+      description: |
+        What a blocked completion rules review found and which recovery happened.
+        It is on the Automaton and on the summary view, omitted when there is none,
+        and cleared by a later review that passes.
+      required: [action, findings, summary, attempt, retry_budget, retries_spent, at]
+      properties:
+        action:
+          type: string
+          enum: [fix_task_created, fix_task_failed, retries_spent, auto_fix_disabled]
+          description: |
+            fix_task_created means a corrective story was added and runs normally.
+            fix_task_failed means the corrective task could not be created.
+            retries_spent means the automatic fix attempts are used up.
+            auto_fix_disabled means automatic fixing is turned off.
+            The last three leave the Automaton waiting in needs_review.
+        findings: {type: array, items: {type: string}, description: One string per finding; never null}
+        summary: {type: string}
+        attempt: {type: integer, description: Which fix attempt this review was}
+        retry_budget: {type: integer, description: How many automatic fix attempts are allowed}
+        retries_spent: {type: integer, description: How many have been used}
+        reason: {type: string, description: Why the recovery stopped, when it did}
+        at: {type: string, format: date-time}
     AutomatonDecisionLogEntry:
       type: object
       description: |
@@ -7530,7 +7557,9 @@ components:
             What the entry records. Among the kinds: `operator_decision` (a decision
             was raised for the Automaton), `operator_answer` (it was answered) and
             `decision_gate_shadow` (in shadow mode, a task the gate would have held;
-            written once per task and reason).
+            written once per task and reason), `rules_review_fix_failed`,
+            `rules_review_retries_spent` and `rules_review_auto_fix_disabled` (a
+            blocked completion rules review left the Automaton waiting in needs_review).
         actor: {type: string, description: "operator, autonomous or verifier"}
         note: {type: string}
         question_id: {type: string, description: "The operator decision the entry records"}
@@ -8363,6 +8392,7 @@ components:
         id: {type: string}
         spec: {type: string}
         status: {type: string}
+        rules_review_outcome: {$ref: '#/components/schemas/RulesReviewOutcome'}
         notify_events: {type: array, items: {type: string}, description: "Lifecycle event kinds that notify for this Automaton; absent or empty means inherit from the guardrail profile, then the global default"}
         notify_events_effective:
           type: object

@@ -2789,8 +2789,15 @@ autonomous:
   # and restore it on the next attempt, unless that attempt was started with
   # clean_restart (reset_task). false disables the save and restore.
   preserve_attempt_work: true
-  # Retries on verifier failure (re-prompts the same backend with the
-  # verifier's findings prepended).
+  # How many content auto-fix retries each Automaton gets (0 turns content
+  # auto-fix off). Each retry is one corrective task created from the
+  # completion review's findings; the retry budget is consumed only after
+  # that task exists. When the completion review still blocks and the
+  # retries are spent (or auto-fix is off), the Automaton is set to
+  # needs_review with the findings attached — not blocked, not running — so
+  # the operator or supervisor adds a corrective task with the normal
+  # add-task call and approves it. The total retry ceiling
+  # (retry_ceiling_total) also applies on top of this budget.
   auto_fix_retries: 1
   # BL366 — bytes of git diff injected into the verifier prompt for
   # evidence grounding. 0 = default (8192). Raise for large PRDs;

@@ -24,7 +24,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt) and held_at. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review."))
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (each Automaton row whose completion review blocked carries rules_review_outcome: action, findings, retries; running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default). The `queue` array lists every queued or capacity-waiting task with the plain-words reason it waits (task_id, prd_id, prd_title, task_title, cause, reason, since, resets_at when known, holder when the reason names one); the `holdings` array lists every running task with the pools it holds (host, llm:, node: and any tree lock key), node, session_id and since. Both are omitted when empty. The `review_needed` array lists every task held for operator review across all Automata, oldest hold first: automaton_id, automaton_title, task_id, task_title, failure_count (failed attempts), last_backend and last_model (the worker of the last attempt) and held_at. It is omitted when no task is held; decide each one with autonomous_prd_resolve_task_review."))
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/autonomous/status", nil)
@@ -150,7 +150,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("plan_tier_allocation_usd", mcpsdk.Description("Notional dollar allocation per subscription plan tier (autonomous.plan_tier_allocation_usd) — tiers pro|max_5x|max_20x|api mapped to a number >= 0 (0 = not declared). It only feeds the allocation_pct estimate on a budget, which is informational and never blocks. A JSON object (e.g. {\"max_5x\":100}) replaces the whole table; tier=value pairs (e.g. 'pro=20,max_5x=100') set just those tiers and leave the others alone.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
-		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
+		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Content auto-fix retries per Automaton (default 1). When the completion review still blocks after these are spent, the Automaton goes to needs_review with the findings attached.")),
 		mcpsdk.WithBoolean("security_scan", mcpsdk.Description("Run nightwire-port security scan before commit")),
 		mcpsdk.WithNumber("verifier_diff_max_bytes", mcpsdk.Description("BL366 — max bytes of git diff injected into verifier prompt (0 = 8192 default)")),
 		mcpsdk.WithBoolean("quality_gates_enabled", mcpsdk.Description("BL367 — enable quality gates by default for all PRDs")),
@@ -887,7 +887,7 @@ func llmSetterResult(out []byte, err error) (*mcpsdk.CallToolResult, error) {
 
 func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_get",
-		mcpsdk.WithDescription("Fetch one automaton. The detail argument picks how much comes back; the default is summary. "+
+		mcpsdk.WithDescription("Fetch one automaton. When the completion review blocked it, the response carries rules_review_outcome (action, findings, retries). The detail argument picks how much comes back; the default is summary. "+
 			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
 			"tasks: everything in summary, plus each task's status, error and verification summary. "+
 			"full: everything, including specs and logs; the PRD spec, every story description and every task spec always come back whole and uncut at full — that is the level to read from before editing them, and an edit carrying a capped view's truncation marker is refused — while summary and tasks deliberately carry no spec text. "+
@@ -1206,7 +1206,7 @@ func (s *Server) handleAutonomousPRDEditStory(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDAddStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_add_story",
-		mcpsdk.WithDescription("Add a new, empty story to a PRD without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithDescription("Add a new, empty story to a PRD without re-running decompose. Structural edits are accepted in needs_review, revisions_asked and cancelled. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Story title")),
 		mcpsdk.WithString("description", mcpsdk.Description("Story description")),
@@ -1228,7 +1228,7 @@ func (s *Server) handleAutonomousPRDAddStory(_ context.Context, req mcpsdk.CallT
 
 func (s *Server) toolAutonomousPRDRemoveStory() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_story",
-		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithDescription("Delete a story (and its tasks) from a PRD without re-running decompose. Accepted in needs_review, revisions_asked and cancelled; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to remove")),
 	)
@@ -1248,7 +1248,7 @@ func (s *Server) handleAutonomousPRDRemoveStory(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_add_task",
-		mcpsdk.WithDescription("Add a new task to an existing story without re-running decompose. Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithDescription("Add a new task to an existing story without re-running decompose. Structural edits are accepted in needs_review, revisions_asked and cancelled. An Automaton whose completion review blocked with no retry left (or whose fix task could not be created) is parked in needs_review for exactly this purpose, so you can add work and run it again."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to add the task to")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
@@ -1281,7 +1281,7 @@ func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallTo
 
 func (s *Server) toolAutonomousPRDRemoveTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_remove_task",
-		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Only allowed pre-approval (needs_review/revisions_asked)."),
+		mcpsdk.WithDescription("Delete one task from a story without re-running decompose (distinct from cancel_task, which stops a running/queued task without removing it). Accepted in needs_review, revisions_asked and cancelled; an Automaton parked in needs_review after a blocked completion review can be edited this way."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID the task belongs to")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to remove")),

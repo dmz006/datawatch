@@ -106,6 +106,8 @@ func PRDHoldReason(prd *PRD, lookup PRDRefLookup) string {
 //
 //   - a judge that timed out on every backend, while the PRD needs review
 //     (code held);
+//   - a completion rules review block that no corrective task is fixing,
+//     while the Automaton needs review (code held);
 //   - a line starting with HOLD (any case) (code held);
 //   - the words "do not run" (code held);
 //   - the words "sequenced last" (code held);
@@ -121,6 +123,9 @@ func PRDHoldCode(prd *PRD, lookup PRDRefLookup) (code, text string) {
 	}
 	if judgeHoldHeld(prd) {
 		return LaneFillReasonHeld, "its judge timed out on every backend and it needs review"
+	}
+	if text := reviewBlockHoldText(prd); text != "" {
+		return LaneFillReasonHeld, text
 	}
 	body := prd.Title + "\n" + prd.Spec
 	if holdLinePattern.MatchString(body) {

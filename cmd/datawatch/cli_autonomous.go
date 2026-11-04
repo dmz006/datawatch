@@ -910,6 +910,9 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 			if len(body) > 0 {
 				prettyPrint(body)
 			}
+			for _, block := range rulesReviewOutcomeBlocks(body) {
+				fmt.Print(block)
+			}
 			if line := prdPushLine(body); line != "" {
 				_, _ = fmt.Fprintln(out, line)
 			}

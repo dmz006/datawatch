@@ -47,14 +47,31 @@ func newAutonomousTagListCmd() *cobra.Command {
 }
 
 func newAutonomousAttentionCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "attention",
-		Short: "List the Automata that need attention (blocked, needs_review and paused by default, plus any with a task held for review)",
+		Short: "List the Automata that need attention (blocked, needs_review and paused by default, plus any with a task held for review); a completion review outcome prints as a short block",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return daemonJSON(http.MethodGet, "/api/autonomous/attention", nil)
+			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/attention", nil)
+			if err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				fmt.Println("ok")
+				return nil
+			}
+			prettyPrint(body)
+			if !asJSON {
+				for _, block := range rulesReviewOutcomeBlocks(body) {
+					fmt.Print(block)
+				}
+			}
+			return nil
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print only the raw REST body")
+	return cmd
 }
 
 func newAutonomousTagCreateCmd() *cobra.Command {

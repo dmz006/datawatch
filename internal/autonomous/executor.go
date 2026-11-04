@@ -1041,13 +1041,27 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		return err
 	} else if blocked {
 		// B124 extension — the judgment-based sibling of the
-		// deterministic check just above. Same PRDBlocked signal;
-		// see rules_review.go's own doc comment for why this is a
-		// judgment review against whatever rules file the operator
-		// configured, not a second hardcoded checklist.
+		// deterministic check just above. See rules_review.go's own doc
+		// comment for why this is a judgment review against whatever
+		// rules file the operator configured.
+		var bv GuardrailVerdict
+		if lv := lastBlockVerdict(prd.Verdicts); lv != nil {
+			bv = *lv
+		}
+		if bv.Category == "" {
+			// A content block that cannot be auto-fixed (retries spent,
+			// auto-fix off, or the total ceiling reached) holds in
+			// needs_review: the operator or supervisor adds a corrective
+			// task and runs the review again. A blocked Automaton would
+			// refuse that structural edit.
+			m.holdRulesReviewForOperator(prd, bv)
+			if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDNeedsReview, "rules_review_retries_spent", blockedReasonFromVerdicts(prd.Verdicts)); ok {
+				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+			}
+			return nil
+		}
 		// A judge that timed out on every backend holds the PRD in
-		// needs_review instead: the operator decides, nothing is
-		// blocked or passed silently.
+		// needs_review instead; other categories (infra) stay blocked.
 		status, reason := rulesReviewBlockStatus(prd)
 		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), status, reason, blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
@@ -1057,18 +1071,67 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// BL410 Phase 2 — no single task/story owns a PRD-wide
 		// rules-review finding: synthesize a new, standalone
 		// corrective story+task on this SAME PRD, then recurse.
-		// Run() re-flattens tasks, executes the new one, and
-		// re-reaches this exact completion check once it's done.
+		// The retry budget is consumed only after the task exists.
 		// BL451 — skip if a concurrent reset/cancel moved the PRD.
 		if !stillRunning() {
 			m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
 			return nil
 		}
-		if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
-			return serr
+		attempt := prd.RetryCountsByCategory["content"] + 1
+		story, serr := m.synthesizeRulesReviewFix(prd, *contentFixVerdict, attempt)
+		if serr != nil {
+			if !stillRunning() {
+				m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
+				return nil
+			}
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: m.reviewNow(), Kind: "rules_review_fix_failed", Actor: "autonomous",
+				Note: fmt.Sprintf("corrective task could not be created: %s", serr.Error()), FailureCategory: "content",
+			})
+			spent := prd.RetryCountsByCategory["content"]
+			prd.RulesReviewOutcome = newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskFailed, serr.Error(),
+				attempt, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+			_ = m.savePRDOwn(prd)
+			// A partly created story bumped the store revision outside this
+			// rollup's own saves; the save above replaced it, so rebase.
+			baseRev, _ = m.store.PRDRev(prd.ID)
+			baseOwn = m.rollupOwnSaves(prd.ID)
+			if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDNeedsReview, "rules_review_fix_failed", blockedReasonFromVerdicts(prd.Verdicts)); ok {
+				m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_failed"), lastBlockVerdict(prd.Verdicts))
+			}
+			return nil
 		}
-		_ = m.store.SavePRD(prd)
+		if err := m.consumeRetryBudget(prd, "content"); err != nil {
+			return err
+		}
+		spent := prd.RetryCountsByCategory["content"]
+		m.recordAutoRetryDecision(prd, prd.ID, "content", spent, false)
+		prd.RulesReviewOutcome = newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskCreated, "",
+			spent, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+		if story != nil && story.Status == StoryAwaitingApproval {
+			// Nothing would run on recursion: the corrective story waits for
+			// approval, so hold the Automaton for the operator instead.
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: m.reviewNow(), Kind: "rules_review_fix_awaiting_approval", Actor: "autonomous",
+				Note: fmt.Sprintf("corrective story %s waits for approval before it runs", story.ID), FailureCategory: "content",
+			})
+			old := prd.Status
+			prd.Status = PRDNeedsReview
+			prd.BlockedReason = blockedReasonFromVerdicts(prd.Verdicts)
+			if err := m.store.SavePRD(prd); err != nil {
+				return err
+			}
+			m.emitPRDStatus(prd, old, lastDecision(prd, "rules_review_fix_awaiting_approval"), lastBlockVerdict(prd.Verdicts))
+			return nil
+		}
+		_ = m.savePRDOwn(prd)
 		return m.Run(ctx, prd.ID, spawn, verify)
+	}
+	// The completion review passed (or did not apply): a stale block record
+	// must not stay on the view.
+	if prd.RulesReviewOutcome != nil {
+		prd.RulesReviewOutcome = nil
+		_ = m.savePRDOwn(prd)
 	}
 	if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
 		return err
@@ -3402,4 +3465,44 @@ func TaskSnapshotSkippedGuardCounts(skipped []gitguard.Skip) string {
 		reasons = append(reasons, sk.Reason)
 	}
 	return stagingGuardCounts(reasons)
+}
+
+// synthesizeRulesReviewFix creates the corrective story and task for a
+// blocked completion rules review, through the test seam when set.
+func (m *Manager) synthesizeRulesReviewFix(prd *PRD, v GuardrailVerdict, attempt int) (*Story, error) {
+	m.mu.Lock()
+	fn := m.synthesizeFn
+	m.mu.Unlock()
+	if fn != nil {
+		story, _, err := fn(prd, v, "")
+		return story, err
+	}
+	story, _, err := m.synthesizeCorrectiveWorkAttempt(prd, v, "", attempt)
+	return story, err
+}
+
+// holdRulesReviewForOperator records why a content-category rules review
+// block gets no automatic fix (auto-fix disabled, content retries spent, or
+// the total retry ceiling reached) and attaches the findings, ahead of the
+// rollup's needs_review commit.
+func (m *Manager) holdRulesReviewForOperator(prd *PRD, v GuardrailVerdict) {
+	spent := prd.RetryCountsByCategory["content"]
+	budget := m.resolveRetryPolicy(prd, "content")
+	kind, action := "rules_review_retries_spent", RulesReviewActionRetriesSpent
+	note := fmt.Sprintf("content retries spent %d of %d", spent, budget)
+	if !m.resolveContentAutoFixEnabled(prd) {
+		kind, action = "rules_review_auto_fix_disabled", RulesReviewActionAutoFixDisabled
+		note = fmt.Sprintf("content auto-fix is disabled; content retries spent %d of %d", spent, budget)
+	} else if spent < budget {
+		total := 0
+		for _, n := range prd.RetryCountsByCategory {
+			total += n
+		}
+		note += fmt.Sprintf("; total retry ceiling reached (%d of %d)", total, m.resolveRetryCeiling(prd))
+	}
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: m.reviewNow(), Kind: kind, Actor: "autonomous", Note: note, FailureCategory: "content",
+	})
+	prd.RulesReviewOutcome = newRulesReviewOutcome(v, action, note, spent, budget, spent, m.reviewNow())
+	_ = m.savePRDOwn(prd)
 }

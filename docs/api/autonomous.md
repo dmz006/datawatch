@@ -750,6 +750,34 @@ review. Each item is the summary view, with `blocked_reason`. `statuses` names t
 statuses in force; they are `blocked`, `needs_review` and `paused`, so a paused
 Automaton is in the group. Read-only; needs the autonomous read capability.
 
+An Automaton that completion review held in `needs_review` with no corrective task
+on the way is listed even when `needs_review` is not one of `statuses`, and it
+leaves the list once its `rules_review_outcome` is cleared. Its item carries
+`rules_review_outcome` (see below), so a surface can show the findings without
+reading the free-text `blocked_reason`.
+
+### Rules review outcome (`rules_review_outcome`)
+
+When the rules review at the end of an Automaton's run blocks it, the Automaton
+records what the review found and what happened next. The record is on the full
+Automaton (`GET /api/autonomous/prds/{id}`) and on the summary view, and it is
+omitted when there is none. A later review that passes clears it.
+
+| Field | Meaning |
+|---|---|
+| `action` | What recovery happened: `fix_task_created` (a corrective story was added and runs normally), `fix_task_failed` (the corrective task could not be created, so the Automaton waits in `needs_review`), `retries_spent` (the automatic fix attempts are used up, so it waits in `needs_review`) or `auto_fix_disabled` (automatic fixing is turned off, so it waits in `needs_review`). |
+| `findings` | The review's findings, one string each; never null. When the review gave no itemised issues, the summary is the single finding. |
+| `summary` | The review's one-line summary. |
+| `attempt` | Which fix attempt this review was. |
+| `retry_budget` | How many automatic fix attempts are allowed. |
+| `retries_spent` | How many have been used. |
+| `reason` | Why the recovery stopped, when it did; omitted otherwise. |
+| `at` | When the review was recorded. |
+
+The decision log gains the kinds `rules_review_fix_failed`, `rules_review_retries_spent`
+and `rules_review_auto_fix_disabled`, one for each of the three held actions. Show an
+unknown kind as plain text.
+
 ### Automata list (`GET /api/autonomous/prds`)
 
 The default reply is a summary list, not whole records: each row carries ids,

@@ -521,6 +521,8 @@ type laneFillRaw struct {
 	// branch and worktreeDir are the recorded Automaton branch and, for an
 	// Automaton that runs in its own worktree, that worktree directory.
 	branch, worktreeDir string
+	// reviewOutcome is the Automaton's last blocked rules review record, if any.
+	reviewOutcome *RulesReviewOutcome
 }
 
 var laneFillRunningTask = map[TaskStatus]bool{
@@ -554,6 +556,7 @@ func (c *Coordinator) readLaneFillRaw() []laneFillRaw {
 				pref: p.LanePreference, priority: p.Priority, created: p.CreatedAt,
 				updated: p.UpdatedAt, automationID: p.AutomationID, backend: p.Backend, model: p.Model,
 				template: p.IsTemplate, typ: p.Type, branch: p.Git.Branch,
+				reviewOutcome: p.RulesReviewOutcome,
 			}
 			if p.Git.Branch != "" && p.ProjectDir != "" && p.ProjectProfile == "" && p.ClusterProfile == "" {
 				r.worktreeDir = p.ProjectDir
@@ -671,7 +674,7 @@ func (c *Coordinator) laneFillSnapshot(ctx context.Context, cfg LaneFillConfig, 
 		if _, busy := decomposing[r.id]; busy {
 			continue // a decompose lane fill started is still running
 		}
-		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec}
+		prd := &PRD{ID: r.id, Title: r.title, Spec: r.spec, Status: r.status, RulesReviewOutcome: r.reviewOutcome}
 		holdCode, holdText := PRDHoldCode(prd, lookup)
 		cand := LaneFillCandidate{
 			ID: r.id, Title: r.title, Status: NormalizePRDStatus(r.status),
