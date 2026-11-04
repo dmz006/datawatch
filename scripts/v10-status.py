@@ -30,7 +30,7 @@ Optional inputs (each defaults to the live behavior when left out):
                      docs/plans/operator-wait-windows.tsv)
   --now ISO          fixed clock, e.g. 2026-10-20T12:00:00Z (default: the
                      wall clock)
-  --lanes N          lane count for utilization (default 5)
+  --lanes N          lane count for utilization (default 3: two GPU lanes + one Claude lane)
   --gap-hours X      hours without task activity that make an inactive window
                      (default 3)
 These let the golden test in internal/autonomous run this script and the
@@ -55,7 +55,7 @@ from datetime import datetime, timedelta, timezone
 
 SINCE = "2026-10-10"  # roadmap lock date (docs/plans/README.md)
 GAP_H = 3.0  # hours of no task activity that count as an inactive window
-LANES = 5  # two GPU lanes + three Claude lanes
+LANES = 3  # two GPU lanes (pi-prompt) + one Claude lane, the standing cap; the supervisor session is not a lane
 
 BUG_RE = re.compile(
     r"\b(fix|flak|defect|bug|root.cause|stall|regress|race|leak|must not|"
