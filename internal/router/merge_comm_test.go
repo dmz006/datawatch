@@ -21,7 +21,7 @@ const mergeCommSample = `{"mode":"on","alert_minutes":30,"automata":[{
 
 const safeToDeleteCommSample = `{"safe":[{"branch":"automaton/prd-1","worktree":"/w/prd-1","commits":2,"reason":"merged into main"}],
 "held":[{"branch":"automaton/prd-2","worktree":"/w/prd-2","state":"pending","dirty":true,"note":"has local edits"}],
-"held_dirty":1}`
+"held_dirty":1,"computed_at":"2026-01-02T09:30:00Z","stale":false}`
 
 func TestMergeComm_VerbMergeRenders(t *testing.T) {
 	log, port := laneFillCommDaemon(t, http.StatusOK, mergeCommSample)
@@ -63,6 +63,7 @@ func TestMergeComm_VerbSafeToDeleteRenders(t *testing.T) {
 		"automaton/prd-1 (2 commit(s)): merged into main",
 		"automaton/prd-2: pending, uncommitted changes — has local edits",
 		"This is a report only: nothing has been deleted.",
+		"Computed at 2026-01-02T09:30:00Z",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("reply lacks %q: %q", want, got)

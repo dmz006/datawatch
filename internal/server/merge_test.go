@@ -263,7 +263,7 @@ func TestMergeRoute_JSONKeyNames(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	mergeWantKeys(t, "safe-to-delete body", rec.Body.Bytes(), "safe", "held", "held_dirty")
+	mergeWantKeys(t, "safe-to-delete body", rec.Body.Bytes(), "safe", "held", "held_dirty", "computed_at", "stale")
 	var safe, held []json.RawMessage
 	_ = json.Unmarshal(report["safe"], &safe)
 	_ = json.Unmarshal(report["held"], &held)
