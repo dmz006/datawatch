@@ -57,7 +57,10 @@ test('a first visit opens the Automata tab on the Automation sub-tab, which is t
   const order = [...out.view.matchAll(/class="output-tab[^"]*" data-tab="([a-z]+)"/g)].map(m => m[1]);
   assert.deepEqual(order, ['automation', 'automata', 'templates']);
   assert.match(out.view, /class="output-tab active" data-tab="automation"/);
-  assert.match(out.view, /id="automationPanel"/);
+  // The Automation sub-tab opens on its Inbox second-row sub-tab; the list is on Automations.
+  assert.match(out.view, /data-subtab="inbox"/);
+  assert.match(out.view, /id="automationTriageCard"/);
+  assert.doesNotMatch(out.view, /id="automationPanel"/);
   assert.doesNotMatch(out.view, /id="automataPanel"/);
 });
 
@@ -74,7 +77,9 @@ test('the action buttons follow the selected sub-tab', () => {
   const { sb, out } = loadView();
   const shown = (html, id) => !new RegExp('id="' + id + '"[^>]*style="[^"]*display:none').test(html);
   sb.renderAutonomousView();
-  for (const id of ['automationFilterBtn', 'automationHistoryBtn']) assert.ok(shown(out.view, id), id + ' shown on Automation');
+  for (const id of ['automationFilterBtn', 'automationHistoryBtn']) assert.ok(!shown(out.view, id), id + ' hidden on the Inbox sub-tab');
+  sb.switchAutomationSubtab('automations');
+  for (const id of ['automationFilterBtn', 'automationHistoryBtn']) assert.ok(shown(out.view, id), id + ' shown on Automations');
   assert.doesNotMatch(out.view, /automationNewBtn/);
   for (const id of ['automataSelectBtn', 'automataFilterBtn', 'automataHistoryBtn', 'automataWatchFilterBtn']) assert.ok(!shown(out.view, id), id + ' hidden on Automation');
   sb.switchAutomataTab('automata');
@@ -102,7 +107,9 @@ test('renderAutomationView routes to the Automata view with the Automation sub-t
   sb.renderAutomationView();
   assert.equal(tabState(sb), 'automation');
   assert.match(out.view, /data-tab="automata"/);
-  assert.match(out.view, /id="automationPanel"/);
+  assert.match(out.view, /data-subtab="inbox"/);
+  assert.match(out.view, /id="automationTriageCard"/);
+  assert.doesNotMatch(out.view, /id="automationPanel"/, 'the list is on Automations, not the Inbox it opens on');
 });
 
 test('a disabled subsystem, or an unreachable config, falls the Automation sub-tab back to Automata', () => {

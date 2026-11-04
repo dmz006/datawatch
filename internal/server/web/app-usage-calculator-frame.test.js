@@ -192,13 +192,20 @@ test('a failed refresh keeps the last body and shows the daemon error', async ()
 
 test('the card sits right after the capacity card on the Automata tab and loads through the list loader', () => {
   const s = loadApp();
-  // Both cards live on the Overview sub-tab; select it before rendering the body.
-  vm.runInContext("_automationState.subtab = 'overview'", s);
+  // Both cards live on the Resources sub-tab; select it before rendering the body.
+  vm.runInContext("_automationState.subtab = 'resources'", s);
   const body = vm.runInContext('_automationBodyHTML()', s);
   const cap = body.indexOf('id="automationCapacityCard"');
   const usage = body.indexOf('id="automationUsageCard"');
   assert.ok(cap >= 0 && usage > cap, 'usage card slot must follow the capacity card slot');
-  assert.equal(body.slice(cap, usage).split('id="').length - 1, 1, 'no other element sits between the two cards');
+  // The lane fill card sits between the capacity and usage cards; nothing else does.
+  const between = body.slice(cap, usage);
+  assert.ok(between.includes('id="automationLaneFillCard"'), 'the lane fill card sits between the two cards');
+  assert.equal(between.split('id="').length - 1, 2, 'no other element sits between the two cards');
+  for (const other of ['inbox', 'automations', 'progress', 'setup', 'housekeeping']) {
+    vm.runInContext(`_automationState.subtab = '${other}'`, s);
+    assert.ok(!vm.runInContext('_automationBodyHTML()', s).includes('id="automationUsageCard"'), 'no usage card slot on ' + other);
+  }
   const ctl = vm.runInContext('_automationUsageLoader()', s);
   assert.equal(vm.runInContext('window._listLoaders.automation_usage', s), ctl, 'registered under its loader key');
   assert.equal(vm.runInContext('_automationUsageLoader()', s), ctl, 'one loader, reused');
