@@ -9178,6 +9178,7 @@ const DOCS_ONBOARDING_REPORT_LINKS = [
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
 const DOCS_MERGE_PIPELINE_LINKS = [
+  [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
     'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
@@ -26478,8 +26479,9 @@ window.mergePipelineCardHtml = function(view, opts) {
     // The daemon's "no project, and no merge base repository" refusal. Render
     // the empty state — never the raw error text — with the project choice:
     // picking a project calls mergePipelineSelectProject, which re-reads the
-    // card for that project. worktree_base_repo has no settings field and no
-    // glossary anchor in this build, so it is named as text, not linked.
+    // card for that project. The worktree_base_repo line carries a help link
+    // to the how-to's "No project yet" section (docsLinkForKey), so the
+    // setting is clickable, not just named.
     const npProjects = (Array.isArray(opts.projects) ? opts.projects : []).filter(p => typeof p === 'string' && p);
     const noProject = `<div class="merge-pipeline-no-project" style="margin-top:4px;min-width:0;">` +
       `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_title'))}</div>` +
@@ -26488,7 +26490,7 @@ window.mergePipelineCardHtml = function(view, opts) {
       `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_no_project_choose'))}</label>` +
       `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
       `<datalist id="mergePipelineProjects">${npProjects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>` +
-      `<div style="font-size:12px;color:var(--text2);margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_set_base'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_set_base'))}${defsLink('merge_pipeline_no_project_set_base')}</div>` +
       `</div>`;
     return `<div class="prd-capacity-card merge-pipeline-card merge-pipeline-no-project" style="min-width:0;">${head}${noProject}</div>`;
   }
