@@ -1126,6 +1126,20 @@ paths:
         is written. GET returns the values in effect. None of these values is
         hard-coded: the daemon re-reads the config on every use, so a PUT
         takes effect immediately with no restart.
+
+        `ui.splash_min_seconds` (whole number from 0 to 60; an unset key
+        reads as 6 — the minimum number of whole seconds the UI splash stays
+        on screen before it may dismiss — and an explicit `0` keeps the
+        legacy timing, i.e. no minimum dwell) and
+        `ui.splash_min_seconds_new_version` (whole number from 0 to 60; an
+        unset key reads as 9 — the same minimum dwell when the splash is
+        shown for a new version — and an explicit `0` keeps the legacy
+        timing). A wrong type (a string, a fraction, a boolean or null), a
+        negative value, or a value over 60 rejects the whole PUT with 400
+        and a message that names the key — nothing is written. GET returns
+        the two values in effect under `ui` (an unset key shows its default)
+        and the daemon re-reads the config on every use, so a PUT takes
+        effect with no restart.
       operationId: updateConfig
       tags: [System]
       requestBody:

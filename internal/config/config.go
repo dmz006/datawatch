@@ -2483,6 +2483,19 @@ func validateUISplashSeconds(key string, def int, n int) error {
 	return nil
 }
 
+// ValidateUISplashMinSeconds checks ui.splash_min_seconds: a whole number
+// from 0 to 60 inclusive (0 = keep the legacy timing; unset reads 6).
+func ValidateUISplashMinSeconds(n int) error {
+	return validateUISplashSeconds("ui.splash_min_seconds", DefaultUISplashMinSeconds, n)
+}
+
+// ValidateUISplashMinSecondsNewVersion checks
+// ui.splash_min_seconds_new_version: a whole number from 0 to 60 inclusive
+// (0 = keep the legacy timing; unset reads 9).
+func ValidateUISplashMinSecondsNewVersion(n int) error {
+	return validateUISplashSeconds("ui.splash_min_seconds_new_version", DefaultUISplashMinSecondsNewVersion, n)
+}
+
 // validate checks the ui.* splash keys; it runs at config load.
 func (u *UIConfig) validate() error {
 	if u.SplashMinSeconds != nil {
