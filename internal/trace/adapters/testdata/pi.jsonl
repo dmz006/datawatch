@@ -1,0 +1,4 @@
+{"type":"session","id":"p1"}
+{"type":"message","timestamp":"2026-01-02T03:04:05Z","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"Looking."},{"type":"toolCall","name":"bash","arguments":{"command":"ls"}},{"type":"toolCall","name":"read","arguments":{"path":"a.go"}}],"usage":{"input":10,"output":4,"cacheRead":6,"cacheWrite":0,"totalTokens":20}}}
+{"type":"message","timestamp":"2026-01-02T03:04:06Z","message":{"role":"user","content":[{"type":"text","text":"ok"}]}}
+{"type":"message","timestamp":"2026-01-02T03:04:07Z","message":{"role":"assistant","content":[{"type":"text","text":"Done."}],"usage":{"input":3,"output":2}}}
