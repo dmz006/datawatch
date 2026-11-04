@@ -22,6 +22,13 @@ func DefaultRegistry() *Registry {
 	r.Register(NewClaudeCode())
 	r.Register(NewPi("pi"))
 	r.Register(NewPi("pi-prompt"))
+	for _, n := range []string{"opencode", "opencode-acp", "opencode-prompt"} {
+		r.Register(NewOpenCode(n))
+	}
+	r.Register(NewGoose("goose"))
+	r.Register(NewGoose("goose-prompt"))
+	r.Register(NewAider())
+	r.Register(NewGemini())
 	return r
 }
 
