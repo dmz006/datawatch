@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.86.0 — Automation view in six sub-tabs
+
+The Automation view is split into six sub-tabs, with an Inbox that counts what is waiting on you.
+
+- **Six sub-tabs** under the Automation sub-tab, in order: **Inbox** (the needs-attention card, the questions, the held questions, the security failure report and the supervisor watch, with a count badge of everything waiting on the operator), **Automations** (the list, filters, release arc and Gantt), **Resources** (capacity, lane fill, usage against the plan, infrastructure retries, the checks and ship status cards), **Progress and cost**, **Setup and policy** (onboarding report, merge pipeline, model request watch) and **Housekeeping** (safe-to-delete report, cleanup, uncommitted work).
+- **Strip.** The sub-tab strip slides and reveals the active tab, and the tab you chose is remembered while the app stays open. The Automation view opens on Inbox.
+- Six new locale keys in the five bundles, a registry test, and the existing tab tests updated; the how-to describes where each card lives.
+
 ## v9.85.3 — Locked store writes in the push path
 
 Two shared-store writes in the push path are now made under the store lock.

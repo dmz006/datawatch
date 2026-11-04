@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.85.3 (2026-11-04).** The push outcome and completion metrics are written under the store lock, closing a data race behind an intermittent CI test failure. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.86.0 (2026-11-04).** The Automation view is split into six sub-tabs (Inbox with a count badge, Automations, Resources, Progress and cost, Setup and policy, Housekeeping). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
