@@ -4582,6 +4582,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			},
 			// Lane fill (autonomous.lane_fill.*).
 			LaneFill: autonomouspkg.LaneFillConfigFromYAML(acfgIn.LaneFill),
+			// Decompose-lint (autonomous.decompose_lint), task templates
+			// (autonomous.task_templates) and decompose guidance
+			// (autonomous.decompose_guidance): the manager consumes all
+			// three at decompose time (internal/autonomous
+			// decompose_lint_hook.go / decompose_guidance.go).
+			DecomposeLint:     acfgIn.DecomposeLint,
+			TaskTemplates:     acfgIn.TaskTemplates,
+			DecomposeGuidance: acfgIn.DecomposeGuidance,
 			// Global tier of the notify event kinds
 			// (autonomous.notify.default_events). Preserve nil (unset —
 			// resolves to the built-in default set) vs a non-nil empty

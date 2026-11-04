@@ -3342,6 +3342,89 @@ autonomous:
     #     tiny_fix:
     #       max_files: 2
     #       allowed_kinds: [test_only, docs_only]
+  # ── Decompose lint (the fresh-decomposition quality check) ──
+  # The quality check over each fresh decomposition, run at decompose time
+  # before the plan is stored. A decompose is NEVER failed by this check:
+  # findings are attached to the stored plan (recorded, never fatal), and
+  # off is a complete no-op (no templates, no lint pass, no record).
+  # How to: docs/howto/automaton-decompose-lint.md.
+  #
+  # mode: off (no check, no record) | shadow (one lint pass, recorded,
+  # never retries — DEFAULT; empty/unset normalizes to shadow) | enforce
+  # (while block findings remain and the retry budget is unspent, the
+  # decomposer is re-run with the block findings fed back; each retry is
+  # re-parsed, re-templated and re-linted) — case-insensitive; anything
+  # else is a config error (a typo cannot quietly mean "enforce").
+  #
+  # max_retries: the enforce retry budget. Default 2 (1 initial pass + at
+  # most 2 retries; attempts = 1 + retries consumed, at most
+  # 1 + max_retries). 0 is a valid explicit value (enforce then lints,
+  # records and stops — no auto-retry). Negatives clamp to 0; the cap is
+  # 5. Only block findings trigger retries; warn findings are reported,
+  # never retried.
+  decompose_lint:
+    mode: shadow
+    max_retries: 2
+    # Operator rules: additions, same-id replacements and disables of the
+    # built-in default pack (internal/autonomous/decompose_lint_rules.go —
+    # seven rules: five block, two warn; the pack is the floor, your rules
+    # the ceiling over it). Empty (below) = the built-in pack, unmodified.
+    # A same-id entry replaces the built-in at its original position; a new
+    # id is appended. Severity: block | warn (empty normalizes to warn;
+    # anything else is a config error). A rule's message is required on an
+    # active rule. match combines present conditions with AND —
+    # spec_regex / title_regex / files_regex over their fields, the
+    # read_only tri-state (absent = don't check),
+    # verification_script_empty, and any_of (at least one member) / all_of
+    # (every member), recursively (nesting capped at depth 8).
+    # A bare {id, disabled: true} entry is the canonical way to disable a
+    # built-in: its severity/message/match stay unused and unvalidated.
+    rules: []
+    # Ids dropped from the effective set regardless of origin (unknown ids
+    # are ignored, no error). Either mechanism drops the rule: disabled
+    # here, or a {id, disabled: true} entry above.
+    disabled_rules: []
+  # ── Task templates (usable task definitions offered at decompose time) ──
+  # Reusable task definitions appended to a story when the planner did not
+  # produce a task for them. Applied in shadow AND enforce (off applies
+  # nothing), idempotently — a task a previous apply added (or one the
+  # planner marked template:<id>, or whose title closely matches) is
+  # detected and never added twice. Slots {{feature}}, {{files}} and
+  # {{files_list}} are filled from the feature name and the union of the
+  # story's task files; depends_on lists template ids the entry runs after
+  # (it also depends on the story's other tasks).
+  # The built-in pack is the floor (internal/autonomous/
+  # task_templates_defaults.go): changelog_entry, parity_issue_draft,
+  # docs_set, final_gate (read-only) and version_bump_left_to_merge (a note,
+  # never an edit) — written to hold two hard properties for every feature
+  # name: no blocking decompose-lint finding, and no hosting-CLI side
+  # effects. Your templates are the ceiling over it: same id replaces the
+  # built-in at its position, new id appends. Template ids must be
+  # well-shaped ([a-z0-9_.-]+) and unique — the daemon validates before
+  # applying, and a duplicate id is a 400, not a merge.
+  task_templates:
+    # Global gate. Default true. false turns template apply off everywhere
+    # (per-project overrides below can still force a project on/off).
+    enabled: true
+    # Operator template definitions (empty = the built-in pack,
+    # unmodified). {id, title, spec, files, kind, read_only, depends_on,
+    # applies_when}.
+    templates: []
+    # Per-project overrides, keyed by project directory or alias. An absent
+    # flag means follow the global; a new project inherits the global
+    # enabled. Overrides are resolved per project at apply time.
+    projects: {}
+  # ── Decompose guidance (the block the planner's prompt carries) ──
+  # The guidance appended to the decompose prompt (under a
+  # --- Decompose guidance --- header). Precedence: (1) set to literal
+  # text — used verbatim (prose is never mistaken for a file); (2) naming
+  # an existing readable file — the file's contents; (3) a path-like value
+  # with a missing, unreadable or empty file — the generated block stands
+  # in (a dead path is not prose to ship); (4) UNSET (empty, default) —
+  # generated from the active rule pack, one line per rule (id, severity,
+  # message) in pack order. So the rules explain themselves to the
+  # planner until you give your own.
+  decompose_guidance: ""
 # ── Dashboard (operator console + card visibility) ──
 # The dashboard.* block switches gate the PWA dashboard board and the
 # operator console one-glance summary (GET /api/dashboard/console, MCP

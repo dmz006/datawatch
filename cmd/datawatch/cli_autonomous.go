@@ -63,6 +63,15 @@ Subcommands:
   cleanup [--json]                 Cleanup status: both passes (worktrees and temp sweep), their last run,
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
+  lint config [--json]             Decompose lint config: the mode, the enforce retry budget, the active
+                                   rule pack and the disabled rule ids (read only)
+  lint config-set key=value ...    Set decompose-lint mode / max_retries / disabled_rules, preserving the
+                                   active rule pack (mode is off|shadow|enforce; disabled_rules is a
+                                   comma list of rule ids; the reply is the new config)
+  lint dry-run <id> [--json]       Lint one Automaton's stored plan read-only: which rules fire and on
+                                   which tasks (nothing is retried, verified or stored)
+  lint findings <id> [--json]      The decompose-lint record the executor stored for one Automaton: the
+                                   mode, the attempts and the final findings one line each
   uncommitted-work [--automaton ID] [--json]
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
@@ -277,6 +286,8 @@ Subcommands:
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
+		// Decompose lint surface (config, dry-run, stored findings).
+		newAutonomousLintCmd(),
 		newAutonomousUncommittedWorkCmd(),
 		newAutonomousRequestWatchCmd(),
 		newAutonomousMergedMembersCmd(),
