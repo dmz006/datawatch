@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+Two capacity fixes: a task that moves between pools no longer holds onto the node lease of its old pool, and the wait reason a queued task gives is always current.
+
+- **Node lease on pool moves.** When a task moves between pools, the node lease of its old pool is released, so a claude-code task never holds a local node engine. This includes work adopted after a daemon restart: if the task's backend takes no node, the stale `node:<name>` lease is dropped instead of keeping a node slot busy.
+- **Live wait reasons.** The reason shown for a queued task is recomputed on every read, instead of the one recorded when the task entered the queue. When the restart adoption hold ends, the queue shows the node-engine reason — the same one the capacity admission answer gives — on REST, MCP, the CLI and the web capacity card.
+
+- Reuse audit — what existing primitive does this extend? The capacity ledger's `Adopt` (lease reconciliation now reconciles the pool set, not just the node), the ledger's `dispatch` pass (its refresh half is what a read reuses), the ledger's `Snapshot` (a read now re-resolves each waiter's reason), and the manager's `TaskVisibility` (the live reason now wins over the persisted one on every surface).
+
 ## v9.81.0 — Model-to-node routing visibility
 
 A pinned model is now checked against the compute nodes, and you can see which models each node serves.
