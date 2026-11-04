@@ -6474,6 +6474,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "93. Merge pipeline — project_required refusal when no project and no merge base repository"
+# Read-only, so it runs against an external daemon too. With no project name the
+# read resolves the merge base repository (autonomous.worktree_base_repo); when
+# that is not set either the answer is the structured 400
+# {"code":"project_required","error":"...worktree_base_repo..."} (other bad project
+# names stay plain-text 400). A daemon that HAS the base repository set answers
+# 200 with the resolved pipeline — the legitimate path — so both answers pass.
+MP_BODY_FILE=$(mktemp)
+MP_CODE=$(curl "${curl_args[@]}" -s -o "$MP_BODY_FILE" -w '%{http_code}' "$BASE/api/autonomous/merge-pipeline" 2>/dev/null || echo "000")
+if [[ "$MP_CODE" == "400" ]]; then
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d.get("code")=="project_required" and "worktree_base_repo" in d.get("error","") else 1)' "$MP_BODY_FILE" 2>/dev/null; then
+    ok "merge pipeline: no project and no merge base repository is a 400 with code project_required naming worktree_base_repo"
+  else
+    ko "merge pipeline: the no-project 400 is not the structured project_required body: $(head -c 120 "$MP_BODY_FILE")"
+  fi
+elif [[ "$MP_CODE" == "200" ]]; then
+  if python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));sys.exit(0 if d.get("project") else 1)' "$MP_BODY_FILE" 2>/dev/null; then
+    ok "merge pipeline: the merge base repository is set, so the bare read answers 200 with a project"
+  else
+    ko "merge pipeline: the bare read answered 200 without a project: $(head -c 120 "$MP_BODY_FILE")"
+  fi
+elif [[ "$MP_CODE" == "503" ]]; then
+  skip "merge pipeline: autonomous is disabled on this daemon (503)"
+else
+  ko "merge pipeline: the bare read answered HTTP $MP_CODE, expected 400 (project_required) or 200"
+fi
+rm -f "$MP_BODY_FILE"
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

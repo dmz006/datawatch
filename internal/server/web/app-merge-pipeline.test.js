@@ -205,6 +205,9 @@ test('docsLinkForKey maps the merge pipeline keys to the four sections', () => {
   };
   for (const [key, anchor] of Object.entries(want)) assert.equal(docsLink(key), DEFS + anchor, key);
   assert.equal(docsLink('autonomous.infra_retry.enabled'), DEFS + 'infrastructure-retry', 'infra retry keeps its own link');
+  assert.equal(docsLink('merge_pipeline_no_project_set_base'), 'howto/merge-pipeline.md#no-project-yet',
+    'the empty-state setting line points at the how-to, before the generic merge_pipeline_ fallback');
+  assert.equal(docsLink('merge_pipeline_no_project_title'), DEFS + 'merge-pipeline', 'the other no-project keys keep the glossary link');
 });
 
 // ── settings fields ─────────────────────────────────────────────────────────
@@ -309,6 +312,10 @@ test('the project_required sentinel renders the four no-project strings and the 
   assert.ok(html.includes('id="mergePipelineProject"'), 'project input missing: ' + html);
   assert.ok(html.includes('window.mergePipelineSelectProject(this.value)'), 'project change handler missing: ' + html);
   assert.ok(html.includes('<option value="alpha"></option><option value="beta"></option>'), 'project choices missing: ' + html);
+  // The worktree_base_repo line is clickable: a help link to the how-to's
+  // "No project yet" section, not just named text.
+  assert.ok(html.includes('href="/diagrams.html#docs/howto/merge-pipeline.md#no-project-yet"'), 'worktree_base_repo docs link missing: ' + html);
+  assert.ok(html.includes('class="docs-link"'), 'help link element missing: ' + html);
   // The failed state the loader owns is the banner text, not this empty state.
   const failed = String(en.merge_pipeline_failed).replace(/%1\$s/g, '').trim();
   assert.ok(!html.includes(failed.split(':')[0].trim()), 'failure text leaked into the empty state: ' + html);

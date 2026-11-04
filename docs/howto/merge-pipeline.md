@@ -105,7 +105,22 @@ pipeline card shows an empty state instead. To fix it, choose a project in
 the card's project field (or pass the project argument of the API call or
 the MCP tool, or `--project` on the CLI), or set the merge base repository
 with the `worktree_base_repo` setting (`autonomous.worktree_base_repo`) —
-the empty state points at that setting.
+the empty state links to this section. That setting is a repository path the
+operator points at the daemon's working root, so it has no PWA settings
+field; every other surface can set it:
+
+| Surface | How |
+|---|---|
+| YAML | `autonomous.worktree_base_repo: /path/to/base-repo` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set autonomous.worktree_base_repo /path/to/base-repo` |
+| Web UI | N/A — no settings field (a repository path, not a settings entry); the empty state links here |
+| REST API | `PUT /api/config` with `{"autonomous.worktree_base_repo": "/path/to/base-repo"}` |
+| Comm channel | `configure autonomous.worktree_base_repo=/path/to/base-repo` |
+
+Once it is set, the reads above — `datawatch autonomous merge-pipeline show`,
+`autonomous_merge_pipeline_get`, `autonomous merge-pipeline` and the card —
+resolve the pipeline in the base repository without a project name, and the
+card's empty state becomes the pipeline itself.
 
 ## Which one wins, and how to see it
 
