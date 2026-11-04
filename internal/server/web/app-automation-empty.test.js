@@ -4,8 +4,8 @@
 // (heading, Create Automation button, Automation-versus-Automaton line) shows
 // only after a successful load with zero Automations, never while loading and
 // never after a failed load; the capacity and queue card loads in parallel with
-// its own loading and failed states on the Automation tab's Overview sub-tab
-// (the card lives there, the list and empty state on the Chains sub-tab);
+// its own loading and failed states on the Automation tab's Resources sub-tab
+// (the card lives there, the list and empty state on the Automations sub-tab);
 // the Automata and Templates sub-tab bodies carry no status card.
 
 const test = require('node:test');
@@ -44,6 +44,8 @@ const CAP = { pools: [{ name: 'host', limit: 4, held: 1, external: 0 }] };
 test('after a successful load with zero Automations the empty state shows', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
+  // The list lives on the Automations sub-tab; the view opens on Inbox.
+  sb.switchAutomationSubtab('automations');
   await flushAsync(30);
   assert.match(out.automationPanel, /No Automations yet/);
   assert.match(out.automationPanel, /id="automationEmptyCreateBtn"/);
@@ -55,6 +57,8 @@ test('after a successful load with zero Automations the empty state shows', asyn
 test('the Create Automation button runs the existing create flow', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
+  // The list lives on the Automations sub-tab; the view opens on Inbox.
+  sb.switchAutomationSubtab('automations');
   await flushAsync(30);
   const m = out.automationPanel.match(/id="automationEmptyCreateBtn"[^>]*onclick="([^"]*)"/);
   assert.ok(m, 'button has an onclick');
@@ -70,6 +74,8 @@ test('no empty state while the first load is in flight', async () => {
     '/api/capacity': { status: 200, body: CAP },
   });
   sb.renderAutomationView();
+  // The list lives on the Automations sub-tab; the view opens on Inbox.
+  sb.switchAutomationSubtab('automations');
   await flushAsync(30);
   assert.ok(!out.automationPanel.includes('No Automations yet'), out.automationPanel);
   assert.ok(!out.automationPanel.includes('automationEmptyCreateBtn'));
@@ -79,6 +85,8 @@ test('no empty state while the first load is in flight', async () => {
 test('no empty state after a failed load, which shows the failed banner instead', async () => {
   const { sb, out } = load({ '/api/automations': { status: 500, body: 'boom' }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
+  // The list lives on the Automations sub-tab; the view opens on Inbox.
+  sb.switchAutomationSubtab('automations');
   await flushAsync(30);
   assert.ok(!out.automationPanel.includes('automationEmptyCreateBtn'), out.automationPanel);
   assert.ok(!out.automationPanel.includes('No Automations yet'));
@@ -92,6 +100,8 @@ test('a non-empty list shows cards and no empty state', async () => {
     '/api/capacity': { status: 200, body: CAP },
   });
   sb.renderAutomationView();
+  // The list lives on the Automations sub-tab; the view opens on Inbox.
+  sb.switchAutomationSubtab('automations');
   await flushAsync(30);
   assert.match(out.automationPanel, /data-automation-id="a1b2c3d4"/);
   assert.ok(!out.automationPanel.includes('automationEmptyCreateBtn'));
@@ -100,8 +110,8 @@ test('a non-empty list shows cards and no empty state', async () => {
 test('the Automation tab renders the capacity card from the shared component', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
-  // The capacity card lives on the Overview sub-tab; select it before reading.
-  sb.switchAutomationSubtab('overview');
+  // The capacity card lives on the Resources sub-tab; select it before reading.
+  sb.switchAutomationSubtab('resources');
   assert.match(out.view, /id="automationCapacityCard"/);
   await flushAsync(30);
   assert.match(out.automationCapacityCard, /prd-capacity-card/);
@@ -111,20 +121,22 @@ test('the Automation tab renders the capacity card from the shared component', a
 test('the capacity card has its own loading and failed handling', async () => {
   const slow = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': () => new Promise(() => {}) });
   slow.sb.renderAutomationView();
+  slow.sb.switchAutomationSubtab('automations');
   await flushAsync(30);
-  assert.match(slow.out.automationPanel, /No Automations yet/, 'the Chains list is not held up by the card');
-  // The card slot lives on the Overview sub-tab; selecting it starts the load.
-  slow.sb.switchAutomationSubtab('overview');
+  assert.match(slow.out.automationPanel, /No Automations yet/, 'the Automations list is not held up by the card');
+  // The card slot lives on the Resources sub-tab; selecting it starts the load.
+  slow.sb.switchAutomationSubtab('resources');
   await flushAsync(30);
   assert.match(slow.out.automationCapacityCard, /list-state-skeleton/);
 
   const bad = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 500, body: 'nope' } });
   bad.sb.renderAutomationView();
-  // Let the first Chains load settle first: switching the sub-tab aborts
+  bad.sb.switchAutomationSubtab('automations');
+  // Let the first Automations load settle first: switching the sub-tab aborts
   // in-flight loads, which would leave the panel at the initial skeleton.
   await flushAsync(30);
-  // The card slot lives on the Overview sub-tab; selecting it starts the load.
-  bad.sb.switchAutomationSubtab('overview');
+  // The card slot lives on the Resources sub-tab; selecting it starts the load.
+  bad.sb.switchAutomationSubtab('resources');
   await flushAsync(30);
   assert.match(bad.out.automationCapacityCard, /Could not load capacity and queue/);
   assert.match(bad.out.automationCapacityCard, /Retry/);
@@ -134,9 +146,14 @@ test('the capacity card has its own loading and failed handling', async () => {
 test('the capacity card is present on the Automation sub-tab only', async () => {
   const { sb, out } = load({ '/api/automations': { status: 200, body: [] }, '/api/capacity': { status: 200, body: CAP } });
   sb.renderAutomationView();
-  sb.switchAutomationSubtab('overview');
+  // Absent from every other Automation sub-tab body.
+  for (const other of ['inbox', 'automations', 'progress', 'setup', 'housekeeping']) {
+    sb.switchAutomationSubtab(other);
+    assert.doesNotMatch(out.view, /id="automationCapacityCard"/, 'no capacity slot on ' + other);
+  }
+  sb.switchAutomationSubtab('resources');
   assert.equal((out.view.match(/id="automationCapacityCard"/g) || []).length, 1, 'exactly one capacity slot on the view');
-  assert.equal((out.view.match(/id="progressCard"/g) || []).length, 1, 'exactly one progress slot on the view');
+  assert.doesNotMatch(out.view, /id="progressCard"/, 'the progress slot lives on Progress, not Resources');
   assert.doesNotMatch(out.view, /id="prdCapacityCard"/, 'no machine-wide capacity slot on the Automata list');
   await flushAsync(30);
   assert.match(out.automationCapacityCard, /prd-capacity-card/);

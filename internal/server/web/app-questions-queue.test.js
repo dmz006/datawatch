@@ -231,9 +231,14 @@ test('v1 question-queue: card renders open questions with escaped hostile text',
     assert.ok(body.includes('id="automationQuestionsSearch"'), 'search input present');
     const iTriage = body.indexOf('id="automationTriageCard"');
     const iQ = body.indexOf('id="automationQuestionsCard"');
-    const iPanel = body.indexOf('id="automationPanel"');
-    assert.ok(iTriage !== -1 && iQ !== -1 && iPanel !== -1, 'all anchors present');
-    assert.ok(iTriage < iQ && iQ < iPanel, 'card sits after the triage card and before the list panel');
+    const iSecurity = body.indexOf('id="automationSecurityFailureCard"');
+    assert.ok(iTriage !== -1 && iQ !== -1 && iSecurity !== -1, 'all anchors present');
+    assert.ok(iTriage < iQ && iQ < iSecurity, 'card sits after the triage card and before the security failure card');
+    assert.ok(!body.includes('id="automationPanel"'), 'the list panel is not on Inbox');
+    for (const other of ['automations', 'resources', 'progress', 'setup', 'housekeeping']) {
+      vmmod.runInContext(`_automationState.subtab = '${other}'`, s9);
+      assert.ok(!vmmod.runInContext('_automationBodyHTML()', s9).includes('id="automationQuestionsCard"'), 'no question card on ' + other);
+    }
   });
 });
 

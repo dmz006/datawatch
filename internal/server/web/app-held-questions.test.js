@@ -113,17 +113,20 @@ test('settings: autonomous.questions.held_mode and held_states sit with the deci
   assert.equal(typeof bundle('en')[states.labelKey], 'string', 'held_question_settings_states must be in en');
 });
 
-test('chains body: the held-questions card renders directly under the queue card, before the panel', () => {
+test('inbox body: the held-questions card renders directly under the queue card, before the security failure card', () => {
   const sandbox = loadApp();
-  const body = vm.runInContext("_automationBodyHTML({subtab: 'chains'})", sandbox);
+  const body = vm.runInContext("(_automationState.subtab = 'inbox', _automationBodyHTML())", sandbox);
   const iQueues = body.indexOf('id="automationQuestionsBody"');
   const iHeldCard = body.indexOf('id="automationHeldQuestionsCard"');
   const iHeldBody = body.indexOf('id="automationHeldQuestionsBody"');
-  const iPanel = body.indexOf('id="automationPanel"');
-  assert.ok(iQueues !== -1, 'queue card present in the chains body');
-  assert.ok(iHeldCard !== -1, 'held-questions card present in the chains body');
+  const iSecurity = body.indexOf('id="automationSecurityFailureCard"');
+  assert.ok(iQueues !== -1, 'queue card present in the inbox body');
+  assert.ok(iHeldCard !== -1, 'held-questions card present in the inbox body');
   assert.ok(iHeldBody !== -1 && iHeldCard < iHeldBody, 'held card carries its body slot');
-  assert.ok(iPanel !== -1 && iHeldBody < iPanel, 'held card sits under the queue card, above the panel');
+  assert.ok(iSecurity !== -1 && iHeldBody < iSecurity, 'held card sits under the queue card, above the security failure card');
+  assert.ok(!body.includes('id="automationPanel"'), 'the list panel is not on Inbox');
+  const list = vm.runInContext("(_automationState.subtab = 'automations', _automationBodyHTML())", sandbox);
+  assert.ok(!list.includes('id="automationHeldQuestionsCard"') && !list.includes('id="automationQuestionsBody"'), 'no question cards on Automations');
   assert.ok(iQueues < iHeldCard, 'queue card comes before the held card');
 });
 

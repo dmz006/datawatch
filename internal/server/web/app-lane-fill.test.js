@@ -247,13 +247,18 @@ test('a hostile evidence error is escaped', () => {
 
 test('the Automation body mounts the lane card beside the capacity card', () => {
   const sandbox = loadApp();
-  // Both cards live on the Overview sub-tab; select it before rendering the body.
-  vm.runInContext("_automationState.subtab = 'overview'", sandbox);
+  // Both cards live on the Resources sub-tab; select it before rendering the body.
+  vm.runInContext("_automationState.subtab = 'resources'", sandbox);
   const body = vm.runInContext('_automationBodyHTML()', sandbox);
   const cap = body.indexOf('id="automationCapacityCard"');
   const lanes = body.indexOf('id="automationLaneFillCard"');
   assert.ok(cap >= 0, 'capacity card missing');
   assert.ok(lanes > cap, 'lane card must follow the capacity card');
+  for (const other of ['inbox', 'automations', 'progress', 'setup', 'housekeeping']) {
+    vm.runInContext(`_automationState.subtab = '${other}'`, sandbox);
+    const o = vm.runInContext('_automationBodyHTML()', sandbox);
+    assert.ok(!o.includes('id="automationLaneFillCard"'), 'no lane card on ' + other);
+  }
 });
 
 test('the lane loader polls the lane fill endpoint with limit 20 and the lane card element', async () => {
