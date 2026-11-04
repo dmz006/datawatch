@@ -74,6 +74,16 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// e3db0001 — capacity priority-source chip + kind table / defect intake settings.
+		"priority_source_badge",
+		"priority_source_explicit",
+		"priority_source_kind",
+		"priority_source_default",
+		"priority_source_tip",
+		"settings_priority_by_kind",
+		"settings_priority_by_kind_hint",
+		"settings_defect_intake_automation",
+		"settings_defect_intake_automation_hint",
 		"prd_scope_warnings_title",
 		"usage_calc_whatif_label",
 		"usage_calc_running_now",

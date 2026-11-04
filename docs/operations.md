@@ -4889,6 +4889,31 @@ is in [howto/automata-capacity.md](howto/automata-capacity.md).
 
 ---
 
+## Priority by kind and defect intake (`autonomous.priority_by_kind`, `autonomous.defect_intake_automation`)
+
+Where an Automaton lines up in the capacity queue is decided by three rules, in order: the **explicit pin** on the Automaton (a priority set directly on the record; it always wins, including an explicit 0), then the **kind table** (`autonomous.priority_by_kind`, read through the Automaton's effective kind), then **0**. The rule that set the priority is recorded on the record as `priority_source`: `explicit`, `kind` or `default`. The web app shows a priority badge with the source and a tooltip.
+
+The shipped table is bug=80, maintenance=70, feature=20, other=0; `other` is the fallback row a kind with no row of its own resolves to. Setting a kind names it exactly as given (a 0 holds it at the back) and kinds you leave out keep their shipped value; values are integers ≥ 0 only — a non-number, a fraction or a boolean is refused and nothing is written. `{}` or an empty string clears the table back to the shipped defaults. Both keys are read live; no restart.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.priority_by_kind` | absent (shipped table: bug=80, maintenance=70, feature=20, other=0) | The kind → capacity-queue priority table. Integer values ≥ 0; a non-number, a fraction or a boolean is refused and stored nowhere. `{}` or the empty string clears it back to the shipped defaults. The full guide is [howto/autonomous-priority-by-kind.md](howto/autonomous-priority-by-kind.md). |
+| `autonomous.defect_intake_automation` | empty (off) | The Automation that new kind:bug defect filings are offered to. Empty records the filing as `not_configured` and offers it to nothing — it is never guessed. Only kind-bug filings are handled; any other kind is recorded as `skipped`. The outcome lands on the Automaton as `defect_intake {outcome, automation, message, at}` with `outcome` one of `offered`, `not_configured`, `skipped`, `error`, and intake never fails or blocks the filing. |
+
+The per-Automaton pin has no CLI subcommand (the related `datawatch session priority <id> <n>` sets a *session's* queue priority, not an Automaton's); use REST `POST /api/autonomous/prds/{id}/set_priority` or the MCP `autonomous_prd_set_priority` tool.
+
+### Surfaces
+
+| Surface | Read the settings | Change the settings | Pin one Automaton |
+|---|---|---|---|
+| REST | `GET /api/autonomous/config`, `GET /api/autonomous/prds/{id}` (`priority`, `priority_source`, `defect_intake`) | `PUT /api/autonomous/config`, `PUT /api/config` | `POST /api/autonomous/prds/{id}/set_priority` |
+| MCP | `autonomous_config_get`, `autonomous_prd_get` | `autonomous_config_set` | `autonomous_prd_set_priority` |
+| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set '{"priority_by_kind":{...}}'`, `datawatch config set autonomous.defect_intake_automation <name>` | — |
+| Comm channel | — | `configure autonomous.priority_by_kind=bug=90,other=0`, `configure autonomous.defect_intake_automation=<name>` | — |
+| PWA | Automaton record (priority badge with source tooltip) | Settings, the `autonomous.priority_by_kind` and `autonomous.defect_intake_automation` fields | — |
+
+---
+
 ## Lane fill (`autonomous.lane_fill`)
 
 Lane fill keeps the GPU and Claude lanes busy. On every poll the planner looks at the lanes and the queue and decides what each idle lane should start. It is in **shadow** mode by default: it records every decision it would make and starts nothing. Switch `autonomous.lane_fill.mode` to `on` only after the shadow comparison in [howto/automation-lane-fill.md](howto/automation-lane-fill.md) has passed.
