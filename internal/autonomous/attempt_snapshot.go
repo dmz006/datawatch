@@ -24,9 +24,23 @@ import (
 // build directories, model-weight patterns) and a file-count limit. When the
 // limit is exceeded, the snapshot is refused with an error and no ref is
 // created.
+//
+// It drops the staging guard's skip list; use
+// SnapshotAttemptWorkWithSkips for it.
 func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) (ref string, err error) {
+	ref, _, err = SnapshotAttemptWorkWithSkips(ctx, dir, taskKey, attempt)
+	return ref, err
+}
+
+// SnapshotAttemptWorkWithSkips is SnapshotAttemptWork with one extra return:
+// the staging guard's skip list, the candidate files gitguard.Default.Keep
+// refused to stage. It is nil before the staging pass runs (including every
+// error path before the candidates are computed) and non-nil afterwards,
+// carrying the guarded skip entries even when the snapshot is later refused
+// (file-count limit) or fails after staging.
+func SnapshotAttemptWorkWithSkips(ctx context.Context, dir, taskKey string, attempt int) (ref string, skipped []gitguard.Skip, err error) {
 	if rerr := gitguard.RefuseNonProject(dir); rerr != nil {
-		return "", rerr
+		return "", nil, rerr
 	}
 	if home, herr := gitguard.InHome(dir, nil); herr == nil && home {
 		// Placeholder, not the path: this warning must not print the home
@@ -36,7 +50,7 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 
 	tmpDir, err := os.MkdirTemp("", "attempt-snapshot-")
 	if err != nil {
-		return "", fmt.Errorf("create snapshot temp dir: %w", err)
+		return "", nil, fmt.Errorf("create snapshot temp dir: %w", err)
 	}
 	// Best-effort cleanup: a failed removal of the temp index dir must
 	// not turn a successful snapshot into an error.
@@ -53,31 +67,31 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 
 	head, err := snapshotGit(ctx, dir, env, "rev-parse", "--verify", "HEAD")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	headTree, err := snapshotGit(ctx, dir, env, "rev-parse", "--verify", "HEAD^{tree}")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	// Staging runs from the repository top so that the repo-relative paths
 	// git reports are valid pathspecs, whichever subdirectory dir names.
 	top, err := snapshotGit(ctx, dir, env, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if _, err := snapshotGit(ctx, dir, env, "read-tree", head); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	p := gitguard.Default
 	candidates, err := snapshotCandidates(ctx, top)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	kept, skipped := p.Keep(top, candidates)
 	kept, err = snapshotDropUnmatched(ctx, top, env, kept)
 	if err != nil {
-		return "", err
+		return "", skipped, err
 	}
 	if len(skipped) > 0 {
 		fmt.Printf("[autonomous] attempt snapshot in %s skipped %d file(s) by the staging guard (%s)\n", dir, len(skipped), snapshotSkipSummary(skipped))
@@ -88,34 +102,34 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 		}
 	}
 	if p.RefuseReason(len(kept)) != "" {
-		return "", fmt.Errorf("attempt snapshot refused in %s: %d candidate file(s), %d to stage, exceeds the limit of %d (MaxStagedFiles); no ref was created", dir, len(candidates), len(kept), p.MaxStagedFiles)
+		return "", skipped, fmt.Errorf("attempt snapshot refused in %s: %d candidate file(s), %d to stage, exceeds the limit of %d (MaxStagedFiles); no ref was created", dir, len(candidates), len(kept), p.MaxStagedFiles)
 	}
 	// git add with no pathspec would stage the whole tree, so an empty kept
 	// list means nothing is staged and the temp index stays at HEAD.
 	if len(kept) > 0 {
 		if err := snapshotAdd(ctx, top, env, p, kept); err != nil {
-			return "", err
+			return "", skipped, err
 		}
 	}
 
 	tree, err := snapshotGit(ctx, dir, env, "write-tree")
 	if err != nil {
-		return "", err
+		return "", skipped, err
 	}
 	if tree == headTree {
-		return "", nil
+		return "", skipped, nil
 	}
 
 	msg := fmt.Sprintf("datawatch attempt snapshot %s #%d", key, attempt)
 	commit, err := snapshotGit(ctx, dir, env, "commit-tree", tree, "-p", head, "-m", msg)
 	if err != nil {
-		return "", err
+		return "", skipped, err
 	}
 	ref = fmt.Sprintf("refs/datawatch/attempts/%s/%d", key, attempt)
 	if _, err := snapshotGit(ctx, dir, env, "update-ref", ref, commit); err != nil {
-		return "", err
+		return "", skipped, err
 	}
-	return ref, nil
+	return ref, skipped, nil
 }
 
 // sanitizeAttemptTaskKey keeps ASCII letters, digits, dash and underscore and

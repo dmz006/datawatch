@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -27,16 +28,25 @@ func (f *fakeStallSessions) EndSession(fullID string, why session.EndReason) err
 // testStallEnd is the end a stall kill records in these tests.
 var testStallEnd = session.EndReason{Caller: "test.stall", Reason: "test stall reason"}
 
-// fakeStallStore records RecordTaskAttemptSnapshot calls into the same log.
+// fakeStallStore records RecordTaskAttemptSnapshot and
+// RecordTaskSkippedSnapshotPaths calls into the same log.
 type fakeStallStore struct {
-	events *[]string
-	refs   []string
+	events    *[]string
+	refs      []string
+	skipped   [][]autonomouspkg.SnapshotSkippedPath
+	recordSkippedErr error
 }
 
 func (f *fakeStallStore) RecordTaskAttemptSnapshot(prdID, taskID, ref string) error {
 	*f.events = append(*f.events, "record:"+ref)
 	f.refs = append(f.refs, ref)
 	return nil
+}
+
+func (f *fakeStallStore) RecordTaskSkippedSnapshotPaths(prdID, taskID string, skipped []autonomouspkg.SnapshotSkippedPath) error {
+	*f.events = append(*f.events, "record-skipped:"+strconv.Itoa(len(skipped)))
+	f.skipped = append(f.skipped, skipped)
+	return f.recordSkippedErr
 }
 
 // stallTestGit runs git in dir with a fixed identity, never touching global config.
