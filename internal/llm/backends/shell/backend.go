@@ -22,7 +22,7 @@ func New(scriptPath string) llm.Backend {
 	return &Backend{scriptPath: scriptPath}
 }
 
-func (b *Backend) Name() string                  { return "shell" }
+func (b *Backend) Name() string                   { return "shell" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) HasToolAccess() bool            { return true }
 func (b *Backend) Version() string {

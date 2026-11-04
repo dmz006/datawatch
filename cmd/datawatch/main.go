@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
 	"log"
 	"net/http"
@@ -1096,6 +1098,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Daemon-observed trace events for the ollama, openwebui and shell
+	// backends: register the recorder hooks against the trace store.
+	var traceObserver *observe.Observer
+	if cfg.Tracing.WithDefaults().Mode != trace.ModeOff {
+		if ts, terr := trace.NewStore(expandHome(cfg.DataDir), cfg.Tracing.WithDefaults(), nil); terr != nil {
+			debugf("trace store unavailable, daemon-observed tracing off: %v", terr)
+		} else {
+			traceObserver = observe.Install(ts, cfg.Tracing, func(tmux string) string {
+				for _, s := range mgr.ListSessions() {
+					if s.TmuxSession == tmux {
+						return s.FullID
+					}
+				}
+				return ""
+			}, nil)
+			defer traceObserver.Close()
+		}
+	}
 	// Old terminal sessions move to the archive file (age and field cap are
 	// the store defaults until the config wiring sets them).
 	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
@@ -1727,6 +1747,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Shell sessions: report the command's exit code from the
+			// daemon's own session record to the trace recorder.
+			if traceObserver != nil && sess.BackendFamily == "shell" && sess.TmuxSession != "" {
+				code := 0
+				if sess.State != session.StateComplete {
+					code = sess.FailureExitCode
+					if code == 0 {
+						code = 1
+					}
+				}
+				traceObserver.SessionEnded(sess.TmuxSession, code)
+			}
 			// Design A3 — revoke this session's scoped credential
 			// immediately; its bridge process can no longer authenticate
 			// to the daemon at all once this returns.
