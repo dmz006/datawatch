@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The image-refresh cleanup step, the ghcr-cleanup listing and the dismissed-alerts watch now parse the paged GitHub API output instead of failing with a JSON parse error.
+
 ## v9.71.0 — Billing profiles for the usage calculator and the cost report
 
 The usage calculator and the cost report now know which plan you are on.
