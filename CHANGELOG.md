@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.85.3 — Locked store writes in the push path
+
+Two shared-store writes in the push path are now made under the store lock.
+
+- The push outcome and the completion metrics wrote to a stored Automaton without holding the store lock, which could race with a concurrent read and was the suspected cause of the intermittent `TestFailureEscalation_RetryPromptCarriesEarlierReports` failure in CI. Both writes now run under the store lock, including the shadow-mode secret-scan findings record.
+- Two regression tests cover the locked writes, and a reproduction loop script is kept with the Automaton. The failure itself could not be reproduced on demand (50 clean loops in three modes).
+- A bug entry in the testing guide records what was found.
+- Known: the full package under the race detector still reports two failures that also occur on main before this change (`TestInfraRetry_HoldResolvedElsewhereWithdrawsQuestion` and `TestShippedStartBackfillEnabledMarksWithoutBlocking`); they are filed for a separate fix.
+
 ## v9.85.2 — Merge pipeline card empty state for a missing project
 
 The Merge pipeline card no longer shows "project is required" as an error.
