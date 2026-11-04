@@ -338,9 +338,10 @@ and the billing-group label on LLM entries (`llm_add` / `llm_update`
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/projects` | `project_list` | Complete | |
-| `POST /api/projects` | `project_upsert` | Complete | |
+| `GET /api/projects` | `project_list` | Complete | Each entry carries the stored `policy` block; CLI `datawatch projects policy show <name>` and comm `project policy <name>` read it |
+| `POST /api/projects` | `project_upsert` | Complete | Also carries the per-project policy tier (optional `policy` object, the layer between the daemon defaults and the Automaton's own overrides); CLI `datawatch projects policy set` / `unset` and the PWA Project policy panel write through it |
 | `DELETE /api/projects` | `project_alias_delete` | Complete | |
+| `GET /api/projects/{name}/policy/effective` | `project_policy_effective` | Complete | Every setting with its value and source tier (automaton, project, daemon); optional `automaton` query adds the top tier; CLI `--effective [--automaton <id>]`, comm `project policy <name> [automaton]` |
 | `GET /api/project/summary?dir=` | `project_summary` | Complete | Git status + sessions + stats |
 
 ### Device aliases

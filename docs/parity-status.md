@@ -54,6 +54,7 @@ Legend:
 | Capacity admission (pools, wait queue, priority, per-node/LLM limits) | ✅ | ✅ (app v1.23.83, 2026-09-29: "Capacity card showing pools, limits and the wait queue") | ✅ |
 | Account usage calculator (readings, advice, three policies, three PWA variants, federation keeper) | ✅ MCP, REST, CLI, comm; PWA 🔶 not yet shipped | ❌ pending: [app#286](https://github.com/dmz006/datawatch-app/issues/286) (contract: `plans/2026-10-25-usage-calculator-mobile-contract.md`); locale keys: [app#287](https://github.com/dmz006/datawatch-app/issues/287) | ❌ pending: [app#286](https://github.com/dmz006/datawatch-app/issues/286), same scope and locale keys [app#287](https://github.com/dmz006/datawatch-app/issues/287) |
 | Burn guard (status, run now, settings, alerts; ladder of admission changes, effort ceiling, Claude retry limit) | ✅ Web UI Burn guard card on the usage calculator view with help link and five locale bundles; MCP (`burn_guard_*`), REST (`/api/usage/burn-guard`), CLI (`datawatch usage burn-guard`), comm (`usage burn-guard`) | ⏳ file a `dmz006/datawatch-app` issue on merge — text in [`plans/parity-issues/burn-guard.md`](plans/parity-issues/burn-guard.md): status, settings, alerts | ⏳ same as Android |
+| Project automation policy (per-project tier between Automaton and daemon: stored block, effective read with per-setting source, set / clear) | ✅ Web UI Settings → Automata → **Project policy** panel (effective values, precedence badge, set / inherit-clear); MCP (`project_upsert` with `policy`, `project_policy_effective`), REST (`POST /api/projects`, `GET /api/projects/{name}/policy/effective`), CLI (`datawatch projects policy show/set/unset`), comm (`project policy <name> [automaton]`) | ⏳ file a `dmz006/datawatch-app` issue on merge — text in [`plans/parity-issues/project-automation-policy-app-parity-issue.md`](plans/parity-issues/project-automation-policy-app-parity-issue.md): policy field on the project read, effective-policy read with the source tier per setting, precedence display | ⏳ same as Android |
 | Usage back-off (capacity panel wait-reason chip + `autonomous.usage_backoff` / `autonomous.backoff_max_wait_minutes` settings fields + status display) | ✅ | ❌ — datawatch-app item: mirror the capacity-panel back-off display and the two settings fields | ❌ — datawatch-app item, same scope |
 | Capacity visibility (task wait cause chip, reason, reset time and Holds line; capacity card back-off reset label, budget spend bars with the estimate label; audit query `subject` filter and `action` prefix) | ✅ | ❌ — pending the datawatch-app issue written up in `plans/2026-10-22-datawatch-app-capacity-visibility-note.md` (not filed yet) | ❌ — same issue, same scope |
 | Capacity card — compute node usage rows (per node: loaded model with memory size and expiry or stays-loaded, slots held of limit, GPU utilization and memory from the observer; `usage` object on REST, `capacity_status` MCP, CLI, comm) | ✅ | ❌ pending the datawatch-app issue written up in `plans/2026-10-24-datawatch-app-capacity-node-usage-note.md` (not filed) | ❌ — same issue, same scope (five-locale key set specified in that note) |
@@ -159,6 +160,25 @@ Per-surface notes:
 - **Effort ceiling** is shown read-only in the Web UI card; it is set through the Automaton and task tools, not the settings call.
 - **Comm channel** shows status only; it has no run verb, run it from the CLI, REST, MCP or Web UI.
 - **Running sessions** are never touched by the guard on any surface.
+
+## Parity surface — project automation policy
+
+| Channel | Surface | Status |
+|---------|---------|--------|
+| REST | `POST /api/projects` (validated `policy` upsert), `GET /api/projects` (stored block on each entry), `GET /api/projects/{name}/policy/effective?automaton=<id>` (value + source tier per setting) | ✅ |
+| MCP | `project_upsert` (`policy` argument), `project_policy_effective` (optional `automaton` argument) | ✅ |
+| CLI | `datawatch projects policy show <name> [--effective] [--automaton <id>]`; `set <name> <key> <value>`; `unset <name> <key>` | ✅ |
+| Comm channel | `project policy <name> [automaton]` (read; writes go through YAML, CLI, MCP or REST) | ✅ |
+| Web UI | Settings → Automata → **Project policy**: one row per key, effective value, precedence badge (Automaton / Project / Daemon), set / *inherit (clear)* | ✅ |
+| YAML | `projects.<alias>.policy` block | ✅ |
+| Android | policy field on the project read, effective-policy read with the source tier per setting, precedence display | ⏳ issue text in [`plans/parity-issues/project-automation-policy-app-parity-issue.md`](plans/parity-issues/project-automation-policy-app-parity-issue.md), to be filed on merge |
+| iOS | same scope as Android | ⏳ same issue |
+
+Per-surface notes:
+
+- **The effective read is the app's main new surface**: one call returns every setting with its value and the tier that supplied it, in the daemon's resolution order (Automaton over project over daemon) — the app renders rows with the tier badge and does not resolve anything itself.
+- **No new alerts** ride on this feature; the existing alert and question surfaces are unchanged, so the app work is purely reading the new fields and offering the set / clear of a key.
+- **Comm channel** is read-only for this feature; set and clear go through YAML, CLI, MCP or REST.
 
 ## Plan/Proposal parity gate
 

@@ -38,7 +38,7 @@ const UncommittedCauseAutomatonFinished = "files were still uncommitted when the
 // does not apply here (the scope setting governs only the per-task check), and
 // nothing is committed.
 func (m *Manager) checkWorktreeUncommittedAtFinish(ctx context.Context, prd *PRD) (blocked bool, err error) {
-	policy := m.Config().Automation.EffectiveUncommittedWorkPolicy()
+	policy := m.effectiveUncommittedWorkPolicy(prd)
 	if policy == config.UncommittedWorkPolicyOff {
 		return false, nil
 	}

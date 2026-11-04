@@ -39,6 +39,8 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"repo_ci_watch_mode_":    true, // + off/shadow/on mode string
 		"supervisor_watch_mode_": true, // + off/shadow/on mode string
 		"priority_source_":       true, // + explicit/kind/default source string
+		"project_policy_":        true, // + policy field key (project policy panel row/label)
+		"project_policy_source_": true, // + automaton/project/daemon source string
 	}
 
 	seen := map[string]bool{}

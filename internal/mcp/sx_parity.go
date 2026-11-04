@@ -257,12 +257,15 @@ func (s *Server) handleProjectList(_ context.Context, _ mcpsdk.CallToolRequest) 
 
 func (s *Server) toolProjectUpsert() mcpsdk.Tool {
 	return mcpsdk.NewTool("project_upsert",
-		mcpsdk.WithDescription("Register or update a project alias (BL27)."),
+		mcpsdk.WithDescription(
+			"Register or update a project alias (BL27), and optionally its per-project policy tier — the layer between the daemon-wide defaults and the Automaton's own overrides. Unset policy keys keep the daemon tier; the daemon re-validates the block and refuses it, naming the offending field, if a key holds a value that key does not know."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Project alias")),
 		mcpsdk.WithString("dir", mcpsdk.Required(), mcpsdk.Description("Absolute directory")),
 		mcpsdk.WithString("default_backend", mcpsdk.Description("Default LLM backend")),
 		mcpsdk.WithString("description", mcpsdk.Description("Description")),
-	)
+		mcpsdk.WithObject("policy",
+			mcpsdk.Description(
+				"Optional per-project policy block (e.g. {\"plan_review_mode\":\"block\",\"max_concurrent_tasks\":2,\"retry_policy\":{\"infra\":3}}). Unset keys keep the daemon tier.")))
 }
 func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := map[string]any{
@@ -270,6 +273,26 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 		"dir":             req.GetString("dir", ""),
 		"default_backend": req.GetString("default_backend", ""),
 		"description":     req.GetString("description", ""),
+	}
+	if raw, ok := req.GetArguments()["policy"]; ok && raw != nil {
+		var obj map[string]any
+		switch v := raw.(type) {
+		case map[string]any:
+			obj = v
+		case string:
+			if err := json.Unmarshal([]byte(v), &obj); err != nil {
+				return toolErrorf("project_upsert", "policy must be an object (or a JSON string encoding one): %v", err), nil
+			}
+		default:
+			return toolErrorf("project_upsert", "policy must be an object (or a JSON string encoding one)"), nil
+		}
+		b, err := json.Marshal(obj)
+		if err != nil {
+			return toolErrorf("project_upsert", "policy: %v", err), nil
+		}
+		// json.RawMessage keeps the block an object on the wire; a plain
+		// []byte would marshal as a base64 string.
+		body["policy"] = json.RawMessage(b)
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
@@ -288,6 +311,33 @@ func (s *Server) handleProjectAliasDelete(_ context.Context, req mcpsdk.CallTool
 	out, err := s.proxyJSON(http.MethodDelete, "/api/projects/"+req.GetString("name", ""), nil)
 	if err != nil {
 		return toolError("project_alias_delete", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+// toolProjectPolicyEffective exposes GET /api/projects/{name}/policy/effective:
+// every policy setting for the project, with the value in force and the tier
+// (automaton, project, or daemon) that supplied it.
+func (s *Server) toolProjectPolicyEffective() mcpsdk.Tool {
+	return mcpsdk.NewTool("project_policy_effective",
+		mcpsdk.WithDescription(
+			"Effective policy for one project: every setting with the value in force and the tier (automaton, project, daemon) that supplied it. Optional automaton parameter resolves with that Automaton's own policy fields as the top tier. Read-only."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("The project alias.")),
+		mcpsdk.WithString("automaton", mcpsdk.Description("Optional Automaton ID whose own policy fields act as the top tier.")),
+	)
+}
+func (s *Server) handleProjectPolicyEffective(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	name := req.GetString("name", "")
+	if name == "" {
+		return toolErrorf("project_policy_effective", "name is required"), nil
+	}
+	q := url.Values{}
+	if auto := req.GetString("automaton", ""); auto != "" {
+		q.Set("automaton", auto)
+	}
+	out, err := s.proxyGet("/api/projects/"+url.PathEscape(name)+"/policy/effective", q)
+	if err != nil {
+		return toolError("project_policy_effective", err), nil
 	}
 	return textOK(string(out)), nil
 }

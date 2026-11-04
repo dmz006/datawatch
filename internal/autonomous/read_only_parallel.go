@@ -12,12 +12,13 @@ import (
 )
 
 // readOnlyTaskSkipsLock reports whether t runs without the tree write lock:
-// the task is flagged read_only and the effective setting is on.
-func (m *Manager) readOnlyTaskSkipsLock(t *Task) bool {
+// the task is flagged read_only and the effective setting is on (daemon
+// default, or a project/ Automaton tier that sets it).
+func (m *Manager) readOnlyTaskSkipsLock(prd *PRD, t *Task) bool {
 	if t == nil || !t.ReadOnly {
 		return false
 	}
-	return EffectiveReadOnlyTasks(m.Config().Parallel)
+	return m.effectiveReadOnlyTasks(prd)
 }
 
 // readOnlyWriteScope returns no write scope for a read-only task, so nothing

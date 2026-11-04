@@ -33,7 +33,7 @@ func (m *Manager) scopeLintMode() string {
 // planScopeWarnings is LintPlanScope gated by the scope-lint mode: off leaves
 // ScopeWarnings empty at plan time, warn and enforce record the problems.
 func (m *Manager) planScopeWarnings(prd *PRD, stories []Story) []string {
-	if m.scopeLintMode() == scopeLintOff {
+	if m.effectiveScopeLint(prd) == scopeLintOff {
 		return nil
 	}
 	return LintPlanScope(prd, stories)

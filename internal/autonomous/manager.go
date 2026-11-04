@@ -1083,6 +1083,29 @@ func (m *Manager) resolveContinueOnStoryFailure(prd *PRD) bool {
 	return d
 }
 
+// resolveTaskConcurrency is the single decision point for the task-session
+// concurrency limit (BL370), resolving the policy tiers in precedence
+// order: the Automaton's own max_concurrent_tasks, then the project policy's
+// (via the injected projectPolicyConcurrency hook — nil or "no value" when
+// the daemon carries no project policy for this PRD's project), then the
+// daemon global default. 0 or 1 stays sequential (existing behaviour).
+func (m *Manager) resolveTaskConcurrency(prd *PRD) int {
+	if prd != nil {
+		if v := prd.MaxConcurrentTasks; v > 0 {
+			return v
+		}
+	}
+	if hook := m.projectPolicyConcurrency; hook != nil {
+		if v, ok := hook(prd); ok && v > 0 {
+			return v
+		}
+	}
+	m.mu.Lock()
+	g := m.cfg.MaxConcurrentTasks
+	m.mu.Unlock()
+	return g
+}
+
 // GuardrailFn (BL191 Q6, v5.10.0) is the indirection that runs one
 // guardrail attestation at the story or task level. Wired in main.go
 // to the same BL103 validator-agent path the BL117 orchestrator uses
@@ -1177,6 +1200,15 @@ type Manager struct {
 	supervisorWatchFindings     func(cfg SupervisorWatchConfig, prds []*PRD) []SupervisorWatchFinding
 	supervisorWatchAlerted      map[string]bool
 	supervisorWatchAlertMu      sync.Mutex
+	projectPolicyConcurrency    func(*PRD) (int, bool) // project-policy tier of resolveTaskConcurrency: (value, true) when the operator set max_concurrent_tasks on the PRD's project, else (0, false); nil = tier unwired. Wire with config.ResolveProjectPolicy, whose Automaton > project > daemon precedence this lookup mirrors.
+
+	// effectivePolicy is the three-tier policy resolver
+	// (config.ResolveProjectPolicy), injected by the daemon with
+	// SetEffectivePolicy; nil = unwired and every reader falls back to the
+	// daemon's autonomous.* defaults. laneFillCaps is the floor of the
+	// projects' lane_fill_* counts, (0,0) when unwired.
+	effectivePolicy atomic.Pointer[PolicyFn]
+	laneFillCaps    atomic.Pointer[laneFillPolicyCapFn]
 
 	dataDir string // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	// judgeVerdictCache — per-commit judge verdict cache
@@ -2638,7 +2670,7 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		s, prd.Story, genDropNotes = kept, kept, notes
 	}
 
-	settings, serr := m.EffectivePlanCoverage()
+	settings, serr := m.effectivePlanCoverage(prd)
 	if serr != nil {
 		// A plan-coverage mode that cannot be resolved is a config
 		// error; do not leave the PRD half-finalized.
@@ -2741,11 +2773,10 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 		_ = m.store.SavePRD(prd)
 	}
 	// BL407 Phase 5 — apply the daemon-wide AutoPR default at creation
-	// time, same shape as DefaultSkills above.
-	m.mu.Lock()
-	defaultAutoPR := m.cfg.DefaultAutoPR
-	m.mu.Unlock()
-	if defaultAutoPR && !prd.Git.AutoPR {
+	// time, same shape as DefaultSkills above; a project/ Automaton tier
+	// sets the default for its Automata when it does
+	// (effectiveDefaultAutoPR).
+	if defaultAutoPR := m.effectiveDefaultAutoPR(prd); defaultAutoPR && !prd.Git.AutoPR {
 		prd.Git.AutoPR = true
 		_ = m.store.SavePRD(prd)
 	}
@@ -3155,7 +3186,7 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// (reviewer outage / unparseable / skipped) never blocks. A plan review the
 	// judge held (it timed out on every backend) refuses approval in every mode,
 	// since no judge checked the plan.
-	if mode := normalizePlanReviewMode(m.cfg.PlanReviewMode); mode != PlanReviewModeOff {
+	if mode := m.effectivePlanReviewMode(prd); mode != PlanReviewModeOff {
 		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed && (mode == PlanReviewModeBlock || v.Held) {
 			msg := v.Summary
 			if cats := planReviewCategories(v.Findings); len(cats) > 0 {

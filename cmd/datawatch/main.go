@@ -7347,6 +7347,57 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
 			autoCoord.SetLaneCapSource(newLaneFillCapSource(httpServer.InferenceRegistry,
 				func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }))
+			// 2026-11-01 — per-project policy tier: wire the three-tier
+			// resolver (config.ResolveProjectPolicy; automaton > project >
+			// daemon) into the autonomous manager's policy reads. A PRD with
+			// no project policy resolves to pure daemon defaults, so absent
+			// policy is behaviorally unchanged.
+			projPolicy := func(prd *autonomouspkg.PRD) *config.ProjectPolicy {
+				if prd == nil || prd.ProjectDir == "" {
+					return nil
+				}
+				for _, entry := range cfg.Projects {
+					if entry.Dir == prd.ProjectDir {
+						return entry.Policy
+					}
+				}
+				return nil
+			}
+			amgr.SetEffectivePolicy(func(prd *autonomouspkg.PRD) config.EffectivePolicy {
+				var auto config.AutomatonOverrides
+				if prd != nil {
+					auto = prd.PolicyOverrides()
+				}
+				return config.ResolveProjectPolicy(config.DaemonPolicySource{
+					Autonomous: cfg.Autonomous,
+					BurnGuard:  cfg.Usage.BurnGuard,
+				}, projPolicy(prd), auto)
+			})
+			// Shared-budget lane caps: a project's lanes are a floor, so the
+			// daemon runs the shared budget at no more than the smallest
+			// count any project's tier sets per lane kind (0 = off);
+			// (0,0) = no project tier set a cap, i.e. no clamp.
+			amgr.SetLaneFillPolicyCaps(func() (int, int) {
+				gpu, claude := 0, 0
+				gpuSet, claudeSet := false, false
+				for _, entry := range cfg.Projects {
+					p := entry.Policy
+					if p == nil {
+						continue
+					}
+					if e := p.LaneFillGPULanes; e != nil {
+						if v := *e; !gpuSet || v < gpu {
+							gpu, gpuSet = v, true
+						}
+					}
+					if e := p.LaneFillClaudeLanes; e != nil {
+						if v := *e; !claudeSet || v < claude {
+							claude, claudeSet = v, true
+						}
+					}
+				}
+				return gpu, claude
+			})
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning

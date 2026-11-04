@@ -7204,7 +7204,85 @@ paths:
       summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name: {type: string}
+                    dir: {type: string}
+                    default_backend: {type: string}
+                    description: {type: string}
+                    policy: {$ref: "#/components/schemas/ProjectPolicy"}
+    post:
+      summary: Upsert a project alias
+      operationId: projectsUpsert
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, dir]
+              properties:
+                name: {type: string, description: "Project alias"}
+                dir: {type: string, description: "Absolute directory"}
+                default_backend: {type: string}
+                description: {type: string}
+                policy:
+                  description: The per-project policy tier (optional); unset keys inherit from the daemon tier.
+                  $ref: "#/components/schemas/ProjectPolicy"
+      responses:
+        "200": {description: OK}
+        "400":
+          description: name or dir missing, dir not absolute, or a policy field holds a value the key does not know — the body names the offending field
+          content: {"text/plain": {schema: {type: string}}}
+  /api/projects/{name}/policy/effective:
+    get:
+      summary: Effective policy for one project
+      description: |
+        Resolves every policy setting for the project across the three tiers —
+        the Automaton's own overrides, the project's policy block, and the
+        daemon defaults — and returns each setting with the value in force
+        and the tier (`automaton`, `project` or `daemon`) that supplied it.
+        Pass `?automaton=\<id\>` to resolve with that Automaton's own policy
+        fields; omitted, every setting resolves from the project and daemon
+        tiers.
+      operationId: projectsPolicyEffective
+      tags: [Singletons]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}, description: "Project alias"}
+        - {name: automaton, in: query, required: false, schema: {type: string}, description: "Automaton ID whose own policy fields act as the top tier"}
+      responses:
+        "200":
+          description: The resolved policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  project: {type: string}
+                  automaton: {type: string, description: "The Automaton ID passed in, or absent"}
+                  policy:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        value: {description: "The value in force; the shape follows the setting"}
+                        source: {type: string, enum: [automaton, project, daemon]}
+        "404":
+          description: The project does not exist, or (with `?automaton=`) the Automaton does not
+          content: {"text/plain": {schema: {type: string}}}
+        "503":
+          description: Autonomations are not available, so the Automaton tier cannot be resolved
+          content: {"text/plain": {schema: {type: string}}}
+
     post:
       summary: Upsert a project alias
       operationId: projectsUpsert
@@ -9688,7 +9766,8 @@ components:
         model: {type: string, description: "Worker model. Needs a backend."}
         effort: {type: string, description: "Effort level: low, medium, high, max, quick, normal or thorough. Empty inherits the task's effort."}
         attempts: {type: integer, minimum: 1, description: "Failed attempts this step covers. Default 1."}
-    ReviewNeededEntry:
+    ProjectPolicy:
+      ReviewNeededEntry:
       description: "A task held for operator review, as listed in an Automaton summary. Only the identity, the failure count and the last worker are included, never the spec or the attempt report."
       type: object
       required: [task_id, story_id, failure_count, held_at]

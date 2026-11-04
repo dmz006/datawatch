@@ -218,7 +218,7 @@ func (m *Manager) runPlanReview(prd *PRD, stories []Story, actor string) *PlanRe
 	if prd == nil {
 		return nil
 	}
-	mode := normalizePlanReviewMode(m.cfg.PlanReviewMode)
+	mode := m.effectivePlanReviewMode(prd)
 	if mode == PlanReviewModeOff {
 		return nil
 	}
@@ -351,7 +351,7 @@ func (m *Manager) ReviewPlan(prdID string, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if normalizePlanReviewMode(m.cfg.PlanReviewMode) == PlanReviewModeOff {
+	if m.effectivePlanReviewMode(pr) == PlanReviewModeOff {
 		return pr, nil // off: nothing to run, nothing to clear
 	}
 	stories := pr.Story // stored on the PRD (Decompose sets prd.Story)

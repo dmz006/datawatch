@@ -34,6 +34,12 @@ func (m *Manager) resolveRetryPolicy(prd *PRD, category string) int {
 			}
 		}
 	}
+	// Project/ Automaton tier: a category named in the higher tier's retry
+	// policy applies before the daemon's global map (a category absent from
+	// either keeps falling through).
+	if v, ok := m.effectiveRetryPolicyEntry(prd, category); ok {
+		return v
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if v, ok := m.cfg.RetryPolicy[category]; ok {
@@ -58,6 +64,11 @@ func (m *Manager) resolveRetryCeiling(prd *PRD) int {
 			return p.CeilingTotal
 		}
 	}
+	// Project/ Automaton tier (a set value, including -1 = unlimited, wins
+	// before the daemon's).
+	if pol, ok := m.effectivePolicyOf(prd); ok && policyProjectTier(pol.RetryCeilingTotal.Source) && pol.RetryCeilingTotal.Value != 0 {
+		return pol.RetryCeilingTotal.Value
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.cfg.RetryCeilingTotal > 0 {
@@ -78,6 +89,11 @@ func (m *Manager) resolveInfraEscalateAfter(prd *PRD) int {
 		if p, ok := m.store.GetRetryProfile(prd.RetryProfile); ok && p.InfraRetryEscalateAfter > 0 {
 			return p.InfraRetryEscalateAfter
 		}
+	}
+	// Project/ Automaton tier (above the daemon's, below the Automaton's
+	// own profile).
+	if pol, ok := m.effectivePolicyOf(prd); ok && policyProjectTier(pol.InfraRetryEscalateAfter.Source) && pol.InfraRetryEscalateAfter.Value > 0 {
+		return pol.InfraRetryEscalateAfter.Value
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()

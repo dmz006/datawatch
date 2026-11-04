@@ -350,6 +350,7 @@ func newProjectsCmd() *cobra.Command {
 			},
 		},
 		newProjectsUpsertCmd(),
+		newProjectsPolicyCmd(),
 		&cobra.Command{
 			Use:   "delete <name>",
 			Short: "Delete a project alias (does not touch the directory)",
@@ -379,6 +380,106 @@ func newProjectsUpsertCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backend, "backend", "", "Default LLM backend")
 	cmd.Flags().StringVar(&description, "description", "", "Description")
 	return cmd
+}
+
+// newProjectsPolicyCmd exposes the per-project policy tier: read it as stored
+// or resolved with each setting's supplying tier, and set or unset single keys.
+func newProjectsPolicyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "policy",
+		Short: "Inspect and edit a project's policy tier",
+		Run:   func(cmd *cobra.Command, args []string) { _ = cmd.Help() },
+	}
+	var effective bool
+	var automaton string
+	show := &cobra.Command{
+		Use:   "show <name>",
+		Short: "Show a project's policy as stored, or every setting resolved with its supplying tier",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			path := "/api/projects/" + args[0]
+			if effective {
+				path += "/policy/effective"
+				if automaton != "" {
+					path += "?automaton=" + url.QueryEscape(automaton)
+				}
+			}
+			return daemonGet(path)
+		},
+	}
+	show.Flags().BoolVar(&effective, "effective", false, "resolve every setting with its value and source tier (instead of the stored policy block)")
+	show.Flags().StringVar(&automaton, "automaton", "", "with --effective: the Automaton ID whose own policy fields act as the top tier")
+	cmd.AddCommand(show)
+	cmd.AddCommand(&cobra.Command{
+		Use:   "set <name> <key> <value>",
+		Short: "Set one key of a project's policy tier (value parsed as a JSON scalar; the daemon re-validates it)",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return upsertProjectPolicy(args[0], func(p map[string]any) { p[args[1]] = parsePolicyValue(args[2]) })
+		},
+	})
+	cmd.AddCommand(&cobra.Command{
+		Use:   "unset <name> <key>",
+		Short: "Remove one key from a project's policy tier (it reverts to the daemon tier)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return upsertProjectPolicy(args[0], func(p map[string]any) { delete(p, args[1]) })
+		},
+	})
+	return cmd
+}
+
+// parsePolicyValue parses a policy value from the command line as a JSON
+// scalar when it parses, otherwise as a plain string.
+func parsePolicyValue(raw string) any {
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err == nil {
+		if s, ok := v.(string); ok {
+			return s
+		}
+		if v != nil {
+			return v
+		}
+	}
+	return raw
+}
+
+// upsertProjectPolicy fetches the project entry, mutates its policy block
+// through mutate, and posts the entry back to the same upsert endpoint the
+// GUI uses. A policy block reduced to nothing is posted as an explicit null
+// so a stored empty object is not mistaken for "set nothing". An invalid
+// value is refused by the daemon and the error names the field, so nothing
+// half-set is left behind.
+func upsertProjectPolicy(name string, mutate func(map[string]any)) error {
+	body, err := daemonJSONBody(http.MethodGet, "/api/projects/"+url.PathEscape(name), nil)
+	if err != nil {
+		return err
+	}
+	var entry struct {
+		Policy json.RawMessage `json:"policy"`
+	}
+	_ = json.Unmarshal(body, &entry)
+	var policy map[string]any
+	if len(entry.Policy) > 0 && string(entry.Policy) != "null" {
+		if err := json.Unmarshal(entry.Policy, &policy); err != nil {
+			return fmt.Errorf("cannot read the project's stored policy: %w", err)
+		}
+	}
+	if policy == nil {
+		policy = map[string]any{}
+	}
+	mutate(policy)
+	out := map[string]any{"name": name}
+	if len(policy) > 0 {
+		out["policy"] = policy
+	} else {
+		out["policy"] = nil
+	}
+	if _, err := daemonJSONBody(http.MethodPost, "/api/projects", out); err != nil {
+		return err
+	}
+	fmt.Println("ok")
+	return nil
 }
 
 // ----- BL29 rollback -------------------------------------------------------
