@@ -8597,6 +8597,23 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.WebSearchLastQueryAt = last
 			}
 		})
+		// Pre-push secret-scan counters (runs, findings, shadow reports,
+		// refusals). Copied from the git package's package-level counters;
+		// nil (key omitted from the JSON) when the daemon never scanned.
+		statsCollector.SetSecretScanStatsFunc(func(s *statspkg.SystemStats) {
+			ss := gitpkg.SecretScanStatsSnapshot()
+			if ss.Runs == 0 && ss.Findings == 0 && ss.ShadowReports == 0 && ss.Refusals == 0 {
+				return
+			}
+			s.SecretScan = &statspkg.SecretScanStats{
+				Runs:          ss.Runs,
+				Findings:      ss.Findings,
+				ShadowReports: ss.ShadowReports,
+				Refusals:      ss.Refusals,
+				LastRunAt:     ss.LastRunAt,
+				LastRefusalAt: ss.LastRefusalAt,
+			}
+		})
 		// Update Prometheus metrics on each stats collection
 		statsCollector.SetOnCollect(func(s statspkg.SystemStats) {
 			metricsPkg.CPUUsage.Set(s.CPULoadAvg1)
