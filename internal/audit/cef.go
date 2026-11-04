@@ -222,6 +222,10 @@ func cefSignature(action string) (int, string, int) {
 		return 64, "UIPromptRefused", 4
 	case ActionLLMSecretAccess:
 		return 65, "LLMSecretAccess", 5
+	case ActionSecretScanRefused:
+		return 66, "SecretScanRefused", 6
+	case ActionSecretScanShadow:
+		return 67, "SecretScanShadow", 4
 	default:
 		return 0, "AuditEvent", 3
 	}
