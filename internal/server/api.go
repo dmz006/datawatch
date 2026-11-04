@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/tagregistry"
+	"github.com/dmz006/datawatch/internal/trace"
 	"io"
 	"log"
 	"math"
@@ -234,10 +235,13 @@ func (s *Server) broadcastSessionsAsync() {
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub      *Hub
-	manager  *session.Manager
-	hostname string
-	token    string
+	// traceStore feeds the additive trace_usage field of the cost report
+	// (nil when tracing is not wired).
+	traceStore *trace.Store
+	hub        *Hub
+	manager    *session.Manager
+	hostname   string
+	token      string
 	// broadcastWG tracks the fire-and-forget sessions broadcasts started by
 	// broadcastSessionsAsync so a test can wait for them.
 	broadcastWG sync.WaitGroup
@@ -673,6 +677,10 @@ type Server struct {
 
 // SetWebSearchRegistry wires the shared *websearch.Registry (BL391) used by
 // the /api/websearch/* REST handlers for stats/history/provider-test.
+// SetTraceStore wires the trace store whose model-request and token totals
+// the cost report carries as an additive field.
+func (s *Server) SetTraceStore(st *trace.Store) { s.traceStore = st }
+
 func (s *Server) SetWebSearchRegistry(r *websearch.Registry) { s.websearchReg = r }
 
 // SetWebSearchAPIKeyRefs wires the pre-ResolveConfig snapshot of each

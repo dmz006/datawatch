@@ -38,6 +38,7 @@ import (
 	"github.com/dmz006/datawatch/internal/costreport"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/trace"
 )
 
 // managerCostSource feeds costreport.Build with the daemon's recorded
@@ -319,7 +320,32 @@ func (s *Server) handleCostReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(rep)
+	_ = json.NewEncoder(w).Encode(costReportResponse{Report: rep, TraceUsage: s.traceUsageSummary()})
+}
+
+// costReportResponse is the Report plus the additive trace_usage field.
+// Every existing Report field and number is unchanged; trace_usage is
+// omitted when no trace store is wired or it holds no model requests.
+type costReportResponse struct {
+	*costreport.Report
+	TraceUsage *trace.UsageSummary `json:"trace_usage,omitempty"`
+}
+
+// traceUsageSummary totals traced model requests and tokens, or nil when
+// there is nothing to report.
+func (s *Server) traceUsageSummary() *trace.UsageSummary {
+	if s.traceStore == nil {
+		return nil
+	}
+	evs, err := s.traceStore.ReadAll()
+	if err != nil {
+		return nil
+	}
+	sum := trace.SummarizeUsage(evs)
+	if sum.Total.ModelRequests == 0 {
+		return nil
+	}
+	return &sum
 }
 
 // parseCostBound — since/until accept RFC3339 or bare YYYY-MM-DD (the two
