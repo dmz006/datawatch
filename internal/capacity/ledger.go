@@ -913,12 +913,7 @@ func (l *Ledger) dispatchLocked() {
 	}
 	now := l.opt.Clock.Now()
 	for _, w := range l.waiters {
-		if w.req.Refresh != nil {
-			cur := w.req.Refresh()
-			w.req.Pools, w.req.Node = cur.Pools, cur.Node
-			w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
-		}
-		w.req = w.req.withoutStaleNode()
+		l.refreshWaiterLocked(w)
 	}
 	for _, w := range l.orderLocked(now) {
 		bound, why := l.resolveLocked(w.req)
@@ -928,6 +923,17 @@ func (l *Ledger) dispatchLocked() {
 		}
 		l.grantLocked(w, bound, now)
 	}
+}
+
+// refreshWaiterLocked applies the waiter's Request.Refresh and drops a stale
+// Node, the first half of a dispatch pass.
+func (l *Ledger) refreshWaiterLocked(w *waiter) {
+	if w.req.Refresh != nil {
+		cur := w.req.Refresh()
+		w.req.Pools, w.req.Node = cur.Pools, cur.Node
+		w.req.NodeChoices, w.req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
+	}
+	w.req = w.req.withoutStaleNode()
 }
 
 // Replan re-runs every waiter's Request.Refresh and dispatches at once. The
@@ -999,6 +1005,7 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 		}
 		deadline = l.opt.Clock.After(remaining)
 	}
+	reported := reason
 	if onWait != nil {
 		onWait(reason)
 	}
@@ -1024,7 +1031,6 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 				return context.Canceled
 			}
 			l.mu.Lock()
-			prev := w.reason
 			l.dispatchLocked()
 			cur := w.reason
 			tick = l.opt.Clock.After(l.pollWaitLocked(w))
@@ -1034,8 +1040,14 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 				return nil
 			default:
 			}
-			if cur != prev && onWait != nil {
-				onWait(cur)
+			// Compare with the last reason REPORTED, not the one the ledger
+			// held before this pass: Snapshot may have refreshed it between
+			// ticks.
+			if cur != reported {
+				reported = cur
+				if onWait != nil {
+					onWait(cur)
+				}
 			}
 		}
 	}
@@ -1146,12 +1158,83 @@ func (l *Ledger) refreshAdoptedLocked(ls *Lease, req Request, sessionID string) 
 	if sessionID != "" {
 		ls.SessionID = sessionID
 	}
+	if req.Node == "" && len(req.NodeChoices) == 0 && !req.NodeUnknown &&
+		!samePoolSet(nonNodePools(ls.Pools), nonNodePools(req.Pools)) {
+		l.rehomeLocked(ls, req.Pools, "")
+		return
+	}
 	if ls.Node == "" && req.Node != "" {
 		ls.NodeUnknown = false
 		l.placeAdoptedLocked(ls, req.Node)
 	} else if ls.Node == "" && req.NodeUnknown {
 		ls.NodeUnknown = true
 	}
+}
+
+// nonNodePools returns pools without the node:<name> entries.
+func nonNodePools(pools []string) []string {
+	var out []string
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// samePoolSet reports whether a and b hold the same names, ignoring order.
+func samePoolSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, p := range a {
+		seen[p]++
+	}
+	for _, p := range b {
+		if seen[p] == 0 {
+			return false
+		}
+		seen[p]--
+	}
+	return true
+}
+
+// Rehome moves the lease held by holder onto pools. node:<node> is added only
+// when node is non-empty; with an empty node the lease gives up its node and
+// clears NodeOverflow and NodeUnknown. Acquired, SessionID and PRDID are kept
+// and the lease count does not change. Waiters queued on a freed pool are
+// granted in the same call. It returns false, changing nothing, when holder
+// holds no lease.
+func (l *Ledger) Rehome(holder string, pools []string, node string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ls, ok := l.leases[holder]
+	if !ok {
+		return false
+	}
+	l.rehomeLocked(ls, pools, node)
+	return true
+}
+
+func (l *Ledger) rehomeLocked(ls *Lease, pools []string, node string) {
+	ls.Pools = poolsWithNode(pools, node)
+	ls.Node = node
+	if node == "" {
+		ls.NodeOverflow = false
+		ls.NodeUnknown = false
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+}
+
+// poolsWithNode copies pools and appends node:<node> when node is set and absent.
+func poolsWithNode(pools []string, node string) []string {
+	out := append([]string(nil), pools...)
+	if node != "" && !sharesPool(out, []string{"node:" + node}) {
+		out = append(out, "node:"+node)
+	}
+	return out
 }
 
 // placeAdoptedLocked records that the adopted lease ls runs on node. It joins
@@ -1294,6 +1377,11 @@ func (l *Ledger) Snapshot() Status {
 		}
 	}
 	for _, w := range l.waiters {
+		// Recompute the reason as a dispatch pass would (refresh, then
+		// resolve) without granting, reordering or recording rate use, so a
+		// read between passes never reports a stale reason.
+		l.refreshWaiterLocked(w)
+		_, w.reason = l.resolveLocked(w.req)
 		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Priority: w.req.Priority, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
 		for _, p := range w.req.allPools() {
 			names[p] = true

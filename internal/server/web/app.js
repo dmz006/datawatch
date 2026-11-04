@@ -25770,8 +25770,9 @@ function capacityWaitingHtml(waiting, now) {
     : window.capacityNameHtml(nm, w.holder);
     const prdTitle = w.prd_title || (w.holder_name && w.holder_name.prd_title) || '';
     const prd = capacityPrdCellHtml(prdTitle, w.prd_id || (w.holder_name && w.holder_name.prd_id));
-    // read_reason resolves the holders it names; reason is the raw text.
-    const reason = w.read_reason || w.reason || '';
+    // readable_reason (older bodies: read_reason) resolves the holders it
+    // names; reason is the raw text. A stale wait_reason is never read here.
+    const reason = w.readable_reason || w.read_reason || w.reason || '';
     const head = [holder, prd].filter(Boolean).join(' · ');
     const prioChip = priorityBadgeHtml(w.priority, w.priority_source);
     return `<div class="prd-capacity-wait" style="min-width:0;overflow-wrap:anywhere;" title="${escHtml(reason)}">&#9203; ${head}${prioChip}${head ? ' · ' : ''}${escHtml(capacityFmtWait(w.since, now))}${reason ? ` — ${escHtml(reason)}` : ''}</div>`;

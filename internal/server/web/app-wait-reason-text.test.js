@@ -157,3 +157,26 @@ test('all new keys exist in all five bundles, with no tracker identifiers', () =
     }
   }
 });
+
+// Surface parity: the Automata task wait line and the capacity card's queue
+// both render the reason the daemon sent, preferring the readable field over a
+// stale persisted one, and never the stale adoption text.
+test('task wait line and capacity queue show the current reason, not a stale wait_reason', () => {
+  const s = loadApp();
+  const STALE = 'waiting for work resumed after the restart to be adopted';
+  const NODE = 'waiting for node alpha: 1/1 engines in use, held by owner';
+  const task = wait(s, { cause: 'pool_full', reason: NODE, readable_reason: NODE, wait_reason: STALE });
+  assert.ok(task.includes(NODE), task);
+  assert.ok(!task.includes('adopted'), task);
+  const plain = wait(s, { cause: 'pool_full', reason: NODE });
+  assert.ok(plain.includes(NODE), plain);
+  s._cap = { pools: [], leases: [], backoff: [], budgets: [],
+    waiting: [{ holder: 't1', since: Date.parse('2026-11-04T12:00:00Z'), reason: NODE, wait_reason: STALE }] };
+  const card = vm.runInContext('window.capacityCardHtml(_cap, { now: Date.parse("2026-11-04T12:05:00Z") })', s);
+  assert.ok(card.includes(NODE), card);
+  assert.ok(!card.includes('adopted'), card);
+  // A readable_reason on a queue row wins over the raw reason.
+  s._cap.waiting[0].readable_reason = 'waiting for node alpha, held by Plan / Task (abc12345)';
+  const card2 = vm.runInContext('window.capacityCardHtml(_cap, { now: Date.parse("2026-11-04T12:05:00Z") })', s);
+  assert.ok(card2.includes('held by Plan / Task (abc12345)'), card2);
+});

@@ -2445,3 +2445,47 @@ Still owed, and not claimed as done: the one-day shadow comparison on the operat
 | **Expected** | `gofmt -l` prints nothing, vet and lint report nothing, and all four tests, including `TestAutomationCommDecisionAssistantUsage` and `TestAutomationCommFixtureDrainsLateRequests`, pass under `-race` with no data race report. |
 | **Actual** | `gofmt -l` printed nothing, vet was clean, lint reported 0 issues, and all four tests passed under `-race`. |
 | **Result** | PASS |
+
+---
+
+## Capacity wait reason and node lease on pool moves (2026-11-04)
+
+Bug 1: when a task moved between pools, the capacity ledger kept holding the node lease of its old pool, so a task on a backend that takes no node — claude-code, say — still held one local node engine, and a slot on that node sat busy. The worst case was a task whose session outlived a daemon restart: it had run a node backend before the restart, and adopting it kept the stale node lease. Fix (`internal/capacity/ledger.go`, `internal/autonomous/capacity.go`): a held lease that is re-keyed to a different pool set reconciles with it — nodeless pools give up the node and its `node:<name>` pool in one call, a live session that names a node is still direct evidence — and the stale recorded node on the task is dropped so it is not re-used.
+
+Bug 2: the wait reason for a queued task was the one from when the task entered the queue, recomputed only on dispatch passes. A restart adoption hold over a node showed `waiting for work resumed after the restart to be adopted` even after the hold had ended, instead of the node-engine reason the slot was actually blocked on; the stale reason reached REST, MCP, the CLI and the web capacity card. Fix (`internal/capacity/ledger.go`, `internal/autonomous/task_visibility.go`): the ledger now recomputes each waiter's reason on every read (its `Snapshot` re-resolves waiters the way a dispatch pass would, without granting), and the queue view prefers the ledger's live reason over the reason persisted with the task. Once the hold ends, the queue shows `waiting for node <name>: … engines in use, held by …`. Neither fix needs a restart or configuration change.
+
+All runs below are from the repository root, on this tree, with `TMUX` and `TMUX_TMPDIR` removed (`env -u TMUX -u TMUX_TMPDIR`), against the Go and Node test harnesses on the sandbox host (linux/amd64, Node 24.x). They use the ledger's fake and fake clocks; no daemon was started and no operator configuration touched. A live check on a running sandbox daemon is still owed and is not claimed here.
+
+### B1 — Node lease on pool moves (`internal/capacity`, `internal/autonomous`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | A task (or its verifier) holding a node lease moves onto a pool set that includes no node: the node lease is released and the node pool holds nothing, while the session, PRD and lease count are kept; freeing the node pool admits a waiter queued on it in the same call; a node-taking backend keeps its lease; and a node a live session itself names is still direct evidence. |
+| **Steps** | `go test ./internal/capacity/ -count=1 -v -run '^(TestRehomeToNodelessPoolsFreesNode\|TestRehomeWithNodeAddsNodePool\|TestRehomeUnknownHolder\|TestRehomeGrantsWaiterOnFreedNode\|TestReadoptWithDifferentPoolsDropsNode\|TestReadoptWithSamePoolsKeepsNode)$' ./internal/capacity/` and `go test ./internal/autonomous/ -count=1 -v -run '^TestPoolMove' ./internal/autonomous/`. |
+| **Expected** | After the move, `node:datawatch` holds 0 and the lease has no node and no `node:` pool; the node pool's waiter is granted; a re-adopt with different non-node pools and no node drops the node, with the same pools it keeps it; the five manager tests pass. |
+| **Actual** | All 6 ledger tests and all 5 manager tests pass (`ok github.com/dmz006/datawatch/internal/capacity`, `ok github.com/dmz006/datawatch/internal/autonomous`). |
+| **Result** | PASS |
+
+### B2 — Wait reason recomputed on every read (`internal/capacity`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | With a poll interval far longer than the clock moves (so no dispatch tick fires between the change and the read), the queue's wait reason must track the current blocker: with the adoption hold over it reads the adoption hold, and once the hold ends it reads the node-engine reason, for both ends of the hold. Reads never grant, reorder or record rate use, and a reason change that a read refreshed between ticks still reaches the waiting caller. |
+| **Steps** | `go test ./internal/capacity/ -count=1 -v -run '^(TestSnapshotReasonRecomputedAfterAdoptionTimeout\|TestSnapshotReasonRecomputedAfterMarkAdoptionComplete\|TestSnapshotRecomputeDoesNotGrant\|TestOnWaitFiresWhenReasonChangedBetweenTicks)$' ./internal/capacity/`. |
+| **Expected** | After `MarkAdoptionComplete` (or the adoption timeout) the snapshot's reason starts with `waiting for node alpha: 1/1 engines in use, held by `; the holder and the queued task are unchanged in order and state; one on-wait notice is recorded for the change. |
+| **Actual** | All 4 tests pass (`ok github.com/dmz006/datawatch/internal/capacity 0.008s`). |
+| **Result** | PASS |
+
+### B3 — The current reason reaches the queue and every surface
+
+| Field | Details |
+|-------|---------|
+| **Description** | The queue view and every surface print the ledger's current reason, not the one persisted at queue time: the REST `GET /api/capacity` body, the `capacity_status` MCP tool, the CLI/comm capacity text, and the web task wait line and capacity card. |
+| **Steps** | `go test ./internal/autonomous/ -count=1 -v -run '^(TestTaskVisibility_LiveWaiterReasonBeatsStalePersisted\|TestTaskVisibility_NoWaiterShowsPersistedReason)$' ./internal/autonomous/`; `go test ./internal/server/ ./internal/mcp/ -count=1 -v -run 'TestCapacityWaitReason_RESTCarriesCurrentReason\|TestCapacityWaitReason_CLITextPrintsCurrentReason\|TestCapacityStatus_PassesCurrentWaitReasonThrough'`; `go test ./internal/autonomous/ -count=1 -run '^TestCapacityText_PrintsCurrentNodeEngineReason$'`; `node --test internal/server/web/app-wait-reason-text.test.js`. |
+| **Expected** | The live waiter's reason beats a stale persisted `wait_reason`; a wait with no ledger waiter still shows its persisted reason; the REST and MCP bodies carry the node-engine reason; the CLI text and the web wait line and capacity card print it. |
+| **Actual** | 2 + 3 + 1 Go tests pass in their packages; `node --test` passes 15 of 15 (14 pre-existing plus the 2026-11-04 test). The comm `capacity` verb shares the CLI renderer covered here, and the admission query resolves from the same ledger state, so both print the current reason. |
+| **Result** | PASS |
+
+### Live check — still owed
+
+A run on a running sandbox daemon (a real task moved between pools, and a restart adoption hold ending while the capacity card is open) has not been done and is not claimed above. The tracker row for this feature is `Validated=No` for the same reason.

@@ -302,3 +302,19 @@ func TestAutonomousConfigSet_WorkerIdleNudgeFields(t *testing.T) {
 		t.Fatalf("nudge fields not forwarded: %v", got)
 	}
 }
+
+// capacity_status returns the REST body untouched, so the current wait reason
+// the daemon publishes reaches MCP callers exactly as REST callers see it.
+func TestCapacityStatus_PassesCurrentWaitReasonThrough(t *testing.T) {
+	const node = "waiting for node alpha: 1/1 engines in use, held by owner"
+	body := `{"pools":[],"leases":[],"waiting":[{"holder":"t1","reason":"` + node + `"}],"tasks":{"waiting":[{"task_id":"t1","reason":"` + node + `","readable_reason":"` + node + `"}],"running":[]}}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) })
+	res, err := s.handleCapacityStatus(context.Background(), callReq(nil))
+	if err != nil || res == nil {
+		t.Fatalf("err=%v res=%v", err, res)
+	}
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	if text != body || strings.Contains(text, "adopted") {
+		t.Fatalf("capacity_status altered the wait reason:\n%s", text)
+	}
+}

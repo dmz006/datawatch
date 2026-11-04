@@ -228,15 +228,17 @@ func (m *Manager) ReadableWaitSentence(reason string) string {
 	})
 }
 
-// waitingTaskView words a task in waiting_capacity from its persisted reason,
-// falling back to the ledger waiter's reason when none is persisted yet.
+// waitingTaskView words a task in waiting_capacity. The ledger waiter's reason
+// (recomputed on every Snapshot) wins when a waiter exists for the task or its
+// verifier holder; the persisted reason is the fallback for waits that are not
+// in the ledger (tree lock, decision, spawn retry) or before a waiter exists.
 func (m *Manager) waitingTaskView(p visPRD, t *visTask, waiters map[string]capacity.Waiter, bo *Backoff, cooldownFn func() time.Time, budgets []BudgetStatus) TaskWaitView {
 	reason := strings.TrimSpace(t.waitReason)
 	since := t.updatedAt
 	for _, h := range []string{t.id, VerifyHolder(t.id)} {
 		if w, ok := waiters[h]; ok {
-			if reason == "" {
-				reason = w.Reason
+			if live := strings.TrimSpace(w.Reason); live != "" {
+				reason = live
 			}
 			if !w.Since.IsZero() {
 				since = w.Since

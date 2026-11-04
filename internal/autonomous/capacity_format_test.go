@@ -258,3 +258,28 @@ func TestJudgeCapacityText(t *testing.T) {
 		t.Fatalf("raw queued judge id leaked into the text:\n%s", out)
 	}
 }
+
+// A body whose adoption hold has ended carries the node-engine reason in the
+// ledger waiter and the queued task alike; the text prints it and nothing of
+// the stale adoption wording.
+func TestCapacityText_PrintsCurrentNodeEngineReason(t *testing.T) {
+	CapacityTextClock = func() time.Time { return time.Date(2026, 11, 4, 12, 5, 0, 0, time.UTC) }
+	t.Cleanup(func() { CapacityTextClock = time.Now })
+	const node = "waiting for node alpha: 1/1 engines in use, held by owner"
+	for name, body := range map[string]string{
+		"tasks.waiting": `{"pools":[],"waiting":[{"holder":"t1","prd_id":"prd-1","reason":"` + node + `","since":"2026-11-04T12:00:00Z"}],
+"tasks":{"waiting":[{"task_id":"t1","prd_id":"prd-1","reason":"` + node + `","readable_reason":"` + node + `","since":"2026-11-04T12:00:00Z"}],"running":[]}}`,
+		"top-level waiting": `{"pools":[],"waiting":[{"holder":"t1","prd_id":"prd-1","reason":"` + node + `","since":"2026-11-04T12:00:00Z"}],"tasks":{"waiting":[],"running":[]}}`,
+	} {
+		out, err := FormatCapacityText([]byte(body))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if !strings.Contains(out, node) {
+			t.Errorf("%s: missing node-engine reason in:\n%s", name, out)
+		}
+		if strings.Contains(out, "adopted") {
+			t.Errorf("%s: stale adoption text in:\n%s", name, out)
+		}
+	}
+}

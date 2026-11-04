@@ -670,6 +670,7 @@ func TestCapacity_CancelTaskReleasesLease(t *testing.T) {
 func TestCapacity_AdoptRecordsNodeOfSurvivingSession(t *testing.T) {
 	m, _, led := capFixture(t, 1)
 	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"host"}, "" })
+	m.SetEntryNodes(func(backend, model string) int { return 1 }) // a node-taking backend
 	m.SetSessionNode(func(id string) string {
 		if id == "live-sess" {
 			return "gpu-b"
