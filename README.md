@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.74.0 (2026-11-03).** A daemon restart no longer discards running Automaton work: live workers are adopted, and a restart policy can wait for a quiet moment or drain first. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.74.1 (2026-11-03).** The default Automaton read returns specs and descriptions whole, and any write that carries the truncation marker is refused with a clear message. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.74.1 — Automaton specs read whole and truncated copies are refused
+
+The default Automaton read returns specs whole, and a write refuses text that was cut by a capped read.
+
+- `GET /api/autonomous/prds/{id}` caps only the heavy output fields (memory report, task error, prior attempt hint, start-failure tail, attempt refs, verdict and verifier text) to `autonomous.detail_text_cap_bytes` (default 4096). The Automaton spec, every story description and every task spec are always returned whole.
+- Each cut field still ends with the truncation marker and is listed in the record's `truncated` array with the URL of the full text (`?full=1` or `GET …/prds/{id}/outputs`).
+- Every spec and description write on REST, MCP, the CLI and the comm verbs now refuses (400) text that contains the truncation marker, with a message that names the field. The comm verbs refuse locally before anything reaches the daemon.
+- OpenAPI, the API and MCP docs and the testing tracker describe the contract. A datawatch-app parity issue is filed with this release.
+
 ## v9.74.0 — Restarts keep running Automaton work
 
 A daemon restart no longer throws away running Automaton work, and the restart can wait for a quiet moment.
