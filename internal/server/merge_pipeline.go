@@ -129,6 +129,10 @@ type mergePipelineValidation struct {
 	File   string `json:"file,omitempty"`
 }
 
+// errMergePipelineProjectRequired is the sentinel for a request that names
+// no project and whose merge base repository gives none either.
+var errMergePipelineProjectRequired = errors.New("project is required")
+
 // mergePipelineProject returns the project a request is about: the project
 // query value, else name, else the base name of the merge base repo.
 func (s *Server) mergePipelineProject(name string) (string, error) {
@@ -141,7 +145,7 @@ func (s *Server) mergePipelineProject(name string) (string, error) {
 		}
 	}
 	if name == "" {
-		return "", errors.New("project is required")
+		return "", errMergePipelineProjectRequired
 	}
 	if len(name) > mergePipelineMaxNameBytes {
 		return "", fmt.Errorf("project is longer than %d bytes", mergePipelineMaxNameBytes)
@@ -219,6 +223,13 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 	project, err := s.mergePipelineProject(r.URL.Query().Get("project"))
 	if err != nil {
+		if errors.Is(err, errMergePipelineProjectRequired) {
+			writeJSONError(w, http.StatusBadRequest, map[string]string{
+				"code":  "project_required",
+				"error": "Choose a project with the project parameter, or set the merge base repository (the worktree_base_repo setting).",
+			})
+			return
+		}
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
