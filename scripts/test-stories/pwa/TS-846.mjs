@@ -72,8 +72,8 @@ let insecureAgent;
 try {
   const { Agent } = await import('undici');
   insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
-} catch { /* fall back to env override below */ }
-if (!insecureAgent) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+} catch { /* reported below */ }
+if (!insecureAgent) throw new Error('TS-846 needs undici to scope the sandbox certificate exemption to its own requests');
 
 function freePort() {
   return new Promise((resolve, reject) => {
