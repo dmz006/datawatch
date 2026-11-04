@@ -47,18 +47,28 @@ func TestShippedStartBackfillEnabledMarksWithoutBlocking(t *testing.T) {
 	// The pass runs in a goroutine and marks the merged PRDs (and the
 	// all-merged Automation) exactly as a synchronous pass would. The
 	// store owns the record it saved, so read the stored copies back.
+	// The backfill goroutine writes the stored PRD while this test polls, so
+	// read it through SnapshotPRD (a copy taken under the store lock), never
+	// through the fixture's live pointer.
+	snapshot := func(id string) *PRD {
+		p, ok := fx.m.store.SnapshotPRD(id)
+		if !ok {
+			t.Fatalf("store lost prd %s", id)
+		}
+		return p
+	}
 	deadline := time.Now().Add(10 * time.Second)
-	for !fx.released.IsShipped() || !getStoredAutomation(t, fx.m, fx.autoOK.ID).IsShipped() {
+	for !snapshot(fx.released.ID).IsShipped() || !getStoredAutomation(t, fx.m, fx.autoOK.ID).IsShipped() {
 		if time.Now().After(deadline) {
 			stored := getStoredAutomation(t, fx.m, fx.autoOK.ID)
 			t.Fatalf("enabled startup backfill did not finish marking: released=%v autoOK=%v",
-				fx.released.IsShipped(), stored.IsShipped())
+				snapshot(fx.released.ID).IsShipped(), stored.IsShipped())
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if fx.released.MergedInRelease != "v9.8.0" || fx.released.ShippedSource != ShippedSourceBackfill {
+	if rel := snapshot(fx.released.ID); rel.MergedInRelease != "v9.8.0" || rel.ShippedSource != ShippedSourceBackfill {
 		t.Errorf("released: release=%q source=%q, want v9.8.0 backfill",
-			fx.released.MergedInRelease, fx.released.ShippedSource)
+			rel.MergedInRelease, rel.ShippedSource)
 	}
 	if ok := getStoredAutomation(t, fx.m, fx.autoOK.ID); !ok.IsShipped() || ok.MergedInRelease != "v9.9.0" {
 		t.Errorf("autoOK: shipped=%v release=%q, want shipped v9.9.0", ok.IsShipped(), ok.MergedInRelease)

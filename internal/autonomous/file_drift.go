@@ -353,9 +353,11 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 	// structurally incapable of blocking the task.
 	if len(inRun) > 0 {
 		joined := strings.Join(inRun, ", ")
-		prd.Decisions = append(prd.Decisions, Decision{
-			At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
-			Note: "task " + t.ID + ": in-run edit by the task's own worker (committed file(s) not pre-existing drift): " + joined,
+		m.store.WithLock(func() {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
+				Note: "task " + t.ID + ": in-run edit by the task's own worker (committed file(s) not pre-existing drift): " + joined,
+			})
 		})
 		m.appendDriftAudit(t.ID, prd.ID, "in_run", inRun)
 		log.Printf("[autonomous] WARNING %s/%s in-run file drift: task committed its own file(s): %s", prd.ID, t.ID, joined)
@@ -365,12 +367,14 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 	var preExistingDec Decision
 	if len(preExisting) > 0 {
 		joined := strings.Join(preExisting, ", ")
-		t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, preExisting)
 		preExistingDec = Decision{
 			At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
 			Note: "task " + t.ID + ": committed pre-existing uncommitted file(s) outside its planned files: " + joined,
 		}
-		prd.Decisions = append(prd.Decisions, preExistingDec)
+		m.store.WithLock(func() {
+			t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, preExisting)
+			prd.Decisions = append(prd.Decisions, preExistingDec)
+		})
 		m.appendDriftAudit(t.ID, prd.ID, "pre_existing", preExisting)
 		log.Printf("[autonomous] WARNING %s/%s foreign file drift: task committed pre-existing uncommitted file(s) outside its planned files: %s", prd.ID, t.ID, joined)
 
@@ -386,8 +390,10 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 		log.Printf("[autonomous] %s/%s file-drift: save PRD: %v", prd.ID, t.ID, err)
 	}
 	if blockPreExisting {
-		t.Status = TaskBlocked
-		t.Error = "foreign_file_drift: " + strings.Join(preExisting, ", ")
+		m.store.WithLock(func() {
+			t.Status = TaskBlocked
+			t.Error = "foreign_file_drift: " + strings.Join(preExisting, ", ")
+		})
 	}
 	_ = m.store.SaveTask(t)
 	if len(preExisting) > 0 {
@@ -471,24 +477,26 @@ func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (
 		stats = nil
 	}
 	lineDetail := map[string]int{}
-	for _, f := range findings {
-		lineDetail[f] = stats[f]
-		found := false
-		for i := range t.UndeclaredEdits {
-			if t.UndeclaredEdits[i].Path == f {
-				t.UndeclaredEdits[i].LinesChanged += stats[f]
-				found = true
-				break
+	joined := strings.Join(findings, ", ")
+	m.store.WithLock(func() {
+		for _, f := range findings {
+			lineDetail[f] = stats[f]
+			found := false
+			for i := range t.UndeclaredEdits {
+				if t.UndeclaredEdits[i].Path == f {
+					t.UndeclaredEdits[i].LinesChanged += stats[f]
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.UndeclaredEdits = append(t.UndeclaredEdits, UndeclaredEdit{Path: f, LinesChanged: stats[f]})
 			}
 		}
-		if !found {
-			t.UndeclaredEdits = append(t.UndeclaredEdits, UndeclaredEdit{Path: f, LinesChanged: stats[f]})
-		}
-	}
-	joined := strings.Join(findings, ", ")
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "undeclared_edit_detected", Actor: "autonomous",
-		Note: "task " + t.ID + ": edited file(s) not in its planned or generated files: " + joined,
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "undeclared_edit_detected", Actor: "autonomous",
+			Note: "task " + t.ID + ": edited file(s) not in its planned or generated files: " + joined,
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] %s/%s undeclared-edit: save PRD: %v", prd.ID, t.ID, err)
@@ -517,8 +525,10 @@ func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (
 	// event's Link ("?alert=<id>") names the alert the sink recorded.
 	m.emitScopeWarning(prd, t, findings, lastDecision(prd, "undeclared_edit_detected"), alertID)
 	if mode == "block" {
-		t.Status = TaskBlocked
-		t.Error = "undeclared_edit: " + joined
+		m.store.WithLock(func() {
+			t.Status = TaskBlocked
+			t.Error = "undeclared_edit: " + joined
+		})
 		_ = m.store.SaveTask(t)
 		return true
 	}

@@ -68,12 +68,14 @@ func (m *Manager) SetTaskProjectDir(prdID, taskID, dir, actor string) (*PRD, err
 	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	task.ProjectDir = dir
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_project_dir", Actor: actor,
-		Note: fmt.Sprintf("task=%s project_dir=%s", taskID, dir),
+	m.store.WithLock(func() {
+		task.ProjectDir = dir
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_project_dir", Actor: actor,
+			Note: fmt.Sprintf("task=%s project_dir=%s", taskID, dir),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

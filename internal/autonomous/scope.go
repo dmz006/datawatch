@@ -43,9 +43,11 @@ func (m *Manager) planScopeWarnings(prd *PRD, stories []Story) []string {
 // pre-spawn scope lint flagged in warn mode, then persists the PRD. The task
 // still spawns; the Decision is the operator's record of the flagged scope.
 func (m *Manager) recordScopeLintWarn(prd *PRD, t *Task, problems []string) {
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "scope_lint_warn", Actor: "autonomous",
-		Note: "task " + t.ID + ": spawned despite scope lint (warn mode): " + strings.Join(problems, "; "),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "scope_lint_warn", Actor: "autonomous",
+			Note: "task " + t.ID + ": spawned despite scope lint (warn mode): " + strings.Join(problems, "; "),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] %s/%s scope-lint warn: save PRD: %v", prd.ID, t.ID, err)

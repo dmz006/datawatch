@@ -83,7 +83,9 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 	if policy == config.UncommittedWorkPolicyOff {
 		return false, nil
 	}
-	if !prdAutoCommits(prd) {
+	var commits bool
+	m.store.WithLock(func() { commits = prdAutoCommits(prd) })
+	if !commits {
 		log.Printf("[autonomous] %s/%s uncommitted-work: skipped, the Automaton does not commit", prd.ID, t.ID)
 		return false, nil
 	}

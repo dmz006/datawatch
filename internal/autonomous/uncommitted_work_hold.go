@@ -271,10 +271,12 @@ func (m *Manager) holdForUncommittedWork(prd *PRD, t *Task, files []UncommittedF
 			HeldAt:       time.Now(),
 		}
 	})
-	t.FailureReason = &FailureReason{
-		Category: "git", Source: "uncommitted-work-hold", Retryable: true,
-		Detail: detail, OccurredAt: time.Now(),
-	}
+	m.store.WithLock(func() {
+		t.FailureReason = &FailureReason{
+			Category: "git", Source: "uncommitted-work-hold", Retryable: true,
+			Detail: detail, OccurredAt: time.Now(),
+		}
+	})
 	m.appendUncommittedDecision(prd, uncommittedHeldDecisionKind, detail, questionID)
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] %s/%s uncommitted-work: save Automaton: %v", prd.ID, t.ID, err)

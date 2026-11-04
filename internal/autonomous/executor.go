@@ -271,8 +271,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// worktree branch is: only fires while Git.Branch is still empty,
 	// so a resumed run never regenerates a second name.
 	if prd.ClusterProfile != "" && prd.Git.Branch == "" {
-		prd.Git.Branch = branchNameFor(prd)
-		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, prd.Git.Branch)
+		clusterBranch := branchNameFor(prd)
+		m.store.WithLock(func() { prd.Git.Branch = clusterBranch })
+		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, clusterBranch)
 	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
 	// (.decompose-output-*.json, CHECKPOINT.md) as defense-in-depth for
@@ -529,8 +530,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						old := latest.Status
 						m.store.WithLock(func() {
 							latest.Status = judgeHoldOrBlocked(lastBlockVerdict(lt.Verdicts))
+							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						})
-						latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
 							m.EmitPRDUpdate(latest.ID)
@@ -888,8 +889,8 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							old := latest.Status
 							m.store.WithLock(func() {
 								latest.Status = PRDBlocked
+								latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 							})
-							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
 								m.EmitPRDUpdate(latest.ID)
@@ -945,8 +946,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			return err
 		} else if blocked {
 			old := prd.Status
-			prd.Status = judgeHoldOrBlocked(lastBlockVerdict(s.Verdicts))
-			prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
+			m.store.WithLock(func() {
+				prd.Status = judgeHoldOrBlocked(lastBlockVerdict(s.Verdicts))
+				prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
+			})
 			if m.store.SavePRD(prd) == nil {
 				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))
 				m.EmitPRDUpdate(prd.ID)
@@ -1081,13 +1084,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
 				return nil
 			}
-			prd.Decisions = append(prd.Decisions, Decision{
-				At: m.reviewNow(), Kind: "rules_review_fix_failed", Actor: "autonomous",
-				Note: fmt.Sprintf("corrective task could not be created: %s", serr.Error()), FailureCategory: "content",
-			})
 			spent := prd.RetryCountsByCategory["content"]
-			prd.RulesReviewOutcome = newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskFailed, serr.Error(),
+			failedOutcome := newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskFailed, serr.Error(),
 				attempt, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+			m.store.WithLock(func() {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At: m.reviewNow(), Kind: "rules_review_fix_failed", Actor: "autonomous",
+					Note: fmt.Sprintf("corrective task could not be created: %s", serr.Error()), FailureCategory: "content",
+				})
+				prd.RulesReviewOutcome = failedOutcome
+			})
 			_ = m.savePRDOwn(prd)
 			// A partly created story bumped the store revision outside this
 			// rollup's own saves; the save above replaced it, so rebase.
@@ -1103,18 +1109,22 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		}
 		spent := prd.RetryCountsByCategory["content"]
 		m.recordAutoRetryDecision(prd, prd.ID, "content", spent, false)
-		prd.RulesReviewOutcome = newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskCreated, "",
+		createdOutcome := newRulesReviewOutcome(*contentFixVerdict, RulesReviewActionFixTaskCreated, "",
 			spent, m.resolveRetryPolicy(prd, "content"), spent, m.reviewNow())
+		m.store.WithLock(func() { prd.RulesReviewOutcome = createdOutcome })
 		if story != nil && story.Status == StoryAwaitingApproval {
 			// Nothing would run on recursion: the corrective story waits for
 			// approval, so hold the Automaton for the operator instead.
-			prd.Decisions = append(prd.Decisions, Decision{
-				At: m.reviewNow(), Kind: "rules_review_fix_awaiting_approval", Actor: "autonomous",
-				Note: fmt.Sprintf("corrective story %s waits for approval before it runs", story.ID), FailureCategory: "content",
+			var old PRDStatus
+			m.store.WithLock(func() {
+				prd.Decisions = append(prd.Decisions, Decision{
+					At: m.reviewNow(), Kind: "rules_review_fix_awaiting_approval", Actor: "autonomous",
+					Note: fmt.Sprintf("corrective story %s waits for approval before it runs", story.ID), FailureCategory: "content",
+				})
+				old = prd.Status
+				prd.Status = PRDNeedsReview
+				prd.BlockedReason = blockedReasonFromVerdicts(prd.Verdicts)
 			})
-			old := prd.Status
-			prd.Status = PRDNeedsReview
-			prd.BlockedReason = blockedReasonFromVerdicts(prd.Verdicts)
 			if err := m.store.SavePRD(prd); err != nil {
 				return err
 			}
@@ -1127,7 +1137,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// The completion review passed (or did not apply): a stale block record
 	// must not stay on the view.
 	if prd.RulesReviewOutcome != nil {
-		prd.RulesReviewOutcome = nil
+		m.store.WithLock(func() { prd.RulesReviewOutcome = nil })
 		_ = m.savePRDOwn(prd)
 	}
 	if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
@@ -1308,7 +1318,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// own lifecycle.
 	hint := t.PriorAttemptHint
 	if hint != "" {
-		t.PriorAttemptHint = ""
+		m.store.WithLock(func() { t.PriorAttemptHint = "" })
 		_ = m.store.SaveTask(t)
 	}
 	// BL410 Phase 3 — tracks the most recent failure's category across
@@ -2016,7 +2026,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// vet failures in as regressions. The plan is persisted on the
 				// result for later tracing (QualityGateResult.ScopePlan).
 				cmp := m.runScopedQualityGate(prd, t, qgDir, qgCfg, qgBaselines, base)
-				t.QualityGateResult = &cmp
+				storedGate := cmp
+				m.store.WithLock(func() { t.QualityGateResult = &storedGate })
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
 				// The verifier PASSED, so whatever the gate reports
@@ -2247,10 +2258,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				t.Status = TaskBlocked
 				t.Error = vr.Summary
 			})
-			t.FailureReason = &FailureReason{
-				Category: "setup", Source: "setup-fault", Retryable: false,
-				Detail: vr.Summary, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				t.FailureReason = &FailureReason{
+					Category: "setup", Source: "setup-fault", Retryable: false,
+					Detail: vr.Summary, OccurredAt: time.Now(),
+				}
+			})
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
@@ -2329,18 +2342,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 // post-mortem, and its session is deleted; exhausted reports that. The normal
 // PRD retry budget is never touched here.
 func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Task, run attemptRun, cause error) (exhausted bool, err error) {
-	t.StartFailures++
-	if t.StartFailures > SessionStartRetryBudget {
+	var startFailures int
+	m.store.WithLock(func() {
+		t.StartFailures++
+		startFailures = t.StartFailures
+	})
+	if startFailures > SessionStartRetryBudget {
 		oldStatus := t.Status
-		t.Status = TaskFailed
-		t.Error = SessionStartFailureReason
-		t.FailureReason = &FailureReason{
-			Category:   "infra",
-			Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
-			Source:     "session-start",
-			Retryable:  false,
-			OccurredAt: time.Now(),
-		}
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = SessionStartFailureReason
+			t.FailureReason = &FailureReason{
+				Category:   "infra",
+				Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
+				Source:     "session-start",
+				Retryable:  false,
+				OccurredAt: time.Now(),
+			}
+		})
 		log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
 			t.ID, SessionStartFailureReason, t.StartFailures)
 		m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
@@ -2357,7 +2376,7 @@ func (m *Manager) countSessionStartFailure(ctx context.Context, prd *PRD, t *Tas
 	// untouched and no RetryPolicy category is recorded.
 	log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
 		t.ID, t.StartFailures, SessionStartRetryBudget)
-	t.Error = cause.Error()
+	m.store.WithLock(func() { t.Error = cause.Error() })
 	m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: "infra", Summary: cause.Error(), Requeue: true, EndReason: attemptEndLaunchRefused, EndDetail: cause.Error()})
 	_ = m.store.SaveTask(t)
 	return false, nil
@@ -2618,7 +2637,7 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	}
 
 	now := time.Now()
-	t.StartedAt = &now
+	m.store.WithLock(func() { t.StartedAt = &now })
 	old = t.Status
 	m.store.WithLock(func() {
 		t.Status = TaskInProgress
@@ -2653,7 +2672,7 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		})
 		return emitSaved(old)
 	}
-	t.ChildPRDID = child.ID
+	m.store.WithLock(func() { t.ChildPRDID = child.ID })
 	old = t.Status
 	m.store.WithLock(func() {
 		t.Status = TaskInProgress
@@ -2722,7 +2741,7 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	// Roll up child outcome onto the parent task.
 	updated, _ := m.store.GetPRD(child.ID)
 	done := time.Now()
-	t.CompletedAt = &done
+	m.store.WithLock(func() { t.CompletedAt = &done })
 	if updated == nil || updated.Status != PRDCompleted {
 		old = t.Status
 		m.store.WithLock(func() {
@@ -2735,11 +2754,12 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	m.store.WithLock(func() {
 		t.Status = TaskCompleted
 	})
-	t.Verification = &VerificationResult{
+	childVerification := &VerificationResult{
 		OK:         true,
 		Summary:    fmt.Sprintf("child PRD %s completed (%d stories)", child.ID, len(updated.Story)),
 		VerifiedAt: time.Now(),
 	}
+	m.store.WithLock(func() { t.Verification = childVerification })
 	return emitSaved(old)
 }
 
@@ -2840,7 +2860,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
 			return false, "", err
 		}
-		t.Verdicts = append(t.Verdicts, v)
+		m.store.WithLock(func() { t.Verdicts = append(t.Verdicts, v) })
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — a content-category block (a real judgment,
 			// not an exhausted infra retry) gets one auto-fix attempt
@@ -2856,10 +2876,12 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			blocked = true
 			m.recordFailureLearning(prd, t.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 			// BL410 remediation (2026-10-13)
-			t.FailureReason = &FailureReason{
-				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
-				Source: "guardrail-task-block", Retryable: false, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				t.FailureReason = &FailureReason{
+					Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+					Source: "guardrail-task-block", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
 		}
 	}
 	return blocked, contentHint, nil
@@ -2943,7 +2965,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
 			return false, nil, err
 		}
-		s.Verdicts = append(s.Verdicts, v)
+		m.store.WithLock(func() { s.Verdicts = append(s.Verdicts, v) })
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — same content-auto-fix eligibility check as
 			// runPerTaskGuardrails, but hands the verdict back for the
@@ -2959,10 +2981,12 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			blocked = true
 			m.recordFailureLearning(prd, s.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 			// BL410 remediation (2026-10-13)
-			s.FailureReason = &FailureReason{
-				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
-				Source: "guardrail-story-block", Retryable: false, OccurredAt: time.Now(),
-			}
+			m.store.WithLock(func() {
+				s.FailureReason = &FailureReason{
+					Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+					Source: "guardrail-story-block", Retryable: false, OccurredAt: time.Now(),
+				}
+			})
 		}
 	}
 	return blocked, contentFixVerdict, nil
@@ -3333,7 +3357,9 @@ func (m *Manager) recordRollupAborted(prdID, note string) {
 	if !ok {
 		return
 	}
-	p.Decisions = append(p.Decisions, Decision{At: time.Now(), Kind: "rollup_aborted_stale", Actor: "autonomous", Note: note})
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{At: time.Now(), Kind: "rollup_aborted_stale", Actor: "autonomous", Note: note})
+	})
 	if err := m.store.SavePRD(p); err != nil {
 		log.Printf("[autonomous] rollup_aborted_stale save: prd=%s: %v", prdID, err)
 	}
@@ -3499,9 +3525,12 @@ func (m *Manager) holdRulesReviewForOperator(prd *PRD, v GuardrailVerdict) {
 		}
 		note += fmt.Sprintf("; total retry ceiling reached (%d of %d)", total, m.resolveRetryCeiling(prd))
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: m.reviewNow(), Kind: kind, Actor: "autonomous", Note: note, FailureCategory: "content",
+	heldOutcome := newRulesReviewOutcome(v, action, note, spent, budget, spent, m.reviewNow())
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: m.reviewNow(), Kind: kind, Actor: "autonomous", Note: note, FailureCategory: "content",
+		})
+		prd.RulesReviewOutcome = heldOutcome
 	})
-	prd.RulesReviewOutcome = newRulesReviewOutcome(v, action, note, spent, budget, spent, m.reviewNow())
 	_ = m.savePRDOwn(prd)
 }

@@ -147,12 +147,18 @@ func (m *Manager) endDuplicateSessions(prd *PRD, t *Task, kept, caller, why stri
 		reason += fmt.Sprintf("; exit of %s not confirmed, left for the next pass", strings.Join(unconfirmed, ", "))
 	}
 	d := SessionDecision{At: time.Now(), Kept: kept, Ended: confirmed, Reason: reason}
-	if !recordSessionDecision(t, d) {
+	note := fmt.Sprintf("task %s kept session %s of %d live; ended %v: %s", t.ID, kept, len(losers)+1, confirmed, reason)
+	var added bool
+	m.store.WithLock(func() {
+		if added = recordSessionDecision(t, d); !added {
+			return
+		}
+		recordEndedSessions(prd, t, confirmed, reason)
+		prd.Decisions = append(prd.Decisions, Decision{At: d.At, Kind: "duplicate_session", Actor: "autonomous", Note: note})
+	})
+	if !added {
 		return confirmed
 	}
-	recordEndedSessions(prd, t, confirmed, reason)
-	note := fmt.Sprintf("task %s kept session %s of %d live; ended %v: %s", t.ID, kept, len(losers)+1, confirmed, reason)
-	prd.Decisions = append(prd.Decisions, Decision{At: d.At, Kind: "duplicate_session", Actor: "autonomous", Note: note})
 	log.Printf("[autonomous] duplicate-session: prd=%s %s", prd.ID, note)
 	if auditFn != nil {
 		auditFn(auditActionDuplicateSession, map[string]any{

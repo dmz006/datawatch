@@ -108,7 +108,10 @@ func taskResetEndReason(prdID, taskID string) string {
 // recordEndedSessions notes the ended session ids on the PRD (Decision) and on
 // the task (History), and records the end reason structurally on the task
 // (Task.SessionEndReason) so the reason is a stable field rather than
-// something readers have to re-derive from a note. The caller saves.
+// something readers have to re-derive from a note. The caller saves and MUST
+// hold the store lock (Store.WithLock): this writes prd.Decisions, t.History
+// and t.SessionEndReason on the canonical PRD/task, and it must not be called
+// from inside another store callback that re-enters the store.
 func recordEndedSessions(prd *PRD, t *Task, ended []string, reason string) {
 	if len(ended) == 0 {
 		return

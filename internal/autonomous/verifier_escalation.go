@@ -46,12 +46,14 @@ func (m *Manager) RecordVerifierEscalation(prdID, taskID, from, to string, count
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: verifierEscalationDecisionKind, Backend: to, Actor: "autonomous",
-		Note:            fmt.Sprintf("task=%s from=%s to=%s consecutive_infra_failures=%d", taskID, from, to, count),
-		FailureCategory: "infra",
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: verifierEscalationDecisionKind, Backend: to, Actor: "autonomous",
+			Note:            fmt.Sprintf("task=%s from=%s to=%s consecutive_infra_failures=%d", taskID, from, to, count),
+			FailureCategory: "infra",
+		})
+		prd.UpdatedAt = time.Now()
 	})
-	prd.UpdatedAt = time.Now()
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
@@ -66,15 +68,22 @@ func (m *Manager) mutateTask(prdID, taskID string, fn func(*Task)) error {
 	if !ok {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				fn(&prd.Story[si].Tasks[ti])
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				prd.UpdatedAt = time.Now()
-				return m.store.SavePRD(prd)
+	found := false
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					fn(&prd.Story[si].Tasks[ti])
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					prd.UpdatedAt = time.Now()
+					found = true
+					return
+				}
 			}
 		}
+	})
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	return m.store.SavePRD(prd)
 }

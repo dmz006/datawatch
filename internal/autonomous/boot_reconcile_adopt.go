@@ -102,21 +102,25 @@ func (m *Manager) adoptUnlinkedSession(prd *PRD, t *Task, listFn func() []Sessio
 		return "", nil
 	}
 	now := time.Now()
-	if t.SessionID != adopted.ID {
-		// The node recorded for an earlier worker says nothing about this one.
-		t.ComputeNode = ""
-	}
-	t.SessionID = adopted.ID
-	t.UpdatedAt = now
+	m.store.WithLock(func() {
+		if t.SessionID != adopted.ID {
+			// The node recorded for an earlier worker says nothing about this one.
+			t.ComputeNode = ""
+		}
+		t.SessionID = adopted.ID
+		t.UpdatedAt = now
+	})
 	m.adoptCapacity(prd, t)
 	if led := m.Capacity(); led != nil {
 		led.Bind(t.ID, adopted.ID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:    now,
-		Kind:  "boot_reconcile",
-		Actor: "autonomous",
-		Note:  fmt.Sprintf("task %s adopted live session %s on daemon restart (no recorded session link)", t.ID, adopted.ID),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    now,
+			Kind:  "boot_reconcile",
+			Actor: "autonomous",
+			Note:  fmt.Sprintf("task %s adopted live session %s on daemon restart (no recorded session link)", t.ID, adopted.ID),
+		})
 	})
 	log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s adopted live session %s (%d other live match(es))",
 		prd.ID, t.ID, t.Status, adopted.ID, len(others))

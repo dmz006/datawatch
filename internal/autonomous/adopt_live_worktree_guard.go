@@ -90,21 +90,25 @@ func (m *Manager) adoptLiveWorkerBeforeSpawn(prd *PRD, t *Task, attempt int, dir
 	if s, _ := DecideDuplicateSession(eligible, m.duplicateSessionKeep()); s != nil {
 		s := *s
 		now := time.Now()
-		if !sameSessionID(t.SessionID, s.ID) {
-			t.ComputeNode = ""
-		}
-		t.SessionID = s.ID
-		t.AdoptedSession = true
-		t.Status = TaskInProgress
-		t.UpdatedAt = now
+		m.store.WithLock(func() {
+			if !sameSessionID(t.SessionID, s.ID) {
+				t.ComputeNode = ""
+			}
+			t.SessionID = s.ID
+			t.AdoptedSession = true
+			t.Status = TaskInProgress
+			t.UpdatedAt = now
+		})
 		m.adoptCapacity(prd, t)
 		if led := m.Capacity(); led != nil {
 			led.Bind(t.ID, s.ID)
 		}
 		note := fmt.Sprintf("task %s adopted live session %s (tmux %s) in worktree %s before spawning; attempt %d kept, no counter changed",
 			t.ID, s.ID, s.TmuxSession, dir, attempt+1)
-		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "adopt_live_worker", Actor: "autonomous", Note: note})
-		t.History = append(t.History, TaskHistoryEntry{At: now, Note: note})
+		m.store.WithLock(func() {
+			prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "adopt_live_worker", Actor: "autonomous", Note: note})
+			t.History = append(t.History, TaskHistoryEntry{At: now, Note: note})
+		})
 		log.Printf("[autonomous] executeOne: %s", note)
 		m.endDuplicateSessions(prd, t, s.ID, "autonomous.executor.duplicate", fmt.Sprintf("duplicate of the live worker adopted before spawn (keep %s)", m.duplicateSessionKeep()))
 		return s.ID

@@ -200,7 +200,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "rules-review"
-	prd.Verdicts = append(prd.Verdicts, v)
+	m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
 	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
 		return false, nil, err
 	}

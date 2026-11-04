@@ -47,25 +47,30 @@ func (m *Manager) RecordVerifierPolicyChoice(prdID, taskID, backend, model, reas
 	}
 	now := time.Now()
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
-			if t.ID != taskID {
-				continue
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID != taskID {
+					continue
+				}
+				t.VerifierPolicyChoice = &VerifierPolicyChoice{Backend: backend, Model: model, Reason: reason, At: now}
+				t.UpdatedAt = now
+				found = true
 			}
-			t.VerifierPolicyChoice = &VerifierPolicyChoice{Backend: backend, Model: model, Reason: reason, At: now}
-			t.UpdatedAt = now
-			found = true
 		}
-	}
+		if !found {
+			return
+		}
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: verifierPolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
+			Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleVerifier, taskID, backend, model, reason),
+		})
+		prd.UpdatedAt = now
+	})
 	if !found {
 		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: verifierPolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
-		Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleVerifier, taskID, backend, model, reason),
-	})
-	prd.UpdatedAt = now
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
@@ -86,11 +91,13 @@ func (m *Manager) RecordJudgePolicyChoice(prdID, taskID, backend, model, reason 
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	now := time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: judgePolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
-		Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleJudge, taskID, backend, model, reason),
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: judgePolicyDecisionKind, Backend: backend, Model: model, Actor: "autonomous",
+			Note: fmt.Sprintf("role=%s task=%s backend=%s model=%s reason=%s", PolicyRoleJudge, taskID, backend, model, reason),
+		})
+		prd.UpdatedAt = now
 	})
-	prd.UpdatedAt = now
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}

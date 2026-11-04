@@ -411,7 +411,7 @@ func historyHasNote(task *Task, text string) bool {
 // prdHasDecisionKind reports whether the Automaton's decision log holds one entry of
 // the given kind.
 func prdHasDecisionKind(m *Manager, prdID, kind string) bool {
-	prd, ok := m.Store().GetPRD(prdID)
+	prd, ok := m.Store().SnapshotPRD(prdID)
 	if !ok {
 		return false
 	}
