@@ -312,6 +312,12 @@ jobs:
         # product artifacts — not in ghcr-cleanup.yaml's known-package
         # matrix, so this job cleans up after itself. Runs even if an
         # earlier build/scan step failed.
+        #
+        # --paginate WITHOUT --slurp prints one concatenated JSON array per
+        # page, which jq cannot parse as a single document ("Expected
+        # separator between values"); --slurp wraps the pages in one outer
+        # array that the [.[][]] filter flattens back into a single version
+        # list.
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -319,20 +325,54 @@ jobs:
           TAG: cve-recheck-${{ github.run_id }}
         run: |
           set -uo pipefail
+          checked=0
+          listing_failures=0
+          found=0
+          deleted=0
+          delete_failures=0
+          list_err="$(mktemp)"
           for pkg in datawatch-agent-base datawatch-validator datawatch-stats-cluster \
                      datawatch-agent-claude datawatch-agent-opencode datawatch-agent-aider \
                      datawatch-agent-gemini datawatch-agent-goose datawatch-parent-full \
                      "agent-base"; do
-            versions=$(gh api "/users/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
-              || gh api "/orgs/$OWNER/packages/container/$pkg/versions" --paginate 2>/dev/null \
-              || echo '[]')
-            vid=$(echo "$versions" | jq -r --arg tag "$TAG" '.[] | select(((.metadata.container.tags // []) | index($tag)) != null) | .id' | head -1)
-            if [[ -n "$vid" ]]; then
-              gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
-                || gh api -X DELETE "/orgs/$OWNER/packages/container/$pkg/versions/$vid" 2>/dev/null \
-                || echo "::warning::failed to delete $pkg:$TAG"
+            checked=$((checked+1))
+            versions=""
+            line1=""
+            if ! versions=$(gh api "/users/$OWNER/packages/container/$pkg/versions" --paginate --slurp 2>"$list_err"); then
+              line1="$(head -n 1 "$list_err")"
+            fi
+            if [[ -z "$versions" || "$versions" != "["* ]]; then
+              if ! versions=$(gh api "/orgs/$OWNER/packages/container/$pkg/versions" --paginate --slurp 2>"$list_err"); then
+                listing_failures=$((listing_failures+1))
+                line2="$(head -n 1 "$list_err")"
+                if [[ -z "$line2" ]]; then line2="$line1"; fi
+                echo "::warning::could not list container versions of $pkg — $line2"
+                continue
+              fi
+            fi
+            vid=$(printf '%s' "$versions" | jq -r \
+                  --arg tag "$TAG" \
+                  '[.[][]] | map(select(((.metadata.container.tags // []) | index($tag)) != null)) | (.[0].id // empty)')
+            if [[ -n "$vid" && "$vid" != "null" ]]; then
+              found=$((found+1))
+              if gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>"$list_err" \
+                 || gh api -X DELETE "/orgs/$OWNER/packages/container/$pkg/versions/$vid" 2>"$list_err"; then
+                deleted=$((deleted+1))
+              else
+                delete_failures=$((delete_failures+1))
+                echo "::warning::failed to delete $pkg:$TAG"
+              fi
             fi
           done
+          rm -f "$list_err"
+          {
+            echo "## Throwaway recheck image cleanup"
+            echo
+            echo "| packages checked | listing failures | throwaway versions found | versions deleted | delete failures |"
+            echo "|---|---|---|---|---|"
+            echo "| $checked | $listing_failures | $found | $deleted | $delete_failures |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "packages checked: $checked | listing failures: $listing_failures | throwaway versions found: $found | versions deleted: $deleted | delete failures: $delete_failures"
 
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6
         with:
