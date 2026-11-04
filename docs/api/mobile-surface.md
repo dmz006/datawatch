@@ -548,7 +548,9 @@ Neither takes a query parameter. Any other method is 405, a federated peer needs
   "held": [
     { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/<user>/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
   ],
-  "held_dirty": 1
+  "held_dirty": 1,
+  "computed_at": "2026-10-30T10:00:00Z",
+  "stale": false
 }
 ```
 
@@ -560,7 +562,7 @@ Shape notes for the app team:
 - `alert_minutes` is the `autonomous.automation.merge_pending_alert_minutes` setting (default 30, `0` = alert off) and rides the body beside the entries it applies to.
 - `pending_since` and `alerted_at` are `null` when they do not apply; `alerted_at` is always `null` in `shadow` mode, which never alerts. `would_alert` is present **only in `shadow` mode**.
 - `state` comes from the daemon's in-memory comparison, so the merge read never runs git and an Automaton not compared yet reads `unknown`. Keep the last good result when a read fails, and do not repeat the read more than about once every 5 seconds.
-- The safe-to-delete read **does run git**, so poll it slowly (the PWA refreshes every 60 seconds). It works in every mode, including `off`. `dirty` and `note` are omitted when false or empty; `worktree` is an empty string when the branch has none. `held_dirty` counts branches safe by state but held back for uncommitted changes. Both lists are always arrays.
+- The safe-to-delete read returns a **cached report**: the daemon computes it once with git and keeps it in memory for 60 seconds per base repository, so a read within the lifetime comes back at once with no git work, and a client may safely poll it every 60 seconds (the PWA already does). A read that misses the lifetime still returns the stored result at once, carries `stale: true`, and starts at most one background refresh (bounded at 60 seconds); if that refresh fails, the reader still gets the last good result. It works in every mode, including `off`. `computed_at` is the UTC time the stored result was computed, `stale` is `true` when the read missed the lifetime, `safe[].dirty_check_skipped` is `true` on an entry whose uncommitted-changes check was skipped because the Automaton is still running (present only when true); `dirty` and `note` are omitted when false or empty; `worktree` is an empty string when the branch has none. `held_dirty` counts branches safe by state but held back for uncommitted changes. Both lists are always arrays. This is a contract change, so it needs a datawatch-app parity issue. This change did not file one, so that parity work is pending for the operator to file it.
 - A 503 from the safe-to-delete read means Automata are disabled or no worktree base repository is configured: show the failed state, not an empty report.
 - **The report never deletes anything**, and the app must not offer a delete, merge or push action next to it. Cleaning up a branch is a separate step the operator approves.
 - Branch names, worktree paths and notes are daemon strings: render them sanitized and wrapped, never as markup.

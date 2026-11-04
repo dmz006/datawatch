@@ -1727,7 +1727,9 @@ GET /api/autonomous/safe-to-delete
     { "branch": "automaton/d0442737d38c", "worktree": "", "state": "pending" },
     { "branch": "automaton/9f8e7d6c5b4a", "worktree": "/home/<user>/.datawatch/prd-worktrees/9f8e7d6c5b4a", "state": "merged", "dirty": true, "note": "Automaton worktree has uncommitted changes" }
   ],
-  "held_dirty": 1
+  "held_dirty": 1,
+  "computed_at": "2026-10-30T10:00:00Z",
+  "stale": false
 }
 ```
 
@@ -1736,13 +1738,16 @@ GET /api/autonomous/safe-to-delete
 | `safe` | Local `automaton/*` branches that can be cleaned up: state `merged` (`reason` `all commits on main`) or `empty` (`reason` `no commits ahead of main`), with no uncommitted changes in the worktree |
 | `safe[].worktree` | The checked-out worktree path; empty when the branch has none |
 | `safe[].commits` | Commits on the branch that are not on `main` (0 for `empty`) |
+| `safe[].dirty_check_skipped` | `true` when this entry's worktree was not checked for uncommitted changes — the branch's Automaton is still running. Present only when true |
 | `held` | Branches that must stay |
 | `held[].state` | `pending`, `needs_look` or `unknown`; or `merged` / `empty` for a branch held only because its worktree is dirty |
 | `held[].dirty` | `true` when the worktree has uncommitted changes; omitted otherwise |
 | `held[].note` | The reason in words (the git error for an `unknown` branch); omitted when empty |
 | `held_dirty` | How many branches are safe by state but held back for uncommitted changes |
+| `computed_at` | UTC time the stored result was computed; empty when the report carries no computed-at stamp |
+| `stale` | `true` when this read missed the report's 60-second lifetime — the stored result was returned at once while a background refresh was under way or had failed. Always present: `false` for a fresh read |
 
-Both lists are always arrays, never `null`. The base branch and the branch checked out in the main checkout are never listed. Unlike the merge route, this one **runs git when it is read** (bounded at 60 seconds) and works in every mode, including `off`. It only needs the worktree base repository, so clients should poll it slowly (the PWA refreshes it every 60 seconds).
+Both lists are always arrays, never `null`. The base branch and the branch checked out in the main checkout are never listed. The report is computed by git, but not on every read: the daemon keeps each result in an in-memory cache for **60 seconds**, keyed by the worktree base repository. A read within the lifetime returns the stored result at once, with no git work; a read that misses the lifetime still returns the stored result at once (with `stale` set) and starts at most one background refresh — further readers in the same window start none and also get the stored result. The background refresh is bounded at 60 seconds, and the route itself is bounded the same way by the handler, so a slow git call cannot hang the read. A refresh that fails is counted (`safe_delete_refresh_failures`) and the reader still gets the last successful result, never a hard error in place of usable data. It works in every mode, including `off`. It only needs the worktree base repository, and clients may poll it on a 60-second cadence (the PWA refreshes it every 60 seconds).
 
 | Status | When |
 |---|---|
