@@ -851,6 +851,9 @@ func (s *HTTPServer) SetScheduleResultStore(store *session.ScheduleResultStore) 
 	s.api.SetScheduleResultStore(store)
 }
 
+// SetTraceRecorder wires the session trace recorder (observe only).
+func (s *HTTPServer) SetTraceRecorder(r SessionTraceRecorder) { s.api.SetTraceRecorder(r) }
+
 // SetSessionTokenStore wires the Design A3 per-session scoped-credential
 // store so fedAuthMiddleware can recognize a session's token.
 func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
