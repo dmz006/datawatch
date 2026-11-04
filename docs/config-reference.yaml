@@ -1606,6 +1606,52 @@ autonomous:
   #   retry_dependents: true
   #   raise_question: true
 
+  # Model routing: what happens when a model is pinned on an Automaton, a story
+  # or a task (or set as a verifier model) and no registered compute node
+  # serves it, and where a task and its verification job run. Each node's
+  # served models are read from the node (Ollama and opencode nodes at
+  # /api/tags, OpenWebUI nodes at /api/v1/models). Only a model that runs on a
+  # local engine reached through a compute node is checked; a hosted backend
+  # such as claude-code is never refused. Every key is settable at runtime,
+  # with no restart, on:
+  #   PUT /api/config {"autonomous.model_routing.refusal_mode": "warn"} (GET
+  #   /api/config shows the block under autonomous.model_routing with defaults
+  #   filled in), MCP autonomous_config_set (model_routing_<key> arguments) or
+  #   config_set, CLI `datawatch config set autonomous.model_routing.refusal_mode
+  #   warn`, comm `configure autonomous.model_routing.refusal_mode=warn`, and
+  #   Settings -> General -> Autonomous in the web app.
+  # Read what each node serves with GET /api/compute/served-models, MCP
+  # compute_served_models, CLI `datawatch compute node served-models` and comm
+  # `compute node models`. A bad value on the write surfaces is rejected (400
+  # on PUT /api/config) and nothing is written; a bad value typed by hand into
+  # config.yaml stops the daemon loading it, with an error naming the key.
+  #
+  # refusal_mode: refuse | warn. Default refuse. refuse turns a pin down when no
+  #   registered node serves the model, and the message names the model and
+  #   every node checked. warn applies the pin, records a
+  #   model_not_served_warning decision on the Automaton and raises a warning.
+  #   A node that is not registered is refused in both modes.
+  # served_models_cache_seconds: whole number >= 0. Default 300. How long a
+  #   node's served models are kept (a failed read is kept too). 0 reads the
+  #   node every time.
+  # verifier_follows_worker_node: true | false. Default true. Runs a task's
+  #   verification job on the node its worker ran on and waits for that node
+  #   instead of moving. false places the verifier like any other job.
+  # unknown_node_policy: assume_serves | assume_not. Default assume_serves. How
+  #   a node whose served models cannot be read counts: as serving the model,
+  #   or as not serving it.
+  # probe_timeout_seconds: whole number >= 1. Default 8. How long one read of a
+  #   node's served models may take before the node counts as unreadable.
+  # alert_on_refusal: true | false. Default true. Raises an alert when a pin is
+  #   refused (error level) or applied with a warning (warning level).
+  model_routing:
+    refusal_mode: refuse
+    served_models_cache_seconds: 300
+    verifier_follows_worker_node: true
+    unknown_node_policy: assume_serves
+    probe_timeout_seconds: 8
+    alert_on_refusal: true
+
   # Progress metrics engine. Every parameter of the engine is a key here; none
   # is fixed in code. Each is also settable at runtime, with no restart, on
   # every configuration channel (shown for lanes; the others use the same form):

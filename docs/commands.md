@@ -659,6 +659,44 @@ Anything that has not been measured reads `not measured`, never zero.
 
 ---
 
+### `compute node models [name] [model=<m>] [backend=<b>] [refresh]`
+
+Show which models each compute node serves. Read-only; prints the same data as `GET /api/compute/served-models`, `datawatch compute node served-models` and the `compute_served_models` MCP tool.
+
+**Syntax:**
+```
+compute node models
+compute node models gpu-1
+compute node models model=ollama/qwen3:27b
+compute node models gpu-1 model=ollama/qwen3:27b backend=ollama refresh
+```
+
+- `name` limits the answer to one node; an unknown node is answered with an error.
+- `model=<m>` adds the model check: whether a pin of that model would be accepted or refused, which nodes serve it, and the refusal message.
+- `backend=<b>` narrows that check to one backend.
+- `refresh` reads the nodes now instead of using the kept copy (kept for `autonomous.model_routing.served_models_cache_seconds`).
+- The words may come in any order; a mistake is answered with the usage line and nothing is sent to the daemon.
+
+**What the reply shows:** one block per node with its kind, then how many models it serves, whether the list is fresh or a kept copy and how old, and the models. A node whose models could not be read says so with the cause; a disabled node says it is disabled and is not read.
+
+---
+
+### `autonomous set-task-node <automaton-id> <task-id> <node|clear>` / `autonomous set-story-node <automaton-id> <story-id> <node|clear>`
+
+Pin one task, or every task of a story that has no pin of its own, to a compute node, so its worker runs there. The word `clear` removes the pin. The pin is checked against the node's served models for the model the task resolves to: a node that does not serve it is refused with a message that names the model and the node (or applied with a warning when `autonomous.model_routing.refusal_mode` is `warn`), and a node that is not registered is refused in both modes. Same behaviour as `datawatch autonomous prd-set-task-node` and `prd-set-story-node`, `POST /api/autonomous/prds/{id}/set_task_node` and `set_story_node`, and the `autonomous_prd_set_task_node` and `autonomous_prd_set_story_node` MCP tools.
+
+**Syntax:**
+```
+autonomous set-task-node <automaton-id> <task-id> gpu-1
+autonomous set-story-node <automaton-id> <story-id> clear
+```
+
+Exactly four words are expected after `autonomous`; anything else is answered with the usage line.
+
+The model routing settings are configuration keys, not commands: `configure autonomous.model_routing.refusal_mode=warn`, and the other `autonomous.model_routing.*` keys. See [howto/model-routing.md](howto/model-routing.md).
+
+---
+
 ### `federation fingerprint list [state]` / `federation fingerprint confirm <id>` / `federation fingerprint reject <id>`
 
 List the **pending matches** this daemon found while reconciling resource fingerprints with its federation peers, and **decide** them yourself. A match means the two daemons appear to be holding the *same underlying resource* — a compute node (e.g. the same GPU), or an LLM entry billed to a shared account. **Confirm** makes those two resources one shared pool (for a compute node, the peer's admitted work now also counts against our admission capacity; rejecting again stops that). **Reject** keeps them as separate things (and undoes a prior confirmation). Nothing is confirmed automatically: a match stays pending until we decide.
@@ -1231,6 +1269,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 | `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
 | `prd-create <spec> --lane-preference <gpu\|claude\|any>` | Give the lane preference at creation; omit it to take any lane |
+| `prd-set-task-node <automaton-id> --task <task-id> --node <node>` | Pin one task to a compute node; an empty `--node` clears the pin. A node that does not serve the task's model is refused with a message naming the model and the node (or applied with a warning when `autonomous.model_routing.refusal_mode` is `warn`); `POST /api/autonomous/prds/{id}/set_task_node`; chat: `autonomous set-task-node <automaton> <task> <node\|clear>` |
+| `prd-set-story-node <automaton-id> --story <story-id> --node <node>` | Pin every task of a story to a compute node (a task's own pin wins); an empty `--node` clears the pin; same checks; `POST /api/autonomous/prds/{id}/set_story_node`; chat: `autonomous set-story-node <automaton> <story> <node\|clear>` |
 | `overlap [spec] [--title <t>] [--spec <s>] [--json]` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's title and spec, best match first. Give the spec as the argument or with `--spec`, and the title with `--title`; either one alone is enough. A read: nothing is written, and it runs in every create-search mode. `--json` prints the `GET /api/autonomous/overlap` body untouched; chat: `autonomous overlap <text>` (the text is the spec) |
 
 Comm channels: `autonomous tags [counts]`, `attention`, `session-tags <session-id> <tag-id1,tag-id2,...>` (omit the list to clear), `set-primary <prd-id> <tag-id|none>`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
@@ -1257,6 +1297,25 @@ Comm channel for operator decisions: `autonomous decisions [automaton-id]` (one 
 Comm channel for the overlap read: `autonomous overlap <text>` takes the spec of the plan you are about to create (everything after the verb) and replies with one line per warning, best match first, or `No overlaps found.`. It is a read and writes nothing; a bare `autonomous overlap` is refused with the usage line. The create-search mode and threshold are configuration keys, not commands: `datawatch config set autonomous.automation.create_search_mode=on` (or `shadow`, or `off`), and `autonomous.automation.create_search_threshold` (above 0, at most 1). In chat, `configure autonomous.automation.create_search_mode=on`.
 
 Lane fill settings are configuration keys, not commands: `datawatch config set autonomous.lane_fill.mode shadow` (or `on`, or `off`), and the other `autonomous.lane_fill.*` keys. In chat, `configure autonomous.lane_fill.mode=on`. The keys and the surfaces are listed in the Lane fill section of `docs/operations.md`.
+
+### `datawatch compute node served-models [name] [--model M] [--backend B] [--refresh] [--json]`
+
+Show which models each compute node serves. One line per node: name, kind, number of models, `fresh` or `cached, <n>s old`, then the models. A node whose models could not be read says why; a disabled node is listed and not read. Reads `GET /api/compute/served-models`; chat: `compute node models`; MCP: `compute_served_models`.
+
+| Flag | Description |
+|---|---|
+| `name` (argument) | Limit the answer to one node; an unknown node is an error |
+| `--model M` | Also check whether the model would be accepted, and print the result (`allowed`, `refused` or `does not apply`), the message, and the nodes that serve it |
+| `--backend B` | Narrow that check to one backend (default: every enabled node) |
+| `--refresh` | Read the nodes now instead of using the kept copy |
+| `--json` | Print the daemon's answer untouched |
+
+```sh
+datawatch compute node served-models
+datawatch compute node served-models gpu-1 --model ollama/qwen3:27b --refresh
+```
+
+The cache age and the refusal behaviour are set with `datawatch config set autonomous.model_routing.<key> <value>`; see [howto/model-routing.md](howto/model-routing.md).
 
 ### `datawatch automation <subcommand>`
 
