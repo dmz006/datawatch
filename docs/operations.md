@@ -1397,6 +1397,42 @@ jq 'length' ~/.datawatch/sessions.json
 jq '.[] | {id, state, task}' ~/.datawatch/sessions.json
 ```
 
+### Secret scan
+
+The daemon counts every pre-push secret scan (the choke point every push
+goes through) in memory since daemon start: the scan, each finding, each
+shadow-mode report (scan found something, the push still proceeded) and
+each enforce-mode refusal (the push was refused, the remote untouched). A
+scan that errored internally still counts as a run with zero findings, and
+off mode records nothing because it never runs a scan. The counters reset
+on daemon restart; the block is omitted from the stats JSON entirely when
+the daemon has never scanned.
+
+| Field | Meaning |
+|-------|---------|
+| `runs` | secret scans that actually executed (shadow or enforce) |
+| `findings` | findings across all scans (each finding in each scan) |
+| `shadow_reports` | shadow-mode scans that found something and reported it (push proceeded) |
+| `refusals` | enforce-mode scans that refused the push |
+| `last_run_at` | time of the most recent scan (RFC 3339; zero time when never) |
+| `last_refusal_at` | time of the most recent enforce refusal (zero time when never) |
+
+**Where to see it.**
+
+| Surface | How |
+|---------|-----|
+| **REST** | `GET /api/stats` — `secret_scan` block with the fields above (absent when the daemon never scanned) |
+| **MCP** | the `get_stats` tool, which proxies `GET /api/stats` |
+| **Web UI** | N/A — there is no dedicated card; the Monitor tab does not render this block (a Prometheus counter and a PWA card are intentionally not provided in this change) |
+| **Comm channel** | N/A — the `stats` command reports its fixed CPU/memory/disk/session summary only and does not include this block |
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/stats | \
+  jq '.secret_scan'
+# {"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+#  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}
+```
+
 ---
 
 ## 9. Log Levels
