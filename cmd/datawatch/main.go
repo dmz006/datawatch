@@ -379,6 +379,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
+		newTraceCmd(),          // agent trace views
 		newAuditCmd(),          // BL9
 		// Sprint S4 (v3.8.0).
 		newAssistCmd(),      // BL42
@@ -1102,10 +1103,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
 	var traceIngestor *session.TraceIngestor
+	var traceStore *trace.Store
 	if cfg.Tracing.WithDefaults().Mode != trace.ModeOff {
 		if ts, terr := trace.NewStore(expandHome(cfg.DataDir), cfg.Tracing.WithDefaults(), nil); terr != nil {
 			debugf("trace store unavailable, daemon-observed tracing off: %v", terr)
 		} else {
+			traceStore = ts
 			traceObserver = observe.Install(ts, cfg.Tracing, func(tmux string) string {
 				for _, s := range mgr.ListSessions() {
 					if s.TmuxSession == tmux {
@@ -3516,6 +3519,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
 		if traceIngestor != nil {
 			httpServer.SetTraceRecorder(traceIngestor)
+		}
+		if traceStore != nil {
+			httpServer.SetTraceStore(traceStore)
 		}
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)

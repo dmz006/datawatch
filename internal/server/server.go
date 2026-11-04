@@ -47,6 +47,7 @@ import (
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tagregistry"
 	"github.com/dmz006/datawatch/internal/tlsutil"
+	"github.com/dmz006/datawatch/internal/trace"
 	"github.com/dmz006/datawatch/internal/websearch"
 )
 
@@ -411,6 +412,10 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cost/usage", api.handleCostUsage)                                  // BL6
 	apiMux.HandleFunc("/api/cost/rates", api.handleCostRates)                                  // BL6 — operator override
 	apiMux.HandleFunc("/api/cost/report", api.handleCostReport)                                // cost report engine (internal/costreport)
+	apiMux.HandleFunc("/api/trace/session/", api.handleTraceSession)     // trace: one session's events + roll-up
+	apiMux.HandleFunc("/api/trace/automaton/", api.handleTraceAutomaton) // trace: an Automaton's events + roll-up
+	apiMux.HandleFunc("/api/trace/rollup", api.handleTraceRollup)        // trace: roll-ups by dimension
+	apiMux.HandleFunc("/api/trace/coverage", api.handleTraceCoverage)    // trace: per-session / per-backend coverage
 	// Sprint S4 (v3.8.0) — messaging + UI polish.
 	apiMux.HandleFunc("/api/splash/logo", api.handleSplashLogo)        // BL69
 	apiMux.HandleFunc("/api/splash/info", api.handleSplashInfo)        // BL69
@@ -853,6 +858,9 @@ func (s *HTTPServer) SetScheduleResultStore(store *session.ScheduleResultStore) 
 
 // SetTraceRecorder wires the session trace recorder (observe only).
 func (s *HTTPServer) SetTraceRecorder(r SessionTraceRecorder) { s.api.SetTraceRecorder(r) }
+
+// SetTraceStore wires the trace store behind the /api/trace/* read routes.
+func (s *HTTPServer) SetTraceStore(st *trace.Store) { s.api.SetTraceStore(st) }
 
 // SetSessionTokenStore wires the Design A3 per-session scoped-credential
 // store so fedAuthMiddleware can recognize a session's token.

@@ -96,6 +96,7 @@ const (
 	CmdRest       CommandType = "rest"
 	CmdCost       CommandType = "cost"
 	CmdCostReport CommandType = "cost_report"
+	CmdTrace      CommandType = "trace"
 	CmdCooldown   CommandType = "cooldown"
 	CmdStale      CommandType = "stale"
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
@@ -1321,6 +1322,11 @@ func Parse(text string) Command {
 		// "report" is never read as a session id.
 		return Command{Type: CmdCostReport, Text: strings.TrimSpace(text[len("cost report"):])}
 
+	case lower == "trace" || strings.HasPrefix(lower, "trace "):
+		// "trace session <id> [k=v ...]", "trace automaton <id> [k=v ...]",
+		// "trace rollup [dimension=<d>] [key=<k>]", "trace coverage [backend=<b>]".
+		return Command{Type: CmdTrace, Text: strings.TrimSpace(text[len("trace"):])}
+
 	case lower == "cost" || strings.HasPrefix(lower, "cost "):
 		// "cost" → /api/cost; "cost <full_id>" → /api/cost?session=<id>
 		rest := strings.TrimSpace(text[len("cost"):])
@@ -1903,6 +1909,8 @@ help                            show this help
 — v3.7.x parity (Sx2) —
 cost [<full_id>]                 token+USD rollup (or per-session)
 cost report [group_by=<g>] [since=<t>] [until=<t>]   grouped cost report (report engine: group_by automaton|automation|backend|release|week; bundled-plan rows show the API-equivalent estimate, usage points and share of the monthly price)
+trace session <id> | trace automaton <id> [tool=<t>] [backend=<b>] [kind=<k>] [errors=true] [limit=<n>]   trace events and roll-up of a session or an Automaton
+trace rollup [dimension=<d>] [key=<k>] | trace coverage [backend=<b>]   trace roll-ups and how much of each backend the trace covers
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
