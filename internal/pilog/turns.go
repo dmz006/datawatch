@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 // ToolCall is a single tool invocation inside an assistant turn; Args is the
@@ -106,4 +107,51 @@ func textOf(parts []string) string {
 		s += p
 	}
 	return s
+}
+
+// TimedTurn is an assistant turn with the log's own timing and token usage.
+type TimedTurn struct {
+	Turn
+	// At is the event time; zero when the log carried none.
+	At time.Time
+	// TokensIn and TokensOut are the turn's usage (cache reads and writes
+	// count as input); zero when the log carried no usage.
+	TokensIn, TokensOut int
+}
+
+// ParseTimedTurns reads JSONL from r and returns the assistant turns, only
+// consuming complete (newline-terminated) lines. consumed is the number of
+// bytes of r that were used, so a caller can resume at that offset once the
+// log has grown. Invalid lines and unknown events are skipped.
+func ParseTimedTurns(r io.Reader) (turns []TimedTurn, consumed int64, err error) {
+	br := bufio.NewReader(r)
+	for {
+		line, rerr := br.ReadBytes('\n')
+		if rerr != nil {
+			if errors.Is(rerr, io.EOF) {
+				return turns, consumed, nil
+			}
+			return turns, consumed, fmt.Errorf("pilog: read: %w", rerr)
+		}
+		consumed += int64(len(line))
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		ev, ok := parseEvent(line)
+		if !ok {
+			continue
+		}
+		t, ok := turnFromEvent(ev)
+		if !ok {
+			continue
+		}
+		tt := TimedTurn{Turn: t}
+		tt.At, _ = eventTime(ev)
+		if u := ev.Message.Usage; u != nil {
+			tt.TokensIn = u.Input + u.CacheRead + u.CacheWrite
+			tt.TokensOut = u.Output
+		}
+		turns = append(turns, tt)
+	}
 }
