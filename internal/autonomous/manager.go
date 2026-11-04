@@ -343,7 +343,16 @@ type Config struct {
 	// live executor before the stuck-running watchdog re-fires its rollup once,
 	// then blocks it. 0 or unset => 900 (config.NormalizeStuckRunningSeconds).
 	StuckRunningSeconds int `json:"stuck_running_seconds,omitempty"`
-	AutoFixRetries      int `json:"auto_fix_retries,omitempty"`
+	// AutoFixRetries — the content auto-fix retries per Automaton (0 turns
+	// content auto-fix off). Each retry is one corrective task created from
+	// the completion review's findings; the retry budget is consumed only
+	// after that task exists. When the retries are spent (or auto-fix is
+	// off) and the completion review still blocks, the Automaton is set to
+	// needs_review with the findings attached — not blocked, not running —
+	// so the operator or supervisor adds a corrective task with the normal
+	// add-task call and approves it. The total retry ceiling
+	// (RetryCeilingTotal) also applies on top of this budget.
+	AutoFixRetries int `json:"auto_fix_retries,omitempty"`
 
 	// TaskMaxAttemptSeconds and TaskNoProgressSeconds mirror the
 	// autonomous.task_max_attempt_seconds / task_no_progress_seconds config
