@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.75.1 — Peer selection stays on the chosen peer
+
+Choosing a federated peer in the web UI now stays on that peer, and every page says which server it shows.
+
+- Selecting the already-active server is a no-op, so a second click no longer drops you back to the primary.
+- Every page has a "Showing: <name>" line (the host name, or "All servers" in all-servers mode).
+- When a peer cannot be reached the error panel offers a "Back to <host>" button.
+- The Settings picker bar and the About page use the same selection path.
+- Five locales, a node test for every picker control, and a browser story (TS-846) that uses two sandbox daemons; the story is written but was not run at merge. The story tooling raises the Playwright dependency from 1.50 to 1.64.
+
 ## v9.75.0 — Drain compute nodes for maintenance
 
 A compute node can be drained for maintenance, and placement now skips nodes that refuse the work.

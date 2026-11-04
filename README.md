@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.75.0 (2026-11-03).** A compute node can be drained for maintenance so it takes no new work while running work finishes, and placement skips drained, denied and maintenance nodes. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.75.1 (2026-11-03).** Choosing a federated peer in the web UI stays on that peer, re-selecting it does nothing, and every page shows which server it is reading. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
