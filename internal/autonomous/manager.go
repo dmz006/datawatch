@@ -229,6 +229,17 @@ type Config struct {
 	// config. No omitempty and no normalization: 0 means the size rule is off
 	// and must round-trip as 0.
 	JudgeSizeThresholdLines int `json:"judge_size_threshold_lines"`
+	// JudgeStrongBackend mirrors autonomous.judge_strong_backend in config:
+	// the strong judge backend a large diff is routed to first, empty = the
+	// last entry of judge_policy (see config.JudgeSizeStrongFirst). No
+	// omitempty, same round-trip reason as JudgeSizeThresholdLines.
+	JudgeStrongBackend string `json:"judge_strong_backend"`
+	// JudgeVerdictCacheEnabled mirrors autonomous.judge_verdict_cache_enabled
+	// in config. A nil (unset) pointer means enabled — the normalizer
+	// config.NormalizeJudgeVerdictCacheEnabled is the single source of the
+	// default. The daemon can also override the live value at runtime via
+	// SetJudgeVerdictCacheEnabled.
+	JudgeVerdictCacheEnabled *bool `json:"judge_verdict_cache_enabled,omitempty"`
 	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
 	// in config. The manager does not consume it: the daemon's autonomous
 	// worker/verifier wait loops in cmd/datawatch/main.go and
@@ -1140,11 +1151,21 @@ type Manager struct {
 	supervisorWatchAlerted      map[string]bool
 	supervisorWatchAlertMu      sync.Mutex
 
-	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose  DecomposeFn
-	guardrail  GuardrailFn
-	planReview PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
+	dataDir string // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	// judgeVerdictCache — per-commit judge verdict cache
+	// (judge_verdict_cache.go): in-memory + JSON-persisted under the same
+	// autonomous data directory as the PRD store, so a completed pass/block
+	// verdict for a (commit, judge policy, rules) triple replays instead of
+	// re-running the judge. Created in NewManager.
+	judgeVerdictCache *JudgeVerdictCache
+	// judgeVerdictCacheEnabled — live resolver for
+	// autonomous.judge_verdict_cache_enabled (wired in cmd/datawatch/main.go);
+	// nil = read the manager's Config at call time. Guarded by mu.
+	judgeVerdictCacheEnabledFn func() bool
+	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose                  DecomposeFn
+	guardrail                  GuardrailFn
+	planReview                 PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter
@@ -2349,6 +2370,10 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	judgeCache, err := NewJudgeVerdictCache(st.dir)
+	if err != nil {
+		return nil, err
+	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
 	cfg.FailureEscalation = normalizeFailureEscalationPolicy(cfg.FailureEscalation)
@@ -2358,6 +2383,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		automations:            automs,
 		repoCIWatch:            repoWatch,
 		supervisorWatch:        supWatch,
+		judgeVerdictCache:      judgeCache,
 		supervisorWatchAlerted: map[string]bool{},
 		dataDir:                dataDir,
 		templates:              newTemplateStore(dataDir),
@@ -2377,6 +2403,21 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 
 // Templates exposes the TemplateStore for REST/API wiring.
 func (m *Manager) Templates() *TemplateStore { return m.templates }
+
+// JudgeVerdictCache exposes the per-commit judge verdict cache for REST or
+// debug wiring.
+func (m *Manager) JudgeVerdictCache() *JudgeVerdictCache { return m.judgeVerdictCacheRef() }
+
+// SetJudgeVerdictCacheEnabled wires the live resolver for
+// autonomous.judge_verdict_cache_enabled. When set, it wins over the
+// manager's Config snapshot at every lookup/store decision, so a runtime
+// config set is honored without a restart. Passing nil restores the
+// Config-based resolution (unset = enabled).
+func (m *Manager) SetJudgeVerdictCacheEnabled(fn func() bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.judgeVerdictCacheEnabledFn = fn
+}
 
 // SetConfig replaces the runtime config (hot-reload entry).
 func (m *Manager) SetConfig(cfg Config) {

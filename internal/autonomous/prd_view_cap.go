@@ -131,12 +131,17 @@ func OutputsRef(prdID, taskID string) string {
 // memory_report, task error, verdicts, start_failure_tail, raw judge and
 // sibling output text keep the cap. prd itself, and so the stored record, is
 // never modified: every slice and pointer the cap touches is copied first.
+// The copy also carries ReviewState, the review view derived from the
+// verdicts on the PRD (see ReviewStateOf): state, cause, action and the
+// attempt count behind the deciding verdict. Neither field is ever stored.
 // max <= 0 returns prd unchanged. A nil prd yields nil.
 func CapPRDText(prd *PRD, max int) *PRD {
 	if prd == nil || max <= 0 {
 		return prd
 	}
 	out := *prd
+	res := ReviewStateOf(prd)
+	out.ReviewState = &res
 	pc := &capper{max: max, ref: OutputsRef(prd.ID, "")}
 	pc.str("memory_report", &out.MemoryReport)
 	out.Truncated = pc.hits

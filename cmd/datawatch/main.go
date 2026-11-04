@@ -4449,6 +4449,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			JudgePolicy:                      config.NormalizeJudgePolicy(acfgIn.JudgePolicy),
 			JudgeTimeoutSeconds:              config.NormalizeJudgeTimeoutSeconds(acfgIn.JudgeTimeoutSeconds),
 			JudgeSizeThresholdLines:          acfgIn.JudgeSizeThresholdLines,
+			JudgeStrongBackend:               acfgIn.JudgeStrongBackend,
+			JudgeVerdictCacheEnabled:         acfgIn.JudgeVerdictCacheEnabled,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
@@ -6509,9 +6511,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// One live-config snapshot for the whole judge (see liveAutonomousConfig).
 			gcfg := liveAutonomousConfig()
 			unitBackend, _ := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
-			// Size rule: a large diff routes the judge to claude-code first. A
-			// pinned unit backend keeps its own behaviour and is not measured.
-			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, req, func(id string) (*autonomouspkg.PRD, bool) {
+			// Size rule: a large diff routes the judge to the configured strong
+			// backend first (autonomous.judge_strong_backend; empty = the judge
+			// policy's last entry). The choice is made once per run and the
+			// decision sentence rides every pick's reason, so the verdict and the
+			// review state can report a reroute. A pinned unit backend keeps its
+			// own behaviour and is not measured.
+			size := judgeSizeFor(ctx, gcfg.JudgeSizeThresholdLines, gcfg.JudgeStrongBackend, req, func(id string) (*autonomouspkg.PRD, bool) {
 				if autonomousMgrRef == nil {
 					return nil, false
 				}
@@ -6546,6 +6552,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Per-commit judge verdict cache (judge_verdict_cache.go): replay a
+			// completed pass/block verdict for a (commit, judge policy, rules)
+			// triple instead of re-running the judge. The live
+			// autonomous.judge_verdict_cache_enabled (unset = on, per
+			// NormalizeJudgeVerdictCacheEnabled) gates it, so a runtime config set
+			// is honored without a restart.
+			amgr.SetJudgeVerdictCacheEnabled(func() bool {
+				return config.NormalizeJudgeVerdictCacheEnabled(liveAutonomousConfig().JudgeVerdictCacheEnabled)
+			})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.

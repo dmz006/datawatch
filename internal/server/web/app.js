@@ -14235,6 +14235,55 @@ function priorityBadgeHtml(priority, source) {
   const srcLabel = t('priority_source_' + src) || src;
   return `<span class="priority-badge" style="${style}" title="${escHtml(t('priority_source_tip', [srcLabel]) || srcLabel)}">${escHtml(t('priority_source_badge', [valStr, srcLabel]))}</span>`;
 }
+// 2026-11-03 — review state timeout hold (review_state, see
+// internal/autonomous/review_state.go). A timed_out review is a HOLD, not
+// a real block: the judge hit its time limit on every backend it tried, so
+// the PRD is kept in the blocked state but the UI must not dress it up as a
+// judgment. The badge is visually distinct from a block badge (a real block
+// keeps the block badge) and shows the cause plus the next actions from
+// the hold: Retry (re-judge on the same backend list) and, when the hold's
+// action is "reroute", Reroute — re-judged pinned to the PRD's stronger
+// guardrail backend (prd.guardrail_backend). Both call the existing
+// rejudge endpoint (POST /api/autonomous/prds/{id}/rejudge).
+window.reviewTimedOutBadgeHtml = function(prd) {
+  const rs = prd && prd.review_state;
+  if (!rs || rs.state !== 'timed_out' || !(prd && prd.id)) return '';
+  const idJ = escHtml(JSON.stringify(prd.id));
+  const title = t('review_timed_out_title') || 'Review timed out';
+  const cause = rs.cause || '';
+  const retryBtn = `<button type="button" class="btn-secondary review-retry-btn" style="font-size:11px;padding:3px 10px;white-space:nowrap;" onclick="event.stopPropagation();reviewRetry(${idJ})" title="${escHtml(title)}">&#10227; ${escHtml(t('review_timed_out_retry') || 'Retry')}</button>`;
+  const rerouteBtn = (rs.action === 'reroute')
+    ? `<button type="button" class="btn-secondary review-reroute-btn" style="font-size:11px;padding:3px 10px;white-space:nowrap;background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="event.stopPropagation();reviewReroute(${idJ},${escHtml(JSON.stringify(prd.guardrail_backend || ''))})" title="${escHtml(title)}">&#8644; ${escHtml(t('review_timed_out_reroute') || 'Reroute')}</button>`
+    : '';
+  return `<span class="review-timeout-badge" style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 10px;border:1px solid #f59e0b;border-radius:8px;background:rgba(245,158,11,0.12);color:inherit;font-size:11px;line-height:1.5;" title="${escHtml(title)}">
+    <span style="font-weight:700;color:#f59e0b;">&#9203; ${escHtml(title)}</span>
+    ${cause ? `<span style="color:inherit;">${escHtml(t('review_timed_out_cause_prefix') || 'Cause')}: ${escHtml(cause)}</span>` : ''}
+    ${retryBtn}${rerouteBtn}
+  </span>`;
+};
+
+// Run the re-judgment: without a backend (Retry — same judge policy order)
+// or pinned to a named backend (Reroute — the PRD's stronger guardrail
+// backend). Success → toast + refresh so the new review state renders in
+// place; failure → long error toast with the server's reason.
+window.reviewRejudge = async function(id, backend) {
+  const body = { actor: 'operator' };
+  if (backend) body.backend = backend;
+  try {
+    await apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/rejudge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    showToast('Re-judgment failed: ' + String(err), 'error', 8000);
+    throw err;
+  }
+  showToast(t('review_timed_out_retry') || 'Re-judgment complete', 'success', 2500);
+  if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+};
+window.reviewRetry = function(id) { return window.reviewRejudge(id, ''); };
+window.reviewReroute = function(id, backend) { return window.reviewRejudge(id, backend || ''); };
 
 function renderPRDRow(prd, opts) {
   const panel = !!(opts && opts.panel);
@@ -17277,6 +17326,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_policy', label: 'Judge backends (ordered, comma-separated; empty = verifier routing policy)', labelKey: 'settings_judge_policy', helpKey: 'settings_judge_policy_help', type: 'text', placeholder: 'claude-code, ollama-datawatch', csv: true },
     { key: 'autonomous.judge_timeout_seconds', label: 'Judge time limit (sec, 0=30m)', labelKey: 'settings_judge_timeout', helpKey: 'settings_judge_timeout_help', type: 'number', min: 0, placeholder: '1800' },
     { key: 'autonomous.judge_size_threshold_lines', label: 'Judge size threshold (lines, 0=off)', labelKey: 'settings_judge_size_threshold', helpKey: 'settings_judge_size_threshold_help', type: 'number', min: 0, placeholder: '400' },
+    { key: 'autonomous.judge_strong_backend', label: 'Strong judge backend (large-diff reroute)', labelKey: 'settings_judge_strong_backend', helpKey: 'settings_judge_strong_backend_help', type: 'text', placeholder: 'claude-opus', default: '' },
+    { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -23581,7 +23632,7 @@ function renderAutomataCard(prd, alsoInHtml) {
     statusHtml: (shippedChipHtml(prd) || statusPill(status)) + renderPrdPushState(prd),
     title: title,
     checkHtml: checkboxCell,
-    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${parentLink}${pinMark}${watchMark}`,
+    badgesHtml: `${typeBadge}${window.automatonKindChipHtml(prd)}${tplBadge}${gateInvalidBadge}${window.reviewTimedOutBadgeHtml ? window.reviewTimedOutBadgeHtml(prd) : ''}${parentLink}${pinMark}${watchMark}`,
     backend: [prd.backend, prd.model].filter(Boolean).join(' · '),
     progress: counts,
     progressLabel: t('work_tile_progress', [counts.done, counts.total]),
@@ -29304,6 +29355,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
         ${lastActivity ? `<span title="${escHtml(t('prd_last_activity_tip')||'Last activity')}">${escHtml(lastActivity)}</span>` : ''}
       </div>
       ${shippedDetailLineHtml(prd)}
+      ${window.reviewTimedOutBadgeHtml ? `<div style="margin-bottom:8px;">${window.reviewTimedOutBadgeHtml(prd)}</div>` : ''}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
         <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
         ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}

@@ -593,6 +593,17 @@ type PRD struct {
 	// cleared when it leaves. Absent (nil) in JSON otherwise, so an
 	// healthy Automaton's stored row is byte-for-byte what it was before.
 	Triage *TriageRecord `json:"triage,omitempty"`
+
+	// ReviewState is the computed review view of this Automaton (state,
+	// cause, action, attempts), derived from the verdicts recorded on it
+	// and its stories and tasks: when the review is held by a judge
+	// timeout it names the backends that timed out and their time limit,
+	// and says whether a re-run should retry on the same backend list or
+	// reroute to a configured stronger backend; a real block stays
+	// "blocked" with action "fix". Set only on the capped copy the
+	// default detail GET returns (see CapPRDText), where it is derived
+	// by ReviewStateOf. Never stored.
+	ReviewState *ReviewResult `json:"review_state,omitempty"`
 }
 
 // PlanCoverage is the plan-coverage state stored on the PRD

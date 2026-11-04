@@ -8,7 +8,7 @@ import (
 )
 
 func TestJudgeChainBySizeEqualToThresholdUnchanged(t *testing.T) {
-	got, rule := judgeSizeRoute([]string{"pi", "claude-code", "ollama"}, 400, 400)
+	got, rule := judgeSizeRoute([]string{"pi", "claude-code", "ollama"}, 400, 400, "claude-code")
 	if want := []string{"pi", "claude-code", "ollama"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -18,7 +18,7 @@ func TestJudgeChainBySizeEqualToThresholdUnchanged(t *testing.T) {
 }
 
 func TestJudgeChainBySizeBelowThresholdUnchanged(t *testing.T) {
-	got, rule := judgeSizeRoute([]string{"pi", "claude-code"}, 120, 400)
+	got, rule := judgeSizeRoute([]string{"pi", "claude-code"}, 120, 400, "claude-code")
 	if want := []string{"pi", "claude-code"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -28,7 +28,7 @@ func TestJudgeChainBySizeBelowThresholdUnchanged(t *testing.T) {
 }
 
 func TestJudgeChainBySizeAboveMovesClaudeCodeFirst(t *testing.T) {
-	got, rule := judgeSizeRoute([]string{"pi", "opencode", "claude-code", "ollama"}, 1000, 400)
+	got, rule := judgeSizeRoute([]string{"pi", "opencode", "claude-code", "ollama"}, 1000, 400, "claude-code")
 	if want := []string{"claude-code", "pi", "opencode", "ollama"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -38,7 +38,7 @@ func TestJudgeChainBySizeAboveMovesClaudeCodeFirst(t *testing.T) {
 }
 
 func TestJudgeChainBySizeAboveWithoutClaudeCodeUnchanged(t *testing.T) {
-	got, rule := judgeSizeRoute([]string{"pi", "ollama"}, 1000, 400)
+	got, rule := judgeSizeRoute([]string{"pi", "ollama"}, 1000, 400, "claude-code")
 	if want := []string{"pi", "ollama"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -48,7 +48,7 @@ func TestJudgeChainBySizeAboveWithoutClaudeCodeUnchanged(t *testing.T) {
 }
 
 func TestJudgeChainBySizeThresholdZeroIsOff(t *testing.T) {
-	got, rule := judgeSizeRoute([]string{"pi", "claude-code"}, 1000000, 0)
+	got, rule := judgeSizeRoute([]string{"pi", "claude-code"}, 1000000, 0, "claude-code")
 	if want := []string{"pi", "claude-code"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -60,7 +60,7 @@ func TestJudgeChainBySizeThresholdZeroIsOff(t *testing.T) {
 func TestJudgeChainBySizeEmptyChain(t *testing.T) {
 	for _, in := range [][]string{nil, {}} {
 		for _, lines := range []int{0, 1000} {
-			got, _ := judgeSizeRoute(in, lines, 400)
+			got, _ := judgeSizeRoute(in, lines, 400, "claude-code")
 			if got == nil || len(got) != 0 {
 				t.Fatalf("got %#v, want empty non-nil slice", got)
 			}
@@ -69,7 +69,7 @@ func TestJudgeChainBySizeEmptyChain(t *testing.T) {
 }
 
 func TestJudgeChainBySizeClaudeCodeAlreadyFirst(t *testing.T) {
-	got, _ := judgeSizeRoute([]string{"claude-code", "pi", "ollama"}, 1000, 400)
+	got, _ := judgeSizeRoute([]string{"claude-code", "pi", "ollama"}, 1000, 400, "claude-code")
 	if want := []string{"claude-code", "pi", "ollama"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v want %v", got, want)
 	}
@@ -78,7 +78,7 @@ func TestJudgeChainBySizeClaudeCodeAlreadyFirst(t *testing.T) {
 func TestJudgeChainBySizeDoesNotMutateInput(t *testing.T) {
 	in := []string{"pi", "opencode", "claude-code", "pi"}
 	orig := append([]string(nil), in...)
-	got, _ := judgeSizeRoute(in, 1000, 400)
+	got, _ := judgeSizeRoute(in, 1000, 400, "claude-code")
 	if !reflect.DeepEqual(in, orig) {
 		t.Fatalf("input mutated: %v want %v", in, orig)
 	}
@@ -86,7 +86,7 @@ func TestJudgeChainBySizeDoesNotMutateInput(t *testing.T) {
 	if !reflect.DeepEqual(in, orig) {
 		t.Fatalf("returned slice aliases input: %v", in)
 	}
-	same, _ := judgeSizeRoute(in, 10, 400)
+	same, _ := judgeSizeRoute(in, 10, 400, "claude-code")
 	same[0] = "changed"
 	if !reflect.DeepEqual(in, orig) {
 		t.Fatalf("returned slice aliases input on default order: %v", in)
@@ -102,7 +102,7 @@ func TestJudgeChainBySizeRemovesDuplicates(t *testing.T) {
 		{1000, []string{"claude-code", "pi", "ollama"}},
 	}
 	for _, c := range cases {
-		got, _ := judgeSizeRoute([]string{"pi", "claude-code", "pi", "ollama", "claude-code"}, c.lines, 400)
+		got, _ := judgeSizeRoute([]string{"pi", "claude-code", "pi", "ollama", "claude-code"}, c.lines, 400, "claude-code")
 		if !reflect.DeepEqual(got, c.want) {
 			t.Fatalf("lines %d: got %v want %v", c.lines, got, c.want)
 		}
@@ -112,7 +112,7 @@ func TestJudgeChainBySizeRemovesDuplicates(t *testing.T) {
 func TestJudgeChainBySizeRuleNamesCountAndThreshold(t *testing.T) {
 	chain := []string{"pi", "claude-code"}
 	for _, lines := range []int{399, 400, 401, 7777} {
-		_, rule := judgeSizeRoute(chain, lines, 400)
+		_, rule := judgeSizeRoute(chain, lines, 400, "claude-code")
 		if !strings.Contains(rule, fmt.Sprint(lines)) || !strings.Contains(rule, "400") {
 			t.Fatalf("lines %d: rule %q omits count or threshold", lines, rule)
 		}

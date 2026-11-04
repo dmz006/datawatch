@@ -1029,11 +1029,11 @@ func (a *API) resumeAfterInfraRecovery(prdID string, before PRDStatus, since tim
 	}
 	return nil
 }
-func (a *API) RejudgeCompletionGuardrail(id, actor string) (any, error) {
+func (a *API) RejudgeCompletionGuardrail(id, actor, backend string) (any, error) {
 	// Manager.RejudgeCompletionGuardrail records its own verdict and
 	// guardrail_rejudge Decision and fires the status event itself, so
 	// no EmitPRDUpdate here (a second notify would be a duplicate).
-	return a.M.RejudgeCompletionGuardrail(context.Background(), id, actor)
+	return a.M.RejudgeCompletionGuardrail(context.Background(), id, actor, backend)
 }
 func (a *API) RepairDependsOn(prdID, actor string) (any, error) {
 	out, err := a.M.RepairDependsOn(prdID, actor)

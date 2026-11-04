@@ -6,48 +6,19 @@ import (
 	"time"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
-// judgeSizeRouteBackend is the backend a large diff is routed to first.
-const judgeSizeRouteBackend = "claude-code"
-
-// judgeSizeRoute orders a judge backend chain for a measured diff size.
-// threshold 0 turns size routing off. At or below the threshold the chain
-// keeps its configured order; above it claude-code moves to the front when
-// it is in the chain and the rest keep their relative order. It returns a
-// fresh slice with each backend once (first occurrence wins) and the
-// sentence the decision log shows; chain is never mutated.
-func judgeSizeRoute(chain []string, lines, threshold int) (ordered []string, rule string) {
-	ordered = make([]string, 0, len(chain))
-	seen := make(map[string]struct{}, len(chain))
-	for _, b := range chain {
-		if _, dup := seen[b]; dup {
-			continue
-		}
-		seen[b] = struct{}{}
-		ordered = append(ordered, b)
-	}
-
-	switch {
-	case threshold == 0:
-		return ordered, "default order: size routing is off (threshold 0)"
-	case lines <= threshold:
-		return ordered, fmt.Sprintf("default order: %d changed lines is at or below the threshold of %d", lines, threshold)
-	}
-
-	if _, ok := seen[judgeSizeRouteBackend]; !ok {
-		return ordered, fmt.Sprintf("default order: %d changed lines is above the threshold of %d but %s is not in the chain",
-			lines, threshold, judgeSizeRouteBackend)
-	}
-	front := make([]string, 0, len(ordered))
-	front = append(front, judgeSizeRouteBackend)
-	for _, b := range ordered {
-		if b != judgeSizeRouteBackend {
-			front = append(front, b)
-		}
-	}
-	return front, fmt.Sprintf("size rule: %d changed lines is above the threshold of %d, %s tried first",
-		lines, threshold, judgeSizeRouteBackend)
+// judgeSizeRoute orders a judge backend chain for a measured diff size. It is
+// the configured-strong-backend form of config.JudgeSizeStrongFirst: the
+// strong backend (autonomous.judge_strong_backend, empty = the last entry of
+// the judge policy) moves to the front when the changed lines exceed the
+// threshold; below or at the threshold, and with threshold 0 (size routing
+// off), the order is unchanged. It returns a fresh slice with each backend
+// once (first occurrence wins) and the decision the log shows; chain is never
+// mutated. The decision is made once per run and reported on every pick.
+func judgeSizeRoute(chain []string, lines, threshold int, strong string) (ordered []string, rule string) {
+	return config.JudgeSizeStrongFirst(chain, lines, threshold, strong)
 }
 
 // judgeSizeMeasureTimeout bounds the git work that counts one Automaton's
@@ -59,23 +30,26 @@ const judgeSizeMeasureTimeout = 30 * time.Second
 var judgeDiffLines = autonomouspkg.JudgeDiffLines
 
 // judgeSize is the size input of one judge call. The zero value (threshold 0)
-// is size routing off. A non-nil Err means the line count is unknown, and the
-// judge keeps the default order.
+// is size routing off. Strong is autonomous.judge_strong_backend ("" = the
+// last entry of the judge policy). A non-nil Err means the line count is
+// unknown, and the judge keeps the default order.
 type judgeSize struct {
 	Threshold int
 	Lines     int
+	Strong    string
 	Err       error
 }
 
 // measureJudgeSize counts the changed lines of req's Automaton for one judge
 // call. With threshold 0 it measures nothing. A failed measurement is never an
 // error for the judge: it is recorded on the result and the judge routes in
-// default order. find looks the Automaton up in the manager store.
-func measureJudgeSize(ctx context.Context, threshold int, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
+// default order. find looks the Automaton up in the manager store. strong is
+// the configured strong backend ("" = the judge policy's last entry).
+func measureJudgeSize(ctx context.Context, threshold int, strong string, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
 	if threshold <= 0 {
 		return judgeSize{}
 	}
-	size := judgeSize{Threshold: threshold}
+	size := judgeSize{Threshold: threshold, Strong: strong}
 	var prd *autonomouspkg.PRD
 	if find != nil {
 		prd, _ = find(req.PRDID)
@@ -93,12 +67,12 @@ func measureJudgeSize(ctx context.Context, threshold int, req autonomouspkg.Guar
 // judgeSizeFor is the size input for one judge call. A pinned invocation keeps
 // its own backend and is not measured, so it gets the zero judgeSize (size
 // routing off); every other invocation is measured. find looks the Automaton
-// up in the manager store.
-func judgeSizeFor(ctx context.Context, threshold int, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
+// up in the manager store. strong is autonomous.judge_strong_backend.
+func judgeSizeFor(ctx context.Context, threshold int, strong string, req autonomouspkg.GuardrailInvocation, find func(id string) (*autonomouspkg.PRD, bool)) judgeSize {
 	if req.GuardrailPinned {
 		return judgeSize{}
 	}
-	return measureJudgeSize(ctx, threshold, req, find)
+	return measureJudgeSize(ctx, threshold, strong, req, find)
 }
 
 // route returns the rule text for the decision log and the function that
@@ -115,9 +89,9 @@ func (s judgeSize) route(read []string, balance bool) (rule string, order func([
 		}
 		return rule, func(l []string) []string { return l }
 	}
-	_, rule = judgeSizeRoute(read, s.Lines, s.Threshold)
+	_, rule = judgeSizeRoute(read, s.Lines, s.Threshold, s.Strong)
 	order = func(l []string) []string {
-		o, _ := judgeSizeRoute(l, s.Lines, s.Threshold)
+		o, _ := judgeSizeRoute(l, s.Lines, s.Threshold, s.Strong)
 		return o
 	}
 	if balance && s.Threshold > 0 {

@@ -13,13 +13,17 @@ import (
 // and returns one fixed (verdict, error) pair, so a test can assert both
 // the judgment's effect and whether the judge was asked at all.
 type rejudgeJudge struct {
-	calls int
-	v     GuardrailVerdict
-	err   error
+	calls      int
+	v          GuardrailVerdict
+	err        error
+	lastBackend string
+	lastPinned  bool
 }
 
-func (r *rejudgeJudge) fn(_ context.Context, _ GuardrailInvocation) (GuardrailVerdict, error) {
+func (r *rejudgeJudge) fn(_ context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
 	r.calls++
+	r.lastBackend = inv.GuardrailBackend
+	r.lastPinned = inv.GuardrailPinned
 	return r.v, r.err
 }
 
@@ -144,7 +148,7 @@ func TestRejudgeCompletionGuardrailPass(t *testing.T) {
 	m.SetGuardrail(rj.fn)
 	_before := taskStatusSummaries(prd)
 
-	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator")
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
 	if err != nil {
 		t.Fatalf("RejudgeCompletionGuardrail: %v", err)
 	}
@@ -210,7 +214,7 @@ func TestRejudgeCompletionGuardrailFail(t *testing.T) {
 	rj := newRejudgeBlockJudge(t)
 	m.SetGuardrail(rj.fn)
 
-	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator")
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
 	if err != nil {
 		t.Fatalf("RejudgeCompletionGuardrail: %v", err)
 	}
@@ -259,7 +263,7 @@ func TestRejudgeCompletionGuardrailNoVerdict(t *testing.T) {
 		_before := taskStatusSummaries(prd)
 		staleDecisions := len(prd.Decisions)
 
-		got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator")
+		got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
 		if err == nil {
 			t.Fatal("RejudgeCompletionGuardrail: want an error when no verdict is produced, got nil")
 		}
@@ -318,7 +322,7 @@ func TestRejudgeCompletionGuardrailRefuses(t *testing.T) {
 			m.SetGuardrail(rj.fn)
 			staleDecisions := len(prd.Decisions)
 
-			got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator")
+			got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
 			if err == nil {
 				t.Fatal("RejudgeCompletionGuardrail: want a refusal error, got nil")
 			}
@@ -372,7 +376,7 @@ func TestRejudgeCompletionGuardrailRefuses(t *testing.T) {
 		m, prd, _ := newRejudgeBlockedPRD(t, TaskCompleted)
 		setTaskStatus(TaskPending)(m, prd)
 		m.SetGuardrail(newRejudgePassJudge(t).fn)
-		_, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator")
+		_, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
 		if err == nil {
 			t.Fatal("want refusal error for a pending task, got nil")
 		}
@@ -393,4 +397,79 @@ func kindsContains(hay []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// TestRejudgeRerouteBackendWins — the reroute of the review state whose
+// action is "reroute": the operator names the judge backend (typically
+// the PRD's stronger guardrail backend) and the re-judgment runs on
+// exactly that backend, pinned over whatever tier resolves, with the
+// reroute named in the audit trail.
+func TestRejudgeRerouteBackendWins(t *testing.T) {
+	m, prd, _ := newRejudgeBlockedPRD(t, TaskCompleted)
+	rj := newRejudgePassJudge(t)
+	m.SetGuardrail(rj.fn)
+
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", " claude-code-strong ")
+	if err != nil {
+		t.Fatalf("RejudgeCompletionGuardrail: %v", err)
+	}
+	if rj.calls != 1 {
+		t.Fatalf("judge calls = %d, want 1", rj.calls)
+	}
+	if rj.lastBackend != "claude-code-strong" {
+		t.Errorf("guardrail backend = %q, want claude-code-strong (the reroute wins over the resolved tier)", rj.lastBackend)
+	}
+	if !rj.lastPinned {
+		t.Error("rerouted invocation is not pinned; the runner could silently fall back behind it")
+	}
+	if got.Status != PRDCompleted {
+		t.Errorf("status = %s, want completed after the rerouted pass", got.Status)
+	}
+	noted := false
+	var notes []string
+	for _, d := range got.Decisions {
+		if d.Kind != "guardrail_rejudge" {
+			continue
+		}
+		notes = append(notes, d.Note)
+		if strings.Contains(d.Note, "rerouted to claude-code-strong") {
+			noted = true
+		}
+	}
+	if !noted {
+		t.Errorf("no guardrail_rejudge decision names the reroute; notes=%v", notes)
+	}
+}
+
+// TestRejudgeRerouteEnablesRunWhenNoTierResolves — the other half of
+// the reroute contract: when no judge tier resolves (the loud
+// no-model block the rejudge would otherwise record), naming a backend
+// makes the run possible because the reroute names the backend directly.
+func TestRejudgeRerouteEnablesRunWhenNoTierResolves(t *testing.T) {
+	m := newNoModelShapeManager(t)
+	prd, _, _ := newJudgeShapePRD(t, m)
+
+	// The resolved tier is empty: an un-rerouted re-judgment would take
+	// the loud no-model path — verify that first.
+	m.SetGuardrail(func(_ context.Context, inv GuardrailInvocation) (GuardrailVerdict, error) {
+		t.Fatalf("judge must not launch without a resolved tier or a rerouted backend")
+		return GuardrailVerdict{}, nil
+	})
+	v, err := m.judgeCompletionRulesReview(context.Background(), prd, "")
+	if err != nil {
+		t.Fatalf("judgeCompletionRulesReview: %v", err)
+	}
+	assertLoudVerdict(t, v)
+
+	// With a reroute backend named, the invocation carries it (pinned)
+	// and the judge runs.
+	rec := &modelJudgeRecorder{}
+	m.SetGuardrail(rec.fn)
+	v, err = m.judgeCompletionRulesReview(context.Background(), prd, "claude-code-strong")
+	if err != nil || v.Outcome != "pass" {
+		t.Fatalf("rerouted re-judge: verdict=%+v err=%v, want a clean pass on the named backend", v, err)
+	}
+	if rec.calls != 1 {
+		t.Fatalf("judge calls = %d, want 1 (the reroute names the backend directly)", rec.calls)
+	}
 }

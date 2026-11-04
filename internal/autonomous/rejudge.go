@@ -27,6 +27,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -39,7 +40,15 @@ import (
 // a missing guardrail function is an error here (an operator asked for a
 // judgment and got none) instead of the silent skip the completion
 // rollup applies (opt-in feature never turned on).
-func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD) (GuardrailVerdict, error) {
+//
+// backend names an explicit judge backend for this run — the reroute of a
+// review state with action "reroute": the prior judgment timed out on
+// every backend it tried, and the operator asks for the re-judgment on a
+// stronger backend. It wins over the invocation's resolved tier and is
+// pinned, so the guardrail runner does not fall back behind it, and it
+// also makes the run possible when no tier resolves (a reroute names the
+// backend directly). Empty re-runs the resolved tier.
+func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, backend string) (GuardrailVerdict, error) {
 	m.mu.Lock()
 	fn := m.guardrail
 	m.mu.Unlock()
@@ -47,11 +56,20 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD) (Gua
 		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
 	inv, resErr := m.prdRulesReviewInvocation(prd)
-	if resErr != nil {
+	backend = strings.TrimSpace(backend)
+	if resErr != nil && backend == "" {
 		// v9.10.18 — no judge model resolvable at any level: loud,
 		// non-retried infra block, recorded by RejudgeCompletionGuardrail
 		// exactly like any other block verdict.
 		return NoGuardrailModelVerdict("rules-review", resErr), nil
+	}
+	if backend != "" {
+		// Reroute: the operator's explicit choice of judge backend wins
+		// over whatever tier resolves, and pinned keeps the guardrail
+		// runner off its default fallback behind it.
+		inv.GuardrailBackend = backend
+		inv.GuardrailModel = ""
+		inv.GuardrailPinned = true
 	}
 	return m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 }
@@ -103,7 +121,10 @@ func firstNonCompletedTask(prd *PRD) (storyID, taskID string, status TaskStatus)
 //     the PRD keeps its PRDBlocked status and its previous
 //     BlockedReason, and an error is returned so the operator sees the
 //     re-judge failed.
-func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor string) (*PRD, error) {
+//
+// backend selects the judge backend for the re-judgment (a reroute, see
+// judgeCompletionRulesReview): empty re-runs the resolved tier.
+func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, backend string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %q not found", prdID)
@@ -134,7 +155,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor s
 		return fmt.Errorf("rejudge completion guardrail: prd %s: %s", prd.ID, detail)
 	}
 
-	v, err := m.judgeCompletionRulesReview(ctx, prd)
+	v, err := m.judgeCompletionRulesReview(ctx, prd, backend)
 	if err != nil {
 		return nil, recordNoVerdict(fmt.Sprintf("the guardrail judgment failed: %v", err))
 	}
@@ -166,6 +187,14 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor s
 	}
 	if v.JudgeSessionID == "" {
 		rej.Backend = v.Backend
+	}
+	if backend = strings.TrimSpace(backend); backend != "" {
+		// Name the reroute in the audit trail: which backend the operator
+		// asked the re-judgment to run on.
+		rej.Note += " (rerouted to " + backend + ")"
+		if rej.Backend == "" {
+			rej.Backend = backend
+		}
 	}
 	if v.Summary != "" {
 		rej.Note += " - " + v.Summary

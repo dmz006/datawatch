@@ -1726,9 +1726,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// PRDBlocked PRD whose work is fully done, on the operator's
 		// behalf. The guardrail verdict and a "guardrail_rejudge"
 		// Decision are recorded on the PRD's decision log; a pass
-		// unblocks the PRD, a block keeps it blocked. Body: {actor?}.
-		// No Run() afterwards — a pass ends the PRD, not a retry of any
-		// task, and a block waits for operator action again.
+		// unblocks the PRD, a block keeps it blocked. Body: {actor?,
+		// backend?} — backend is the reroute of the review state whose
+		// action is "reroute": it names the judge backend the re-judgment
+		// runs on (winning over the resolved tier, pinned), typically the
+		// PRD's stronger guardrail backend. No Run() afterwards — a pass
+		// ends the PRD, not a retry of any task, and a block waits for
+		// operator action again.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -1737,18 +1741,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Actor string `json:"actor"`
+			Actor   string `json:"actor"`
+			Backend string `json:"backend"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.RejudgeCompletionGuardrail(id, req.Actor)
+		req.Backend = strings.TrimSpace(req.Backend)
+		updated, err := s.autonomousMgr.RejudgeCompletionGuardrail(id, req.Actor, req.Backend)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "rejudge", "automaton", id, map[string]any{"actor": req.Actor}) // GH#201 Phase 4
+		s.audit(r.Context(), "rejudge", "automaton", id, map[string]any{"actor": req.Actor, "backend": req.Backend}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, "", "", "rejudge complete; the guardrail verdict and outcome are in the PRD's decision log")
 	case "repair_depends_on":

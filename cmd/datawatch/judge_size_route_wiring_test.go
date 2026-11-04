@@ -106,7 +106,7 @@ func TestJudgeSizeRouteThresholdZeroSkipsMeasurement(t *testing.T) {
 		called = true
 		return 1, nil
 	}
-	size := measureJudgeSize(context.Background(), 0, autonomouspkg.GuardrailInvocation{PRDID: "p1"},
+	size := measureJudgeSize(context.Background(), 0, "", autonomouspkg.GuardrailInvocation{PRDID: "p1"},
 		func(string) (*autonomouspkg.PRD, bool) { called = true; return &autonomouspkg.PRD{}, true })
 	if called || size.Threshold != 0 || size.Err != nil {
 		t.Fatalf("threshold 0 measured anyway: called=%v size=%+v", called, size)
@@ -115,12 +115,27 @@ func TestJudgeSizeRouteThresholdZeroSkipsMeasurement(t *testing.T) {
 
 func TestJudgeSizeRouteAboveThresholdWithoutClaudeCodeKeepsOrder(t *testing.T) {
 	cfg := sizeRouteConfig("fixed", "pi", "ollama")
-	backend, reason := sizeRouteFirstPick(t, cfg, judgeSize{Threshold: 400, Lines: 900})
+	// A configured strong backend that is not in the judge policy does not
+	// enter it: the order stays unchanged and the decision says why.
+	backend, reason := sizeRouteFirstPick(t, cfg, judgeSize{Threshold: 400, Lines: 900, Strong: "claude-code"})
 	if backend != "pi" {
 		t.Fatalf("first pick = %q, want pi", backend)
 	}
 	if !strings.Contains(reason, "not in the chain") {
 		t.Fatalf("reason %q should say claude-code is not in the chain", reason)
+	}
+}
+
+func TestJudgeSizeRouteAboveThresholdStrongDefaultsToLastPolicyEntry(t *testing.T) {
+	cfg := sizeRouteConfig("fixed", "pi", "ollama")
+	// No strong backend configured: the judge policy's last entry is routed
+	// first for a large diff.
+	backend, reason := sizeRouteFirstPick(t, cfg, judgeSize{Threshold: 400, Lines: 900})
+	if backend != "ollama" {
+		t.Fatalf("first pick = %q, want ollama (the policy's last entry)", backend)
+	}
+	if !strings.Contains(reason, "size rule") || !strings.Contains(reason, "ollama tried first") {
+		t.Fatalf("reason %q lacks the size rule for the default strong backend", reason)
 	}
 }
 
@@ -142,7 +157,7 @@ func TestJudgeSizeRouteMeasurementFailureGivesDefaultOrder(t *testing.T) {
 		return 0, errors.New("git exploded")
 	}
 	req := autonomouspkg.GuardrailInvocation{PRDID: "p1", ProjectDir: "/x"}
-	size := measureJudgeSize(context.Background(), 400, req,
+	size := measureJudgeSize(context.Background(), 400, "", req,
 		func(string) (*autonomouspkg.PRD, bool) { return &autonomouspkg.PRD{ID: "p1"}, true })
 	if size.Err == nil {
 		t.Fatal("measurement error was dropped")
@@ -159,7 +174,7 @@ func TestJudgeSizeRouteMeasurementFailureGivesDefaultOrder(t *testing.T) {
 }
 
 func TestJudgeSizeRouteMissingAutomatonGivesUnknownCount(t *testing.T) {
-	size := measureJudgeSize(context.Background(), 400, autonomouspkg.GuardrailInvocation{PRDID: "gone"},
+	size := measureJudgeSize(context.Background(), 400, "", autonomouspkg.GuardrailInvocation{PRDID: "gone"},
 		func(string) (*autonomouspkg.PRD, bool) { return nil, false })
 	if size.Err == nil {
 		t.Fatal("missing automaton should leave the count unknown")
@@ -178,7 +193,7 @@ func TestJudgeSizeRouteMeasurementIsBoundedAndUsesProjectDir(t *testing.T) {
 		gotDeadline, _ = ctx.Deadline()
 		return 777, nil
 	}
-	size := measureJudgeSize(context.Background(), 400, autonomouspkg.GuardrailInvocation{PRDID: "p1", ProjectDir: "/work/p1"},
+	size := measureJudgeSize(context.Background(), 400, "", autonomouspkg.GuardrailInvocation{PRDID: "p1", ProjectDir: "/work/p1"},
 		func(string) (*autonomouspkg.PRD, bool) { return &autonomouspkg.PRD{ID: "p1"}, true })
 	if size.Lines != 777 || size.Err != nil || size.Threshold != 400 {
 		t.Fatalf("size = %+v", size)
@@ -318,11 +333,11 @@ func TestJudgeSizeForSkipsMeasurementOnlyWhenPinned(t *testing.T) {
 	find := func(string) (*autonomouspkg.PRD, bool) { return &autonomouspkg.PRD{}, true }
 
 	pinned := autonomouspkg.GuardrailInvocation{PRDID: "p1", GuardrailBackend: "pi", GuardrailPinned: true}
-	if got := judgeSizeFor(context.Background(), 400, pinned, find); got != (judgeSize{}) || calls != 0 {
+	if got := judgeSizeFor(context.Background(), 400, "", pinned, find); got != (judgeSize{}) || calls != 0 {
 		t.Fatalf("pinned size = %+v with %d measurements, want zero size and none", got, calls)
 	}
 	unpinned := autonomouspkg.GuardrailInvocation{PRDID: "p1", GuardrailBackend: "pi"}
-	if got := judgeSizeFor(context.Background(), 400, unpinned, find); got.Lines != 900 || calls != 1 {
+	if got := judgeSizeFor(context.Background(), 400, "", unpinned, find); got.Lines != 900 || calls != 1 {
 		t.Fatalf("unpinned size = %+v with %d measurements, want 900 lines measured once", got, calls)
 	}
 }

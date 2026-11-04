@@ -232,10 +232,10 @@ func TestPinRoutingJudgeSizeForMeasuresOnlyUnpinned(t *testing.T) {
 	}
 	find := func(string) (*autonomouspkg.PRD, bool) { return &autonomouspkg.PRD{}, true }
 
-	if got := judgeSizeFor(context.Background(), 400, pinnedInvocation("pi-prompt"), find); got != (judgeSize{}) || calls != 0 {
+	if got := judgeSizeFor(context.Background(), 400, "", pinnedInvocation("pi-prompt"), find); got != (judgeSize{}) || calls != 0 {
 		t.Fatalf("pinned: size %+v after %d measurements, want zero size and none", got, calls)
 	}
-	got := judgeSizeFor(context.Background(), 400, unpinnedInvocation(), find)
+	got := judgeSizeFor(context.Background(), 400, "", unpinnedInvocation(), find)
 	if calls != 1 || got.Lines != 1943 || got.Threshold != 400 || got.Err != nil {
 		t.Fatalf("unpinned: size %+v after %d measurements, want 1943 lines at threshold 400 from one measurement", got, calls)
 	}

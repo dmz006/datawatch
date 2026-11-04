@@ -787,7 +787,7 @@ type AutonomousAPI interface {
 	// "guardrail_rejudge" Decision for the acting operator are recorded
 	// in the decision log, a pass unblocks the PRD, a block keeps it
 	// blocked, and a no-verdict failure returns an error.
-	RejudgeCompletionGuardrail(prdID, actor string) (any, error)
+	RejudgeCompletionGuardrail(prdID, actor, backend string) (any, error)
 	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
 	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.
@@ -6289,6 +6289,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"judge_policy":                 judgePolicyForDisplay(s.cfg.Autonomous.JudgePolicy),
 			"judge_timeout_seconds":        config.NormalizeJudgeTimeoutSeconds(s.cfg.Autonomous.JudgeTimeoutSeconds),
 			"judge_size_threshold_lines":   s.cfg.Autonomous.JudgeSizeThresholdLines,
+			// Strong-first judge routing: the named strong backend (empty =
+			// the last judge-policy entry) and the per-commit verdict cache
+			// flag (unset reads the default, true).
+			"judge_strong_backend":        s.cfg.Autonomous.JudgeStrongBackend,
+			"judge_verdict_cache_enabled": config.NormalizeJudgeVerdictCacheEnabled(s.cfg.Autonomous.JudgeVerdictCacheEnabled),
 			"session_idle_timeout_seconds": s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			// Effective value (nil -> default 3, so the key is never absent from
 			// the read surface); 0 renders as 0 = loop detection off.
@@ -7062,6 +7067,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// judge_size_threshold_lines is a whole number of 0 or more; the whole PUT
 	// is refused before anything is applied.
 	if err := validateJudgeSizeThresholdPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// judge_strong_backend must be a string (empty clears strong-first
+	// routing) and judge_verdict_cache_enabled accepts only a JSON boolean
+	// (JSON null is not a boolean); each refusal names the key and the
+	// whole PUT is refused before anything is applied.
+	if err := validateJudgeStrongRoutingPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9114,6 +9127,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.JudgeSizeThresholdLines = n
 			}
+		case "autonomous.judge_strong_backend":
+			// Stored trimmed; empty clears the strong-first routing. Type
+			// checked up front by validateJudgeStrongRoutingPatch.
+			if str, ok := v.(string); ok {
+				cfg.Autonomous.JudgeStrongBackend = strings.TrimSpace(str)
+			}
+		case "autonomous.judge_verdict_cache_enabled":
+			// Stored as a pointer so an explicit false keeps meaning false
+			// while an unset key reads the default (true) via
+			// config.NormalizeJudgeVerdictCacheEnabled. Type-checked up front
+			// by validateJudgeStrongRoutingPatch.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.JudgeVerdictCacheEnabled = &b
+			}
 		case "autonomous.session_idle_timeout_seconds":
 			// Stored as-is; zero falls back to the default via
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
@@ -10620,6 +10647,25 @@ func validateJudgeSizeThresholdPatch(patch map[string]interface{}) error {
 		}
 	}
 	return fmt.Errorf("%s: %v is invalid; use a whole number of 0 or more (0 turns size-aware judge routing off)", key, v)
+}
+
+// validateJudgeStrongRoutingPatch checks the two strong-first judge routing
+// keys in a config patch: autonomous.judge_strong_backend must be a string
+// (empty clears the strong-first routing), and
+// autonomous.judge_verdict_cache_enabled must be a JSON boolean (JSON null is
+// not a boolean). Each refusal names the key.
+func validateJudgeStrongRoutingPatch(patch map[string]interface{}) error {
+	if v, ok := patch["autonomous.judge_strong_backend"]; ok {
+		if _, isStr := v.(string); !isStr {
+			return fmt.Errorf("autonomous.judge_strong_backend: %v is invalid; use a backend name, or an empty string to turn the strong-first routing off", v)
+		}
+	}
+	if v, ok := patch["autonomous.judge_verdict_cache_enabled"]; ok {
+		if _, isBool := v.(bool); !isBool {
+			return fmt.Errorf("autonomous.judge_verdict_cache_enabled: %v is invalid; use a boolean (true or false)", v)
+		}
+	}
+	return nil
 }
 
 // validateQuestionQualityPatch checks the four autonomous.questions quality and

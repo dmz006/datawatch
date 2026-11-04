@@ -487,6 +487,11 @@ func stripNotifyEffective(t *testing.T, got map[string]any) {
 	delete(got, "notify_events_effective")
 }
 
+func stripReviewState(t *testing.T, m map[string]any) {
+	t.Helper()
+	delete(m, "review_state")
+}
+
 func TestPRDRESTDefaultUnchanged(t *testing.T) {
 	const specText = "task spec text"
 
@@ -511,8 +516,10 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 		wantMap := decodeAnyMap(t, want)
 		stripNotifyEffective(t, got)
 		stripNotifyEffective(t, wantMap)
+		stripReviewState(t, got)
+		stripReviewState(t, wantMap)
 		if !reflect.DeepEqual(got, wantMap) {
-			t.Errorf("default GET body differs from stored PRD (notify_events_effective aside)\n got: %s\nwant: %s", rec.Body.String(), want)
+			t.Errorf("default GET body differs from stored PRD (notify_events_effective and review_state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 		if !strings.Contains(rec.Body.String(), specText) {
 			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())
@@ -545,8 +552,9 @@ func TestPRDRESTDefaultUnchanged(t *testing.T) {
 			t.Fatalf("reset_task body must not carry notify_events_effective (never-persisted field): %v", got["notify_events_effective"])
 		}
 		stripNotifyEffective(t, wantMap)
+		stripReviewState(t, wantMap)
 		if !reflect.DeepEqual(got, wantMap) {
-			t.Errorf("default reset_task body differs from stored PRD (notify_events_effective aside)\n got: %s\nwant: %s", rec.Body.String(), want)
+			t.Errorf("default reset_task body differs from stored PRD (notify_events_effective and review_state aside)\n got: %s\nwant: %s", rec.Body.String(), want)
 		}
 	})
 }
