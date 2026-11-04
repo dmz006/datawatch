@@ -718,8 +718,10 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		return
 	}
 	choices := nodeChoicesFor(choicesFn, backend, model)
-	if node == "" && len(choices) == 0 && (entryNodes == nil || entryNodes(backend, model) == 0) {
-		// The backend takes no local compute node (claude-code, say). A node
+	if node == "" && len(choices) == 0 && !localEngineBackends[backend] && (entryNodes == nil || entryNodes(backend, model) == 0) {
+		// The backend takes no local compute node (claude-code, say; never a
+		// local-engine backend such as pi-prompt, whose model name may simply
+		// not resolve to a hosting entry here). A node
 		// recorded while the task ran on another backend is stale: ignore it,
 		// drop it from the task so it is not re-used. The node the live session
 		// reports is ignored too: a backend that takes no node holds none.
