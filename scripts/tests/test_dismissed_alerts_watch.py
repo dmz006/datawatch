@@ -14,18 +14,20 @@ no process at import time, so importing it here is safe. Every test
 replaces the `gh` binary with a fake shell script in a
 tempfile.mkdtemp() directory prepended to PATH via
 unittest.mock.patch.dict (stopped in tearDown, along with rmtree of the
-dir); nothing outside that tempdir is written. The fake emits two pages:
-with --slurp in its argv it prints one JSON array of the two pages (what
-`gh api --paginate --slurp` emits), otherwise it prints the two pages
-concatenated, as unsliced `gh api --paginate` output would be.
+dir); nothing outside that tempdir is written. The fake emits two pages
+concatenated, exactly as unsliced `gh api --paginate` output is: there
+is no `--slurp` folding to emulate, and the fake rejects `--slurp` with
+the real gh's "unknown flag" error so a regression to that flag fails
+the test immediately.
 
 Covered:
   1. gh_api_paginated flattens both pages into one item list, error None.
   2. A non-zero gh exit returns (None, non-empty message).
   3. A page that is a dict with a "message" field returns (None, a
      string containing that message).
-  4. The argv the fake receives includes --slurp and --paginate
-     (verified via the fake writing its argv to a file).
+  4. The argv the fake receives includes --paginate and does NOT
+     include the nonexistent --slurp flag (verified via the fake
+     writing its argv to a file).
 """
 
 import json
@@ -76,17 +78,15 @@ case "${FAKE_GH_MODE:-pages}" in
     P2='__PAGE_2__'
     ;;
 esac
-slurp=0
 for a in "$@"; do
-    if [ "$a" = "--slurp" ]; then slurp=1; fi
+    if [ "$a" = "--slurp" ]; then
+        # Real gh (e.g. 2.46.0): "unknown flag: --slurp", exit nonzero.
+        echo "unknown flag: --slurp" >&2
+        exit 1
+    fi
 done
-if [ "$slurp" = "1" ]; then
-    # `gh api --paginate --slurp`: one JSON array of the pages
-    printf '[%s,%s]\n' "$P1" "$P2"
-else
-    # unsliced `gh api --paginate`: the pages concatenated
-    printf '%s\n%s\n' "$P1" "$P2"
-fi
+# unsliced `gh api --paginate`: the pages concatenated
+printf '%s\n%s\n' "$P1" "$P2"
 '''
 
 
@@ -150,13 +150,13 @@ class GhhApiPaginatedTest(unittest.TestCase):
         self.assertIsInstance(err, str)
         self.assertIn("fake: secondary rate limit exceeded", err)
 
-    # (4) argv the fake received includes --slurp and --paginate
-    def test_argv_includes_slurp_and_paginate(self):
+    # (4) argv the fake received includes --paginate and NOT --slurp
+    def test_argv_has_paginate_and_no_slurp(self):
         self.gh()
         with open(self.argv_file, encoding="utf-8") as f:
             argv = [line for line in f.read().splitlines() if line]
-        self.assertIn("--slurp", argv)
         self.assertIn("--paginate", argv)
+        self.assertNotIn("--slurp", argv)
         # sanity: the endpoint the test asked for is on the command line
         self.assertIn("repos/owner/repo/code-scanning/alerts", argv)
 

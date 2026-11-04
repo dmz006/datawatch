@@ -105,10 +105,11 @@ pushes, for each shipped image on each run, a throwaway image tagged
 The cleanup step deletes those throwaway tags again once the run is over.
 
 To do that it lists, for each shipped image package, the versions that
-carry the recheck tag. The listing is paged: `gh api --paginate --slurp`
-fetches all pages at once and the result is flattened into a single list,
-first trying the user endpoint and falling back to the organization
-endpoint. It then deletes the throwaway versions it finds.
+carry the recheck tag. The listing is paged: `gh api --paginate` fetches
+all pages (one JSON array per page), the pages are folded with `jq -s`
+and flattened into a single list, first trying the user endpoint and
+falling back to the organization endpoint. It then deletes the
+throwaway versions it finds.
 
 A listing or delete failure never fails the run: a warning names the package
 that could not be handled, and cleanup moves on to the next package or the

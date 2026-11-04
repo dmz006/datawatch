@@ -44,6 +44,11 @@ cat > "$bin/gh" <<'FAKEGH'
 # fixture pages for `gh api .../versions` listing calls and records DELETE
 # calls. Reads FAKE_GH_PAGES_DIR, and FAKE_GH_DELETE_LOG /
 # FAKE_GH_FAIL_PKG from the environment (set by the test).
+#
+# It deliberately rejects unknown flags the same way the real gh does
+# (exit 1, "unknown flag: <flag>"): `--slurp` is not a gh api flag, and a
+# fake that accepts and emulates it would hide a workflow that breaks on
+# the installed gh.
 set -u
 if [[ "${1:-}" != "api" ]]; then
   echo "fake gh: unsupported command: ${*:-(none)}" >&2
@@ -51,13 +56,12 @@ if [[ "${1:-}" != "api" ]]; then
 fi
 shift
 method="GET"
-slurp=0
 path=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -X) method="${2:?-X needs a value}"; shift 2 ;;
-    --slurp) slurp=1; shift ;;
     --paginate) shift ;;
+    --*) echo "unknown flag: $1" >&2; exit 1 ;;
     *) if [[ -z "$path" && "$1" == /* ]]; then path="$1"; shift
        else echo "fake gh: unsupported argument: $1" >&2; exit 3
        fi ;;
@@ -77,16 +81,11 @@ if [[ "$method" == "DELETE" ]]; then
   exit 0
 fi
 
-# GET listing: serve the two fixture pages. With --slurp, as gh --slurp
-# does: the pages are one JSON array of page-arrays. Without --slurp,
-# as gh --paginate does: the pages are concatenated arrays.
-if [[ "$slurp" == "1" ]]; then
-  jq -s '.' "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-1.json \
-         "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-2.json
-else
-  cat "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-1.json
-  cat "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-2.json
-fi
+# GET listing: serve the two fixture pages the way `gh api --paginate`
+# actually does: the pages are concatenated arrays, one JSON document per
+# page (there is no --slurp-style folding; the workflow folds with jq -s).
+cat "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-1.json
+cat "${FAKE_GH_PAGES_DIR:?FAKE_GH_PAGES_DIR must be set}"-2.json
 FAKEGH
 chmod +x "$bin/gh"
 
@@ -209,6 +208,20 @@ if [[ -n "$rund" && -s "$rund" ]]; then
   else
     fail "d: json.load" "versions.json is not valid JSON"
   fi
+fi
+
+# ------------------------------------------------------- (e) no --slurp --
+# `--slurp` is not a gh api flag on the installed gh (it exits with
+# "unknown flag: --slurp"); fail loudly if the workflows call for it,
+# instead of waiting for a live run to break.
+slurps="$(grep -n -- '--slurp' "$root/.github/workflows/ghcr-cleanup.yaml" \
+           "$root/.github/workflows/image-refresh.yaml" 2>/dev/null \
+           | grep -v ':[0-9]*: *#')"
+slurps="${slurps:-}"
+if [[ -n "$slurps" ]]; then
+  fail e-no-slurp "workflows use the nonexistent --slurp flag: $(tr '\n' ';' <<<"$slurps")"
+else
+  ok "e: no --slurp in the workflows"
 fi
 
 # ------------------------------------------------------------------ done --
