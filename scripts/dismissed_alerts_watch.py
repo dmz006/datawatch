@@ -40,16 +40,22 @@ def gh_api_paginated(repo, path, token, state="dismissed"):
         env["GH_TOKEN"] = token
     try:
         out = subprocess.run(
-            ["gh", "api", f"repos/{repo}/{path}", "--paginate", "-X", "GET",
+            ["gh", "api", f"repos/{repo}/{path}", "--paginate", "--slurp", "-X", "GET",
              "-f", f"state={state}", "-f", "per_page=100"],
             capture_output=True, text=True, check=True, env=env,
         )
     except subprocess.CalledProcessError as e:
         return None, e.stderr.strip()
     try:
-        return json.loads(out.stdout), None
+        pages = json.loads(out.stdout)
     except json.JSONDecodeError:
         return None, f"non-JSON response: {out.stdout[:200]!r}"
+    items = []
+    for page in pages:
+        if isinstance(page, dict):
+            return None, f"API error: {page.get('message', str(page)[:200])}"
+        items.extend(page)
+    return items, None
 
 
 def main(argv):
