@@ -191,7 +191,7 @@ an alert.
 | MCP | `supervisor_watch_list` (read-only) | The same body as the GET route. Takes no arguments; any argument is refused rather than ignored. |
 | CLI | `datawatch autonomous supervisor-watch` | The mode, the last poll, one line per finding (kind, state, last seen, the operator line) and the comparison summary; `--json` prints the body untouched. |
 | Comm channel | `autonomous supervisor-watch` (alias `supervisor_watch`) | The same lines as the CLI, in the same order. The read takes no arguments. |
-| PWA | Automation view → Chains sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
+| PWA | Automation view → Inbox sub-tab → the **Supervisor watch** card | The mode, how long ago the coordinator last polled, up to twenty open findings with their kind and line (a finding shadow marked alert-due says so), and the comparison line. Refreshes every 30 seconds. The card is hidden when the endpoint is unavailable, so it never shows a stale state. |
 
 ### Monitoring
 

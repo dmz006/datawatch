@@ -142,7 +142,7 @@ reports; none of them changes anything, stops anything or reruns anything.
 | MCP | `security_failure_list` (read-only, same list) | `repo` and `status` parameters, same vocabulary |
 | CLI | `datawatch autonomous security-failure` — a table with repository, ref, workflow, run, status, dependency, advisory, recommendation and action | `--repo <repository>`, `--status <state>`, `--json` for the raw body. Without `--status` only open reports are listed: runs whose watch status is neither `green` nor `superseded`. |
 | Comm channel | `autonomous security-failure` (alias `security_failure`) lists the open reports in the same words as the CLI. `autonomous security-failure <run-id>` replies with the full report of that run; an unknown run gets a not-found reply | the run identifier |
-| PWA | Automata tab → Automation view → **Chains** sub-tab → the **Security failure** card, beside the triage card above the list, refreshed every few seconds. One block per report with the dependency, advisory, publication date, registry entry, recommendation, mode and action | the card shows every stored report |
+| PWA | Automata tab → Automation view → **Inbox** sub-tab → the **Security failure** card, beside the triage card above the list, refreshed every few seconds. One block per report with the dependency, advisory, publication date, registry entry, recommendation, mode and action | the card shows every stored report |
 
 The full report holds these things:
 

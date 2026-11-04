@@ -167,7 +167,7 @@ The report carries the same facts on every surface:
 | MCP | `autonomous_held_questions`, with the same optional `prd_id` and `state` arguments. Read-only. Answer with the standard `question_answer` tool (`chosen_option_id`, or `quote`; `supersedes` for a changed mind). |
 | CLI | `datawatch question held [--prd <id>] [--state <id>] [--json]` — the same report, human-readable or raw JSON. Answer with `datawatch question answer <id> --option <option id> [--text "…"]`. |
 | Chat | `question held [prd <id> \| state <held state id>]` — read-only. `question answer <id> <option number or id> [quote…]` answers; a bare reply still answers the single open question, as with worker questions. |
-| PWA | The **Held-question** card on the Automation view (Chains sub-tab), directly beneath the open-questions card: the mode badge, every open held entry with its recommendation, the forced default line, a link that opens the Automaton detail, and the usual answer sheet. In shadow mode the would-be holds are listed beneath them. |
+| PWA | The **Held-question** card on the Automation view (Inbox sub-tab), directly beneath the open-questions card: the mode badge, every open held entry with its recommendation, the forced default line, a link that opens the Automaton detail, and the usual answer sheet. In shadow mode the would-be holds are listed beneath them. |
 
 ## Shadow dogfood, then switch to on
 
