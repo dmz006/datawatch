@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## Generated artefacts from the change record — next patch above main
+
+An Automaton now records what each task changed and the daemon generates five drafts from that record: a gate report (counts only), a changelog entry, a datawatch-app parity issue draft, testing-tracker rows and a registry row. Nobody plans a task for them.
+
+- Each file starts with a marker line. A file a person edited is never overwritten: a missing marker, an `<!-- edited -->` line or a changed body keeps it, and a regenerate reports `skipped` with the reason.
+- A project can replace a layout with `.datawatch/templates/<kind>.tmpl`; an invalid template falls back to the built-in one with a warning.
+- Seven settings under `autonomous.generated_artefacts` (change record, the five artefacts and the single combined documentation task), all on by default. A kind turned off is not a review finding, and the planner keeps a task for it.
+- Decompose plans at most one combined documentation task and drops tasks whose whole purpose is a generated artefact.
+- Read and control it through REST (`GET /api/autonomous/generated-artefacts`, the change record, preview and regenerate routes), four MCP tools, `datawatch autonomous generated-artefacts`, the chat verbs, the config file and a Generated artefacts group in Settings, in five locales.
+- How-to: `docs/howto/generated-artefacts.md`.
+
 ## v9.73.2 — Peer view no longer reloads to the primary
 
 Opening a federated peer in the web UI no longer reloads the page back to the primary.
