@@ -210,6 +210,11 @@ type Session struct {
 	// describes). Empty when there was nothing to commit.
 	CommitSHA string `json:"commit_sha,omitempty"`
 
+	// StagingSkipped holds the candidate files the completion commit did
+	// not stage and why (the last staging pass of the session's git).
+	// Empty when nothing was skipped or there was no commit.
+	StagingSkipped []StagingSkip `json:"staging_skipped,omitempty"`
+
 	// CompletionSummary holds the one-line summary the worker gave when
 	// the session signalled done. Empty if the worker didn't provide one.
 	CompletionSummary string `json:"completion_summary,omitempty"`
