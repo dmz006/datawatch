@@ -26294,7 +26294,7 @@ window.laneFillCardHtml = function(status) {
 
 // ── Infrastructure retries card ─────────────────────────────────────────────
 // infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
-// body into the Automation Setup card: whether automatic retry is on and how
+// body into the Automation Resources card: whether automatic retry is on and how
 // many tries a task gets, then one block per task that was retried or is held,
 // newest first. Each retry reads "Retry n of max" with its class, reason and
 // time; a held task also shows the cause and, when the daemon raised one, a
@@ -32309,10 +32309,11 @@ window.openAutomationDetail = openAutomationDetail;
 
 // openAutomationLink is the entry for every link that targets one Automation:
 // it selects the Automation sub-tab on the Automata view, then opens the item.
-// With no id it lands on the sub-tab's list.
+// With no id it lands on the default sub-tab (Inbox); with an id it lands on
+// Automations and opens the item.
 function openAutomationLink(id) {
   _automataState.tab = 'automation';
-  _automationState.subtab = 'automations'; // links always land on Automations
+  _automationState.subtab = id ? 'automations' : _AUTOMATION_DEFAULT_SUBTAB;
   navigate('autonomous');
   if (!id) return Promise.resolve();
   return openAutomationDetail(id);
