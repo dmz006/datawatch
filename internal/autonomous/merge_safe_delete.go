@@ -8,8 +8,9 @@
 // (carrying each branch's ahead count via the ahead-behind atom), one
 // worktree list, and — only when at least one branch is ahead — one base
 // subject log. Per branch it then makes at most two calls (cherry, branch
-// subject log) plus a status check for safe branches that own a worktree,
-// running the per-branch work through a bounded worker pool.
+// subject log) plus — unless the branch's Automaton is running — a status
+// check for safe branches that own a worktree, running the per-branch work
+// through a bounded worker pool.
 package autonomous
 
 import (
@@ -39,6 +40,19 @@ type SafeDeleteEntry struct {
 	Reason   string `json:"reason"`
 	// Commits is the number of commits on the branch that are not on base.
 	Commits int `json:"commits"`
+	// DirtyCheckSkipped is true when the worktree's uncommitted-changes
+	// check was skipped because the branch's Automaton is still running.
+	DirtyCheckSkipped bool `json:"dirty_check_skipped,omitempty"`
+}
+
+// SafeDeleteOptions carries the per-Automaton context the safe-to-delete
+// report needs beyond the git repository.
+type SafeDeleteOptions struct {
+	// IsRunning reports whether the branch's Automaton is still running.
+	// For those worktrees the report skips the uncommitted-changes status
+	// read (a running Automaton's worktree is expected to churn) and marks
+	// the entry with DirtyCheckSkipped. Nil treats no Automaton as running.
+	IsRunning func(branch string) bool
 }
 
 // SafeDeleteHeld is one Automaton branch that must not be deleted yet.
@@ -74,12 +88,14 @@ type sdPlan struct {
 
 // sdResult is the per-branch outcome of SafeToDeleteReport: the merge
 // classification plus the worktree status check result for safe branches
-// that own a worktree.
+// that own a worktree. skipped means the branch's Automaton is running,
+// so the status read was deliberately not made.
 type sdResult struct {
 	cmp       MergeCompare
 	statusErr error
 	statusOut string
 	dirty     bool
+	skipped   bool
 }
 
 // SafeToDeleteReport inspects the Automaton branches of baseRepo against
@@ -89,7 +105,7 @@ type sdResult struct {
 // back to a plain ref listing plus one rev-list --count call per branch. A
 // listing failure returns an error; a per-branch git failure holds that
 // branch as unknown.
-func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base string) (SafeDeleteReport, error) {
+func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base string, opts SafeDeleteOptions) (SafeDeleteReport, error) {
 	report := SafeDeleteReport{Safe: []SafeDeleteEntry{}, Held: []SafeDeleteHeld{}}
 
 	// Fixed-cost listing: one for-each-ref that prints each branch name and
@@ -207,7 +223,7 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 		go func() {
 			defer wg.Done()
 			for i := range jobs {
-				results[i] = sdBranchWork(ctx, git, baseRepo, base, plans[i], baseSubjects, baseErr)
+				results[i] = sdBranchWork(ctx, git, baseRepo, base, plans[i], opts, baseSubjects, baseErr)
 			}
 		}()
 	}
@@ -225,7 +241,7 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 			if r.cmp.State == MergeStateEmpty {
 				reason = safeReasonEmpty(base)
 			}
-			if p.wt != "" {
+			if p.wt != "" && !r.skipped {
 				if r.statusErr != nil {
 					report.Held = append(report.Held, SafeDeleteHeld{
 						Branch: p.branch, Worktree: p.wt, State: MergeStateUnknown,
@@ -242,9 +258,14 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 					continue
 				}
 			}
-			report.Safe = append(report.Safe, SafeDeleteEntry{
+			entry := SafeDeleteEntry{
 				Branch: p.branch, Worktree: p.wt, Reason: reason, Commits: r.cmp.Ahead,
-			})
+			}
+			if r.skipped {
+				entry.DirtyCheckSkipped = true
+				entry.Reason += "; dirty check skipped because the Automaton is running"
+			}
+			report.Safe = append(report.Safe, entry)
 		default:
 			held := SafeDeleteHeld{Branch: p.branch, Worktree: p.wt, State: r.cmp.State}
 			if r.cmp.Error != "" {
@@ -258,9 +279,10 @@ func SafeToDeleteReport(ctx context.Context, git MergeGitRunner, baseRepo, base 
 
 // sdBranchWork does one candidate branch's git work for the safe-delete
 // report. It makes at most two calls (cherry, branch subject log) and a
-// status check only for safe branches that own a worktree; a branch with
-// zero commits ahead makes none of the classification calls.
-func sdBranchWork(ctx context.Context, git MergeGitRunner, repo, base string, p sdPlan, baseSubjects map[string]struct{}, baseErr string) sdResult {
+// status check only for safe branches that own a worktree (skipped when the
+// branch's Automaton is running); a branch with zero commits ahead makes
+// none of the classification calls.
+func sdBranchWork(ctx context.Context, git MergeGitRunner, repo, base string, p sdPlan, opts SafeDeleteOptions, baseSubjects map[string]struct{}, baseErr string) sdResult {
 	if p.err != nil {
 		return sdResult{cmp: MergeCompare{State: MergeStateUnknown, Error: p.err.Error()}}
 	}
@@ -275,6 +297,14 @@ func sdBranchWork(ctx context.Context, git MergeGitRunner, repo, base string, p 
 	}
 	r := sdResult{cmp: cmp}
 	if p.wt != "" && (cmp.State == MergeStateMerged || cmp.State == MergeStateEmpty) {
+		// A running Automaton's worktree is expected to churn, so the
+		// report does not read its status; the entry stays in the safe
+		// list with its classification unchanged. The report is
+		// informational only: the worktree cleanup still re-checks for
+		// uncommitted work at removal time.
+		if opts.IsRunning != nil && opts.IsRunning(p.branch) {
+			return sdResult{cmp: cmp, skipped: true}
+		}
 		status, serr := git.Run(ctx, repo, "-C", p.wt, "status", "--porcelain")
 		if serr != nil {
 			r.statusErr = serr
