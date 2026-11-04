@@ -68,7 +68,7 @@ func TestNodeHealthDrainFields(t *testing.T) {
 		t.Fatalf("drain: got %d, want 200", code)
 	}
 
-	out = healthDrainBody(t, srv, "gpu-m")
+	out := healthDrainBody(t, srv, "gpu-m")
 	if out["drained"] != true || out["drain_active"] != true {
 		t.Fatalf("drain state = drained=%v active=%v: %v", out["drained"], out["drain_active"], out)
 	}
