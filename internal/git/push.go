@@ -11,6 +11,13 @@
 // and no '+' refspec ever leave this package; a non-fast-forward push
 // is refused by git and surfaced as a non_fast_forward failure
 // (see PushFailureKind), with the remote left exactly as it was.
+//
+// Pre-push secret scan: when a caller passes a SecretScanPolicy (see
+// push_scan.go), the commits about to be pushed are scanned for secret
+// material before anything runs. Enforce mode refuses the push with
+// Kind=secret_found and the remote untouched; shadow mode logs and
+// returns the (always redacted) findings on the PushResult and lets the
+// push proceed. Without a policy no scan runs.
 
 package git
 
@@ -77,6 +84,12 @@ const (
 	// commits the local one does not, so git refused the push. The
 	// remote is unchanged — this package never forces.
 	PushFailNonFastForward PushFailureKind = "non_fast_forward"
+	// PushFailSecret: the pre-push secret scan (enforce mode) found
+	// secret material in the commits about to be pushed, so the push
+	// was refused before anything ran. The remote is untouched, and
+	// Reason and SecretFindings are redacted (counts, detector names,
+	// file:line, fingerprints) — the matched secret is never in them.
+	PushFailSecret PushFailureKind = "secret_found"
 	// PushFailOther: everything else.
 	PushFailOther PushFailureKind = "other"
 )
@@ -93,6 +106,12 @@ type PushResult struct {
 	SHA           string
 	Reason        string
 	Kind          PushFailureKind
+	// SecretFindings carries the redacted pre-push secret-scan
+	// findings when a scan ran and reported: in shadow mode on the
+	// success shape (the caller records them for the operator), and on
+	// the secret_found refusal in enforce mode. Findings never hold,
+	// and never render, the matched secret itself.
+	SecretFindings []SecretFinding
 }
 
 // pushTimeout caps every individual git call, on top of the
@@ -200,8 +219,12 @@ func headSHA(ctx context.Context, dir string) string {
 // force flag and no '+' refspec, so a non-fast-forward state on the
 // remote is a terminal, reported failure (Kind=non_fast_forward) and
 // the remote is left untouched. An unconfigured remote is reported as
-// Kind=no_remote before anything is attempted.
-func PushToBranch(ctx context.Context, dir, remote, branch string) PushResult {
+// Kind=no_remote before anything is attempted. When non-empty secret
+// scan policies are passed (see SecretScanPolicy), the commits about
+// to be pushed are scanned first: enforce mode refuses with
+// Kind=secret_found before the push runs, shadow mode logs the
+// findings, returns them on the success shape and pushes.
+func PushToBranch(ctx context.Context, dir, remote, branch string, scan ...SecretScanPolicy) PushResult {
 	if remote == "" {
 		remote = "origin"
 	}
@@ -213,15 +236,19 @@ func PushToBranch(ctx context.Context, dir, remote, branch string) PushResult {
 			Reason: fmt.Sprintf("remote %q is not configured in %s (try `git remote add %s <url>`)", remote, dir, remote),
 		}
 	}
+	findings, blocked := scanBeforePush(ctx, dir, remote, branch, pushScanPolicy(scan))
+	if blocked.Kind != "" {
+		return blocked // refused before any push ran — remote untouched
+	}
 	out, err := runGit(ctx, dir, "push", "--set-upstream", remote, branch+":refs/heads/"+branch)
 	if err != nil {
 		return failedPush(out, remote, branch)
 	}
 	sha := headSHA(ctx, dir)
 	if strings.Contains(out, "Everything up-to-date") {
-		return PushResult{NothingToPush: true, Remote: remote, Ref: branch, SHA: sha}
+		return PushResult{NothingToPush: true, Remote: remote, Ref: branch, SHA: sha, SecretFindings: findings}
 	}
-	return PushResult{Pushed: true, Remote: remote, Ref: branch, SHA: sha}
+	return PushResult{Pushed: true, Remote: remote, Ref: branch, SHA: sha, SecretFindings: findings}
 }
 
 // DefaultBranch resolves the default branch reported by remote for
@@ -309,7 +336,7 @@ func remoteAdvertisedRefs(ctx context.Context, dir, remote string) (map[string]b
 // If the remote already contains commits HEAD does not, git refuses
 // the push and this returns Kind=non_fast_forward with the remote
 // untouched — that is the never-force guarantee.
-func PushToDefaultBranch(ctx context.Context, dir, remote string) PushResult {
+func PushToDefaultBranch(ctx context.Context, dir, remote string, scan ...SecretScanPolicy) PushResult {
 	if remote == "" {
 		remote = "origin"
 	}
@@ -328,6 +355,10 @@ func PushToDefaultBranch(ctx context.Context, dir, remote string) PushResult {
 			Reason: err.Error(),
 		}
 	}
+	findings, blocked := scanBeforePush(ctx, dir, remote, def, pushScanPolicy(scan))
+	if blocked.Kind != "" {
+		return blocked // refused before any push ran — remote untouched
+	}
 	sha := headSHA(ctx, dir)
 	out, err := runGit(ctx, dir, "push", remote, "HEAD:refs/heads/"+def)
 	if err != nil {
@@ -336,9 +367,9 @@ func PushToDefaultBranch(ctx context.Context, dir, remote string) PushResult {
 		return res
 	}
 	if strings.Contains(out, "Everything up-to-date") {
-		return PushResult{NothingToPush: true, Remote: remote, Ref: def, SHA: sha}
+		return PushResult{NothingToPush: true, Remote: remote, Ref: def, SHA: sha, SecretFindings: findings}
 	}
-	return PushResult{Pushed: true, Remote: remote, Ref: def, SHA: sha}
+	return PushResult{Pushed: true, Remote: remote, Ref: def, SHA: sha, SecretFindings: findings}
 }
 
 // UnpushedCommits reports how many commits on HEAD are present on no

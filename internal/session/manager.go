@@ -25,6 +25,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
@@ -542,6 +543,11 @@ type Manager struct {
 	// read on every push attempt, so a runtime config change applies
 	// without a restart. Nil = one-shot pushes disabled.
 	gitPushSettings func() (policy, remote string)
+
+	// secretScanPolicyFn returns the live pre-push secret scan policy
+	// (git.secret_scan: mode, detectors, allow-lists) read on every
+	// push attempt (see git_push.go). Nil (or zero policy) = no scan.
+	secretScanPolicyFn func() git.SecretScanPolicy
 
 	// pushAlertFn delivers operator alerts for one-shot push failures.
 	// Called as fn("warn", title, body). Nil = no alert (state still

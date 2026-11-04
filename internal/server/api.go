@@ -6018,6 +6018,17 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
 			"push_remote":      s.cfg.Git.EffectivePushRemote(),
+			// git.secret_scan — pre-push secret scan (v9.0.0). Effective
+			// values, mirroring push_* above: an unset config shows its
+			// defaults (mode shadow, all built-in detectors, empty allow-list).
+			"secret_scan": map[string]interface{}{
+				"mode":      s.cfg.Git.EffectiveSecretScanMode(),
+				"detectors": s.cfg.Git.EffectiveSecretScanDetectors(),
+				"allow_list": map[string]interface{}{
+					"paths":        s.cfg.Git.SecretScan.AllowList.Paths,
+					"fingerprints": s.cfg.Git.SecretScan.AllowList.Fingerprints,
+				},
+			},
 		},
 		"mcp": map[string]interface{}{
 			"enabled":           s.cfg.MCP.Enabled,
@@ -7169,6 +7180,55 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// git.secret_scan.mode — pre-validate like pi.thinking_level above: an
+	// unknown mode (a security-critical setting) rejects the whole PUT
+	// instead of silently no-op'ing in applyConfigPatch.
+	if raw, ok := patch["git.secret_scan.mode"]; ok {
+		ms, isStr := raw.(string)
+		if !isStr || config.ValidateGitSecretScanMode(strings.ToLower(strings.TrimSpace(ms))) != nil {
+			http.Error(w, "git.secret_scan.mode: use one of "+config.GitSecretScanShadow+", "+config.GitSecretScanEnforce+", "+config.GitSecretScanOff, http.StatusBadRequest)
+			return
+		}
+	}
+	// git.secret_scan.detectors — an unknown detector name rejects the whole
+	// PUT: a typo would otherwise make the push-time scan fail and, in
+	// enforce mode, let the push through with only a log line.
+	if raw, ok := patch["git.secret_scan.detectors"]; ok {
+		var names []string
+		if arr, okArr := toStringArray(raw); okArr {
+			names = arr
+		} else if str, okStr := raw.(string); okStr {
+			names = splitCSV(str)
+		} else {
+			http.Error(w, "git.secret_scan.detectors: must be a list of detector names or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateGitSecretScanDetectors(names); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// git.secret_scan.allow_list.fingerprints — 16 or 64 lowercase hex
+	// chars each (sha256 of the secret, first 16 = short form). A bad
+	// entry rejects the whole PUT; allow-list fingerprints never appear
+	// in findings, so an unparseable one is always an operator error.
+	if raw, ok := patch["git.secret_scan.allow_list.fingerprints"]; ok {
+		var candidate []string
+		if arr, okArr := toStringArray(raw); okArr {
+			candidate = arr
+		} else if s, okStr := raw.(string); okStr {
+			candidate = splitCSV(s)
+		} else {
+			http.Error(w, "git.secret_scan.allow_list.fingerprints: must be a list of fingerprints or a comma-separated list", http.StatusBadRequest)
+			return
+		}
+		for _, fp := range candidate {
+			if !isSecretFingerprint(fp) {
+				http.Error(w, "git.secret_scan.allow_list.fingerprints: "+strings.TrimSpace(fp)+" is not a 16- or 64-char hex fingerprint (sha256 of the secret)", http.StatusBadRequest)
+				return
+			}
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
@@ -7702,6 +7762,33 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Trimmed; empty resets to the built-in default (origin),
 			// resolved via GitConfig.EffectivePushRemote.
 			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
+		case "git.secret_scan.mode":
+			// Pre-validated by the PUT handler (unknown modes reject the
+			// whole PUT); empty clears the flag back to the shadow default.
+			if s := strings.ToLower(strings.TrimSpace(toString(v))); config.ValidateGitSecretScanMode(s) == nil {
+				cfg.Git.SecretScan.Mode = s
+			}
+		case "git.secret_scan.detectors":
+			// Empty (either form) resets to all built-in detectors, resolved
+			// via EffectiveSecretScanDetectors at scan time.
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.Detectors = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.Detectors = splitCSV(s)
+			}
+		case "git.secret_scan.allow_list.paths":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.AllowList.Paths = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.AllowList.Paths = splitCSV(s)
+			}
+		case "git.secret_scan.allow_list.fingerprints":
+			// Pre-validated by the PUT handler (each entry 16/64 hex).
+			if arr, ok := toStringArray(v); ok {
+				cfg.Git.SecretScan.AllowList.Fingerprints = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Git.SecretScan.AllowList.Fingerprints = splitCSV(s)
+			}
 		case "session.kill_sessions_on_exit":
 			cfg.Session.KillSessionsOnExit = toBool(v)
 		case "session.one_shot_sessions":
@@ -10834,6 +10921,22 @@ func toQuickCommands(v interface{}) ([]config.QuickCommand, bool) {
 		result = append(result, cmd)
 	}
 	return result, len(result) > 0
+}
+
+// isSecretFingerprint reports whether fp is a 16- or 64-character hex
+// fingerprint (the sha256 of a secret, short or full form).
+func isSecretFingerprint(fp string) bool {
+	hex := strings.TrimSpace(fp)
+	if len(hex) != 16 && len(hex) != 64 {
+		return false
+	}
+	for _, c := range hex {
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // splitCSV (v5.17.0) is the convenience fallback for the PWA's

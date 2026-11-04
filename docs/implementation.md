@@ -2499,3 +2499,11 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Secret scan before push (`git.secret_scan`)
+
+- `internal/config/config.go`: `GitSecretScanConfig` (`mode`, `detectors`, `allow_list.paths`, `allow_list.fingerprints`), `ValidateGitSecretScanMode`, `ValidateGitSecretScanDetectors` and `GitConfig.EffectiveSecretScanDetectors`.
+- `internal/session/git_push.go`: `effectiveSecretScan` and the scan in the push path; shadow mode records findings and lets the push go, enforce mode refuses it. Findings carry detector, file:line and fingerprint, never the matched secret.
+- `internal/server/api.go`: the config PUT validates the mode, detector names and fingerprints before anything is stored.
+- `internal/mcp/secret_scan_tools.go`: `secret_scan_config_get` and `secret_scan_config_set`.
+- Web settings in `internal/server/web/app.js` with five locale bundles.

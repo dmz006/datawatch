@@ -336,6 +336,34 @@ const (
 	GitPushDefaultBranch = "default_branch"
 )
 
+// Git secret-scan modes (git.secret_scan.mode) — what datawatch does
+// when the pre-push secret scan of about-to-be-pushed commits finds a
+// match. Defined here as plain string constants (as with the push
+// policies above, and mirroring the internal/git detector names)
+// to avoid an import cycle with the config package.
+const (
+	// GitSecretScanOff disables the pre-push secret scan.
+	GitSecretScanOff = "off"
+	// GitSecretScanShadow runs the scan, logs and records findings, but
+	// does not refuse the push.
+	GitSecretScanShadow = "shadow"
+	// GitSecretScanEnforce runs the scan and refuses the push when a
+	// finding is not allow-listed.
+	GitSecretScanEnforce = "enforce"
+)
+
+// GitSecretScanDefaultDetectors is the detector list in effect when
+// git.secret_scan.detectors is unset: all built-in detectors (the names
+// of internal/git's built-ins, kept here as plain strings to avoid the
+// import cycle).
+var GitSecretScanDefaultDetectors = []string{
+	"private_key",
+	"aws_access_key",
+	"github_token",
+	"generic_token",
+	"slack_token",
+}
+
 // GitConfig holds git lifecycle settings for finished work.
 type GitConfig struct {
 	// PushOnComplete controls what gets pushed to the remote when work
@@ -345,6 +373,41 @@ type GitConfig struct {
 	// PushRemote is the remote the finished branch is pushed to
 	// (default "origin").
 	PushRemote string `yaml:"push_remote" json:"push_remote"`
+	// SecretScan is the pre-push secret-scan block. See
+	// GitSecretScanConfig: the defaults (an unset or empty mode reads
+	// shadow — the first-release default, matching the shadow-first
+	// rollout convention of security_failure, supervisor_watch, lane
+	// fill and create search — and an unset detector list reads all
+	// built-in detectors) are applied only in the Effective* accessors,
+	// and a mode other than off|shadow|enforce is refused on every
+	// write path.
+	SecretScan GitSecretScanConfig `yaml:"secret_scan" json:"secret_scan"`
+}
+
+// GitSecretScanConfig is the git.secret_scan block: which detectors
+// run, and what is allow-listed (path globs and fingerprint hashes).
+type GitSecretScanConfig struct {
+	// Mode is "off", "shadow" or "enforce"; empty or unknown reads as
+	// shadow through EffectiveSecretScanMode.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// Detectors is the list of detector names to enable (see
+	// GitSecretScanDefaultDetectors); empty reads as all built-ins.
+	Detectors []string `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	// AllowList is the allow-list: path globs and fingerprint hashes
+	// that suppress findings.
+	AllowList GitSecretAllowList `yaml:"allow_list" json:"allow_list"`
+}
+
+// GitSecretAllowList is the git.secret_scan.allow_list block. Paths are
+// glob patterns matched against the repository-relative path (and a
+// bare name like "vendor" matches any path inside that directory);
+// fingerprints are the short 16-hex SHA-256 fingerprint a finding
+// carries, or a full 64-hex SHA-256 digest.
+type GitSecretAllowList struct {
+	// Paths are path globs whose matches are skipped entirely.
+	Paths []string `yaml:"paths,omitempty" json:"paths,omitempty"`
+	// Fingerprints are allow-listed fingerprint hashes.
+	Fingerprints []string `yaml:"fingerprints,omitempty" json:"fingerprints,omitempty"`
 }
 
 // EffectivePushOnComplete returns PushOnComplete normalised to one of the
@@ -364,6 +427,83 @@ func (g GitConfig) EffectivePushRemote() string {
 		return "origin"
 	}
 	return g.PushRemote
+}
+
+// EffectiveSecretScanMode returns SecretScan.Mode normalised to one of
+// off, shadow or enforce; empty or unknown values fall back to shadow —
+// the first-release default, so a fresh configuration records findings
+// without ever refusing a push.
+func (g GitConfig) EffectiveSecretScanMode() string {
+	switch g.SecretScan.Mode {
+	case GitSecretScanOff, GitSecretScanShadow, GitSecretScanEnforce:
+		return g.SecretScan.Mode
+	default:
+		return GitSecretScanShadow
+	}
+}
+
+// ValidateGitSecretScanMode accepts the empty string (the default,
+// shadow) and the three known modes; anything else is an error for the
+// write paths.
+func ValidateGitSecretScanMode(mode string) error {
+	switch mode {
+	case "", GitSecretScanOff, GitSecretScanShadow, GitSecretScanEnforce:
+		return nil
+	default:
+		return fmt.Errorf("git.secret_scan.mode must be \"off\", \"shadow\" or \"enforce\", got %q", mode)
+	}
+}
+
+// ValidateGitSecretScanDetectors rejects a detector name that is not one of
+// the built-ins (GitSecretScanDefaultDetectors). A misspelt name would make
+// the push-time scan fail, which must never be possible to configure for a
+// security gate. An empty list is valid (it resets to all built-ins).
+func ValidateGitSecretScanDetectors(names []string) error {
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n == "" {
+			continue
+		}
+		known := false
+		for _, d := range GitSecretScanDefaultDetectors {
+			if n == d {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return fmt.Errorf("git.secret_scan.detectors: unknown detector %q (use %s)", n, strings.Join(GitSecretScanDefaultDetectors, ", "))
+		}
+	}
+	return nil
+}
+
+// EffectiveSecretScanDetectors returns the configured detector list, or
+// all built-in detectors (GitSecretScanDefaultDetectors) when unset.
+func (g GitConfig) EffectiveSecretScanDetectors() []string {
+	if len(g.SecretScan.Detectors) == 0 {
+		return append([]string(nil), GitSecretScanDefaultDetectors...)
+	}
+	return g.SecretScan.Detectors
+}
+
+// SecretScanRefusesPush reports whether the effective secret-scan mode
+// is enforce: true only for enforce. Shadow (and off) never refuse a
+// push — shadow logs and records findings only.
+func (g GitConfig) SecretScanRefusesPush() bool {
+	return g.EffectiveSecretScanMode() == GitSecretScanEnforce
+}
+
+// EffectiveSecretScanAllowList returns the configured allow-list; unset
+// slices read as empty (nothing allow-listed).
+func (g GitConfig) EffectiveSecretScanAllowList() GitSecretAllowList {
+	if g.SecretScan.AllowList.Paths == nil {
+		g.SecretScan.AllowList.Paths = []string{}
+	}
+	if g.SecretScan.AllowList.Fingerprints == nil {
+		g.SecretScan.AllowList.Fingerprints = []string{}
+	}
+	return g.SecretScan.AllowList
 }
 
 // Config holds all datawatch configuration.
@@ -5824,6 +5964,10 @@ func DefaultConfig() *Config {
 		Git: GitConfig{
 			PushOnComplete: GitPushBranch,
 			PushRemote:     "origin",
+			SecretScan: GitSecretScanConfig{
+				Mode:      GitSecretScanShadow,
+				Detectors: GitSecretScanDefaultDetectors,
+			},
 		},
 		Server: ServerConfig{
 			Enabled:              true,

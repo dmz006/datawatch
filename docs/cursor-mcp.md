@@ -210,3 +210,5 @@ A remote AI agent (e.g. running in a cloud function) can:
 
 This enables fully autonomous AI workflows that delegate coding tasks to
 datawatch-managed AI sessions on your development machines.
+
+- `secret_scan_config_get` / `secret_scan_config_set` — read and change the push-time secret scan (`git.secret_scan`); the setter validates the mode, detector names and fingerprints.

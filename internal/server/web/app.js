@@ -17122,6 +17122,15 @@ const GENERAL_CONFIG_FIELDS = [
     // ws_session_list_default), so the raw values stay as the visible labels.
     { key: 'git.push_on_complete', label: 'Push finished work to the remote', labelKey: 'settings_git_push_on_complete', type: 'select', options: ['never', 'branch', 'default_branch'] },
     { key: 'git.push_remote', label: 'Push remote name', labelKey: 'settings_git_push_remote', type: 'text', placeholder: 'origin' },
+    // Pre-push secret scan (v9.0.0) — git.secret_scan. Effective values are
+    // reported by the daemon (unset mode shows shadow, unset detectors show
+    // all built-ins), so saving the displayed values is always a no-op
+    // semantically. List fields save as comma-separated strings; the
+    // daemon's splitCSV splits them into arrays.
+    { key: 'git.secret_scan.mode', label: 'Pre-push secret scan mode', labelKey: 'settings_git_secret_scan_mode', helpKey: 'settings_git_secret_scan_mode_help', type: 'select', options: ['off', 'shadow', 'enforce'] },
+    { key: 'git.secret_scan.detectors', label: 'Secret scan detectors (comma-separated; empty = all built-in)', labelKey: 'settings_git_secret_scan_detectors', helpKey: 'settings_git_secret_scan_detectors_help', type: 'text', placeholder: 'private_key, aws_access_key, github_token', csv: true },
+    { key: 'git.secret_scan.allow_list.paths', label: 'Secret scan path allow-list (globs)', labelKey: 'settings_git_secret_scan_allow_paths', helpKey: 'settings_git_secret_scan_allow_paths_help', type: 'text', placeholder: 'vendor, testdata', csv: true },
+    { key: 'git.secret_scan.allow_list.fingerprints', label: 'Secret scan fingerprint allow-list (16/64 hex)', labelKey: 'settings_git_secret_scan_allow_fingerprints', helpKey: 'settings_git_secret_scan_allow_fingerprints_help', type: 'text', placeholder: 'a1b2c3d4e5f60718', csv: true },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },
     { key: 'session.mcp_max_retries', label: 'MCP auto-retry limit', type: 'number' },
     { key: 'session.schedule_settle_ms', label: 'Scheduled command settle (ms) — B30', type: 'number' },

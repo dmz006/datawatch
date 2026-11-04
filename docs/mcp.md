@@ -2097,3 +2097,5 @@ datawatch mcp
 # SSE mode (for remote clients, overrides config)
 datawatch mcp --sse
 ```
+
+- **`secret_scan_config_get`** / **`secret_scan_config_set`** — read and change the push-time secret scan (`git.secret_scan`: `mode` off, shadow or enforce; `detectors`; `allow_list_paths`; `allow_list_fingerprints`). The setter refuses an unknown mode, an unknown detector name or a malformed fingerprint, and honours `allow_self_config`. See [secret scan push gate](howto/secret-scan-push-gate.md).

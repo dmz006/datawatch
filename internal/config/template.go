@@ -51,6 +51,35 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	b.WriteString("git:\n")
 	fieldi(&b, "push_on_complete", cfg.Git.PushOnComplete, `What to push when work completes: never (no push, with a visible not-pushed warning), branch (push the finished work branch, default), or default_branch`)
 	fieldi(&b, "push_remote", cfg.Git.PushRemote, "Remote the finished branch is pushed to (default origin)")
+	ss := cfg.Git.SecretScan
+	if ss.Mode != "" || len(ss.Detectors) > 0 || len(ss.AllowList.Paths) > 0 || len(ss.AllowList.Fingerprints) > 0 {
+		b.WriteString("  # Pre-push secret scan of the commits about to be pushed: mode off|shadow|enforce (unset = shadow; shadow logs/records without refusing), detectors (unset = all built-ins), allow_list paths (globs) and fingerprints (16-hex or 64-hex SHA-256)\n")
+		b.WriteString("  secret_scan:\n")
+		if ss.Mode != "" {
+			fmt.Fprintf(&b, "    mode: %s\n", ss.Mode)
+		}
+		if len(ss.Detectors) > 0 {
+			b.WriteString("    detectors:\n")
+			for _, d := range ss.Detectors {
+				fmt.Fprintf(&b, "      - %s\n", d)
+			}
+		}
+		if len(ss.AllowList.Paths) > 0 || len(ss.AllowList.Fingerprints) > 0 {
+			b.WriteString("    allow_list:\n")
+			if len(ss.AllowList.Paths) > 0 {
+				b.WriteString("      paths:\n")
+				for _, p := range ss.AllowList.Paths {
+					fmt.Fprintf(&b, "        - %s\n", p)
+				}
+			}
+			if len(ss.AllowList.Fingerprints) > 0 {
+				b.WriteString("      fingerprints:\n")
+				for _, f := range ss.AllowList.Fingerprints {
+					fmt.Fprintf(&b, "        - %s\n", f)
+				}
+			}
+		}
+	}
 	b.WriteString("\n")
 
 	section(&b, "Web Server", "HTTP/WebSocket server for the PWA, REST API, and browser access.")

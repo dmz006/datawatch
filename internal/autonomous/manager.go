@@ -1497,6 +1497,12 @@ type Manager struct {
 	// Guarded by mu. Nil = daemon values unavailable (defaults apply).
 	gitPushConfigFn func() (policy, remote string)
 
+	// gitScanPolicyFn — when set, returns the daemon's live pre-push secret
+	// scan policy (git.secret_scan: mode, detectors, allow-lists). Read on
+	// every push attempt so a runtime config change applies without restart.
+	// Guarded by mu. Nil = the daemon did not wire it (scan policy off).
+	gitScanPolicyFn func() git.SecretScanPolicy
+
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
@@ -1852,6 +1858,18 @@ func (m *Manager) SetGitPushSettings(fn func() (policy, remote string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.gitPushConfigFn = fn
+}
+
+// SetSecretScanSettings wires the daemon's live pre-push secret scan policy
+// (git.secret_scan: mode, detectors, path and fingerprint allow-lists).
+// Same live-config pattern as SetGitPushSettings: the function, not its
+// return value, is stored — it is read on every push attempt, so a
+// runtime `configure git.secret_scan=...` applies without a daemon
+// restart. Nil (or a zero policy) = no scan, the legacy push behaviour.
+func (m *Manager) SetSecretScanSettings(fn func() git.SecretScanPolicy) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.gitScanPolicyFn = fn
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.

@@ -6003,3 +6003,7 @@ When the store has an encryption key (secure mode), each session record and each
 | `session.store_side_file_cap_kb` | `64` | PRD text above this many KB goes to a side file. A PRD is rewritten with the new value when it next changes. |
 
 All four are available in `config.yaml`, the web UI Settings, `datawatch config set`, the comm channel `configure` command, MCP `config_set` and `PUT /api/config`.
+
+### Secret scan before push
+
+`git.secret_scan.mode` is `shadow` by default: the scan runs before an Automaton's branch is pushed, records findings and lets the push go. `enforce` refuses a push with a finding that is not allow-listed, and `off` disables the scan. Detector names and allow-list fingerprints are validated on every write, so a typo is refused instead of weakening the gate. Details and the false-positive procedure: [secret scan push gate](howto/secret-scan-push-gate.md).
