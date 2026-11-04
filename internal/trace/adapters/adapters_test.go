@@ -182,7 +182,7 @@ func TestFallbackWhenNoDetail(t *testing.T) {
 func TestRegistryHonorsBackends(t *testing.T) {
 	r := DefaultRegistry()
 	all := r.Enabled(trace.Settings{})
-	if len(all) != 10 || all[0].Name() != "aider" || all[1].Name() != "claude-code" {
+	if len(all) != 13 || all[0].Name() != "aider" || all[1].Name() != "claude-code" {
 		t.Fatalf("%v", all)
 	}
 	s := trace.Settings{Backends: map[string]bool{"pi": false}}
@@ -192,7 +192,7 @@ func TestRegistryHonorsBackends(t *testing.T) {
 	if _, ok := r.For("pi-prompt", s); !ok {
 		t.Error("pi-prompt should be on")
 	}
-	if got := len(r.Enabled(s)); got != 9 {
+	if got := len(r.Enabled(s)); got != 12 {
 		t.Errorf("enabled %d", got)
 	}
 	if got := len(r.Enabled(trace.Settings{Mode: trace.ModeOff})); got != 0 {

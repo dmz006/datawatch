@@ -192,15 +192,21 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 		req.Header.Set("Authorization", "Bearer "+b.apiKey)
 	}
 
+	rec := RequestRecord{Session: tmuxSession, Model: b.model, Start: recordNow()}
+	defer func() { emitRecord(rec, recordNow()) }()
+
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
+		rec.Err = err
 		errMsg := fmt.Sprintf("echo '[openwebui] error: %s'", strings.ReplaceAll(err.Error(), "'", "\\'"))
 		exec.Command("tmux", "send-keys", "-t", tmuxSession, errMsg, "Enter").Run() //nolint:errcheck
 		return fmt.Errorf("API request: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	rec.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != 200 {
+		rec.Err = fmt.Errorf("API returned %d", resp.StatusCode)
 		body, _ := io.ReadAll(resp.Body)
 		errMsg := fmt.Sprintf("echo '[openwebui] API error %d: %s'", resp.StatusCode,
 			strings.ReplaceAll(string(body[:min(len(body), 200)]), "'", "\\'"))
@@ -270,6 +276,7 @@ func (b *InteractiveBackend) sendAndStream(ctx context.Context, tmuxSession, use
 			fmt.Sprintf("printf '%%s\\n' '%s'", escaped), "Enter").Run() //nolint:errcheck
 	}
 
+	rec.TokensIn, rec.TokensOut = usageIn, usageOut
 	if usageFn != nil && (usageIn > 0 || usageOut > 0) {
 		usageFn(tmuxSession, usageIn, usageOut)
 	}

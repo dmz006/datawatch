@@ -29,6 +29,9 @@ func DefaultRegistry() *Registry {
 	r.Register(NewGoose("goose-prompt"))
 	r.Register(NewAider())
 	r.Register(NewGemini())
+	r.Register(NewOllama())
+	r.Register(NewOpenWebUI())
+	r.Register(NewShell())
 	return r
 }
 

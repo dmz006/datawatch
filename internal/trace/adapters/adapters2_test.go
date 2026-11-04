@@ -81,7 +81,7 @@ func TestAiderParse(t *testing.T) {
 	if a.Coverage() != trace.CoveragePartial || a.Name() != "aider" {
 		t.Fatal("meta")
 	}
-	evs, _ := parseFix(t, a, "aider.log")
+	evs, _ := parseFix(t, a, "aider.txt")
 	if len(evs) != 3 {
 		t.Fatalf("%d events %+v", len(evs), evs)
 	}
