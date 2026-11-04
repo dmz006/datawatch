@@ -1439,6 +1439,47 @@ jq 'length' ~/.datawatch/sessions.json
 jq '.[] | {id, state, task}' ~/.datawatch/sessions.json
 ```
 
+### Secret scan
+
+The daemon counts every pre-push secret scan (the choke point every push
+goes through) in memory since daemon start: the scan, each finding, each
+shadow-mode report (scan found something, the push still proceeded) and
+each enforce-mode refusal (the push was refused, the remote untouched). A
+scan that errored internally still counts as a run with zero findings, and
+off mode records nothing because it never runs a scan. The counters reset
+on daemon restart; the block is omitted from the stats JSON entirely when
+the daemon has never scanned.
+
+| Field | Meaning |
+|-------|---------|
+| `runs` | secret scans that actually executed (shadow or enforce) |
+| `findings` | findings across all scans (each finding in each scan) |
+| `shadow_reports` | shadow-mode scans that found something and reported it (push proceeded) |
+| `refusals` | enforce-mode scans that refused the push |
+| `last_run_at` | time of the most recent scan (RFC 3339; zero time when never) |
+| `last_refusal_at` | time of the most recent enforce refusal (zero time when never) |
+
+**Where to see it.**
+
+| Surface | How |
+|---------|-----|
+| **REST (dedicated)** | `GET /api/git/secret-scan/stats` — `{mode, stats: {runs, findings, shadow_reports, refusals, last_run_at, last_refusal_at}}`; `mode` is the effective `git.secret_scan.mode`, and the counters are in-memory since daemon start (reset on restart). Read-only; needs the health read capability from a federation peer |
+| **REST** | `GET /api/stats` — `secret_scan` block with the fields above (absent when the daemon never scanned) |
+| **MCP** | `secret_scan_stats` for the counters (mirrors the dedicated endpoint, no parameters); `secret_scan_config_get` / `secret_scan_config_set` for the config; the `get_stats` tool, which proxies `GET /api/stats` |
+| **Web UI** | N/A — there is no dedicated card; the Monitor tab does not render this block (a Prometheus counter and a PWA card are intentionally not provided in this change) |
+| **Comm channel** | N/A — the `stats` command reports its fixed CPU/memory/disk/session summary only and does not include this block |
+
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/git/secret-scan/stats
+# {"mode":"shadow","stats":{"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+#  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}}
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/stats | \
+  jq '.secret_scan'
+# {"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+#  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}
+```
+
 ---
 
 ## 9. Log Levels
@@ -6119,3 +6160,19 @@ All four are available in `config.yaml`, the web UI Settings, `datawatch config 
 ### Secret scan before push
 
 `git.secret_scan.mode` is `shadow` by default: the scan runs before an Automaton's branch is pushed, records findings and lets the push go. `enforce` refuses a push with a finding that is not allow-listed, and `off` disables the scan. Detector names and allow-list fingerprints are validated on every write, so a typo is refused instead of weakening the gate. Details and the false-positive procedure: [secret scan push gate](howto/secret-scan-push-gate.md).
+
+### Secret scan default for the first release
+
+The default remains `shadow` for the first release. That is a decision, not a gap. The scanner has a false-positive rate that the allow-list procedure in the how-to only becomes easy to apply once an operator has seen real findings. In `shadow` the scan records its findings, raises one warn alert per push, and writes its audit and counter data without ever refusing a push — so a fresh install cannot have an Automaton or a one-shot session stalled by a false positive. The hard gate is one setting away; `enforce` is the same value on every write surface:
+
+| Surface | Set `git.secret_scan.mode` to `enforce` |
+|---|---|
+| YAML (config file) | the `mode: enforce` line inside the `git.secret_scan` block |
+| CLI | `datawatch config set git.secret_scan.mode enforce` (the generic `config set` command; there is no dedicated secret-scan subcommand) |
+| Web UI Settings | the **Pre-push secret scan mode** select on the git settings card (`off` / `shadow` / `enforce`) |
+| REST | `PUT /api/config` with key `git.secret_scan.mode` |
+| comm channel | `configure git.secret_scan.mode=enforce` |
+
+**Where to see.** The *Secret scan* subsection under [8. Monitoring](#8-monitoring) documents the counters (`runs`, `findings`, `shadow_reports`, `refusals`, …) on `GET /api/git/secret-scan/stats`, in the `secret_scan` block of `GET /api/stats`, and on the MCP `secret_scan_stats` tool, together with the per-push audit events (`secret_scan_shadow` when shadow records a finding, `secret_scan_refused` when enforce refuses) in the JSON-lines and CEF audit logs.
+
+**Revisiting the default.** Deciding whether to change the default is the operator's call and would be a separate change for a later release. The criterion, using the monitoring above: the `secret_scan` stats and audit events show a sustained period of shadow reports in which every report was either a true positive or resolved by the allow-list procedure, with refusals for known-good content at zero. Until that shows up, `shadow` remains the safe default for a fresh install.

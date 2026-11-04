@@ -3969,6 +3969,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
+		// Pre-push secret scan audit (git.secret_scan): ONE sink over the
+		// operator audit log (a nil log yields a no-op reporter) shared by
+		// both push engines. Each security-relevant scanned push — an
+		// enforce-mode refusal (secret_scan_refused) or a shadow-mode
+		// finding report (secret_scan_shadow) — emits one entry carrying
+		// the redacted findings only (count, detector, file:line,
+		// fingerprint; never the matched secret).
+		secretScanSink := auditpkg.NewSecretScanSink(wiredAuditLog)
+		mgr.SetSecretScanAuditFn(secretScanSink)
 		warnDeprecatedConfigKeys(cfg.DeprecatedKeys, wiredAuditLog)
 		// Node seeding from config runs before the audit log is opened, so
 		// the startup record of nodes configured with verification off is
@@ -6633,6 +6642,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					Fingerprints: al.Fingerprints,
 				}
 			})
+			// Same shared audit sink as the session manager: enforce
+			// refusals and shadow finding reports for Automaton pushes
+			// land in the operator audit log, redacted fields only.
+			amgr.SetSecretScanAuditFn(secretScanSink)
 			// Defect intake (autonomous.defect_intake_automation):
 			// when an Automaton is filed with kind bug and the setting names
 			// an Automation, it is offered to that Automation's bugs stage
@@ -8657,6 +8670,23 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			s.WebSearchErrorsTotal = int64(errs)
 			if !last.IsZero() {
 				s.WebSearchLastQueryAt = last
+			}
+		})
+		// Pre-push secret-scan counters (runs, findings, shadow reports,
+		// refusals). Copied from the git package's package-level counters;
+		// nil (key omitted from the JSON) when the daemon never scanned.
+		statsCollector.SetSecretScanStatsFunc(func(s *statspkg.SystemStats) {
+			ss := gitpkg.SecretScanStatsSnapshot()
+			if ss.Runs == 0 && ss.Findings == 0 && ss.ShadowReports == 0 && ss.Refusals == 0 {
+				return
+			}
+			s.SecretScan = &statspkg.SecretScanStats{
+				Runs:          ss.Runs,
+				Findings:      ss.Findings,
+				ShadowReports: ss.ShadowReports,
+				Refusals:      ss.Refusals,
+				LastRunAt:     ss.LastRunAt,
+				LastRefusalAt: ss.LastRefusalAt,
 			}
 		})
 		// Update Prometheus metrics on each stats collection

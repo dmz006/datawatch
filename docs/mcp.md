@@ -2255,3 +2255,15 @@ datawatch mcp --sse
 
 - **`autonomous_attention_list`** — lists the Automata that need the operator's attention (`GET /api/autonomous/attention`). Each item carries `rules_review_outcome` (`action`, `findings`, `retries`) when the completion review blocked it. An Automaton whose review blocked with no retry left sits in `needs_review` until you add work or decide.
 - **`autonomous_prd_get` / `autonomous_status` — `rules_review_outcome`.** Carried on an Automaton whose completion review blocked: what was done (`action`), the `findings`, and how many `retries` were used. The `auto_fix_retries` setting in `autonomous_config_set` is the number of content auto-fix retries per Automaton (default 1); once spent, the Automaton goes to `needs_review` with the findings attached.
+- **`secret_scan_stats`** — read the daemon's pre-push secret-scan counters with the effective `git.secret_scan` mode (off, shadow or enforce — unset defaults to shadow). Read-only: it proxies `GET /api/git/secret-scan/stats`, so it changes nothing and runs no scan, push or judge. The counters are in-memory since daemon start and reset on daemon restart.
+
+  **Parameters**: none.
+
+  **Returns** the REST body as-is — `mode`, plus `stats` with `runs` (scans that executed), `findings`, `shadow_reports` (shadow-mode findings, the push proceeded) and `refusals` (enforce-mode refusals), and `last_run_at` / `last_refusal_at` (RFC 3339, the zero time `0001-01-01T00:00:00Z` when never recorded). Needs the health read capability when called by a federation peer.
+
+  ```
+  secret_scan_stats()
+  # {"mode":"shadow","stats":{"runs":4,"findings":1,"shadow_reports":1,"refusals":0,
+  #  "last_run_at":"2026-11-01T10:12:05Z","last_refusal_at":"0001-01-01T00:00:00Z"}}
+  ```
+

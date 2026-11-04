@@ -104,6 +104,10 @@ func scanBeforePush(ctx context.Context, dir, remote, ref string, p SecretScanPo
 	if p.Mode == "" || p.Mode == ScanOff {
 		return nil, PushResult{}
 	}
+	// The scan is about to execute (shadow or enforce); count it, including
+	// the case where the scanner itself fails below (a run with zero
+	// findings — a malfunction never wedges a legitimate push).
+	RecordSecretScanRun()
 	findings, err := ScanUnpushed(ctx, dir, remote, p.options())
 	if err != nil {
 		log.Printf("git: pre-push secret scan (%s) of %s failed; the push proceeds: %v", p.Mode, ref, err)
@@ -112,8 +116,10 @@ func scanBeforePush(ctx context.Context, dir, remote, ref string, p SecretScanPo
 	if len(findings) == 0 {
 		return nil, PushResult{}
 	}
+	RecordSecretScanFindings(len(findings))
 	summary := RedactedFindingsSummary(findings)
 	if p.Mode == ScanEnforce {
+		RecordSecretScanRefusal()
 		log.Printf("git: push to %s/%s refused by the pre-push secret scan (enforce): %s", remote, ref, summary)
 		return findings, PushResult{
 			Remote:         remote,
@@ -125,6 +131,9 @@ func scanBeforePush(ctx context.Context, dir, remote, ref string, p SecretScanPo
 	}
 	// Shadow (and any other mode value — the config write paths
 	// refuse unknown ones): log, record via the caller, push proceeds.
+	if p.Mode == ScanShadow {
+		RecordSecretScanShadowReport()
+	}
 	log.Printf("git: push to %s/%s proceeds with shadow-mode secret findings: %s", remote, ref, summary)
 	return findings, PushResult{}
 }

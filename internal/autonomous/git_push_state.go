@@ -24,8 +24,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/git"
 )
+
+// secretScanAuditFindings converts redacted scan findings into the
+// reporter's map form, carrying ONLY the four allowed fields (detector,
+// path, line, fingerprint). No field of git.SecretFinding could carry
+// the matched secret in the first place.
+func secretScanAuditFindings(findings []git.SecretFinding) []map[string]any {
+	out := make([]map[string]any, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, map[string]any{
+			"detector":    f.Detector,
+			"path":        f.Path,
+			"line":        f.Line,
+			"fingerprint": f.Fingerprint,
+		})
+	}
+	return out
+}
 
 // recordPushOutcome folds res into prd.Git's push state, appends the
 // matching Decision row, alerts the operator on failure (level "warn",
@@ -71,7 +89,14 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 			// failure path uses.
 			m.mu.Lock()
 			alertSink := m.alertSink
+			scanAuditFn := m.secretScanAuditFn
 			m.mu.Unlock()
+			if scanAuditFn != nil {
+				// One secret_scan_shadow audit entry per shadow report,
+				// redacted fields only (count, detector, file:line,
+				// fingerprint; never the matched secret).
+				scanAuditFn(audit.ActionSecretScanShadow, prd.ID, res.Remote, res.Ref, secretScanAuditFindings(res.SecretFindings))
+			}
 			if alertSink != nil {
 				alertSink("warn", fmt.Sprintf("Automaton %s: %d pre-push secret finding(s) (shadow mode)", prd.ID, len(res.SecretFindings)), shadowSummary)
 			}
@@ -90,7 +115,15 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 		})
 		m.mu.Lock()
 		alertSink := m.alertSink
+		scanAuditFn := m.secretScanAuditFn
 		m.mu.Unlock()
+		if res.Kind == git.PushFailSecret && scanAuditFn != nil {
+			// One secret_scan_refused audit entry per enforce refusal,
+			// redacted fields only (count, detector, file:line,
+			// fingerprint; never the matched secret). Other failure
+			// kinds never emit a secret-scan audit entry.
+			scanAuditFn(audit.ActionSecretScanRefused, prd.ID, res.Remote, res.Ref, secretScanAuditFindings(res.SecretFindings))
+		}
 		if alertSink != nil {
 			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", id), reason)
 		}

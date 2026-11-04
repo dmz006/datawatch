@@ -224,6 +224,10 @@ func cefSignature(action string) (int, string, int) {
 		return 65, "LLMSecretAccess", 5
 	case "regenerate_artefact":
 		return 66, "AutomatonArtefactRegenerated", 3
+	case ActionSecretScanRefused:
+		return 67, "SecretScanRefused", 6
+	case ActionSecretScanShadow:
+		return 68, "SecretScanShadow", 4
 	default:
 		return 0, "AuditEvent", 3
 	}

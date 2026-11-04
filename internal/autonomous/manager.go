@@ -1618,6 +1618,14 @@ type Manager struct {
 	// Guarded by mu. Nil = the daemon did not wire it (scan policy off).
 	gitScanPolicyFn func() git.SecretScanPolicy
 
+	// secretScanAuditFn — when set, reports one security-relevant scanned
+	// push to the operator audit log (audit.NewSecretScanSink over the
+	// daemon's audit log, shared with the session manager): a shadow-mode
+	// finding report or an enforce-mode refusal, redacted fields only (see
+	// recordPushOutcome in git_push_state.go). Guarded by mu. Nil = no
+	// audit emission (state, decisions and alerts are unchanged).
+	secretScanAuditFn audit.SecretScanReporter
+
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
@@ -1989,6 +1997,22 @@ func (m *Manager) SetSecretScanSettings(fn func() git.SecretScanPolicy) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.gitScanPolicyFn = fn
+}
+
+// SetSecretScanAuditFn wires the operator-audit reporter for scanned
+// pushes. The daemon constructs it once with
+// audit.NewSecretScanSink(auditLog) and passes the same value to the
+// session manager. Called exactly once per security-relevant scanned
+// push — a shadow-mode finding report (audit.ActionSecretScanShadow) or
+// an enforce-mode refusal (audit.ActionSecretScanRefused) — with the
+// redacted findings only (count, detector, file:line, fingerprint; never
+// the matched secret). Nil (or a sink over a nil audit log) = no audit
+// emission; the push outcome, PRD state and alerts are never affected by
+// it.
+func (m *Manager) SetSecretScanAuditFn(fn audit.SecretScanReporter) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.secretScanAuditFn = fn
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.

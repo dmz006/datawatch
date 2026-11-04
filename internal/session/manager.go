@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/git"
@@ -548,6 +549,13 @@ type Manager struct {
 	// (git.secret_scan: mode, detectors, allow-lists) read on every
 	// push attempt (see git_push.go). Nil (or zero policy) = no scan.
 	secretScanPolicyFn func() git.SecretScanPolicy
+
+	// secretScanAuditFn reports one security-relevant scanned push to the
+	// operator audit log (audit.NewSecretScanSink over the daemon's audit
+	// log): a shadow-mode finding report or an enforce-mode refusal,
+	// redacted fields only (see git_push.go). Nil = no audit emission
+	// (recording and alerts are unchanged).
+	secretScanAuditFn audit.SecretScanReporter
 
 	// pushAlertFn delivers operator alerts for one-shot push failures.
 	// Called as fn("warn", title, body). Nil = no alert (state still

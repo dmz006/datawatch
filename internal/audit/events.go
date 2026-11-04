@@ -234,4 +234,22 @@ const (
 	// constructor accepts names and the outcome only, so a secret value has
 	// no path into the log.
 	ActionLLMSecretAccess = "llm_secret_access"
+
+	// Pre-push secret scan (git.secret_scan) — the scan runs over the
+	// commits about to be pushed and its findings are redacted to
+	// (detector, path, line, short fingerprint); the matched secret has
+	// no path into the log.
+
+	// ActionSecretScanRefused — the pre-push secret scan (enforce mode)
+	// found an un-allow-listed finding, so the push was refused and the
+	// remote untouched. Subject: the session or Automaton that attempted
+	// the push. Details (redacted only): remote, ref, mode (enforce),
+	// finding_count, findings (per finding: detector, path, line,
+	// fingerprint — never the secret).
+	ActionSecretScanRefused = "secret_scan_refused"
+	// ActionSecretScanShadow — the pre-push secret scan (shadow mode)
+	// found a finding and reported it WITHOUT refusing the push. Subject
+	// and Details: the same redacted shape as ActionSecretScanRefused,
+	// with mode shadow. Never the secret.
+	ActionSecretScanShadow = "secret_scan_shadow"
 )

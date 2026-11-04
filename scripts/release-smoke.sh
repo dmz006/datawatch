@@ -6479,6 +6479,133 @@ else
   ko "burn guard: DELETE answered HTTP $BG_POST, expected 405"
 fi
 
+# ---------------------------------------------------------------------------
+H "93. git.secret_scan — pre-push secret scan (shadow + enforce, sandbox repo)"
+#
+# v9.0.0: the pre-push secret scan (internal/git) runs inside the daemon on
+# every push path — session teardown and autonomous ship (git.push_on_
+# complete) — over the commits about to be pushed. The config block is
+# git.secret_scan (mode off|shadow|enforce, detectors, allow_list); the
+# effective mode defaults to shadow. This section proves that surface on
+# THIS script's own smoke daemon:
+#
+#   * a scratch sandbox repo — work repo + bare remote, both under the
+#     script's own mktemp'd $TEST_DATA_DIR, a throwaway git identity (local
+#     user.name/user.email, empty GIT_CONFIG_GLOBAL, GIT_TERMINAL_PROMPT=0)
+#     — commits one secret-shaped line assembled from random fragments at
+#     runtime, so no contiguous secret literal lives in this file; the
+#     sandbox is torn down before the section ends and is never pushed;
+#   * shadow and enforce modes are each applied via PUT /api/config and
+#     read back through GET /api/config and GET /api/git/secret-scan/stats
+#     (the stats endpoint must carry mode + the runs/findings/
+#     shadow_reports/refusals/last_run_at/last_refusal_at counters);
+#   * the mode is restored to its exact pre-section value afterwards.
+#
+# What this section does NOT do:
+#   * it never touches operator repos, git config, $HOME, or the production
+#     daemon; in external-daemon mode (DW_BASE set) it skips rather than
+#     mutate an operator daemon's git.secret_scan;
+#   * it does not drive an actual push — the daemon exposes no REST or CLI
+#     surface that triggers a git push, so the push portion is marked SKIP
+#     with that reason; the scan's shadow-report (finding recorded, push
+#     proceeds) and enforce-refusal (push refused, counters bumped) behavior
+#     is covered by the go tests (internal/git/secretscan_push_test.go).
+if [[ "${SECTION_SKIP:-0}" == "1" ]]; then
+  skip "git.secret_scan: daemon unavailable — config + push sub-checks not run (section skipped at daemon start)"
+elif [[ "$EXTERNAL_DAEMON" == "1" ]]; then
+  skip "git.secret_scan: external-daemon mode (DW_BASE set) — smoke never mutates an operator daemon's git.secret_scan, so the section is skipped"
+  skip "git.secret_scan push (shadow + enforce): skipped — no daemon REST/CLI surface drives a git push, and an external daemon is never mutated by smoke"
+else
+  SS_SCRATCH="$TEST_DATA_DIR/git-secret-scan-$$"
+  mkdir -p "$SS_SCRATCH"
+  # --- sandbox repo: work repo + bare remote, throwaway identity ----------
+  : > "$SS_SCRATCH/gitconfig"   # empty throwaway GIT_CONFIG_GLOBAL
+  SS_GIT_ENV=(env "GIT_CONFIG_GLOBAL=$SS_SCRATCH/gitconfig" GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0)
+  if "${SS_GIT_ENV[@]}" git init --quiet --bare "$SS_SCRATCH/remote.git" 2>/dev/null \
+     && "${SS_GIT_ENV[@]}" git init --quiet "$SS_SCRATCH/work" 2>/dev/null; then
+    git -C "$SS_SCRATCH/work" config user.name "smoke-sandbox"
+    git -C "$SS_SCRATCH/work" config user.email "smoke@example.invalid"
+    git -C "$SS_SCRATCH/work" remote add origin "$SS_SCRATCH/remote.git"
+    # one line that looks like a committed credential, assembled from
+    # random fragments at runtime (never a literal in this file)
+    SS_FAKE_A="$(openssl rand -hex 12 2>/dev/null || head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    SS_FAKE_B="$(openssl rand -hex 4 2>/dev/null || head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+    printf 'export GITHUB_TOKEN=ghp_%s%s\n' "$SS_FAKE_A" "$SS_FAKE_B" > "$SS_SCRATCH/work/fixture"
+    SS_COMMIT_OK=0
+    if "${SS_GIT_ENV[@]}" git -C "$SS_SCRATCH/work" add fixture 2>/dev/null \
+       && "${SS_GIT_ENV[@]}" git -C "$SS_SCRATCH/work" commit --quiet -m "sandbox fixture (smoke, never pushed)" 2>/dev/null; then
+      SS_COMMIT_OK=1
+    fi
+    if [[ "$SS_COMMIT_OK" == "1" ]]; then
+      ok "sandbox repo: work repo + bare remote under the script's temp dir, one committed secret-shaped line"
+    else
+      ko "sandbox repo: git init/commit in the sandbox failed (git missing or broken?) — continuing with the config-surface checks"
+    fi
+  else
+    ko "sandbox repo: git init failed — git is not available for the sandbox fixture — continuing with the config-surface checks"
+  fi
+  # --- remember the pre-section mode so the section leaves it as found ---
+  SS_ORIG_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  # --- shadow mode: apply, read back, stats surface -----------------------
+  SS_SHADOW_PUT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d '{"git.secret_scan.mode":"shadow"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_SHADOW_PUT" == "200" ]]; then
+    ok "shadow: PUT /api/config git.secret_scan.mode=shadow accepted (HTTP 200)"
+  else
+    ko "shadow: PUT /api/config git.secret_scan.mode=shadow answered HTTP $SS_SHADOW_PUT (want 200)"
+  fi
+  SS_SHADOW_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  if [[ "$SS_SHADOW_MODE" == "shadow" ]]; then
+    ok "shadow: GET /api/config reports effective git.secret_scan.mode=shadow"
+  else
+    ko "shadow: GET /api/config reports mode '$SS_SHADOW_MODE' (want shadow)"
+  fi
+  SS_STATS_CODE=$(curl "${curl_args[@]}" -o "$SS_SCRATCH/stats-shadow.json" -w '%{http_code}' "$BASE/api/git/secret-scan/stats" 2>/dev/null || echo 000)
+  SS_STATS_KEYS="$(python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+missing=[k for k in ("mode","stats") if k not in d]
+st=d.get("stats") or {}
+missing+=[k for k in ("runs","findings","shadow_reports","refusals","last_run_at","last_refusal_at") if k not in st]
+print("missing:"+",".join(missing) if missing else "ok")' "$SS_SCRATCH/stats-shadow.json" 2>/dev/null || echo unreadable)"
+  if [[ "$SS_STATS_CODE" == "200" && "$SS_STATS_KEYS" == "ok" ]]; then
+    ok "shadow: GET /api/git/secret-scan/stats answers with mode + runs/findings/shadow_reports/refusals/last_run_at/last_refusal_at"
+  else
+    ko "shadow: GET /api/git/secret-scan/stats HTTP $SS_STATS_CODE, keys: $SS_STATS_KEYS"
+  fi
+  skip "shadow push: SKIP — the daemon exposes no REST/CLI surface to drive a git push (pushes run at session teardown / autonomous ship under git.push_on_complete); the shadow-report path (finding recorded, push proceeds) is covered by the go tests (internal/git/secretscan_push_test.go)"
+  # --- enforce mode: apply, read back, stats surface ----------------------
+  SS_ENFORCE_PUT=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d '{"git.secret_scan.mode":"enforce"}' "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_ENFORCE_PUT" == "200" ]]; then
+    ok "enforce: PUT /api/config git.secret_scan.mode=enforce accepted (HTTP 200)"
+  else
+    ko "enforce: PUT /api/config git.secret_scan.mode=enforce answered HTTP $SS_ENFORCE_PUT (want 200)"
+  fi
+  SS_ENFORCE_MODE="$(curl "${curl_args[@]}" "$BASE/api/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("git") or {}).get("secret_scan",{}).get("mode",""))' 2>/dev/null || echo "")"
+  if [[ "$SS_ENFORCE_MODE" == "enforce" ]]; then
+    ok "enforce: GET /api/config reports effective git.secret_scan.mode=enforce"
+  else
+    ko "enforce: GET /api/config reports mode '$SS_ENFORCE_MODE' (want enforce)"
+  fi
+  SS_STATS_CODE=$(curl "${curl_args[@]}" -o "$SS_SCRATCH/stats-enforce.json" -w '%{http_code}' "$BASE/api/git/secret-scan/stats" 2>/dev/null || echo 000)
+  SS_STATS_MODE="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("mode",""))' "$SS_SCRATCH/stats-enforce.json" 2>/dev/null || echo "")"
+  if [[ "$SS_STATS_CODE" == "200" && "$SS_STATS_MODE" == "enforce" ]]; then
+    ok "enforce: GET /api/git/secret-scan/stats answers 200 and reports the effective mode (enforce)"
+  else
+    ko "enforce: GET /api/git/secret-scan/stats HTTP $SS_STATS_CODE, mode '$SS_STATS_MODE' (want 200 / enforce)"
+  fi
+  skip "enforce push: SKIP — no daemon REST/CLI surface drives a git push, so the enforce-refusal path (push refused, remote ref unchanged, refusals counter bumped) is covered by the go tests (internal/git/secretscan_push_test.go)"
+  # --- restore the pre-section mode exactly, tear down the sandbox --------
+  SS_RESTORE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X PUT -H "Content-Type: application/json" \
+    -d "{\"git.secret_scan.mode\": \"$SS_ORIG_MODE\"}" "$BASE/api/config" 2>/dev/null || echo 000)
+  if [[ "$SS_RESTORE" == "200" ]]; then
+    ok "restore: git.secret_scan.mode returned to its pre-section value ('${SS_ORIG_MODE:-<unset/default>}')"
+  else
+    ko "restore: PUT /api/config git.secret_scan.mode='${SS_ORIG_MODE:-<unset/default>}' answered HTTP $SS_RESTORE (want 200)"
+  fi
+  rm -rf "$SS_SCRATCH"
+fi
+
 BG_CFG=$(curl "${curl_args[@]}" "$BASE/api/usage/burn-guard/config" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "margin_points" in d and "ladder" in d;print(d["margin_points"])' 2>/dev/null || echo "")
 if [[ -n "$BG_CFG" ]]; then
   ok "burn guard: config answers (margin_points=$BG_CFG)"

@@ -193,6 +193,12 @@ type SystemStats struct {
 	AccessLogEnabled           bool  `json:"access_log_enabled,omitempty"`
 	AccessLogEventsTotal       int64 `json:"access_log_events_total,omitempty"`
 	AccessLogAuthFailuresTotal int64 `json:"access_log_auth_failures_total,omitempty"`
+
+	// Pre-push secret-scan counters (runs, findings, shadow reports,
+	// refusals, last-run/last-refusal times), since daemon start. Filled
+	// by the git package's counters through SetSecretScanStatsFunc; nil
+	// (and therefore omitted from JSON) when the daemon never scanned.
+	SecretScan *SecretScanStats `json:"secret_scan,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -268,6 +274,22 @@ type SessionStat struct {
 	RTKCommands    int     `json:"rtk_commands,omitempty"`
 }
 
+// SecretScanStats is the pre-push secret-scan counter block surfaced in
+// SystemStats.SecretScan: how many scans executed, how many findings they
+// produced, how many shadow reports and enforce refusals, plus the times
+// of the last of each. Mirrors the git package's SecretScanStats json tags
+// (the two packages cannot import each other, so the shape is duplicated
+// here and the wiring callback copies field by field). Counts are since
+// daemon start and reset on restart.
+type SecretScanStats struct {
+	Runs          int64     `json:"runs"`
+	Findings      int64     `json:"findings"`
+	ShadowReports int64     `json:"shadow_reports"`
+	Refusals      int64     `json:"refusals"`
+	LastRunAt     time.Time `json:"last_run_at"`
+	LastRefusalAt time.Time `json:"last_refusal_at"`
+}
+
 // Collector periodically samples system metrics and stores them in a ring buffer.
 type Collector struct {
 	mu      sync.RWMutex
@@ -321,6 +343,10 @@ type Collector struct {
 
 	// webSearchStatsFn populates web search stats (BL372)
 	webSearchStatsFn func(*SystemStats)
+
+	// secretScanStatsFn populates the pre-push secret-scan counters
+	// (SecretScan field).
+	secretScanStatsFn func(*SystemStats)
 
 	// uiPromptsFn returns the daemon-side in-memory interstitial UI-prompt
 	// dismissal outcome counters (from the session manager).
@@ -443,6 +469,14 @@ func (c *Collector) SetAutonomousStatsFunc(fn func(*SystemStats)) {
 // SetWebSearchStatsFunc sets a callback that populates web search stats on each snapshot (BL372).
 func (c *Collector) SetWebSearchStatsFunc(fn func(*SystemStats)) {
 	c.webSearchStatsFn = fn
+}
+
+// SetSecretScanStatsFunc sets a callback that populates the pre-push
+// secret-scan counters (SystemStats.SecretScan) on each snapshot. The
+// callback is expected to leave the field nil when the daemon has never
+// scanned, so the key is omitted from the JSON output entirely.
+func (c *Collector) SetSecretScanStatsFunc(fn func(*SystemStats)) {
+	c.secretScanStatsFn = fn
 }
 
 // SetOllamaHost sets the Ollama API URL for stats polling.
@@ -592,6 +626,11 @@ func (c *Collector) collect() {
 	// BL372 — web search stats
 	if c.webSearchStatsFn != nil {
 		c.webSearchStatsFn(&s)
+	}
+
+	// Pre-push secret-scan counters
+	if c.secretScanStatsFn != nil {
+		c.secretScanStatsFn(&s)
 	}
 
 	// Ollama server stats (BL71) — poll every collection cycle
