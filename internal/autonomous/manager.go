@@ -2369,11 +2369,16 @@ func (m *Manager) EmitPRDUpdate(prdID string) {
 		return
 	}
 	ev := LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: prdID}
-	if prd, _ := m.store.GetPRD(prdID); prd != nil {
-		ev.NewStatus = string(prd.Status)
-		ev.ParentPRDID = prd.ParentPRDID
-	} else {
+	prd, _ := m.store.GetPRD(prdID)
+	if prd == nil {
 		ev.Deleted = true
+	} else {
+		// prd is the shared stored pointer; read under the store lock so the
+		// read is ordered against writers that mutate it under WithLock.
+		m.store.WithLock(func() {
+			ev.NewStatus = string(prd.Status)
+			ev.ParentPRDID = prd.ParentPRDID
+		})
 	}
 	m.emit(ev)
 }
@@ -3549,26 +3554,31 @@ func (m *Manager) RepairDependsOn(prdID, actor string) (*PRD, error) {
 // pending (BL451). The task is left untouched; the containing story is
 // reopened if terminal and the PRD returns to PRDRunning.
 func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*PRD, error) {
-	s := &prd.Story[si]
-	if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
-		s.Status = StoryPending
-	}
-	// Same start-over guarantee as ResetTask: a manual reset of an
-	// already-pending task must drop the per-task git anchors too.
-	for ti := range s.Tasks {
-		if s.Tasks[ti].ID == taskID {
-			s.Tasks[ti].BaseSHA = ""
-			s.Tasks[ti].AttemptCommitSHAs = nil
-			break
-		}
-	}
-	old := prd.Status
-	now := time.Now()
-	prd.Status = PRDRunning
-	prd.UpdatedAt = now
+	var old PRDStatus
 	kind := "recover_pending_task"
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor,
-		Note: fmt.Sprintf("task=%s already pending; prd reopened from %s (force=true recovery)", taskID, old)})
+	// prd is the shared stored pointer; write under the store lock. SavePRD
+	// takes Store.mu too (non-reentrant), so it stays out of the closure.
+	m.store.WithLock(func() {
+		s := &prd.Story[si]
+		if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
+			s.Status = StoryPending
+		}
+		// Same start-over guarantee as ResetTask: a manual reset of an
+		// already-pending task must drop the per-task git anchors too.
+		for ti := range s.Tasks {
+			if s.Tasks[ti].ID == taskID {
+				s.Tasks[ti].BaseSHA = ""
+				s.Tasks[ti].AttemptCommitSHAs = nil
+				break
+			}
+		}
+		old = prd.Status
+		now := time.Now()
+		prd.Status = PRDRunning
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor,
+			Note: fmt.Sprintf("task=%s already pending; prd reopened from %s (force=true recovery)", taskID, old)})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -3651,148 +3661,162 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 	found := false
 	foundSI := -1
 	emitReset := func(*Decision) {}
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			t := &prd.Story[si].Tasks[ti]
-			if t.ID == taskID {
-				isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
-				isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
-				if !isRetryable && !isRequeue {
-					if force {
-						return nil, fmt.Errorf("task %q status %q cannot be requeued even with force=true; only completed or cancelled tasks qualify", taskID, t.Status)
+	var resetOld PRDStatus
+	kind := ""
+	// prd is the shared stored pointer (Store.GetPRD): the task, story and PRD
+	// writes below run under the store lock so they are ordered against
+	// readers (EmitPRDUpdate, snapshots) and persist. SavePRD takes Store.mu
+	// too (non-reentrant), so it stays out of the closure.
+	applyErr := func() error {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID == taskID {
+					isRetryable := t.Status == TaskFailed || t.Status == TaskBlocked || (review != nil && t.Status == TaskReviewNeeded)
+					isRequeue := force && (t.Status == TaskCompleted || t.Status == TaskCancelled)
+					if !isRetryable && !isRequeue {
+						if force {
+							return fmt.Errorf("task %q status %q cannot be requeued even with force=true; only completed or cancelled tasks qualify", taskID, t.Status)
+						}
+						return fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
 					}
-					return nil, fmt.Errorf("task %q status %q cannot be reset; only failed or blocked tasks can be retried (use force=true to requeue completed/cancelled tasks)", taskID, t.Status)
-				}
-				// v8.36.1 — capture why the previous attempt didn't land
-				// before clearing it, so the retry's worker gets told what
-				// happened instead of the bare original spec (see
-				// PriorAttemptHint's doc comment on Task).
-				hintParts := make([]string, 0, 2)
-				if t.Error != "" {
-					hintParts = append(hintParts, "Previous attempt error: "+t.Error)
-				}
-				if t.Verification != nil && !t.Verification.OK {
-					vSummary := fmt.Sprintf("Previous verification failed (%s): %s", t.Verification.Severity, t.Verification.Summary)
-					if len(t.Verification.Issues) > 0 {
-						vSummary += " Specific issues: " + strings.Join(t.Verification.Issues, "; ")
+					// v8.36.1 — capture why the previous attempt didn't land
+					// before clearing it, so the retry's worker gets told what
+					// happened instead of the bare original spec (see
+					// PriorAttemptHint's doc comment on Task).
+					hintParts := make([]string, 0, 2)
+					if t.Error != "" {
+						hintParts = append(hintParts, "Previous attempt error: "+t.Error)
 					}
-					hintParts = append(hintParts, vSummary)
+					if t.Verification != nil && !t.Verification.OK {
+						vSummary := fmt.Sprintf("Previous verification failed (%s): %s", t.Verification.Severity, t.Verification.Summary)
+						if len(t.Verification.Issues) > 0 {
+							vSummary += " Specific issues: " + strings.Join(t.Verification.Issues, "; ")
+						}
+						hintParts = append(hintParts, vSummary)
+					}
+					if len(hintParts) > 0 {
+						// v8.36.2 — found live retrying this exact hint on PRD
+						// a2833a5e: the original wording ("verify/finish it
+						// rather than starting over") was ambiguous enough that
+						// the worker checked the files looked fine, wrote only a
+						// CHECKPOINT.md note, and produced no diff touching the
+						// actual required files — which the verifier (correctly
+						// scoped to just this run's diff) then rejected as no
+						// output at all. Now explicit: touching/recommitting
+						// the real deliverables themselves is what's required,
+						// not just a checkpoint note about them.
+						t.PriorAttemptHint = "This is a retry of a previous attempt on this task. " +
+							strings.Join(hintParts, " ") +
+							" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing the actual required deliverable files themselves — do not run git add or git commit; your work is committed automatically when you finish. Verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
+					}
+					resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
+					t.Status = ""
+					t.Error = ""
+					t.SessionID = ""
+					// A human reset means starting over: drop the per-task git
+					// anchors so the fresh attempt re-captures them at spawn.
+					// Automatic verifier retries never go through here — BaseSHA
+					// is written only on the first attempt (attempt 0) of the
+					// executor's spawn path, so in-loop retries keep the first
+					// attempt's anchor.
+					t.BaseSHA = ""
+					t.AttemptCommitSHAs = nil
+					// BL427 — fired after the SavePRD below succeeds.
+					emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
+					t.Verification = nil
+					// A reset ends an uncommitted-work hold: the task runs again.
+					t.UncommittedWork = nil
+					t.RetryCount = 0
+					// The next attempt is admitted afresh, from the task's current
+					// worker: drop the pair the last attempt was admitted with.
+					t.AdmittedBackend, t.AdmittedModel = "", ""
+					// A human reset starts a new count of failed attempts for the
+					// failure escalation policy, so the ladder restarts at step 1.
+					t.EscalationFailures = 0
+					// v9.2.1 — a manual (operator) reset is the strongest "this is a
+					// retry" signal: to reach this block the task already reached a
+					// terminal-ish status (failed/blocked, or completed/cancelled
+					// requeued via force), i.e. at least one prior attempt happened.
+					// RetryCount is zeroed for the next attempt's auto-retry budget,
+					// but PriorAttemptCount is cumulative and is what the verifier
+					// consults to know a retry's empty diff is legitimate (the prior
+					// attempt may have already landed correct work) rather than a
+					// genuine no-output. Auto in-loop retries don't go through
+					// ResetTask and leave this at 0 (see Task's field doc).
+					t.PriorAttemptCount++
+					// Operator's choice for this reset only: a plain reset leaves
+					// the flag false, so an unconsumed clean restart never carries
+					// over into a later reset.
+					t.CleanRestart = cleanRestart
+					// An operator review's changes go on last, so the hint they
+					// set replaces the generic one built above.
+					if review != nil {
+						review.apply(t, time.Now())
+					}
+					t.StartedAt = nil
+					t.CompletedAt = nil
+					t.UpdatedAt = time.Now()
+					found = true
+					foundSI = si
+					break
 				}
-				if len(hintParts) > 0 {
-					// v8.36.2 — found live retrying this exact hint on PRD
-					// a2833a5e: the original wording ("verify/finish it
-					// rather than starting over") was ambiguous enough that
-					// the worker checked the files looked fine, wrote only a
-					// CHECKPOINT.md note, and produced no diff touching the
-					// actual required files — which the verifier (correctly
-					// scoped to just this run's diff) then rejected as no
-					// output at all. Now explicit: touching/recommitting
-					// the real deliverables themselves is what's required,
-					// not just a checkpoint note about them.
-					t.PriorAttemptHint = "This is a retry of a previous attempt on this task. " +
-						strings.Join(hintParts, " ") +
-						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing the actual required deliverable files themselves — do not run git add or git commit; your work is committed automatically when you finish. Verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
-				}
-				resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
-				t.Status = ""
-				t.Error = ""
-				t.SessionID = ""
-				// A human reset means starting over: drop the per-task git
-				// anchors so the fresh attempt re-captures them at spawn.
-				// Automatic verifier retries never go through here — BaseSHA
-				// is written only on the first attempt (attempt 0) of the
-				// executor's spawn path, so in-loop retries keep the first
-				// attempt's anchor.
-				t.BaseSHA = ""
-				t.AttemptCommitSHAs = nil
-				// BL427 — fired after the SavePRD below succeeds.
-				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
-				t.Verification = nil
-				// A reset ends an uncommitted-work hold: the task runs again.
-				t.UncommittedWork = nil
-				t.RetryCount = 0
-				// The next attempt is admitted afresh, from the task's current
-				// worker: drop the pair the last attempt was admitted with.
-				t.AdmittedBackend, t.AdmittedModel = "", ""
-				// A human reset starts a new count of failed attempts for the
-				// failure escalation policy, so the ladder restarts at step 1.
-				t.EscalationFailures = 0
-				// v9.2.1 — a manual (operator) reset is the strongest "this is a
-				// retry" signal: to reach this block the task already reached a
-				// terminal-ish status (failed/blocked, or completed/cancelled
-				// requeued via force), i.e. at least one prior attempt happened.
-				// RetryCount is zeroed for the next attempt's auto-retry budget,
-				// but PriorAttemptCount is cumulative and is what the verifier
-				// consults to know a retry's empty diff is legitimate (the prior
-				// attempt may have already landed correct work) rather than a
-				// genuine no-output. Auto in-loop retries don't go through
-				// ResetTask and leave this at 0 (see Task's field doc).
-				t.PriorAttemptCount++
-				// Operator's choice for this reset only: a plain reset leaves
-				// the flag false, so an unconsumed clean restart never carries
-				// over into a later reset.
-				t.CleanRestart = cleanRestart
-				// An operator review's changes go on last, so the hint they
-				// set replaces the generic one built above.
-				if review != nil {
-					review.apply(t, time.Now())
-				}
-				t.StartedAt = nil
-				t.CompletedAt = nil
-				t.UpdatedAt = time.Now()
-				found = true
-				foundSI = si
+			}
+			if found {
 				break
 			}
 		}
-		if found {
-			break
+		if !found {
+			return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 		}
-	}
-	if !found {
-		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
-	}
-	// B99: if the containing story was completed/failed/cancelled, reopen it
-	// to pending so the progress bar and status dot reflect that work is
-	// still in flight. StoryCancelled added v8.36.6 — same recovery path as
-	// PRDCancelled/PRDCompleted above; a cancelled story force-requeued via
-	// one of its tasks needs to actually resume, not stay cancelled.
-	if foundSI >= 0 {
-		s := &prd.Story[foundSI]
-		if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
-			s.Status = StoryPending
+		// B99: if the containing story was completed/failed/cancelled, reopen it
+		// to pending so the progress bar and status dot reflect that work is
+		// still in flight. StoryCancelled added v8.36.6 — same recovery path as
+		// PRDCancelled/PRDCompleted above; a cancelled story force-requeued via
+		// one of its tasks needs to actually resume, not stay cancelled.
+		if foundSI >= 0 {
+			s := &prd.Story[foundSI]
+			if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
+				s.Status = StoryPending
+			}
 		}
+		now := time.Now()
+		prd.UpdatedAt = now
+		// B97: when called on a PRDFailed PRD, restore it to PRDRunning so the
+		// executor picks it back up without the operator having to reset_to_draft
+		// (which would discard all completed task work). Same for PRDBlocked
+		// (guardrail block or story-failure halt) and PRDCancelled (operator
+		// cancelled to fix a task's spec) — but the executor's Run loop has
+		// already exited by the time a PRD reaches any of these, so restoring
+		// the status alone isn't enough; the operator (or PWA) must call Run
+		// again (boot-resume does this automatically on the next restart, but
+		// that's not required for it to take effect).
+		resetOld = prd.Status
+		if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled || prd.Status == PRDCompleted {
+			prd.Status = PRDRunning
+		}
+		kind = "reset_task"
+		note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
+		decActor := actor
+		if force {
+			kind = "requeue_task"
+			note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
+		}
+		if review != nil {
+			kind = reviewDecisionKind
+			note = review.decisionNote(taskID, actor)
+			decActor = reviewDecisionActor
+			// The block reason named the held task, which is no longer held.
+			prd.BlockedReason = ""
+		}
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
+		return nil
 	}
-	now := time.Now()
-	prd.UpdatedAt = now
-	// B97: when called on a PRDFailed PRD, restore it to PRDRunning so the
-	// executor picks it back up without the operator having to reset_to_draft
-	// (which would discard all completed task work). Same for PRDBlocked
-	// (guardrail block or story-failure halt) and PRDCancelled (operator
-	// cancelled to fix a task's spec) — but the executor's Run loop has
-	// already exited by the time a PRD reaches any of these, so restoring
-	// the status alone isn't enough; the operator (or PWA) must call Run
-	// again (boot-resume does this automatically on the next restart, but
-	// that's not required for it to take effect).
-	resetOld := prd.Status
-	if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled || prd.Status == PRDCompleted {
-		prd.Status = PRDRunning
+	var lockedErr error
+	m.store.WithLock(func() { lockedErr = applyErr() })
+	if lockedErr != nil {
+		return nil, lockedErr
 	}
-	kind := "reset_task"
-	note := fmt.Sprintf("task=%s reset to pending for retry", taskID)
-	decActor := actor
-	if force {
-		kind = "requeue_task"
-		note = fmt.Sprintf("task=%s requeued (force=true)", taskID)
-	}
-	if review != nil {
-		kind = reviewDecisionKind
-		note = review.decisionNote(taskID, actor)
-		decActor = reviewDecisionActor
-		// The block reason named the held task, which is no longer held.
-		prd.BlockedReason = ""
-	}
-	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: decActor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}

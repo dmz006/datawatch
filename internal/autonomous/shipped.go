@@ -107,10 +107,20 @@ func (m *Manager) RecordPRDShipped(id, release string, mergedAt time.Time, commi
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", id)
 	}
-	if p.MergeCommit == c {
-		return p, nil // idempotent: already recorded with this commit
+	// p is the shared stored pointer (Store.GetPRD): check and write under the
+	// store lock so the shipped fields are ordered against snapshot reads and
+	// persist. SavePRD takes Store.mu too (non-reentrant), so it stays out.
+	already := false
+	m.store.WithLock(func() {
+		if p.MergeCommit == c {
+			already = true // idempotent: already recorded with this commit
+			return
+		}
+		setPRDShipped(p, release, mergedAt, c, source)
+	})
+	if already {
+		return p, nil
 	}
-	setPRDShipped(p, release, mergedAt, c, source)
 	if err := m.store.SavePRD(p); err != nil {
 		return nil, fmt.Errorf("shipped: save: %w", err)
 	}
