@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.79.0 — Review-timed-out state and size-aware judge routing
+
+A review that times out is now a clear hold you can retry or reroute, and big changes go to a stronger judge first.
+
+- **Review-timed-out state.** When the completion review times out on every backend it tried, the Automaton is held with a `review_state` of `timed_out` instead of looking like a real block. The state names the cause and the next action: retry on the same backends, or reroute to the stronger judge (`autonomous.judge_strong_backend`).
+- **Size-aware judge routing.** `autonomous.judge_size_threshold_lines` (default 400, 0 = rule off) sends changes above that size to the stronger backend first.
+- **Judge verdict cache.** `autonomous.judge_verdict_cache_enabled` (default on) reuses a verdict for the same run, so a finished review is never judged twice.
+- On REST, MCP, the CLI, the comm channel, the config file and the web UI (a timed-out badge with Retry and Reroute buttons), with five locales.
+
 ## v9.78.0 — Read-only tasks may write a declared report
 
 A read-only task can now write a declared report file, so a review or audit task can leave its findings behind without a write-capable tree.
