@@ -17214,6 +17214,17 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_scoped_requirements', label: 'Plan coverage: count only scope and constraint sentences (default on)', labelKey: 'settings_plan_coverage_scoped_requirements', helpKey: 'settings_plan_coverage_scoped_requirements_help', type: 'toggle', default: true },
     { key: 'autonomous.plan_coverage_requirement_sections', label: 'Plan coverage: requirement section names (comma separated)', labelKey: 'settings_plan_coverage_requirement_sections', helpKey: 'settings_plan_coverage_requirement_sections_help', type: 'text', placeholder: 'scope,constraints' },
     { key: 'autonomous.plan_coverage_min_requirement_chars', label: 'Plan coverage: shortest requirement in characters (0 uses the default)', labelKey: 'settings_plan_coverage_min_requirement_chars', helpKey: 'settings_plan_coverage_min_requirement_chars_help', type: 'number', min: 0, placeholder: '30' },
+    // Generated artefacts — one switch per artefact an Automaton writes from
+    // its change record (all on by default). Saved to
+    // autonomous.generated_artefacts.<name> through the config routes.
+    { label: 'Generated artefacts', labelKey: 'settings_generated_artefacts_group', type: 'group' },
+    { key: 'autonomous.generated_artefacts.change_record', label: 'Change record (default on)', labelKey: 'settings_generated_change_record', helpKey: 'settings_generated_change_record_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.gate_report', label: 'Gate report (default on)', labelKey: 'settings_generated_gate_report', helpKey: 'settings_generated_gate_report_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.changelog_draft', label: 'Changelog draft (default on)', labelKey: 'settings_generated_changelog_draft', helpKey: 'settings_generated_changelog_draft_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.parity_draft', label: 'Parity draft (default on)', labelKey: 'settings_generated_parity_draft', helpKey: 'settings_generated_parity_draft_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.tracker_rows', label: 'Tracker rows (default on)', labelKey: 'settings_generated_tracker_rows', helpKey: 'settings_generated_tracker_rows_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.registry_row', label: 'Registry row (default on)', labelKey: 'settings_generated_registry_row', helpKey: 'settings_generated_registry_row_help', type: 'toggle', default: true },
+    { key: 'autonomous.generated_artefacts.combined_docs_task', label: 'One combined documentation task (default on)', labelKey: 'settings_generated_combined_docs_task', helpKey: 'settings_generated_combined_docs_task_help', type: 'toggle', default: true },
     // Per-backend usage back-off — while one of a backend's sessions is
     // rate-limited, autonomous dispatch to that backend waits until the
     // parsed reset time (or the max back-off when the message has none).
@@ -28204,6 +28215,7 @@ window._loadPRDActiveSessionCard = function(prd) {
   const slot = document.getElementById('prdActiveSessionCard');
   if (!slot) return;
   if (window._loadPRDCapacityCard) window._loadPRDCapacityCard(prd && prd.id);
+  if (window._loadChangeRecord && prd && prd.id) window._loadChangeRecord(prd.id);
   if (window._prdActiveSessionInterval) clearInterval(window._prdActiveSessionInterval);
 
   const fmtB = b => {
@@ -28876,6 +28888,73 @@ window._prdPlanCoverageAck = function(prdID, inputEl, btnEl) {
   });
 };
 
+// Generated artefacts on the Automaton detail: a read-only change-record
+// summary and a Regenerate button. The summary loads from
+// GET /api/autonomous/prds/{id}/change-record; Regenerate posts to
+// /generated/{kind}/regenerate. Every string goes through t().
+const GENERATED_ARTEFACT_KINDS = ['gate_report', 'changelog_draft', 'parity_draft', 'tracker_rows', 'registry_row'];
+const GENERATED_ARTEFACT_KIND_KEYS = {
+  gate_report: 'prd_generated_kind_gate_report', changelog_draft: 'prd_generated_kind_changelog_draft',
+  parity_draft: 'prd_generated_kind_parity_draft', tracker_rows: 'prd_generated_kind_tracker_rows',
+  registry_row: 'prd_generated_kind_registry_row',
+};
+function _changeRecordSummaryHtml(rec) {
+  if (!rec) return `<div class="prd-change-record-empty">${escHtml(t('prd_change_record_empty'))}</div>`;
+  const rows = [
+    ['prd_change_record_files', (rec.files || []).length],
+    ['prd_change_record_packages', (rec.packages || []).length],
+    ['prd_change_record_settings', (rec.settings_added || []).length],
+    ['prd_change_record_routes', (rec.routes_added || []).length],
+    ['prd_change_record_locale_keys', (rec.locale_keys_added || []).length],
+    ['prd_change_record_tests', (rec.tests_added || []).length],
+  ];
+  return rows.map(([k, n]) => `<span class="prd-change-record-item">${escHtml(t(k))}: ${n}</span>`).join(' · ');
+}
+function _prdGeneratedArtefactsBlock(prd) {
+  if (!prd || !prd.id) return '';
+  const id = String(prd.id);
+  const sid = id.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const opts = GENERATED_ARTEFACT_KINDS.map(k => `<option value="${k}">${escHtml(t(GENERATED_ARTEFACT_KIND_KEYS[k]))}</option>`).join('');
+  return `<div class="prd-generated-artefacts" data-prd-id="${escHtml(id)}" style="margin-top:8px;padding:8px 10px;border-left:3px solid var(--border);background:var(--bg2);border-radius:0 4px 4px 0;font-size:12px;">
+    <div style="font-weight:600;">${escHtml(t('prd_change_record_title'))}</div>
+    <div id="prdChangeRecord-${sid}" class="prd-change-record-summary" style="margin-top:3px;">${escHtml(t('prd_change_record_loading'))}</div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:6px;">
+      <select id="prdGenKind-${sid}" class="form-input" style="font-size:11px;" aria-label="${escHtml(t('prd_generated_kind_label'))}">${opts}</select>
+      <button class="btn-primary" id="prdGenRegen-${sid}" style="font-size:11px;padding:3px 10px;white-space:nowrap;" onclick="window._regenerateArtefact(${escHtml(JSON.stringify(id))})">${escHtml(t('prd_generated_regenerate'))}</button>
+    </div>
+  </div>`;
+}
+window._prdGeneratedArtefactsBlock = _prdGeneratedArtefactsBlock;
+window._changeRecordSummaryHtml = _changeRecordSummaryHtml;
+window._loadChangeRecord = function(prdID) {
+  const sid = String(prdID || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const el = document.getElementById('prdChangeRecord-' + sid);
+  if (!el) return Promise.resolve(null);
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/change-record')
+    .then(rec => { el.innerHTML = _changeRecordSummaryHtml(rec); return rec; })
+    .catch(() => { el.innerHTML = _changeRecordSummaryHtml(null); return null; });
+};
+window._regenerateArtefact = function(prdID, kindArg) {
+  const sid = String(prdID || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const sel = document.getElementById('prdGenKind-' + sid);
+  const btn = document.getElementById('prdGenRegen-' + sid);
+  const kind = kindArg || (sel && sel.value) || GENERATED_ARTEFACT_KINDS[0];
+  if (btn) btn.disabled = true;
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/generated/' + encodeURIComponent(kind) + '/regenerate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  }).then(res => {
+    if (btn) btn.disabled = false;
+    showToast(t('prd_generated_regenerate_done') + (res && res.status ? ': ' + res.status : ''), 'success', 2500);
+    return res;
+  }).catch(err => {
+    if (btn) btn.disabled = false;
+    showToast(t('prd_generated_regenerate_failed') + ': ' + String(err), 'error', 3000);
+    return null;
+  });
+};
+
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
 // BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
 // The audit confirmed the previous implementation IS consistent; operator's
@@ -29078,6 +29157,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
       ${_prdPlanCoverageBlock(prd)}
+      ${_prdGeneratedArtefactsBlock(prd)}
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
