@@ -1,4 +1,4 @@
-# datawatch-app parity issue — spec/description writes: truncation-marker refusal and full reads (READY TO FILE, NOT FILED)
+# datawatch-app parity issue — spec/description writes: truncation-marker refusal and full reads (FILED)
 
 This is a ready-to-file draft for a sync issue on **datawatch-app**. It covers the
 datawatch main behaviour that the Android and iOS clients must match when they read,
@@ -8,7 +8,7 @@ array, the full-text reads), and the guardrail on every spec/description write t
 refuses text carrying the truncation marker — a copy pasted from a capped view, even one
 edited after the cut.
 
-Do not run `gh` from here and leave the issue URL/number blank — the supervisor files it
+Do not run `gh` from here and issue filed: https://github.com/dmz006/datawatch-app/issues/347; was blank — the supervisor files it
 at the merge and records the URL back into this file.
 
 ---
