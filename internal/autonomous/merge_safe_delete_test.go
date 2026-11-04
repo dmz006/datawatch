@@ -88,7 +88,7 @@ func TestSafeToDeleteListsBranchesAllOnMain(t *testing.T) {
 	setEmpty(g, "automaton/two")
 	setMerged(g, "automaton/three")
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestSafeToDeleteSkipsBaseAndCheckedOutBranch(t *testing.T) {
 	setMerged(g, "automaton/current")
 	setMerged(g, "automaton/one")
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestSafeToDeleteHoldsDirtyWorktree(t *testing.T) {
 	setMerged(g, "automaton/two")
 	g.out["-C /wt/one status --porcelain"] = " M internal/file.go\n"
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,7 +154,7 @@ func TestSafeToDeleteHoldsPendingAndNeedsLook(t *testing.T) {
 	g.out["cherry main automaton/two"] = "+ a\n"
 	g.out["log main..automaton/two --format=%s"] = "x\n"
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestSafeToDeleteNeverDeletes(t *testing.T) {
 	setEmpty(g, "automaton/three")
 	g.out["-C /wt/one status --porcelain"] = "?? stray\n"
 
-	if _, err := SafeToDeleteReport(context.Background(), g, "/repo", "main"); err != nil {
+	if _, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(g.calls) == 0 {
@@ -206,7 +206,7 @@ func TestSafeToDeleteNeverDeletes(t *testing.T) {
 
 func TestSafeToDeleteEmptyRepoReturnsEmptyReport(t *testing.T) {
 	g := sdGit("worktree /repo\nHEAD aaa\nbranch refs/heads/main\n\n")
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestSafeToDeleteCountsGitCallsForThreeBranches(t *testing.T) {
 	setMerged(g, "automaton/two")
 	setEmpty(g, "automaton/three")
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestSafeToDeleteFallsBackToRevListWhenAheadBehindFails(t *testing.T) {
 	g.out["log main..automaton/one --format=%s"] = "x\ny\n"
 	g.out["rev-list --count main..automaton/two"] = "0\n"
 
-	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main")
+	rep, err := SafeToDeleteReport(context.Background(), g, "/repo", "main", SafeDeleteOptions{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

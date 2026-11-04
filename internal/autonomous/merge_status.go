@@ -137,5 +137,14 @@ func (m *Manager) MergeSafeToDelete(ctx context.Context) (SafeDeleteReport, erro
 		return SafeDeleteReport{Safe: []SafeDeleteEntry{}, Held: []SafeDeleteHeld{}}, ErrMergeNoBaseRepo
 	}
 	git := NewMergeGitRunner()
-	return SafeToDeleteReport(ctx, git, repo, resolveMergeBase(ctx, git, repo))
+	probe := &managerWorktreeProbe{m: m}
+	return SafeToDeleteReport(ctx, git, repo, resolveMergeBase(ctx, git, repo), SafeDeleteOptions{
+		// Reuse the same running rule the worktree-cleanup probe's
+		// WorktreeInUse check applies: the Automaton in the automation
+		// store is in one of the running states.
+		IsRunning: func(branch string) bool {
+			prd := probe.prdFor(branch)
+			return prd != nil && (prd.Status == PRDRunning || prd.Status == PRDActive)
+		},
+	})
 }
