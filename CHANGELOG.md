@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentation update — `skipped_snapshot_paths`.** The autonomous how-to, implementation guide, API reference and testing tracker now state that the skip record on the task result is written by the normal completion commit, the stall-recovery commit and the attempt snapshot path, and is shown on the PWA, CLI and comm channel surfaces.
+
 ## v9.70.2 — The stats installer fetches the right archive
 
 ### Added
@@ -45,7 +49,7 @@ A task retried with an explicit backend now waits on the pool it asked for, and 
 The snapshot commit taken when a task finishes no longer stages stray files.
 
 - It stages only paths inside the task's declared plan and the files the task changed, honours the repository ignore rules and a new never-stage pattern list (`autonomous.snapshot_never_stage`, defaults cover scratch, temporary and local data folders).
-- Skipped files are logged with a reason (outside the plan, ignored, never-stage) and a per-reason summary. The stall-recovery commit also records them on the task result as `skipped_snapshot_paths`; the normal completion commit logs only for now.
+- Skipped files are logged with a reason (outside the plan, ignored, never-stage) and a per-reason summary. The normal completion commit, the stall-recovery commit and the attempt snapshot path record them on the task result as `skipped_snapshot_paths`, shown on the PWA, CLI and comm channel surfaces.
 - The setting is on REST, MCP, the CLI, the comm channel and the web settings, with five locales, and documented in the autonomous how-to.
 
 ## v9.67.1 — Smoke checks must not copy operator configuration
