@@ -161,6 +161,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("judge_policy", mcpsdk.Description("Ordered list of LLM backends the judges (Automaton guardrail, plan review and other autonomous judges) try, one attempt per backend in order. Empty list = the judges follow the verifier routing policy, one attempt per backend it offers. A judge moves to the next backend only when its run hits the time limit.")),
 		mcpsdk.WithNumber("judge_timeout_seconds", mcpsdk.Description("Time limit in seconds for one judge run (default 1800 = 30m). It counts the judge run only, not the wait for a capacity slot. 0 or a negative value means the default.")),
 		mcpsdk.WithNumber("judge_size_threshold_lines", mcpsdk.Description("Changed-line count above which the judges route by change size (default 400). 0 turns size-aware routing off. Must be a whole number of 0 or more.")),
+		mcpsdk.WithString("judge_strong_backend", mcpsdk.Description("The strong judge backend a large diff is routed to first when the size-aware rule fires. Empty (the default) = the last entry of the judge policy (autonomous.judge_strong_backend).")),
+		mcpsdk.WithBoolean("judge_verdict_cache_enabled", mcpsdk.Description("Per-commit judge verdict cache: pass/block verdicts replay by (commit, judge policy, rules), and a verified commit is held on a judge timeout instead of re-run (default true). Give false to re-judge every verified commit fresh (autonomous.judge_verdict_cache_enabled).")),
 		mcpsdk.WithNumber("verifier_no_progress_timeout_seconds", mcpsdk.Description("Bound in seconds for a verifier session that shows no output file, no pane activity, no live runner process and no held capacity slot before it is ended as an infra failure (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("session_idle_timeout_seconds", mcpsdk.Description("Bound for one autonomous worker/verifier session in seconds — a session sitting in waiting_input/idle with no live child process longer than this is treated as an infra failure and retried through the auto_fix_retries budget (default 900 = 15m; 0 or negative means use the default)")),
 		mcpsdk.WithNumber("descendant_stall_seconds", mcpsdk.Description("Bound in seconds for a pi-prompt autonomous worker whose only liveness is its work child process — no output, no file change and no log write for this long means the session is stalled and is reaped as an infra failure (default 2700 = 45 minutes; 0 or negative means use the default)")),
@@ -499,11 +501,18 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetFloat("verification_timeout_seconds", -1); v >= 0 {
 		body["verification_timeout_seconds"] = int(v)
 	}
-	// Presence-aware like verification_backends: an explicit [] clears the
-	// judge policy so the judges follow the verifier routing policy again.
+	// Presence-aware like judge_policy: an explicit empty judge_strong_backend
+	// (resolve to the last judge-policy entry) and an explicit false (cache
+	// off) must both reach the daemon.
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["judge_policy"]; ok {
 			body["judge_policy"] = req.GetStringSlice("judge_policy", []string{})
+		}
+		if _, ok := args["judge_strong_backend"]; ok {
+			body["judge_strong_backend"] = strings.TrimSpace(req.GetString("judge_strong_backend", ""))
+		}
+		if _, ok := args["judge_verdict_cache_enabled"]; ok {
+			body["judge_verdict_cache_enabled"] = req.GetBool("judge_verdict_cache_enabled", true)
 		}
 	}
 	if v := req.GetFloat("judge_timeout_seconds", -1); v >= 0 {
@@ -835,6 +844,7 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"warn = the judge flagged a non-blocking concern; error = the judge itself could not run. "+
 			"runs[] gives each CI run's id, name, status, conclusion and url; issues lists the specific problems found. "+
 			"The automaton's own status is blocked after failed_policy, failed_infra, or failed_content with no corrective task; completed otherwise. "+
+			"It also exposes review_state {state, cause, action} computed from its guardrail and verdict records: state passed and pending say nothing further; blocked pairs a judge's blocking finding with the fix action; timed_out pairs a judge timeout (a timeout is not a block) with the retry or reroute action. "+
 			"To resume a blocked automaton: commit your decision (fix, upgrade, or accepted-risk entry) to the repo first, "+
 			"then autonomous_prd_reset_task with force=true on the task that pushed, then autonomous_prd_run; "+
 			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it. "+

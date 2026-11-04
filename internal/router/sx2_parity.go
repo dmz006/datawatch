@@ -729,6 +729,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 		if lines := taskMergeStatusLines(out); len(lines) > 0 {
 			reply += "\n" + strings.Join(lines, "\n")
 		}
+		if line := reviewStateStatusLine(out); line != "" {
+			reply += "\n" + line
+		}
 		r.reply("autonomous get", reply)
 	case "decompose":
 		if len(args) < 2 {
