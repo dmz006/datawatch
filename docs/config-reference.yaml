@@ -227,6 +227,21 @@ session:
     # prohibits file names, identifiers, error codes, and markdown formatting.
     prompt: ""
 
+# ── UI ──
+# Top-level UI display settings (the ui.* section). Unset keys read the
+# defaults; an explicit 0 is a real value, distinct from unset.
+ui:
+  # Minimum whole seconds the UI splash stays on screen before it may
+  # dismiss. Default: 6. 0 keeps the legacy timing (no minimum dwell).
+  # A whole number from 0 to 60; values outside that range are refused at
+  # config load (the error names ui.splash_min_seconds).
+  splash_min_seconds: 6
+  # Minimum whole seconds for the splash shown when it is for a new
+  # version. Default: 9. 0 keeps the legacy timing (no minimum dwell).
+  # A whole number from 0 to 60; values outside that range are refused at
+  # config load (the error names ui.splash_min_seconds_new_version).
+  splash_min_seconds_new_version: 9
+
 # ── Git push-on-complete ──
 # What datawatch pushes to the git remote when finished work is committed.
 # Covers autonomous PRD work, one-shot sessions, and the last-resort

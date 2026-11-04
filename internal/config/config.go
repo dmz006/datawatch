@@ -379,6 +379,10 @@ type Config struct {
 	// Session configuration
 	Session SessionConfig `yaml:"session"`
 
+	// UI holds the top-level UI display settings (the ui.* section):
+	// splash minimum-dwell seconds. Unset keys read their defaults.
+	UI UIConfig `yaml:"ui" json:"ui"`
+
 	// Git lifecycle settings: push-on-complete policies and push remote.
 	Git GitConfig `yaml:"git" json:"git"`
 
@@ -2417,6 +2421,79 @@ func ValidateUIPromptMaxAttempts(n int) error {
 	if n < 1 {
 		return fmt.Errorf("session.ui_prompt_max_attempts: %d is invalid (use a whole number >= 1; default %d)",
 			n, DefaultUIPromptMaxAttempts)
+	}
+	return nil
+}
+
+// UIConfig holds the top-level UI display settings (the ui.* section).
+type UIConfig struct {
+	// SplashMinSeconds (ui.splash_min_seconds) is the minimum number of
+	// whole seconds the UI splash stays on screen before it may dismiss.
+	// Unset reads the default 6; an explicit 0 keeps the legacy timing
+	// (no minimum dwell). A whole number from 0 to 60 inclusive.
+	SplashMinSeconds *int `yaml:"splash_min_seconds" json:"splash_min_seconds"`
+
+	// SplashMinSecondsNewVersion (ui.splash_min_seconds_new_version) is
+	// the minimum dwell, in whole seconds, when the splash is shown for
+	// a new version. Unset reads the default 9; an explicit 0 keeps the
+	// legacy timing (no minimum dwell). A whole number from 0 to 60
+	// inclusive.
+	SplashMinSecondsNewVersion *int `yaml:"splash_min_seconds_new_version" json:"splash_min_seconds_new_version"`
+}
+
+// DefaultUISplash* values: what the ui.* splash keys read when absent.
+const (
+	// DefaultUISplashMinSeconds is what splash_min_seconds reads when
+	// absent (an explicit 0 = keep the legacy timing; the default is
+	// never 0).
+	DefaultUISplashMinSeconds = 6
+	// DefaultUISplashMinSecondsNewVersion is what
+	// splash_min_seconds_new_version reads when absent.
+	DefaultUISplashMinSecondsNewVersion = 9
+	// MaxUISplashSeconds is the largest splash minimum dwell accepted.
+	MaxUISplashSeconds = 60
+)
+
+// SplashMinSecondsEffective returns ui.splash_min_seconds: 6 when the
+// key is absent. Callers use this instead of reading the pointer.
+func (u *UIConfig) SplashMinSecondsEffective() int {
+	if u == nil || u.SplashMinSeconds == nil {
+		return DefaultUISplashMinSeconds
+	}
+	return *u.SplashMinSeconds
+}
+
+// SplashMinSecondsNewVersionEffective returns
+// ui.splash_min_seconds_new_version: 9 when the key is absent.
+func (u *UIConfig) SplashMinSecondsNewVersionEffective() int {
+	if u == nil || u.SplashMinSecondsNewVersion == nil {
+		return DefaultUISplashMinSecondsNewVersion
+	}
+	return *u.SplashMinSecondsNewVersion
+}
+
+// validateUISplashSeconds is the shared ui.* splash rule: a whole number
+// from 0 to 60 inclusive (0 = keep the legacy timing). key is the dotted
+// setting name the error carries.
+func validateUISplashSeconds(key string, def int, n int) error {
+	if n < 0 || n > MaxUISplashSeconds {
+		return fmt.Errorf("%s: %d is invalid (use a whole number from 0 to %d; 0 = keep the legacy timing; default %d)",
+			key, n, MaxUISplashSeconds, def)
+	}
+	return nil
+}
+
+// validate checks the ui.* splash keys; it runs at config load.
+func (u *UIConfig) validate() error {
+	if u.SplashMinSeconds != nil {
+		if err := validateUISplashSeconds("ui.splash_min_seconds", DefaultUISplashMinSeconds, *u.SplashMinSeconds); err != nil {
+			return err
+		}
+	}
+	if u.SplashMinSecondsNewVersion != nil {
+		if err := validateUISplashSeconds("ui.splash_min_seconds_new_version", DefaultUISplashMinSecondsNewVersion, *u.SplashMinSecondsNewVersion); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -6471,6 +6548,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.Session.validate(); err != nil {
+		return err
+	}
+	if err := cfg.UI.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {
