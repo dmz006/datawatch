@@ -3552,12 +3552,17 @@ paths:
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/edit_task:
     post:
-      summary: Edit a task's spec and/or read-only mark
+      summary: Edit a task's spec, read-only mark or report path
       description: |
-        Rewrites a task's spec and/or sets its `read_only` mark. At least one of
-        `new_spec` and `read_only` is required; an omitted field is left unchanged.
+        Rewrites a task's spec and/or sets its `read_only` mark and/or its
+        `report_path`. At least one of `new_spec`, `read_only` and
+        `report_path` is required; an omitted field is left unchanged.
         A read-only task is one that changes no files, so it may skip the tree lock
-        when `autonomous.parallel.read_only_tasks` is on. The same status gates as a
+        when `autonomous.parallel.read_only_tasks` is on. A `report_path` is the one
+        clean repo-relative file the task may write (under `.datawatch/reports/`);
+        it is only accepted when the task is read-only, including via a
+        `read_only: true` in the same call.
+        The same status gates as a
         spec edit apply to both fields: needs_review, revisions_asked and cancelled
         Automata, and a blocked Automaton's failed or blocked task. A completed task
         is immutable.
@@ -3575,10 +3580,11 @@ paths:
                 task_id: {type: string, description: Task to edit}
                 new_spec: {type: string, description: "New spec text; omit to keep the current spec"}
                 read_only: {type: boolean, description: "Mark (true) or clear (false) the read-only flag; omit to leave it unchanged"}
+                report_path: {type: string, description: "The one clean repo-relative report file the read-only task may write (under .datawatch/reports/); requires the task to be read-only; omit to leave it unchanged"}
                 actor: {type: string, description: "Defaults to operator"}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: "Missing task_id, neither new_spec nor read_only given, truncated spec, locked Automaton or task, or unknown task"}
+        "400": {description: "Missing task_id, none of new_spec / read_only / report_path given, truncated spec, invalid or non-read-only report_path, locked Automaton or task, or unknown task"}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/add_task:
     post:
@@ -3586,7 +3592,9 @@ paths:
       description: |
         Appends a task to an existing story without re-running decompose. Allowed
         while the Automaton is needs_review, revisions_asked or cancelled. Set
-        `read_only` true for a task that changes no files.
+        `read_only` true for a task that changes no files, and `report_path` to the
+        one report (under `.datawatch/reports/`) it may write — a `report_path`
+        is only accepted with `read_only` true.
       operationId: autonomousPRDAddTask
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -3603,10 +3611,11 @@ paths:
                 spec: {type: string}
                 depends_on: {type: array, items: {type: string}, description: Task IDs in the same Automaton that must complete first}
                 read_only: {type: boolean, default: false, description: "The task changes no files and may skip the tree lock"}
+                report_path: {type: string, description: "The one clean repo-relative report file this read-only task may write (under .datawatch/reports/); requires read_only true"}
                 actor: {type: string, description: "Defaults to operator"}
       responses:
         "200": {description: Updated Automaton}
-        "400": {description: Missing story_id or title, unknown dependency, or locked Automaton}
+        "400": {description: "Missing story_id or title, report_path without read_only, invalid report path, unknown dependency, or locked Automaton"}
         "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/prds/{id}/set_failure_escalation:
     post:
@@ -7955,6 +7964,7 @@ components:
         spec: {type: string}
         depends_on: {type: array, items: {type: string}}
         read_only: {type: boolean, description: "The task changes no files, so it may skip the tree lock when autonomous.parallel.read_only_tasks is on. Absent = false. Set through add_task and edit_task, or by decompose"}
+        report_path: {type: string, description: "The one clean repo-relative report file this read-only task may write; under .datawatch/reports/. Absent = the task writes nothing. Only honored on a read-only task"}
         merge_state: {type: string, enum: [pending, merged, conflict, held], description: "State of the merge of the task branch into the PRD branch (worktree-per-task mode). Absent for a task that works in the PRD worktree"}
         merge_commit: {type: string, description: "The PRD branch commit that carries the task work once merge_state is merged"}
         kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
