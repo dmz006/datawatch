@@ -1,0 +1,32 @@
+[
+  {
+    "id": 2001,
+    "name": "sha256:aaaaaaaaaaa00000000000000000000000000000000000000000000000",
+    "created_at": "2026-09-14T05:31:00Z",
+    "metadata": {
+      "container": {
+        "tags": ["v8.34.1", "latest"]
+      }
+    }
+  },
+  {
+    "id": 2003,
+    "name": "sha256:bbbbbbbbbbb11111111111111111111111111111111111111111111111",
+    "created_at": "2026-09-21T05:32:00Z",
+    "metadata": {
+      "container": {
+        "tags": ["refresh-20260921"]
+      }
+    }
+  },
+  {
+    "id": 2004,
+    "name": "sha256:ccccccccccc22222222222222222222222222222222222222222222222",
+    "created_at": "2026-10-05T05:33:00Z",
+    "metadata": {
+      "container": {
+        "tags": ["refresh-20261005"]
+      }
+    }
+  }
+]

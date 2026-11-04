@@ -312,6 +312,7 @@ test:
 	bash tests/test-check-no-local-leaks.sh
 	bash tests/test-seed-leak-patterns.sh
 	bash tests/test-scrub-peer-names.sh
+	bash tests/test-ci-package-listing.sh
 	bash tests/test-tidy-plans.sh
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
