@@ -1892,3 +1892,7 @@ Options put to the operator: leave it and let the guard decide; finish the queue
 Operator decision, quoted: "leave it and lets see how things go through the day".
 
 Consequence: no lane or planning change. The supervisor watches the burn guard and the next readings, and brings the choice back at the next reading if the projection stays over budget.
+
+### Decision record, 2026-11-03: second Claude lane opened and closed
+
+The operator opened a second Claude lane at 17:41 for six hours ("Yes open 2nd for next 6 hours"). At 21:21 the weekly reading was 36% against a pace line of 36.5, with a recent burn of 23.4 points per 24h against 14.3 allowed, and the burn guard had spent part of the window in its hold rung. The supervisor recommended closing the lane early, and the operator answered: "Claude can go back down to one lane for the night." The claude-code inflight cap was set back to 1 at 21:25, about 3 hours 45 minutes into the window.
