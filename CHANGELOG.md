@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.75.0 — Drain compute nodes for maintenance
+
+A compute node can be drained for maintenance, and placement now skips nodes that refuse the work.
+
+- Drain a node so it takes no new work while running work finishes, with an optional end time and reason; undrain when done. A drain with an end time ends by itself.
+- On every surface: `datawatch compute node drain <name> --until ... --reason ...` and `undrain`, REST `POST`/`DELETE /api/compute/nodes/<name>/drain`, the MCP tools `compute_node_drain` and `compute_node_undrain`, the comm channel, and the Compute page, which also shows how many tasks are still finishing on a drained node. Five locales.
+- The capacity gate skips a node that is drained, denies the work's consumer or is in a maintenance window, and the wait reason names each refusal.
+- Known gap: no live smoke run against a running daemon for node persistence; the testing tracker marks it not validated.
+
 ## v9.74.1 — Automaton specs read whole and truncated copies are refused
 
 The default Automaton read returns specs whole, and a write refuses text that was cut by a capped read.
