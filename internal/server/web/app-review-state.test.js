@@ -52,11 +52,11 @@ async function loadApp(routes, extra) {
       return {
         ok: match.status < 400,
         status: match.status,
-        json() { return Promise.resolve(this.body); },
-        text() { return Promise.resolve().then(() => {
-          if (typeof this.body === 'string') return this.body;
-          try { return JSON.stringify(this.body); } catch (e) { return ''; }
-        }); },
+        json() { return Promise.resolve(match.body); },
+        text() {
+          if (typeof match.body === 'string') return Promise.resolve(match.body);
+          try { return Promise.resolve(JSON.stringify(match.body)); } catch (e) { return Promise.resolve(''); }
+        },
       };
     }
     return {
@@ -75,7 +75,7 @@ async function loadApp(routes, extra) {
     const fn = sandbox.initI18n || sandbox.window.initI18n;
     try { await fn(); } catch (e) { /* i18n is best-effort in the stub */ }
   }
-  await flushAsync(sandbox);
+  await flushAsync();
   return sandbox;
 }
 
@@ -167,8 +167,10 @@ test('failed re-judgment rejects and surfaces an error toast', async () => {
 
 test('general config fields: strong backend + verdict cache after the judge size threshold', async () => {
   const sb = await sandboxWithRoutes();
-  const fields = sb.GENERAL_CONFIG_FIELDS;
-  assert.ok(Array.isArray(fields), 'GENERAL_CONFIG_FIELDS reachable from the sandbox');
+  const fields = JSON.parse(vm.runInContext(
+    "JSON.stringify(((GENERAL_CONFIG_FIELDS || []).find(s => s.id === 'autonomous') || {fields: []}).fields)",
+    sb));
+  assert.ok(Array.isArray(fields) && fields.length > 0, 'autonomous section fields reachable from the sandbox');
   const idx = fields.findIndex(f => f.key === 'autonomous.judge_size_threshold_lines');
   assert.ok(idx >= 0, 'judge_size_threshold field present');
   const strong = fields[idx + 1];
@@ -184,9 +186,9 @@ test('general config fields: strong backend + verdict cache after the judge size
 test('badges wired into the card and detail views', async () => {
   const sb = await sandboxWithRoutes();
   const src = fs.readFileSync(AppPath(), 'utf8');
-  const cardFn = src.slice(src.indexOf('function renderAutomataCard('), src.indexOf('// PRD list renderer'));
+  const cardFn = src.slice(src.indexOf('function renderAutomataCard('), src.indexOf('// GH#182 — hand-rolled SVG DAG'));
   assert.ok(cardFn.includes('reviewTimedOutBadgeHtml(prd)'), 'card renders the timeout badge');
-  const detailFn = src.slice(src.indexOf('function _renderDetailHeader('), src.indexOf('// v6.13.1'));
+  const detailFn = src.slice(src.indexOf('function _renderDetailHeader('), src.indexOf('// v6.13.1 (C4 + C10 + C12)'));
   assert.ok(detailFn.includes('reviewTimedOutBadgeHtml(prd)'), 'detail header renders the timeout badge');
 });
 
