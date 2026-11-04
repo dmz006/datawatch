@@ -174,7 +174,7 @@ func (a *API) AttentionAutomata(statuses []string) []any {
 	out := []any{}
 	for _, p := range prds {
 		view := BuildSummaryView(p)
-		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 {
+		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 || reviewBlockHoldText(p) != "" {
 			out = append(out, view)
 		}
 	}
