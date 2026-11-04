@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Splash dwell settings.** The PWA splash screen (the logo screen shown on first visit, when the daemon's version has changed, or after 24 hours) now has two dwell settings: `ui.splash_min_seconds` (default 6) and `ui.splash_min_seconds_new_version` (default 9). Each is a whole number of seconds from 0 to 60 and sets how long the splash stays on screen before it fades; `0` keeps the legacy timing. Once the window is connected, a tap, click, or any keypress dismisses the splash early, with the same fade. When the splash is shown for a new version, the version line now carries the previous version.
+
 ## v9.71.0 — Billing profiles for the usage calculator and the cost report
 
 The usage calculator and the cost report now know which plan you are on.
