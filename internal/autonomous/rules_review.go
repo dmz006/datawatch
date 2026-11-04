@@ -209,10 +209,10 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// BL410 Phase 2 — a content-category block (a real judgment, like
 	// rules-review's own post-B127-fix `warn`/`block`) gets one
 	// auto-fix attempt when enabled and budget remains.
+	// Eligibility only: the budget is consumed by the rollup after the
+	// corrective task exists, so a failed synthesis never spends a retry.
 	if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
-		_ = m.consumeRetryBudget(prd, "content")
 		vCopy := v
-		m.recordAutoRetryDecision(prd, prd.ID, "content", prd.RetryCountsByCategory["content"], false)
 		return false, &vCopy, nil
 	}
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
