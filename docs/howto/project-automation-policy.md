@@ -13,7 +13,7 @@ exec_steps:
     read_only: true
   - tool: project_upsert
     description: A state-changing call. Upsert the project entry with its policy block as a whole at the project tier (not one key at a time). One invalid value rejects the whole block and stores nothing
-    args: {name: core-api, dir: /home/op/core-api, policy: {max_concurrent_tasks: 2}}
+    args: {name: core-api, dir: /srv/projects/core-api, policy: {max_concurrent_tasks: 2}}
 ---
 
 # Project automation policy
