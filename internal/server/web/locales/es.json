@@ -3533,5 +3533,18 @@
   "settings_model_routing_probe_timeout": "Node probe timeout (seconds, whole number, minimum 1, default 8)",
   "settings_model_routing_probe_timeout_hint": "How long one read of a node's models may take before the node counts as unreachable.",
   "settings_model_routing_alert": "Alert when a run is refused for its model (on by default)",
-  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model."
+  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model.",
+  "rules_review_action_fix_task_created": "La revisión final bloqueó este autómata; se creó una tarea de corrección",
+  "rules_review_action_fix_task_failed": "La revisión final bloqueó este autómata; no se pudo crear la tarea de corrección",
+  "rules_review_action_retries_spent": "La revisión final bloqueó este autómata; se agotaron todos los reintentos de corrección automática",
+  "rules_review_action_auto_fix_disabled": "La revisión final bloqueó este autómata; la corrección automática está desactivada",
+  "rules_review_action_unknown": "La revisión final bloqueó este autómata",
+  "rules_review_retries_of": "Reintentos de corrección usados: %1$d de %2$d",
+  "rules_review_findings_title": "Hallazgos (%1$d)",
+  "rules_review_findings_more": "+%1$d más",
+  "rules_review_next_fix_task_failed": "Siguiente paso: añada usted una tarea de corrección, apruebe el autómata y ejecútelo.",
+  "rules_review_next_retries_spent": "Siguiente paso: añada una tarea que resuelva los hallazgos, apruebe el autómata y ejecútelo.",
+  "rules_review_next_auto_fix_disabled": "Siguiente paso: añada una tarea que resuelva los hallazgos (o aumente los reintentos de corrección en Ajustes), apruebe el autómata y ejecútelo.",
+  "settings_auto_fix_retries": "Reintentos de corrección automática",
+  "settings_auto_fix_retries_help": "Cuántas veces una revisión final bloqueada puede crear una tarea de corrección. Cuando se agotan los reintentos, el autómata pasa a needs_review para el operador."
 }
