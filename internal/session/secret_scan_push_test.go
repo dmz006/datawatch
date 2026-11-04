@@ -10,6 +10,7 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/git"
 )
 
@@ -166,7 +168,7 @@ func TestRecordShadowSecretScanFindings_OneWarnAlertAndRedactedSessionWarning(t 
 	m.SetPushAlertFn(fn)
 	sess := &Session{ID: "abcd", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
 
-	m.recordShadowSecretFindings(sess, findings)
+	m.recordShadowSecretFindings(sess, "origin", "main", findings)
 
 	// The session warning: the shadow-mode prefix plus the redacted
 	// summary (count, detector, file:line, fingerprint — nothing else).
@@ -210,7 +212,7 @@ func TestRecordShadowSecretScanFindings_OneWarnAlertAndRedactedSessionWarning(t 
 func TestRecordShadowSecretScanFindings_NoAlertSinkDoesNotPanic(t *testing.T) {
 	m := &Manager{}
 	sess := &Session{ID: "abcd"}
-	m.recordShadowSecretFindings(sess, []git.SecretFinding{
+	m.recordShadowSecretFindings(sess, "origin", "main", []git.SecretFinding{
 		{Detector: git.DetectorGitHubToken, Commit: strings.Repeat("9", 40), Path: "creds.txt", Line: 1, Fingerprint: "0123456789abcdef"},
 		{Detector: git.DetectorSlackToken, Commit: strings.Repeat("9", 40), Path: "x.yml", Line: 3, Fingerprint: "fedcba9876543210"},
 	})
@@ -525,5 +527,276 @@ func TestPushUnpushedBeforeTeardown_SecretScanCleanPushRecordsNoWarning(t *testi
 	}
 	if len(*alerts) != 0 {
 		t.Errorf("no alert expected on a clean shadow scan, got: %+v", *alerts)
+	}
+}
+
+// --- Audit emission tests (operator audit log, git.secret_scan) ---------
+
+// secretScanAuditCall is one recorded SetSecretScanAuditFn invocation.
+type secretScanAuditCall struct {
+	action   string
+	subject  string
+	remote   string
+	ref      string
+	findings []map[string]any
+}
+
+// recordingAudit returns a SetSecretScanAuditFn reporter plus the slice
+// of calls it recorded.
+func recordingAudit() (fn audit.SecretScanReporter, out *[]secretScanAuditCall) {
+	out = &[]secretScanAuditCall{}
+	fn = func(action, subject, remote, ref string, findings []map[string]any) {
+		*out = append(*out, secretScanAuditCall{action: action, subject: subject, remote: remote, ref: ref, findings: findings})
+	}
+	return fn, out
+}
+
+// assertRedactedAuditFindings proves the audit-emission redaction
+// contract: every emitted finding carries ONLY the four allowed fields
+// (detector, path, line, fingerprint), and no emission anywhere carries
+// the matched token material.
+func assertRedactedAuditFindings(t *testing.T, calls *[]secretScanAuditCall) {
+	t.Helper()
+	if len(*calls) == 0 {
+		t.Fatal("no audit emissions recorded")
+	}
+	for i, c := range *calls {
+		if len(c.findings) == 0 {
+			t.Errorf("emission %d carries no findings", i)
+		}
+		for j, f := range c.findings {
+			for _, k := range []string{"detector", "path", "line", "fingerprint"} {
+				if _, ok := f[k]; !ok {
+					t.Errorf("emission %d finding %d — missing redacted field %q: %v", i, j, k, f)
+				}
+			}
+			for k := range f {
+				if k != "detector" && k != "path" && k != "line" && k != "fingerprint" {
+					t.Errorf("emission %d finding %d — carries a non-redacted field %q: %v", i, j, k, f)
+				}
+			}
+		}
+	}
+	if dump := fmt.Sprintf("%+v", *calls); strings.Contains(dump, secretTokenMaterial()) {
+		t.Error("the audit emission must never carry the matched token material")
+	}
+}
+
+// Test 5a — recordShadowSecretFindings with an audit reporter wired:
+// EXACTLY ONE secret_scan_shadow emission for the shadow report, named
+// after the session, carrying the push target and the redacted findings
+// only.
+func TestRecordShadowSecretScanFindings_SecretScanAuditEmitsOnceShadow(t *testing.T) {
+	findings := []git.SecretFinding{
+		{Detector: git.DetectorGitHubToken, Commit: strings.Repeat("c", 40), Path: "creds.txt", Line: 2, Fingerprint: "0123456789abcdef"},
+		{Detector: git.DetectorSlackToken, Commit: strings.Repeat("c", 40), Path: "deploy/.env", Line: 7, Fingerprint: "fedcba9876543210"},
+	}
+	fn, alerts := recordingAlerts()
+	fnAudit, calls := recordingAudit()
+	m := &Manager{}
+	m.SetPushAlertFn(fn)
+	m.SetSecretScanAuditFn(fnAudit)
+	sess := &Session{ID: "abcd", CreatedAt: fixedTestTime, UpdatedAt: fixedTestTime}
+
+	m.recordShadowSecretFindings(sess, "origin", "main", findings)
+
+	if len(*calls) != 1 {
+		t.Fatalf("exactly ONE audit emission expected for one shadow report, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanShadow {
+		t.Errorf("audit action %q — want %q", c.action, audit.ActionSecretScanShadow)
+	}
+	if c.subject != "abcd" {
+		t.Errorf("audit subject %q — want the session ID", c.subject)
+	}
+	if c.remote != "origin" || c.ref != "main" {
+		t.Errorf("audit target = %s/%s — want origin/main", c.remote, c.ref)
+	}
+	if len(c.findings) != len(findings) {
+		t.Fatalf("audit findings = %d entries — want %d", len(c.findings), len(findings))
+	}
+	for i, want := range findings {
+		got := c.findings[i]
+		if got["detector"] != want.Detector || got["path"] != want.Path || got["line"] != want.Line || got["fingerprint"] != want.Fingerprint {
+			t.Errorf("audit finding[%d] = %v — want the redacted %+v", i, got, want)
+		}
+	}
+	assertRedactedAuditFindings(t, calls)
+	// The alert behaviour is unchanged by the audit wiring.
+	if len(*alerts) != 1 {
+		t.Errorf("exactly one alert expected, got %d", len(*alerts))
+	}
+}
+
+// Test 5b — recordShadowSecretFindings with NO audit reporter wired:
+// nothing changes — no panic, no emission, the recording and alert
+// contract hold exactly as before.
+func TestRecordShadowSecretScanFindings_SecretScanAuditNilFnChangesNothing(t *testing.T) {
+	findings := []git.SecretFinding{
+		{Detector: git.DetectorGitHubToken, Commit: strings.Repeat("9", 40), Path: "creds.txt", Line: 1, Fingerprint: "0123456789abcdef"},
+	}
+	fn, alerts := recordingAlerts()
+	m := &Manager{} // no SetSecretScanAuditFn call at all
+	m.SetPushAlertFn(fn)
+	sess := &Session{ID: "abcd"}
+
+	m.recordShadowSecretFindings(sess, "origin", "main", findings)
+
+	if !strings.HasPrefix(sess.PushWarning, "pushed; pre-push secret scan (shadow mode) reported: ") {
+		t.Fatalf("PushWarning %q — recording must hold even with no audit reporter", sess.PushWarning)
+	}
+	if len(*alerts) != 1 {
+		t.Errorf("exactly one alert expected with a nil audit fn, got %d", len(*alerts))
+	}
+}
+
+// Test 6a — pushAfterCommit, shadow, end to end: EXACTLY ONE
+// secret_scan_shadow audit emission (one per shadow report), with the
+// pushed target and the redacted findings; the push outcome, session
+// state and alert are unchanged by the wiring.
+func TestPushAfterCommit_SecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
+	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	addSecretCommit(t, dir, "add creds")
+	head := localHead(t, dir)
+	fnAudit, calls := recordingAudit()
+	mgr.SetSecretScanAuditFn(fnAudit)
+	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanShadow} })
+
+	mgr.pushAfterCommit(sess, head)
+
+	if r := bareHead(t, bare, "main"); r != head {
+		t.Errorf("bare remote main %q — shadow mode must push (want %q)", r, head)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("exactly ONE audit emission expected per shadow report, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanShadow {
+		t.Errorf("audit action %q — want %q", c.action, audit.ActionSecretScanShadow)
+	}
+	if c.subject != sess.ID {
+		t.Errorf("audit subject %q — want the session ID %q", c.subject, sess.ID)
+	}
+	if c.remote != "origin" {
+		t.Errorf("audit remote %q — want the push target %q", c.remote, "origin")
+	}
+	if !strings.Contains(c.ref, "main") {
+		t.Errorf("audit ref %q — must name the pushed branch", c.ref)
+	}
+	for _, f := range c.findings {
+		if f["path"] == "" || f["detector"] == "" || f["line"] == 0 || f["fingerprint"] == "" {
+			t.Errorf("audit finding %v — must carry detector, path, line, fingerprint", f)
+		}
+	}
+	assertRedactedAuditFindings(t, calls)
+	if len(*alerts) != 1 {
+		t.Errorf("exactly one alert expected, got %d: %+v", len(*alerts), *alerts)
+	}
+}
+
+// Test 6b — pushAfterCommit, enforce, end to end: EXACTLY ONE
+// secret_scan_refused audit emission (one per refusal), with the
+// refused target and the redacted findings; the remote stays untouched.
+func TestPushAfterCommit_SecretScanAuditEmitsOncePerRefusal(t *testing.T) {
+	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	seed := bareHead(t, bare, "main")
+	addSecretCommit(t, dir, "add creds")
+	fnAudit, calls := recordingAudit()
+	mgr.SetSecretScanAuditFn(fnAudit)
+	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanEnforce} })
+
+	mgr.pushAfterCommit(sess, localHead(t, dir))
+
+	if r := bareHead(t, bare, "main"); r != seed {
+		t.Errorf("bare remote main %q — enforce mode must leave the remote untouched (want seed %q)", r, seed)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("exactly ONE audit emission expected per enforce refusal, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanRefused {
+		t.Errorf("audit action %q — want %q", c.action, audit.ActionSecretScanRefused)
+	}
+	if c.subject != sess.ID {
+		t.Errorf("audit subject %q — want the session ID %q", c.subject, sess.ID)
+	}
+	if c.remote != "origin" {
+		t.Errorf("audit remote %q — want the refused target %q", c.remote, "origin")
+	}
+	if len(c.findings) == 0 {
+		t.Error("the refusal emission must carry the redacted findings")
+	}
+	assertRedactedAuditFindings(t, calls)
+	if len(*alerts) != 1 {
+		t.Errorf("exactly one alert expected on a refused push, got %d: %+v", len(*alerts), *alerts)
+	}
+}
+
+// Test 6c — pushAfterCommit, shadow, clean history: a clean scan
+// produces NO audit emission at all (the sink sees nothing), and no
+// alert.
+func TestPushAfterCommit_SecretScanCleanPushEmitsNoAuditEntry(t *testing.T) {
+	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	if err := os.WriteFile(filepath.Join(dir, "f1.txt"), []byte("one\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, dir, "add", "-A")
+	gitRunT(t, dir, "commit", "-q", "-m", "benign work")
+	head := localHead(t, dir)
+	fnAudit, calls := recordingAudit()
+	mgr.SetSecretScanAuditFn(fnAudit)
+	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanShadow} })
+
+	mgr.pushAfterCommit(sess, head)
+
+	if r := bareHead(t, bare, "main"); r != head {
+		t.Errorf("bare remote main %q — want the pushed commit %q", r, head)
+	}
+	if len(*calls) != 0 {
+		t.Errorf("a clean push must emit no audit entry, got: %+v", *calls)
+	}
+	if len(*alerts) != 0 {
+		t.Errorf("a clean push must raise no alert, got: %+v", *alerts)
+	}
+}
+
+// Test 7 — pushUnpushedBeforeTeardown, enforce, end to end: EXACTLY ONE
+// secret_scan_refused audit emission for the refused teardown push, and
+// the session record is unchanged by the wiring.
+func TestPushUnpushedBeforeTeardown_SecretScanAuditEmitsOncePerRefusal(t *testing.T) {
+	bare, dir, mgr, sess, alerts := pushSecretScanFixture(t)
+	gitRunT(t, dir, "checkout", "-q", "-b", "work") // side branch: not the remote default
+	addSecretCommit(t, dir, "add creds on work")
+	fnAudit, calls := recordingAudit()
+	mgr.SetSecretScanAuditFn(fnAudit)
+	mgr.SetSecretScanSettings(func() git.SecretScanPolicy { return git.SecretScanPolicy{Mode: git.ScanEnforce} })
+
+	rep := mgr.pushUnpushedBeforeTeardown(sess)
+	if !rep.Attempted || rep.Pushed || rep.Reason == "" {
+		t.Fatalf("report = %+v — enforce mode must refuse the teardown push", rep)
+	}
+	if r := bareHead(t, bare, "work"); r != "" {
+		t.Errorf("bare remote work %q — enforce mode must leave the remote untouched", r)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("exactly ONE audit emission expected per refused teardown push, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanRefused {
+		t.Errorf("audit action %q — want %q", c.action, audit.ActionSecretScanRefused)
+	}
+	if c.subject != sess.ID {
+		t.Errorf("audit subject %q — want the session ID %q", c.subject, sess.ID)
+	}
+	if c.remote != "origin" {
+		t.Errorf("audit remote %q — want the refused target %q", c.remote, "origin")
+	}
+	if len(c.findings) == 0 {
+		t.Error("the refusal emission must carry the redacted findings")
+	}
+	assertRedactedAuditFindings(t, calls)
+	if len(*alerts) != 1 {
+		t.Errorf("exactly one alert expected on a refused teardown push, got %d: %+v", len(*alerts), *alerts)
 	}
 }

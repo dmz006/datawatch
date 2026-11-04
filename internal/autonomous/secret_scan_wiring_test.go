@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/git"
 )
 
@@ -349,4 +350,226 @@ func TestRecordPushOutcomeSecretScanCleanPush(t *testing.T) {
 	if len(alerts) != 0 {
 		t.Errorf("clean push must raise no alert, got %v", alerts)
 	}
+}
+
+// --- Audit emission tests (operator audit log, git.secret_scan) ---------
+
+// secretScanAuditCall is one recorded SetSecretScanAuditFn invocation.
+type secretScanAuditCall struct {
+	action   string
+	subject  string
+	remote   string
+	ref      string
+	findings []map[string]any
+}
+
+// recordingSecretScanAudit returns a SetSecretScanAuditFn reporter plus
+// the slice of calls it recorded.
+func recordingSecretScanAudit() (fn audit.SecretScanReporter, out *[]secretScanAuditCall) {
+	out = &[]secretScanAuditCall{}
+	fn = func(action, subject, remote, ref string, findings []map[string]any) {
+		*out = append(*out, secretScanAuditCall{action: action, subject: subject, remote: remote, ref: ref, findings: findings})
+	}
+	return fn, out
+}
+
+// assertRedactedSecretScanAudit proves the audit-emission redaction
+// contract: every emitted finding carries ONLY the four allowed fields
+// (detector, path, line, fingerprint), and no emission anywhere carries
+// the fake secret.
+func assertRedactedSecretScanAudit(t *testing.T, calls *[]secretScanAuditCall, secret string) {
+	t.Helper()
+	if len(*calls) == 0 {
+		t.Fatal("no audit emissions recorded")
+	}
+	for i, c := range *calls {
+		for j, f := range c.findings {
+			for _, k := range []string{"detector", "path", "line", "fingerprint"} {
+				if _, ok := f[k]; !ok {
+					t.Errorf("emission %d finding %d — missing redacted field %q: %v", i, j, k, f)
+				}
+			}
+			for k := range f {
+				if k != "detector" && k != "path" && k != "line" && k != "fingerprint" {
+					t.Errorf("emission %d finding %d — carries a non-redacted field %q: %v", i, j, k, f)
+				}
+			}
+		}
+	}
+	if dump, err := json.Marshal(*calls); err == nil && strings.Contains(string(dump), secret) {
+		t.Error("the audit emission must never carry the fake secret")
+	}
+}
+
+// 5. recordPushOutcome with shadow findings and an audit reporter wired:
+// EXACTLY ONE secret_scan_shadow emission per shadow report, named after
+// the Automaton, carrying the push target and the redacted findings
+// only; the Decision, alert and PRD state are unchanged by the wiring.
+func TestRecordPushOutcomeSecretScanAuditEmitsOncePerShadowReport(t *testing.T) {
+	findings, secret := secretScanFindings()
+
+	m, prd := newSecretScanTestPRD(t)
+	var alerts [][]string
+	m.SetAlertSink(func(level, title, body string) string {
+		alerts = append(alerts, []string{level, title, body})
+		return ""
+	})
+	fnAudit, calls := recordingSecretScanAudit()
+	m.SetSecretScanAuditFn(fnAudit)
+
+	m.recordPushOutcome(prd, git.PushResult{
+		Pushed:         true,
+		Remote:         "origin",
+		Ref:            "refs/heads/prd/p1",
+		SHA:            "abc123",
+		SecretFindings: findings,
+	}, git.PushBranch)
+
+	if len(*calls) != 1 {
+		t.Fatalf("want exactly 1 audit emission per shadow report, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanShadow {
+		t.Errorf("audit action = %q, want %q", c.action, audit.ActionSecretScanShadow)
+	}
+	if c.subject != prd.ID {
+		t.Errorf("audit subject = %q, want the Automaton ID %q", c.subject, prd.ID)
+	}
+	if c.remote != "origin" || c.ref != "refs/heads/prd/p1" {
+		t.Errorf("audit target = %s/%s, want origin/refs/heads/prd/p1", c.remote, c.ref)
+	}
+	if len(c.findings) != len(findings) {
+		t.Fatalf("audit findings = %d entries, want %d", len(c.findings), len(findings))
+	}
+	for i, want := range findings {
+		got := c.findings[i]
+		if got["detector"] != want.Detector || got["path"] != want.Path || got["line"] != want.Line || got["fingerprint"] != want.Fingerprint {
+			t.Errorf("audit finding[%d] = %v, want the redacted %+v", i, got, want)
+		}
+	}
+	assertRedactedSecretScanAudit(t, calls, secret)
+	// The Decision + alert contract is unchanged by the audit wiring.
+	if got := countDecisionRows(t, prd, "git_secret_scan_shadow"); got != 1 {
+		t.Errorf("git_secret_scan_shadow rows = %d, want exactly 1", got)
+	}
+	if len(alerts) != 1 {
+		t.Errorf("exactly 1 alert expected, got %d: %v", len(alerts), alerts)
+	}
+}
+
+// 6. recordPushOutcome with an enforce refusal and an audit reporter
+// wired: EXACTLY ONE secret_scan_refused emission per refusal, with the
+// refused target and the redacted findings; the failure recording and
+// alert are unchanged by the wiring.
+func TestRecordPushOutcomeSecretScanAuditEmitsOncePerRefusal(t *testing.T) {
+	findings, secret := secretScanFindings()
+	reason := "secret scan (enforce mode): " + git.RedactedFindingsSummary(findings) + " refuses the push to origin/refs/heads/prd/p1"
+
+	m, prd := newSecretScanTestPRD(t)
+	var alerts [][]string
+	m.SetAlertSink(func(level, title, body string) string {
+		alerts = append(alerts, []string{level, title, body})
+		return ""
+	})
+	fnAudit, calls := recordingSecretScanAudit()
+	m.SetSecretScanAuditFn(fnAudit)
+
+	m.recordPushOutcome(prd, git.PushResult{
+		Remote:         "origin",
+		Ref:            "refs/heads/prd/p1",
+		Kind:           git.PushFailSecret,
+		Reason:         reason,
+		SecretFindings: findings,
+	}, git.PushBranch)
+
+	if len(*calls) != 1 {
+		t.Fatalf("want exactly 1 audit emission per enforce refusal, got %d: %+v", len(*calls), *calls)
+	}
+	c := (*calls)[0]
+	if c.action != audit.ActionSecretScanRefused {
+		t.Errorf("audit action = %q, want %q", c.action, audit.ActionSecretScanRefused)
+	}
+	if c.subject != prd.ID {
+		t.Errorf("audit subject = %q, want the Automaton ID %q", c.subject, prd.ID)
+	}
+	if c.remote != "origin" || c.ref != "refs/heads/prd/p1" {
+		t.Errorf("audit target = %s/%s, want origin/refs/heads/prd/p1", c.remote, c.ref)
+	}
+	if len(c.findings) != len(findings) {
+		t.Fatalf("audit findings = %d entries, want %d", len(c.findings), len(findings))
+	}
+	assertRedactedSecretScanAudit(t, calls, secret)
+	// Failure recording and alert are unchanged by the audit wiring.
+	if prd.Git.PushState != PushStateNotPushed {
+		t.Errorf("PushState = %q, want not_pushed", prd.Git.PushState)
+	}
+	if len(alerts) != 1 {
+		t.Errorf("exactly 1 alert expected on a refusal, got %d: %v", len(alerts), alerts)
+	}
+}
+
+// 7. recordPushOutcome: a clean push (no findings) and a non-secret
+// failure kind (auth) emit NO secret-scan audit entry at all — the sink
+// is never called, whether or not it is wired.
+func TestRecordPushOutcomeSecretScanAuditCleanPushAndOtherFailureEmitNothing(t *testing.T) {
+	// Clean push: no emission.
+	m, prd := newSecretScanTestPRD(t)
+	fnAudit, calls := recordingSecretScanAudit()
+	m.SetSecretScanAuditFn(fnAudit)
+	m.recordPushOutcome(prd, git.PushResult{
+		Pushed: true,
+		Remote: "origin",
+		Ref:    "refs/heads/prd/p1",
+		SHA:    "abc123",
+	}, git.PushBranch)
+	if len(*calls) != 0 {
+		t.Errorf("a clean push must emit no secret-scan audit entry, got: %+v", *calls)
+	}
+
+	// A non-secret failure kind (auth) must not emit either.
+	m2, prd2 := newSecretScanTestPRD(t)
+	fnAudit2, calls2 := recordingSecretScanAudit()
+	m2.SetSecretScanAuditFn(fnAudit2)
+	m2.recordPushOutcome(prd2, git.PushResult{
+		Remote: "origin",
+		Ref:    "refs/heads/prd/p1",
+		Kind:   git.PushFailAuth,
+		Reason: "auth failed",
+	}, git.PushBranch)
+	if len(*calls2) != 0 {
+		t.Errorf("a non-secret failure must emit no secret-scan audit entry, got: %+v", *calls2)
+	}
+}
+
+// 8. recordPushOutcome with shadow findings and NO audit reporter wired:
+// nothing changes — no panic, no emission, and the shadow Decision +
+// alert contract holds exactly as before.
+func TestRecordPushOutcomeSecretScanAuditNilReporterChangesNothing(t *testing.T) {
+	findings, secret := secretScanFindings()
+
+	m, prd := newSecretScanTestPRD(t) // no SetSecretScanAuditFn call at all
+	var alerts [][]string
+	m.SetAlertSink(func(level, title, body string) string {
+		alerts = append(alerts, []string{level, title, body})
+		return ""
+	})
+
+	m.recordPushOutcome(prd, git.PushResult{
+		Pushed:         true,
+		Remote:         "origin",
+		Ref:            "refs/heads/prd/p1",
+		SHA:            "abc123",
+		SecretFindings: findings,
+	}, git.PushBranch)
+
+	if prd.Git.PushState != PushStatePushed {
+		t.Fatalf("shadow push must still record success: %+v", prd.Git)
+	}
+	if got := countDecisionRows(t, prd, "git_secret_scan_shadow"); got != 1 {
+		t.Errorf("git_secret_scan_shadow rows = %d, want exactly 1 with a nil audit reporter", got)
+	}
+	if len(alerts) != 1 {
+		t.Errorf("exactly 1 alert expected with a nil audit reporter, got %d: %v", len(alerts), alerts)
+	}
+	assertNoSecretInPRDOrAlerts(t, prd, alerts, secret)
 }

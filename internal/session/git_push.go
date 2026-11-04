@@ -22,6 +22,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/git"
 )
 
@@ -52,6 +53,49 @@ func (m *Manager) SetPushAlertFn(fn func(level, title, body string)) {
 // behaviour.
 func (m *Manager) SetSecretScanSettings(fn func() git.SecretScanPolicy) {
 	m.secretScanPolicyFn = fn
+}
+
+// SetSecretScanAuditFn wires the operator-audit reporter for scanned
+// pushes. The daemon constructs it once with
+// audit.NewSecretScanSink(auditLog) and passes the same value to the
+// autonomous manager; the reporter is a plain function whose parameters
+// are all stdlib types, so this package needs nothing from internal/audit
+// beyond the type and the action-name constants. Called exactly once per
+// security-relevant scanned push — a shadow-mode finding report (action
+// audit.ActionSecretScanShadow) or an enforce-mode refusal (action
+// audit.ActionSecretScanRefused) — with the redacted findings only. Nil
+// (or a sink over a nil audit log) = no audit emission; the push
+// outcome, session fields and alerts are never affected by it.
+func (m *Manager) SetSecretScanAuditFn(fn audit.SecretScanReporter) {
+	m.secretScanAuditFn = fn
+}
+
+// secretScanAuditFindings converts redacted scan findings into the
+// reporter's map form, carrying ONLY the four allowed fields (detector,
+// path, line, fingerprint). The Commit field is deliberately dropped,
+// and no field of git.SecretFinding could carry the matched secret in
+// the first place.
+func secretScanAuditFindings(findings []git.SecretFinding) []map[string]any {
+	out := make([]map[string]any, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, map[string]any{
+			"detector":    f.Detector,
+			"path":        f.Path,
+			"line":        f.Line,
+			"fingerprint": f.Fingerprint,
+		})
+	}
+	return out
+}
+
+// reportSecretScan emits one scanned-push audit entry via the wired
+// reporter (nil-safe: an unwired manager never emits). remote and ref
+// come straight from the push result.
+func (m *Manager) reportSecretScan(action, subject, remote, ref string, findings []git.SecretFinding) {
+	if m.secretScanAuditFn == nil {
+		return
+	}
+	m.secretScanAuditFn(action, subject, remote, ref, secretScanAuditFindings(findings))
 }
 
 // effectiveSecretScan resolves the live scan policy for one push
@@ -129,7 +173,7 @@ func (m *Manager) pushAfterCommit(sess *Session, sha string) {
 			sess.PushedSHA = sha
 		}
 		if len(res.SecretFindings) > 0 {
-			m.recordShadowSecretFindings(sess, res.SecretFindings)
+			m.recordShadowSecretFindings(sess, res.Remote, res.Ref, res.SecretFindings)
 		}
 	} else {
 		reason := res.Reason
@@ -138,6 +182,9 @@ func (m *Manager) pushAfterCommit(sess *Session, sha string) {
 		}
 		sess.PushState = "not_pushed"
 		sess.PushWarning = "not pushed: " + reason
+		if res.Kind == git.PushFailSecret {
+			m.reportSecretScan(audit.ActionSecretScanRefused, sess.ID, res.Remote, res.Ref, res.SecretFindings)
+		}
 		if m.pushAlertFn != nil {
 			m.pushAlertFn("warn", fmt.Sprintf("One-shot %s not pushed", sess.ID), reason)
 		}
@@ -262,7 +309,7 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 		sess.PushedSHA = res.SHA
 		log.Printf("session %s: teardown push succeeded: %s on %s", sess.ID, res.SHA, branch)
 		if len(res.SecretFindings) > 0 {
-			m.recordShadowSecretFindings(sess, res.SecretFindings)
+			m.recordShadowSecretFindings(sess, res.Remote, res.Ref, res.SecretFindings)
 		}
 	} else {
 		reason := res.Reason
@@ -271,6 +318,9 @@ func (m *Manager) pushUnpushedBeforeTeardown(sess *Session) PushReport {
 		}
 		rep.Reason = reason
 		m.recordTeardownPushFailure(sess, reason)
+		if res.Kind == git.PushFailSecret {
+			m.reportSecretScan(audit.ActionSecretScanRefused, sess.ID, res.Remote, res.Ref, res.SecretFindings)
+		}
 		log.Printf("session %s: teardown push failed: %s (%d commit(s) kept locally on %s)", sess.ID, reason, count, branch)
 	}
 	m.saveTeardownPushState(sess)
@@ -292,14 +342,16 @@ func (m *Manager) recordTeardownPushFailure(sess *Session, reason string) {
 }
 
 // recordShadowSecretFindings records redacted shadow-mode scan findings
-// on a session whose push SUCCEEDED, and fires ONE warn-level operator
-// alert (when an alert sink is wired). The summary carries the count,
-// detector names, file:line and fingerprints — never the matched secret
-// (SecretFinding does not hold it, and the session record only ever
-// receives the summary).
-func (m *Manager) recordShadowSecretFindings(sess *Session, findings []git.SecretFinding) {
+// on a session whose push SUCCEEDED, fires ONE warn-level operator alert
+// (when an alert sink is wired), and emits one secret_scan_shadow audit
+// entry (when an audit reporter is wired). The summary carries the
+// count, detector names, file:line and fingerprints — never the matched
+// secret (SecretFinding does not hold it, and the session record only
+// ever receives the summary).
+func (m *Manager) recordShadowSecretFindings(sess *Session, remote, ref string, findings []git.SecretFinding) {
 	summary := git.RedactedFindingsSummary(findings)
 	sess.PushWarning = "pushed; pre-push secret scan (shadow mode) reported: " + summary
+	m.reportSecretScan(audit.ActionSecretScanShadow, sess.ID, remote, ref, findings)
 	if m.pushAlertFn != nil {
 		m.pushAlertFn("warn", fmt.Sprintf("Session %s: %d pre-push secret finding(s) (shadow mode)", sess.ID, len(findings)), summary)
 	}
