@@ -725,8 +725,9 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		// recorded while the task ran on another backend is stale: ignore it,
 		// drop it from the task so it is not re-used. The node the live session
 		// reports is ignored too: a backend that takes no node holds none.
-		if t.ComputeNode != "" {
-			m.store.WithLock(func() { t.ComputeNode = "" })
+		var stale bool
+		m.store.WithLock(func() { stale = t.ComputeNode != "" })
+		if stale {
 			m.store.MutateTask(t.ID, func(st *Task) { st.ComputeNode = "" })
 		}
 		base := poolsWithoutNodes(pools)
