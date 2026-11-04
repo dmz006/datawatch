@@ -318,7 +318,8 @@ git:
 # permission decisions, loop warnings, errors) from every backend.
 tracing:
   # off (no tracing), summary (default; unset reads summary) or full.
-  # Any other value is refused with an error naming the allowed values.
+  # Any other value is refused (at config load and on PUT /api/config) with
+  # an error naming the allowed values.
   mode: summary
   # Maximum bytes of a tool-call argument summary stored per event.
   # 0 or unset reads 512; allowed range 0..1048576.

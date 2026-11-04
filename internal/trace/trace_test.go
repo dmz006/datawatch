@@ -1,7 +1,9 @@
 package trace
 
 import (
+	"bufio"
 	"encoding/json"
+	"os"
 	"testing"
 	"time"
 )
@@ -113,5 +115,45 @@ func TestBackendEnabled(t *testing.T) {
 				t.Errorf("got %v want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestFixtureLogDecode replays a fixture log through a fake fixed clock:
+// every line decodes to a valid Kind, timestamps are exactly those in the
+// fixture, and a fake clock "now" yields deterministic retention cutoffs.
+func TestFixtureLogDecode(t *testing.T) {
+	f, err := os.Open("testdata/session.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	fakeNow := time.Date(2026, 1, 2, 3, 4, 8, 0, time.UTC)
+	var events []Event
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		var e Event
+		if err := json.Unmarshal(sc.Bytes(), &e); err != nil {
+			t.Fatalf("decode %q: %v", sc.Text(), err)
+		}
+		if !e.Kind.Valid() {
+			t.Errorf("invalid kind %q", e.Kind)
+		}
+		events = append(events, e)
+	}
+	if len(events) != 4 {
+		t.Fatalf("got %d events, want 4", len(events))
+	}
+	want := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if !events[0].Timestamp.Equal(want) {
+		t.Errorf("ts=%v want %v", events[0].Timestamp, want)
+	}
+	if events[1].DurationMS != 1200 || events[2].TokensIn != 900 || events[2].TokensOut != 120 {
+		t.Errorf("fields not decoded: %+v %+v", events[1], events[2])
+	}
+	cutoff := fakeNow.AddDate(0, 0, -Defaults().RetentionDays)
+	for _, e := range events {
+		if e.Timestamp.Before(cutoff) {
+			t.Errorf("event %v unexpectedly older than retention cutoff %v", e.Timestamp, cutoff)
+		}
 	}
 }

@@ -6690,6 +6690,9 @@ func validateLoaded(cfg *Config) error {
 			cfg.Autonomous.ProjectWriteSerialization,
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
+	if err := ValidateTracing(cfg.Tracing); err != nil {
+		return err
+	}
 	if err := ValidateMergeConflictPolicy(cfg.Autonomous.Parallel.MergeConflictPolicy); err != nil {
 		return err
 	}

@@ -6024,6 +6024,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// never null, so a fresh daemon's config has the same shape.
 			"billing": billingProfilesForDisplay(s.cfg.Usage.Billing),
 		},
+		"tracing": s.cfg.Tracing.WithDefaults(),
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
 			"push_remote":      s.cfg.Git.EffectivePushRemote(),
@@ -7263,6 +7264,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// tracing.* — pre-validate like git.secret_scan below: a bad mode, cap,
+	// retention or backend map rejects the whole PUT.
+	if terr := validateTracingPatch(s.cfg.Tracing, patch); terr != nil {
+		http.Error(w, terr.Error(), http.StatusBadRequest)
+		return
+	}
 	// git.secret_scan.mode — pre-validate like pi.thinking_level above: an
 	// unknown mode (a security-critical setting) rejects the whole PUT
 	// instead of silently no-op'ing in applyConfigPatch.
@@ -7586,6 +7593,10 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
 	for k, v := range patch {
+		if strings.HasPrefix(k, "tracing.backends.") {
+			_ = applyTracingKey(&cfg.Tracing, k, v)
+			continue
+		}
 		switch k {
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)
@@ -7845,6 +7856,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Trimmed; empty resets to the built-in default (origin),
 			// resolved via GitConfig.EffectivePushRemote.
 			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
+		case "tracing.mode", "tracing.arg_cap_bytes", "tracing.retention_days", "tracing.backends":
+			// Pre-validated by the PUT handler (validateTracingPatch).
+			_ = applyTracingKey(&cfg.Tracing, k, v)
 		case "git.secret_scan.mode":
 			// Pre-validated by the PUT handler (unknown modes reject the
 			// whole PUT); empty clears the flag back to the shadow default.
