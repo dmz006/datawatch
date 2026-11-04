@@ -103,7 +103,8 @@ func TestTaskVisibility_QueuedTaskCarriesReason(t *testing.T) {
 		t.Fatalf("approved Automaton must say it has not been started: %+v", v)
 	}
 
-	// A capacity wait uses the persisted reason, classified.
+	// A capacity wait with no ledger waiter (tree lock, decision, spawn retry)
+	// falls back to the persisted reason, classified.
 	reason := PoolFullWaitText("host", 2, 2, []string{"t9", "t8"})
 	visSetTask(t, m, ids[3], func(c *Task) { c.Status = TaskWaitingCapacity; c.WaitReason = reason })
 	queue, _ = m.TaskVisibility()
@@ -282,5 +283,49 @@ func TestTaskVisibility_EveryWaitCauseHasText(t *testing.T) {
 				t.Errorf("resets_at = %v; want none", v.ResetsAt)
 			}
 		})
+	}
+}
+
+// The live ledger waiter reason beats a stale persisted one.
+func TestTaskVisibility_LiveWaiterReasonBeatsStalePersisted(t *testing.T) {
+	m, prd, led := visFixture(t, 2)
+	ids := visTaskIDs(t, m, prd.ID)
+	led.SetLimit("node:n1", 1)
+	if err := led.Acquire(context.Background(), capacity.Request{
+		Holder: "other", PRDID: "prd-x", Pools: []string{"node:n1"}, Node: "n1",
+	}, time.Second, nil, nil); err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	go func() {
+		_ = led.Acquire(context.Background(), capacity.Request{
+			Holder: ids[1], PRDID: prd.ID, Pools: []string{"node:n1"}, Node: "n1",
+		}, 0, nil, nil)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(led.Snapshot().Waiting) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("waiter never queued")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	stale := "waiting for work resumed after the restart to be adopted"
+	visSetTask(t, m, ids[1], func(c *Task) { c.Status = TaskWaitingCapacity; c.WaitReason = stale })
+	queue, _ := m.TaskVisibility()
+	v := waitViewFor(queue, ids[1])
+	if v == nil || !strings.HasPrefix(v.Reason, "waiting for node n1: 1/1 engines in use") {
+		t.Fatalf("live waiter reason must win over the stale persisted one: %+v", v)
+	}
+}
+
+// With no ledger waiter the persisted reason is shown.
+func TestTaskVisibility_NoWaiterShowsPersistedReason(t *testing.T) {
+	m, prd, _ := visFixture(t, 1)
+	ids := visTaskIDs(t, m, prd.ID)
+	persisted := "waiting for the tree lock on /w/proj"
+	visSetTask(t, m, ids[0], func(c *Task) { c.Status = TaskWaitingCapacity; c.WaitReason = persisted })
+	queue, _ := m.TaskVisibility()
+	v := waitViewFor(queue, ids[0])
+	if v == nil || v.Reason != persisted {
+		t.Fatalf("persisted reason must show when the ledger has no waiter: %+v", v)
 	}
 }
