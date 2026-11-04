@@ -85,6 +85,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Process envelopes](#process-envelopes)
   - [eBPF per-process net](#ebpf-per-process-net)
   - [Audit log](#audit-log)
+  - [Agent trace](#agent-trace)
   - [Knowledge graph](#knowledge-graph)
   - [Daemon log](#daemon-log)
 - [Settings](#settings)
@@ -783,6 +784,10 @@ Per-session counters across the daemon's lifetime: messages in / out, tokens, co
 Every operator action (config change, session start/stop, secret read, rollback, Automata lifecycle, alert-rule and federation-peer changes, etc.) recorded with actor / action / details / timestamp, never the bearer token. Default view shows the last 5 entries; bump the limit dropdown for more (20 / 50 / 100). Filter by actor or action substring.
 
 This is one of **two** separate logs: `audit.log` (operator actions, shown here) and `access.log` (every HTTP request/auth-failure/WS connect across CLI+REST+MCP). Both are retained for `audit.retention_days` (default 30), can SIEM-mirror as CEF (`audit.cef_mirror_enabled`), and — for a request forwarded through a federation peer — can carry **cross-hop attribution**: `origin_actor` + `hop_chain` detail fields naming who actually initiated the action on the forwarding daemon, not just which peer presented it, verified via an HMAC-signed chain over each hop's existing shared peer token. See [howto/audit-logging](howto/audit-logging.md) for the full query surface and the trust-model detail.
+
+### Agent trace
+
+A redacted record of what agents did: tool calls and results, model requests, state changes, capability and permission decisions, loop warnings and errors. Read it as a timeline for one session or one Automaton, or as a roll-up by session, task, story, Automaton, agent or backend. `tracing.mode` is `off`, `summary` (default, short first-line summaries) or `full` (longer text up to `tracing.arg_cap_bytes`); `tracing.retention_days` (default 14) sets how long events are kept and `tracing.backends` turns a backend off. Each backend has a coverage level: **full**, **partial** or **events-only**, so missing detail is never read as no activity. Secrets and private paths are removed before an event is stored. Shown as the Trace card in the session and Automaton views. OpenTelemetry export is a follow-up. See [howto/agent-tracing](howto/agent-tracing.md).
 
 ### Knowledge graph
 
