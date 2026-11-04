@@ -92,6 +92,21 @@ pipeline kept by the daemon.
 To remove it: `datawatch autonomous merge-pipeline clear-record`, the same tool
 with `clear` set to `true`, or Remove record in the PWA.
 
+## No project yet
+
+Nothing above needs a registered project: a read without a project name uses
+the merge base repository, and the pipeline resolves and runs inside it. When
+neither a registered project nor a merge base repository is set, the read
+answers HTTP 400 with the code `project_required` (a JSON body with
+`code: "project_required"`).
+
+In the PWA you never see a raw error: in Settings > Automation, the Merge
+pipeline card shows an empty state instead. To fix it, choose a project in
+the card's project field (or pass the project argument of the API call or
+the MCP tool, or `--project` on the CLI), or set the merge base repository
+with the `worktree_base_repo` setting (`autonomous.worktree_base_repo`) —
+the empty state points at that setting.
+
 ## Which one wins, and how to see it
 
 The sources are tried in the order set by `autonomous.merge_pipeline.source_order`.
