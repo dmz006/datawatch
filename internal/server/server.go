@@ -618,6 +618,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/websearch/providers", api.handleWebSearchProviders)
 	apiMux.HandleFunc("/api/websearch/providers/", api.handleWebSearchProviders)
 	apiMux.HandleFunc("/api/websearch/stats", api.handleWebSearchStatsV2)
+	apiMux.HandleFunc("/api/git/secret-scan/stats", api.handleGitSecretScanStats)
 	apiMux.HandleFunc("/api/websearch/history", api.handleWebSearchHistory)
 	apiMux.HandleFunc("/api/sessions/aggregated", api.handleAggregatedSessions)
 	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)            // BL349
