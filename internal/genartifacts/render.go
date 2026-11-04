@@ -126,6 +126,9 @@ func Render(kind Kind, rec *changerecord.ChangeRecord, o Options) (string, []str
 	}
 	data := buildData(kind, rec, o)
 	var warnings []string
+	if OverridePath(kind) == "" {
+		return "", nil, fmt.Errorf("genartifacts: unknown kind %q", kind)
+	}
 	if b, err := os.ReadFile(filepath.Join(o.root(), filepath.FromSlash(OverridePath(kind)))); err == nil { // #nosec G304 -- fixed path under the project root
 		out, err := execute(string(b), data)
 		if err == nil {

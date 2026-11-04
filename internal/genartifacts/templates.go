@@ -56,7 +56,15 @@ func DefaultPaths() map[Kind]string {
 // OverridePath is where a project places its own template for a kind,
 // relative to the project root.
 func OverridePath(k Kind) string {
-	return filepath.ToSlash(filepath.Join(".datawatch", "templates", string(k)+".tmpl"))
+	// Build the path from the matching entry of the fixed kind list, not from
+	// the caller's value, so a kind that arrives from a request can never
+	// shape a path: an unknown kind yields no path at all.
+	for _, known := range Kinds() {
+		if known == k {
+			return filepath.ToSlash(filepath.Join(".datawatch", "templates", string(known)+".tmpl"))
+		}
+	}
+	return ""
 }
 
 // DefaultTemplate returns the embedded default template text of a kind.
