@@ -105,6 +105,60 @@ func TestMergePipelineMCP_GetDaemonErrorAndBadBody(t *testing.T) {
 	}
 }
 
+func TestMergePipelineMCP_GetProjectRequired(t *testing.T) {
+	const body = `{"code":"project_required","error":"Choose a project with the project parameter, or set the merge base repository (the worktree_base_repo setting)."}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(body))
+	})
+	res, _ := s.handleAutonomousMergePipelineGet(context.Background(), callReq(nil))
+	if res == nil || !res.IsError {
+		t.Fatalf("res=%+v", res)
+	}
+	text := automationText(t, res)
+	for _, want := range []string{
+		body,
+		"project_required",
+		"a project is needed, pass the project argument or set the merge base repository",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text lacks %q:\n%s", want, text)
+		}
+	}
+
+	// A plain-text 400 keeps today's error text and gets no plain line.
+	s = capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "bad request: project is empty", http.StatusBadRequest)
+	})
+	res, _ = s.handleAutonomousMergePipelineGet(context.Background(), callReq(nil))
+	if res == nil || !res.IsError {
+		t.Fatal("a plain-text refusal must be an error result")
+	}
+	text = automationText(t, res)
+	if !strings.Contains(text, "HTTP 400") || !strings.Contains(text, "project is empty") {
+		t.Errorf("plain 400 must keep the old text: %s", text)
+	}
+	if strings.Contains(text, "a project is needed, pass the project argument") {
+		t.Errorf("plain 400 must not get the plain line: %s", text)
+	}
+
+	// A 400 with a JSON body of another code keeps today's error text too.
+	s = capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"code":"not_found","error":"no such project"}`))
+	})
+	res, _ = s.handleAutonomousMergePipelineGet(context.Background(), callReq(nil))
+	if res == nil || !res.IsError {
+		t.Fatal("a structured refusal of another code must be an error result")
+	}
+	text = automationText(t, res)
+	if !strings.Contains(text, "no such project") || strings.Contains(text, "a project is needed, pass the project argument") {
+		t.Errorf("another code must keep the old text: %s", text)
+	}
+}
+
 func TestMergePipelineMCP_SetRecordSendsPut(t *testing.T) {
 	var method, path string
 	var got map[string]any

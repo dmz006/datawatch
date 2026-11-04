@@ -9307,6 +9307,7 @@ const DOCS_ONBOARDING_REPORT_LINKS = [
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
 const DOCS_MERGE_PIPELINE_LINKS = [
+  [['merge_pipeline_no_project_set_base'], 'howto/merge-pipeline.md#no-project-yet'],
   [['autonomous.merge_pipeline.source_order', 'autonomous.merge_pipeline.file_name', 'autonomous.merge_pipeline.fallback_on_bad_file',
     'settings_merge_pipeline_source_order', 'settings_merge_pipeline_file_name', 'settings_merge_pipeline_fallback_on_bad_file',
     'merge_pipeline_source'], DOCS_DEFINITIONS + '#merge-pipeline-source'],
@@ -27190,6 +27191,25 @@ window.mergePipelineCardHtml = function(view, opts) {
   if (!view || typeof view !== 'object') {
     return `<div class="prd-capacity-card merge-pipeline-card">${head}<div style="color:var(--text2);">${escHtml(t('merge_pipeline_placeholder'))}</div></div>`;
   }
+  if (view.project_required === true) {
+    // The daemon's "no project, and no merge base repository" refusal. Render
+    // the empty state — never the raw error text — with the project choice:
+    // picking a project calls mergePipelineSelectProject, which re-reads the
+    // card for that project. The worktree_base_repo line carries a help link
+    // to the how-to's "No project yet" section (docsLinkForKey), so the
+    // setting is clickable, not just named.
+    const npProjects = (Array.isArray(opts.projects) ? opts.projects : []).filter(p => typeof p === 'string' && p);
+    const noProject = `<div class="merge-pipeline-no-project" style="margin-top:4px;min-width:0;">` +
+      `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_title'))}</div>` +
+      `<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_body'))}</div>` +
+      `<div style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:6px;min-width:0;">` +
+      `<label for="mergePipelineProject" style="font-size:12px;color:var(--text2);">${escHtml(t('merge_pipeline_no_project_choose'))}</label>` +
+      `<input id="mergePipelineProject" class="form-input" list="mergePipelineProjects" value="" style="flex:1;min-width:120px;max-width:100%;font-size:12px;" onchange="window.mergePipelineSelectProject(this.value)" autocomplete="off" />` +
+      `<datalist id="mergePipelineProjects">${npProjects.map(p => `<option value="${escHtml(p)}"></option>`).join('')}</datalist></div>` +
+      `<div style="font-size:12px;color:var(--text2);margin-top:4px;overflow-wrap:anywhere;">${escHtml(t('merge_pipeline_no_project_set_base'))}${defsLink('merge_pipeline_no_project_set_base')}</div>` +
+      `</div>`;
+    return `<div class="prd-capacity-card merge-pipeline-card merge-pipeline-no-project" style="min-width:0;">${head}${noProject}</div>`;
+  }
   const project = String(view.project || '');
   const projects = (Array.isArray(opts.projects) ? opts.projects : []).filter(p => typeof p === 'string' && p);
   const projectRow = `<div class="merge-pipeline-project" style="display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin-top:4px;min-width:0;">` +
@@ -27234,13 +27254,17 @@ window.mergePipelineCardHtml = function(view, opts) {
     `<div id="mergePipelineMessage" class="merge-pipeline-message" role="status" style="font-size:12px;margin-top:4px;overflow-wrap:anywhere;"></div></details>`;
   return `<div class="prd-capacity-card merge-pipeline-card" style="min-width:0;">${head}${projectRow}${source}${stepsBlock}${policy}${model}${editor}</div>`;
 };
-// The card's state: the project shown (empty reads the daemon's default project),
-// the registry names and the project list. The loader reads it on every poll.
+// The card's state: the project shown, the registry names and the project
+// list. The loader reads it on every poll. When no project is chosen the
+// card preselects the first project of the list: an empty choice with no
+// merge base repository is exactly the empty state the card can render the
+// project for, so the first known project is the least-surprising read.
 window._mergePipelineProject = '';
 window._mergePipelineModels = [];
 window._mergePipelineProjects = [];
 function _mergePipelineUrl() {
-  const p = window._mergePipelineProject;
+  let p = window._mergePipelineProject;
+  if (!p && Array.isArray(window._mergePipelineProjects) && window._mergePipelineProjects.length > 0) p = window._mergePipelineProjects[0];
   return '/api/autonomous/merge-pipeline' + (p ? '?project=' + encodeURIComponent(p) : '');
 }
 function _mergePipelineMessage(text, bad) {
@@ -27293,7 +27317,10 @@ window.mergePipelineClearRecord = function() {
     .catch(e => _mergePipelineMessage(t('merge_pipeline_save_failed', [e && e.message ? e.message : String(e)]), true));
 };
 // _mergePipelineLoadLists reads the registry names and the project list once;
-// a failed read leaves the list empty and the card still renders.
+// a failed read leaves the list empty and the card still renders. When the
+// list arrives with at least one project and none is chosen, the card
+// re-reads once: the preselect of the first project resolves an empty state
+// that rendered before the list was known.
 function _mergePipelineLoadLists() {
   if (window._mergePipelineListsLoaded) return;
   window._mergePipelineListsLoaded = true;
@@ -27302,6 +27329,7 @@ function _mergePipelineLoadLists() {
   }).catch(() => {});
   Promise.resolve(apiFetch('/api/projects')).then(d => {
     window._mergePipelineProjects = (Array.isArray(d) ? d : []).map(p => (p && (p.name || p.alias)) || (typeof p === 'string' ? p : '')).filter(Boolean);
+    if (!window._mergePipelineProject && window._mergePipelineProjects.length > 0) _mergePipelineReload();
   }).catch(() => {});
 }
 // ── Model routing ───────────────────────────────────────────────────────────
@@ -27407,6 +27435,19 @@ window.modelRoutingPinBadgeHtml = function(item) {
   const node = String(item.pinned_node);
   return `<span class="prd-task-llm-badge model-routing-pin-badge" title="${escHtml(t('model_routing_pinned_title', [node]))}">${escHtml(t('model_routing_pinned_badge', [node]))}</span>`;
 };
+// _mergePipelineFetch reads the pipeline for the card. The daemon's "no
+// project, no merge base repository" refusal is a structured non-2xx whose
+// body is {"code":"project_required",...}; it resolves to the sentinel view
+// the card renders as the empty state instead of a failure. Any other
+// rejection is rethrown so the loader's merge_pipeline_failed banner shows.
+function _mergePipelineFetch(url, o) {
+  return apiFetch(url, o).catch(e => {
+    let body = null;
+    try { body = JSON.parse(String((e && e.message) || '')); } catch (_) { body = null; }
+    if (body && body.code === 'project_required') return { project_required: true };
+    throw e;
+  });
+}
 
 // ── Triage card ─────────────────────────────────────────────────────────────
 // triageCardHtml(record) turns one triage record — the single self-contained
@@ -31190,6 +31231,7 @@ function _automationMergePipelineLoader() {
   _mergePipelineLoadLists();
   return window._listLoaders.automation_merge_pipeline || listLoader({
     key: 'automation_merge_pipeline', el: 'automationMergePipelineCard', get url() { return _mergePipelineUrl(); }, pollMs: 0,
+    fetch: _mergePipelineFetch,
     failedText: msg => t('merge_pipeline_failed', [msg]),
     active: () => !!document.getElementById('automationMergePipelineCard'),
     render: view => {

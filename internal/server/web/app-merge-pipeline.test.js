@@ -205,6 +205,9 @@ test('docsLinkForKey maps the merge pipeline keys to the four sections', () => {
   };
   for (const [key, anchor] of Object.entries(want)) assert.equal(docsLink(key), DEFS + anchor, key);
   assert.equal(docsLink('autonomous.infra_retry.enabled'), DEFS + 'infrastructure-retry', 'infra retry keeps its own link');
+  assert.equal(docsLink('merge_pipeline_no_project_set_base'), 'howto/merge-pipeline.md#no-project-yet',
+    'the empty-state setting line points at the how-to, before the generic merge_pipeline_ fallback');
+  assert.equal(docsLink('merge_pipeline_no_project_title'), DEFS + 'merge-pipeline', 'the other no-project keys keep the glossary link');
 });
 
 // ── settings fields ─────────────────────────────────────────────────────────
@@ -296,6 +299,91 @@ test('every merge_pipeline key the app references exists in all five bundles', (
     const b = bundle(lang);
     for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' missing in ' + lang);
   }
+});
+
+// ── the project_required sentinel ──────────────────────────────────────────
+
+test('the project_required sentinel renders the four no-project strings and the project choice', () => {
+  const en = bundle('en');
+  const html = render({ project_required: true }, { projects: ['alpha', 'beta'] });
+  for (const k of ['merge_pipeline_no_project_title', 'merge_pipeline_no_project_body', 'merge_pipeline_no_project_choose', 'merge_pipeline_no_project_set_base']) {
+    assert.ok(html.includes(en[k]), k + ' text missing: ' + html);
+  }
+  assert.ok(html.includes('id="mergePipelineProject"'), 'project input missing: ' + html);
+  assert.ok(html.includes('window.mergePipelineSelectProject(this.value)'), 'project change handler missing: ' + html);
+  assert.ok(html.includes('<option value="alpha"></option><option value="beta"></option>'), 'project choices missing: ' + html);
+  // The worktree_base_repo line is clickable: a help link to the how-to's
+  // "No project yet" section, not just named text.
+  assert.ok(html.includes('href="/diagrams.html#docs/howto/merge-pipeline.md#no-project-yet"'), 'worktree_base_repo docs link missing: ' + html);
+  assert.ok(html.includes('class="docs-link"'), 'help link element missing: ' + html);
+  // The failed state the loader owns is the banner text, not this empty state.
+  const failed = String(en.merge_pipeline_failed).replace(/%1\$s/g, '').trim();
+  assert.ok(!html.includes(failed.split(':')[0].trim()), 'failure text leaked into the empty state: ' + html);
+});
+
+test('the project_required sentinel escapes a hostile project choice', () => {
+  const html = render({ project_required: true }, { projects: [HOSTILE] });
+  assert.ok(html.includes('<option value="&lt;img src=x onerror=alert(1)&gt;"'), 'hostile project not escaped: ' + html);
+  assert.ok(!html.includes(HOSTILE), 'hostile markup rendered unescaped: ' + html);
+  assert.ok(!html.includes('<img'), 'an image element was injected');
+});
+
+// ── the card URL preselect ──────────────────────────────────────────────────
+
+test('_mergePipelineUrl preselects the first project when none is chosen', () => {
+  const sandbox = loadApp();
+  sandbox._mergePipelineProjects = ['alpha', 'beta'];
+  sandbox._mergePipelineProject = '';
+  assert.equal(vm.runInContext('_mergePipelineUrl()', sandbox), '/api/autonomous/merge-pipeline?project=alpha');
+});
+
+test('_mergePipelineUrl prefers the chosen project over the preselect', () => {
+  const sandbox = loadApp();
+  sandbox._mergePipelineProjects = ['alpha', 'beta'];
+  sandbox._mergePipelineProject = 'beta';
+  assert.equal(vm.runInContext('_mergePipelineUrl()', sandbox), '/api/autonomous/merge-pipeline?project=beta');
+});
+
+test('_mergePipelineUrl is the bare endpoint when the project list is empty', () => {
+  const sandbox = loadApp();
+  sandbox._mergePipelineProjects = [];
+  sandbox._mergePipelineProject = '';
+  assert.equal(vm.runInContext('_mergePipelineUrl()', sandbox), '/api/autonomous/merge-pipeline');
+});
+
+// ── the loader fetch wrapper ────────────────────────────────────────────────
+
+// mergePipelineFetchOf instantiates the real _automationMergePipelineLoader in
+// a fresh sandbox and returns the fetch the loader passed to listLoader, which
+// is _mergePipelineFetch: the apiFetch wrapper that turns the daemon's
+// project_required refusal into the sentinel view and rethrows everything else.
+async function mergePipelineFetchOf(stubSrc) {
+  const sandbox = loadApp();
+  // The constructor kicks off the one-time list reads; make them settle to
+  // nothing so no state the test does not set leaks in.
+  vm.runInContext('apiFetch = () => Promise.resolve({ llms: [], projects: [] }); ' + stubSrc + ';', sandbox);
+  vm.runInContext('_automationMergePipelineLoader();', sandbox);
+  const ctl = sandbox._listLoaders.automation_merge_pipeline;
+  const doFetch = ctl && ctl.state && ctl.state.opts && ctl.state.opts.fetch;
+  assert.ok(typeof doFetch === 'function', 'the loader did not pass a fetch');
+  return doFetch('/api/autonomous/merge-pipeline', {});
+}
+
+test('the loader resolves the project_required refusal to the sentinel view', async () => {
+  const view = await mergePipelineFetchOf(
+    'fetchStubRej = new Error(JSON.stringify({ code: "project_required" })); apiFetch = () => Promise.reject(fetchStubRej)');
+  assert.equal(view.project_required, true);
+  assert.equal((Object.keys(view) || []).join(','), 'project_required', JSON.stringify(view));
+});
+
+test('the loader rethrows any other rejection as the same error', async () => {
+  const sandbox = loadApp();
+  vm.runInContext('boom = new Error("500 Internal Server Error"); apiFetch = () => Promise.reject(boom);', sandbox);
+  vm.runInContext('_automationMergePipelineLoader();', sandbox);
+  const doFetch = sandbox._listLoaders.automation_merge_pipeline.state.opts.fetch;
+  await assert.rejects(
+    Promise.resolve(doFetch('/api/autonomous/merge-pipeline', {})),
+    e => e === sandbox.boom, 'the rejection was not rethrown unchanged');
 });
 
 // ── the stats-poll rule ─────────────────────────────────────────────────────

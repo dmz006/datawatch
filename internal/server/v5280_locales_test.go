@@ -112,6 +112,12 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_usage_burn_guard_ask_on_change",
 		"burn_guard_state_line",
 		"burn_guard_decision_line",
+		// Merge pipeline card empty state (ad4e0001): the project_required refusal
+		// the operator sees when no project and no merge base repository is set.
+		"merge_pipeline_no_project_title",
+		"merge_pipeline_no_project_body",
+		"merge_pipeline_no_project_choose",
+		"merge_pipeline_no_project_set_base",
 		"stats_burn_guard",
 		"settings_usage_burn_guard_enabled",
 		"status_card_activity",

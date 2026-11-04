@@ -183,6 +183,65 @@ func TestMergePipelineGetErrors(t *testing.T) {
 	}
 }
 
+func TestMergePipelineGetProjectRequired(t *testing.T) {
+	s, _ := newMergePipelineServer(t)
+
+	// No project and no merge base repository: a JSON 400 with a code.
+	rec := mpDo(s.handleMergePipeline, http.MethodGet, "/api/autonomous/merge-pipeline", "")
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("no project: want 400, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("Content-Type: want application/json, got %q", ct)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body should be JSON: %v: %s", err, rec.Body.String())
+	}
+	if body["code"] != "project_required" || body["error"] == nil {
+		t.Errorf("body: %v", body)
+	}
+
+	// The other 400 cases keep the plain text form, without a code.
+	long := strings.Repeat("a", mergePipelineMaxNameBytes+1)
+	for name, target := range map[string]string{
+		"long name":         "/api/autonomous/merge-pipeline?project=" + long,
+		"control char name": "/api/autonomous/merge-pipeline?project=a%01b",
+	} {
+		rec := mpDo(s.handleMergePipeline, http.MethodGet, target, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: want 400, got %d", name, rec.Code)
+		}
+		var plain map[string]any
+		if json.Unmarshal(rec.Body.Bytes(), &plain) == nil {
+			if _, has := plain["code"]; has {
+				t.Errorf("%s: plain text 400 must not carry a code: %s", name, rec.Body.String())
+			}
+		}
+	}
+
+	// A project query value answers as before.
+	if rec := mpDo(s.handleMergePipeline, http.MethodGet, "/api/autonomous/merge-pipeline?project=demo", ""); rec.Code != http.StatusOK {
+		t.Errorf("project=demo: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	// The merge base repository names the project when the query is empty.
+	s2, _ := newMergePipelineServer(t)
+	repo := t.TempDir()
+	s2.autonomousMgr = &mergeRunSpy{repo: repo}
+	rec = mpDo(s2.handleMergePipeline, http.MethodGet, "/api/autonomous/merge-pipeline", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("merge base repo: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+	var v mergePipelineView
+	if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
+		t.Fatalf("decode: %v: %s", err, rec.Body.String())
+	}
+	if v.Project != filepath.Base(repo) {
+		t.Errorf("project: want %q (base name of the merge base repo), got %q", filepath.Base(repo), v.Project)
+	}
+}
+
 func TestMergePipelineRecordPutDelete(t *testing.T) {
 	s, _ := newMergePipelineServer(t)
 	const url = "/api/autonomous/merge-pipeline/record"

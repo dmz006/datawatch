@@ -92,6 +92,36 @@ pipeline kept by the daemon.
 To remove it: `datawatch autonomous merge-pipeline clear-record`, the same tool
 with `clear` set to `true`, or Remove record in the PWA.
 
+## No project yet
+
+Nothing above needs a registered project: a read without a project name uses
+the merge base repository, and the pipeline resolves and runs inside it. When
+neither a registered project nor a merge base repository is set, the read
+answers HTTP 400 with the code `project_required` (a JSON body with
+`code: "project_required"`).
+
+In the PWA you never see a raw error: in Settings > Automation, the Merge
+pipeline card shows an empty state instead. To fix it, choose a project in
+the card's project field (or pass the project argument of the API call or
+the MCP tool, or `--project` on the CLI), or set the merge base repository
+with the `worktree_base_repo` setting (`autonomous.worktree_base_repo`) —
+the empty state links to this section. That setting is a repository path the
+operator points at the daemon's working root, so it has no PWA settings
+field; every other surface can set it:
+
+| Surface | How |
+|---|---|
+| YAML | `autonomous.worktree_base_repo: /path/to/base-repo` in `~/.datawatch/config.yaml` |
+| CLI | `datawatch config set autonomous.worktree_base_repo /path/to/base-repo` |
+| Web UI | N/A — no settings field (a repository path, not a settings entry); the empty state links here |
+| REST API | `PUT /api/config` with `{"autonomous.worktree_base_repo": "/path/to/base-repo"}` |
+| Comm channel | `configure autonomous.worktree_base_repo=/path/to/base-repo` |
+
+Once it is set, the reads above — `datawatch autonomous merge-pipeline show`,
+`autonomous_merge_pipeline_get`, `autonomous merge-pipeline` and the card —
+resolve the pipeline in the base repository without a project name, and the
+card's empty state becomes the pipeline itself.
+
 ## Which one wins, and how to see it
 
 The sources are tried in the order set by `autonomous.merge_pipeline.source_order`.

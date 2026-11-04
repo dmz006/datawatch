@@ -67,6 +67,43 @@ func (s *Server) toolAutonomousMergePipelineValidate() mcpsdk.Tool {
 	)
 }
 
+// mergePipelineProjectRequiredLine is the plain line both surfaces add when
+// the daemon refuses a merge pipeline read because no project is known (no
+// project argument and no merge base repository set).
+const mergePipelineProjectRequiredLine = "a project is needed, pass the project argument or set the merge base repository"
+
+const http400Prefix = "HTTP 400: "
+
+// mergePipelineProjectRequired reports whether a non-2xx error from a merge
+// pipeline read is the daemon's structured project_required refusal: an HTTP
+// 400 whose body parses as JSON with code project_required. The second
+// result is the body the error text carries. A body that is not JSON, every
+// other status and every other code never match and keep today's error text.
+func mergePipelineProjectRequired(err error) (body string, ok bool) {
+	if err == nil {
+		return "", false
+	}
+	msg := err.Error()
+	if !strings.HasPrefix(msg, http400Prefix) {
+		return "", false
+	}
+	body = strings.TrimSpace(msg[len(http400Prefix):])
+	var code struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal([]byte(body), &code) != nil || code.Code != "project_required" {
+		return "", false
+	}
+	return body, true
+}
+
+// mergePipelineProjectRequiredError builds the error both surfaces return for
+// the project_required refusal: the daemon's JSON body followed by one plain
+// line.
+func mergePipelineProjectRequiredError(body string) error {
+	return fmt.Errorf("%s\n%s", body, mergePipelineProjectRequiredLine)
+}
+
 // mergePipelineWantsJSON reads the format argument. Anything but text or json
 // is refused so a typo is not silently read as the default.
 func mergePipelineWantsJSON(args map[string]any) (bool, error) {
@@ -130,6 +167,9 @@ func (s *Server) handleAutonomousMergePipelineGet(_ context.Context, req mcpsdk.
 	}
 	out, err := s.proxyGet(mergePipelinePath, q)
 	if err != nil {
+		if body, ok := mergePipelineProjectRequired(err); ok {
+			return toolError(op, mergePipelineProjectRequiredError(body)), nil
+		}
 		return toolError(op, err), nil
 	}
 	if asJSON {
