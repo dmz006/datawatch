@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.84.1 — A restart keeps the node lease of a pi-prompt task
+
+A restart no longer drops the node lease of a pi-prompt task.
+
+- After a daemon restart, adoption treated any task whose model name did not resolve to a hosting LLM entry as a backend that takes no node, and dropped its node lease. Tasks on pi-prompt with an unprefixed model name lost their node accounting, so both nodes read idle while six tasks waited behind a full pool.
+- Only hosted backends (such as claude-code) take the no-node path now; local-engine backends keep the node their task or live session names.
+- A unit test covers a pi-prompt task that recorded its node.
+
 ## v9.84.0 — Completion review block recovery
 
 A blocked completion review no longer leaves an Automaton stuck.

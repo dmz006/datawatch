@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.84.0 (2026-11-04).** A blocked completion review creates a fix task or holds the Automaton for review with its findings, instead of leaving it stuck. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.84.1 (2026-11-04).** Adoption after a restart no longer drops the node lease of a task on a local-engine backend whose model name does not resolve. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
