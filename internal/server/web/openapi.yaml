@@ -984,6 +984,7 @@ paths:
         `autonomous.plan_coverage_scoped_requirements` (true|false, default true; only count requirement wording inside the configured spec sections),
         `autonomous.plan_coverage_requirement_sections` (comma-separated string of spec section names, default "scope,constraints"; empty restores the default),
         `autonomous.plan_coverage_min_requirement_chars` (whole number >= 0, 0 reads the 30-character default; the shortest requirement sentence that counts),
+        `autonomous.generated_artefacts.change_record`, `.gate_report`, `.changelog_draft`, `.parity_draft`, `.tracker_rows`, `.registry_row`, `.combined_docs_task` (true|false, default true; which artefacts an Automaton generates from its change record; applies without restart),
         `autonomous.stuck_running_seconds` (whole seconds >= 0, default 900; how long an
         Automaton may stay running with every task finished and no live session before the
         stuck-running watchdog re-fires its roll-up once, then blocks it; 0 uses the default),
@@ -4140,6 +4141,122 @@ paths:
                   filters: {$ref: "#/components/schemas/PlanCoverageFilters"}
                   suppressed: {$ref: "#/components/schemas/PlanCoverageSuppressed"}
         "404": {description: Not found}
+        "405": {description: Method not allowed}
+  /api/autonomous/generated-artefacts:
+    get:
+      summary: Generated-artefact settings and kinds
+      description: |
+        The effective `autonomous.generated_artefacts.*` switches (unset reads
+        as on) plus every artefact kind with its format description and its
+        default tracked path (the placeholder `<automaton-id>` stands for the
+        Automaton id). Read-only; a federated peer needs the autonomous read
+        capability. Writable through `PUT /api/config` with the dotted keys
+        `autonomous.generated_artefacts.change_record`, `.gate_report`,
+        `.changelog_draft`, `.parity_draft`, `.tracker_rows`, `.registry_row`
+        and `.combined_docs_task` (booleans); a change applies to a running
+        daemon without restart.
+      operationId: autonomousGeneratedArtefacts
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Settings in effect and the artefact kinds
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings:
+                    type: object
+                    properties:
+                      change_record: {type: boolean}
+                      gate_report: {type: boolean}
+                      changelog_draft: {type: boolean}
+                      parity_draft: {type: boolean}
+                      tracker_rows: {type: boolean}
+                      registry_row: {type: boolean}
+                      combined_docs_task: {type: boolean}
+                  kinds:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        kind: {type: string, enum: [gate_report, changelog_draft, parity_draft, tracker_rows, registry_row]}
+                        enabled: {type: boolean}
+                        format: {type: string}
+                        tracked_path: {type: string}
+        "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/change-record:
+    get:
+      summary: Read an Automaton's stored merged change record
+      description: |
+        The merged change record (files, packages, settings, routes, locale
+        keys, tests added, commands run). When only per-task records exist they
+        are merged on the fly. 404 for an unknown id or when no record is
+        stored. Read-only; needs the autonomous read capability.
+      operationId: autonomousPRDChangeRecord
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200": {description: The change record, content: {application/json: {schema: {type: object}}}}
+        "404": {description: Unknown id, or no change record stored}
+        "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/generated/{kind}:
+    get:
+      summary: Preview a generated artefact without writing it
+      description: |
+        Renders the artefact from the stored change record and returns the
+        text and its tracked path. Nothing is written. `enabled` is false and
+        `content` empty when the kind is switched off. 404 for an unknown id
+        or kind. Needs the autonomous read capability.
+      operationId: autonomousPRDGeneratedArtefact
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [gate_report, changelog_draft, parity_draft, tracker_rows, registry_row]}}
+      responses:
+        "200":
+          description: The rendered preview
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  kind: {type: string}
+                  path: {type: string}
+                  enabled: {type: boolean}
+                  content: {type: string}
+                  warnings: {type: array, items: {type: string}}
+        "404": {description: Unknown id or kind}
+        "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/generated/{kind}/regenerate:
+    post:
+      summary: Re-render a generated artefact and write it
+      description: |
+        Re-renders the artefact and writes it to its tracked path. A file a
+        person edited is kept: the result is `skipped` with a `reason`. A kind
+        that is switched off returns `disabled`. Needs the autonomous write
+        capability.
+      operationId: autonomousPRDRegenerateArtefact
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+        - {name: kind, in: path, required: true, schema: {type: string, enum: [gate_report, changelog_draft, parity_draft, tracker_rows, registry_row]}}
+      responses:
+        "200":
+          description: The write outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  kind: {type: string}
+                  status: {type: string, enum: [written, skipped, disabled]}
+                  path: {type: string}
+                  reason: {type: string}
+                  warnings: {type: array, items: {type: string}}
+        "404": {description: Unknown id or kind}
         "405": {description: Method not allowed}
   /api/autonomous/prds/{id}/decompose:
     post:

@@ -139,6 +139,10 @@ Selected core tools:
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
 | `autonomous_progress_trend` | Read the progress trend from the saved daily snapshots; optional `days` (1 to 365, default 30) |
 | `autonomous_overlap_search` | Search before create: the Automata, registry rows and unmerged branches that already cover a plan's `title` and `spec`, best match first, with the threshold and mode in force; optional `limit` (1 to 50, default 10); read-only |
+| `generated_artefacts_get` | Read the generated-artefact switches in effect and each artefact kind with its format and tracked path; read-only |
+| `autonomous_prd_change_record` | Read the change record of an Automaton (`id`): files, packages, settings, routes, locale keys, tests, commands; read-only |
+| `autonomous_prd_generated_artefact` | Preview one generated artefact without writing it (`id`, `kind`: `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`); read-only |
+| `autonomous_prd_regenerate_artefact` | Re-render one generated artefact and write it to its tracked path (`id`, `kind`); a file a person edited is kept |
 | `autonomous_lane_fill_status` | Read the lane fill status: lanes, idle state, recent planner decisions and idle alerts; optional `limit` (1 to 1000, default 50) |
 | `autonomous_prd_set_lane_preference` | Set an Automaton's lane to `gpu`, `claude` or `any` (empty means `any`); takes `id` and `lane_preference` |
 | `compute_served_models` | Read which models each compute node serves; optional `node`, `model`, `backend` and `refresh` (true reads the node again); with `model` it also says whether the node would accept it |

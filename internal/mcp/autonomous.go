@@ -1830,3 +1830,77 @@ func finishTierTable(raw map[string]json.Number) (map[string]int, error) {
 	}
 	return out, nil
 }
+
+// Generated artefacts — four tools proxying the REST routes in
+// internal/server/generated_artefacts_rest.go.
+
+func (s *Server) toolGeneratedArtefactsGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("generated_artefacts_get",
+		mcpsdk.WithDescription("Read the generated-artefact settings in effect (autonomous.generated_artefacts.*) plus each artefact kind with its format description and tracked path. Proxies GET /api/autonomous/generated-artefacts. Read-only."),
+	)
+}
+func (s *Server) handleGeneratedArtefactsGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/autonomous/generated-artefacts", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDChangeRecord() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_change_record",
+		mcpsdk.WithDescription("Read the stored merged change record of one Automaton (files, packages, settings, routes, locale keys, tests, commands run). Proxies GET /api/autonomous/prds/{id}/change-record. Read-only."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDChangeRecord(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	if id == "" {
+		return toolErrorf("autonomous_prd_change_record", "id is required"), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+url.PathEscape(id)+"/change-record", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDGeneratedArtefact() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_generated_artefact",
+		mcpsdk.WithDescription("Preview one generated artefact for an Automaton: the rendered text, its tracked path and whether the kind is enabled. Nothing is written. Proxies GET /api/autonomous/prds/{id}/generated/{kind}."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("Artefact kind: gate_report, changelog_draft, parity_draft, tracker_rows or registry_row")),
+	)
+}
+func (s *Server) handleAutonomousPRDGeneratedArtefact(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	kind := strings.TrimSpace(req.GetString("kind", ""))
+	if id == "" || kind == "" {
+		return toolErrorf("autonomous_prd_generated_artefact", "id and kind are required"), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+url.PathEscape(id)+"/generated/"+url.PathEscape(kind), nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolAutonomousPRDRegenerateArtefact() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_regenerate_artefact",
+		mcpsdk.WithDescription("Re-render one generated artefact for an Automaton and write it to its tracked path. A file a person edited is kept: the result is skipped with the reason. Proxies POST /api/autonomous/prds/{id}/generated/{kind}/regenerate."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("kind", mcpsdk.Required(), mcpsdk.Description("Artefact kind: gate_report, changelog_draft, parity_draft, tracker_rows or registry_row")),
+	)
+}
+func (s *Server) handleAutonomousPRDRegenerateArtefact(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := strings.TrimSpace(req.GetString("id", ""))
+	kind := strings.TrimSpace(req.GetString("kind", ""))
+	if id == "" || kind == "" {
+		return toolErrorf("autonomous_prd_regenerate_artefact", "id and kind are required"), nil
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+url.PathEscape(id)+"/generated/"+url.PathEscape(kind)+"/regenerate", map[string]any{})
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}

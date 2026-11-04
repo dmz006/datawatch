@@ -6561,6 +6561,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetJudgeVerdictCacheEnabled(func() bool {
 				return config.NormalizeJudgeVerdictCacheEnabled(liveAutonomousConfig().JudgeVerdictCacheEnabled)
 			})
+			amgr.SetGeneratedArtefacts(func() config.EffectiveGeneratedArtefactsSettings {
+				return cfg.Autonomous.EffectiveGeneratedArtefacts()
+			})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.

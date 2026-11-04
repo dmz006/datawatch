@@ -199,3 +199,8 @@ func (ts *TemplateStore) Instantiate(id string, vars map[string]string) (spec, t
 	ts.RecordUse(id)
 	return subst(tmpl.Spec), subst(tmpl.Title), nil
 }
+
+// builtinTaskTemplates are the built-in task templates. None ships a task for
+// a daemon-generated artefact (gate report, changelog, parity draft, tracker
+// rows, registry row); documentation is one combined task.
+var builtinTaskTemplates = []Template{}

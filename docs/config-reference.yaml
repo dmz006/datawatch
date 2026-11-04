@@ -2944,6 +2944,29 @@ autonomous:
   # the two booleans; PWA Settings row:
   # settings_plan_coverage_min_requirement_chars.
   # plan_coverage_min_requirement_chars: 30
+  # Generated artefacts: which artefacts an Automaton produces from its
+  # change record (internal/changerecord). Every switch defaults to on when
+  # unset; set one to false to turn that artefact off.
+  # Read and change at runtime without restart: GET /api/config shows the
+  # effective set; PUT /api/config takes autonomous.generated_artefacts.<name>
+  # (booleans only; anything else is a 400); `datawatch config set` and the
+  # comm channel `configure` use the same dotted keys. REST: GET
+  # /api/autonomous/generated-artefacts, GET .../prds/{id}/change-record,
+  # GET .../prds/{id}/generated/{kind}, POST .../generated/{kind}/regenerate;
+  # MCP: generated_artefacts_get, autonomous_prd_change_record,
+  # autonomous_prd_generated_artefact, autonomous_prd_regenerate_artefact.
+  # change_record: no change record is built or stored when off.
+  # gate_report / changelog_draft / parity_draft / tracker_rows / registry_row:
+  #   that artefact is not generated when off.
+  # combined_docs_task: decompose does not ask for the combined docs task.
+  # generated_artefacts:
+  #   change_record: true
+  #   gate_report: true
+  #   changelog_draft: true
+  #   parity_draft: true
+  #   tracker_rows: true
+  #   registry_row: true
+  #   combined_docs_task: true
   # BL418 — PRD-completion rules review opt-in. Empty (default) means
   # runPRDCompletionRulesReview never fires, even when a rules/context
   # file exists. Add "rules-review" here (or to a PRD's own

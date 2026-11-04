@@ -61,6 +61,8 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
   - [Infrastructure retry](#infrastructure-retry)
+  - [Change record](#change-record)
+  - [Generated artefacts](#generated-artefacts)
   - [Merge pipeline](#merge-pipeline)
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge conflict policy](#merge-conflict-policy)
@@ -1812,6 +1814,14 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 **Dependents that recover** (`autonomous.infra_retry.retry_dependents`, on by default) — when a task fails for an infrastructure reason and the tasks that depend on it fail behind it, each of those dependents is marked as failed because of the dependency, with the original task named as the root. Once the root is no longer failed, cancelled, blocked or held, the dependents return to pending on their own, in dependency order, so a chain recovers in one pass, and an Automaton that ended failed or blocked only because of them returns to running. A dependent that failed for any other reason, or that still waits on another unmet dependency, is left alone. A dependency that was cancelled or that failed on its own merits marks nothing. The recovery is logged as an `infra_dependents_recovered` decision. With the setting off, dependents fail as before and stay failed until reset by hand.
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
+
+### Change record
+
+The change record is the list of what an Automaton changed, built from the git diff of each task and merged for the Automaton: files, packages, settings, routes, locale keys, tests and the commands that were run. It is stored with the Automaton, read with `GET /api/autonomous/prds/{id}/change-record`, the `autonomous_prd_change_record` MCP tool and `datawatch autonomous change-record <id>`, and it is the only input the generated artefacts are drawn from. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
+
+### Generated artefacts
+
+Generated artefacts are the small documents drawn from the change record when an Automaton completes: a gate report, a changelog draft, a mobile parity draft, testing-tracker rows and a registry row. Each starts with a generated marker and is a draft: a file a person edited is never overwritten, and `autonomous_prd_regenerate_artefact` (or `datawatch autonomous generated <id> <kind> --regenerate`) renders it again. Seven switches under `autonomous.generated_artefacts` (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) turn each piece off; unset means on. See [howto/generated-artefacts.md](howto/generated-artefacts.md).
 
 ### Merge pipeline
 

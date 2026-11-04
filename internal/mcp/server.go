@@ -606,8 +606,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDResume(), tracked(s.handleAutonomousPRDResume))
 	mcpSrv.AddTool(s.toolAutonomousPRDReject(), tracked(s.handleAutonomousPRDReject))
 	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageAcknowledge(), tracked(s.handleAutonomousPRDPlanCoverageAcknowledge))
-	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageGet(), tracked(s.handleAutonomousPRDPlanCoverageGet)) // autonomous_prd_plan_coverage_get — plan coverage read
-	mcpSrv.AddTool(s.toolAutonomousPRDPlanReview(), tracked(s.handleAutonomousPRDPlanReview))           // plan review gate
+	mcpSrv.AddTool(s.toolAutonomousPRDPlanCoverageGet(), tracked(s.handleAutonomousPRDPlanCoverageGet))       // autonomous_prd_plan_coverage_get — plan coverage read
+	mcpSrv.AddTool(s.toolGeneratedArtefactsGet(), tracked(s.handleGeneratedArtefactsGet))                     // generated_artefacts_get
+	mcpSrv.AddTool(s.toolAutonomousPRDChangeRecord(), tracked(s.handleAutonomousPRDChangeRecord))             // autonomous_prd_change_record
+	mcpSrv.AddTool(s.toolAutonomousPRDGeneratedArtefact(), tracked(s.handleAutonomousPRDGeneratedArtefact))   // autonomous_prd_generated_artefact
+	mcpSrv.AddTool(s.toolAutonomousPRDRegenerateArtefact(), tracked(s.handleAutonomousPRDRegenerateArtefact)) // autonomous_prd_regenerate_artefact
+	mcpSrv.AddTool(s.toolAutonomousPRDPlanReview(), tracked(s.handleAutonomousPRDPlanReview))                 // plan review gate
 	mcpSrv.AddTool(s.toolAutonomousPRDRequestRevision(), tracked(s.handleAutonomousPRDRequestRevision))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditTask(), tracked(s.handleAutonomousPRDEditTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDEditStory(), tracked(s.handleAutonomousPRDEditStory))

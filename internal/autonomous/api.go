@@ -17,6 +17,7 @@ import (
 	"time"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/changerecord"
 	"github.com/dmz006/datawatch/internal/config"
 )
 
@@ -2150,4 +2151,22 @@ func (a *API) SupervisorWatchStatus() SupervisorWatchStatus {
 // Serves GET /api/autonomous/supervisor-watch/stats.
 func (a *API) SupervisorWatchStats() SupervisorWatchStats {
 	return a.M.SupervisorWatchStatus().Stats(time.Now())
+}
+
+// Generated artefacts — read, preview and regenerate (generated_artefacts_read.go).
+
+func (a *API) GeneratedChangeRecord(prdID string) (*changerecord.ChangeRecord, error) {
+	return a.M.GeneratedChangeRecord(prdID)
+}
+
+func (a *API) PreviewGeneratedArtefact(prdID, kind string) (*GeneratedArtefactPreview, error) {
+	return a.M.PreviewGeneratedArtefact(prdID, kind)
+}
+
+func (a *API) RegenerateGeneratedArtefact(prdID, kind string) (*GeneratedArtefactResult, error) {
+	res, err := a.M.RegenerateGeneratedArtefact(prdID, kind)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return res, err
 }

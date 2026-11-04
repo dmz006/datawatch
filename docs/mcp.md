@@ -470,6 +470,53 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Needs the autonomous read capability when called by a federated peer.
+
+- **`generated_artefacts_get`** — read the seven `autonomous.generated_artefacts.*` switches in effect (`change_record`, `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`, `combined_docs_task`) and each artefact kind with its format and tracked path. Read-only. Same as `GET /api/autonomous/generated-artefacts`. The switches are changed with `config_set`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | (none) | | Takes no arguments |
+
+  ```
+  generated_artefacts_get()
+  ```
+
+  Needs the autonomous read capability when called by a federated peer. Operator view: [`howto/generated-artefacts.md`](howto/generated-artefacts.md).
+- **`autonomous_prd_change_record`** — read the stored change record of one Automaton: files, Go packages, settings, routes, locale keys, tests and the commands that were run. Read-only. Same as `GET /api/autonomous/prds/{id}/change-record`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton id |
+
+  ```
+  autonomous_prd_change_record(id="a1b2c3d4")
+  ```
+
+  An unknown Automaton, or one with no record yet, is a not-found answer. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_prd_generated_artefact`** — preview one generated artefact (the draft that would be written, its tracked path and whether its switch is on) without writing anything. Same as `GET /api/autonomous/prds/{id}/generated/{kind}`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton id |
+  | `kind` | yes | One of `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row` |
+
+  ```
+  autonomous_prd_generated_artefact(id="a1b2c3d4", kind="changelog_draft")
+  ```
+
+  An unknown Automaton or kind is a not-found answer. Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_prd_regenerate_artefact`** — render one generated artefact again and write it to its tracked path. A file a person edited is kept and the answer is `skipped` with the reason. Same as `POST /api/autonomous/prds/{id}/generated/{kind}/regenerate`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton id |
+  | `kind` | yes | One of `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row` |
+
+  ```
+  autonomous_prd_regenerate_artefact(id="a1b2c3d4", kind="gate_report")
+  ```
+
+  Needs the autonomous write capability when called by a federated peer; the call is written to the audit log as `regenerate_artefact`.
 - **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
 
   ```

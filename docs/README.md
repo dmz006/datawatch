@@ -29,6 +29,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [mcp.md](mcp.md) | MCP (Model Context Protocol) server — Cursor, Claude Desktop, VS Code, remote AI agents |
 | [cursor-mcp.md](cursor-mcp.md) | Quick-start for Cursor and Claude Desktop MCP integration |
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
+| [howto/generated-artefacts.md](howto/generated-artefacts.md) | Generated artefacts: the change record an Automaton keeps and the gate report, changelog draft, parity draft, tracker rows and registry row drawn from it, the seven switches, template overrides, edit protection, reading and regenerating from every surface |
 | [howto/mcp-prompts.md](howto/mcp-prompts.md) | 10 MCP prompt slash commands — live context injection for every operator workflow (v7.1.0) |
 | [howto/automata-progress.md](howto/automata-progress.md) | Automata progress dashboard: counts by kind, rates per active day, known versus estimated work left, completion range, daily trend |
 | [howto/automata-defect-queue.md](howto/automata-defect-queue.md) | Defect queue: group related defects into one batch Automaton, run tiny test/docs/script fixes in a one-task lane, read the intake decision log, split a failed story out, and every `autonomous.defect_queue.*` setting with the REST, MCP, CLI and comm commands |

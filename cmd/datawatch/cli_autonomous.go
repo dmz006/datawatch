@@ -112,6 +112,9 @@ Subcommands:
   prd-reject <id>                 Reject a PRD plan
   prd-coverage <id> [--json]      Show the Automaton's stored plan-coverage report, its ack, findings and the suppressed counts
   prd-ack-coverage <id>           Acknowledge a failing coverage report (--actor, --note) so approve in block mode is allowed
+  generated-artefacts [get|set <key> <on|off>]   Show or change the switches for the artefacts an Automaton generates
+  change-record <prd-id>          Show the change record of an Automaton
+  generated <prd-id> <kind> [--regenerate]   Preview a generated artefact, or write it again
   prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
   prd-edit-story <id>             Rewrite a story's title/description before approving
@@ -169,6 +172,9 @@ Subcommands:
 		newAutonomousInfraRetriesCmd(),
 		newAutonomousMergePipelineCmd(),
 		newAutonomousStatusCmd(),
+		newAutonomousGeneratedArtefactsCmd(),
+		newAutonomousChangeRecordCmd(),
+		newAutonomousGeneratedCmd(),
 		newAutonomousConfigGetCmd(),
 		newAutonomousConfigSetCmd(),
 		newAutonomousPRDListCmd(),

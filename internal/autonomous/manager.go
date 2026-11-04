@@ -1555,6 +1555,10 @@ type Manager struct {
 	// fake.
 	driftGit driftGitRunner
 
+	// genArt — change-record and generated-artefact wiring
+	// (generated_artefacts.go). The zero value is dormant.
+	genArt generatedArtefactState
+
 	// taskCommit — commits a task's leftover files when the uncommitted-work
 	// check rescues them. nil means DefaultTaskCommit; tests inject a fake.
 	taskCommit TaskCommitFn
@@ -2591,6 +2595,13 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	prd.LastDecomposeFailure = nil // success — clear the single-use hint
 	prd.DecomposeSessionFailures = 0
 
+	// Drop tasks whose whole purpose is an artefact the change record
+	// generates, so coverage and scope lint see the plan that will run.
+	var genDropNotes []string
+	if kept, notes := m.dropGeneratedPlanTasks(s); len(notes) > 0 {
+		s, prd.Story, genDropNotes = kept, kept, notes
+	}
+
 	settings, serr := m.EffectivePlanCoverage()
 	if serr != nil {
 		// A plan-coverage mode that cannot be resolved is a config
@@ -2625,7 +2636,8 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
-	prd.ScopeWarnings = m.planScopeWarnings(prd, s)
+	prd.ScopeWarnings = append(m.planScopeWarnings(prd, s), genDropNotes...)
+	prd.ScopeWarnings = append(prd.ScopeWarnings, LintCombinedDocs(s)...)
 	// A save failure here is a real decompose failure: route it through
 	// the shared give-up tail (log, keep artifact, record
 	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
@@ -2809,6 +2821,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	prompt += m.generatedArtefactPlanSuffix()
 
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — a pi-family decompose session must launch with an explicit
@@ -2971,6 +2984,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	prompt += m.rulesContextSuffix(prd)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
+	prompt += m.generatedArtefactPlanSuffix()
 
 	// Operator-reported: a PRD configured for claude-code kept running
 	// decompose against the daemon's global qwen default instead. Root
