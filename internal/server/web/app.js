@@ -29710,6 +29710,7 @@ function renderAutonomousView() {
   `;
   if (isAutomation) {
     _automationMount();
+    _automationSubtabsReveal();
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
@@ -30140,6 +30141,25 @@ function _automationStopLoaders(keys) {
 // Automation body for the selected sub-tab (the filter, search and history
 // state lives in _automationState, so it survives the redraw) and syncs the
 // action buttons so filter and history show on Automations only.
+// _automationSubtabsReveal scrolls the active second-row tab into view inside
+// its horizontally scrolling strip, so a tab chosen by deep link or keyboard
+// is visible. Guarded for DOMs without scrollIntoView (the node stub).
+function _automationSubtabsReveal() {
+  try {
+    const btn = document.querySelector('.automation-subtabs .output-tab.active');
+    if (!btn) return;
+    if (typeof btn.scrollIntoView === 'function') {
+      btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+      return;
+    }
+    const strip = btn.parentElement;
+    if (strip && typeof btn.offsetLeft === 'number') {
+      strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    }
+  } catch (e) { /* cosmetic only */ }
+}
+window._automationSubtabsReveal = _automationSubtabsReveal;
+
 function switchAutomationSubtab(id) {
   const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
   if (!def) return;
