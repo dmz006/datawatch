@@ -53,8 +53,8 @@ func genArtServer(f *genArtFake) *Server {
 
 func genArtDo(s *Server, method, path string) *httptest.ResponseRecorder {
 	rr := httptest.NewRecorder()
-	switch {
-	case path == "/api/autonomous/generated-artefacts":
+	switch path {
+	case "/api/autonomous/generated-artefacts":
 		s.handleGeneratedArtefacts(rr, httptest.NewRequest(method, path, nil))
 	default:
 		s.handleAutonomousPRDs(rr, httptest.NewRequest(method, path, nil))

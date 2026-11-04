@@ -163,20 +163,20 @@ func TestEditedFileNotOverwritten(t *testing.T) {
 	p := filepath.Join(root, "a.md")
 
 	// No marker.
-	os.WriteFile(p, []byte("mine\n"), 0o644)
+	_ = os.WriteFile(p, []byte("mine\n"), 0o644)
 	if r, _ := Write(GateReport, "x", "a.md", o); r.Status != Skipped || r.Reason == "" {
 		t.Errorf("no marker: %+v", r)
 	}
 	// Edited line.
-	os.WriteFile(p, []byte(Marker+"\n"+EditedMarker+"\nmine\n"), 0o644)
+	_ = os.WriteFile(p, []byte(Marker+"\n"+EditedMarker+"\nmine\n"), 0o644)
 	if r, _ := Write(GateReport, "x", "a.md", o); r.Status != Skipped || r.Reason == "" {
 		t.Errorf("edited: %+v", r)
 	}
 	// Body edited after generation (hash mismatch).
-	os.Remove(p)
-	Write(GateReport, "gen\n", "a.md", o)
+	_ = os.Remove(p)
+	_, _ = Write(GateReport, "gen\n", "a.md", o)
 	b, _ := os.ReadFile(p)
-	os.WriteFile(p, append(b, []byte("person line\n")...), 0o644)
+	_ = os.WriteFile(p, append(b, []byte("person line\n")...), 0o644)
 	if r, _ := Write(GateReport, "x", "a.md", o); r.Status != Skipped || r.Reason == "" {
 		t.Errorf("hash: %+v", r)
 	}
@@ -189,8 +189,8 @@ func TestEditedFileNotOverwritten(t *testing.T) {
 func TestOverrideTemplateReplacesDefault(t *testing.T) {
 	root := t.TempDir()
 	op := filepath.Join(root, OverridePath(GateReport))
-	os.MkdirAll(filepath.Dir(op), 0o755)
-	os.WriteFile(op, []byte("custom {{.ID}} runs={{.CommandsRun}}"), 0o644)
+	_ = os.MkdirAll(filepath.Dir(op), 0o755)
+	_ = os.WriteFile(op, []byte("custom {{.ID}} runs={{.CommandsRun}}"), 0o644)
 	got, warns, err := Render(GateReport, fullRecord(), Options{Root: root})
 	if err != nil || len(warns) != 0 || got != "custom abc123 runs=2" {
 		t.Errorf("got %q %v %v", got, warns, err)
@@ -200,9 +200,9 @@ func TestOverrideTemplateReplacesDefault(t *testing.T) {
 func TestBrokenOverrideFallsBack(t *testing.T) {
 	root := t.TempDir()
 	op := filepath.Join(root, OverridePath(GateReport))
-	os.MkdirAll(filepath.Dir(op), 0o755)
+	_ = os.MkdirAll(filepath.Dir(op), 0o755)
 	for _, bad := range []string{"{{.ID", "{{.NoSuchField}}"} {
-		os.WriteFile(op, []byte(bad), 0o644)
+		_ = os.WriteFile(op, []byte(bad), 0o644)
 		got, warns, err := Render(GateReport, fullRecord(), Options{Root: root})
 		if err != nil || len(warns) != 1 || !strings.Contains(got, "# Gate report abc123") {
 			t.Errorf("%q: got %q %v %v", bad, got, warns, err)

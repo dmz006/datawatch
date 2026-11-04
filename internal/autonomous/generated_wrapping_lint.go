@@ -340,7 +340,7 @@ func genIsDocTask(t Task) bool {
 	}
 	for _, f := range t.FilesPlanned {
 		n := normalizeGenPath(f)
-		if !(strings.HasPrefix(n, "docs/") || strings.HasSuffix(strings.ToLower(n), ".md")) {
+		if !strings.HasPrefix(n, "docs/") && !strings.HasSuffix(strings.ToLower(n), ".md") {
 			return false
 		}
 	}

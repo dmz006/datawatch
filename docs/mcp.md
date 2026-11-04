@@ -364,6 +364,14 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
   ```
 
+- **`generated_artefacts_get`**, **`autonomous_prd_change_record`**, **`autonomous_prd_generated_artefact`**, **`autonomous_prd_regenerate_artefact`** — the change record of an Automaton and the documents drafted from it (gate report, changelog draft, parity draft, testing-tracker rows, registry row). `generated_artefacts_get` takes no arguments and reads the seven `autonomous.generated_artefacts.*` switches in effect plus each kind with its format and tracked path. `autonomous_prd_change_record` reads the record of one Automaton (`id`). `autonomous_prd_generated_artefact` previews one artefact without writing it (`id`, `kind`). `autonomous_prd_regenerate_artefact` re-renders one artefact and writes it to its tracked path; a file a person edited is kept (`id`, `kind`). `kind` is one of `gate_report`, `changelog_draft`, `parity_draft`, `tracker_rows`, `registry_row`. Reads need the autonomous read capability, regenerate the write capability. The switches are changed with `config_set`. Operator view: [`howto/generated-artefacts.md`](howto/generated-artefacts.md).
+
+  ```
+  generated_artefacts_get()
+  autonomous_prd_generated_artefact(id="a1b2c3d4", kind="changelog_draft")
+  autonomous_prd_regenerate_artefact(id="a1b2c3d4", kind="gate_report")
+  ```
+
 - **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
 
   ```

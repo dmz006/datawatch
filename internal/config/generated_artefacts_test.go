@@ -10,7 +10,7 @@ import (
 func TestEffectiveGeneratedArtefactsDefaultsOn(t *testing.T) {
 	var a AutonomousConfig
 	e := a.EffectiveGeneratedArtefacts()
-	if !(e.ChangeRecord && e.GateReport && e.ChangelogDraft && e.ParityDraft && e.TrackerRows && e.RegistryRow && e.CombinedDocsTask) {
+	if !e.ChangeRecord || !e.GateReport || !e.ChangelogDraft || !e.ParityDraft || !e.TrackerRows || !e.RegistryRow || !e.CombinedDocsTask {
 		t.Fatalf("expected all on, got %+v", e)
 	}
 }
