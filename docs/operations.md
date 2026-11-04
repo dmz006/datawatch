@@ -686,6 +686,45 @@ When the tries run out, `autonomous.infra_retry.exhausted_action` decides. `hold
 
 A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; the refusal names the key and the valid values. A bad value written by hand into `config.yaml` is not checked on load: a try limit below 1 reads as 3, an unknown `exhausted_action` reads as `hold`, a negative delay waits no time and an unknown class is never retried. Changes made through the write surfaces apply at once, with no restart.
 
+
+### Model routing
+
+An Automaton worker that asks for a model runs on a compute node, and a model no node serves used to fail the task much later with a model-not-found error from the engine. Model routing refuses that earlier, when the model is pinned. It applies to a worker or verifier model that runs on a local engine reached through a compute node; a hosted backend such as `claude-code` is never checked. The operator guide is [howto/model-routing.md](howto/model-routing.md).
+
+**What you see when a pin is refused.** Pinning a model on an Automaton, a story or a task (or setting a verifier model), or pinning a task or story to a node, answers with the refusal text and stores nothing. REST answers 400 with the text as the body, and the CLI, the comm channel and the web app show the same text. It names the model and every node checked, with a reason for each:
+
+```
+no registered node serves model "ollama/qwen3:27b"; nodes checked: gpu-1 (serves 2 models, none is ollama/qwen3:27b), gpu-2 (could not read models: connection refused)
+```
+
+`serves 2 models, none is ...` means the node answered and the model is not on it: pull the model there, or pick another. `could not read models: ...` means the node did not answer; `autonomous.model_routing.unknown_node_policy` decides whether such a node counts as serving (`assume_serves`, the default) or not (`assume_not`). A pin to a node that is not a registered compute node is refused in either mode. Unless `autonomous.model_routing.alert_on_refusal` is off, each refusal also raises one error-level alert titled "Automaton model not served by any node". With `autonomous.model_routing.refusal_mode` set to `warn` the pin is applied instead, a `model_not_served_warning` decision is added to the Automaton and the alert is raised at warning level.
+
+**Read which models a node serves.** `GET /api/compute/served-models` (optional `node`, `model`, `backend`, `refresh=true`), the `compute_served_models` MCP tool, `datawatch compute node served-models [name] [--model M] [--refresh] [--json]`, the comm verb `compute node models [name] [model=<m>] [refresh]`, and the Served models block on each node row in the web app. Each node shows its models, whether the list is fresh or kept, and how old the kept copy is; a node that could not be read says why. Passing `model` also returns the answer a pin of that model would get.
+
+**Tune the cache age.** Each node's list is kept for `autonomous.model_routing.served_models_cache_seconds` (300 by default); a failed read is kept for the same time. If a model you just pulled is not seen, press Refresh or pass `refresh=true`. If it keeps happening, set the age to a lower number, or to `0` to read the node on every pin, at the cost of a read per pin. A longer age saves reads on a busy daemon but delays seeing a change on a node. `autonomous.model_routing.probe_timeout_seconds` (8 by default, at least 1) bounds one read, so a node that is down delays a pin by at most that long.
+
+**Verification follows the worker.** With `autonomous.model_routing.verifier_follows_worker_node` on (the default), a task's verification job runs on the node its worker ran on and waits for that node rather than move. When it cannot follow, it is placed normally and a `verifier_node_not_followed` decision gives the reason.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.model_routing:` with `refusal_mode`, `served_models_cache_seconds`, `verifier_follows_worker_node`, `unknown_node_policy`, `probe_timeout_seconds`, `alert_on_refusal` |
+| **CLI** | `datawatch config set autonomous.model_routing.served_models_cache_seconds 60`; `datawatch compute node served-models`; `datawatch autonomous prd-set-task-node <automaton-id> --task <task-id> --node <node>` |
+| **Web UI** | Settings → General → Autonomous (the six keys); Served models on each node row; Pin to node on the task and story editors |
+| **REST API** | `GET /api/compute/served-models`; `PUT /api/config` with `autonomous.model_routing.<key>`; `POST /api/autonomous/prds/{id}/set_task_node` and `set_story_node` |
+| **Comm channel** | `compute node models`; `autonomous set-task-node <automaton> <task> <node\|clear>`; `configure autonomous.model_routing.refusal_mode=warn` |
+| **MCP** | `compute_served_models` (read-only), `autonomous_prd_set_task_node`, `autonomous_prd_set_story_node`, `autonomous_config_set` with the `model_routing_*` arguments, `config_set` |
+
+| Key | Default | Allowed values and effect |
+|-----|---------|---------------------------|
+| `autonomous.model_routing.refusal_mode` | `refuse` | `refuse` or `warn`. What happens when a pinned model is served by no registered node. |
+| `autonomous.model_routing.served_models_cache_seconds` | `300` | Whole number >= 0. How long a node's served models are kept; `0` reads the node every time. |
+| `autonomous.model_routing.verifier_follows_worker_node` | `true` | `true` or `false`. Run the verification job on the worker's node and wait for it. |
+| `autonomous.model_routing.unknown_node_policy` | `assume_serves` | `assume_serves` or `assume_not`. How a node whose models cannot be read counts. |
+| `autonomous.model_routing.probe_timeout_seconds` | `8` | Whole number >= 1. How long one read of a node's models may take. |
+| `autonomous.model_routing.alert_on_refusal` | `true` | `true` or `false`. Raise an alert when a pin is refused or applied with a warning. |
+
+A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel or the web app is refused and nothing is written; a bad value typed by hand into `config.yaml` stops the file loading, with an error naming the key.
+
 ---
 
 ## 5. Signal Account Management

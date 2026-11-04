@@ -61,6 +61,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
   - [Lifecycle subscriptions — outbound webhook and peer forwarding](#lifecycle-subscriptions--outbound-webhook-and-peer-forwarding)
   - [Infrastructure retry](#infrastructure-retry)
+  - [Model routing](#model-routing)
 - [Automation](#automation)
   - [Automation list](#automation-list)
   - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
@@ -1684,6 +1685,38 @@ A wrong answer, a failed check, a task that went out of scope or a stall that is
 **Dependents that recover** (`autonomous.infra_retry.retry_dependents`, on by default) — when a task fails for an infrastructure reason and the tasks that depend on it fail behind it, each of those dependents is marked as failed because of the dependency, with the original task named as the root. Once the root is no longer failed, cancelled, blocked or held, the dependents return to pending on their own, in dependency order, so a chain recovers in one pass, and an Automaton that ended failed or blocked only because of them returns to running. A dependent that failed for any other reason, or that still waits on another unmet dependency, is left alone. A dependency that was cancelled or that failed on its own merits marks nothing. The recovery is logged as an `infra_dependents_recovered` decision. With the setting off, dependents fail as before and stay failed until reset by hand.
 
 The state is read with `GET /api/autonomous/infra-retries`, the `autonomous_infra_retries` MCP tool, `datawatch autonomous infra-retries` and the comm channel verb `autonomous infra-retries`. Every setting above is also a config key on all surfaces. See [howto/infrastructure-retry.md](howto/infrastructure-retry.md) for the walkthrough and [mcp.md](mcp.md) for the arguments that set the policy.
+
+### Model routing
+
+**Model routing** (`autonomous.model_routing`) — the rules that decide what happens when an Automaton, a story or a task asks for a model that none of your compute nodes serves, and which node a task and its verification job run on. Each node's served models are read from the node and kept for a while; when you pin a worker or verifier model (or pin a task or story to a node) and no registered node serves the model, the pin is refused, or applied with a warning. A task or a story can be pinned to one compute node, and the verification job follows the worker to that node. Only models that run on a local engine reached through a compute node are checked; a hosted backend such as `claude-code` runs on no node and is never refused. The refusal message names the model and every node that was checked. See [howto/model-routing.md](howto/model-routing.md) for the walkthrough.
+
+The settings below are the six keys of the block. Each is set on every surface (YAML, `PUT /api/config`, MCP, `datawatch config set`, `configure` in chat and the Settings page) and applies at once with no restart.
+
+#### Model routing refusal mode
+
+`autonomous.model_routing.refusal_mode` — what happens when a model is pinned and no registered node serves it. `refuse` (the default) turns the pin down, stores nothing and tells you which model and which nodes were checked. `warn` applies the pin anyway, records a `model_not_served_warning` decision on the Automaton and raises a warning. A node that is not a registered compute node is refused in both modes.
+
+#### Served models cache age
+
+`autonomous.model_routing.served_models_cache_seconds` — how long, in whole seconds, a node's list of served models is kept before the node is read again (default 300). The answer is kept whether the read worked or failed. `0` reads the node every time, so a freshly pulled model is seen at once, at the cost of a read on every pin. Refresh on the node view, `--refresh` on the CLI and `refresh=true` on the read always read the node now.
+
+<a id="verifier-follows-the-workers-node"></a>
+
+#### Verifier follows the worker's node
+
+`autonomous.model_routing.verifier_follows_worker_node` — when on (the default), the verification job for a task runs on the node its worker ran on, and waits for that node instead of moving to another one, as long as that node is one of the verifier's candidates and serves the verifier's model. When off, or when the node cannot be followed, the verifier is placed like any other job; a `verifier_node_not_followed` decision says why.
+
+#### Unreachable node policy
+
+`autonomous.model_routing.unknown_node_policy` — how a node whose served models cannot be read counts: `assume_serves` (the default) counts it as serving the model, so a node that is down does not block a pin, and `assume_not` counts it as not serving, so a pin is refused unless a node that was read serves the model. A node of a kind that has no model list to read counts as unreadable too.
+
+#### Node probe timeout
+
+`autonomous.model_routing.probe_timeout_seconds` — how long, in whole seconds, one read of a node's served models may take before the node counts as unreadable (default 8, minimum 1). Raise it for a slow or distant node; lower it to find out sooner that a node is down.
+
+#### Model routing refusal alert
+
+`autonomous.model_routing.alert_on_refusal` — when on (the default), a pin that no node can serve raises one alert titled *Automaton model not served by any node*: at error level when the pin was refused, at warning level when `refusal_mode` is `warn` and the pin was applied. Turn it off to keep the refusal message in the reply only.
 
 ---
 
