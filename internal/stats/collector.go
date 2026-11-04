@@ -138,6 +138,14 @@ type SystemStats struct {
 	WorkerQuestionsParked    int64 `json:"worker_questions_parked,omitempty"`
 	WorkerQuestionsResumed   int64 `json:"worker_questions_resumed,omitempty"`
 
+	// Safe-to-delete report (autonomous manager): duration in
+	// milliseconds of the most recent safe-to-delete computation, and the
+	// totals of computations over the warning threshold and of failed
+	// computations. Populated in the autonomous stats callback.
+	SafeDeleteLastMS          int64  `json:"safe_delete_last_ms,omitempty"`
+	SafeDeleteSlowReports     uint64 `json:"safe_delete_slow_reports,omitempty"`
+	SafeDeleteRefreshFailures uint64 `json:"safe_delete_refresh_failures,omitempty"`
+
 	// UI prompt interstitials (ui_prompt.* settings): the daemon-side
 	// dismissal outcome counters for recognised interstitial prompts, since
 	// daemon start (in-memory only — reset on restart). Filled by the
