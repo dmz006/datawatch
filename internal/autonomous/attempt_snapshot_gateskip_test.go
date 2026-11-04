@@ -133,13 +133,13 @@ func TestSnapshotAttemptWorkWithSkips_GateReportIsCountsOnly(t *testing.T) {
 	}
 	os.Stdout = w
 	ref, skipped, err := SnapshotAttemptWorkWithSkips(context.Background(), dir, "gateprint", 1)
-	w.Close()
+	_ = w.Close()
 	os.Stdout = oldStdout
 	var buf strings.Builder
 	if _, err := io.Copy(&buf, r); err != nil {
 		t.Fatal(err)
 	}
-	r.Close()
+	_ = r.Close()
 	out := buf.String()
 
 	if err != nil {

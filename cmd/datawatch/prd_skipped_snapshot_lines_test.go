@@ -41,10 +41,10 @@ func runPRDGet(t *testing.T, args ...string) (cmdOut string, stdout string) {
 	cmd.SetErr(out)
 	cmd.SetArgs(args)
 	if err := cmd.Execute(); err != nil {
-		w.Close()
+		_ = w.Close()
 		t.Fatalf("execute: %v (output: %s)", err, out)
 	}
-	w.Close()
+	_ = w.Close()
 	data, _ := io.ReadAll(r)
 	return out.String(), string(data)
 }

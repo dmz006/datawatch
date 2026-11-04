@@ -911,16 +911,16 @@ func newAutonomousPRDGetCmd() *cobra.Command {
 				prettyPrint(body)
 			}
 			if line := prdPushLine(body); line != "" {
-				fmt.Fprintln(out, line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			if line := prdReviewLine(body); line != "" {
 				fmt.Println(line)
 			}
 			if line := prdParallelLine(body); line != "" {
-				fmt.Fprintln(out, line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			for _, line := range prdTaskMergeLines(body) {
-				fmt.Fprintln(out, line)
+				_, _ = fmt.Fprintln(out, line)
 			}
 			// Counts-first line per task with a non-empty
 			// skipped_snapshot_paths ("left unstaged: <task> N (reason=count, ...)");
