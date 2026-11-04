@@ -1146,12 +1146,83 @@ func (l *Ledger) refreshAdoptedLocked(ls *Lease, req Request, sessionID string) 
 	if sessionID != "" {
 		ls.SessionID = sessionID
 	}
+	if req.Node == "" && len(req.NodeChoices) == 0 && !req.NodeUnknown &&
+		!samePoolSet(nonNodePools(ls.Pools), nonNodePools(req.Pools)) {
+		l.rehomeLocked(ls, req.Pools, "")
+		return
+	}
 	if ls.Node == "" && req.Node != "" {
 		ls.NodeUnknown = false
 		l.placeAdoptedLocked(ls, req.Node)
 	} else if ls.Node == "" && req.NodeUnknown {
 		ls.NodeUnknown = true
 	}
+}
+
+// nonNodePools returns pools without the node:<name> entries.
+func nonNodePools(pools []string) []string {
+	var out []string
+	for _, p := range pools {
+		if !strings.HasPrefix(p, "node:") {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// samePoolSet reports whether a and b hold the same names, ignoring order.
+func samePoolSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, p := range a {
+		seen[p]++
+	}
+	for _, p := range b {
+		if seen[p] == 0 {
+			return false
+		}
+		seen[p]--
+	}
+	return true
+}
+
+// Rehome moves the lease held by holder onto pools. node:<node> is added only
+// when node is non-empty; with an empty node the lease gives up its node and
+// clears NodeOverflow and NodeUnknown. Acquired, SessionID and PRDID are kept
+// and the lease count does not change. Waiters queued on a freed pool are
+// granted in the same call. It returns false, changing nothing, when holder
+// holds no lease.
+func (l *Ledger) Rehome(holder string, pools []string, node string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ls, ok := l.leases[holder]
+	if !ok {
+		return false
+	}
+	l.rehomeLocked(ls, pools, node)
+	return true
+}
+
+func (l *Ledger) rehomeLocked(ls *Lease, pools []string, node string) {
+	ls.Pools = poolsWithNode(pools, node)
+	ls.Node = node
+	if node == "" {
+		ls.NodeOverflow = false
+		ls.NodeUnknown = false
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+}
+
+// poolsWithNode copies pools and appends node:<node> when node is set and absent.
+func poolsWithNode(pools []string, node string) []string {
+	out := append([]string(nil), pools...)
+	if node != "" && !sharesPool(out, []string{"node:" + node}) {
+		out = append(out, "node:"+node)
+	}
+	return out
 }
 
 // placeAdoptedLocked records that the adopted lease ls runs on node. It joins
