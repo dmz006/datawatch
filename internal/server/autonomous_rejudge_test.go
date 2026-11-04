@@ -31,13 +31,13 @@ import (
 // refusal) while recording the (id, actor) it was called with.
 type rejudgeAPI struct {
 	fakeOrchAutonomous
-	calls []struct{ id, actor string }
+	calls []struct{ id, actor, backend string }
 	err   error
 	prd   any // the fake PRD (a *autonomous.PRD) returned on a pass
 }
 
-func (a *rejudgeAPI) RejudgeCompletionGuardrail(prdID, actor string) (any, error) {
-	a.calls = append(a.calls, struct{ id, actor string }{prdID, actor})
+func (a *rejudgeAPI) RejudgeCompletionGuardrail(prdID, actor, backend string) (any, error) {
+	a.calls = append(a.calls, struct{ id, actor, backend string }{prdID, actor, backend})
 	if a.err != nil {
 		return nil, a.err
 	}

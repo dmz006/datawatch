@@ -2583,6 +2583,45 @@ paths:
         "400": {description: "An invalid entry — message names the offending kind (or its index) and lists the valid kinds; nothing is changed"}
         "405": {description: "POST-only action"}
 
+  /api/autonomous/prds/{id}/rejudge:
+    post:
+      summary: Re-run the rules-review completion guardrail for a blocked Automaton
+      description: |
+        Re-runs the PRD-completion "rules-review" judgment for a PRDBlocked
+        Automaton whose work is fully done — every task in every story at
+        `task_completed` — without resetting or editing any task. The verdict
+        and a `guardrail_rejudge` decision (naming the acting `actor`)
+        are recorded on the Automaton's decision log; a pass unblocks the
+        Automaton (status `prd_completed`), a block keeps it `prd_blocked`
+        with its blocked reason set from the verdict. No tasks are retried
+        afterwards — a pass ends the Automaton and a block waits for operator
+        action again.
+        `backend` is the reroute of the review state whose `action` is
+        `reroute`: it names the judge backend the re-judgment runs on, beating
+        the resolved tier (pinned, and even making the run possible when no
+        tier resolves) — typically the Automaton's stronger guardrail
+        backend. Omit it to re-run the resolved tier. Needs the autonomous
+        write capability when called by a federated peer; any other method is
+        rejected with 405.
+      operationId: autonomousPRDRejudge
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Who asked; recorded on the guardrail_rejudge decision. Default the operator."}
+                backend: {type: string, description: "Optional judge backend reroute (the review state action `reroute`); empty = the resolved tier"}
+      responses:
+        "200": {description: "Rejudge complete; the guardrail verdict and outcome are in the Automaton's decision log"}
+        "400": {description: "Refused: unknown Automaton, not PRDBlocked, a task not completed (the message names the first offending task and its status), or no verdict was produced — each refusal says why"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST-only action"}
+
   /api/autonomous/tags:
     get:
       summary: List Automata tags
@@ -3140,6 +3179,13 @@ paths:
         deleted, on the Automaton branch against its merge base, lock files left
         out) above which the judges try `claude-code` first, default 400; 0 turns
         the size rule off.
+        `judge_strong_backend` (empty = unset) is the stronger backend that
+        guarded or should guard a review: when the review's judge timed out on
+        every backend it tried and none of them was this one, the review state's
+        action is `reroute` (run the judge on that backend instead) instead of
+        `retry`. `judge_verdict_cache_enabled` (boolean; an unset key reads
+        true) is the per-run-id judge verdict cache: a verdict that ran is
+        reused for the same run id and never re-judged.
         `scope_lint` (off|warn|enforce, default enforce) is the pre-spawn scope
         lint mode: the effective, normalized value is returned.
         The `automation` object carries the search-before-create settings:
@@ -3242,6 +3288,15 @@ paths:
         `judge_size_threshold_lines` is a whole number of changed lines of 0 or more
         (0 = size-aware judge routing off, default 400). `PUT /api/config` with the
         key `autonomous.judge_size_threshold_lines` rejects anything else with 400.
+        `judge_strong_backend` (string; `PUT /api/config` key
+        `autonomous.judge_strong_backend`) is the stronger guardrail backend named
+        by reroute reviews - a non-string is rejected with 400 naming the key, and
+        the empty string clears it. `judge_verdict_cache_enabled` (JSON boolean;
+        key `autonomous.judge_verdict_cache_enabled`) is the per-run-id judge
+        verdict cache (true = a verdict that ran for a run id is reused, never
+        re-judged; false = off); a non-boolean - including null - is rejected with
+        400 naming the key. Each change applies to the next review without a
+        restart.
         `scope_lint` (off|warn|enforce, default enforce) sets the pre-spawn scope
         lint mode; any other value is rejected with 400. `PUT /api/config` accepts
         it as `autonomous.scope_lint`.
@@ -8677,12 +8732,34 @@ components:
         push_warning: {type: string, description: 'reason no push was made (push_state=not_pushed only)'}
         stories: {type: array, items: {type: object}, description: story+task tree (full view)}
         ci_watch: {type: object, description: ci-watch completion guardrail result, when it ran}
+        review_state: {$ref: '#/components/schemas/AutonomousPrdReviewState'}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
         merged_in_release: {type: string, description: 'shipped state: the release the work landed in. Present when the work shipped'}
         merged_at: {type: string, format: date-time, description: 'shipped state: when it merged (RFC 3339)'}
         merge_commit: {type: string, description: 'shipped state: the default-branch merge commit — its being non-empty is what makes the record shipped; recording it never changes the status'}
         shipped_source: {type: string, enum: [merge_step, backfill], description: 'shipped state: where the record came from'}
+
+    AutonomousPrdReviewState:
+      type: object
+      description: |
+        Where the Automaton's review stands, computed from the verdicts
+        recorded on it (its own, then each story's and task's) and never stored:
+        the newest block decides unless a strictly newer pass superseded it.
+        `timed_out` is a judge-timeout hold - the judge hit its time limit on
+        every backend it tried, so the review is held, not approved or blocked
+        by a judgment; its `cause` names the backends that timed out and their
+        time limit, and its `action` is `reroute` (the stronger guardrail
+        backend is configured and none of the timed-out attempts tried it) or
+        `retry` (run the judge again on the same backend list). `blocked` is a
+        real judgment - the verdict's issues say what to fix (action `fix`).
+        `passed` reads as passed with no action.
+      required: [state, attempts]
+      properties:
+        state: {type: string, enum: [passed, blocked, timed_out, pending], description: 'review outcome'}
+        cause: {type: string, description: 'one-line account of why the review is in this state; absent when there is nothing to name or it is pending with no warnings'}
+        action: {type: string, enum: [fix, retry, reroute], description: 'the next step the review state points to; absent for pending'}
+        attempts: {type: integer, description: 'judge attempts behind the deciding verdict (one record per backend); 0 for a single-judgment verdict and for pending'}
 
     AutonomousPrdList:
       type: object
