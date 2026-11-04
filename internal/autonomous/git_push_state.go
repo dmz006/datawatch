@@ -30,36 +30,44 @@ func (m *Manager) recordPushOutcome(prd *PRD, res git.PushResult, policy git.Pus
 	if reason == "" {
 		reason = string(res.Kind)
 	}
+	id := prd.ID
 	if res.Pushed || res.NothingToPush {
 		now := time.Now()
-		prd.Git.PushState = PushStatePushed
-		prd.Git.PushedRef = res.Ref
-		prd.Git.PushedSHA = res.SHA
-		prd.Git.PushedAt = &now
-		prd.Git.PushWarning = ""
-		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-			At:   now,
-			Kind: "git_pushed",
-		}))
+		// prd is the shared stored pointer (Store.GetPRD); mutate under the
+		// store lock. SavePRD also takes Store.mu (non-reentrant), so it stays
+		// out of the closure.
+		m.store.WithLock(func() {
+			prd.Git.PushState = PushStatePushed
+			prd.Git.PushedRef = res.Ref
+			prd.Git.PushedSHA = res.SHA
+			prd.Git.PushedAt = &now
+			prd.Git.PushWarning = ""
+			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+				At:   now,
+				Kind: "git_pushed",
+			}))
+		})
 	} else {
 		now := time.Now()
-		prd.Git.PushState = PushStateNotPushed
-		prd.Git.PushWarning = "not pushed: " + reason
-		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
-			At:   now,
-			Kind: "git_not_pushed",
-			Note: reason,
-		}))
+		m.store.WithLock(func() {
+			prd.Git.PushState = PushStateNotPushed
+			prd.Git.PushWarning = "not pushed: " + reason
+			prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+				At:   now,
+				Kind: "git_not_pushed",
+				Note: reason,
+			}))
+		})
 		m.mu.Lock()
 		alertSink := m.alertSink
 		m.mu.Unlock()
 		if alertSink != nil {
-			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", prd.ID), reason)
+			alertSink("warn", fmt.Sprintf("Automaton %s not pushed", id), reason)
 		}
-		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", prd.ID, policy, reason)
+		log.Printf("autonomous: prd %s push-on-complete (%s) failed: %s", id, policy, reason)
 	}
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() { prd.UpdatedAt = time.Now() })
 	if err := m.store.SavePRD(prd); err != nil {
-		log.Printf("autonomous: prd %s saving push state: %v", prd.ID, err)
+		log.Printf("autonomous: prd %s saving push state: %v", id, err)
 	}
 }
