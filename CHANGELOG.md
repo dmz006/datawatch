@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.90.1 — Fix the daemon crash from unlocked writes to stored Automata
+
+The daemon crash from writes to a stored Automaton made without the store lock is fixed, and the race tests now pass.
+
+- **The crash.** On 2026-11-04 the daemon aborted with `panic: reflect: slice index out of range` in the store's deep copy, reached from `SavePRD`: another goroutine had shortened or replaced a slice of the same stored Automaton at that moment. systemd restarted it within seconds.
+- **The fix.** Every unlocked write to a stored Automaton, story or task that the audit found now runs inside the store lock (or on a copy that is saved), across the autonomous package: the push outcome and metrics, the retry and hold paths, the shipped backfill, tags, the verifier policy records, the uncommitted-work holds and others. The Store API is unchanged.
+- **Tests.** A regression test runs saves and the fixed writers concurrently under the race detector, and the two tests that failed under `-race` on main now pass. `go test -race ./internal/autonomous/` passes at `GOMAXPROCS=1` (196 seconds).
+- Known gaps: two readers (the boot-resume park and the task effort ceiling) still read shared fields outside the lock and are not covered; the package under the race detector takes about 10 minutes on a loaded host, close to the default test timeout; and one timing-sensitive safe-delete cache test flakes about 1 in 6 runs.
+
 ## v9.90.0 — Configurable splash dwell with early dismiss
 
 The splash screen's on-screen time is now configurable, and a tap or key press dismisses it.
