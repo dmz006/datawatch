@@ -92,8 +92,8 @@ func TestLearning_PRDLevelRulesReviewExhausted_WritesRow(t *testing.T) {
 
 	_ = m.Run(context.Background(), prd.ID, fakeSpawn, fakeVerify)
 	prd, _ = m.Store().GetPRD(prd.ID)
-	if prd.Status != PRDBlocked {
-		t.Fatalf("status = %s, want blocked once the content budget is exhausted", prd.Status)
+	if prd.Status != PRDNeedsReview {
+		t.Fatalf("status = %s, want needs_review once the content budget is exhausted", prd.Status)
 	}
 
 	learnings := m.Store().ListLearnings()

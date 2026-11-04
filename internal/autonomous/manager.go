@@ -1538,6 +1538,10 @@ type Manager struct {
 	// fake so attempt durations are exact. Set before the Manager runs.
 	attemptClock func() time.Time
 
+	// synthesizeFn — test seam for the rules review rollup's corrective
+	// work creation. Nil uses synthesizeCorrectiveWork.
+	synthesizeFn func(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error)
+
 	// gitPushConfigFn — when set, returns the daemon's live push-on-complete
 	// settings (git.push_on_complete, git.push_remote). Read on every use of
 	// effectivePushPolicy so a runtime config change applies without restart.

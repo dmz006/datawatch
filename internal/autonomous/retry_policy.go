@@ -429,7 +429,13 @@ func (m *Manager) runGuardrailInfraRetry(ctx context.Context, prd *PRD, inv Guar
 // check once it completes. The PRD-level caller passes "" (no single
 // story owns a PRD-wide finding), creating a standalone new story.
 func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error) {
-	attempt := prd.RetryCountsByCategory["content"]
+	return m.synthesizeCorrectiveWorkAttempt(prd, verdict, targetStoryID, prd.RetryCountsByCategory["content"])
+}
+
+// synthesizeCorrectiveWorkAttempt is synthesizeCorrectiveWork with the
+// attempt number named by the caller, for callers that create the work
+// before consuming the retry budget.
+func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVerdict, targetStoryID string, attempt int) (*Story, *Task, error) {
 	title := fmt.Sprintf("Auto-fix: %s findings (attempt %d)", verdict.Guardrail, attempt)
 	spec := contentFixHint(verdict)
 
