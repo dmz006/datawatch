@@ -61,6 +61,17 @@ func TestMergeMCP_MergeReadsRoute(t *testing.T) {
 	}
 }
 
+func TestMergeMCP_SafeToDeleteDescriptionMentionsComputedAt(t *testing.T) {
+	s := &Server{}
+	desc := s.toolAutonomousSafeToDelete().Description
+	if !strings.Contains(desc, "computed_at") {
+		t.Errorf("tool description does not mention computed_at:\n%s", desc)
+	}
+	if !strings.Contains(desc, "stale") {
+		t.Errorf("tool description does not mention the stale flag:\n%s", desc)
+	}
+}
+
 func TestMergeMCP_SafeToDeleteReadsRoute(t *testing.T) {
 	var path, method, rawQuery string
 	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {

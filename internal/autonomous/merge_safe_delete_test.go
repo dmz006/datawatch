@@ -327,3 +327,52 @@ func TestSafeToDeleteFallsBackToRevListWhenAheadBehindFails(t *testing.T) {
 		t.Fatalf("cherry calls for automaton/two = %d, want 0", got)
 	}
 }
+
+// TestRenderSafeToDeleteComputedAtAndStaleLines proves the renderer prints
+// the computed-at stamp, as given, and the stale note only when the report
+// is stale.
+func TestRenderSafeToDeleteComputedAtAndStaleLines(t *testing.T) {
+	rep := SafeDeleteReport{
+		Safe:       []SafeDeleteEntry{{Branch: "automaton/done", Reason: "all commits on main"}},
+		ComputedAt: "2026-01-02T09:30:00Z",
+	}
+	got := RenderSafeToDelete(rep)
+	if !strings.Contains(got, "Computed at 2026-01-02T09:30:00Z") {
+		t.Errorf("missing the computed-at line:\n%s", got)
+	}
+	if strings.Contains(got, "stale") {
+		t.Errorf("fresh report must not carry the stale note:\n%s", got)
+	}
+	rep.Stale = true
+	got = RenderSafeToDelete(rep)
+	if !strings.Contains(got, "This report is stale; a refresh is under way or due.") {
+		t.Errorf("stale report missing the stale note:\n%s", got)
+	}
+	if !strings.Contains(got, "Computed at 2026-01-02T09:30:00Z") {
+		t.Errorf("stale report lost the computed-at line:\n%s", got)
+	}
+	// A report without either field renders exactly as before.
+	if got := RenderSafeToDelete(SafeDeleteReport{Safe: rep.Safe}); strings.Contains(got, "Computed at") || strings.Contains(got, "stale") {
+		t.Errorf("report without meta fields must not gain meta lines:\n%s", got)
+	}
+}
+
+// TestParseSafeToDeleteAcceptsBodiesWithAndWithoutMetaFields proves parsing
+// stays tolerant of the new fields: bodies from before they existed still
+// parse, and stamped bodies carry the values through.
+func TestParseSafeToDeleteAcceptsBodiesWithAndWithoutMetaFields(t *testing.T) {
+	old, err := ParseSafeToDelete([]byte(`{"safe":[],"held":[],"held_dirty":0}`))
+	if err != nil {
+		t.Fatalf("a pre-field body must still parse: %v", err)
+	}
+	if old.ComputedAt != "" || old.Stale {
+		t.Errorf("pre-field body must parse with empty meta: %+v", old)
+	}
+	rep, err := ParseSafeToDelete([]byte(`{"safe":[],"held":[],"held_dirty":0,"computed_at":"2026-01-02T09:30:00Z","stale":true}`))
+	if err != nil {
+		t.Fatalf("stamped body: %v", err)
+	}
+	if rep.ComputedAt != "2026-01-02T09:30:00Z" || !rep.Stale {
+		t.Errorf("stamped body not carried through: %+v", rep)
+	}
+}

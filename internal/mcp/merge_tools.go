@@ -20,7 +20,7 @@ func (s *Server) toolAutonomousMerge() mcpsdk.Tool {
 
 func (s *Server) toolAutonomousSafeToDelete() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_safe_to_delete",
-		mcpsdk.WithDescription("Read the safe-to-delete report for Automaton work branches and worktrees: \"safe\" lists the branches that can be deleted, \"held\" lists the ones that must stay (not merged yet, or a worktree with uncommitted changes) and \"held_dirty\" counts the dirty ones. Read-only; the same object as GET /api/autonomous/safe-to-delete. It never deletes anything — deleting is a separate step the operator approves."),
+		mcpsdk.WithDescription("Read the safe-to-delete report for Automaton work branches and worktrees: \"safe\" lists the branches that can be deleted, \"held\" lists the ones that must stay (not merged yet, or a worktree with uncommitted changes) and \"held_dirty\" counts the dirty ones. Read-only; the same object as GET /api/autonomous/safe-to-delete. It never deletes anything — deleting is a separate step the operator approves. The result is cached and carries computed_at and stale; a stale read is refreshed in the background."),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
