@@ -69,11 +69,15 @@ type LLMOverrideResult struct {
 
 // unstartedTask is the "not started yet" predicate a queued-mode override
 // may act on: ready or in line (pending/queued), waiting for a capacity
-// lease (waiting_capacity), waiting for a decision or approval — none of
-// which has begun execution. Running (in_progress, running_tests,
-// verifying) and finished (completed, failed, cancelled) tasks are never
-// modified, along with parked/blocked and review-needed tasks.
+// lease (waiting_capacity), waiting for a decision or approval, or never
+// scheduled at all (empty status — a freshly created task). Running
+// (in_progress, running_tests, verifying) and finished (completed, failed,
+// cancelled) tasks are never modified, along with parked/blocked and
+// review-needed tasks.
 func unstartedTask(s TaskStatus) bool {
+	if s == "" {
+		return true
+	}
 	switch s {
 	case TaskPending, TaskQueued, TaskWaitingCapacity, TaskWaitingDecision, TaskAwaitingApproval:
 		return true
@@ -175,6 +179,16 @@ func (m *Manager) applyQueuedTaskLLM(prdID, taskID, backend, effort, model, acto
 	task, story := findTaskInPRD(prd, taskID)
 	if task == nil {
 		return nil, nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	// Same started-task rule as the story-level path, and the documented
+	// SetTaskLLM contract: queued mode never rewrites a task that is running
+	// or already finished — it is returned in left_alone with the reason and
+	// its record is left exactly as it was.
+	if !unstartedTask(task.Status) {
+		updated, _ := m.store.GetPRD(prdID)
+		return updated, &LLMOverrideResult{
+			LeftAlone: []LLMOverrideOutcome{{TaskID: taskID, Reason: taskLeftAloneReason(task.Status)}},
+		}, nil
 	}
 	// Refuse before any field changes: check the pair the task will run
 	// with, after the task's new values are applied over the story and the
