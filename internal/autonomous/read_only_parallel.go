@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"path"
 	"strings"
 )
 
@@ -28,15 +29,61 @@ func readOnlyWriteScope(readOnly bool, scope []string) []string {
 	return scope
 }
 
+// reportPathOf returns the task's report path, only when the task is
+// read-only; a non-read-only task's ReportPath is ignored.
+func reportPathOf(t *Task) string {
+	if t == nil || !t.ReadOnly {
+		return ""
+	}
+	return t.ReportPath
+}
+
+// validateReportPath checks that p is a legal report path for a
+// read-only task: repo-relative (not absolute), no .. segment, already
+// clean, and under .datawatch/reports/. Empty is valid (the task
+// writes nothing).
+func validateReportPath(p string) error {
+	if p == "" {
+		return nil
+	}
+	if strings.HasPrefix(p, "/") {
+		return fmt.Errorf("report path %q must be repo-relative, not absolute", p)
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return fmt.Errorf("report path %q must not contain a .. segment", p)
+		}
+	}
+	if path.Clean(p) != p {
+		return fmt.Errorf("report path %q must be clean (path.Clean(p) == p)", p)
+	}
+	if !strings.HasPrefix(p, ".datawatch/reports/") {
+		return fmt.Errorf("report path %q must lie under .datawatch/reports/", p)
+	}
+	return nil
+}
+
 // readOnlyTreeStatus returns the porcelain status of the task's tree. ok is
 // false when the tree cannot be inspected (no tree, not a repo, git missing),
-// in which case no violation can be judged.
+// in which case no violation can be judged. When the task has a report path,
+// that one path is excluded too, so the single allowed write does not
+// register as dirty.
 func (m *Manager) readOnlyTreeStatus(ctx context.Context, prd *PRD, t *Task) (string, bool) {
 	_, root, err := ResolveTreeKey(prd, t)
 	if err != nil {
 		return "", false
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude).datawatch") // #nosec G204 -- fixed subcommand; root comes from the PRD's resolved tree
+	args := []string{"-C", root, "status", "--porcelain", "--untracked-files=all", "--", ".", ":(exclude).datawatch"}
+	// An unvalidated path is never passed to git: if the path fails
+	// validateReportPath the exclusion is simply not applied, so a write
+	// there still registers as dirty.
+	if rp := reportPathOf(t); rp != "" && validateReportPath(rp) == nil {
+		args = append(args, ":(exclude)"+rp)
+	}
+	// #nosec G204 -- fixed "git" binary and fixed subcommand; the root comes
+	// from the PRD's resolved tree and any report path was validated by
+	// validateReportPath above, so every argument stays inside the root.
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- see note above
 	out, err := cmd.Output()
 	if err != nil {
 		return "", false

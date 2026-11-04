@@ -1231,17 +1231,18 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			TaskID   string `json:"task_id"`
-			NewSpec  string `json:"new_spec"`
-			ReadOnly *bool  `json:"read_only,omitempty"`
-			Actor    string `json:"actor"`
+			TaskID     string `json:"task_id"`
+			NewSpec    string `json:"new_spec"`
+			ReadOnly   *bool  `json:"read_only,omitempty"`
+			ReportPath string `json:"report_path,omitempty"`
+			Actor      string `json:"actor"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil) {
-			http.Error(w, "task_id and at least one of new_spec / read_only required", http.StatusBadRequest)
+		if req.TaskID == "" || (req.NewSpec == "" && req.ReadOnly == nil && req.ReportPath == "") {
+			http.Error(w, "task_id and at least one of new_spec / read_only / report_path required", http.StatusBadRequest)
 			return
 		}
 		if msg, refuse := truncationRefusal("new_spec", req.NewSpec); refuse {
@@ -1251,7 +1252,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.Actor)
+		updated, err := s.autonomousMgr.EditTask(id, req.TaskID, req.NewSpec, req.ReadOnly, req.ReportPath, req.Actor)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1379,12 +1380,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			StoryID   string   `json:"story_id"`
-			Title     string   `json:"title"`
-			Spec      string   `json:"spec"`
-			Actor     string   `json:"actor"`
-			DependsOn []string `json:"depends_on,omitempty"`
-			ReadOnly  bool     `json:"read_only,omitempty"`
+			StoryID    string   `json:"story_id"`
+			Title      string   `json:"title"`
+			Spec       string   `json:"spec"`
+			Actor      string   `json:"actor"`
+			DependsOn  []string `json:"depends_on,omitempty"`
+			ReadOnly   bool     `json:"read_only,omitempty"`
+			ReportPath string   `json:"report_path,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -1401,7 +1403,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.AddTaskReadOnly(id, req.StoryID, req.Title, req.Spec, req.Actor, req.DependsOn, req.ReadOnly)
+		updated, err := s.autonomousMgr.AddTaskReadOnly(id, req.StoryID, req.Title, req.Spec, req.Actor, req.DependsOn, req.ReadOnly, req.ReportPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

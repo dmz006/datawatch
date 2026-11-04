@@ -971,8 +971,8 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	}
 	return out, err
 }
-func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (any, error) {
-	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, actor)
+func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error) {
+	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, reportPath, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}
@@ -1088,8 +1088,8 @@ func (a *API) AddTask(prdID, storyID, title, spec, actor string, dependsOn []str
 	}
 	return out, err
 }
-func (a *API) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (any, error) {
-	out, err := a.M.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, readOnly)
+func (a *API) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool, reportPath string) (any, error) {
+	out, err := a.M.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, readOnly, reportPath)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

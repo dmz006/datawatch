@@ -1117,6 +1117,7 @@ func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
 		mcpsdk.WithString("new_spec", mcpsdk.Description("New spec text (omit to leave the spec unchanged when only changing read_only) — the full spec text: read the existing spec first from autonomous_prd_get with detail=full, which returns task specs whole and uncut; a spec carrying a capped view's truncation marker is refused (the daemon answers the same refusal with a 400)")),
 		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only (it changes no files, so it may skip the tree lock) or clear the mark. Omit to leave unchanged.")),
+		mcpsdk.WithString("report_path", mcpsdk.Description("Optional: the one repo-relative file the read-only task may write, under .datawatch/reports/. The task must be read_only (set it via read_only in the same call if needed) or it is rejected.")),
 	)
 }
 func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1136,6 +1137,9 @@ func (s *Server) handleAutonomousPRDEditTask(_ context.Context, req mcpsdk.CallT
 	}
 	if _, present := req.GetArguments()["read_only"]; present {
 		editBody["read_only"] = req.GetBool("read_only", false)
+	}
+	if v := req.GetString("report_path", ""); v != "" {
+		editBody["report_path"] = v
 	}
 	body, _ := json.Marshal(editBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/edit_task", body)
@@ -1230,18 +1234,23 @@ func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 		mcpsdk.WithString("spec", mcpsdk.Description("Task spec — concrete instructions for the worker session")),
 		mcpsdk.WithArray("depends_on", mcpsdk.Description("Task IDs (within the same PRD) that must complete before this one becomes eligible. Each must already exist."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("read_only", mcpsdk.Description("Mark the task read-only: it changes no files, so it may skip the tree lock. Default false.")),
+		mcpsdk.WithString("report_path", mcpsdk.Description("Optional: the one repo-relative file the read-only task may write, under .datawatch/reports/. Requires read_only=true.")),
 	)
 }
 func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]any{
+	addBody := map[string]any{
 		"story_id":   req.GetString("story_id", ""),
 		"title":      req.GetString("title", ""),
 		"spec":       req.GetString("spec", ""),
 		"actor":      "operator",
 		"depends_on": req.GetStringSlice("depends_on", nil),
 		"read_only":  req.GetBool("read_only", false),
-	})
+	}
+	if v := req.GetString("report_path", ""); v != "" {
+		addBody["report_path"] = v
+	}
+	body, _ := json.Marshal(addBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_task", body)
 	if err != nil {
 		return nil, err

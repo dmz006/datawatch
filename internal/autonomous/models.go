@@ -1312,6 +1312,11 @@ type Task struct {
 	// the tree lock (see EffectiveReadOnlyTasks).
 	ReadOnly bool `json:"read_only,omitempty"`
 
+	// ReportPath is the one repo-relative path a read-only task may
+	// write (see validateReportPath); empty means it writes nothing. It
+	// is only honored when ReadOnly is set (see reportPathOf).
+	ReportPath string `json:"report_path,omitempty"`
+
 	// WorktreePath / WorktreeBranch name the task's own git worktree and
 	// branch while worktree_per_task is on (see EnsureTaskWorktree). Empty
 	// when the task works in the PRD worktree.

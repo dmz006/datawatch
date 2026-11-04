@@ -930,18 +930,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous request-revision", prettyJSON(out))
 	case "edit-task", "edit_task":
-		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [<new-spec…>]"
+		const editTaskUsage = "usage: autonomous edit-task <prd-id> <task-id> [read_only=true|false] [report_path=<path>] [<new-spec…>]"
 		if len(args) < 4 {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
-		rest, readOnly, roErr := takeReadOnlyToken(args[3:])
-		if roErr != nil {
-			r.reply("autonomous edit-task failed", roErr.Error())
+		rest, readOnly, reportPath, tokErr := takeTaskTokens(args[3:])
+		if tokErr != nil {
+			r.reply("autonomous edit-task failed", tokErr.Error())
 			return
 		}
 		newSpec := strings.TrimSpace(strings.Join(rest, " "))
-		if newSpec == "" && readOnly == nil {
+		if newSpec == "" && readOnly == nil && reportPath == "" {
 			r.reply("autonomous edit-task failed", editTaskUsage)
 			return
 		}
@@ -955,6 +955,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		if readOnly != nil {
 			editBody["read_only"] = *readOnly
+		}
+		if reportPath != "" {
+			editBody["report_path"] = reportPath
 		}
 		body, _ := json.Marshal(editBody)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/edit_task", string(body))
@@ -1025,18 +1028,19 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous remove-story", prettyJSON(out))
 	case "add-task", "add_task":
+		const addTaskUsage = "usage: autonomous add-task <prd-id> <story-id> [read_only=true|false] [report_path=<path>] <title…>"
 		if len(args) < 4 {
-			r.reply("autonomous add-task failed", "usage: autonomous add-task <prd-id> <story-id> [read_only=true|false] <title…>")
+			r.reply("autonomous add-task failed", addTaskUsage)
 			return
 		}
-		rest, readOnly, roErr := takeReadOnlyToken(args[3:])
-		if roErr != nil {
-			r.reply("autonomous add-task failed", roErr.Error())
+		rest, readOnly, reportPath, tokErr := takeTaskTokens(args[3:])
+		if tokErr != nil {
+			r.reply("autonomous add-task failed", tokErr.Error())
 			return
 		}
 		title := strings.TrimSpace(strings.Join(rest, " "))
 		if title == "" {
-			r.reply("autonomous add-task failed", "usage: autonomous add-task <prd-id> <story-id> [read_only=true|false] <title…>")
+			r.reply("autonomous add-task failed", addTaskUsage)
 			return
 		}
 		if msg, refuse := commTruncationRefusal("add-task", "title", title); refuse {
@@ -1046,6 +1050,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 		addBody := map[string]any{"story_id": args[2], "title": title, "actor": "operator"}
 		if readOnly != nil && *readOnly {
 			addBody["read_only"] = true
+		}
+		if reportPath != "" {
+			addBody["report_path"] = reportPath
 		}
 		body, _ := json.Marshal(addBody)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/add_task", string(body))
@@ -1878,16 +1885,36 @@ func (r *Router) handleMCPResCmd(cmd Command) {
 // takeReadOnlyToken strips a leading read_only=<bool> token from args and
 // returns the remaining words plus the parsed flag (nil when absent).
 func takeReadOnlyToken(args []string) ([]string, *bool, error) {
-	if len(args) == 0 {
-		return args, nil, nil
+	rest, ro, _, err := takeTaskTokens(args)
+	return rest, ro, err
+}
+
+// takeTaskTokens strips leading read_only=<bool> and report_path=<path>
+// tokens (in either order) from args and returns the remaining words plus the
+// parsed values (flag nil / path empty when absent). Any other word ends the
+// token run and starts the positional text.
+func takeTaskTokens(args []string) ([]string, *bool, string, error) {
+	var ro *bool
+	var reportPath string
+	for len(args) > 0 {
+		k, v, ok := strings.Cut(args[0], "=")
+		if !ok {
+			break
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "read_only" || k == "read-only" {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return nil, nil, "", fmt.Errorf("read_only must be true or false, got %q", v)
+			}
+			ro = &b
+		} else if k == "report_path" {
+			reportPath = v
+		} else {
+			break
+		}
+		args = args[1:]
 	}
-	k, v, ok := strings.Cut(args[0], "=")
-	if !ok || (k != "read_only" && k != "read-only") {
-		return args, nil, nil
-	}
-	b, err := strconv.ParseBool(strings.TrimSpace(v))
-	if err != nil {
-		return nil, nil, fmt.Errorf("read_only must be true or false, got %q", v)
-	}
-	return args[1:], &b, nil
+	return args, ro, reportPath, nil
 }

@@ -3360,18 +3360,26 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // be corrected and retried without widening PRD dirs or recreating the PRD.
 // Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
-	return m.EditTask(prdID, taskID, newSpec, nil, actor)
+	return m.EditTask(prdID, taskID, newSpec, nil, "", actor)
 }
 
-// EditTask is EditTaskSpec plus the read_only flag: newSpec == "" leaves the
-// spec unchanged and readOnly == nil leaves the flag unchanged. The same PRD
-// and task status gates apply to both fields.
-func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (*PRD, error) {
-	if newSpec == "" && readOnly == nil {
-		return nil, fmt.Errorf("nothing to edit: pass a new spec and/or read_only")
+// EditTask is EditTaskSpec plus the read_only flag and the report path:
+// newSpec == "" leaves the spec unchanged, readOnly == nil leaves the flag
+// unchanged, and reportPath == "" leaves the path unchanged. A non-empty
+// reportPath is validated with validateReportPath and only accepted when the
+// task ends up read_only (already flagged, or flagged by this same edit).
+// The same PRD and task status gates apply to all fields.
+func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (*PRD, error) {
+	if newSpec == "" && readOnly == nil && reportPath == "" {
+		return nil, fmt.Errorf("nothing to edit: pass a new spec, a read_only flag, and/or a report_path")
 	}
 	if newSpec != "" {
 		if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
+			return nil, err
+		}
+	}
+	if reportPath != "" {
+		if err := validateReportPath(reportPath); err != nil {
 			return nil, err
 		}
 	}
@@ -3405,6 +3413,13 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor 
 				if readOnly != nil {
 					prd.Story[si].Tasks[ti].ReadOnly = *readOnly
 				}
+				if reportPath != "" {
+					readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly || (readOnly != nil && *readOnly)
+					if !readOnlyAfter {
+						return nil, fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
+					}
+					prd.Story[si].Tasks[ti].ReportPath = reportPath
+				}
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 				found = true
 				break
@@ -3420,7 +3435,7 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor 
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "edit_task", Actor: actor,
-		Note: editTaskNote(taskID, newSpec, readOnly),
+		Note: editTaskNote(taskID, newSpec, readOnly, reportPath),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -3950,21 +3965,35 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 }
 
 // editTaskNote renders the decision note for a task edit.
-func editTaskNote(taskID, newSpec string, readOnly *bool) string {
+func editTaskNote(taskID, newSpec string, readOnly *bool, reportPath string) string {
 	note := fmt.Sprintf("task=%s spec_chars=%d", taskID, len(newSpec))
 	if readOnly != nil {
 		note += fmt.Sprintf(" read_only=%t", *readOnly)
+	}
+	if reportPath != "" {
+		note += fmt.Sprintf(" report_path=%s", reportPath)
 	}
 	return note
 }
 
 // AddTask appends a new task to an existing story.
 func (m *Manager) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (*PRD, error) {
-	return m.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, false)
+	return m.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, false, "")
 }
 
-// AddTaskReadOnly is AddTask with the read_only flag set on the new task.
-func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (*PRD, error) {
+// AddTaskReadOnly is AddTask with the read_only flag set on the new task, and
+// optionally a single repo-relative report path it may write. A non-empty
+// reportPath is validated with validateReportPath and only accepted with
+// readOnly.
+func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool, reportPath string) (*PRD, error) {
+	if reportPath != "" {
+		if err := validateReportPath(reportPath); err != nil {
+			return nil, err
+		}
+		if !readOnly {
+			return nil, fmt.Errorf("report_path %q requires a read_only task; add the task with readOnly=true", reportPath)
+		}
+	}
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3980,11 +4009,16 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
-	if readOnly {
+	if readOnly || reportPath != "" {
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
 				if prd.Story[si].Tasks[ti].ID == task.ID {
-					prd.Story[si].Tasks[ti].ReadOnly = true
+					if readOnly {
+						prd.Story[si].Tasks[ti].ReadOnly = true
+					}
+					if reportPath != "" {
+						prd.Story[si].Tasks[ti].ReportPath = reportPath
+					}
 				}
 			}
 		}
@@ -3995,6 +4029,9 @@ func (m *Manager) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dep
 	}
 	if readOnly {
 		note += " read_only=true"
+	}
+	if reportPath != "" {
+		note += fmt.Sprintf(" report_path=%s", reportPath)
 	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "add_task", Actor: actor,

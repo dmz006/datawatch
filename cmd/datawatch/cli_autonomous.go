@@ -1194,14 +1194,14 @@ func newAutonomousPRDRequestRevisionCmd() *cobra.Command {
 }
 
 func newAutonomousPRDEditTaskCmd() *cobra.Command {
-	var taskID, newSpec string
+	var taskID, newSpec, reportPath string
 	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]]",
-		Short: "Rewrite a task's spec and/or read-only mark before approving",
+		Use:   "prd-edit-task <prd-id> --task <task-id> [--spec <new-spec>] [--read-only[=false]] [--report-path <path>]",
+		Short: "Rewrite a task's spec, read-only mark or report path before approving",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly)
+			body, err := prdEditTaskCLIBody(cmd, taskID, newSpec, readOnly, reportPath)
 			if err != nil {
 				return err
 			}
@@ -1211,17 +1211,19 @@ func newAutonomousPRDEditTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to rewrite (required)")
 	cmd.Flags().StringVar(&newSpec, "spec", "", "new task spec text (omit to keep the spec) — the full spec text: to edit the existing spec, read it first (prd-get's default full view returns the whole spec, uncut); a spec carrying a capped view's truncation marker is refused here and by the daemon")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only (changes no files; may skip the tree lock); --read-only=false clears it; omit to leave unchanged")
+	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path a read-only task may write (under .datawatch/reports/); requires the task to be read-only")
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
 }
 
 // prdEditTaskCLIBody builds the edit_task request body. The read_only key is
 // sent only when the --read-only flag was given, so an unset flag leaves the
-// task's mark unchanged.
-func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool) ([]byte, error) {
+// task's mark unchanged; the report_path key is sent only when --report-path
+// was given non-empty (an empty path is the same as none).
+func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly bool, reportPath string) ([]byte, error) {
 	roSet := cmd.Flags().Changed("read-only")
-	if newSpec == "" && !roSet {
-		return nil, fmt.Errorf("nothing to edit: pass --spec and/or --read-only")
+	if newSpec == "" && !roSet && reportPath == "" {
+		return nil, fmt.Errorf("nothing to edit: pass --spec, --read-only and/or --report-path")
 	}
 	if newSpec != "" {
 		// Text copied out of a capped view carries the truncation
@@ -1238,6 +1240,9 @@ func prdEditTaskCLIBody(cmd *cobra.Command, taskID, newSpec string, readOnly boo
 	}
 	if roSet {
 		body["read_only"] = readOnly
+	}
+	if reportPath != "" {
+		body["report_path"] = reportPath
 	}
 	return json.Marshal(body)
 }
@@ -1306,21 +1311,17 @@ func newAutonomousPRDRemoveStoryCmd() *cobra.Command {
 }
 
 func newAutonomousPRDAddTaskCmd() *cobra.Command {
-	var storyID, title, spec, dependsOnCSV string
+	var storyID, title, spec, dependsOnCSV, reportPath string
 	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>] [--read-only]",
+		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>] [--read-only] [--report-path <path>]",
 		Short: "Add a new task to an existing story without re-running decompose",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body := map[string]any{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"}
-			if dependsOnCSV != "" {
-				body["depends_on"] = splitCSV(dependsOnCSV)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			bodyJSON, err := prdAddTaskCLIBody(cmd, storyID, title, spec, dependsOnCSV, readOnly, reportPath)
+			if err != nil {
+				return err
 			}
-			if readOnly {
-				body["read_only"] = true
-			}
-			bodyJSON, _ := json.Marshal(body)
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", bodyJSON)
 		},
 	}
@@ -1329,9 +1330,30 @@ func newAutonomousPRDAddTaskCmd() *cobra.Command {
 	cmd.Flags().StringVar(&spec, "spec", "", "task spec — concrete instructions for the worker session")
 	cmd.Flags().StringVar(&dependsOnCSV, "depends-on", "", "comma-separated task IDs (within the same PRD) that must complete before this one becomes eligible")
 	cmd.Flags().BoolVar(&readOnly, "read-only", false, "mark the task read-only: it changes no files, so it may skip the tree lock")
+	cmd.Flags().StringVar(&reportPath, "report-path", "", "the one repo-relative report path this read-only task may write (under .datawatch/reports/); requires --read-only")
 	_ = cmd.MarkFlagRequired("story")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd
+}
+
+// prdAddTaskCLIBody builds the add_task request body. read_only is sent only
+// when --read-only was given and report_path only when --report-path was given
+// non-empty, so an add without the flags asks for nothing extra.
+func prdAddTaskCLIBody(cmd *cobra.Command, storyID, title, spec, dependsOnCSV string, readOnly bool, reportPath string) ([]byte, error) {
+	body := map[string]any{"story_id": storyID, "title": title, "actor": "operator"}
+	if spec != "" {
+		body["spec"] = spec
+	}
+	if dependsOnCSV != "" {
+		body["depends_on"] = splitCSV(dependsOnCSV)
+	}
+	if readOnly {
+		body["read_only"] = true
+	}
+	if reportPath != "" {
+		body["report_path"] = reportPath
+	}
+	return json.Marshal(body)
 }
 
 func newAutonomousPRDRemoveTaskCmd() *cobra.Command {

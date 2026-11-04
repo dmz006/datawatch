@@ -775,7 +775,7 @@ type AutonomousAPI interface {
 	EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error)
 	// EditTask is EditTaskSpec plus the read_only flag (nil = unchanged,
 	// empty newSpec = spec unchanged).
-	EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (any, error)
+	EditTask(prdID, taskID, newSpec string, readOnly *bool, reportPath string, actor string) (any, error)
 	// v8.23.0 — reset a failed/blocked task to pending for retry.
 	// BL382 — force=true also requeues completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
@@ -802,7 +802,7 @@ type AutonomousAPI interface {
 	AddStory(prdID, title, description, actor string) (any, error)
 	RemoveStory(prdID, storyID, actor string) (any, error)
 	AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error)
-	AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (any, error)
+	AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool, reportPath string) (any, error)
 	RemoveTask(prdID, storyID, taskID, actor string) (any, error)
 
 	// Phase 3 (v5.26.60) — per-story execution profile + approval.
