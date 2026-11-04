@@ -1,3 +1,18 @@
+---
+docs:
+  index: true
+  topics: [agent-tracing, trace, observability]
+exec_params: []
+exec_steps:
+  - tool: trace_coverage
+    description: Show how much of each backend's activity is traced
+    args: {}
+    read_only: true
+  - tool: trace_rollup
+    description: Roll up time, errors and tokens across traced sessions
+    args: {}
+    read_only: true
+---
 # Agent tracing
 
 Agent tracing records what your agents did: each tool call and its result, each

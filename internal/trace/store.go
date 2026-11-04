@@ -88,6 +88,39 @@ type Store struct {
 	mu    sync.Mutex
 	index map[string]*IndexEntry
 	seen  map[string]map[string]struct{}
+
+	// Monotonic counters since the daemon started (guarded by mu).
+	appended     uint64
+	appendErrors uint64
+	pruned       uint64
+}
+
+// StoreStats is a point-in-time view of the store for the stats surfaces
+// (system stats, Prometheus, GET /api/trace/stats).
+type StoreStats struct {
+	Sessions     int       `json:"sessions"`
+	Events       int       `json:"events"`
+	ErrorEvents  int       `json:"error_events"`
+	Appended     uint64    `json:"appended_total"`
+	AppendErrors uint64    `json:"append_errors_total"`
+	Pruned       uint64    `json:"pruned_total"`
+	LastEventAt  time.Time `json:"last_event_at,omitempty"`
+}
+
+// Stats returns the counters and the index totals.
+func (st *Store) Stats() StoreStats {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	out := StoreStats{Sessions: len(st.index), Appended: st.appended,
+		AppendErrors: st.appendErrors, Pruned: st.pruned}
+	for _, e := range st.index {
+		out.Events += e.Total
+		out.ErrorEvents += e.Errors
+		if e.LastAt.After(out.LastEventAt) {
+			out.LastEventAt = e.LastAt
+		}
+	}
+	return out
 }
 
 // NewStore opens (creating if needed) the trace folder under dataDir.
@@ -190,10 +223,15 @@ func (st *Store) loadSeen(session string) (map[string]struct{}, error) {
 // Append redacts each event and appends those not already stored. It
 // returns how many were newly written. Events without a session ID are
 // rejected.
-func (st *Store) Append(events ...Event) (int, error) {
+func (st *Store) Append(events ...Event) (added int, err error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	added := 0
+	defer func() {
+		st.appended += uint64(added)
+		if err != nil {
+			st.appendErrors++
+		}
+	}()
 	touched := false
 	bySession := map[string][]Event{}
 	var order []string
@@ -376,12 +414,12 @@ func (st *Store) Index() []IndexEntry {
 // Prune drops events older than tracing.retention_days (relative to the
 // injected clock), removes sessions left empty, and returns the number of
 // events removed.
-func (st *Store) Prune() (int, error) {
+func (st *Store) Prune() (removed int, err error) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
+	defer func() { st.pruned += uint64(removed) }()
 	days := st.settings.WithDefaults().RetentionDays
 	cutoff := st.now().Add(-time.Duration(days) * 24 * time.Hour)
-	removed := 0
 	sessions := make([]string, 0, len(st.index))
 	for s := range st.index {
 		sessions = append(sessions, s)

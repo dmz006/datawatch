@@ -146,6 +146,17 @@ type SystemStats struct {
 	SafeDeleteSlowReports     uint64 `json:"safe_delete_slow_reports,omitempty"`
 	SafeDeleteRefreshFailures uint64 `json:"safe_delete_refresh_failures,omitempty"`
 
+	// Agent tracing (tracing.* settings): store totals and write counters.
+	// Present only while tracing is on. Populated by the trace stats callback.
+	TraceEnabled      bool   `json:"trace_enabled,omitempty"`
+	TraceSessions     int    `json:"trace_sessions,omitempty"`
+	TraceEvents       int    `json:"trace_events,omitempty"`
+	TraceErrorEvents  int    `json:"trace_error_events,omitempty"`
+	TraceAppended     uint64 `json:"trace_appended_total,omitempty"`
+	TraceAppendErrors uint64 `json:"trace_append_errors_total,omitempty"`
+	TracePruned       uint64 `json:"trace_pruned_total,omitempty"`
+	TraceLastEventAge int64  `json:"trace_last_event_age_seconds,omitempty"`
+
 	// UI prompt interstitials (ui_prompt.* settings): the daemon-side
 	// dismissal outcome counters for recognised interstitial prompts, since
 	// daemon start (in-memory only — reset on restart). Filled by the
@@ -312,6 +323,9 @@ type Collector struct {
 	// burnGuardStatsFn populates the burn guard fields.
 	burnGuardStatsFn func(*SystemStats)
 
+	// traceStatsFn populates the agent tracing fields.
+	traceStatsFn func(*SystemStats)
+
 	// accessLogStatsFn (GH#201) populates HTTP access / WS lifecycle /
 	// auth-failure log fields.
 	accessLogStatsFn func(*SystemStats)
@@ -423,6 +437,11 @@ func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
 // access-log fields on each stats snapshot.
 func (c *Collector) SetAccessLogStatsFunc(fn func(*SystemStats)) {
 	c.accessLogStatsFn = fn
+}
+
+// SetTraceStatsFunc sets a callback that populates the agent tracing fields on each snapshot.
+func (c *Collector) SetTraceStatsFunc(fn func(*SystemStats)) {
+	c.traceStatsFn = fn
 }
 
 // SetBurnGuardStatsFunc sets a callback that populates the burn guard fields on each snapshot.
@@ -579,6 +598,9 @@ func (c *Collector) collect() {
 	// Episodic memory stats
 	if c.burnGuardStatsFn != nil {
 		c.burnGuardStatsFn(&s)
+	}
+	if c.traceStatsFn != nil {
+		c.traceStatsFn(&s)
 	}
 	if c.memoryStatsFn != nil {
 		c.memoryStatsFn(&s)

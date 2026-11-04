@@ -8628,6 +8628,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
 			fillBurnGuardStats(s, httpServer.BurnGuardStats())
 		})
+		// Agent tracing stats in the WS broadcast and the Prometheus collector.
+		if traceStore != nil {
+			statsCollector.SetTraceStatsFunc(func(s *statspkg.SystemStats) {
+				fillTraceStats(s, traceStore.Stats(), time.Now())
+			})
+		}
 		// BL372 — wire web search stats into the collector.
 		statsCollector.SetWebSearchStatsFunc(func(s *statspkg.SystemStats) {
 			s.WebSearchEnabled = cfg.WebSearch.Enabled
@@ -8670,6 +8676,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
 			updateBurnGuardMetrics(s)
+			updateTraceMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

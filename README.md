@@ -112,6 +112,7 @@ More: [skills](docs/skills.md) · [MCP](docs/mcp.md) · [Claude Code hooks](docs
 - Chat apps: Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS and voice
 - AI tools: claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui and shell
 - Docker and Kubernetes workers
+- Agent tracing: a timeline of what each agent did (tool calls, model requests, permission decisions, loop warnings, errors) for a session or a whole Automaton, with roll-ups and a per-backend coverage badge. On by default at the summary level; settings under `tracing.*` ([how-to](docs/howto/agent-tracing.md))
 - Rate-limit recovery, network monitoring, Prometheus metrics and a Tailscale network
 
 Everything else is in the [Documentation index](#documentation-index).

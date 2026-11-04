@@ -3633,5 +3633,13 @@
   "settings_tracing_retention_days": "Trace retention (days, whole number, 0 = default)",
   "settings_tracing_backends": "Trace per backend (JSON object of backend to true or false; a backend not listed is on)",
   "settings_tracing_backends_hint": "Example: {\"pi\": false} turns tracing off for pi only. Leave empty to trace every backend.",
-  "settings_tracing_backends_invalid": "Enter a JSON object of backend names to true or false, e.g. {\"pi\": false}"
+  "settings_tracing_backends_invalid": "Enter a JSON object of backend names to true or false, e.g. {\"pi\": false}",
+  "stats_trace": "Tracing",
+  "stats_trace_sessions": "Traced sessions",
+  "stats_trace_events": "Stored events",
+  "stats_trace_error_events": "Error events",
+  "stats_trace_appended": "Events written",
+  "stats_trace_append_errors": "Failed writes",
+  "stats_trace_pruned": "Pruned by retention",
+  "stats_trace_last_event_age": "Last event (s ago)"
 }

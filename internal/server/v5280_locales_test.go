@@ -75,6 +75,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// 70c90001 — agent tracing: settings group, the Trace card title and the Monitor card title.
+		"settings_tracing_group",
+		"trace_card_title",
+		"stats_trace",
 		// e3db0001 — capacity priority-source chip + kind table / defect intake settings.
 		"priority_source_badge",
 		"priority_source_explicit",

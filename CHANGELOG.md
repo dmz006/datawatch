@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Agent tracing
+
+Agents leave a trace of what they did, readable for one session or a whole Automaton.
+
+- **Trace.** Tool calls and results, model requests, state changes, capability checks, permission decisions, loop warnings and errors are recorded in one normalized form from every backend (claude-code, pi, opencode, goose, aider, gemini through their transcripts; ollama, openwebui and shell as the daemon sees them). Secrets and home paths are redacted before anything is stored. Tracing only records and reads; it never changes how an agent runs.
+- **Read it everywhere.** `GET /api/trace/session/{id}`, `/api/trace/automaton/{id}`, `/api/trace/rollup` and `/api/trace/coverage`; MCP tools `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`; `datawatch trace ...`; the same verbs in chat; a Trace card in the session and Automaton views with filters, roll-up and a coverage badge per backend; a Tracing group in Settings. Five locales.
+- **Settings.** `tracing.mode` (`off`, `summary` default, `full`), `tracing.arg_cap_bytes` (512), `tracing.retention_days` (14), `tracing.backends` (a backend not listed is traced). An invalid value is refused with the allowed values named.
+- **Monitoring.** `GET /api/trace/stats`, `trace_*` fields on the system stats, a Tracing card on the Monitor tab and the Prometheus series `datawatch_trace_events_total`, `datawatch_trace_append_errors_total`, `datawatch_trace_stored_events` and `datawatch_trace_stored_sessions`.
+- **Docs and checks.** How-to `docs/howto/agent-tracing.md` (now carries `exec_steps`), operations, implementation, MCP and README entries, both openapi copies, a release smoke section, browser story TS-847, and the locale guard list extended with the new high-visibility keys.
+- **Reuse audit — what existing primitive does this extend?** The cost report's token roll-up, the stats collector and Prometheus mirror used by the burn guard, the PWA list loader, the `CapAnalyticsRead` gate and the per-backend transcript readers.
+- reuse-audit: cost-report roll-up, stats collector mirror, list loader, CapAnalyticsRead gate
+- skills-hook: N/A
+- locale-guard: added settings_tracing_group, trace_card_title, stats_trace
+- smoke-extended: Agent tracing
+- audit-tests: N/A (trace events are a redacted read-only copy; the denials they mirror keep their own audit entries; see docs/plans/2026-11-04-agent-tracing.md)
+- Live run on a sandbox daemon is owed at merge: the building automaton ran without a daemon.
+
 ## v9.85.1 — Paged GitHub listings read correctly in the image cleanup steps
 
 The image-refresh and ghcr cleanup steps now read paged GitHub package listings correctly.

@@ -224,3 +224,34 @@ func TestTraceRoutesNeedStore(t *testing.T) {
 		}
 	}
 }
+
+func TestTraceStats(t *testing.T) {
+	s := traceFixtureServer(t)
+	m := traceDecode(t, traceGet(t, s.handleTraceStats, "/api/trace/stats"))
+	want := map[string]float64{"sessions": 3, "events": 5, "error_events": 2, "appended_total": 5, "append_errors_total": 0}
+	for k, v := range want {
+		var got float64
+		if err := json.Unmarshal(m[k], &got); err != nil || got != v {
+			t.Errorf("%s = %v (err %v), want %v", k, got, err, v)
+		}
+	}
+	if got := s.TraceStats(); got.Events != 5 || got.Sessions != 3 {
+		t.Errorf("TraceStats = %+v", got)
+	}
+}
+
+func TestTraceStatsNeedsStoreAndGet(t *testing.T) {
+	s := bl90Server(t)
+	if rr := traceGet(t, s.handleTraceStats, "/api/trace/stats"); rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("no store: status %d, want 503", rr.Code)
+	}
+	if got := s.TraceStats(); got.Events != 0 {
+		t.Errorf("TraceStats without a store = %+v", got)
+	}
+	s = traceFixtureServer(t)
+	rr := httptest.NewRecorder()
+	s.handleTraceStats(rr, httptest.NewRequest(http.MethodPost, "/api/trace/stats", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST: status %d, want 405", rr.Code)
+	}
+}

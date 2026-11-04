@@ -395,3 +395,31 @@ test('the card renders in every language without a raw key showing', () => {
     assert.ok(html.includes(bundle(lang).trace_card_title), lang);
   }
 });
+
+// Monitor Tracing card: the stats card reads the trace_* fields of the system
+// stats and shows only while tracing is on.
+const STATS_KEYS = ['stats_trace', 'stats_trace_sessions', 'stats_trace_events', 'stats_trace_error_events',
+  'stats_trace_appended', 'stats_trace_append_errors', 'stats_trace_pruned', 'stats_trace_last_event_age'];
+
+test('the Monitor tracing card keys exist and are translated in every language', () => {
+  const en = bundle('en');
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of STATS_KEYS) {
+      assert.ok(typeof b[k] === 'string' && b[k].length > 0, lang + ' missing ' + k);
+      if (lang !== 'en' && k !== 'stats_trace') assert.notEqual(b[k], en[k], lang + ' left ' + k + ' in English');
+      assert.ok(!/\bPRDs?\b|\bBL\d+\b/.test(b[k]), lang + ' has an internal term in ' + k);
+    }
+  }
+});
+
+test('the Monitor stats view draws the tracing card only when trace_enabled is reported', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  assert.ok(src.includes('if (data.trace_enabled) {'), 'card is gated on trace_enabled');
+  assert.ok(src.includes('data-stat="trace"'), 'card has its data-stat hook');
+  for (const f of ['trace_sessions', 'trace_events', 'trace_error_events', 'trace_appended_total',
+    'trace_append_errors_total', 'trace_pruned_total', 'trace_last_event_age_seconds']) {
+    assert.ok(src.includes('data.' + f), 'reads data.' + f);
+  }
+  for (const k of STATS_KEYS) assert.ok(src.includes("'" + k + "'") || src.includes('`' + k), 'uses ' + k);
+});

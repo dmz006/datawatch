@@ -3633,5 +3633,13 @@
   "settings_tracing_retention_days": "トレースの保存期間（日、整数、0 = 既定）",
   "settings_tracing_backends": "バックエンドごとのトレース（バックエンド名から true または false への JSON オブジェクト。記載のないバックエンドは有効）",
   "settings_tracing_backends_hint": "例: {\"pi\": false} は pi だけトレースをオフにします。空にするとすべてのバックエンドを記録します。",
-  "settings_tracing_backends_invalid": "バックエンド名から true または false への JSON オブジェクトを入力してください。例: {\"pi\": false}"
+  "settings_tracing_backends_invalid": "バックエンド名から true または false への JSON オブジェクトを入力してください。例: {\"pi\": false}",
+  "stats_trace": "トレース",
+  "stats_trace_sessions": "トレース済みセッション",
+  "stats_trace_events": "保存済みイベント",
+  "stats_trace_error_events": "エラーイベント",
+  "stats_trace_appended": "書き込み済みイベント",
+  "stats_trace_append_errors": "書き込み失敗",
+  "stats_trace_pruned": "保持期間で削除",
+  "stats_trace_last_event_age": "最後のイベント(秒前)"
 }
