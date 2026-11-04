@@ -51,7 +51,7 @@ func seedPRDLLM(t *testing.T, m *Manager) string {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 	fields := prdLLMTestFields()
-	if _, err := m.SetPRDLLM(prd.ID, sp(fields[0].initial), sp(fields[1].initial), sp(fields[2].initial), sp(fields[3].initial), sp(fields[4].initial), "seed"); err != nil {
+	if _, _, err := m.SetPRDLLM(prd.ID, sp(fields[0].initial), sp(fields[1].initial), sp(fields[2].initial), sp(fields[3].initial), sp(fields[4].initial), "seed"); err != nil {
 		t.Fatalf("SetPRDLLM (seed): %v", err)
 	}
 	stored, ok := m.Store().GetPRD(prd.ID)
@@ -103,7 +103,7 @@ func setOnePRDField(t *testing.T, m *Manager, prdID string, i int, value string)
 	default:
 		t.Fatalf("setOnePRDField: bad index %d", i)
 	}
-	if _, err := m.SetPRDLLM(prdID, b, e, mo, dp, dm, "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prdID, b, e, mo, dp, dm, "test"); err != nil {
 		t.Fatalf("SetPRDLLM (one field): %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestSetPRDLLM_FieldOmitted_Kept(t *testing.T) {
 	// (b) A call with all five fields nil must not change any field.
 	t.Run("Omits:All", func(t *testing.T) {
 		prdID := seedPRDLLM(t, m)
-		if _, err := m.SetPRDLLM(prdID, nil, nil, nil, nil, nil, "test"); err != nil {
+		if _, _, err := m.SetPRDLLM(prdID, nil, nil, nil, nil, nil, "test"); err != nil {
 			t.Fatalf("SetPRDLLM (all nil): %v", err)
 		}
 		got := loadedPRDLLMFields(t, m, prdID)
@@ -252,7 +252,7 @@ func TestSetPRDLLM_FieldSet_Replaces(t *testing.T) {
 	}
 
 	prdID := seedPRDLLM(t, m)
-	if _, err := m.SetPRDLLM(prdID, sp(newValues[0]), sp(newValues[1]), sp(newValues[2]), sp(newValues[3]), sp(newValues[4]), "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prdID, sp(newValues[0]), sp(newValues[1]), sp(newValues[2]), sp(newValues[3]), sp(newValues[4]), "test"); err != nil {
 		t.Fatalf("SetPRDLLM (all set): %v", err)
 	}
 

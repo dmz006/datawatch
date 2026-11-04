@@ -105,7 +105,9 @@ func (s *Server) handleDecomposeAsync(w http.ResponseWriter, r *http.Request, pr
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		return
 	}
-	// If a job is already in flight for this PRD, return its status.
+	// If a job is already in flight for this PRD, return its status — with
+	// the planning-requeue outcome riding along whenever the PRD is already
+	// planning (re-request must not double-spawn the decompose).
 	if existing, ok := s.decomposeJobs.Load(prdID); ok {
 		j := existing.(*decomposeJob)
 		j.mu.RLock()
@@ -114,13 +116,35 @@ func (s *Server) handleDecomposeAsync(w http.ResponseWriter, r *http.Request, pr
 		if status == decomposeJobPending || status == decomposeJobInProgress {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(map[string]any{
+			resp := map[string]any{
 				"task_id":    prdID,
 				"stream_url": fmt.Sprintf("/api/autonomous/prds/%s/decompose/stream", prdID),
 				"message":    "decompose already in progress",
-			})
+			}
+			if p, planning := s.planningRequeueOutcome(prdID); planning {
+				resp["planning"] = p
+			}
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
+	}
+
+	// No in-flight job, but the PRD is already planning: its planning run
+	// sits (queued or started) in the capacity ledger. Re-request does NOT
+	// spawn a second decompose — the shared planning-requeue helper
+	// re-queues a queued run on the pool the CURRENT decomposition profile
+	// resolves to, or explains why it was left alone (requirement d).
+	if p, planning := s.planningRequeueOutcome(prdID); planning {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"task_id":    prdID,
+			"stream_url": fmt.Sprintf("/api/autonomous/prds/%s/decompose/stream", prdID),
+			"message":    "decompose already in progress",
+			"planning":   p,
+		})
+		s.audit(r.Context(), "decompose_requeue", "automaton", prdID, nil)
+		return
 	}
 
 	job := newDecomposeJob(prdID)

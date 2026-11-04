@@ -66,6 +66,40 @@ func (s *Server) writeAutonomousResultOverride(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// writeAutonomousPlanningResult writes the PRD-level set_llm reply for a
+// call that carried a planning field (decomposition_profile /
+// decomposition_model): the structured planning-requeue outcome rides along
+// in the prd key in the full view ("prd" + "planning") and as the planning
+// key of the write view in compact mode. planning is nil — the handler
+// never routes here then — so every other write keeps its exact legacy reply.
+func (s *Server) writeAutonomousPlanningResult(w http.ResponseWriter, r *http.Request, prd any, planning any, taskID, storyID, message string) {
+	if isNilPRD(prd) {
+		writeJSONOK(w, struct {
+			PRD      any `json:"prd"`
+			Planning any `json:"planning,omitempty"`
+		}{PRD: prd, Planning: planning})
+		return
+	}
+	switch view := r.URL.Query().Get("view"); view {
+	case "", "full":
+		writeJSONOK(w, struct {
+			PRD      any `json:"prd"`
+			Planning any `json:"planning,omitempty"`
+		}{PRD: prd, Planning: planning})
+	case "compact":
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "compact view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		v := autonomous.BuildWriteView(p, taskID, storyID, message)
+		v.Planning = planning
+		writeJSONOK(w, v)
+	default:
+		http.Error(w, "invalid view: accepted values are full, compact", http.StatusBadRequest)
+	}
+}
+
 // writeAutonomousCancelResult writes the reply for the DELETE cancel route.
 // view=compact returns the write view for prd and carries killed, the number
 // of sessions the cancel stopped, in killed_sessions. Any other view keeps

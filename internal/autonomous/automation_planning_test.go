@@ -97,7 +97,7 @@ func TestDecomposeUsesAutomationPlanning(t *testing.T) {
 			t.Fatalf("CreatePRD: %v", err)
 		}
 		if profile != "" || decompModel != "" {
-			if _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(profile), sp(decompModel), "test"); err != nil {
+			if _, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(profile), sp(decompModel), "test"); err != nil {
 				t.Fatalf("SetPRDLLM: %v", err)
 			}
 		}

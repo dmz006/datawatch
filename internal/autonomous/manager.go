@@ -5077,18 +5077,31 @@ func prdLLMOverrideAllowed(status PRDStatus) bool {
 	return status != PRDRunning && status != PRDCompleted
 }
 
-func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, error) {
+// SetPRDLLM updates the PRD's LLM fields. The third return value reports
+// the planning-requeue outcome (requirement b): non-nil whenever a planning
+// field (decomposition_profile / decomposition_model) was part of the call —
+// PlanningUnchanged when there is nothing to move (effective pair unchanged,
+// no live planning run, or capacity accounting off), otherwise requeued /
+// deferred_to_next_run with the old and new pools plus a reason.
+func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, *PlanningRequeueResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if !prdLLMOverrideAllowed(prd.Status) {
-		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+		return nil, nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
 	}
 	// The decomposition model is not checked: its backend is the planning
 	// backend, which resolvePlannedModel resolves separately.
 	if err := checkLevelPair(prdID, backend, model, prd.Backend, prd.Model); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	planChanged := decompositionProfile != nil || decompositionModel != nil
+	// The pair the CURRENT record still resolves to — captured before the
+	// mutation so the result can report what the run was queued on.
+	var oldBackend, oldModel string
+	if planChanged {
+		oldBackend, oldModel = m.plannerPairFor(prd)
 	}
 	if backend != nil {
 		prd.Backend = *backend
@@ -5130,10 +5143,17 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 		Note: note,
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	var planning *PlanningRequeueResult
+	if planChanged {
+		// The profile (or planning model) changed: move a QUEUED planning run
+		// onto the pool the CURRENT profile resolves to, or explain why the
+		// change applies from the next run (see requeuePlanningRun).
+		planning = m.requeuePlanningRun(prdID, actor, oldBackend, oldModel)
+	}
+	return updated, planning, nil
 }
 
 // SetPRDGuardrailLLM (BL416) overrides the PRD-level backend/model used

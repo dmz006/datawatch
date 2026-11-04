@@ -27,10 +27,11 @@ func TestBL320_SetPRDLLM_PersistsDecompositionProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp("qwen3:8b"), sp("my-planning-llm"), sp(""), "test")
+	updated, planning, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp("qwen3:8b"), sp("my-planning-llm"), sp(""), "test")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
+	_ = planning
 
 	if updated.DecompositionProfile != "my-planning-llm" {
 		t.Errorf("DecompositionProfile: got %q, want %q", updated.DecompositionProfile, "my-planning-llm")
@@ -57,7 +58,7 @@ func TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp("opencode"), sp(""), "operator")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp("opencode"), sp(""), "operator")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestBL320_SetPRDLLM_EmptyDecompProfile_Accepted(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(""), sp(""), "")
+	updated, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(""), sp(""), "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM with empty DecompositionProfile should not error: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 
 	// Absent args (nil) must not appear in the decision note; the field
 	// itself stays empty.
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -136,7 +137,7 @@ func TestBL320_SetPRDLLM_LockedOnRunning(t *testing.T) {
 	prd.Status = PRDRunning
 	_ = m.Store().SavePRD(prd)
 
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode")
 	if err == nil {
 		t.Error("SetPRDLLM on PRDRunning should return error (LLM overrides locked)")
 	}
