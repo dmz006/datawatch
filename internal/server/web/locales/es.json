@@ -1928,6 +1928,7 @@
   "session_action_unmute": "Unmute notifications",
   "settings_replay_splash": "↻ Replay splash",
   "splash_status_connected": "Connected",
+  "splash_version_previous": "anterior %1$s",
   "prd_action_permission": "Permission",
   "prd_permission_mode_title": "Modo de permisos del autómata",
   "prd_permission_mode_hint": "Valor predeterminado de claude-code --permission-mode para tareas creadas bajo este autómata. Se hereda en cada tarea salvo que se sobrescriba allí.",

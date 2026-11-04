@@ -842,6 +842,16 @@ function connect() {
       const serverVer = state._daemonVersion || '';
       const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
       const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
+      // Previous-version line: only when the daemon version actually changed
+      // since the last splash display (window._splashPrevVersion was exposed
+      // by the splash-gating task). Stays hidden on a plain re-show.
+      if (isNewVersion) {
+        const prevEl = document.getElementById('splashVersionPrev');
+        if (prevEl) {
+          prevEl.textContent = t('splash_version_previous', [lastSplashVer]);
+          prevEl.style.display = '';
+        }
+      }
 
       // GH#176 — the "Updated to vX" badge was never requested and has been
       // removed from the Android/iOS apps (datawatch-app v1.25.1); the rest
