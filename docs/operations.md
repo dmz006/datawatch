@@ -6116,3 +6116,19 @@ All four are available in `config.yaml`, the web UI Settings, `datawatch config 
 ### Secret scan before push
 
 `git.secret_scan.mode` is `shadow` by default: the scan runs before an Automaton's branch is pushed, records findings and lets the push go. `enforce` refuses a push with a finding that is not allow-listed, and `off` disables the scan. Detector names and allow-list fingerprints are validated on every write, so a typo is refused instead of weakening the gate. Details and the false-positive procedure: [secret scan push gate](howto/secret-scan-push-gate.md).
+
+### Secret scan default for the first release
+
+The default remains `shadow` for the first release. That is a decision, not a gap. The scanner has a false-positive rate that the allow-list procedure in the how-to only becomes easy to apply once an operator has seen real findings. In `shadow` the scan records its findings, raises one warn alert per push, and writes its audit and counter data without ever refusing a push — so a fresh install cannot have an Automaton or a one-shot session stalled by a false positive. The hard gate is one setting away; `enforce` is the same value on every write surface:
+
+| Surface | Set `git.secret_scan.mode` to `enforce` |
+|---|---|
+| YAML (config file) | the `mode: enforce` line inside the `git.secret_scan` block |
+| CLI | `datawatch configure git.secret_scan.mode=enforce` (the generic `configure` command; there is no dedicated secret-scan subcommand) |
+| Web UI Settings | the **Pre-push secret scan mode** select on the git settings card (`off` / `shadow` / `enforce`) |
+| REST | `PUT /api/config` with key `git.secret_scan.mode` |
+| comm channel | `configure git.secret_scan.mode=enforce` |
+
+**Where to see.** The *Secret scan* subsection under [8. Monitoring](#8-monitoring) documents the counters (`runs`, `findings`, `shadow_reports`, `refusals`, …) on `GET /api/git/secret-scan/stats`, in the `secret_scan` block of `GET /api/stats`, and on the MCP `secret_scan_stats` tool, together with the per-push audit events (`secret_scan_shadow` when shadow records a finding, `secret_scan_refused` when enforce refuses) in the JSON-lines and CEF audit logs.
+
+**Revisiting the default.** Deciding whether to change the default is the operator's call and would be a separate change for a later release. The criterion, using the monitoring above: the `secret_scan` stats and audit events show a sustained period of shadow reports in which every report was either a true positive or resolved by the allow-list procedure, with refusals for known-good content at zero. Until that shows up, `shadow` remains the safe default for a fresh install.

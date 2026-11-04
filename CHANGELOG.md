@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+The pre-push secret scan gets its follow-up work: tests, audit events, stats, a live smoke, and the decision behind its default.
+
+- **Secret scan unit tests.** Tests covering the scan policy wiring and shadow recording on the session and Automata push paths, plus audit-event format tests (action names, CEF signatures, and log-injection escaping).
+- **Secret scan audit events.** Every scan decision now lands in the audit log — a shadow-mode finding report and an enforce-mode refusal — in both the JSON-lines and CEF formats.
+- **Secret scan stats.** A `secret_scan` stats block (`runs`, `findings`, `shadow_reports`, `refusals`, `last_run_at`, `last_refusal_at`) on `GET /api/stats`, a dedicated `GET /api/git/secret-scan/stats` endpoint, and the MCP `secret_scan_stats` tool.
+- **Live smoke.** A `git.secret_scan` section in the release smoke (shadow and enforce against a sandbox repo) that drives a real push and checks the counters, alert and audit trail.
+- **Web test.** A node test for the secret scan settings card — the mode select, the detectors and allow-list fields — and its locale strings.
+- **Default decision.** The decision to keep the scan default at `shadow` for the first release is now documented in the operations guide, with every way to switch to `enforce` and the monitoring to use when revisiting the default in a later release.
+
 ## v9.81.0 — Model-to-node routing visibility
 
 A pinned model is now checked against the compute nodes, and you can see which models each node serves.
