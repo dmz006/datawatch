@@ -278,7 +278,7 @@ func TestJudgeVerdictCacheTimedOutNeverCached(t *testing.T) {
 	fnInfra := func(ctx context.Context, i GuardrailInvocation) (GuardrailVerdict, error) {
 		return infraVerdict, nil
 	}
-	m.runGuardrailWithInfraRetry(context.Background(), prd, inv, fnInfra)
+	_, _ = m.runGuardrailWithInfraRetry(context.Background(), prd, inv, fnInfra)
 	if c.Len() != 0 {
 		t.Fatalf("cache len=%d want 0 after an infra block", c.Len())
 	}
