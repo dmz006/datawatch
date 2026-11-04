@@ -330,9 +330,9 @@ test('selectServer: switching to a peer and back to local never reloads or banne
   run(env, 'selectServer(null);');
   assert.equal(run(env, 'state.activeServer'), null);
   assert.equal(env.reloads.length, 0);
-  run(env, "selectServer('peerA'); selectServer('peerA');"); // on, off again
-  assert.equal(run(env, 'state.activeServer'), null);
-  assert.equal(env.reloads.length, 0, 'repeated toggles still never reload');
+  run(env, "selectServer('peerA'); selectServer('peerA');"); // re-selecting the active peer is a no-op
+  assert.equal(run(env, 'state.activeServer'), 'peerA');
+  assert.equal(env.reloads.length, 0, 'repeated selection still never reloads');
   assert.equal(env.appended.length, 0);
 });
 

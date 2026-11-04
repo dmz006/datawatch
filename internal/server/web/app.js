@@ -2809,6 +2809,7 @@ function navigate(view, sessionId, fromPopstate) {
     headerIdentityBtn.style.display = view === 'autonomous' ? 'inline-flex' : 'none';
   }
 
+  renderServerHeaderLine(); // shared shell: every page gets the stable server line
   const viewEl = document.getElementById('view');
   if (view === 'session-detail') {
     if (state.activeSession !== sessionId) _clearImageAttachment();
@@ -13362,8 +13363,44 @@ window.loadAboutShowingServer = loadAboutShowingServer;
 function settingsRefreshShowingLines() {
   const label = settingsShowingLabel();
   document.querySelectorAll('[data-showing-line] .settings-label').forEach(el => { el.textContent = label; });
+  renderServerHeaderLine();
 }
 window.settingsRefreshShowingLines = settingsRefreshShowingLines;
+
+// Stable server header line -- one element (#server-header-line) shown on
+// every page (Sessions, Automata, About, Settings tabs, Alerts, ...). It
+// lives as a sibling BEFORE #view, so the pages' innerHTML re-renders can
+// never drop it; navigate() (the shared page shell) and selectServer()
+// both call renderServerHeaderLine(), so no page can omit it.
+// Peer selected -> peer name; 'all' -> all-servers label; otherwise the
+// local hostname (via _ensureLocalHostname).
+function serverHeaderName() {
+  const active = state.activeServer;
+  if (active === 'all') return t('server_header_all') || 'All servers';
+  if (active && active !== 'local') return active;
+  return _localHostname || (t('server_local_label') || 'this server');
+}
+function renderServerHeaderLine() {
+  if (typeof document === 'undefined') return null;
+  const view = document.getElementById('view');
+  if (!view || !view.parentNode) return null;
+  const active = state.activeServer;
+  if ((!active || active === 'local') && !_localHostname) _ensureLocalHostname(renderServerHeaderLine);
+  const name = serverHeaderName();
+  let el = document.getElementById('server-header-line');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'server-header-line';
+    el.className = 'server-header-line';
+    el.style.cssText = 'font-size:11px;padding:3px 12px;color:var(--text2);';
+    view.parentNode.insertBefore(el, view);
+  }
+  el.setAttribute('data-server', active === 'all' ? 'all' : (active && active !== 'local') ? active : (_localHostname || 'local'));
+  el.textContent = t('server_header_showing', [name]) || ('Showing: ' + name);
+  return el;
+}
+window.serverHeaderName = serverHeaderName;
+window.renderServerHeaderLine = renderServerHeaderLine;
 
 function loadAboutOrphanedTmux() {
   const el = document.getElementById('aboutOrphanedTmux');
@@ -20477,11 +20514,13 @@ function loadServers() {
   // Fetch server list, health, and config (for the sandbox-origin PWA
   // link below) in parallel.
   Promise.all([
-    // Proxy-aware (version-skew audit): _apiPath routes the Servers card
-    // to the selected peer (no-op for local/all).
-    fetch(_apiPath('/api/servers'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch(_apiPath('/api/servers/health'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
-    fetch(_apiPath('/api/config'), { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
+    // The Servers card always lists the LOCAL daemon's registered servers
+    // (never the selected peer's proxied list): it is where an operator picks
+    // a peer and returns to local, so it must still show the peer, its active
+    // marker and the back-to-local control while that peer is selected.
+    fetch('/api/servers', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
+    fetch('/api/servers/health', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
+    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([servers, health, cfg]) => {
     if (!servers) { el.textContent = t('servers_unavailable') || 'Servers unavailable'; return; }
     state.servers = servers;
@@ -20495,6 +20534,8 @@ function loadServers() {
     const sandboxPort = cfg && cfg.server && cfg.server.proxy_sandbox_port;
     const pwaOrigin = sandboxPort ? `${location.protocol}//${location.hostname}:${sandboxPort}` : '';
     state.proxySandboxOrigin = pwaOrigin; // reused by _showRemotePWAViewer
+    // The server-store handler answers {servers: [...]}; the legacy static list is a bare array.
+    if (!Array.isArray(servers)) servers = Array.isArray(servers.servers) ? servers.servers : [];
     if (servers.length === 0) { el.textContent = t('servers_none_available') || 'No servers available.'; return; }
     // Build health lookup: name → health info
     const healthMap = {};
@@ -20548,7 +20589,10 @@ function loadServers() {
       const displayName = sv.name === 'local' ? (sv.hostname || sv.name) : sv.name;
       return `<div class="settings-row" style="justify-content:space-between">
         <div><strong>${escHtml(displayName)}</strong>${activeLabel}${healthBadge} ${auth}${pwaLink}<br><span style="font-size:12px;color:var(--text2)">${escHtml(sv.url)}</span></div>
+        <div style="display:flex;gap:6px;align-items:center;">
         <button class="btn-secondary" style="font-size:12px;padding:4px 8px" onclick="selectServer('${escHtml(sv.name)}')">${isActive ? (t('status_connected') || 'Connected') : (t('btn_select') || 'Select')}</button>
+        ${isActive && sv.name !== 'local' ? `<button class="btn-secondary" data-back-to-local="1" style="font-size:12px;padding:4px 8px" onclick="selectServer(null)">${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>` : ''}
+        </div>
       </div>`;
     })).then(rows => {
       el.innerHTML = rows.join('');
@@ -20561,10 +20605,15 @@ function loadServers() {
 // it must NOT reload the page or touch the update banner.
 function selectServer(name) {
   const prev = state.activeServer;
+  // null / '' / 'local' all mean "go back to the local server".
+  const target = (!name || name === 'local') ? null : name;
+  // Re-selecting the already-active server is a no-op (no state reset, no
+  // toast). Returning to local is always an explicit control (selectServer(null)).
+  if (target === (prev || null)) return;
   _ensureLocalHostname(); // GH#194 -- so the "Connected to <name>" toast below can use the real hostname
-  // Toggle back to null (local) if same button clicked; otherwise switch
-  state.activeServer = (state.activeServer === name) ? null : name;
+  state.activeServer = target;
   loadServers();
+  renderServerHeaderLine();
   if (state.activeServer !== prev) {
     state.sessions = [];
     state.channelReady = {};
@@ -37283,7 +37332,9 @@ function _loadServerPickerModalList() {
     el.innerHTML = chips.map(c => {
       const isActive = c.name === active;
       return `<button data-server-name="${escHtml(c.name || '')}" onclick="${escHtml(`selectServer(${c.name ? JSON.stringify(c.name) : 'null'});document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:${isActive ? 'var(--accent2,#4f8)' : 'var(--bg3,#2d3148)'};color:${isActive ? '#fff' : 'var(--text)'};font-weight:${isActive ? '600' : '400'};cursor:pointer;">${isActive ? '● ' : '○ '}${escHtml(c.label)}</button>`;
-    }).join('');
+    }).join('') + ((active && active !== 'all')
+      ? `<button data-back-to-local="1" onclick="${escHtml(`selectServer(null);document.getElementById('serverPickerModal').remove();`)}" style="text-align:left;padding:8px 10px;border-radius:6px;border:1px dashed var(--border);background:transparent;color:var(--text);cursor:pointer;">&#8617; ${escHtml(t('fed_conn_back_to_local', [_localHostname || (t('server_local_label') || 'this server')]) || `Back to ${_localHostname || 'this server'}`)}</button>`
+      : '');
     // GH#194 -- re-render (not a text-patch) once the real hostname
     // resolves, so the "● "/"○ " active-marker prefix this modal's
     // markup carries is rebuilt correctly rather than clobbered by a

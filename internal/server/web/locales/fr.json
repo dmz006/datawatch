@@ -1241,6 +1241,8 @@
   "server_indicator_return_tip": "Cliquez pour revenir à %1$s",
   "server_local_label": "Ce serveur",
   "settings_showing_server": "Affichage : %1$s",
+  "server_header_showing": "Affichage : %1$s",
+  "server_header_all": "Tous les serveurs",
   "server_name_label": "Nom",
   "server_picker_add": "Ajouter un serveur",
   "server_picker_federation_peer": "Pair Fédéré",

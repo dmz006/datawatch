@@ -148,6 +148,22 @@ Every main view (Sessions, Alerts, Automata, Observer, Dashboard) has a
 
 The active chip persists in `state.activeServer` for the duration of the session.
 
+Behaviours worth knowing:
+
+- **Re-selecting the active server is a no-op.** Tapping the chip that is
+  already active does not reload the view, refetch data or reset scroll
+  position and filters.
+- **Back to \<hostname\>.** When a remote server cannot be reached and
+  no sessions are loaded, the error panel offers an explicit
+  **Back to \<hostname\>** button (where \<hostname\> is this daemon's own
+  name) that returns you to local data in one tap. It appears only in that
+  unreachable-server state, not on every view; otherwise use the **Local**
+  chip.
+- **Showing: \<name\> header line.** Every page carries a
+  **Showing: \<name\>** line above the view naming the server whose data
+  is on screen: the server's hostname, or **All servers** in all-servers
+  mode.
+
 ## All-servers (aggregated) mode
 
 Selecting **All** uses two dedicated endpoints that fan out in parallel:
