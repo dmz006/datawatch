@@ -9011,6 +9011,11 @@ const DOCS_LINKS_BY_KEY = {
   evals: 'howto/evals.md',
   council: 'howto/council-mode.md',
   gc_projectprofiles: DOCS_DEFINITIONS + '#project-profiles',
+  // Per-project policy tier panel (Automata tab): the section header's
+  // docs pill opens the *Project automation policy* section of the
+  // central manual; the panel itself carries a second pill to
+  // docs/howto/project-automation-policy.md.
+  project_policy: DOCS_DEFINITIONS + '#project-automation-policy',
   pipelines: 'howto/pipeline-chaining.md',
   obs_pipelines: 'howto/pipeline-chaining.md',
   orchestrator_graphs: 'howto/automata-orchestrator.md',
@@ -9622,6 +9627,18 @@ function renderSettingsView() {
           <div id="settings-sec-gc_projectprofiles" style="${secContent('gc_projectprofiles')}">
             <div id="projectProfilesPanel" style="padding:4px 12px;">
               <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Per-project policy tier: one row per policy setting with the
+             effective value and the tier that supplied it (Automaton
+             overrides project overrides daemon). -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('project_policy', t('project_policy_title'))}
+          <div id="settings-sec-project_policy" style="${secContent('project_policy')}">
+            <div id="projectPolicyPanel" style="padding:4px 12px;">
+              <div style="color:var(--text2);font-size:13px;">${loadingEyeBlock(t('project_policy_loading'))}</div>
             </div>
           </div>
         </div>
@@ -10544,6 +10561,7 @@ function renderSettingsView() {
   loadGeneralConfig();
   loadDaemonLog(0);
   loadProjectProfiles();
+  loadProjectPolicyPanel();
   loadClusterProfiles();
   loadAgentsConfig();
   loadPluginsPanel();
@@ -26143,6 +26161,355 @@ function _automationUsageLoader() {
 }
 window.usageCalcRefresh = function () {
   return _automationUsageLoader().load();
+};
+
+// ── Project policy panel ────────────────────────────────────────────────────
+// Settings → Automata → Project policy: the per-project policy tier
+// (projects.<name>.policy in datawatch.yaml) — the middle layer between the
+// daemon defaults and one Automaton's own overrides. Every row shows the
+// EFFECTIVE value (what an Automaton of this project actually runs with),
+// the tier that supplied it as a badge, and a control for the project tier
+// alone: set a value, or clear it back to inherit. The resolver precedence
+// is automaton > project > daemon; the panel states it in the legend line.
+//
+// Writes go through POST /api/projects (project upsert) with the whole entry
+// — name, dir, description, default_backend kept as listed — and a policy
+// object carrying exactly one field set or null-cleared, so the daemon's
+// own validation is the final check. The client-side checks only keep an
+// obviously bad value from leaving the page; both kinds of message render
+// escaped. window._projectPolicy is the panel state, and
+// window.projectPolicyPanelHtml is a pure renderer exported exactly like
+// window.burnGuardCardHtml so the regression test
+// (app-project-policy.test.js) can drive it without a DOM.
+const PROJECT_POLICY_GROUPS = [
+  { labelKey: 'project_policy_group_plan', fields: [
+    { key: 'plan_coverage_check', kind: 'enum', values: ['off', 'warn', 'block'] },
+    { key: 'plan_coverage_min_ratio', kind: 'ratio' },
+    { key: 'plan_review_mode', kind: 'enum', values: ['off', 'warn', 'block'] },
+    { key: 'scope_lint', kind: 'enum', values: ['off', 'warn', 'enforce'] },
+  ] },
+  { labelKey: 'project_policy_group_retry', fields: [
+    { key: 'retry_policy', kind: 'map', categories: ['infra', 'content', 'scope', 'policy'] },
+    { key: 'retry_ceiling_total', kind: 'int', min: 0 },
+    { key: 'auto_fix_retries', kind: 'int', min: 0 },
+    { key: 'infra_retry_escalate_after', kind: 'int', min: 0 },
+    { key: 'failure_escalation', kind: 'escalation' },
+  ] },
+  { labelKey: 'project_policy_group_git', fields: [
+    { key: 'default_auto_pr', kind: 'bool' },
+    { key: 'parallel_read_only_tasks', kind: 'bool' },
+    { key: 'parallel_worktree_per_task', kind: 'bool' },
+  ] },
+  { labelKey: 'project_policy_group_lanes', fields: [
+    { key: 'max_concurrent_tasks', kind: 'int', min: 1 },
+    { key: 'plan_tier_max_inflight', kind: 'map', categories: null },
+    { key: 'lane_fill_gpu_lanes', kind: 'int', min: 0 },
+    { key: 'lane_fill_claude_lanes', kind: 'int', min: 0 },
+  ] },
+  { labelKey: 'project_policy_group_recent', fields: [
+    { key: 'uncommitted_work_policy', kind: 'enum', labelKey: 'project_policy_uncommitted_work_policy', values: ['hold', 'warn', 'off'] },
+    { key: 'uncommitted_work_scope', kind: 'enum', labelKey: 'project_policy_uncommitted_work_scope', values: ['task_files', 'worktree'] },
+    { key: 'burn_guard_ask_on_change', kind: 'bool' },
+  ] },
+];
+const _projectPolicy = {
+  projects: [],      // GET /api/projects entries (name, dir, description,
+                     // default_backend, policy = the project tier as saved)
+  projectName: '',
+  automaton: '',     // optional Automaton tier to resolve on top
+  effective: null,   // {policy: {key: {value, source}}}
+  error: '',
+  message: '',
+  busy: false,
+};
+window._projectPolicy = _projectPolicy;
+
+function ppLabelKey(key) { const d = ppFieldDef(key); return (d && d.labelKey) || ('project_policy_' + key); }
+
+function ppFieldDef(key) {
+  for (const g of PROJECT_POLICY_GROUPS)
+    for (const f of g.fields)
+      if (f.key === key) return f;
+  return null;
+}
+
+function ppSourceBadge(source) {
+  if (!source) return '';
+  const bg = source === 'automaton' ? 'rgba(80,140,255,.18)'
+    : source === 'project' ? 'rgba(176,124,255,.18)'
+    : 'rgba(130,130,140,.2)';
+  return ` <span style="margin-left:6px;padding:1px 7px;border-radius:8px;font-size:11px;white-space:nowrap;background:${bg}">${escHtml(t('project_policy_source_' + source))}</span>`;
+}
+
+function ppFormatValue(key, v) {
+  if (v === null || v === undefined) return '—';
+  const def = ppFieldDef(key);
+  if (!def) return escHtml(String(v));
+  if (def.kind === 'bool')
+    return escHtml(v ? t('project_policy_bool_on') : t('project_policy_bool_off'));
+  if (def.kind === 'escalation') {
+    if (!v || !v.enabled) return escHtml(t('project_policy_escalation_off'));
+    const steps = Array.isArray(v.steps) ? v.steps.length : 0;
+    const max = v.max_failures == null ? 0 : v.max_failures;
+    return escHtml(t('project_policy_escalation_on', [String(max), String(steps)]));
+  }
+  if (def.kind === 'map') {
+    const m = v && typeof v === 'object' ? v : {};
+    const pairs = Object.keys(m).sort().map(k => k + '=' + String(m[k]));
+    return escHtml(pairs.length ? pairs.join(', ') : '—');
+  }
+  return escHtml(String(v));
+}
+
+function ppInitial(key, value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
+  if (def0IsMap(key)) {
+    if (typeof value === 'object')
+      return Object.keys(value).sort().map(k => k + '=' + value[k]).join(', ');
+    return '';
+  }
+  if (key === 'failure_escalation') {
+    // rendered as two dedicated inputs — see ppRowHtml
+    return '';
+  }
+  return String(value);
+}
+function def0IsMap(key) { return !!(ppFieldDef(key) && ppFieldDef(key).kind === 'map'); }
+
+function ppControlHtml(st, f) {
+  const key = f.key;
+  const entry = (st.projects || []).find(p => p && p.name === st.projectName) || null;
+  const tier = (entry && entry.policy) ? entry.policy[key] : null;
+  const id = 'ppf_' + key;
+  const inputStyle = 'flex:none;width:170px;padding:3px 8px;font-size:13px;background:var(--input,#1e1e24);color:var(--text,#eee);border:1px solid var(--border,#3a3a44);border-radius:6px;';
+  const selStyle = 'flex:none;min-width:130px;padding:3px 8px;font-size:13px;background:var(--input,#1e1e24);color:var(--text,#eee);border:1px solid var(--border,#3a3a44);border-radius:6px;';
+  const clearOpt = `<option value="">${escHtml(t('project_policy_clear'))}</option>`;
+  let control = '';
+  if (f.kind === 'enum' || f.kind === 'bool') {
+    const options = f.kind === 'bool'
+      ? `<option value="on">${escHtml(t('project_policy_bool_on'))}</option><option value="off">${escHtml(t('project_policy_bool_off'))}</option>`
+      : f.values.map(v => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('');
+    control = `<select id="${id}" style="${selStyle}">${clearOpt}${options}</select>`;
+  } else if (f.kind === 'map') {
+    const ph = f.categories ? f.categories.join(', ') : 'tier=2, other=1';
+    control = `<input type="text" inputmode="text" id="${id}" value="${escHtml(ppInitial(key, tier))}" placeholder="${escHtml(ph)}" style="${inputStyle}">`;
+  } else if (f.kind === 'int' || f.kind === 'ratio') {
+    control = `<input type="text" inputmode="decimal" id="${id}" value="${escHtml(ppInitial(key, tier))}" style="${inputStyle}">`;
+  } else if (f.kind === 'escalation') {
+    const en = tier ? (tier.enabled ? 'on' : 'off') : '';
+    const mx = (tier && tier.max_failures > 0) ? String(tier.max_failures) : '';
+    control = `<select id="${id}" style="${selStyle}"><option value="">${escHtml(t('project_policy_clear'))}</option>` +
+      `<option value="on">${escHtml(t('project_policy_bool_on'))}</option>` +
+      `<option value="off">${escHtml(t('project_policy_bool_off'))}</option></select>` +
+      `<span style="color:var(--text2);font-size:12px;flex:none">${escHtml(t('project_policy_max'))}</span>` +
+      `<input type="text" inputmode="numeric" id="${id}_max" value="${escHtml(mx)}" style="${inputStyle}flex:none;width:70px;">`;
+  }
+  const btn = ` <button style="flex:none;padding:3px 12px;font-size:13px;border-radius:6px;background:var(--accent,#4f8cff);color:#fff;border:1px solid transparent;cursor:pointer;white-space:nowrap;" onclick="projectPolicyApply('${key}')">${escHtml(t('project_policy_apply'))}</button>`;
+  return control + btn;
+}
+
+function ppRowHtml(st, f) {
+  const view = (st.effective && st.effective.policy) ? st.effective.policy[f.key] : null;
+  const value = view ? ppFormatValue(f.key, view.value) : '—';
+  const badge = view && view.source ? ppSourceBadge(view.source) : '';
+  return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border,#2a2a32);flex-wrap:wrap;">
+    <span style="flex:1 1 220px;min-width:160px;font-size:13px;" title="${escHtml(t(ppLabelKey(f.key)))}">${escHtml(t(ppLabelKey(f.key)))}</span>
+    <span style="flex:none;font-size:13px;white-space:nowrap;">${value}${badge}</span>
+    <span style="flex:1 1 auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">${ppControlHtml(st, f)}</span>
+  </div>`;
+}
+
+window.projectPolicyPanelHtml = function (st) {
+  st = st || {};
+  const err = st.error ? `<div style="color:var(--red,#e06060);font-size:13px;margin:6px 0;white-space:pre-wrap;">${escHtml(st.error)}</div>` : '';
+  const msg = st.message ? `<div style="color:var(--green,#63b277);font-size:13px;margin:6px 0;">${escHtml(st.message)}</div>` : '';
+  if (st.busy)
+    return err + msg + `<div style="padding:10px 0;color:var(--text2);font-size:13px;">${escHtml(t('project_policy_loading'))}</div>`;
+  if (!st.projects || !st.projects.length)
+    return err + msg + `<div style="padding:10px 0;color:var(--text2);font-size:13px;">${escHtml(t('project_policy_no_projects'))}</div>`;
+  const opts = st.projects.map(p =>
+    `<option value="${escHtml(p.name)}"${p.name === st.projectName ? ' selected' : ''}>${escHtml(p.name)}</option>`).join('');
+  let h = err + msg +
+    `<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px;">
+      <label style="font-size:13px;color:var(--text2);flex:none;">${escHtml(t('project_policy_project'))}</label>
+      <select style="min-width:160px;padding:3px 8px;font-size:13px;background:var(--input,#1e1e24);color:var(--text,#eee);border:1px solid var(--border,#3a3a44);border-radius:6px;" onchange="projectPolicySelect(this.value)">${opts}</select>
+      <input type="text" placeholder="${escHtml(t('project_policy_automaton_hint'))}" value="${escHtml(st.automaton || '')}" style="min-width:220px;padding:3px 8px;font-size:13px;background:var(--input,#1e1e24);color:var(--text,#eee);border:1px solid var(--border,#3a3a44);border-radius:6px;" onchange="projectPolicySetAutomaton(this.value)">
+      <button style="padding:3px 12px;font-size:13px;border-radius:6px;background:transparent;color:var(--text,#eee);border:1px solid var(--border,#3a3a44);cursor:pointer;" onclick="projectPolicyRefresh()">${escHtml(t('project_policy_refresh'))}</button>
+    </div>
+    <div style="font-size:12px;color:var(--text2);margin:0 0 10px;">${escHtml(t('project_policy_legend'))}${docsLink('howto/project-automation-policy.md', t('project_policy_guide'))}</div>`;
+  if (!st.effective || !st.effective.policy)
+    return h + `<div style="padding:10px 0;color:var(--text2);font-size:13px;">${escHtml(t('project_policy_loading'))}</div>`;
+  for (const g of PROJECT_POLICY_GROUPS) {
+    h += `<div style="font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--text2);margin:14px 0 4px;">${escHtml(t(g.labelKey))}</div>`;
+    for (const f of g.fields) h += ppRowHtml(st, f);
+  }
+  return h;
+};
+
+// ── project policy: load + write paths ─────────────────────────────────────
+function _ppRenderPanel() {
+  const el = document.getElementById('projectPolicyPanel');
+  if (!el) return;
+  el.innerHTML = window.projectPolicyPanelHtml(_projectPolicy);
+}
+
+function _ppFetchEffective() {
+  const q = _projectPolicy.automaton ? '?automaton=' + encodeURIComponent(_projectPolicy.automaton) : '';
+  return apiFetch('/api/projects/' + encodeURIComponent(_projectPolicy.projectName) + '/policy/effective' + q)
+    .then(body => {
+      _projectPolicy.effective = (body && body.policy) ? body : null;
+      _projectPolicy.error = '';
+      if (!_projectPolicy.message) _ppRenderPanel();
+    })
+    .catch(e => { _projectPolicy.error = String((e && e.message) || e); _ppRenderPanel(); });
+}
+
+window.loadProjectPolicyPanel = function () {
+  _projectPolicy.busy = true;
+  _projectPolicy.error = '';
+  _projectPolicy.message = '';
+  _ppRenderPanel();
+  return apiFetch('/api/projects').then(list => {
+    const arr = Array.isArray(list) ? list : (list && list.projects) || [];
+    _projectPolicy.projects = arr;
+    _projectPolicy.projectName = (arr[0] && arr[0].name) || '';
+    _projectPolicy.busy = false;
+    if (_projectPolicy.projectName) return _ppFetchEffective();
+    _ppRenderPanel();
+  }).catch(e => {
+    _projectPolicy.busy = false;
+    _projectPolicy.error = String((e && e.message) || e);
+    _ppRenderPanel();
+  });
+};
+
+window.projectPolicyRefresh = function () {
+  _projectPolicy.busy = true;
+  _projectPolicy.error = '';
+  _projectPolicy.message = '';
+  _ppRenderPanel();
+  if (!_projectPolicy.projectName) { _projectPolicy.busy = false; _ppRenderPanel(); return Promise.resolve(); }
+  return _ppFetchEffective().then(() => { _projectPolicy.busy = false; _ppRenderPanel(); },
+    e => { _projectPolicy.busy = false; throw e; });
+};
+
+window.projectPolicySelect = function (name) {
+  _projectPolicy.projectName = String(name || '');
+  _projectPolicy.error = '';
+  _projectPolicy.message = '';
+  return _ppFetchEffective();
+};
+
+window.projectPolicySetAutomaton = function (id) {
+  _projectPolicy.automaton = String(id || '').trim();
+  _projectPolicy.error = '';
+  _projectPolicy.message = '';
+  return _ppFetchEffective();
+};
+
+function ppParseValue(def, key, raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (s === '') return { value: null };
+  const label = t(ppLabelKey(key));
+  const err = detail => ({ error: t('project_policy_invalid', [label, detail]) });
+  if (def.kind === 'enum') {
+    if (def.values.indexOf(s) === -1) return err(s + ' (' + def.values.join(' / ') + ')');
+    return { value: s };
+  }
+  if (def.kind === 'bool') {
+    if (s === 'on') return { value: true };
+    if (s === 'off') return { value: false };
+    return err(s);
+  }
+  if (def.kind === 'int') {
+    if (!/^\d+$/.test(s)) return err(s);
+    const n = parseInt(s, 10);
+    if (def.min !== undefined && n < def.min) return err(s);
+    return { value: n };
+  }
+  if (def.kind === 'ratio') {
+    const n = Number(s);
+    if (!isFinite(n) || n <= 0 || n > 1) return err(s + ' (0 < ratio ≤ 1)');
+    return { value: n };
+  }
+  if (def.kind === 'map') {
+    const m = {};
+    for (const part of s.split(',')) {
+      const p = part.trim();
+      if (!p) continue;
+      const ci = p.indexOf('=');
+      if (ci <= 0) return err(p);
+      const k = p.slice(0, ci).trim(), v = p.slice(ci + 1).trim();
+      if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(k)) return err(p);
+      if (!/^\d+$/.test(v)) return err(p);
+      if (def.categories && def.categories.indexOf(k) === -1) return err(p + ' (' + def.categories.join(' / ') + ')');
+      m[k] = parseInt(v, 10);
+    }
+    if (!Object.keys(m).length) return err('—');
+    return { value: m };
+  }
+  return err(s);
+}
+
+function ppParseEscalation() {
+  const en = String((document.getElementById('ppf_failure_escalation') || {}).value || '').trim();
+  const ms = String((document.getElementById('ppf_failure_escalation_max') || {}).value || '').trim();
+  const label = t('project_policy_failure_escalation');
+  if (en === '' && ms === '') return { value: null };
+  if (en !== 'on' && en !== 'off') return { error: t('project_policy_invalid', [label, en || '—']) };
+  if (ms !== '' && !/^\d+$/.test(ms)) return { error: t('project_policy_invalid', [label, ms]) };
+  return { value: { enabled: en === 'on', max_failures: ms === '' ? 0 : parseInt(ms, 10) } };
+}
+
+window.projectPolicyApply = function (key) {
+  if (_projectPolicy.busy) return Promise.resolve();
+  const def = ppFieldDef(key);
+  const entry = (_projectPolicy.projects || []).find(p => p && p.name === _projectPolicy.projectName) || null;
+  if (!def || !entry) {
+    _projectPolicy.error = t('project_policy_no_projects');
+    _ppRenderPanel();
+    return Promise.resolve();
+  }
+  _projectPolicy.busy = true;
+  _projectPolicy.error = '';
+  _projectPolicy.message = '';
+  _ppRenderPanel();
+  let parsed;
+  try {
+    if (def.kind === 'escalation') parsed = ppParseEscalation();
+    else parsed = ppParseValue(def, key, ((document.getElementById('ppf_' + key) || {}).value));
+  } catch (e) {
+    parsed = { error: String((e && e.message) || e) };
+  }
+  if (parsed && parsed.error) {
+    _projectPolicy.busy = false;
+    _projectPolicy.error = parsed.error;
+    _ppRenderPanel();
+    return Promise.resolve();
+  }
+  const policy = Object.assign({}, entry.policy || {});
+  policy[key] = parsed.value; // may be null = clear / inherit the tier
+  const body = {
+    name: entry.name,
+    dir: entry.dir || '',
+    description: entry.description || '',
+    default_backend: entry.default_backend || '',
+    policy: policy,
+  };
+  return apiFetch('/api/projects', { method: 'POST', body: JSON.stringify(body) })
+    .then(() => {
+      _projectPolicy.message = t('project_policy_saved', [t(ppLabelKey(key))]);
+      return _ppFetchEffective().then(() => {
+        _projectPolicy.busy = false;
+        _ppRenderPanel();
+      });
+    })
+    .catch(e => {
+      _projectPolicy.busy = false;
+      _projectPolicy.error = String((e && e.message) || e);
+      _ppRenderPanel();
+    });
 };
 
 // ── Lane fill card ──────────────────────────────────────────────────────────

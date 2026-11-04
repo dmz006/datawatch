@@ -317,6 +317,11 @@ test('every infra_retry key the app references exists in all five bundles', () =
   const referenced = new Set();
   for (const m of src.matchAll(/['"`]((?:settings_)?infra_retry_[a-z_]+)['"`]/g)) referenced.add(m[1]);
   assert.ok(referenced.size >= 20, 'too few references found: ' + referenced.size);
+  // infra_retry_escalate_after is also the ProjectPolicy JSON field name the
+  // project policy panel sends in the policy object; its UI label lives under
+  // project_policy_infra_retry_escalate_after, so the bare key is a contract
+  // identifier here, not a locale key.
+  referenced.delete('infra_retry_escalate_after');
   for (const lang of LANGS) {
     const b = bundle(lang);
     for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' referenced by app.js but missing in ' + lang);
