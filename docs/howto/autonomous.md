@@ -39,6 +39,9 @@ know together:
    it on every surface.
 3. **`skipped_snapshot_paths`** — the record on the task result that
    tells you which files the staging pass refused to stage, and why.
+   The record is written by the normal completion commit, the
+   stall-recovery commit and the attempt snapshot path, and the PWA,
+   the CLI and the comm channel all show it.
 
 If a file the task needed shows up in `skipped_snapshot_paths`, the
 usual fix is to put that path back in scope for that file (widen the
@@ -112,9 +115,10 @@ committed work — follow this staging discipline:
 6. **The skip is reported, not papered over.** Every refused file is
    logged with its reason (the first 50 are shown, the rest counted as
    "and N more skipped") with a per-reason summary (for example
-   `ignored=1, never-stage=2`), and, when the stall-recovery commit performs the staging, the pass is
-   recorded on the task result — see `skipped_snapshot_paths` below. The
-   normal completion commit logs its skips but does not yet set the record.
+   `ignored=1, never-stage=2`), and the pass is recorded on the task
+   result — the normal completion commit, the stall-recovery commit and
+   the attempt snapshot path all set the record. See
+   `skipped_snapshot_paths` below.
 
 In short: a file reaches an automatic commit only if it is within the
 task's declared scope (or the run's own changes), it is not in your
@@ -201,9 +205,10 @@ changed.
 ## `skipped_snapshot_paths` — the skip record on the task result
 
 When a staging pass refused one or more candidates, the task result
-carries it. Today the record is written by the stall-recovery commit
-path; the normal completion commit only logs its skips, so a missing
-record does not prove nothing was skipped — check the daemon log too. Each automaton task in the `autonomous_prd_get` /
+carries it. The record is written by the normal completion commit, the
+stall-recovery commit and the attempt snapshot path — and the PWA, the
+CLI and the comm channel all show it alongside MCP and REST. Each
+automaton task in the `autonomous_prd_get` /
 `/api/autonomous/prds/<id>` record shows, when it has a last staging
 pass with skips:
 
@@ -235,7 +240,7 @@ pass with skips:
 - **Cap and ordering:** at most 50 entries are kept (oldest dropped), and
   when the same task ran more than one staging pass the **last pass
   wins** — the record always describes the most recent pass.
-- **Read it** with `autonomous_prd_get` (MCP), `GET /api/autonomous/prds/<id>` (REST), and `datawatch autonomous prd-get <id>` (CLI) — all three return the same task record. The daemon log also has one line per skipped file with the reason.
+- **Read it** with `autonomous_prd_get` (MCP), `GET /api/autonomous/prds/<id>` (REST), and `datawatch autonomous prd-get <id>` (CLI) — all three return the same task record. The PWA shows the record on the task, and the comm channel renders an "left unstaged" line per task that has skips. The daemon log also has one line per skipped file with the reason.
 
 ## Troubleshooting
 
