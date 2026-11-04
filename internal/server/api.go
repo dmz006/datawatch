@@ -6020,6 +6020,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			}
 			return m
 		}(),
+		// UI display settings — the ui.* splash minimum-dwell seconds, EFFECTIVE
+		// values, so an unset config shows its defaults (6 / 9).
+		"ui": map[string]interface{}{
+			"splash_min_seconds":             s.cfg.UI.SplashMinSecondsEffective(),
+			"splash_min_seconds_new_version": s.cfg.UI.SplashMinSecondsNewVersionEffective(),
+		},
 		// Usage calculator settings — EFFECTIVE values, so an unset config
 		// shows its defaults.
 		"usage": map[string]interface{}{
@@ -7223,6 +7229,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// session.liveness_window_seconds / session.liveness_idle_timeout_overrides:
 	// a bad value or an unknown backend name rejects the whole PUT.
 	if err := validateLivenessPatch(patch, s.availableBackends); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// ui.splash_min_seconds and ui.splash_min_seconds_new_version: a bad value
+	// rejects the whole PUT before anything is applied, by the same rules the
+	// config file load uses.
+	if err := validateUISplashPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9150,6 +9163,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Session.UIPromptMaxAttempts = &n
 			}
+		case "ui.splash_min_seconds":
+			// Validated in handlePutConfig to a whole number from 0 to 60
+			// (0 = keep the legacy timing).
+			if n, ok := toInt(v); ok {
+				cfg.UI.SplashMinSeconds = &n
+			}
+		case "ui.splash_min_seconds_new_version":
+			// Validated in handlePutConfig to a whole number from 0 to 60
+			// (0 = keep the legacy timing).
+			if n, ok := toInt(v); ok {
+				cfg.UI.SplashMinSecondsNewVersion = &n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -10842,6 +10867,36 @@ func validateUIPromptPatch(patch map[string]interface{}) error {
 				v, config.DefaultUIPromptMaxAttempts))
 		} else {
 			err(config.ValidateUIPromptMaxAttempts(n))
+		}
+	}
+	return firstErr
+}
+
+// validateUISplashPatch checks the ui.* splash minimum-dwell keys: a whole
+// number from 0 to 60 inclusive, by the same rules the config file load uses.
+func validateUISplashPatch(patch map[string]interface{}) error {
+	var firstErr error
+	err := func(e error) {
+		if firstErr == nil && e != nil {
+			firstErr = e
+		}
+	}
+	if v, ok := patch["ui.splash_min_seconds"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("ui.splash_min_seconds: %v is invalid; use a whole number from 0 to %d (0 = keep the legacy timing; default %d)",
+				v, config.MaxUISplashSeconds, config.DefaultUISplashMinSeconds))
+		} else {
+			err(config.ValidateUISplashMinSeconds(n))
+		}
+	}
+	if v, ok := patch["ui.splash_min_seconds_new_version"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			err(fmt.Errorf("ui.splash_min_seconds_new_version: %v is invalid; use a whole number from 0 to %d (0 = keep the legacy timing; default %d)",
+				v, config.MaxUISplashSeconds, config.DefaultUISplashMinSecondsNewVersion))
+		} else {
+			err(config.ValidateUISplashMinSecondsNewVersion(n))
 		}
 	}
 	return firstErr

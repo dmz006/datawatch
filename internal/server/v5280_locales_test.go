@@ -75,6 +75,12 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		// b4220001 — PWA splash dwell settings and the previous-version line.
+		"splash_version_previous",
+		"settings_splash_min_seconds",
+		"settings_splash_min_seconds_hint",
+		"settings_splash_min_seconds_new_version",
+		"settings_splash_min_seconds_new_version_hint",
 		// e3db0001 — capacity priority-source chip + kind table / defect intake settings.
 		"priority_source_badge",
 		"priority_source_explicit",

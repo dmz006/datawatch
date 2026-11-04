@@ -500,6 +500,32 @@ configure session.dismiss_ui_prompts     — show current value
 
 Defaults when unset: `dismiss_ui_prompts=true`, delay 5 s, clear bound 30 s, 2 attempts. When the budget is spent (or dismissal is off), the session is flagged waiting-for-input and an operator question is raised with the captured screen tail. Counters show in the stats API under `ui_prompts`. See `docs/howto/sessions-deep-dive.md` and `docs/operations.md` for the full rules.
 
+### Splash dwell settings via `configure`
+
+Two settings control how long the PWA splash screen (logo screen) stays on screen, in whole seconds from 0 to 60; `0` keeps the legacy timing. They apply from the next splash show — no restart.
+
+```
+configure ui.splash_min_seconds=8                    # dwell for an ordinary show (first visit or > 24 h); default 6
+configure ui.splash_min_seconds_new_version=15       # dwell when shown for a new version; default 9
+```
+
+Read the current value with `datawatch config get ui.splash_min_seconds` or `GET /api/config` (both keys under `ui`). Out-of-range or non-whole-number values are refused with the key named, and nothing changes. Once the window is connected, a tap, click, or keypress dismisses the splash early with the fade.
+
+The same keys work through every other surface:
+
+```
+datawatch config set ui.splash_min_seconds 8
+datawatch config set ui.splash_min_seconds_new_version 15
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \\
+     -d '{"ui.splash_min_seconds": 8}' \\
+     http://datawatch.local/api/config
+# YAML:  ui:
+#           splash_min_seconds: 8
+#           splash_min_seconds_new_version: 15
+```
+
+MCP: `config_set` with key `ui.splash_min_seconds`. See operations.md → “Splash dwell settings” and implementation.md → “Splash dwell settings” for the full write-up.
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.

@@ -118,11 +118,23 @@ body {
   letter-spacing: 1px;
 }
 .splash-version {
-  font-size: 11px;
+  font-size: 15px;
   color: var(--accent2);
   opacity: 0.85;
   margin-top: 8px;
   letter-spacing: 0.5px;
+}
+/* Previous-version line under the new version; only shown when the daemon
+   version changed since the last splash display. */
+.splash-version-prev {
+  font-size: 13px;
+  color: var(--text2);
+  opacity: 0.8;
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+  /* Keep long version strings inside the 320 px / 16 px gutter envelope. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 /* GH#172 D59 — splash status line (Android already has this). */
 .splash-status {

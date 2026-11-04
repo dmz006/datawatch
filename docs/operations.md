@@ -6176,3 +6176,55 @@ The default remains `shadow` for the first release. That is a decision, not a ga
 **Where to see.** The *Secret scan* subsection under [8. Monitoring](#8-monitoring) documents the counters (`runs`, `findings`, `shadow_reports`, `refusals`, …) on `GET /api/git/secret-scan/stats`, in the `secret_scan` block of `GET /api/stats`, and on the MCP `secret_scan_stats` tool, together with the per-push audit events (`secret_scan_shadow` when shadow records a finding, `secret_scan_refused` when enforce refuses) in the JSON-lines and CEF audit logs.
 
 **Revisiting the default.** Deciding whether to change the default is the operator's call and would be a separate change for a later release. The criterion, using the monitoring above: the `secret_scan` stats and audit events show a sustained period of shadow reports in which every report was either a true positive or resolved by the allow-list procedure, with refusals for known-good content at zero. Until that shows up, `shadow` remains the safe default for a fresh install.
+## Splash dwell settings (`ui.splash_min_seconds`, `ui.splash_min_seconds_new_version`)
+
+Two settings control how long the PWA splash screen (the logo screen) stays on screen when it is shown.
+
+### When the splash is shown
+
+The splash is shown only when one of these is true for that browser and origin (the decision is kept in the browser's `localStorage` under `cs_splash_time` and `cs_splash_version`):
+
+- **First visit** — the browser has no record of the splash being shown.
+- **New version** — the daemon's version differs from the version the splash last showed for.
+- **> 24 hours** — more than 24 hours have elapsed since the splash was last shown.
+
+Otherwise the splash is removed immediately on connect, with no dwell and no fade.
+
+### How long it stays
+
+Once the connection is up and the gating above allows the splash, it stays for the configured minimum dwell, then fades out (700 ms):
+
+- **`ui.splash_min_seconds`** — dwell for the ordinary show (first visit or > 24 hours). Default **6** seconds.
+- **`ui.splash_min_seconds_new_version`** — dwell when the splash is shown because the daemon's version changed. Default **9** seconds.
+
+Both keys take a whole number of seconds from **0 to 60**, and **`0` keeps the legacy timing** (the fixed 3000 ms window measured from page start) instead of a configured dwell. Values outside the range or not a whole number are refused with the key named, and nothing is changed. A change takes effect on the next splash show — no daemon restart is needed, because the PWA reads the current `GET /api/config` value at the moment the gating decision runs.
+
+### Early dismiss
+
+Once the window is connected to the daemon, a tap, a click, or any keypress dismisses the splash early: the fade starts immediately and the splash is removed, without waiting out the dwell. The first such input wins; the dismiss cannot be triggered again by a second input on the same splash. Before the connection is up, the settings still apply to the dwell timing once it connects.
+
+### Version line
+
+When the splash is shown for a new version, the version line now carries the **previous** version (the one the splash last showed for) instead of only the current one. On an ordinary show the line is unchanged.
+
+### Surfaces
+
+| Surface | How |
+|---|---|
+| YAML | `ui.splash_min_seconds`, `ui.splash_min_seconds_new_version` under `ui:` in `config.yaml` |
+| CLI | `datawatch config set ui.splash_min_seconds 8` (and the `_new_version` key the same way) |
+| REST | `PUT /api/config` with the key and a whole number 0–60; `GET /api/config` reports both under `ui` with the defaults when unset |
+| MCP | the config-set tool with the same two keys |
+| Comm channel | `configure ui.splash_min_seconds=8` |
+| Web settings | two fields in the PWA settings view, with the same 0–60 floor and ceiling |
+
+### Configuration keys
+
+| Key | Default | Meaning |
+|---|---|---|
+| `ui.splash_min_seconds` | `6` | Minimum seconds the splash stays on screen for an ordinary show (first visit or > 24 h). `0` keeps the legacy 3000 ms timing. Whole number 0–60. |
+| `ui.splash_min_seconds_new_version` | `9` | Minimum seconds the splash stays when shown for a new daemon version. `0` keeps the legacy timing. Whole number 0–60. |
+
+### Android / iPhone
+
+The mobile apps (datawatch-app) do not yet mirror these dwell settings. The parity issue asking them to adopt the two dwell timetables is filed at `docs/plans/parity-issues/splash-dwell-settings.md`.

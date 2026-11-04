@@ -2644,3 +2644,90 @@ the result is `skipped`). Reads need the autonomous read capability, regenerate 
 The manager side is `generated_artefacts_read.go`; an unknown id, kind or missing record is a 404.
 MCP tools `generated_artefacts_get`, `autonomous_prd_change_record`, `autonomous_prd_generated_artefact`
 and `autonomous_prd_regenerate_artefact` proxy those routes.
+### Splash dwell settings (`ui.splash_min_seconds`, `ui.splash_min_seconds_new_version`)
+
+Two keys size how long the PWA splash screen stays on screen before it may
+dismiss. Neither value is hard-coded: both are read from the daemon config at
+the moment the splash gating decision runs (on connect), and a change from
+any surface applies to the next splash show with no daemon restart. A failed
+config fetch or a non-number value keeps the defaults.
+
+How it works, for someone reading the code:
+
+- `internal/config/config.go` carries the two keys as pointer fields in
+  `UIConfig` (`SplashMinSeconds *int`, `SplashMinSecondsNewVersion *int`), so
+  an unset key and an explicit `0` are distinct and both survive a YAML round
+  trip and a `PUT /api/config` write. `EffectiveSplashMinSeconds()` and
+  `EffectiveSplashMinSecondsNewVersion()` resolve unset to the defaults `6`
+  and `9` seconds (constants `DefaultUISplashMinSeconds`,
+  `DefaultUISplashMinSecondsNewVersion`; `MaxUISplashSeconds` is `60`).
+  `validateUISplashSeconds` (shared with the config-load path) accepts a whole
+  number 0–60 and rejects a fraction, a negative, `61`, and a non-number,
+  naming the key.
+- `internal/server/api.go`: `GET /api/config` returns the two effective
+  values under `ui`; `PUT /api/config` accepts the two dot-path keys
+  (`ui.splash_min_seconds`, `ui.splash_min_seconds_new_version`) and, before
+  anything is applied, rejects out-of-range or non-whole-number values with
+  HTTP 400 naming the key.
+- `internal/server/web/app.js` drives the behaviour at display time:
+  `splashDwellRemainingMs({ minSeconds, legacyStartAt, now })` computes the
+  remaining dwell — `minSeconds * 1000` measured from the moment the gating
+  allowed the splash, or, when the resolved setting is `0`, the legacy window
+  of 3000 ms measured from `window._splashStart` (page start) minus what
+  already elapsed. `window._splashStart` is set at the top of the file, before
+  anything else runs. `_scheduleSplashDismiss(splash, remainingMs, { connected })`
+  waits that long then starts the 700 ms fade (`splash.classList.add
+  ('fade-out')`) and removes the splash element exactly once (a prior
+  dismiss path clears the timers and the flag). Early dismiss: once
+  `connected` is true, `pointerdown`, `click`, and `keydown` on the document
+  start the fade immediately (the first one wins; a later input on the same
+  splash does nothing). The gating branch on connect (`shouldShow`) covers
+  first visit (`!lastSplashTime`), new version (`serverVer !== lastSplashVer`
+  against the `cs_splash_version` localStorage key), or 24+ hours
+  (`hoursSince >= 24` against `cs_splash_time`). The dwell settings are
+  fetched from `GET /api/config` before the timing decision, so the first
+  connect uses the operator's values; a failed fetch or non-number keeps the
+  defaults (6 / 9).
+- Version line: when the splash is shown for a new version,
+  `#splashVersionPrev` carries the previous version via the locale key
+  `splash_version_previous` (the version the splash last showed for, read
+  before the key is overwritten); on an ordinary show it stays hidden.
+- The PWA settings view exposes both keys as number fields
+  (`settings_splash_min_seconds`, `settings_splash_min_seconds_new_version`
+  and their `*_hint` strings in all five locale bundles), seeded with the
+  effective values (6 / 9 when unset).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `ui.splash_min_seconds`, `ui.splash_min_seconds_new_version` (whole number 0–60; `0` keeps the legacy timing) |
+| **CLI** | `datawatch config set ui.splash_min_seconds 8`, `datawatch config set ui.splash_min_seconds_new_version 15` |
+| **REST API** | `PUT /api/config` with, e.g., `{"ui.splash_min_seconds": 8}`; `GET /api/config` returns each under `ui` with its effective value |
+| **MCP** | `config_set` with key `ui.splash_min_seconds` (or `_new_version`) |
+| **Comm channel** | `configure ui.splash_min_seconds=8` |
+
+**Keys.**
+
+| Key | Type | Default | Meaning |
+|-----|------|---------|---------|
+| `ui.splash_min_seconds` | whole seconds, 0–60 | `6` | Minimum dwell for an ordinary splash show (first visit or > 24 h). `0` keeps the legacy 3000 ms timing. |
+| `ui.splash_min_seconds_new_version` | whole seconds, 0–60 | `9` | Minimum dwell when the splash is shown because the daemon version changed. `0` keeps the legacy timing. |
+
+Tests:
+
+- `internal/config/ui_splash_settings_test.go` — defaults when unset,
+  explicit `0` kept, `60` accepted, `61` and `−1` rejected, both keys round
+  trip YAML.
+- `internal/server/splash_settings_test.go` — `GET /api/config` returns the
+  defaults when unset, `PUT` round-trips without a restart, bad values are
+  refused naming the key.
+- `internal/router/splash_configure_test.go` — comm `configure` help and
+  listing mention both keys; `configure` accepts them.
+- `internal/mcp/splash_config_set_test.go` — MCP `config_set` accepts both
+  keys and refuses bad values.
+- `cmd/datawatch/splash_config_set_test.go` — CLI `config set`/`get` for both
+  keys; bad values refused.
+- `internal/server/web/app-splash-dwell.test.js` — dwell timing, late
+  connection, `0` = legacy, early dismiss (click / pointerdown / keydown),
+  version line, 700 ms fade, single teardown.
+- `internal/server/web/app-splash-settings.test.js` — the settings fields and
+  their floors/ceilings on the five locale bundles.
