@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.89.0 (2026-11-04).** The secret scan writes audit events and counts its runs and findings on the stats, with tests and a smoke section. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.90.0 (2026-11-04).** The PWA splash dwell is configurable (6 seconds, 9 on a new version) and a tap or key press dismisses it early. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

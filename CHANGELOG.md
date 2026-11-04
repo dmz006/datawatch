@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.90.0 — Configurable splash dwell with early dismiss
+
+The splash screen's on-screen time is now configurable, and a tap or key press dismisses it.
+
+- **Two settings.** `ui.splash_min_seconds` (default 6) and `ui.splash_min_seconds_new_version` (default 9) set how long the splash stays up before it fades, shown on first visit, when the daemon's version changed, or after 24 hours. Each is a whole number of seconds from 0 to 60; 0 keeps the legacy timing.
+- **Early dismiss.** Once the window is connected, a tap, click or any key press dismisses the splash with the same fade.
+- **Version line.** When the splash is shown for a new version, it also names the previous version.
+- On the config file, REST, MCP, CLI, comm channel and web settings, with five locales and docs. The splash reads the settings once per page load.
+
 ## v9.89.0 — Secret scan follow-up: audit events, stats and smoke
 
 The pre-push secret scan gets its follow-up work: tests, audit events, stats, a smoke check and the decision on its default.
