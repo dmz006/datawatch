@@ -281,3 +281,70 @@ Changed (tests, signature updates for 3-value `SetPRDLLM` / 3-value `SplitSetLLM
 Verification: `go vet ./...` clean; full `go test ./internal/... -count=1` green (11078 tests /
 93 packages); targeted `go test ./internal/autonomous/ -run 'TestPlanningRequeue|TestSplitSetLLMOut'
 -count=1` all PASS. No version bump, no `gh`, no daemon start.
+
+## 13. Changed files — surface wiring for the structured outcome (this worktree)
+
+After the planning requeue and the worker queued-override were implemented (sections 10–12),
+this task wires the SAME structured outcome — `SetLLMOut{Override, Planning}` via
+`SplitSetLLMOut` — through all five surfaces, each in a short plain form, so every one
+shows *what changed*, *what was left alone and why*, and *whether the planning run was
+requeued or deferred*.
+
+The outcome sentences are rendered by two shared formatters (surface parity, no
+per-surface reimplementation):
+- `autonomous.FormatLLMOverrideResult` (`queued_task_override.go`) — changed tasks
+  (`(capacity retargeted)` where the capacity entry moved), left-alone tasks with the
+  reason, `""` when nil.
+- `autonomous.FormatPlanningRequeueResult` (`planning_requeue.go`) —
+  `planning <outcome> (pools <old> → <new>) — <reason>`, `""` when nil.
+
+Changed (non-test):
+- `internal/autonomous/queued_task_override.go` — added `FormatLLMOverrideResult` (shared
+  one-line outcome rendering).
+- `internal/autonomous/planning_requeue.go` — added `FormatPlanningRequeueResult`.
+- `internal/mcp/autonomous.go` — `llmSetterResult` (used by `autonomous_prd_set_llm`,
+  `autonomous_prd_set_story_llm`, `autonomous_prd_set_task_llm`, the decompose-restart
+  tool) appends `\noutcome: <override>; <planning>` to the JSON text; tool descriptions
+  now state that the reply reports changed / left-alone tasks and the planning outcome.
+- `internal/mcp/memory_tools.go` — `autonomous.override_queued_tasks` documented in the
+  `get_config` / `config_set` tool text (the one new config surface).
+- `internal/router/sx2_parity.go` — added `llmOutcomeReply`: the comm-channel `autonomous
+  set-llm` / `set-story-llm` / `set-task-llm` handlers now answer
+  `ok — <override> — <planning>` (plain words instead of a PRD JSON blob) while a classic
+  reply without outcome fields keeps the old pretty-JSON answer.
+- `cmd/datawatch/cli_autonomous.go` — `prd-set-llm` / `prd-set-story-llm` /
+  `prd-set-task-llm` now switch to `daemonJSONBody` + `prettyPrint` and additionally
+  print an `outcome: <override>; <planning>` line via new `printSetLLMOutcome` (no-op
+  when the reply carries no outcome).
+- `internal/server/web/app.js` — (a) the LLM/effort controls in the PRD, story and task
+  modals are editable while the Automaton is RUNNING: queued tasks can still be retargeted
+  (`override_queued_tasks`) and planning changes requeue decompose — previously the
+  controls disabled on the running status; (b) new `llmOutcomeToast(res)`: the
+  set_llm-family responses toast the outcome — changed tasks, left-alone tasks with their
+  reason, and the planning outcome/reason (requeued pools old → new, or deferred). The
+  waiting-capacity tasks already render their `wait_reason` + `taskWaitHtml` (the reason
+  names the current pool).
+- REST (`internal/server/autonomous.go`, `autonomous_view.go`, `planning_requeue_helper.go`) —
+  already fully wired in sections 10–12 (`SetLLMOut.Planning`,
+  `writeAutonomousPlanningResult`); no change in this task.
+
+New tests:
+- `internal/mcp/queued_requeue_outcome_test.go` — `TestQueuedRequeue_OutcomeSummaryLine`
+  (prd/story/task/decompose-restart all carry the outcome line against a fake daemon
+  returning the envelope), `TestQueuedRequeue_PlanningDeferredExplains` (deferred
+  outcome + "wait for it to finish, or cancel the PRD" reason),
+  `TestQueuedRequeue_ClassicPlainReplyUnchanged` (a reply without outcome fields is
+  relayed as-is, no outcome invented).
+- `internal/router/set_llm_outcome_comm_test.go` — `TestCommSetLLMFamiliesSurfaceQueuedOutcome`
+  (all three comm verbs reply with the plain outcome sentence, including
+  `planning requeued (pools claude-code → opencode)`),
+  `TestCommSetLLMPlanningDeferredExplains` (deferred + cancel-or-wait explanation),
+  `TestCommSetLLMClassicReplyUnchanged`.
+- `cmd/datawatch/cli_set_llm_outcome_test.go` — `TestCLI_PRDSetLLM_PrintsQueuedOutcome`,
+  `TestCLI_PRDSetStoryLLM_PrintsQueuedOutcome`, `TestCLI_PRDSetTaskLLM_PrintsQueuedOutcome`
+  (pretty daemon reply AND `outcome:` line, against a fake daemon),
+  `TestCLI_PRDSetLLM_ClassicReply_NoOutcomeLine`.
+
+Verification: `go build ./...` clean, `node --check internal/server/web/app.js` clean,
+`go test -count=1` green for all five touched packages (autonomous, mcp, router,
+cmd/datawatch, server — 10728 tests).

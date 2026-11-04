@@ -71,6 +71,27 @@ type PlanningRequeueResult struct {
 	Reason     string          `json:"reason,omitempty"`
 }
 
+// FormatPlanningRequeueResult renders a planning requeue outcome as one
+// short, flat, chat- and terminal-friendly line: the outcome word, the
+// pool change for a requeued run (old pools → new pools), and the
+// daemon's one-line reason when it carries one. It returns "" when the
+// result is nil (the PRD's own LLM settings did not change, or the
+// response carried no planning field at all), so callers can append it
+// unconditionally.
+func FormatPlanningRequeueResult(res *PlanningRequeueResult) string {
+	if res == nil {
+		return ""
+	}
+	s := "planning " + string(res.Outcome)
+	if len(res.OldPools) > 0 || len(res.NewPools) > 0 {
+		s += fmt.Sprintf(" (pools %s \u2192 %s)", strings.Join(res.OldPools, ","), strings.Join(res.NewPools, ","))
+	}
+	if res.Reason != "" {
+		s += " \u2014 " + res.Reason
+	}
+	return s
+}
+
 // plannerHolder is the capacity holder key decomposeAdmitted queues the
 // planner under (see capacity.go).
 func plannerHolder(prdID string) string { return "plan:" + prdID }

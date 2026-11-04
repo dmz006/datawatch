@@ -824,12 +824,44 @@ func (s *Server) handleAutonomousShippedCounts(_ context.Context, _ mcpsdk.CallT
 // llmSetterResult turns a proxied LLM setter response into a tool result.
 // A refusal from the REST handler (non-2xx, such as a model/backend
 // pairing the backend cannot serve) becomes a tool error carrying the REST
-// error text, so the caller sees a failure rather than a success.
+// error text, so the caller sees a failure rather than a success. On
+// success the raw JSON is returned as-is (it already carries the
+// structured `override` and `planning` outcome fields when present) with
+// a one-line `outcome:` summary appended, naming the changed / left-alone
+// tasks and the planning requeue outcome, so an LLM caller does not have
+// to mine the JSON.
 func llmSetterResult(out []byte, err error) (*mcpsdk.CallToolResult, error) {
 	if err != nil {
 		return mcpsdk.NewToolResultError(err.Error()), nil
 	}
-	return textOK(string(out)), nil
+	text := string(out)
+	if extra := setLLMOutcomeSummary(out); extra != "" {
+		text += "\noutcome: " + extra
+	}
+	return textOK(text), nil
+}
+
+// setLLMOutcomeSummary extracts the optional structured outcome fields
+// (override, planning) from a set_llm-family REST reply and renders them
+// with the autonomous package's formatters, joined by "; ". It returns
+// "" when the body is not JSON or carries neither field, so callers can
+// append the result unconditionally.
+func setLLMOutcomeSummary(out []byte) string {
+	var envelope struct {
+		Override *autonomous.LLMOverrideResult     `json:"override"`
+		Planning *autonomous.PlanningRequeueResult `json:"planning"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil {
+		return ""
+	}
+	var parts []string
+	if s := autonomous.FormatLLMOverrideResult(envelope.Override); s != "" {
+		parts = append(parts, s)
+	}
+	if s := autonomous.FormatPlanningRequeueResult(envelope.Planning); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "; ")
 }
 
 func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
@@ -1382,7 +1414,7 @@ func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_llm",
-		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Pass only the fields to change — an omitted parameter leaves the PRD field unchanged, an empty value clears that field (falling back to the global default). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend."),
+		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Pass only the fields to change — an omitted parameter leaves the PRD field unchanged, an empty value clears that field (falling back to the global default). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend. When the PRD's planning run is still queued for capacity and its pool changes, the queued request is retargeted to the new pool and the response carries a `planning` result (outcome: requeued | deferred_to_next_run | unchanged; old/new backend, model, pools; reason); a started run is deferred to the next poll. An `outcome: ...` summary line is appended when either structured result is present."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("Task-execution backend (claude-code / opencode / goose / ollama / etc.)")),
 		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
@@ -1424,7 +1456,7 @@ func prdSetLLMBody(req mcpsdk.CallToolRequest) (map[string]any, error) {
 
 func (s *Server) toolAutonomousPRDSetStoryLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_story_llm",
-		mcpsdk.WithDescription("BL381 — override the worker LLM for all tasks in one story. Empty string = clear (falls back to PRD then global). Resolution order: per-task → per-story → per-PRD → global."),
+		mcpsdk.WithDescription("BL381 — override the worker LLM for all tasks in one story. Empty string = clear (falls back to PRD then global). Resolution order: per-task → per-story → per-PRD → global. When accepted while the Automaton is running (autonomous.override_queued_tasks, default true), only the story's not-yet-started tasks are touched and the response carries an `override` result: the changed tasks (each with capacity_moved when its live queued capacity request was retargeted to the new pool) and the left-alone tasks each with the reason; an `outcome: ...` summary line is appended."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),
@@ -1447,7 +1479,7 @@ func (s *Server) handleAutonomousPRDSetStoryLLM(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_task_llm",
-		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global)."),
+		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global). When accepted while the Automaton is running (autonomous.override_queued_tasks, default true), a task that has not started yet is retargeted (capacity_moved when its live queued capacity request moved on the new pool's queue); a running or finished task is left alone and named in left_alone with the reason; an `outcome: ...` summary line is appended."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),

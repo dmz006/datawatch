@@ -36,6 +36,7 @@ package autonomous
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
@@ -224,6 +225,35 @@ func (m *Manager) applyQueuedTaskLLM(prdID, taskID, backend, effort, model, acto
 	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, &LLMOverrideResult{Changed: []LLMOverrideOutcome{out}}, nil
+}
+
+// FormatLLMOverrideResult renders a queued-mode override result as one
+// short, flat, chat- and terminal-friendly line: the changed tasks first
+// (task IDs, with a "(capacity retargeted)" marker when the task's live
+// queued request was moved to the new pool), then each left-alone task
+// with the reason it was not modified. It returns "" when the result is
+// nil (a classic-mode or refused call) or when both lists are empty, so
+// callers can append it unconditionally.
+func FormatLLMOverrideResult(res *LLMOverrideResult) string {
+	if res == nil {
+		return ""
+	}
+	parts := make([]string, 0, 2+len(res.LeftAlone))
+	if len(res.Changed) > 0 {
+		ids := make([]string, 0, len(res.Changed))
+		for _, o := range res.Changed {
+			id := o.TaskID
+			if o.CapacityMoved {
+				id += " (capacity retargeted)"
+			}
+			ids = append(ids, id)
+		}
+		parts = append(parts, "changed: "+strings.Join(ids, ", "))
+	}
+	for _, o := range res.LeftAlone {
+		parts = append(parts, "left alone: "+o.TaskID+" \u2014 "+o.Reason)
+	}
+	return strings.Join(parts, "; ")
 }
 
 // requeueQueuedCapacity cancels the task's queued capacity wait (if it has

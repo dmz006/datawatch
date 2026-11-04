@@ -14427,15 +14427,22 @@ function renderStory(prd, story) {
   // blocked PRD for a failed/blocked task (BL421) and never a completed
   // task — renderTask computes that separately as specEditable.
   const removeStoryFn = `prdRemoveStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')})`;
+  // While the Automaton is running only the LLM override stays editable
+  // (queued/requeue — applies to unstarted tasks); the structural edits
+  // follow the server gates (needs_review/revisions_asked/cancelled).
+  const storyLLMEditable = editable || prd.status === 'running';
+  const storyLLMIcon = `<button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>`;
   const editIcons = editable
     ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">
          <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
-         <button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>
+         ${storyLLMIcon}
          <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeStoryFn)}" title="Remove this story and its tasks">&#128465;</button>
        </span>`
-    : '';
+    : (storyLLMEditable
+      ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">${storyLLMIcon}</span>`
+      : '');
 
   // Status + per-story profile pill (read-only when not editable).
   const statusPill = story.status
@@ -14842,8 +14849,10 @@ function renderTask(prd, story, task, editable) {
   // without opening the structural edits, which stay locked while blocked.
   const specEditable = (task.status !== 'completed') &&
     (editable || (prd.status === 'blocked' && (task.status === 'failed' || task.status === 'blocked')));
-  const specEditBtn = specEditable
-    ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>`
+  const taskUnstarted = !['in_progress','running','running_tests','verifying','completed','cancelled'].includes(task.status || '');
+  const taskLLMEditable = specEditable || (prd.status === 'running' && taskUnstarted);
+  const specEditBtn = taskLLMEditable
+    ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="${specEditable ? 'Edit spec + LLM' : 'Override LLM (applies to unstarted tasks)'}">&#9998;</button>`
     : '';
   const editIcons = editable
     ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
@@ -14851,9 +14860,13 @@ function renderTask(prd, story, task, editable) {
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>
        </span>`
-    : (specEditable
+    : (taskLLMEditable
       ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">${specEditBtn}</span>`
       : '');
+  // queued requeue: while the Automaton is running the worker LLM/effort
+  // override is still editable for unstarted tasks (the queued request is
+  // retargeted to the new pool); the spec itself stays locked. The same
+  // edit modal is used; the server enforces the spec gate.
 
   // Inline badges visible whether collapsed or expanded.
   const llmBadge = (task.backend || task.effort || task.model)
@@ -15254,12 +15267,17 @@ function renderPRDActions(prd) {
   }
   const btns = [];
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
-  // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
+  // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval,
+  // and also while running: the worker LLM/effort still retargets queued/unstarted tasks
+  // (override_queued_tasks) and a planning change requeues decompose.
   // A summary row from the paged list lacks the fields these three editors
   // prefill from, so their buttons fetch the full PRD first (prdPanelOpenFull).
   const summaryOnly = _prdIsSummaryOnly(prd);
-  if (status !== 'running' && status !== 'completed') {
+  // LLM override stays offered while running; structural Permission stays gated as before.
+  if (status !== 'completed') {
     btns.push(a('LLM', summaryOnly ? `prdPanelOpenFull(${idJ},'llm')` : `openPRDSetLLMModal(${idJ},${JSON.stringify(_prdLLMCurrent(prd))})`, ''));
+  }
+  if (status !== 'running' && status !== 'completed') {
     // GH#172 D75 — edit PRD permission_mode.
     btns.push(a(t('prd_action_permission')||'Permission', summaryOnly ? `prdPanelOpenFull(${idJ},'permission')` : `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
   }
@@ -15695,7 +15713,7 @@ function renderLifecycleStrip(prd) {
     : '';
   const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openCloneToTemplateModal(${idJ})">Clone to Template…</button>`;
   const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
-  const llmItem = !isRunning && status !== 'completed'
+  const llmItem = status !== 'completed'
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||'',decomposition_profile:prd.decomposition_profile||'',decomposition_model:prd.decomposition_model||'',verification_backend:prd.verification_backend||'',verification_model:prd.verification_model||'',verification_effort:String(prd.verification_effort||'')}))})">Set LLM…</button>`
     : '';
   // v6.13.1 (C2) — operator: "since the buttons are there (and on all
@@ -16223,7 +16241,9 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         body: JSON.stringify(editBody),
       }));
     }
+    let llmOutcomeIdx = -1;
     if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
+      llmOutcomeIdx = calls.length;
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_llm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskID, backend, effort, model, actor: 'operator' }),
@@ -16245,7 +16265,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
     }
     if (calls.length === 0) { _prdCloseModal(); return; }
     Promise.all(calls)
-      .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .then(results => { if (llmOutcomeIdx >= 0) llmOutcomeToast(results[llmOutcomeIdx]); showToast('Task updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate the model dropdown for the current backend now that
@@ -16367,9 +16387,40 @@ function openPRDAddTaskModal(prdID, storyID) {
 }
 window.openPRDAddTaskModal = openPRDAddTaskModal;
 
+// Queued requeue — set_llm-family saves can carry a structured outcome:
+// `override` (queued-mode task retargeting: changed + left alone) and/or
+// `planning` (requeued/deferred/unchanged). llmOutcomeToast renders both
+// so an operator saving on a running Automaton sees exactly what changed
+// and what was left alone. No-op when the response has neither field,
+// so classic-path saves are unaffected.
+function llmOutcomeToast(res) {
+  if (!res || typeof res !== 'object') return;
+  const lines = [];
+  let level = 'success';
+  const ov = res.override;
+  if (ov && typeof ov === 'object') {
+    const changed = (ov.changed || []).map(x => x.capacity_moved ? x.task_id + ' (queue retargeted)' : (x.task_id || '')).join(', ') || 'none';
+    const left = (ov.left_alone || []).map(x => (x.task_id || '') + (x.reason ? ' — ' + x.reason : '')).join(', ');
+    lines.push('changed: ' + changed + (left ? ' · left alone: ' + left : ''));
+  }
+  const pl = res.planning;
+  if (pl && typeof pl === 'object' && pl.outcome) {
+    if (pl.outcome === 'deferred_to_next_run') level = 'warning';
+    let s = 'planning ' + pl.outcome.replace(/_/g, ' ');
+    const op = (pl.old_pools || []).join('/');
+    const np = (pl.new_pools || []).join('/');
+    if (op && np && op !== np) s += ' (pools ' + op + ' → ' + np + ')';
+    if (pl.reason) s += ' — ' + pl.reason;
+    lines.push(s);
+  }
+  if (lines.length) showToast(lines.join(' | '), level, 5000);
+}
+window.llmOutcomeToast = llmOutcomeToast;
+
 // BL381 — per-story LLM override modal. Mirrors openPRDEditTaskModal's LLM
-// section; calls set_story_llm. Available in needs_review + revisions_asked
-// + cancelled (see renderStory's editable gate).
+// section; calls set_story_llm. While the Automaton is running the save is
+// still accepted: unstarted tasks get retargeted, in-flight ones show up
+// as "left alone" in the outcome.
 function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel, currentVerif) {
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
@@ -16398,7 +16449,9 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
     const model = modelEl ? modelEl.value.trim() : '';
     const verif = _prdReadVerifLLM('prdStoryVerif');
     const calls = [];
+    let llmOutcomeIdx = -1;
     if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
+      llmOutcomeIdx = calls.length;
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_llm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ story_id: storyID, backend, effort, model, actor: 'operator' }),
@@ -16412,7 +16465,7 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
     }
     if (calls.length === 0) { _prdCloseModal(); return; }
     Promise.all(calls)
-      .then(() => { showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .then(results => { if (llmOutcomeIdx >= 0) llmOutcomeToast(results[llmOutcomeIdx]); showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   refreshLLMModelField('prdStoryLLMModelWrap', 'prdStoryLLMModelInner', 'prdStoryLLMBackend', currentModel || '');
@@ -16477,7 +16530,7 @@ function openPRDSetLLMModal(prdID, current) {
         body: JSON.stringify(Object.assign({ actor: 'operator' }, verif)),
       }));
     }
-    Promise.all(calls).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+    Promise.all(calls).then(results => { llmOutcomeToast(results[0]); showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate model dropdowns for the current backends now that the modal is mounted.
@@ -16742,6 +16795,7 @@ function openPRDSettingsModal(prdID) {
           const newConcurrency = parseInt(document.getElementById('prdSettingsConcurrency').value || '0', 10) || 0;
 
           const calls = [];
+          let prdSettingsLLMIdx = -1;
           if (newType !== cur.type) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_type', {
               method: 'POST', headers: {'Content-Type':'application/json'},
@@ -16749,6 +16803,7 @@ function openPRDSettingsModal(prdID) {
             }));
           }
           if (newBackend !== cur.backend || newEffort !== cur.effort || newModel !== cur.model || newDecompositionProfile !== cur.decomposition_profile || newDecompositionModel !== (cur.decomposition_model||'')) {
+            prdSettingsLLMIdx = calls.length;
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ backend: newBackend, effort: newEffort, model: newModel, decomposition_profile: newDecompositionProfile, decomposition_model: newDecompositionModel, actor: 'operator' }),
@@ -16846,7 +16901,8 @@ function openPRDSettingsModal(prdID) {
           }
           if (calls.length === 0) { _prdCloseModal(); return; }
           Promise.all(calls)
-            .then(() => {
+            .then(results => {
+              if (prdSettingsLLMIdx >= 0) llmOutcomeToast(results[prdSettingsLLMIdx]);
               if (notifyEventsChanged) {
                 showToast(t('notify_events_saved')||'Notification events saved', 'success', 1500);
               }

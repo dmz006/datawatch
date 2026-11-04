@@ -1332,6 +1332,34 @@ func newAutonomousPRDRemoveTaskCmd() *cobra.Command {
 	return cmd
 }
 
+// printSetLLMOutcome prints a short `outcome:` line for a set_llm-family
+// reply when it carries a structured outcome (the queued-mode override
+// result and/or the planning requeue result). The JSON body is already
+// on stdout (prettyPrint); this line is the human summary of which
+// tasks changed / were left alone and which way the planning run went —
+// "" when no outcome field is present, so callers invoke it
+// unconditionally.
+func printSetLLMOutcome(out []byte) {
+	var envelope struct {
+		Override *autonomous.LLMOverrideResult     `json:"override"`
+		Planning *autonomous.PlanningRequeueResult `json:"planning"`
+	}
+	if err := json.Unmarshal(out, &envelope); err != nil ||
+		(envelope.Override == nil && envelope.Planning == nil) {
+		return
+	}
+	var parts []string
+	if s := autonomous.FormatLLMOverrideResult(envelope.Override); s != "" {
+		parts = append(parts, s)
+	}
+	if s := autonomous.FormatPlanningRequeueResult(envelope.Planning); s != "" {
+		parts = append(parts, s)
+	}
+	if len(parts) > 0 {
+		fmt.Println("outcome: " + strings.Join(parts, "; "))
+	}
+}
+
 func newAutonomousPRDSetLLMCmd() *cobra.Command {
 	var backend, effort, model, decompositionProfile, guardrailBackend, guardrailModel string
 	cmd := &cobra.Command{
@@ -1340,7 +1368,13 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, _ := json.Marshal(prdSetLLMCLIBody(cmd))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
+			out, err := daemonJSONBody(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
+			if err != nil {
+				return err
+			}
+			prettyPrint(out)
+			printSetLLMOutcome(out)
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&backend, "backend", "", "Worker LLM name (empty value clears to fallback; omit the flag to leave unchanged)")
@@ -1359,7 +1393,13 @@ func newAutonomousPRDSetStoryLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
+			out, err := daemonJSONBody(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
+			if err != nil {
+				return err
+			}
+			prettyPrint(out)
+			printSetLLMOutcome(out)
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
@@ -1379,7 +1419,13 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			legacy := map[string]string{"backend": backend, "effort": effort, "model": model}
 			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"task_id": taskID, "actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model"))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
+			out, err := daemonJSONBody(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
+			if err != nil {
+				return err
+			}
+			prettyPrint(out)
+			printSetLLMOutcome(out)
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")

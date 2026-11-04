@@ -455,6 +455,30 @@ func (r *Router) handlePeers(cmd Command) {
 	}
 }
 
+// llmOutcomeReply renders a set_llm-family REST reply as a short
+// chat-friendly message. When the response carries a structured outcome
+// (the queued-mode override result or the planning requeue result) it
+// shows just that outcome in plain words — a full PRD JSON blob is noise
+// in chat — otherwise it keeps the classic pretty-JSON reply.
+func llmOutcomeReply(out string) string {
+	var envelope struct {
+		Override *autonomous.LLMOverrideResult     `json:"override"`
+		Planning *autonomous.PlanningRequeueResult `json:"planning"`
+	}
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil ||
+		(envelope.Override == nil && envelope.Planning == nil) {
+		return prettyJSON(out)
+	}
+	parts := []string{"ok"}
+	if s := autonomous.FormatLLMOverrideResult(envelope.Override); s != "" {
+		parts = append(parts, s)
+	}
+	if s := autonomous.FormatPlanningRequeueResult(envelope.Planning); s != "" {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, " \u2014 ")
+}
+
 // prettyJSON pretty-prints body when valid JSON; returns the raw
 // string otherwise. Local helper to keep handlePeers terse.
 func prettyJSON(body string) string {
@@ -1076,7 +1100,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-llm", prettyJSON(out))
+		r.reply("autonomous set-llm", llmOutcomeReply(out))
 	case "set-notify-events", "set_notify_events":
 		// Per-Automaton notify_events list: which lifecycle event kinds
 		// produce notifications. inherit (empty list) falls back to the
@@ -1128,7 +1152,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-story-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-story-llm", prettyJSON(out))
+		r.reply("autonomous set-story-llm", llmOutcomeReply(out))
 	case "set-task-llm", "set_task_llm":
 		args, guardrail := extractGuardrailLLMTokens(args)
 		if len(args) < 3 || (len(args) < 4 && len(guardrail) == 0) {
@@ -1154,7 +1178,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-task-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-task-llm", prettyJSON(out))
+		r.reply("autonomous set-task-llm", llmOutcomeReply(out))
 	case "set-task-project-dir", "set_task_project_dir":
 		if len(args) < 3 {
 			r.reply("autonomous set-task-project-dir failed", "usage: autonomous set-task-project-dir <prd-id> <task-id> [dir]  (omit dir to clear)")
