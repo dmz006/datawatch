@@ -2626,6 +2626,8 @@
   "safe_delete_state": "Automaton branch state: %1$s",
   "safe_delete_dirty": "The Automaton worktree has uncommitted changes.",
   "safe_delete_failed": "Could not load the Automaton safe-to-delete report: %1$s",
+  "safe_delete_computed_at": "オートマトンレポートの計算日時: %1$s",
+  "safe_delete_stale": "オートマトンレポートは古いデータです",
   "lane_fill_pref_label": "レーンの希望",
   "lane_fill_pref_any": "どのレーンでも",
   "settings_lane_fill_mode": "レーン充填モード（off、shadow、on。既定は shadow）",

@@ -2626,6 +2626,8 @@
   "safe_delete_state": "Automaton branch state: %1$s",
   "safe_delete_dirty": "The Automaton worktree has uncommitted changes.",
   "safe_delete_failed": "Could not load the Automaton safe-to-delete report: %1$s",
+  "safe_delete_computed_at": "Automaten-Bericht berechnet am: %1$s",
+  "safe_delete_stale": "Automaten-Bericht ist veraltet",
   "lane_fill_pref_label": "Lane-Präferenz",
   "lane_fill_pref_any": "Beliebige Lane",
   "settings_lane_fill_mode": "Lane-Füllmodus (off, shadow oder on; Standard shadow)",

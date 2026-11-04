@@ -17,7 +17,7 @@ const mergeCLISample = `{"mode":"shadow","alert_minutes":30,
 const safeToDeleteCLISample = `{"safe":[{"branch":"automaton/p2","worktree":"/work/p2","reason":"merged into main","commits":0}],
 "held":[{"branch":"automaton/p1","worktree":"","state":"pending"},
         {"branch":"automaton/p3","worktree":"/work/p3","state":"merged","dirty":true,"note":"Automaton worktree has uncommitted changes"}],
-"held_dirty":1}`
+"held_dirty":1,"computed_at":"2026-01-02T09:30:00Z","stale":false}`
 
 func TestMergeCLI_MergeCommandPrints(t *testing.T) {
 	d := newLaneFillCLIDaemon(t, http.StatusOK, mergeCLISample)
@@ -65,6 +65,7 @@ func TestMergeCLI_SafeToDeleteCommandPrints(t *testing.T) {
 		"automaton/p3: merged, uncommitted changes",
 		"1 branch(es) would otherwise be safe",
 		"nothing has been deleted",
+		"Computed at 2026-01-02T09:30:00Z",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)

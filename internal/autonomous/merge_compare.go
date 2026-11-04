@@ -89,14 +89,7 @@ func CompareBranchToMain(ctx context.Context, git MergeGitRunner, repo, branch, 
 	if err != nil {
 		return fail("cherry", out, err)
 	}
-	for _, line := range strings.Split(out, "\n") {
-		switch {
-		case strings.HasPrefix(line, "+"):
-			res.CherryNotOnBase++
-		case strings.HasPrefix(line, "-"):
-			res.CherryOnBase++
-		}
-	}
+	cherryOut := out
 
 	branchSubjects, err := git.Run(ctx, repo, "log", rng, "--format=%s")
 	if err != nil {
@@ -110,19 +103,43 @@ func CompareBranchToMain(ctx context.Context, git MergeGitRunner, repo, branch, 
 	for _, s := range strings.Split(baseSubjects, "\n") {
 		onBase[s] = struct{}{}
 	}
-	res.SubjectsOnBase = true
+
+	classifyMergeFromPrecomputed(&res, ahead, cherryOut, branchSubjects, onBase)
+	return res
+}
+
+// classifyMergeFromPrecomputed fills in the classification fields of c from
+// precomputed inputs: the ahead count, the "git cherry base branch" output,
+// the "git log base..branch --format=%s" output, and the set of subjects of
+// the "git log base --format=%s" output. It sets c.State through
+// decideMergeState and returns it, so callers with precomputed inputs
+// (CompareBranchToMain, the batched safe-delete report) share one
+// classification rule.
+func classifyMergeFromPrecomputed(c *MergeCompare, ahead int, cherryOut, branchSubjects string, baseSubjects map[string]struct{}) string {
+	c.Ahead = ahead
+	cherryNotOnBase, cherryOnBase := 0, 0
+	for _, line := range strings.Split(cherryOut, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			cherryNotOnBase++
+		case strings.HasPrefix(line, "-"):
+			cherryOnBase++
+		}
+	}
+	c.CherryNotOnBase = cherryNotOnBase
+	c.CherryOnBase = cherryOnBase
+	c.SubjectsOnBase = true
 	for _, s := range strings.Split(branchSubjects, "\n") {
 		if s == "" {
 			continue
 		}
-		if _, ok := onBase[s]; !ok {
-			res.SubjectsOnBase = false
+		if _, ok := baseSubjects[s]; !ok {
+			c.SubjectsOnBase = false
 			break
 		}
 	}
-
-	res.State = decideMergeState(res)
-	return res
+	c.State = decideMergeState(*c)
+	return c.State
 }
 
 // decideMergeState applies the Automaton merge decision rules, in order.

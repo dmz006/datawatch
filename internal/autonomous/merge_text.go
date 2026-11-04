@@ -106,12 +106,30 @@ func RenderMergeState(ms MergeStatus) string {
 }
 
 // RenderSafeToDelete formats the safe-to-delete report: the Automaton
-// branches and worktrees that can be deleted and those held back, with why.
-// It is a report only; deleting stays a separate step the operator approves.
+// branches and worktrees that can be deleted and those held back, with why,
+// ending with the computed-at stamp and, for a stale report, the note that a
+// refresh is under way or due. It is a report only; deleting stays a
+// separate step the operator approves.
+// safeToDeleteMetaLines renders the lines every safe-to-delete report ends
+// with: the moment the report was computed, exactly as the daemon stamps it,
+// when present, and one line saying the report is stale and a refresh is
+// under way or due, when it is.
+func safeToDeleteMetaLines(r SafeDeleteReport) string {
+	var b strings.Builder
+	if r.ComputedAt != "" {
+		fmt.Fprintf(&b, "Computed at %s\n", r.ComputedAt)
+	}
+	if r.Stale {
+		b.WriteString("This report is stale; a refresh is under way or due.\n")
+	}
+	return b.String()
+}
+
 func RenderSafeToDelete(r SafeDeleteReport) string {
 	var b strings.Builder
 	if len(r.Safe) == 0 && len(r.Held) == 0 {
 		b.WriteString("No finished Automaton branches or worktrees to review.\n")
+		b.WriteString(safeToDeleteMetaLines(r))
 		return b.String()
 	}
 	fmt.Fprintf(&b, "Automaton branches safe to delete: %d, held back: %d\n", len(r.Safe), len(r.Held))
@@ -144,6 +162,7 @@ func RenderSafeToDelete(r SafeDeleteReport) string {
 		fmt.Fprintf(&b, "%d branch(es) would otherwise be safe but have uncommitted changes in their worktree.\n", r.HeldDirty)
 	}
 	b.WriteString("This is a report only: nothing has been deleted.\n")
+	b.WriteString(safeToDeleteMetaLines(r))
 	return b.String()
 }
 

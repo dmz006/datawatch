@@ -105,6 +105,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"burn_guard_title",
 		"server_header_showing",
 		"server_header_all",
+		"safe_delete_stale",
+		"safe_delete_computed_at",
 		"burn_guard_run_now",
 		"burn_guard_settings_title",
 		"settings_usage_burn_guard_ask_on_change",

@@ -7874,6 +7874,7 @@ components:
               worktree: {type: string, description: The checked-out worktree path; empty when none exists}
               reason: {type: string}
               commits: {type: integer, description: Commits on the branch that are not on main}
+              dirty_check_skipped: {type: boolean, description: True when the dirty check was skipped because the Automaton is still running}
         held:
           type: array
           items:
@@ -7886,6 +7887,8 @@ components:
               dirty: {type: boolean, description: True when the worktree has uncommitted changes}
               note: {type: string}
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
+        computed_at: {type: string, format: date-time, description: When the report was computed (always present; UTC, RFC 3339)}
+        stale: {type: boolean, description: True when the report is a stale read older than the cache lifetime; that stale read is being refreshed in the background}
     CleanupStatus:
       type: object
       description: |-

@@ -1197,6 +1197,11 @@ type Manager struct {
 	// nil only for hand-rolled test Managers.
 	cleanupStatus *cleanupStatusRecorder
 
+	// safeDeleteCache is the short-lived cache in front of
+	// MergeSafeToDelete (merge_safe_delete_cache.go). Guarded by mu;
+	// created lazily on first use, or wired directly in tests.
+	safeDeleteCache *safeDeleteCache
+
 	// pairingLogged records each pairing warning already written to the
 	// daemon log, so a config set does not repeat a warning it logged before.
 	pairingLogged map[string]bool

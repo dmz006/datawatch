@@ -760,7 +760,7 @@ func (m *Manager) ReleaseAutomatonWorktree(prd *PRD) {
 			Skipped: []WorktreeCleanupSkipped{{Branch: prd.Git.Branch, Reason: cleanupSkipNoBase, Detail: "no base branch could be resolved"}}})
 		return
 	}
-	report, err := SafeToDeleteReport(ctx, git, repo, base)
+	report, err := SafeToDeleteReport(ctx, git, repo, base, SafeDeleteOptions{})
 	if err != nil {
 		log.Printf("[autonomous] worktree-cleanup: safe-to-delete report for %s: %v", prd.Git.Branch, err)
 		return
@@ -851,7 +851,7 @@ func (m *Manager) cleanupWorktreesPassRun() WorktreeCleanupResult {
 		log.Printf("[autonomous] worktree-cleanup: pass skipped, no default base branch could be resolved for %s", repo)
 		return WorktreeCleanupResult{Mode: mode}
 	}
-	report, err := SafeToDeleteReport(ctx, git, repo, base)
+	report, err := SafeToDeleteReport(ctx, git, repo, base, SafeDeleteOptions{})
 	if err != nil {
 		log.Printf("[autonomous] worktree-cleanup: safe-to-delete report: %v", err)
 		return WorktreeCleanupResult{Mode: mode}
