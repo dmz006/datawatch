@@ -313,11 +313,16 @@ jobs:
         # matrix, so this job cleans up after itself. Runs even if an
         # earlier build/scan step failed.
         #
-        # --paginate WITHOUT --slurp prints one concatenated JSON array per
-        # page, which jq cannot parse as a single document ("Expected
-        # separator between values"); --slurp wraps the pages in one outer
-        # array that the [.[][]] filter flattens back into a single version
-        # list.
+        # --paginate prints one JSON array per page; jq cannot parse that as
+        # a single document ("Expected separator between values"). There is
+        # no flag to fold the pages into one outer array: `--slurp` does not
+        # exist in gh 2.46.0 (current cli/cli release as of this writing),
+        # and passing it exits nonzero with "unknown flag". So the pages are
+        # handed to `jq -s`, which collects the separate pages into one
+        # array, and the [.[][]] filter flattens them into a single version
+        # list. Each attempt's stderr is captured to a mktemp file so a
+        # both-endpoint failure can be reported with its real error line
+        # instead of being masked as an empty `[]`.
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -337,22 +342,34 @@ jobs:
                      "agent-base"; do
             checked=$((checked+1))
             versions=""
-            line1=""
-            if ! versions=$(gh api "/users/$OWNER/packages/container/$pkg/versions" --paginate --slurp 2>"$list_err"); then
-              line1="$(head -n 1 "$list_err")"
-            fi
-            if [[ -z "$versions" || "$versions" != "["* ]]; then
-              if ! versions=$(gh api "/orgs/$OWNER/packages/container/$pkg/versions" --paginate --slurp 2>"$list_err"); then
-                listing_failures=$((listing_failures+1))
-                line2="$(head -n 1 "$list_err")"
-                if [[ -z "$line2" ]]; then line2="$line1"; fi
-                echo "::warning::could not list container versions of $pkg — $line2"
-                continue
+            for ep in "/users/$OWNER/packages/container/$pkg/versions" \
+                      "/orgs/$OWNER/packages/container/$pkg/versions"; do
+              # A usable listing's pages are all JSON arrays (jq -s collects
+              # the pages into one array); an error body such as an
+              # object like {"name":"not_found"} fails this check and falls
+              # through to the next endpoint instead of passing as an
+              # empty list.
+              if out=$(gh api "$ep" --paginate 2>"$list_err") \
+                 && printf '%s' "$out" | jq -se 'map(type == "array") | all' >/dev/null 2>&1; then
+                versions="$out"
+                break
               fi
+            done
+            if [[ -z "$versions" ]]; then
+              listing_failures=$((listing_failures+1))
+              reason="$(head -n 1 "$list_err")"
+              if [[ -z "$reason" ]]; then reason="gh api exited non-zero with no stderr"; fi
+              echo "::warning::could not list container versions of $pkg — $reason"
+              continue
             fi
-            vid=$(printf '%s' "$versions" | jq -r \
-                  --arg tag "$TAG" \
-                  '[.[][]] | map(select(((.metadata.container.tags // []) | index($tag)) != null)) | (.[0].id // empty)')
+            # First version (id) whose metadata.container.tags contains $TAG.
+            # Entries whose metadata is missing or not an object are skipped
+            # rather than aborting the whole filter.
+            vid=$(printf '%s' "$versions" | jq -rse --arg tag "$TAG" '
+              [.[][]] // []
+              | map(select(type == "object" and (.metadata? | type) == "object"))
+              | [ .[] | select(((.metadata.container?.tags?) // []) | index($tag) != null) ]
+              | .[0].id // empty')
             if [[ -n "$vid" && "$vid" != "null" ]]; then
               found=$((found+1))
               if gh api -X DELETE "/users/$OWNER/packages/container/$pkg/versions/$vid" 2>"$list_err" \
