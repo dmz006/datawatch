@@ -219,6 +219,7 @@ Subcommands:
 		newAutonomousPRDSetKindCmd(),
 		newAutonomousPRDSetLanePreferenceCmd(),
 		newAutonomousShippedCmd(),
+		newAutonomousDefectCmd(),
 		newAutonomousTagListCmd(),
 		newAutonomousTagCreateCmd(),
 		newAutonomousTagRenameCmd(),

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +86,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_defect_intake_automation",
 		"settings_defect_intake_automation_hint",
 		"prd_scope_warnings_title",
+		"settings_defect_queue_group",
+		"settings_defect_queue_enabled",
+		"settings_defect_queue_batch_size_cap",
+		"settings_defect_queue_tiny_fix_enabled",
 		"usage_calc_whatif_label",
 		"usage_calc_running_now",
 		"checks_card_title",
@@ -456,6 +461,48 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		for _, k := range mustHave {
 			if _, ok := bundle[k]; !ok {
 				t.Errorf("locale %s missing required key %q", lang, k)
+			}
+		}
+	}
+}
+
+// datawatch-app parity issue — to be filed by the merge step (no gh here).
+// Title: feat(i18n): add settings_defect_queue_* keys for defect queue settings parity
+// New keys (English values in internal/server/web/locales/en.json; DE/ES/FR/JA
+// currently carry English placeholders, please translate through the Compose pipeline).
+// Each field key below also has a matching "<key>_hint" help string:
+//
+//	settings_defect_queue_group
+//	settings_defect_queue_priority_highest_member
+//	settings_defect_queue_priority_first_member
+//	settings_defect_queue_enabled
+//	settings_defect_queue_batch_size_cap
+//	settings_defect_queue_batch_grouping_keys
+//	settings_defect_queue_batch_allow_unrelated
+//	settings_defect_queue_batch_priority_rule
+//	settings_defect_queue_tiny_fix_enabled
+//	settings_defect_queue_tiny_fix_max_files
+//	settings_defect_queue_tiny_fix_allowed_path_globs
+//	settings_defect_queue_tiny_fix_allowed_kinds
+//	settings_defect_queue_tiny_fix_operator_visible_path_globs
+//
+// TestDefectQueueLocales asserts all five locales carry every defect_queue key.
+func TestDefectQueueLocales(t *testing.T) {
+	en := loadLocaleBundle(t, "en")
+	var want []string
+	for k := range en {
+		if strings.HasPrefix(k, "settings_defect_queue_") {
+			want = append(want, k)
+		}
+	}
+	if len(want) < 23 {
+		t.Fatalf("en carries only %d defect_queue keys, expected at least 23", len(want))
+	}
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		for _, k := range want {
+			if v, ok := bundle[k]; !ok || v == "" {
+				t.Errorf("locale %s missing defect_queue key %q", lang, k)
 			}
 		}
 	}

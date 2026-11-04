@@ -2398,6 +2398,45 @@ global default. Web surface: settings card *Pi (worker backend)*
 - `internal/server/web/app-autonomous-settings-fields.test.js` — asserts `autonomous.loop_detect_turns` renders as a number with its label key, `pi.thinking_level` renders as a select offering `""/off/minimal/low/medium/high`, and both `settings_loop_detect_turns` / `settings_pi_thinking_level` labels are non-empty in en, de, es, fr, ja.
 - `internal/server/web/app-pi-progress.test.js` — the PWA progress block: the progress keys it renders and the poll-stacking guard.
 
+## Defect queue configuration (autonomous.defect_queue)
+
+The `autonomous.defect_queue` block holds the settings the defect queue reads
+when it batches defects and when it decides a defect is a tiny fix. It is
+configuration only: it defines, validates and exposes the values.
+
+- **`internal/config/defect_queue.go`** — `DefectQueueConfig` and its parts.
+  Fields are pointer or zero-valued when unset, so an absent block reads the
+  built-in defaults and an explicit `false` survives a save and load.
+  - `enabled` (default true).
+  - `batch.size_cap` (5, at least 1), `batch.grouping_keys` (`project_area`,
+    `shared_files`, `shared_surfaces`), `batch.allow_unrelated` (false),
+    `batch.priority_rule` (`highest_member`, or `first_member`).
+  - `tiny_fix.enabled` (true), `tiny_fix.max_files` (3, at least 1),
+    `tiny_fix.allowed_path_globs` (test files, docs, scripts, lint / rule
+    config), `tiny_fix.allowed_kinds` (`test_only`, `docs_only`,
+    `script_only`, `rule_tweak`, `lint_tweak`) and
+    `tiny_fix.operator_visible_path_globs` (`internal/server/web/**`,
+    `cmd/**`, `internal/server/api.go`).
+  - `projects.<name>.{batch,tiny_fix}.*` — per-project overrides of every
+    batch and tiny-fix key.
+- **Accessors** — `EffectiveEnabled`, `EffectiveBatch`, `EffectiveTinyFix`
+  and `EffectiveForProject(project)`. Precedence is project override, then the
+  block value, then the default; lists are returned as copies.
+- **Setting a value** — `DefectQueueConfig.Set(name, value)` is the one setter
+  behind `PUT /api/config`, the comm `configure` verb, MCP `config_set` and the
+  CLI. `ValidateDefectQueueSetting(key, value)` is the same check without
+  storing. Per-project keys are
+  `autonomous.defect_queue.projects.<project>.<batch.* | tiny_fix.*>`; a `nil`
+  value clears that override. Lists accept a JSON list or a comma-separated
+  string. A refusal names the full key.
+- **Load** — `loadDefectQueue` re-runs every set field through the same
+  validator, so a bad `config.yaml` refuses startup with the same message.
+- **Server** — `internal/server/defect_queue_config.go` renders the block for
+  `GET /api/config` (effective block values plus raw project overrides) and
+  checks every `autonomous.defect_queue.*` key of a `PUT /api/config` patch
+  before anything is applied; `applyConfigPatch` stores each accepted key
+  through `Set`. Operator reference: `docs/config-reference.yaml`.
+
 ## Shipped state (autonomous.shipped)
 
 How datawatch records and displays the shipped state of Automata (PRDs)

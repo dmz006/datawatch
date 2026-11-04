@@ -31,6 +31,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
 | [howto/mcp-prompts.md](howto/mcp-prompts.md) | 10 MCP prompt slash commands — live context injection for every operator workflow (v7.1.0) |
 | [howto/automata-progress.md](howto/automata-progress.md) | Automata progress dashboard: counts by kind, rates per active day, known versus estimated work left, completion range, daily trend |
+| [howto/automata-defect-queue.md](howto/automata-defect-queue.md) | Defect queue: group related defects into one batch Automaton, run tiny test/docs/script fixes in a one-task lane, read the intake decision log, split a failed story out, and every `autonomous.defect_queue.*` setting with the REST, MCP, CLI and comm commands |
 | [howto/automata-tags.md](howto/automata-tags.md) | Nested tags for Automata and sessions: the tag tree, subtree counts, browsing with match ANY or ALL, primary tag, the attention group, session tags (own and inherited), settings |
 | [howto/automata-tag-registry.md](howto/automata-tag-registry.md) | One tag registry across federated daemons: the keeper, peers, stale copies, pending sync and merge notes |
 | [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md) | Automata checks and ship steps: the four checks, push, tag and CI watch, the off / shadow / on modes, starting in shadow, reading the status from every surface |

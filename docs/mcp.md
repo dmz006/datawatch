@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
@@ -365,6 +365,61 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
   ```
 
+- **`autonomous_defect_intake`** — route one incoming defect through the defect queue. The decision is `tiny_fix` (a one-task Automaton), `open_batch` (the defect is added to an open draft batch of the same project and area) or `new_batch`. The reply carries `route`, `reason` and `batch_id`; when the tiny-fix lane refused a change that looked eligible, `tiny_fix_refusal` names the paths and the reason, and the defect went to a batch instead. Writes: it creates or extends an Automaton and appends to the intake decision log. Refused with a plain message when `autonomous.defect_queue.enabled` is off for the project. Same as `POST /api/autonomous/defects/intake`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Defect id |
+  | `title` | yes | Short defect title |
+  | `project` | yes | Project the defect belongs to |
+  | `description` | no | Defect description |
+  | `files` | no | Repo-relative paths the fix is expected to touch |
+  | `kind` | no | Declared change kind: `test_only`, `docs_only`, `script_only`, `rule_tweak` or `lint_tweak`; anything else is not a tiny fix |
+  | `area` | no | Area used to pick an open batch |
+  | `priority` | no | Higher is more urgent (default 0) |
+
+  ```
+  autonomous_defect_intake(id="D-41", title="Reconnect stalls the session list", project="datawatch", area="web-sessions", files=["internal/server/web/app.js"], priority=2)
+  ```
+
+  Needs the autonomous write capability when called by a federated peer.
+- **`autonomous_defect_batches`** — list the open defect batches with the story-to-defect mapping of each: batch id, project, area, status, size and one `{story_id, defect_id}` per story. Read-only. Same as `GET /api/autonomous/defects/batches`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `project` | no | Only batches of this project; empty lists all |
+
+  ```
+  autonomous_defect_batches()
+  autonomous_defect_batches(project="datawatch")
+  ```
+
+  Needs the autonomous read capability when called by a federated peer.
+- **`autonomous_defect_batch_split`** — split one story out of a defect batch into its own new Automaton, for example after that story failed. The new Automaton holds that story with its own gate, documentation and changelog tasks; the batch keeps its other stories and the dependencies on the moved tasks are removed. Returns the new `automaton_id`. Writes. Same as `POST /api/autonomous/defects/batches/{id}/split`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `batch_id` | yes | Defect batch id |
+  | `story_id` | yes | Story to split out |
+
+  ```
+  autonomous_defect_batch_split(batch_id="a1b2c3d4", story_id="a1b2c3d4-story-D-41")
+  ```
+
+  An unknown batch or story is a not-found answer. Needs the autonomous write capability when called by a federated peer.
+- **`autonomous_defect_tinyfix_check`** — check whether a change qualifies for the tiny-fix lane, without creating anything. Returns `eligible` and a `reason`; a change that touches operator-visible or out-of-lane paths is refused with the paths (`refused_paths`) and the reason named. Read-only. Same as `POST /api/autonomous/defects/tiny-fix/check`.
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `files` | yes | Repo-relative paths the change touches |
+  | `kind` | yes | Declared change kind: `test_only`, `docs_only`, `script_only`, `rule_tweak` or `lint_tweak` |
+  | `project` | no | Project whose settings apply; empty uses the block-level settings |
+
+  ```
+  autonomous_defect_tinyfix_check(files=["internal/autonomous/x_test.go"], kind="test_only", project="datawatch")
+  ```
+
+  Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
 
   ```

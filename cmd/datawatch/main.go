@@ -6626,6 +6626,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				amgr:           amgr,
 				automationName: func() string { return liveAutonomousConfig().DefectIntakeAutomation },
 			})
+			// Defect queue (autonomous.defect_queue.*): batches of related
+			// defects, the tiny-fix lane and the intake decision log behind
+			// POST /api/autonomous/defects/* and the MCP/CLI/comm verbs.
+			// Without this the endpoints answer 503. The settings are read
+			// live from cfg on every call (the REST config handler mutates
+			// cfg in place), so a runtime config set needs no restart.
+			wireDefectQueue(httpServer, amgr, cfg)
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.

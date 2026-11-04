@@ -3372,6 +3372,11 @@ type AutonomousConfig struct {
 	// counting and release backfill at startup. See ShippedConfig and
 	// ValidateShippedSetting.
 	Shipped ShippedConfig `yaml:"shipped" json:"shipped"`
+
+	// DefectQueue — defect queue batching and tiny-fix criteria, with
+	// per-project overrides. See DefectQueueConfig and
+	// ValidateDefectQueueSetting.
+	DefectQueue DefectQueueConfig `yaml:"defect_queue" json:"defect_queue"`
 }
 
 // ShippedSettingPrefix is the dotted key prefix shared by every
@@ -6857,6 +6862,9 @@ func Load(path string) (*Config, error) {
 	if err := loadTags(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadDefectQueue(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -6904,6 +6912,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadTags(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadDefectQueue(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

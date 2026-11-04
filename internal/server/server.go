@@ -450,6 +450,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// autonomous.shipped settings; shipped is a status-like bucket only while
 	// enabled + count_separately hold, and never moves a stored status.
 	apiMux.HandleFunc("/api/autonomous/shipped/counts", api.handleAutonomousShippedCounts)
+	// Defect queue: intake, open batches, split-out, tiny-fix check.
+	apiMux.HandleFunc("/api/autonomous/defects/intake", api.handleDefectIntake)
+	apiMux.HandleFunc("/api/autonomous/defects/batches", api.handleDefectBatches)
+	apiMux.HandleFunc("/api/autonomous/defects/batches/", api.handleDefectBatchSplit)
+	apiMux.HandleFunc("/api/autonomous/defects/tiny-fix/check", api.handleDefectTinyFixCheck)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
@@ -853,6 +858,17 @@ func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
 // SetEncKey wires the Argon2id-derived key for file-persisted handlers
 // that encrypt discussion WAL, participants, and channel routing (BL334 T43a).
 func (s *HTTPServer) SetEncKey(key []byte) { s.api.SetEncKey(key) }
+
+// Handler returns the HTTP handler the server serves (routes, auth and
+// security headers), for tests that drive the real mux without listening.
+func (s *HTTPServer) Handler() http.Handler { return s.srv.Handler }
+
+// SetDefectQueue installs the defect queue backend and its intake decision
+// log on the REST API. Until it is called the /api/autonomous/defects/
+// endpoints that need the queue answer 503 "defect queue unavailable".
+func (s *HTTPServer) SetDefectQueue(b DefectQueueBackend, log autonomous.IntakeLog) {
+	s.api.SetDefectQueue(b, log)
+}
 
 // SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints (BL241).
 func (s *HTTPServer) SetMatrixBackend(b matrixBackendAPI) { s.api.SetMatrixBackend(b) }

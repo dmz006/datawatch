@@ -128,6 +128,10 @@ var MCPToolCap = map[string]string{
 	"autonomous_shipped_record":                    CapAutonomousWrite, // operator records a PRD or Automation as shipped
 	"autonomous_shipped_backfill":                  CapAutonomousWrite, // operator runs the shipped-state backfill from merge history (dry_run or writing)
 	"autonomous_shipped_counts":                    CapAutonomousRead,  // read the per-status shipped counts (PRD + Automation buckets) under the in-force settings
+	"autonomous_defect_intake":                     CapAutonomousWrite, // routes a defect: creates or extends an Automaton and logs the decision
+	"autonomous_defect_batches":                    CapAutonomousRead,  // read the open defect batches with the story-to-defect mapping
+	"autonomous_defect_batch_split":                CapAutonomousWrite, // splits a story out of a batch into a new Automaton
+	"autonomous_defect_tinyfix_check":              CapAutonomousRead,  // classify a change for the tiny-fix lane; creates nothing
 	"autonomous_scan_config_get":                   CapAutonomousRead,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,
 	"autonomous_status":                            CapAutonomousRead,
