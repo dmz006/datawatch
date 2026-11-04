@@ -45,3 +45,36 @@ func (g GeneratedArtefacts) Effective() EffectiveGeneratedArtefactsSettings {
 func (a *AutonomousConfig) EffectiveGeneratedArtefacts() EffectiveGeneratedArtefactsSettings {
 	return a.GeneratedArtefacts.Effective()
 }
+
+// GeneratedArtefactKeys lists the switch names in a stable order.
+func GeneratedArtefactKeys() []string {
+	return []string{"change_record", "gate_report", "changelog_draft", "parity_draft",
+		"tracker_rows", "registry_row", "combined_docs_task"}
+}
+
+// Set stores one switch by its YAML name as an explicit value. It returns
+// false for an unknown name and leaves the block unchanged.
+func (g *GeneratedArtefacts) Set(name string, v bool) bool {
+	var p **bool
+	switch name {
+	case "change_record":
+		p = &g.ChangeRecord
+	case "gate_report":
+		p = &g.GateReport
+	case "changelog_draft":
+		p = &g.ChangelogDraft
+	case "parity_draft":
+		p = &g.ParityDraft
+	case "tracker_rows":
+		p = &g.TrackerRows
+	case "registry_row":
+		p = &g.RegistryRow
+	case "combined_docs_task":
+		p = &g.CombinedDocsTask
+	default:
+		return false
+	}
+	b := v
+	*p = &b
+	return true
+}

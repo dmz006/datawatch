@@ -2506,3 +2506,32 @@ combines task records into one Automaton record, and `Save`/`Load` persist it as
 Config: `autonomous.generated_artefacts` with `change_record`, `gate_report`, `changelog_draft`,
 `parity_draft`, `tracker_rows`, `registry_row` and `combined_docs_task` (all bool, all on when
 unset). `AutonomousConfig.EffectiveGeneratedArtefacts()` resolves the defaults.
+
+Each field is a `*bool` in `config.GeneratedArtefacts` (nil reads as on, so an explicit off survives a
+YAML or JSON round trip); `GeneratedArtefacts.Set(name, bool)` stores one by its YAML name. A value
+that is not a boolean is rejected by the YAML loader and by `PUT /api/config` (400, nothing stored).
+
+| Field | Effect when off |
+|-------|-----------------|
+| `autonomous.generated_artefacts.change_record` | No per-task or merged change record is built or stored. |
+| `autonomous.generated_artefacts.gate_report` | The gate report (counts only) is not generated. |
+| `autonomous.generated_artefacts.changelog_draft` | The changelog draft is not generated. |
+| `autonomous.generated_artefacts.parity_draft` | The parity issue draft is not generated. |
+| `autonomous.generated_artefacts.tracker_rows` | The testing tracker rows are not generated. |
+| `autonomous.generated_artefacts.registry_row` | The plan registry row is not generated. |
+| `autonomous.generated_artefacts.combined_docs_task` | Decompose does not ask for the one combined documentation task. |
+
+Surfaces: `GET /api/config` returns `autonomous.generated_artefacts` as the effective set;
+`PUT /api/config` takes the dotted keys `autonomous.generated_artefacts.<field>` (`handlePutConfig`
+validates, `applyConfigPatch` stores). The daemon wires `Manager.SetGeneratedArtefacts` with a provider
+that reads the live `cfg.Autonomous`, so a change applies to a running Manager without restart.
+
+REST (`internal/server/generated_artefacts_rest.go`): `GET /api/autonomous/generated-artefacts`
+(settings plus kinds with format description and tracked path), `GET /api/autonomous/prds/{id}/change-record`
+(the stored merged record; the completion step saves it under the Automaton id), `GET
+/api/autonomous/prds/{id}/generated/{kind}` (preview, nothing written) and `POST
+/api/autonomous/prds/{id}/generated/{kind}/regenerate` (re-render and write; an edited file is kept and
+the result is `skipped`). Reads need the autonomous read capability, regenerate the write capability.
+The manager side is `generated_artefacts_read.go`; an unknown id, kind or missing record is a 404.
+MCP tools `generated_artefacts_get`, `autonomous_prd_change_record`, `autonomous_prd_generated_artefact`
+and `autonomous_prd_regenerate_artefact` proxy those routes.

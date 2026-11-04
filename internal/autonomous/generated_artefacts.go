@@ -210,6 +210,14 @@ func (m *Manager) writeGeneratedArtefacts(prd *PRD) {
 	}
 	merged := changerecord.Merge(recs...)
 	merged.AutomatonID = prd.ID
+	if s.ChangeRecord {
+		// Store the merged record under the Automaton id so the REST and MCP
+		// reads (and a later regenerate) work from the same record. A save
+		// error is logged and never fails the completion.
+		if err := changerecord.Save(m.dataDir, prd.ID, merged); err != nil {
+			log.Printf("[autonomous] %s save merged change record: %v", prd.ID, err)
+		}
+	}
 	opts := m.generatedArtefactOptions(prd, s)
 	var lines []string
 	for _, k := range genartifacts.Kinds() {

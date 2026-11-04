@@ -85,3 +85,20 @@ func templateFuncs() template.FuncMap {
 func parseTemplate(name, text string) (*template.Template, error) {
 	return template.New(name).Funcs(templateFuncs()).Option("missingkey=error").Parse(text)
 }
+
+// Describe returns a one-line description of the kind's output format.
+func Describe(k Kind) string {
+	switch k {
+	case GateReport:
+		return "Markdown report of counts only: commands run, passed, failed, files changed, packages touched, tests added, settings, routes and locale keys."
+	case ChangelogDraft:
+		return "CHANGELOG.md-style entry whose heading carries the placeholder vX.Y.Z; the release version is taken at merge time."
+	case ParityDraft:
+		return "Markdown parity issue draft: What changed, Settings to add to the mobile app, REST contract, New locale keys, Screens."
+	case TrackerRows:
+		return "Rows for the table in docs/testing-tracker.md, one per surface touched."
+	case RegistryRow:
+		return "Draft row for the table in docs/plans/README.md."
+	}
+	return ""
+}
