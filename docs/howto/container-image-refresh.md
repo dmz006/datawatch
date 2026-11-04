@@ -97,12 +97,34 @@ and packages are listed; a version-anchored false positive would require
 Trivy's own package inventory to be wrong, not just its vulnerability
 labeling, which is a much rarer failure mode than ID churn.
 
+## Throwaway recheck image cleanup
+
+Because the recheck job scans fresh rebuilds before anything else, it
+pushes, for each shipped image on each run, a throwaway image tagged
+`cve-recheck-RUN_ID` (where `RUN_ID` is the GitHub Actions run id, `github.run_id`).
+The cleanup step deletes those throwaway tags again once the run is over.
+
+To do that it lists, for each shipped image package, the versions that
+carry the recheck tag. The listing is paged: `gh api --paginate` fetches
+all pages (one JSON array per page), the pages are folded with `jq -s`
+and flattened into a single list, first trying the user endpoint and
+falling back to the organization endpoint. It then deletes the
+throwaway versions it finds.
+
+A listing or delete failure never fails the run: a warning names the package
+that could not be handled, and cleanup moves on to the next package or the
+next version. At the end, the step writes a counts-only report to the job
+summary: the number of packages checked, listing failures, throwaway
+versions found, versions deleted, and delete failures. The report contains
+no version IDs and no tag names.
+
 ## Registry housekeeping
 
 `ghcr-cleanup` runs weekly, once per image package. It always deletes stale
 `refresh-*` staging tags. It also lists old patch versions of closed minor
 lines, but that part is a dry run unless started manually with
-`dry_run=false`.
+`dry_run=false`. Its version listing is paged too: it fetches the listing
+in pages and flattens them the same way the recheck cleanup does.
 
 ## See also
 

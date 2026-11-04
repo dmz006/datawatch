@@ -74,10 +74,17 @@ jobs:
         run: |
           set -euo pipefail
           # User-owned first (dmz006 is a user account), then org-owned.
+          # `gh api --paginate` prints one JSON array per page. `--slurp`
+          # is not a gh api flag (the installed gh exits nonzero with
+          # "unknown flag: --slurp"), so `jq -s` collects the separate
+          # page arrays into one array and [.[][]] flattens them into a
+          # single version list.
           if ! gh api "/users/$OWNER/packages/container/$PKG/versions" \
-               --paginate > versions.json 2>err.txt; then
+               --paginate 2>err.txt \
+               | jq -s '[.[][]]' > versions.json; then
             if ! gh api "/orgs/$OWNER/packages/container/$PKG/versions" \
-                 --paginate > versions.json 2>>err.txt; then
+                 --paginate 2>>err.txt \
+                 | jq -s '[.[][]]' > versions.json; then
               echo "::warning::could not list versions of $PKG: $(tr '\n' ' ' < err.txt)"
               echo '[]' > versions.json
             fi

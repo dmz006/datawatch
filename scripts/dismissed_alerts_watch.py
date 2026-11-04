@@ -34,6 +34,24 @@ except ImportError:
     sys.exit("PyYAML is required: pip install pyyaml")
 
 
+def _parse_pages(stdout):
+    """Parse `gh api --paginate` output: one JSON document per page,
+    concatenated (no flag folds the pages into one outer array -- `--slurp`
+    is not a gh api flag on the gh this script runs against)."""
+    decoder = json.JSONDecoder()
+    pages = []
+    idx = 0
+    size = len(stdout)
+    while idx < size:
+        while idx < size and stdout[idx] in " \t\r\n":
+            idx += 1
+        if idx >= size:
+            break
+        page, idx = decoder.raw_decode(stdout, idx)
+        pages.append(page)
+    return pages
+
+
 def gh_api_paginated(repo, path, token, state="dismissed"):
     env = dict(os.environ)
     if token:
@@ -47,9 +65,17 @@ def gh_api_paginated(repo, path, token, state="dismissed"):
     except subprocess.CalledProcessError as e:
         return None, e.stderr.strip()
     try:
-        return json.loads(out.stdout), None
+        pages = _parse_pages(out.stdout)
     except json.JSONDecodeError:
         return None, f"non-JSON response: {out.stdout[:200]!r}"
+    if not pages:
+        return None, f"empty response: {out.stdout[:200]!r}"
+    items = []
+    for page in pages:
+        if isinstance(page, dict):
+            return None, f"API error: {page.get('message', str(page)[:200])}"
+        items.extend(page)
+    return items, None
 
 
 def main(argv):

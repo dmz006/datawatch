@@ -312,7 +312,9 @@ test:
 	bash tests/test-check-no-local-leaks.sh
 	bash tests/test-seed-leak-patterns.sh
 	bash tests/test-scrub-peer-names.sh
+	bash tests/test-ci-package-listing.sh
 	bash tests/test-tidy-plans.sh
+	python3 scripts/tests/test_dismissed_alerts_watch.py
 
 # Temp-dir leak guard (internal/session TestNoNewTmpLeakEntries) in full
 # mode: DW_LEAK_GUARD_FULL=1 makes it run every package from `go list ./...`
