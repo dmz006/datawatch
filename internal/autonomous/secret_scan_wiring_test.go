@@ -162,8 +162,20 @@ func TestEffectiveSecretScanPolicyResolution(t *testing.T) {
 // Decision row (count asserted to catch a duplicate), one warn alert
 // naming Automaton and the finding count, both carrying the redacted
 // summary and nothing secret-shaped.
+//
+// git.SecretFinding structurally cannot hold the matched secret (its
+// fields are detector, commit, path, line, fingerprint — see internal/git
+// secretscan.go), so the redaction contract asserted here is the one the
+// wiring layer actually owns: the alert and the Decision record exactly
+// the redacted summary, and no unrendered finding field leaks into them.
+// Commit is the one field RedactedFindingsSummary does not render, so a
+// sentinel planted there turns the render guard from a vacuous string
+// check into an assertion that can fail if production ever switches to a
+// raw finding dump (String() or %+v) in the alert or the PRD.
 func TestRecordPushOutcomeSecretScanShadowFindings(t *testing.T) {
 	findings, secret := secretScanFindings()
+	raw := "raw" + "finding" + "field" + "7Q9x" // sentinel: assembled from fragments
+	findings[0].Commit = raw
 	summary := git.RedactedFindingsSummary(findings)
 	if summary == "" {
 		t.Fatal("RedactedFindingsSummary returned empty for two findings")
@@ -228,6 +240,22 @@ func TestRecordPushOutcomeSecretScanShadowFindings(t *testing.T) {
 
 	// The fake secret never appears on the PRD or in the alert.
 	assertNoSecretInPRDOrAlerts(t, prd, alerts, secret)
+
+	// Neither the sentinel from the unrendered field nor a raw dump of
+	// the findings' other fields may leak into the warning, the decision
+	// rows or the alert (a String()/struct-dump regression is caught here
+	// even though the summary-equality checks above already pin the exact
+	// redacted text).
+	for _, s := range []string{title, body, prd.Git.PushWarning} {
+		if strings.Contains(s, raw) {
+			t.Errorf("shadow render leaked an unrendered finding field: %q", s)
+		}
+	}
+	for _, d := range prd.Decisions {
+		if strings.Contains(d.Note, raw) {
+			t.Errorf("shadow decision row leaked an unrendered finding field: %q", d.Note)
+		}
+	}
 
 	// Persisted, not just in memory.
 	got, ok := m.store.GetPRD(prd.ID)
