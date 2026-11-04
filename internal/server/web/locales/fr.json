@@ -1141,6 +1141,7 @@
   "prd_task_verification": "Vérification",
   "prd_files_touched_label": "Touched:",
   "prd_files_generated_label": "Generated (verification):",
+  "prd_skipped_snapshot_label": "Left unstaged:",
   "prd_verification_script_label": "verification script",
   "prd_task_view_session": "Voir la session de travail",
   "prd_terminal_state_hint": "Cet automate est dans un état terminal. Modifier/Paramètres/Exécuter ne sont plus disponibles ; seuls Cloner-en-modèle + Supprimer restent.",
