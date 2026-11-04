@@ -191,8 +191,10 @@ func (m *Manager) ensureWorktreeIfConfigured(prd *PRD) (created bool, err error)
 	if werr != nil {
 		return false, fmt.Errorf("worktree setup: %w", werr)
 	}
-	prd.ProjectDir = path
-	prd.Git.Branch = branch
+	m.store.WithLock(func() {
+		prd.ProjectDir = path
+		prd.Git.Branch = branch
+	})
 	return true, nil
 }
 

@@ -77,14 +77,16 @@ func (m *Manager) SetTaskNode(prdID, taskID, node, actor string) (*PRD, error) {
 			return nil, err
 		}
 	}
-	task.PinnedNode = node
-	task.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: setTaskNodeKind, Actor: actor,
-		Note: fmt.Sprintf("task=%s node=%s", taskID, node),
+	m.store.WithLock(func() {
+		task.PinnedNode = node
+		task.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: setTaskNodeKind, Actor: actor,
+			Note: fmt.Sprintf("task=%s node=%s", taskID, node),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -123,14 +125,16 @@ func (m *Manager) SetStoryNode(prdID, storyID, node, actor string) (*PRD, error)
 			return nil, err
 		}
 	}
-	story.PinnedNode = node
-	story.UpdatedAt = time.Now()
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: setStoryNodeKind, Actor: actor,
-		Note: fmt.Sprintf("story=%s node=%s", storyID, node),
+	m.store.WithLock(func() {
+		story.PinnedNode = node
+		story.UpdatedAt = time.Now()
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: setStoryNodeKind, Actor: actor,
+			Note: fmt.Sprintf("story=%s node=%s", storyID, node),
+		})
+		recordModelWarning(prd, warning, actor)
 	})
-	recordModelWarning(prd, warning, actor)
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}

@@ -252,11 +252,13 @@ func (m *Manager) resetStartFailedAtBoot(t *Task, killerFn func(sessionID, calle
 	}
 	m.releaseCapacity(t.ID)
 	oldSession := t.SessionID
-	t.SessionID = ""
-	t.AdoptedSession = false
-	t.Status = TaskPending
-	t.Error = SessionStartFailureReason
-	t.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		t.SessionID = ""
+		t.AdoptedSession = false
+		t.Status = TaskPending
+		t.Error = SessionStartFailureReason
+		t.UpdatedAt = time.Now()
+	})
 	return oldSession
 }
 

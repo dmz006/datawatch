@@ -71,12 +71,14 @@ func (m *Manager) SetPRDVerifierPolicy(prdID string, mode *string, backends *[]s
 	if err != nil {
 		return nil, err
 	}
-	prd.VerifierPolicy = next
 	now := time.Now()
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: "set_prd_verifier_policy", Actor: actor,
-		Note: verifierPolicyNote(next),
+	m.store.WithLock(func() {
+		prd.VerifierPolicy = next
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: "set_prd_verifier_policy", Actor: actor,
+			Note: verifierPolicyNote(next),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -105,13 +107,15 @@ func (m *Manager) SetTaskVerifierPolicy(prdID, taskID string, mode *string, back
 	if err != nil {
 		return nil, err
 	}
-	task.VerifierPolicy = next
 	now := time.Now()
-	task.UpdatedAt = now
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: now, Kind: "set_task_verifier_policy", Actor: actor,
-		Note: fmt.Sprintf("task=%s %s", taskID, verifierPolicyNote(next)),
+	m.store.WithLock(func() {
+		task.VerifierPolicy = next
+		task.UpdatedAt = now
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: "set_task_verifier_policy", Actor: actor,
+			Note: fmt.Sprintf("task=%s %s", taskID, verifierPolicyNote(next)),
+		})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

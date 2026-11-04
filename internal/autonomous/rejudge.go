@@ -143,11 +143,13 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// did not yield a judgment.
 	recordNoVerdict := func(detail string) error {
 		detail = "no verdict was produced: " + detail
-		prd.Decisions = append(prd.Decisions, Decision{
-			At:    time.Now(),
-			Kind:  "guardrail_rejudge",
-			Actor: actor,
-			Note:  fmt.Sprintf("rejudge of the rules-review completion guardrail for prd %s: %s", prd.ID, detail),
+		m.store.WithLock(func() {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:    time.Now(),
+				Kind:  "guardrail_rejudge",
+				Actor: actor,
+				Note:  fmt.Sprintf("rejudge of the rules-review completion guardrail for prd %s: %s", prd.ID, detail),
+			})
 		})
 		if serr := m.store.SavePRD(prd); serr != nil {
 			return fmt.Errorf("rejudge completion guardrail: prd %s: record no-verdict decision: %w", prd.ID, serr)
@@ -223,10 +225,12 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %s: commit PRDCompleted: %w", prd.ID, cerr)
 		}
 		old := PRDBlocked
-		prd.Verdicts = append(prd.Verdicts, v)
-		prd.Decisions = append(prd.Decisions, rej)
-		prd.Status = PRDCompleted
-		prd.BlockedReason = ""
+		m.store.WithLock(func() {
+			prd.Verdicts = append(prd.Verdicts, v)
+			prd.Decisions = append(prd.Decisions, rej)
+			prd.Status = PRDCompleted
+			prd.BlockedReason = ""
+		})
 		m.emitPRDStatus(prd, old, lastDecision(prd, "guardrail_rejudge"), nil)
 		m.recordProgressMilestone(prd.ID)
 		return prd, nil
@@ -236,11 +240,14 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// verdict goes on prd.Verdicts and the reason on BlockedReason in
 	// the one save (Status is already PRDBlocked, so SavePRD's
 	// clearStaleBlockedReason leaves the new reason in place).
-	old := prd.Status
-	prd.Verdicts = append(prd.Verdicts, v)
-	prd.Decisions = append(prd.Decisions, rej)
-	prd.Status = PRDBlocked
-	prd.BlockedReason = blockedReasonFor(v)
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Verdicts = append(prd.Verdicts, v)
+		prd.Decisions = append(prd.Decisions, rej)
+		prd.Status = PRDBlocked
+		prd.BlockedReason = blockedReasonFor(v)
+	})
 	if serr := m.store.SavePRD(prd); serr != nil {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s: record block outcome: %w", prd.ID, serr)
 	}

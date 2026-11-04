@@ -240,23 +240,28 @@ func (m *Manager) SetTaskEffortCeiling(prdID, taskID, ceiling, actor string) (*P
 		return nil, err
 	}
 	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].EffortCeiling = ceiling
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
+	m.store.WithLock(func() {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				if prd.Story[si].Tasks[ti].ID == taskID {
+					prd.Story[si].Tasks[ti].EffortCeiling = ceiling
+					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+					found = true
+				}
 			}
 		}
-	}
+		if !found {
+			return
+		}
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "set_task_effort_ceiling", Actor: actor,
+			Note: fmt.Sprintf("task=%s effort_ceiling=%s", taskID, ceiling),
+		})
+	})
 	if !found {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "set_task_effort_ceiling", Actor: actor,
-		Note: fmt.Sprintf("task=%s effort_ceiling=%s", taskID, ceiling),
-	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}

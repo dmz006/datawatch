@@ -25,7 +25,7 @@ func (m *Manager) recordGuardrailVerdict(prd *PRD, unitID string, v GuardrailVer
 	if v.JudgeSessionID == "" {
 		d.Backend = v.Backend
 	}
-	prd.Decisions = append(prd.Decisions, d)
+	m.store.WithLock(func() { prd.Decisions = append(prd.Decisions, d) })
 	if err := m.savePRDOwn(prd); err != nil {
 		return err
 	}

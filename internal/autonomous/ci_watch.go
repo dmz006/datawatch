@@ -465,9 +465,8 @@ func ciFailureIssue(fr FailureReason) string {
 
 // recordCIWatch stamps res onto prd.CIWatch and appends the matching
 // ci_watch Decision. Every ci-watch outcome goes through here.
-func recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
+func (m *Manager) recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
 	res.CheckedAt = time.Now()
-	prd.CIWatch = &res
 	note := fmt.Sprintf("status=%s", res.Status)
 	if res.SHA != "" {
 		note += " sha=" + res.SHA
@@ -484,9 +483,12 @@ func recordCIWatch(prd *PRD, res CIWatchResult, outcome, category string) {
 	if res.Summary != "" {
 		note += " — " + res.Summary
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: res.CheckedAt, Kind: "ci_watch", Actor: "autonomous",
-		VerdictOutcome: outcome, FailureCategory: category, Note: note,
+	m.store.WithLock(func() {
+		prd.CIWatch = &res
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: res.CheckedAt, Kind: "ci_watch", Actor: "autonomous",
+			VerdictOutcome: outcome, FailureCategory: category, Note: note,
+		})
 	})
 }
 
@@ -530,7 +532,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 	}
 	skip := func(res CIWatchResult) (bool, *GuardrailVerdict, error) {
 		res.Status = "skipped"
-		recordCIWatch(prd, res, "n/a", "")
+		m.recordCIWatch(prd, res, "n/a", "")
 		return false, nil, nil
 	}
 	if prd.ProjectDir == "" {
@@ -589,7 +591,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 		if len(infra) == 0 {
 			base.Status = "pass"
 			base.Summary = fmt.Sprintf("all %d CI run(s) passed", len(runs))
-			recordCIWatch(prd, base, "pass", "")
+			m.recordCIWatch(prd, base, "pass", "")
 			return false, nil, nil
 		}
 		// Only CI-machinery failures: re-run them while infra budget lasts.
@@ -598,7 +600,7 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 			base.Category = "infra"
 			base.Summary = "CI run(s) did not complete (cancelled/timed out/failed to start) and the infra retry budget is exhausted"
 			base.Issues = []string{ciFailureIssue(FailureReason{Category: "infra", Source: "ci-watch", Detail: strings.TrimSpace(ciRunList(infra))})}
-			recordCIWatch(prd, base, "block", "infra")
+			m.recordCIWatch(prd, base, "block", "infra")
 			m.recordFailureLearning(prd, prd.ID, "infra", "ci-watch: "+base.Summary+"\n"+ciRunList(infra))
 			return true, nil, nil
 		}
@@ -628,7 +630,7 @@ func (m *Manager) ciWatchPending(prd *PRD, res CIWatchResult, d ciWatchDeps) {
 	res.Category = "infra"
 	res.Summary = detail
 	res.Issues = []string{ciFailureIssue(FailureReason{Category: "infra", Source: "ci-watch", Retryable: false, Detail: detail})}
-	recordCIWatch(prd, res, "n/a", "infra")
+	m.recordCIWatch(prd, res, "n/a", "infra")
 
 	prdID, sha, ownerRepo := prd.ID, res.SHA, res.Repo
 	go func() { // #nosec G118 -- single follow-up CI check after PRD completion; request context already done
@@ -681,7 +683,7 @@ func (m *Manager) ciWatchFollowUp(prdID, sha, ownerRepo string) {
 			res.Summary = fmt.Sprintf("follow-up check: all %d CI run(s) passed", len(runs))
 		}
 	}
-	recordCIWatch(p, res, outcome, category)
+	m.recordCIWatch(p, res, outcome, category)
 	if strings.HasPrefix(res.Status, "failed_") {
 		m.recordFailureLearning(p, prdID, category, "ci-watch: "+res.Summary+"\n"+ciRunList(runs))
 		log.Printf("[autonomous] ci-watch: prd=%s %s", prdID, res.Summary)
@@ -703,7 +705,7 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		res.Status = "error"
 		res.Summary = "CI run(s) failed but no guardrail judge is configured; not blocking"
 		res.Issues = []string{strings.TrimSpace(ciRunList(failed))}
-		recordCIWatch(prd, res, "n/a", "")
+		m.recordCIWatch(prd, res, "n/a", "")
 		return false, nil, nil
 	}
 	inv := GuardrailInvocation{
@@ -740,7 +742,7 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "ci-watch"
-	prd.Verdicts = append(prd.Verdicts, v)
+	m.store.WithLock(func() { prd.Verdicts = append(prd.Verdicts, v) })
 	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
 		return false, nil, err
 	}
@@ -751,14 +753,14 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	if v.Outcome != "block" {
 		// A CI failure the judge found acceptable is recorded, not blocking.
 		res.Status = v.Outcome
-		recordCIWatch(prd, res, v.Outcome, v.Category)
+		m.recordCIWatch(prd, res, v.Outcome, v.Category)
 		return false, nil, nil
 	}
 	// Identical auto-fix condition to rules-review: a "policy" (operator
 	// sign-off required) or "infra" block never qualifies.
 	if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
 		res.Status = "failed_content"
-		recordCIWatch(prd, res, v.Outcome, v.Category)
+		m.recordCIWatch(prd, res, v.Outcome, v.Category)
 		_ = m.consumeRetryBudget(prd, "content")
 		vCopy := v
 		m.recordAutoRetryDecision(prd, prd.ID, "content", prd.RetryCountsByCategory["content"], false)
@@ -772,7 +774,7 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	default:
 		res.Status = "failed_content"
 	}
-	recordCIWatch(prd, res, v.Outcome, v.Category)
+	m.recordCIWatch(prd, res, v.Outcome, v.Category)
 	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v))
 	return true, nil, nil
 }

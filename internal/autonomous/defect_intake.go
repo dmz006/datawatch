@@ -163,7 +163,9 @@ func (m *Manager) intakeDefect(prd *PRD) {
 // in-memory record the caller holds).
 func (m *Manager) recordDefectIntake(prd *PRD, outcome, automation, message string) {
 	rec := &DefectIntakeRecord{Outcome: outcome, Automation: automation, Message: message, At: time.Now()}
-	prd.DefectIntake = rec
-	prd.UpdatedAt = rec.At
+	m.store.WithLock(func() {
+		prd.DefectIntake = rec
+		prd.UpdatedAt = rec.At
+	})
 	_ = m.store.SavePRD(prd)
 }

@@ -145,10 +145,12 @@ func (m *Manager) retryBudgetRemaining(prd *PRD, category string) bool {
 // for the given category, persisting the PRD so the consumption
 // survives a daemon restart.
 func (m *Manager) consumeRetryBudget(prd *PRD, category string) error {
-	if prd.RetryCountsByCategory == nil {
-		prd.RetryCountsByCategory = map[string]int{}
-	}
-	prd.RetryCountsByCategory[category]++
+	m.store.WithLock(func() {
+		if prd.RetryCountsByCategory == nil {
+			prd.RetryCountsByCategory = map[string]int{}
+		}
+		prd.RetryCountsByCategory[category]++
+	})
 	return m.savePRDOwn(prd)
 }
 
@@ -164,9 +166,11 @@ func (m *Manager) recordAutoRetryDecision(prd *PRD, unitID, category string, att
 	if escalated {
 		note += " escalated-to-global-default"
 	}
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "auto_retry", Actor: "autonomous",
-		Note: note, FailureCategory: category,
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "auto_retry", Actor: "autonomous",
+			Note: note, FailureCategory: category,
+		})
 	})
 }
 
@@ -220,13 +224,13 @@ func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail strin
 	if m.retryBudgetRemaining(prd, category) {
 		_ = m.consumeRetryBudget(prd, category)
 		reason.Retryable = true
-		prd.LastDecomposeFailure = reason
+		m.store.WithLock(func() { prd.LastDecomposeFailure = reason })
 		m.recordAutoRetryDecision(prd, prd.ID, category, prd.RetryCountsByCategory[category], false)
 		_ = m.store.SavePRD(prd)
 		return true
 	}
 	reason.Retryable = false
-	prd.LastDecomposeFailure = reason
+	m.store.WithLock(func() { prd.LastDecomposeFailure = reason })
 	m.recordFailureLearning(prd, prd.ID, category, detail)
 	return false
 }
@@ -248,7 +252,9 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	// that would otherwise leave LastDecomposeFailure nil. Record the
 	// parse reason so an operator sees WHY (the same intent manager.go's
 	// decom-parse comment states), without touching an existing record.
-	if prd.LastDecomposeFailure == nil {
+	var hasFailure bool
+	m.store.WithLock(func() { hasFailure = prd.LastDecomposeFailure != nil })
+	if !hasFailure {
 		category := "content"
 		retryable := false
 		switch source {
@@ -258,17 +264,22 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 			category = "infra"
 			retryable = true // a store persistence failure is operator-retryable, not a content judgement
 		}
-		prd.LastDecomposeFailure = &FailureReason{
-			Category:   category,
-			Detail:     cause.Error(),
-			Source:     source,
-			Retryable:  retryable,
-			OccurredAt: time.Now(),
-		}
+		m.store.WithLock(func() {
+			prd.LastDecomposeFailure = &FailureReason{
+				Category:   category,
+				Detail:     cause.Error(),
+				Source:     source,
+				Retryable:  retryable,
+				OccurredAt: time.Now(),
+			}
+		})
 	}
-	old := prd.Status
-	prd.Status = PRDDraft
-	prd.UpdatedAt = time.Now()
+	var old PRDStatus
+	m.store.WithLock(func() {
+		old = prd.Status
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] prd=%s: give-up rollback save failed: %v", prd.ID, err)
 		return
@@ -304,36 +315,45 @@ const decomposeSessionStopThreshold = 2
 // threshold it parks the PRD in PRDFailed and returns true: the caller
 // must return the error and must not invoke the decompose fn again.
 func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, derr error) bool {
-	prd.DecomposeSessionFailures++
+	var failures int
+	m.store.WithLock(func() {
+		prd.DecomposeSessionFailures++
+		failures = prd.DecomposeSessionFailures
+	})
 	now := time.Now()
 	modelLabel := model
 	if modelLabel == "" {
 		modelLabel = "default"
 	}
-	if prd.DecomposeSessionFailures < decomposeSessionStopThreshold {
-		prd.LastDecomposeFailure = &FailureReason{
-			Category:   "infra",
-			Source:     "decompose-session",
-			Retryable:  true,
-			Detail:     fmt.Sprintf("the decompose session ended without writing the plan file (%s, %s model); retrying with a fresh session", backend, modelLabel),
-			OccurredAt: now,
-		}
+	if failures < decomposeSessionStopThreshold {
+		m.store.WithLock(func() {
+			prd.LastDecomposeFailure = &FailureReason{
+				Category:   "infra",
+				Source:     "decompose-session",
+				Retryable:  true,
+				Detail:     fmt.Sprintf("the decompose session ended without writing the plan file (%s, %s model); retrying with a fresh session", backend, modelLabel),
+				OccurredAt: now,
+			}
+		})
 		_ = m.store.SavePRD(prd)
 		return false
 	}
-	detail := fmt.Sprintf("%d decompose sessions ended without writing a plan (%s, %s model); stopped — reset to draft to retry", prd.DecomposeSessionFailures, backend, modelLabel)
-	prd.LastDecomposeFailure = &FailureReason{
-		Category:   "infra",
-		Source:     "decompose-session",
-		Retryable:  false,
-		Detail:     detail,
-		OccurredAt: now,
-	}
-	old := prd.Status
-	prd.Status = PRDFailed
-	prd.UpdatedAt = now
+	detail := fmt.Sprintf("%d decompose sessions ended without writing a plan (%s, %s model); stopped — reset to draft to retry", failures, backend, modelLabel)
+	var old PRDStatus
+	m.store.WithLock(func() {
+		prd.LastDecomposeFailure = &FailureReason{
+			Category:   "infra",
+			Source:     "decompose-session",
+			Retryable:  false,
+			Detail:     detail,
+			OccurredAt: now,
+		}
+		old = prd.Status
+		prd.Status = PRDFailed
+		prd.UpdatedAt = now
+	})
 	log.Printf("[autonomous] prd=%s decompose stopped after %d no-output sessions (backend=%s, model=%s): %v",
-		prd.ID, prd.DecomposeSessionFailures, backend, modelLabel, derr)
+		prd.ID, failures, backend, modelLabel, derr)
 	m.recordFailureLearning(prd, prd.ID, "infra", detail)
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, old, nil, nil)
@@ -465,15 +485,19 @@ func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVer
 	if targetStoryID == "" && !m.resolveAutoFixSkipApproval(prd) && perStoryApproval {
 		fresh, ok := m.store.GetPRD(prd.ID)
 		if ok {
-			for i := range fresh.Story {
-				if fresh.Story[i].ID == storyID {
-					fresh.Story[i].Status = StoryAwaitingApproval
+			m.store.WithLock(func() {
+				for i := range fresh.Story {
+					if fresh.Story[i].ID == storyID {
+						fresh.Story[i].Status = StoryAwaitingApproval
+					}
 				}
-			}
+			})
 			if err := m.store.SavePRD(fresh); err != nil {
 				return nil, nil, err
 			}
-			*prd = *fresh
+			if prd != fresh {
+				m.store.WithLock(func() { *prd = *fresh })
+			}
 		}
 	}
 	story, _ := m.store.GetPRD(prd.ID)

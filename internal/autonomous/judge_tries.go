@@ -53,7 +53,9 @@ func (m *Manager) RecordJudgeTry(prdID, key string, rec JudgeAttemptRecord) erro
 	if !ok {
 		return fmt.Errorf("judge try: PRD %s not found", prdID)
 	}
-	prd.JudgeTries = append(prd.JudgeTries, JudgeTry{Key: key, JudgeAttemptRecord: rec})
+	m.store.WithLock(func() {
+		prd.JudgeTries = append(prd.JudgeTries, JudgeTry{Key: key, JudgeAttemptRecord: rec})
+	})
 	return m.savePRDOwn(prd)
 }
 
@@ -64,15 +66,21 @@ func (m *Manager) ClearJudgeTries(prdID, key string) error {
 	if !ok {
 		return nil
 	}
-	var kept []JudgeTry
-	for _, t := range prd.JudgeTries {
-		if t.Key != key {
-			kept = append(kept, t)
+	changed := false
+	m.store.WithLock(func() {
+		var kept []JudgeTry
+		for _, t := range prd.JudgeTries {
+			if t.Key != key {
+				kept = append(kept, t)
+			}
 		}
-	}
-	if len(kept) == len(prd.JudgeTries) {
+		if len(kept) != len(prd.JudgeTries) {
+			prd.JudgeTries = kept
+			changed = true
+		}
+	})
+	if !changed {
 		return nil
 	}
-	prd.JudgeTries = kept
 	return m.savePRDOwn(prd)
 }
