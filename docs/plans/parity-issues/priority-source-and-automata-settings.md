@@ -1,4 +1,4 @@
-Issue: (not yet filed — see Filing record)
+Issue: https://github.com/dmz006/datawatch-app/issues/351
 
 # [sync] Autonomous settings: new REST fields (priority_by_kind, defect_intake_automation), priority_source on PRD/session objects, MCP, CLI, comm, PWA settings fields and 9 locale keys (priority source badge + two settings rows)
 
