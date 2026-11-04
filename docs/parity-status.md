@@ -42,6 +42,7 @@ Legend:
 | Push notifications (APNs) | N/A | N/A | ✅ v8.62.x — server-side dispatch shipped (BL397 Phase 4 / BL335); **unit-tested only, not live-verified against real Apple servers** (no Apple Developer account/Auth Key/TestFlight device token available in this environment) |
 | Alert list + mark read | ✅ | ✅ | ✅ |
 | Autonomous PRD list + actions | ✅ | ✅ | ✅ |
+| Task skipped snapshot paths (staging-guard skips: `skipped_snapshot_paths` on the server REST read — PWA task-card chips; CLI `autonomous prd-get` counts-first line "left unstaged: <task> N (reason=count, ...)"; comm `autonomous get` same line) | ✅ | ❌ pending the datawatch-app issue (to be filed: show the skipped-snapshot path+reason chips + counts line on the Automaton task card) | ❌ pending the datawatch-app issue (to be filed, same scope as Android) |
 | Automaton spec expand (show full / collapse) | ✅ | ✅ | ✅ |
 | Automaton status graphs (progress bars + CPU/RSS) | ✅ | ✅ | ✅ |
 | Automaton cancel button visible during running state | ✅ | ✅ | ✅ |
