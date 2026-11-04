@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.83.1 — Node leases follow pool moves and wait reasons stay current
+
+Two capacity fixes: a task that moves between pools no longer holds the node lease of its old pool, and the wait reason of a queued task is always current.
+
+- **Node lease on pool moves.** When a task moves between pools, the node lease of its old pool is released, so a claude-code task never holds a local node engine. This includes work adopted after a daemon restart: if the task's backend takes no node, the stale `node:<name>` lease is dropped instead of keeping a node slot busy.
+- **Live wait reasons.** The reason shown for a queued task is recomputed on every read, not the one recorded when it entered the queue. When the restart adoption hold ends, the queue shows the node-engine reason, the same one the capacity admission answer gives, on REST, MCP, the CLI and the web capacity card.
+
 ## v9.83.0 — Skipped snapshot paths recorded on every finish path
 
 A task's list of files the snapshot left out is now recorded on every finish path and shown everywhere.

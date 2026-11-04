@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.83.0 (2026-11-04).** A task's skipped snapshot paths are recorded on every finish path and shown on the Automaton detail, CLI, comm channel and web task row. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.83.1 (2026-11-04).** A task that moves between pools drops its old node lease, and a queued task's wait reason is recomputed on every read. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
