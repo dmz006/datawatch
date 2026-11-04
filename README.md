@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.87.0 (2026-11-04).** Decompose output is linted against a configurable rule pack (off, shadow or enforce), task templates are applied at decompose time, and the planner gets guidance. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.88.0 (2026-11-04).** A project can carry its own automation policy between an Automaton's settings and the daemon's defaults, with a precedence view in the web settings. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.88.0 — Project automation policy
+
+A project can now carry its own automation policy, between an Automaton's settings and the daemon's defaults.
+
+- **Per-project tier.** Policy keys stored under `projects.<alias>.policy` cover plan checks (`plan_coverage_check`, `plan_coverage_min_ratio`, `plan_review_mode`, `scope_lint`), retry and escalation (`retry_policy`, `retry_ceiling_total`, `auto_fix_retries`, `infra_retry_escalate_after`, `failure_escalation`), git defaults (`default_auto_pr`, parallel read-only and worktree-per-task), lane limits (`max_concurrent_tasks`, `plan_tier_max_inflight`, `lane_fill_gpu_lanes`, `lane_fill_claude_lanes`), and the uncommitted-work and burn-guard keys.
+- **Inherit by default.** Every key is optional and inherits the daemon's value when unset, so a project with no policy reads exactly as before. A write to the project tier never touches the daemon tier, and an unset key never becomes a written zero.
+- **Surfaces.** YAML, the CLI (`datawatch projects policy show|set|unset`), REST (`POST /api/projects`, `GET /api/projects/{name}/policy/effective`), MCP (`project_upsert` with `policy`, `project_policy_effective`), the comm channel, and a Project policy panel in the web Settings with the effective value and a precedence badge (Automaton, Project or Daemon) per row. Five locales and an operator how-to.
+- Known gap: the final gate report was not produced (its task depended on the version-bump task, which the merge step does).
+
 ## v9.87.0 — Configurable decompose lint, task templates and guidance
 
 Decompose output is now linted against a configurable rule pack, and task templates and guidance shape the plan.
