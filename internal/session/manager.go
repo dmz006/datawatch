@@ -476,6 +476,10 @@ type Manager struct {
 	// onSessionEnd is called when a session reaches a terminal state (complete/failed/killed).
 	onSessionEnd func(sess *Session)
 
+	// traceIngest feeds trace events into the trace store and the session
+	// timeline (see trace_ingest.go). nil until wired; observe only.
+	traceIngest *TraceIngestor
+
 	// sessionTempRelease releases the session's own temporary files (task
 	// capture files, per-session worker config directories for the pi,
 	// claude-code, opencode, aider and goose backends) using the created-path
@@ -1171,6 +1175,33 @@ func (m *Manager) SetOnSessionEnd(fn func(*Session)) {
 	m.onSessionEnd = fn
 }
 
+// SetTraceIngestor wires the trace ingestor into the session lifecycle: it
+// is told when a session starts and when it ends, and receives the
+// timeline lines through AppendTimeline. Pass nil to detach.
+func (m *Manager) SetTraceIngestor(t *TraceIngestor) { m.traceIngest = t }
+
+// notifySessionStart tells the trace ingestor, then fires onSessionStart.
+func (m *Manager) notifySessionStart(sess *Session) {
+	if m.traceIngest != nil {
+		m.traceIngest.SessionStarted(m.store.Snapshot(sess))
+	}
+	if m.onSessionStart != nil {
+		m.onSessionStart(sess)
+	}
+}
+
+// AppendTimeline appends one line to a session's existing timeline.md,
+// through the live tracker when there is one, else the folder on disk.
+func (m *Manager) AppendTimeline(id, line string) error {
+	m.mu.Lock()
+	tracker := m.trackers[id]
+	m.mu.Unlock()
+	if tracker == nil {
+		tracker = ResumeTracker(m.dataDir, &Session{FullID: id})
+	}
+	return tracker.appendTimeline(line)
+}
+
 // SetScratchReleaser sets the callback that releases a session's own
 // temporary files when the session ends. It runs on the session manager's
 // end path — before the registered SessionEnd listeners — for the pi,
@@ -1192,6 +1223,9 @@ func (m *Manager) SetScratchReleaser(fn func(*Session)) {
 func (m *Manager) emitSessionEnd(sess *Session) {
 	if m.sessionTempRelease != nil {
 		m.sessionTempRelease(sess)
+	}
+	if m.traceIngest != nil {
+		m.traceIngest.SessionEnded(m.store.Snapshot(sess))
 	}
 	if m.onSessionEnd != nil {
 		m.onSessionEnd(sess)
@@ -2419,9 +2453,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		m.notifySessionCreated(sess)
 		go m.runSubprocess(sess)
-		if m.onSessionStart != nil {
-			m.onSessionStart(sess)
-		}
+		m.notifySessionStart(sess)
 		return sess, nil
 	}
 
@@ -2806,9 +2838,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		})
 	}
 
-	if m.onSessionStart != nil {
-		m.onSessionStart(sess)
-	}
+	m.notifySessionStart(sess)
 
 	return sess, nil
 }
@@ -4495,9 +4525,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	if m.onStateChange != nil {
 		m.onStateChange(sess, oldState)
 	}
-	if m.onSessionStart != nil {
-		m.onSessionStart(sess)
-	}
+	m.notifySessionStart(sess)
 
 	return sess, nil
 }

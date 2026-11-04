@@ -1101,6 +1101,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Daemon-observed trace events for the ollama, openwebui and shell
 	// backends: register the recorder hooks against the trace store.
 	var traceObserver *observe.Observer
+	var traceIngestor *session.TraceIngestor
 	if cfg.Tracing.WithDefaults().Mode != trace.ModeOff {
 		if ts, terr := trace.NewStore(expandHome(cfg.DataDir), cfg.Tracing.WithDefaults(), nil); terr != nil {
 			debugf("trace store unavailable, daemon-observed tracing off: %v", terr)
@@ -1114,6 +1115,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return ""
 			}, nil)
 			defer traceObserver.Close()
+			// Transcript ingest (incremental + at session end) and the
+			// capability/permission/call events of sessions, all on one
+			// background goroutine; each event is also appended to the
+			// session timeline.
+			traceIngestor = session.NewTraceIngestor(session.TraceIngestConfig{
+				Sink: ts, Settings: cfg.Tracing,
+				Locate:   session.DefaultTranscriptLocator(""),
+				Timeline: func(id, line string) { _ = mgr.AppendTimeline(id, line) },
+			})
+			mgr.SetTraceIngestor(traceIngestor)
+			traceCtx, traceCancel := context.WithCancel(context.Background())
+			go traceIngestor.Run(traceCtx)
+			defer func() { traceCancel(); traceIngestor.Close() }()
 		}
 	}
 	// Old terminal sessions move to the archive file (age and field cap are
@@ -3500,6 +3514,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetResultStore(resultStore)               // BL360
 		httpServer.SetScheduleResultStore(scheduleResultStore)
 		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
+		if traceIngestor != nil {
+			httpServer.SetTraceRecorder(traceIngestor)
+		}
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)

@@ -454,6 +454,8 @@ type Server struct {
 	// token" by fedAuthMiddleware, falling through to admin/peer
 	// checks). Wired from main.go via SetSessionTokenStore.
 	sessionTokens *auth.SessionTokenStore
+	// traceRecorder receives session trace events (observe only); nil until wired.
+	traceRecorder SessionTraceRecorder
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -1340,6 +1342,7 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.traceMCPCall(r.Context(), req.Tool)
 	data, err := s.mcpBridge.MCPCallJSON(ctx, req.Tool, req.Args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -12176,6 +12179,7 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 		"subtype":    body.Type,
 		"request_id": body.RequestID,
 	}
+	s.tracePermissionRelay(r.Context(), body.Type, body.RequestID)
 	raw, _ := json.Marshal(notifyData)
 	outMsg := WSMessage{Type: MsgChannelNotify, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
