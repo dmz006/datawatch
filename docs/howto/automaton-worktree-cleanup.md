@@ -177,9 +177,10 @@ the counts show what a pass found it could remove.
    views show when the result was computed, with a stale badge when a read
    misses the lifetime — it still gets the result at once, and at most one
    background refresh (bounded at 60 seconds) is started — further reads in
-   that window start none and also get the stored result. If that refresh
-   fails, the reader still gets the last successful result, and the failure is
-   counted in the daemon stats.
+   that window start none and also get the stored result. While that refresh
+   is still running, reads keep serving the last successful result, so a slow
+   or failing refresh never leaves the card blank or blocked, and a failed
+   refresh is counted in the daemon stats.
 3. The daemon log carries one summary line per pass
    (`worktree-cleanup` and `temp-sweep`) with the mode and the counts.
 
