@@ -653,3 +653,25 @@ func TestNodePin_UnpinnedPlacementIsUntouched(t *testing.T) {
 		t.Fatalf("an unpinned refresh changed the request: %+v", got)
 	}
 }
+
+// An unknown Automaton id is refused with a message that names the Automaton
+// and starts in lower case, as Go error strings do.
+func TestNodePin_UnknownAutomatonMessageNamesAutomaton(t *testing.T) {
+	m, _, _ := newPinManager(t, "refuse", routeServedModel)
+	for name, call := range map[string]func() error{
+		"task":  func() error { _, err := m.SetTaskNode("missing-id", "t", "gpu-a", "tester"); return err },
+		"story": func() error { _, err := m.SetStoryNode("missing-id", "s", "gpu-a", "tester"); return err },
+	} {
+		err := call()
+		if err == nil {
+			t.Fatalf("%s: want an error for an unknown Automaton", name)
+		}
+		msg := err.Error()
+		if !strings.Contains(msg, "Automaton") || !strings.Contains(msg, "missing-id") || strings.Contains(msg, "PRD") {
+			t.Fatalf("%s: message %q should name the Automaton and its id", name, msg)
+		}
+		if msg[0] < 'a' || msg[0] > 'z' {
+			t.Fatalf("%s: message %q should start in lower case", name, msg)
+		}
+	}
+}

@@ -60,7 +60,7 @@ func (m *Manager) SetTaskNode(prdID, taskID, node, actor string) (*PRD, error) {
 	node = strings.TrimSpace(node)
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("Automaton %q not found", prdID)
+		return nil, fmt.Errorf("no Automaton with id %q", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (m *Manager) SetStoryNode(prdID, storyID, node, actor string) (*PRD, error)
 	node = strings.TrimSpace(node)
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("Automaton %q not found", prdID)
+		return nil, fmt.Errorf("no Automaton with id %q", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
