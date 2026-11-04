@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/llm"
 )
@@ -86,5 +87,9 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	// explicit length check for this branch's intentionally inline forms
 	// (the interactive echo-of-task and the script argv) — oversize
 	// commands are rejected up front, so nothing is ever sent to tmux.
-	return llm.SendKeys(ctx, tmuxSession, cmd)
+	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
+		return err
+	}
+	emitRecord(CommandRecord{Session: tmuxSession, Command: cmd, Start: time.Now()})
+	return nil
 }

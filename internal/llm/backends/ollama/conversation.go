@@ -188,6 +188,9 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 		return err
 	}
 
+	rec := RequestRecord{Session: tmuxSession, Model: model, Start: recordNow()}
+	defer func() { emitRecord(rec, recordNow()) }()
+
 	reqBody := map[string]interface{}{
 		"model":    model,
 		"messages": messages,
@@ -205,12 +208,15 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 
 	resp, err := (&http.Client{}).Do(req)
 	if err != nil {
+		rec.Err = err
 		emitChat(tmuxSession, "system", fmt.Sprintf("Error: %v", err), false)
 		return err
 	}
 	defer resp.Body.Close() //nolint:errcheck
+	rec.StatusCode = resp.StatusCode
 
 	if resp.StatusCode != 200 {
+		rec.Err = fmt.Errorf("ollama HTTP %d", resp.StatusCode)
 		emitChat(tmuxSession, "system", fmt.Sprintf("Ollama error: HTTP %d", resp.StatusCode), false)
 		return fmt.Errorf("ollama HTTP %d", resp.StatusCode)
 	}
@@ -236,6 +242,7 @@ func (b *Backend) sendAndStream(ctx context.Context, tmuxSession, userMsg string
 			emitChat(tmuxSession, "assistant", chunk.Message.Content, true)
 		}
 		if chunk.Done {
+			rec.TokensIn, rec.TokensOut = chunk.PromptEvalCount, chunk.EvalCount
 			if usageFn != nil && (chunk.PromptEvalCount > 0 || chunk.EvalCount > 0) {
 				usageFn(tmuxSession, chunk.PromptEvalCount, chunk.EvalCount)
 			}
