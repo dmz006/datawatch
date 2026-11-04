@@ -44794,6 +44794,16 @@ function loadBrandingPanel() {
           <label style="font-size:11px;width:90px;flex-shrink:0;">Logo path</label>
           <input id="splashLogoPath" type="text" class="form-input" style="flex:1;font-size:11px;" placeholder="Absolute path to PNG/SVG on server" value="" />
         </div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="font-size:11px;width:130px;flex-shrink:0;">${t('settings_splash_min_seconds')}</label>
+          <input id="splashMinSeconds" type="number" class="form-input" style="flex:1;font-size:11px;" min="0" max="60" step="1" placeholder="6" value="" />
+        </div>
+        <div style="font-size:10px;opacity:0.65;margin:0 0 6px 136px;">${t('settings_splash_min_seconds_hint')}</div>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label style="font-size:11px;width:130px;flex-shrink:0;">${t('settings_splash_min_seconds_new_version')}</label>
+          <input id="splashMinSecondsNewVersion" type="number" class="form-input" style="flex:1;font-size:11px;" min="0" max="60" step="1" placeholder="9" value="" />
+        </div>
+        <div style="font-size:10px;opacity:0.65;margin:0 0 6px 136px;">${t('settings_splash_min_seconds_new_version_hint')}</div>
         <div style="display:flex;gap:6px;padding-top:2px;">
           <button class="btn-primary" style="font-size:11px;" onclick="saveBranding()">Save</button>
           <span id="brandingSaveStatus" style="font-size:10px;color:var(--text2);align-self:center;"></span>
@@ -44802,17 +44812,43 @@ function loadBrandingPanel() {
     apiFetch('/api/config').then(cfg => {
       const lp = document.getElementById('splashLogoPath');
       if (lp) lp.value = cfg?.session?.splash_logo_path || '';
+      const ms = document.getElementById('splashMinSeconds');
+      if (ms) ms.value = (cfg && cfg.ui && cfg.ui.splash_min_seconds != null) ? cfg.ui.splash_min_seconds : 6;
+      const nv = document.getElementById('splashMinSecondsNewVersion');
+      if (nv) nv.value = (cfg && cfg.ui && cfg.ui.splash_min_seconds_new_version != null) ? cfg.ui.splash_min_seconds_new_version : 9;
     }).catch(() => {});
   }).catch(e => { el.innerHTML = `<span style="color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load splash info.'))}</span>`; });
 }
 window.loadBrandingPanel = loadBrandingPanel;
+// splashSecondsEntry validates one splash minimum-dwell entry the same way
+// the daemon validates it in internal/config/config.go: a whole number from
+// 0 to 60 inclusive (0 = keep the legacy timing). An out-of-range or non
+// whole entry is reported with an error toast and nothing is sent — the
+// same style as savePromptNumberSetting's client-side floor. Returns null
+// for anything the daemon would refuse.
+function splashSecondsEntry(rawValue) {
+  const text = String(rawValue == null ? '' : rawValue).trim();
+  const n = Number(text);
+  if (text === '' || !Number.isInteger(n) || n < 0 || n > 60) return null;
+  return n;
+}
+window.splashSecondsEntry = splashSecondsEntry;
 window.saveBranding = function() {
   const tagline = (document.getElementById('splashTagline')||{}).value||'';
   const logoPath = (document.getElementById('splashLogoPath')||{}).value||'';
+  const minSeconds = splashSecondsEntry((document.getElementById('splashMinSeconds')||{}).value);
+  if (minSeconds === null) { showToast('Enter a whole number of seconds from 0 to 60', 'error'); return; }
+  const minSecondsNewVersion = splashSecondsEntry((document.getElementById('splashMinSecondsNewVersion')||{}).value);
+  if (minSecondsNewVersion === null) { showToast('Enter a whole number of seconds from 0 to 60', 'error'); return; }
   apiFetch('/api/config', {
     method: 'PUT',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ 'session.splash_tagline': tagline, 'session.splash_logo_path': logoPath }),
+    body: JSON.stringify({
+      'session.splash_tagline': tagline,
+      'session.splash_logo_path': logoPath,
+      'ui.splash_min_seconds': minSeconds,
+      'ui.splash_min_seconds_new_version': minSecondsNewVersion,
+    }),
   }).then(() => {
     const s = document.getElementById('brandingSaveStatus');
     if (s) { s.textContent = t('state_saved') || 'Saved.'; setTimeout(() => { if(s) s.textContent=''; }, 2500); }
