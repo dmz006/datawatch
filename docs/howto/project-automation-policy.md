@@ -1,194 +1,279 @@
 ---
 docs:
   index: true
-  topics: [policy, project, precedence, automaton, daemon, retry, plan coverage, lanes, burn guard, uncommitted work, PWA, settings]
+  topics: [projects, policy, precedence, tiers, automaton, plan-checks, retry, lanes, uncommitted-work]
 exec_steps:
   - tool: project_policy_effective
-    description: Read every setting of a project's effective policy with the tier that supplies each value, and optionally an Automaton's own tier on top
-    args:
-      name: "{{params.project_name}}"
+    description: Read the effective policy first. It shows every setting, the value in force, and the tier (Automaton, Project or Daemon) that supplied it
+    args: {name: core-api}
+    read_only: true
+  - tool: project_policy_effective
+    description: Worked example, read-only. Resolve with one Automaton's own policy fields as the top tier, so you see which of the Automaton's keys shadow the project's
+    args: {name: core-api, automaton: 1}
     read_only: true
   - tool: project_upsert
-    description: Register a project and/or set one or more keys of its policy tier; keys left out of policy keep the tier below
-    args:
-      name: "{{params.project_name}}"
-      dir: "{{params.project_dir}}"
-      policy: {"plan_review_mode": "block"}
-    read_only: false
+    description: A state-changing call. Upsert the project entry with its policy block as a whole at the project tier (not one key at a time). One invalid value rejects the whole block and stores nothing
+    args: {name: core-api, dir: /home/op/core-api, policy: {max_concurrent_tasks: 2}}
 ---
 
 # Project automation policy
 
-**Project automation policy** is the middle tier of the three tiers the daemon
-resolves every Automaton setting through: **Automaton** (its own override)
-over **project** over **daemon** defaults. The project tier is one block per
-registered project — `projects.<name>.policy` in `datawatch.yaml` — and it is
-the only tier that travels with the repository: clone the project, keep the
-datawatch config folder, and the same rules apply on every host.
-
-The PWA's **Settings → Automata → Project policy** panel is where you read and
-edit this tier: one row per setting, the effective value in force, a badge
-naming the tier that supplied it, and a control to set a value or clear the
-key back to the tier below.
-
-## The three tiers, concretely
-
-For any one setting the daemon reads the tiers top to bottom and takes the
-first that holds a value:
+**Project automation policy** is the per-project layer of the three tiers the daemon resolves every
+Automaton setting through. It sits **between the daemon and the Automaton**:
 
 ```
-Automaton tier   the Automaton's own policy fields (set per run or on the record)
-project tier     projects.<name>.policy     ← this panel edits here
-daemon tier      the daemon-wide defaults and autonomous.* settings
+Automaton's own settings   (top)     — the Automaton overrides any one policy
+          over
+Project policy              (middle) — this document: stored per project
+          over
+Daemon defaults             (base)   — your daemon-wide configuration
 ```
 
-A key that is *absent* from a tier is not "the daemon value was written" — the
-tier below is simply in play again. Clearing a key in the panel therefore
-restores whatever a daemon setting or an Automaton override supplies, which
-can be more or less permissive than the daemon default alone. The precedence
-badge on each row states *in force right now*, not what is stored in this
-tier.
+The project tier is what travels with the repository. The daemon tier is what the machine holds,
+and the Automaton tier is what a single Automaton decides for itself. The project tier is the one
+you tune when *this project* should behave differently from *this machine*, without touching the
+daemon-wide defaults that every other project still reads.
 
-Reading any of the tiers has no side effect. Only writing the project tier or
-the Automaton tier changes anything, and a write here never touches the daemon
-tier.
+Every field is optional. An **absent field is not the same as a set field**: an absent field
+*inherits* whatever is below it — the Automaton's own value if it set one, otherwise the daemon
+default. That way you can keep one daemon serving two projects whose plan gates point at different
+repositories or different retry budgets, without two daemons.
 
-## Base requirements
+A project with no policy at all reads exactly like it did before policies existed — every setting
+resolves to the **daemon** tier — because every field's default is *unset*, i.e. *inherit the daemon
+value*. **Nothing in this repository changes until you set a key.**
 
-- A running daemon with automation on (`autonomous.enabled: true`) and at
-  least one registered project, added in the Project Profiles panel one above,
-  by `project_upsert`, or from `datawatch projects set <name> <dir>`.
-- For the **Automaton** tier badge to be meaningful, an Automaton id to pass.
-  The panel takes it as an optional field per project.
+## The settings
 
-## Reading the panel
+Each field is optional. If a field is absent, the daemon falls back to its own value for that key.
 
-Open **Settings → Automata → Project policy** in the PWA:
+**Plan checks**
 
-1. Pick the **project**. The panel loads its stored policy keys and resolves
-   every setting through the tiers.
-2. Optionally fill in an **Automaton** id to include that Automaton's own
-   policy fields as the top tier — the same read the daemon performs at run
-   time.
-3. Each row shows the setting's label, its effective value, the **precedence
-   badge** (Automaton / Project / Daemon) and a control.
-4. Groups appear in the order plan checks, retry & escalation, git defaults,
-   lane limits, and the other recent keys. The legend under the title restates
-   the precedence rule.
+- **`plan_coverage_check`** — what the plan requirement-coverage gate does to a short plan. `off`
+  lets every plan through, `warn` leaves the plan as-is and only names the shortfall, and `block`
+  stops the gate short of accepting the plan.
+- **`plan_coverage_min_ratio`** — the coverage ratio a plan must reach, between just above zero and
+  one. A plan that carries less of the requirement set than this line does not pass.
+- **`plan_review_mode`** — the plan-quality review gate, in the same three vocabularies: `off`, `warn`
+  or `block`.
+- **`scope_lint`** — the task-scope lint for this project: `off` turns it off, `warn` leaves the task as
+  is and names the problem, `enforce` refuses a task that does not fit its stated scope. These four
+  apply to every Automaton that plans inside this project, before any Automaton's own settings are
+  consulted.
 
-The same read, without the panel:
+**Retry & escalation**
 
-```bash
-datawatch projects policy show <name> --effective --automaton <id>
-# or on REST
-GET /api/projects/<name>/policy/effective?automaton=<id>
+- **`retry_policy`** — the per-category retry budgets: a whole number of attempts from zero up, for
+  each of `infra`, `content`, `scope` and `policy`. Leave a category out of the map and only that
+  category keeps the daemon's number — the others you did set still apply.
+- **`retry_ceiling_total`** — a cap, in whole attempts, on the retries the daemon spends across all of
+  a task's categories. Set it low when you want a project's retries to stay bounded no matter how
+  many categories each fail.
+- **`auto_fix_retries`** — how many times an auto-fix run may be retried before the work is given up on. Zero
+  turns auto-fix off for the project; a negative value is refused when saved.
+- **`infra_retry_escalate_after`** — after how many infrastructure retries a task is allowed to
+  *escalate* — move to a stronger backend — instead of retrying the same class. Zero reads as *never,
+  keep retrying*; a negative value is refused.
+- **`failure_escalation`** — the escalation level the daemon reaches when a task's retries are spent:
+  the tier, its backend/model/effort, and how many attempts each step gets.
+
+**Git defaults**
+
+- **`default_auto_pr`** — whether a task may open a pull request for itself without asking per task.
+- **`parallel_read_only_tasks`** — whether read-only tasks may run in parallel in this project
+  rather than one at a time.
+- **`parallel_worktree_per_task`** — whether each parallel task gets its own worktree rather
+  than sharing one. Off means the tasks share the project's single worktree, which is the right
+  choice only when they also have nothing to write.
+
+**Lane limits**
+
+- **`max_concurrent_tasks`** — the project's cap on in-flight tasks at once. Zero or below refuses
+  when saved; one is the floor.
+- **`plan_tier_max_inflight`** — per plan tier, how many Automata of this project may be running at once.
+- **`lane_fill_gpu_lanes`** and **`lane_fill_claude_lanes`** — how many GPU and Claude lanes this
+  project may hold from the shared pools. Zero on each means *no preference*, which reads the
+  daemon's own caps.
+
+**Other recent keys**
+
+- **`uncommitted_work_policy`** — what an Automaton must do with work left uncommitted before it
+  is called done: `hold` keeps the work and parks the Automaton for a human, `ask` raises a
+  question the operator answers, and `discard` throws the uncommitted work away.
+- **`uncommitted_work_scope`** — how wide that check looks: `commit` judges only the work a session
+  committed, `worktree` also counts files it found sitting in the worktree. `worktree` is the
+  default and the stricter of the two.
+- **`burn_guard_ask_on_change`** — whether, when the burn guard changes a setting for a task in this
+  project, the change is a confirmation question to the operator or a silent write. Off (the default)
+  keeps it a silent write the operator can audit afterwards; on asks first.
+
+## How it is stored
+
+One object per project, in `~/.datawatch/config.yaml`, under `projects.<name>.policy`:
+
+```yaml
+projects:
+  core-api:
+    dir: ~/projects/core-api
+    policy:
+      plan_coverage_check: warn
+      plan_coverage_min_ratio: 0.85
+      retry_policy:
+        infra: 2
+        content: 1
+      max_concurrent_tasks: 4
 ```
 
-Both answer with one entry per setting: the value in force and the tier that
-supplied it.
+Set a key and it wins for every Automaton in that project unless the Automaton overrode the same
+key. The CLI (`datawatch projects policy set <name> <key> <value>`) and the panel both upsert through
+the same `POST /api/projects` endpoint and the daemon re-validates the key before it lands, so a bad
+value lands nowhere at all.
 
-## Setting a value
+## How to read it
 
-Choose the value in the row's control and press **Save** for that row. The
-panel sends the project's full policy block with this one key changed, so no
-other row moves. The daemon re-validates the block and refuses a value a key
-does not accept — the panel shows the reason and keeps your input for a retry;
-nothing half-written is stored.
+### In the panel
 
-Examples, all three surfaces:
+Open Settings on the PWA, go to **Automata > Project policy**, and ask for a project by name.
+The panel shows every setting in one view.
 
-```bash
-# CLI: set one key (value parsed as a JSON scalar or object)
-datawatch projects policy set <name> plan_review_mode block
-datawatch projects policy set <name> max_concurrent_tasks 2
-datawatch projects policy set <name> retry_policy '{"infra":3}'
+### Before you change anything
+
+- **Read the effective value.** The panel already shows each field's effective value — that is the
+  value the daemon will actually use, resolved across the tiers.
+- **Read the badge.** The badge next to each field names the tier that supplied the effective value:
+  **Automaton**, **Project**, or **Daemon**. A field whose badge says *Daemon* has no project value
+  at all; its effective value is the daemon's, and it is not a copy of it that you set.
+
+## How to set it
+
+### In the panel
+
+Pick the field whose badge you want to flip, choose a value, and the panel writes one key of
+`projects.<name>.policy`. The daemon re-checks the key before it stores it — a value outside the
+field's range is refused with the reason shown, and nothing is half-written.
+
+### From the command line or API
+
+- **YAML** — `projects.<name>.policy` in `~/.datawatch/config.yaml`, as in the block above.
+- **MCP** — `project_upsert` with the entry's `policy` object (upserts the whole policy object, so
+  send the block you want as a whole, not one key at a time).
+- **REST** — `POST /api/projects` with the `policy` field.
+
+The effective value — every setting with its supplying tier — is readable several ways, all read
+only:
+
+- **MCP** — `project_policy_effective(name)` — add the optional `automaton` argument to resolve with
+  an Automaton's own fields in play as the top tier.
+- **CLI** — `datawatch projects policy show <name> [--effective] [--automaton <id>]` — without
+  `--effective` it shows the stored policy block.
+- **Comm channel** — type `project policy <name>` (with an optional `<automaton-id>` for the
+  top tier) and the daemon answers with the same effective table, one line per setting in the form
+  `setting = value (source-tier)`. Comm carries the read only — it never writes the policy.
+- **REST** — `GET /api/projects` (stored, on each entry) and
+  `GET /api/projects/{name}/policy/effective?automaton=<id>`.
+
+## How to clear it
+
+The panel's *inherit (clear)* action removes the key — it does not write `null` or a daemon default
+in its place. On the CLI the counterpart is `datawatch projects policy unset <name> <key>`; by hand,
+delete the key from `projects.<name>.policy` in `~/.datawatch/config.yaml`. After clearing, the badge on the
+panel's next read shows the tier below in play — **Automaton** if that Automaton sets the key,
+otherwise **Daemon** — so you can confirm the fall-through before you close the panel:
+
+- Clear **`plan_coverage_check`** and the gate reverts to the daemon's mode for this project.
+- Clear **`max_concurrent_tasks`** and the project's cap reverts to the daemon's cap. Clear
+  **`plan_tier_max_inflight`** and the per-tier cap reverts the same way.
+- Clear **`lane_fill_gpu_lanes`** / **`lane_fill_claude_lanes`** and each reverts to *no
+  preference*.
+- Clear **`uncommitted_work_policy`** and the check reverts to the daemon's policy for this
+  project; clear **`uncommitted_work_scope`** and it reverts to `worktree`.
+- Clear **`burn_guard_ask_on_change`** and burn-guard changes for the project's tasks go back to
+  silent writes.
+
+## What the panel does not do
+
+Every value is validated on the write path: a whole number stays a whole number, an enum stays in
+its vocabulary, a ratio stays in `(0, 1]`. A value the daemon refuses does not land, and the panel
+shows the reason it was refused.
+
+There is no *apply to every project* — the panel edits one project at a time.
+
+Every write is a no-op for the daemon tier: a project field never writes through to
+`autonomous.<key>` or `usage.<key>` in the daemon's config. The daemon's values are the floor the
+project tier sits above, and they stay put whatever you set above them.
+
+## What stays daemon-wide until you ask
+
+The policy block has the keys above — and only the keys above. The keys the daemon already holds
+for everything but which do not have a project form yet stay daemon-wide until someone asks for a
+per-project form:
+
+- **Timeouts & cadences** — session and lane timeouts, the lane-fill poll interval, and the idle-lane
+  alerting.
+- **Backend & model selection** — the `gpu` and `claude` backends and the models they call, and
+  the session default backend.
+- **Worktree layout** — the worktree base and the worktree directory the projects draw from.
+- **Burn guard** — its whole configuration (interval, margin, ladder) stays daemon-wide; only the
+  `ask_on_change` switch moved into the policy.
+
+None of these moves on its own. If a daemon-wide key needs a per-project form, that is a design
+decision, not a setting.
+
+## A worked example
+
+You run one daemon that builds two repositories. `core-api` is a tight trunk: plans must reach 85%
+requirement coverage before the work starts, infrastructure failures get exactly two retries before
+escalation, and at most four of its tasks may be in flight at once. `docs-site` is looser and just
+inherits the daemon.
+
+```yaml
+projects:
+  core-api:
+    dir: ~/projects/core-api
+    policy:
+      plan_coverage_check: warn
+      plan_coverage_min_ratio: 0.85
+      retry_policy:
+        infra: 2
+      max_concurrent_tasks: 4
+  docs-site:
+    dir: ~/projects/docs-site
+    # no policy: every setting resolves to the daemon tier
 ```
 
-```jsonc
-// MCP: project_upsert carries the whole policy block
-{ "name": "<alias>", "dir": "/abs/dir",
-  "policy": { "plan_review_mode": "block",
-              "max_concurrent_tasks": 2,
-              "retry_policy": { "infra": 3 } } }
-```
+Then from the PWA open Settings → Automata → **Project policy** and ask for `core-api`. The rows
+show effective values and badges:
 
-```bash
-# REST: same body to POST /api/projects
-```
+- `plan_coverage_check` — *warn* — **Project** (you set it; with the daemon at `off`, the effective value is the project's).
+- `plan_coverage_min_ratio` — *0.85* — **Project**: you set it; an Automaton that sets its own ratio
+  would badge **Automaton** instead and win.
+- `max_concurrent_tasks` — *4* — **Project**.
+- `plan_review_mode` — whatever the daemon holds — **Daemon**: the project never set it, and no
+  Automaton overrides it.
+- `burn_guard_ask_on_change` — *false* — **Daemon**: burn-guard changes in `core-api` stay silent
+  writes you can audit, unless you flip the key.
 
-The panel's controls are the same call wrapped: pick a value, the block is
-built with every other stored key unchanged, and the response is the project
-as saved.
+And `datawatch projects policy show core-api --effective` on the CLI,
+`project_policy_effective("core-api")` on MCP, or `project policy core-api` on the comm
+channel, give the same table — and `--automaton <id>` / the `automaton` argument /
+`project policy core-api <automaton-id>` add the top tier, showing which of that
+Automaton's own fields would shadow which project keys.
 
-## Clearing a key back to the tier below
+Reading any of these never writes anything; only a key you set in the panel, a
+`datawatch projects policy set`, a `project_upsert` or a `POST /api/projects` does.
+(The comm `project policy` line is a read, like the rest of the list above.)
 
-Choose **inherit (clear)** and press **Save**. The key is deleted from the
-project tier — not set to the daemon value. After a clear, the badge on that
-row moves to **Daemon** (or back to **Automaton** while the optional Automaton
-field still holds its own value for the key), and the effective value is
-whatever the lower tier supplies. This is the right way to undo a project rule
-you want to hand back, and it is visibly different from a save of the daemon
-default.
+## How it behaves
 
-## The fields, group by group
-
-Every key is optional. **Plan checks** — `plan_coverage_check` (`off`, `warn`,
-`block`): what the plan requirement-coverage gate does to a plan that misses
-requirements; `plan_coverage_min_ratio`: the ratio a plan must reach before
-the gate fires (a number in `(0, 1]`); `plan_review_mode` (`off`, `warn`,
-`block`): the plan-quality review gate; `scope_lint` (`off`, `warn`,
-`enforce`): the scope-integrity check on a task.
-
-**Retry & escalation** — `retry_policy`: the per-category retry budgets, a
-whole count of attempts for each of `infra`, `content`, `scope` and `policy`;
-a category left out of the map keeps the tier below for that category only.
-`retry_ceiling_total`: the cap on retries the daemon spends in total, an
-integer of 0 or more. `auto_fix_retries`: how many times an auto-fix run may
-be retried, an integer of 0 or more. `infra_retry_escalate_after`: after how
-many infrastructure retries a task may be escalated rather than retried
-(fixed-version bumps are never escalated). `failure_escalation`: the
-escalation level reached when a task's retries are spent — tier, backend,
-model, effort and attempts per step.
-
-**Git defaults** — `default_auto_pr`: whether a finished task may open a pull
-request without a per-task ask. `parallel_read_only_tasks`: whether read-only
-tasks may run in parallel. `parallel_worktree_per_task`: whether each parallel
-task gets its own worktree.
-
-**Lane limits** — `max_concurrent_tasks`: the project's cap on in-flight
-tasks, an integer of 1 or more. `plan_tier_max_inflight`: per plan tier, how
-many Automata that tier may run at once. `lane_fill_gpu_lanes` and
-`lane_fill_claude_lanes`: how many GPU and Claude lanes this project may hold,
-integers of 0 or more, 0 meaning the daemon's own choice.
-
-**Other recent keys** — `uncommitted_work_policy` (`hold`, `warn` or `off`)
-and `uncommitted_work_scope` (`task_files` or `worktree`): the uncommitted-work
-check for every Automaton that commits its own work inside this project, as
-described in [definitions — Uncommitted-work check](../datawatch-definitions.md#uncommitted-work-check).
-`burn_guard_ask_on_change`: whether a burn-guard change while a task runs asks
-the operator first.
-
-## Verifying a change
-
-After saving, the row's value and badge update in place on the next **Refresh**
-(or immediately, if the save response carried the resolved block). From a shell,
-the standing read is:
-
-```bash
-datawatch projects policy show <name> --effective
-```
-
-and the stored block, independent of the tiers, is the project entry in
-`datawatch.yaml` under `projects.<name>.policy`.
-
-## What the panel never does
-
-- It never writes the daemon tier; daemon-wide settings stay in
-  `autonomous.*` and apply only where a project or Automaton has not spoken.
-- It never rewrites an Automaton's own tier; the Automaton id is a read-only
-  lens for the resolution.
-- It never stores a value the daemon refuses: the daemon is the final
-  authority on every key, and a refused save names the offending field.
-
-See [definitions — Project automation policy](../datawatch-definitions.md#project-automation-policy)
-and [mcp.md — projects](../mcp.md#projects).
+- **A project is a value, not a switch.** A policy block set on a project applies to every Automaton
+  the daemon runs inside that project's directory, and does not apply to any other project. No
+  per-project on/off flag: absence of the key *is* the off position, and it means *defer to the
+  daemon*.
+- **The effective read tells you which side won.** Every read surface resolves the same way the
+  daemon does at use time: Automaton first, then project, then daemon. So the badge is a promise —
+  the value you see is the value in force for that Automaton right now, not a stored field.
+- **A value you set stays until you unset it.** A project value persists in `~/.datawatch/config.yaml`
+  across daemon restarts, like the rest of the file.
+- **The daemon's values are never changed by this panel.** Setting
+  `projects.core-api.policy.max_concurrent_tasks: 4` does not edit `autonomous.`
+  The two tiers stay independent; the project tier just wins the resolution.
