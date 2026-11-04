@@ -6327,7 +6327,7 @@ if u is not None:
 fi
 
 # ---------------------------------------------------------------------------
-H "92. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
+H "94. Lane fill eligibility — refusal codes, lane counts, per-lane-kind mode"
 # The Automata checks and ship status reads: both answer 200 with a JSON object.
 # They are read-only and change nothing.
 if [[ "$SECTION_SKIP" != "1" ]]; then

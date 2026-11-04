@@ -229,7 +229,7 @@ the fixes, from the repository root, under `env -u TMUX -u TMUX_TMPDIR`.
 | Seven new config keys missing from `docs/implementation.md` | The "Fields" entry under "Lane fill" lists each key, its type, default, `Effective*` helper and the rule it controls. |
 | No Playwright story for the PWA lane fill view | `scripts/test-stories/TS-842.sh` with `pwa/lane-fill-card.mjs` (route-fulfilled: chips, counts, modes, hostile text as text, phone width, an older daemon, the failed state). Checked with `node --check` and `bash -n` only; it needs a run where the PWA stories run, because the Playwright package is outside this worktree. |
 | Count-only tests for the `lane_fill_mode` audit event | `ActionLaneFillMode` (CEF signature 62 `AutonomousLaneFillMode`) and `internal/audit/lane_fill_mode_events_test.go`: a JSON-lines round-trip and a CEF escape test. |
-| No release smoke coverage | `scripts/release-smoke.sh` section 92. It passed 5 of 5 against a scratch daemon started from this worktree's binary. Run through the script itself with `SMOKE_ONLY`, the daemon was unreachable (HTTP 000) for section 92 and for the existing section 90 alike, so that run is not counted. |
+| No release smoke coverage | `scripts/release-smoke.sh` section 94 (originally numbered 92; renumbered later to resolve the duplicate section number, which coexisted with the Claude Code interstitial prompt section 92). It passed 5 of 5 against a scratch daemon started from this worktree's binary. Run through the script itself with `SMOKE_ONLY`, the daemon was unreachable (HTTP 000) — that run is not counted. |
 | No lane fill results in `docs/testing.md` | A results section was added there, and four rows were added to the tracker. |
 | Locale guard list not updated | 20 lane fill keys added to `TestLocales_CommonNavKeysPresent`. |
 | Audit tokens absent | Below, and in the final commit message. |
@@ -242,7 +242,7 @@ fixed to 93 and `tests/ci` and `cmd/datawatch` were rerun alone and pass); `node
 internal/server/web/*.test.js` 1849 of 1849; `node --check` on `app.js` ok; `make build` ok. The sandbox
 live check (8 of 8) was run on the earlier commit and was not rerun, because the script writes its scratch
 area under `/tmp` and this follow-up was limited to the project directory; the changes since are wording,
-lint, an audit constant, tests and docs, and smoke section 92 ran against a fresh binary.
+lint, an audit constant, tests and docs, and smoke section 94 (then 92) ran against a fresh binary.
 
 **Per-sprint audit tokens** (also in the final commit message):
 
