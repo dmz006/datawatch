@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.81.0 — Model-to-node routing visibility
+
+A pinned model is now checked against the compute nodes, and you can see which models each node serves.
+
+- **Pin check.** When you pin a task or story's model (or node), the daemon checks the registered compute nodes. If none serves the model, the pin is refused with a message naming the model and the nodes it checked; in warn mode the pin is applied and you get a warning instead (`model_routing` settings).
+- **Served models.** Each node's served models and the age of that reading are shown on `GET /api/compute/served-models`, the `compute_served_models` MCP tool, the CLI, the comm channel and the web UI.
+- **Node pins.** A task or story can be pinned to a node (`set-task-node`, `set-story-node`); the web task row shows a pin badge. A pinned worker skips the capacity fall-through, because the alternate backend would be placed without the pin.
+- On REST, MCP, CLI, comm channel, config file and web, with five locales and operator docs.
+
 ## v9.80.0 — Defect queue: batches and a tiny-fix lane
 
 Related defects can now share one Automaton, and a tiny fix gets a one-task lane.

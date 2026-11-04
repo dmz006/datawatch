@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.80.0 (2026-11-04).** Related defects can share one batch Automaton and tiny fixes get a one-task lane, routed by an intake step that logs every decision. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.81.0 (2026-11-04).** A pinned model is checked against the compute nodes that serve it, served models are visible per node, and tasks and stories can be pinned to a node. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
