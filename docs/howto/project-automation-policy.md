@@ -1,3 +1,21 @@
+---
+docs:
+  index: true
+  topics: [projects, policy, precedence, tiers, automaton, plan-checks, retry, lanes, uncommitted-work]
+exec_steps:
+  - tool: project_policy_effective
+    description: Read the effective policy first. It shows every setting, the value in force, and the tier (Automaton, Project or Daemon) that supplied it
+    args: {name: core-api}
+    read_only: true
+  - tool: project_policy_effective
+    description: Worked example, read-only. Resolve with one Automaton's own policy fields as the top tier, so you see which of the Automaton's keys shadow the project's
+    args: {name: core-api, automaton: 1}
+    read_only: true
+  - tool: project_upsert
+    description: A state-changing call. Upsert the project entry with its policy block as a whole at the project tier (not one key at a time). One invalid value rejects the whole block and stores nothing
+    args: {name: core-api, dir: /home/op/core-api, policy: {max_concurrent_tasks: 2}}
+---
+
 # Project automation policy
 
 **Project automation policy** is the per-project layer of the three tiers the daemon resolves every
@@ -91,7 +109,7 @@ Each field is optional. If a field is absent, the daemon falls back to its own v
 
 ## How it is stored
 
-One object per project, in `datawatch.yaml`, under `projects.<name>.policy`:
+One object per project, in `~/.datawatch/config.yaml`, under `projects.<name>.policy`:
 
 ```yaml
 projects:
@@ -141,13 +159,16 @@ field's range is refused with the reason shown, and nothing is half-written.
   send the block you want as a whole, not one key at a time).
 - **REST** — `POST /api/projects` with the `policy` field.
 
-The effective value — every setting with its supplying tier — is readable three ways, all read
+The effective value — every setting with its supplying tier — is readable several ways, all read
 only:
 
 - **MCP** — `project_policy_effective(name)` — add the optional `automaton` argument to resolve with
   an Automaton's own fields in play as the top tier.
 - **CLI** — `datawatch projects policy show <name> [--effective] [--automaton <id>]` — without
   `--effective` it shows the stored policy block.
+- **Comm channel** — type `project policy <name>` (with an optional `<automaton-id>` for the
+  top tier) and the daemon answers with the same effective table, one line per setting in the form
+  `setting = value (source-tier)`. Comm carries the read only — it never writes the policy.
 - **REST** — `GET /api/projects` (stored, on each entry) and
   `GET /api/projects/{name}/policy/effective?automaton=<id>`.
 
@@ -155,7 +176,7 @@ only:
 
 The panel's *inherit (clear)* action removes the key — it does not write `null` or a daemon default
 in its place. On the CLI the counterpart is `datawatch projects policy unset <name> <key>`; by hand,
-delete the key from `projects.<name>.policy` in `datawatch.yaml`. After clearing, the badge on the
+delete the key from `projects.<name>.policy` in `~/.datawatch/config.yaml`. After clearing, the badge on the
 panel's next read shows the tier below in play — **Automaton** if that Automaton sets the key,
 otherwise **Daemon** — so you can confirm the fall-through before you close the panel:
 
@@ -232,13 +253,15 @@ show effective values and badges:
 - `burn_guard_ask_on_change` — *false* — **Daemon**: burn-guard changes in `core-api` stay silent
   writes you can audit, unless you flip the key.
 
-And `datawatch projects policy show core-api --effective` on the CLI, or
-`project_policy_effective("core-api")` on MCP, give the same table — and with
-`?automaton=<id>` / the `automaton` argument, they add the top tier, showing which of that
+And `datawatch projects policy show core-api --effective` on the CLI,
+`project_policy_effective("core-api")` on MCP, or `project policy core-api` on the comm
+channel, give the same table — and `--automaton <id>` / the `automaton` argument /
+`project policy core-api <automaton-id>` add the top tier, showing which of that
 Automaton's own fields would shadow which project keys.
 
 Reading any of these never writes anything; only a key you set in the panel, a
 `datawatch projects policy set`, a `project_upsert` or a `POST /api/projects` does.
+(The comm `project policy` line is a read, like the rest of the list above.)
 
 ## How it behaves
 
@@ -249,8 +272,8 @@ Reading any of these never writes anything; only a key you set in the panel, a
 - **The effective read tells you which side won.** Every read surface resolves the same way the
   daemon does at use time: Automaton first, then project, then daemon. So the badge is a promise —
   the value you see is the value in force for that Automaton right now, not a stored field.
-- **A value you set stays until you unset it.** A project value persists in `datawatch.yaml` across
-  daemon restarts, like the rest of the file.
+- **A value you set stays until you unset it.** A project value persists in `~/.datawatch/config.yaml`
+  across daemon restarts, like the rest of the file.
 - **The daemon's values are never changed by this panel.** Setting
   `projects.core-api.policy.max_concurrent_tasks: 4` does not edit `autonomous.`
   The two tiers stay independent; the project tier just wins the resolution.
