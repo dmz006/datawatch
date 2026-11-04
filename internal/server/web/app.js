@@ -10,6 +10,75 @@ window._splashStart = Date.now();
   if (c && window.DWSplashArt) window._splashStopFn = window.DWSplashArt.startScene(c, { compact: false });
 })();
 
+// Splash minimum-dwell arithmetic, kept pure so tests can call it with
+// plain numbers (no DOM, no timers). minSeconds is the applicable
+// ui.splash_min_seconds (or ui.splash_min_seconds_new_version for a version
+// change); 0 means "the server left the legacy timing in place" and the
+// wait is the old 3000 ms measured from window._splashStart minus what
+// already elapsed (min 0). Otherwise the whole minimum applies from the
+// moment the gating allowed the splash to show.
+function splashDwellRemainingMs({ minSeconds = 0, legacyStartAt = 0, now = 0 } = {}) {
+  if (!(minSeconds > 0)) {
+    return Math.max(0, 3000 - (now - legacyStartAt));
+  }
+  return minSeconds * 1000;
+}
+window.splashDwellRemainingMs = splashDwellRemainingMs;
+
+// Schedule the launch splash's exit: wait remainingMs, then the 700 ms
+// fade, then removal. The listeners are only ever added on the connected
+// path, so input before the connection is up never ends the dwell.
+// pointerdown / click / keydown on document end the dwell immediately.
+// Every exit path (natural dwell end, early input, or another path that
+// removes the splash) clears both timers and the listeners, and the
+// splash element is torn down exactly once (window._splashStopFn keeps
+// its existing behaviour).
+function _scheduleSplashDismiss(splash, remainingMs, { connected = false } = {}) {
+  const existing = splash._splashDismiss;
+  if (existing) {
+    existing.cancel();
+    splash._splashDismiss = null;
+  }
+  let dwellTimer = null;
+  let fadeTimer = null;
+  let finished = false;
+  const onEarlyDismiss = () => { beginFade(); };
+  const removeListeners = () => {
+    document.removeEventListener('pointerdown', onEarlyDismiss);
+    document.removeEventListener('click', onEarlyDismiss);
+    document.removeEventListener('keydown', onEarlyDismiss);
+  };
+  const beginFade = () => {
+    if (finished) return;
+    finished = true;
+    if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+    removeListeners();
+    splash.classList.add('fade-out');
+    fadeTimer = setTimeout(() => {
+      fadeTimer = null;
+      splash._splashDismiss = null;
+      if (!splash.isConnected) return; // another path already took it out
+      if (window._splashStopFn) window._splashStopFn();
+      splash.remove();
+    }, 700);
+  };
+  dwellTimer = setTimeout(beginFade, remainingMs);
+  if (connected) {
+    document.addEventListener('pointerdown', onEarlyDismiss);
+    document.addEventListener('click', onEarlyDismiss);
+    document.addEventListener('keydown', onEarlyDismiss);
+  }
+  splash._splashDismiss = {
+    cancel() {
+      if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+      if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
+      removeListeners();
+      finished = true;
+      splash._splashDismiss = null;
+    },
+  };
+}
+
 // Per-Automaton notification-event overrides. The closed set of valid
 // lifecycle event kinds (sorted; every prd.<status> kind, every
 // task.<status> kind, task.session_started / task.session_cleared, plus the
@@ -767,6 +836,9 @@ function connect() {
       if (statusEl) statusEl.textContent = t('splash_status_connected') || 'Connected';
       const lastSplashTime = parseInt(localStorage.getItem('cs_splash_time') || '0', 10);
       const lastSplashVer = localStorage.getItem('cs_splash_version') || '';
+      // Keep the version the splash last showed for, read before the
+      // shouldShow branch below overwrites the key.
+      window._splashPrevVersion = lastSplashVer;
       const serverVer = state._daemonVersion || '';
       const hoursSince = (Date.now() - lastSplashTime) / (1000 * 60 * 60);
       const isNewVersion = serverVer && lastSplashVer && serverVer !== lastSplashVer;
@@ -779,20 +851,39 @@ function connect() {
       // Show splash if: first visit, new version, or >24h since last display
       const shouldShow = !lastSplashTime || isNewVersion || hoursSince >= 24;
 
-      if (shouldShow) {
-        localStorage.setItem('cs_splash_time', String(Date.now()));
-        if (serverVer) localStorage.setItem('cs_splash_version', serverVer);
-        const elapsed = Date.now() - (window._splashStart || 0);
-        const remaining = Math.max(0, 3000 - elapsed);
-        setTimeout(() => {
-          splash.classList.add('fade-out');
-          setTimeout(() => { if (window._splashStopFn) window._splashStopFn(); splash.remove(); }, 700);
-        }, remaining);
-      } else {
-        // Skip splash — remove immediately
-        if (window._splashStopFn) window._splashStopFn();
-        splash.remove();
-      }
+      // Minimum-dwell settings (ui.splash_min_seconds / *_new_version,
+      // daemon defaults 6 / 9 seconds) must be in hand before the timing
+      // decision: on first connect this gating runs before _loadUiConfig
+      // is called below, so fetch the config here and decide when it
+      // settles. A failed fetch or a non-number value keeps the defaults.
+      fetch('/api/config', { headers: tokenHeader() })
+        .then(r => (r && r.ok) ? r.json() : null)
+        .then(cfg => cfg || {})
+        .catch(() => ({}))
+        .then(cfg => {
+          if (document.getElementById('splash') !== splash) return; // it went away before the fetch settled
+          const ui = cfg.ui || {};
+          const readMin = (v, dflt) => (typeof v === 'number' && Number.isFinite(v) && v >= 0) ? v : dflt;
+          const minSeconds = isNewVersion
+            ? readMin(ui.splash_min_seconds_new_version, 9)
+            : readMin(ui.splash_min_seconds, 6);
+          if (shouldShow) {
+            localStorage.setItem('cs_splash_time', String(Date.now()));
+            if (serverVer) localStorage.setItem('cs_splash_version', serverVer);
+            // Dwell clock starts now (the moment the gating allowed the
+            // splash); 0 in the settings keeps the legacy 3000 ms window
+            // measured from window._splashStart instead.
+            _scheduleSplashDismiss(splash, splashDwellRemainingMs({
+              minSeconds,
+              legacyStartAt: window._splashStart || 0,
+              now: Date.now(),
+            }), { connected: true });
+          } else {
+            // Skip splash — remove immediately
+            if (window._splashStopFn) window._splashStopFn();
+            splash.remove();
+          }
+        });
     }
     showToast('Connected', 'success', 2000);
     if (!isReconnect) _loadUiConfig();
@@ -20686,7 +20777,10 @@ window.splashSaveToken = function() {
   localStorage.setItem('cs_token', tok);
   if (window._splashStopFn) window._splashStopFn();
   const splash = document.getElementById('splash');
-  if (splash) splash.remove();
+  if (splash) {
+    if (splash._splashDismiss) splash._splashDismiss.cancel();
+    splash.remove();
+  }
   connect();
 };
 
