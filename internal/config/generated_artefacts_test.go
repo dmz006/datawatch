@@ -49,3 +49,37 @@ func TestGeneratedArtefactsExplicitOffRoundTrips(t *testing.T) {
 		t.Fatalf("json round trip wrong: %+v", e)
 	}
 }
+
+func TestGeneratedArtefactsSetByName(t *testing.T) {
+	var a AutonomousConfig
+	for _, k := range GeneratedArtefactKeys() {
+		if !a.GeneratedArtefacts.Set(k, false) {
+			t.Fatalf("Set(%q) rejected a known key", k)
+		}
+	}
+	if e := a.EffectiveGeneratedArtefacts(); e != (EffectiveGeneratedArtefactsSettings{}) {
+		t.Fatalf("all keys off should give the zero value, got %+v", e)
+	}
+	if a.GeneratedArtefacts.Set("nope", true) {
+		t.Fatal("unknown key accepted")
+	}
+	b, _ := json.Marshal(a)
+	var c AutonomousConfig
+	if err := json.Unmarshal(b, &c); err != nil {
+		t.Fatal(err)
+	}
+	if e := c.EffectiveGeneratedArtefacts(); e.ChangeRecord || e.CombinedDocsTask {
+		t.Fatalf("explicit offs lost in round trip: %+v", e)
+	}
+}
+
+func TestGeneratedArtefactsInvalidValueRejected(t *testing.T) {
+	var a AutonomousConfig
+	if err := yaml.Unmarshal([]byte("generated_artefacts:\n  gate_report: maybe\n"), &a); err == nil {
+		t.Fatal("a non-boolean YAML value must be rejected")
+	}
+	var b AutonomousConfig
+	if err := json.Unmarshal([]byte(`{"generated_artefacts":{"parity_draft":"yes"}}`), &b); err == nil {
+		t.Fatal("a non-boolean JSON value must be rejected")
+	}
+}

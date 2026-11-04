@@ -6243,6 +6243,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"plan_coverage_scoped_requirements":    s.cfg.Autonomous.EffectivePlanCoverageFilters().ScopedRequirements,
 			"plan_coverage_requirement_sections":   strings.Join(s.cfg.Autonomous.EffectivePlanCoverageFilters().RequirementSections, ","),
 			"plan_coverage_min_requirement_chars":  s.cfg.Autonomous.EffectivePlanCoverageFilters().MinRequirementChars,
+			// Generated artefacts — the effective switches (unset = on) so
+			// a fresh config shows every artefact enabled.
+			"generated_artefacts": s.cfg.Autonomous.EffectiveGeneratedArtefacts(),
 			// Tag browser settings (autonomous.tags) — the effective values, so an
 			// unset block shows its defaults. Validated by ValidateTagSetting.
 			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
@@ -6689,6 +6692,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if err != nil || f != math.Trunc(f) || f < 0 {
 			http.Error(w, "autonomous.plan_coverage_min_requirement_chars: must be a whole number >= 0 (0 = the 30-character default)", http.StatusBadRequest)
 			return
+		}
+	}
+	// autonomous.generated_artefacts.<kind>: boolean switches only.
+	for _, k := range generatedArtefactConfigKeys() {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				http.Error(w, k+": must be a boolean (true or false)", http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// mcp.public_url is advertised verbatim to MCP SSE clients, so a value
@@ -8584,6 +8596,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// stored as 0 and reads back as the 30-character default.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PlanCoverageMinRequirementChars = n
+			}
+		case "autonomous.generated_artefacts.change_record", "autonomous.generated_artefacts.gate_report",
+			"autonomous.generated_artefacts.changelog_draft", "autonomous.generated_artefacts.parity_draft",
+			"autonomous.generated_artefacts.tracker_rows", "autonomous.generated_artefacts.registry_row",
+			"autonomous.generated_artefacts.combined_docs_task":
+			// Validated (boolean) in handlePutConfig. Stored as an explicit
+			// pointer so an explicit off survives; the manager reads the
+			// live config through its settings provider, so no restart.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.GeneratedArtefacts.Set(strings.TrimPrefix(k, "autonomous.generated_artefacts."), b)
 			}
 		case "autonomous.usage_backoff":
 			// Validated in handlePutConfig; stored lower-cased and trimmed.

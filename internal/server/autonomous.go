@@ -718,6 +718,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		action = "outputs"
 	}
+	// Generated artefacts: GET change-record, GET generated/{kind},
+	// POST generated/{kind}/regenerate (generated_artefacts_rest.go).
+	if action == "change-record" || strings.HasPrefix(action, "generated/") {
+		s.handleGeneratedArtefactPRD(w, r, id, action)
+		return
+	}
 	switch action {
 	case "outputs":
 		if r.Method != http.MethodGet {

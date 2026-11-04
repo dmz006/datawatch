@@ -422,6 +422,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 	apiMux.HandleFunc("/api/autonomous/config", api.handleAutonomousConfig)
 	apiMux.HandleFunc("/api/autonomous/status", api.handleAutonomousStatus)
+	apiMux.HandleFunc("/api/autonomous/generated-artefacts", api.handleGeneratedArtefacts)
 	apiMux.HandleFunc("/api/autonomous/prds/aggregated", api.handleAggregatedPRDs) // BL312 S5
 	apiMux.HandleFunc("/api/autonomous/prds", api.handleAutonomousPRDs)
 	apiMux.HandleFunc("/api/autonomous/prds/", api.handleAutonomousPRDs)
