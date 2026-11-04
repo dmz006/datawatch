@@ -3633,5 +3633,13 @@
   "settings_tracing_retention_days": "Aufbewahrung der Traces (Tage, ganze Zahl, 0 = Standard)",
   "settings_tracing_backends": "Trace pro Backend (JSON-Objekt aus Backend und true oder false; ein nicht genanntes Backend ist aktiv)",
   "settings_tracing_backends_hint": "Beispiel: {\"pi\": false} schaltet die Ablaufverfolgung nur für pi aus. Leer lassen, um alle Backends zu verfolgen.",
-  "settings_tracing_backends_invalid": "Gib ein JSON-Objekt aus Backend-Namen und true oder false ein, z. B. {\"pi\": false}"
+  "settings_tracing_backends_invalid": "Gib ein JSON-Objekt aus Backend-Namen und true oder false ein, z. B. {\"pi\": false}",
+  "stats_trace": "Tracing",
+  "stats_trace_sessions": "Erfasste Sitzungen",
+  "stats_trace_events": "Gespeicherte Ereignisse",
+  "stats_trace_error_events": "Fehlerereignisse",
+  "stats_trace_appended": "Geschriebene Ereignisse",
+  "stats_trace_append_errors": "Fehlgeschlagene Schreibvorgänge",
+  "stats_trace_pruned": "Durch Aufbewahrung entfernt",
+  "stats_trace_last_event_age": "Letztes Ereignis (s her)"
 }

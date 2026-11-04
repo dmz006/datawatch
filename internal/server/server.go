@@ -416,6 +416,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/trace/automaton/", api.handleTraceAutomaton) // trace: an Automaton's events + roll-up
 	apiMux.HandleFunc("/api/trace/rollup", api.handleTraceRollup)        // trace: roll-ups by dimension
 	apiMux.HandleFunc("/api/trace/coverage", api.handleTraceCoverage)    // trace: per-session / per-backend coverage
+	apiMux.HandleFunc("/api/trace/stats", api.handleTraceStats)          // trace: store totals + write counters
 	// Sprint S4 (v3.8.0) — messaging + UI polish.
 	apiMux.HandleFunc("/api/splash/logo", api.handleSplashLogo)        // BL69
 	apiMux.HandleFunc("/api/splash/info", api.handleSplashInfo)        // BL69

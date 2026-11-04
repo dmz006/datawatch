@@ -8242,6 +8242,35 @@ paths:
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
         "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
 
+  /api/trace/stats:
+    get:
+      summary: Trace store stats
+      description: |
+        Totals held in the trace store (sessions, events, error events) and the write counters
+        since the daemon started (events appended, failed writes, events pruned by retention),
+        with the time of the newest event. The same numbers appear on the Monitor Tracing card
+        and as `trace_*` fields of the system stats and `datawatch_trace_*` Prometheus series.
+      operationId: traceStats
+      tags: [Trace]
+      responses:
+        "200":
+          description: The trace store stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: {type: integer}
+                  events: {type: integer}
+                  error_events: {type: integer}
+                  appended_total: {type: integer, format: int64}
+                  append_errors_total: {type: integer, format: int64}
+                  pruned_total: {type: integer, format: int64}
+                  last_event_at: {type: string, format: date-time}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
 components:
   securitySchemes:
     BearerToken:

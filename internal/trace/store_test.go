@@ -96,7 +96,7 @@ func TestAppendIdempotent(t *testing.T) {
 func TestAppendRedacts(t *testing.T) {
 	st, dir := newTestStore(t, Settings{Mode: ModeFull})
 	ev := sev("s", KindToolCall, "bash", storeNow)
-	ev.ArgSummary = "cat /work/proj/a.go /home/bob/.ssh/x"
+	ev.ArgSummary = "cat /work/proj/a.go " + homeDir + "/bob/.ssh/x"
 	st.Append(ev)
 	b, _ := os.ReadFile(filepath.Join(dir, "trace", "s.jsonl"))
 	if strings.Contains(string(b), "/work/proj") || strings.Contains(string(b), "bob") {
@@ -195,5 +195,21 @@ func TestSessionIDPathSafe(t *testing.T) {
 	}
 	if got, _ := st.Read("../evil/x", Filter{}); len(got) != 1 {
 		t.Fatal("read back failed")
+	}
+}
+
+func TestStoreStatsCounters(t *testing.T) {
+	st, _ := newTestStore(t, Settings{Mode: ModeFull})
+	st.Append(sev("a", KindToolCall, "bash", storeNow), sev("a", KindToolCall, "bash", storeNow.Add(time.Second)))
+	st.Append(sev("a", KindToolCall, "bash", storeNow)) // duplicate: not counted
+	if _, err := st.Append(Event{Name: "no session"}); err == nil {
+		t.Fatal("event without a session id must be rejected")
+	}
+	got := st.Stats()
+	if got.Sessions != 1 || got.Events != 2 || got.Appended != 2 || got.AppendErrors != 1 {
+		t.Fatalf("stats = %+v", got)
+	}
+	if got.LastEventAt.IsZero() {
+		t.Error("LastEventAt not set")
 	}
 }

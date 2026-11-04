@@ -4,8 +4,9 @@
 //	GET /api/trace/automaton/{id}    events + roll-up across an Automaton's sessions
 //	GET /api/trace/rollup            roll-ups along one dimension
 //	GET /api/trace/coverage          per-session and per-backend trace coverage
+//	GET /api/trace/stats             store totals and write counters (observability)
 //
-// All four are read-only views over the trace store (internal/trace); the
+// All five are read-only views over the trace store (internal/trace); the
 // MCP tools, the CLI and the comm verbs proxy these routes so the logic
 // lives in one place. Reads need the analytics read capability. Event
 // text was redacted when it was stored.
@@ -342,4 +343,22 @@ func (s *Server) handleTraceCoverage(w http.ResponseWriter, r *http.Request) {
 		byBackend[b][string(cov)]++
 	}
 	writeJSONOK(w, map[string]interface{}{"sessions": rows, "by_backend": byBackend})
+}
+
+// TraceStats returns the trace store's counters; the zero value when
+// tracing is off. It feeds the system stats and the Prometheus counters.
+func (s *Server) TraceStats() trace.StoreStats {
+	if s.traceStore == nil {
+		return trace.StoreStats{}
+	}
+	return s.traceStore.Stats()
+}
+
+// handleTraceStats serves GET /api/trace/stats: store totals (sessions,
+// events, error events) and the write counters since the daemon started.
+func (s *Server) handleTraceStats(w http.ResponseWriter, r *http.Request) {
+	if !s.traceReady(w, r) {
+		return
+	}
+	writeJSONOK(w, s.traceStore.Stats())
 }

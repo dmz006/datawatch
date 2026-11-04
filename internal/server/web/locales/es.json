@@ -3633,5 +3633,13 @@
   "settings_tracing_retention_days": "Retención de trazas (días, número entero, 0 = por defecto)",
   "settings_tracing_backends": "Traza por backend (objeto JSON de backend a true o false; un backend que no aparece está activado)",
   "settings_tracing_backends_hint": "Ejemplo: {\"pi\": false} desactiva el rastreo solo para pi. Déjalo vacío para rastrear todos los backends.",
-  "settings_tracing_backends_invalid": "Introduce un objeto JSON de nombres de backend a true o false, p. ej. {\"pi\": false}"
+  "settings_tracing_backends_invalid": "Introduce un objeto JSON de nombres de backend a true o false, p. ej. {\"pi\": false}",
+  "stats_trace": "Trazas",
+  "stats_trace_sessions": "Sesiones con traza",
+  "stats_trace_events": "Eventos almacenados",
+  "stats_trace_error_events": "Eventos de error",
+  "stats_trace_appended": "Eventos escritos",
+  "stats_trace_append_errors": "Escrituras fallidas",
+  "stats_trace_pruned": "Eliminados por retención",
+  "stats_trace_last_event_age": "Último evento (s atrás)"
 }

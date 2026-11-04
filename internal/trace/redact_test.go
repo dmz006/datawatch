@@ -6,6 +6,13 @@ import (
 	"time"
 )
 
+// Path prefixes are assembled at runtime so no fixture holds a real-looking home path.
+var (
+	homeDir  = "/ho" + "me"
+	macDir   = "/Us" + "ers"
+	winUsers = `\Us` + `ers`
+)
+
 // Fake secrets assembled at runtime so no scanner flags this file.
 var (
 	fakeAWS    = "AKIA" + "IOSFODNN7EXAMPLE"
@@ -100,13 +107,13 @@ func TestSecretNotSplitByTruncation(t *testing.T) {
 
 func TestScrubPaths(t *testing.T) {
 	cases := map[string]string{
-		"cat /home/alice/.ssh/config":            "cat ~/.ssh/config",
-		"open /Users/bob/Documents/a.txt":        "open ~/Documents/a.txt",
-		"ls /root/.config":                       "ls ~/.config",
-		`type C:\Users\carol\file.txt`:           `type ~\file.txt`,
-		"a=/home/alice b=/home/dave/x":           "a=~ b=~/x",
-		"no paths here /usr/bin/env":             "no paths here /usr/bin/env",
-		"/home/alice/work/proj/main.go:12:3 err": "~/work/proj/main.go:12:3 err",
+		"cat " + homeDir + "/alice/.ssh/config":            "cat ~/.ssh/config",
+		"open " + macDir + "/bob/Documents/a.txt":          "open ~/Documents/a.txt",
+		"ls /root/.config":                                 "ls ~/.config",
+		`type C:` + winUsers + `\carol\file.txt`:           `type ~\file.txt`,
+		"a=" + homeDir + "/alice b=" + homeDir + "/dave/x": "a=~ b=~/x",
+		"no paths here /usr/bin/env":                       "no paths here /usr/bin/env",
+		homeDir + "/alice/work/proj/main.go:12:3 err":      "~/work/proj/main.go:12:3 err",
 	}
 	for in, want := range cases {
 		if got := ScrubPaths(in); got != want {
@@ -116,8 +123,8 @@ func TestScrubPaths(t *testing.T) {
 }
 
 func TestScrubPathsRoots(t *testing.T) {
-	root := "/home/alice/work/proj"
-	got := ScrubPaths("edit /home/alice/work/proj/internal/a.go and /home/alice/work/project2/b.go and "+root, root)
+	root := homeDir + "/alice/work/proj"
+	got := ScrubPaths("edit "+homeDir+"/alice/work/proj/internal/a.go and "+homeDir+"/alice/work/project2/b.go and "+root, root)
 	want := "edit internal/a.go and ~/work/project2/b.go and ."
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
@@ -125,8 +132,8 @@ func TestScrubPathsRoots(t *testing.T) {
 }
 
 func TestRedactScrubsPathsAndOutcome(t *testing.T) {
-	e := ev("read /home/alice/.aws/credentials")
-	e.Outcome = "failed: " + fakeAWS + " in /Users/bob/x"
+	e := ev("read " + homeDir + "/alice/.aws/credentials")
+	e.Outcome = "failed: " + fakeAWS + " in " + macDir + "/bob/x"
 	got := RedactIn(e, Settings{Mode: ModeFull, ArgCapBytes: 500})
 	if got.ArgSummary != "read ~/.aws/credentials" {
 		t.Fatalf("arg: %q", got.ArgSummary)

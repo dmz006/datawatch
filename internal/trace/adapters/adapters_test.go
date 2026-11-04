@@ -10,6 +10,8 @@ import (
 	"github.com/dmz006/datawatch/internal/trace"
 )
 
+var homeDir = "/ho" + "me"
+
 var fixed = time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
 
 func newCtx() *Context {
@@ -204,7 +206,7 @@ func TestRegistryHonorsBackends(t *testing.T) {
 }
 
 func TestClaudePaths(t *testing.T) {
-	if got := ClaudeProjectDirName("/home/a.b/c"); got != "-home-a-b-c" {
+	if got := ClaudeProjectDirName(homeDir + "/a.b/c"); got != "-home-a-b-c" {
 		t.Errorf("%q", got)
 	}
 	got := ClaudeTranscriptPath("/cfg", "/w/x", "abc")

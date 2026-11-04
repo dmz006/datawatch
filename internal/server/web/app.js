@@ -37089,6 +37089,25 @@ function renderStatsData(el, data) {
       html += `<div class="stat-card" data-stat="burn-guard"><div class="stat-label">${t('stats_burn_guard')||'Burn guard'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${bgLines}</div></div>`;
     }
+    // Tracing card: store totals and write counters from the trace store. Left
+    // out while tracing is off (the daemon then reports no trace_enabled).
+    if (data.trace_enabled) {
+      const trRows = [
+        ['stats_trace_sessions', 'Traced sessions', data.trace_sessions || 0],
+        ['stats_trace_events', 'Stored events', data.trace_events || 0],
+        ['stats_trace_error_events', 'Error events', data.trace_error_events || 0],
+        ['stats_trace_appended', 'Events written', data.trace_appended_total || 0],
+        ['stats_trace_append_errors', 'Failed writes', data.trace_append_errors_total || 0],
+        ['stats_trace_pruned', 'Pruned by retention', data.trace_pruned_total || 0],
+        ['stats_trace_last_event_age', 'Last event (s ago)', data.trace_last_event_age_seconds || 0],
+      ];
+      const trLines = trRows.map(r => {
+        const warn = r[0] === 'stats_trace_append_errors' && r[2] > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card" data-stat="trace"><div class="stat-label">${t('stats_trace')||'Tracing'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${trLines}</div></div>`;
+    }
     html += '</div>';
 
     // ── Session Statistics Card ──

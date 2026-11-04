@@ -264,6 +264,19 @@ saved value falls back to its default with a logged warning, as `normalizeUsageC
 - `effort_ceiling` — map of task kind to ceiling `low` | `medium` | `high` | `cheaper_backend` (default `docs`, `parity`, `live_check`, `final_gate` all `low`; an unknown ceiling becomes `low`).
 - `retry_limit_claude` — most retries of one task on Claude, 0 to 20 (default `2`).
 
+Tracing settings (`internal/trace/config.go`, the `Tracing` field of `Config`, block `tracing`): normalized agent trace events
+written by `internal/session/trace_ingest.go` and read through `internal/trace`. Unset values read as their defaults through
+`Settings.WithDefaults`; an invalid value is refused at config load and on `PUT /api/config` through `config.ValidateTracing`.
+- `mode` — `off` | `summary` | `full` (default `summary`; unset reads `summary`). `off` records nothing and the `/api/trace/*` routes answer 503. `full` keeps the argument summary, `summary` keeps counts and names.
+- `arg_cap_bytes` — most bytes of an argument summary stored per event, 0 to 1048576 (default `512`; 0 reads the default).
+- `retention_days` — days events are kept before the prune pass removes them, 0 to 3650 (default `14`; 0 reads the default).
+- `backends` — map of backend name to on/off; a backend not listed is traced (default empty, all on).
+Observability: `Store.Stats()` feeds the `trace_*` fields of `SystemStats` (`trace_enabled`, `trace_sessions`, `trace_events`,
+`trace_error_events`, `trace_appended_total`, `trace_append_errors_total`, `trace_pruned_total`, `trace_last_event_age_seconds`), the
+Monitor Tracing card, `GET /api/trace/stats` and the Prometheus series `datawatch_trace_events_total`,
+`datawatch_trace_append_errors_total`, `datawatch_trace_stored_events` and `datawatch_trace_stored_sessions`.
+Redaction runs before anything is stored (`internal/trace/redact.go`); see [howto/agent-tracing.md](howto/agent-tracing.md).
+
 Billing profiles (`internal/config/billing_profile.go`, the `Billing` field of
 `UsageConfig`): the `usage.billing` block is an open map keyed by provider
 (`claude-code`, `openai`, `gemini`, or any other operator-chosen key). Each
