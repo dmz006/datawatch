@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.82.0 — Generated wrapping for changes
+
+The change record and its artefacts are now generated for you instead of being planned as tasks.
+
+- **Change record.** Each Automaton keeps a change record of what it changed. From it the daemon generates the changelog draft, the datawatch-app parity draft, the testing-tracker rows, the registry row and the counts-only gate report, instead of planning each as a separate task. A decompose lint drops tasks whose whole purpose is one of those artefacts.
+- **Switches.** Seven `autonomous.generated_artefacts` settings turn each artefact on or off.
+- **Surfaces.** `GET /api/automations`-style reads and a regenerate action on REST, four MCP tools (`generated_artefacts_get`, `autonomous_prd_change_record`, `autonomous_prd_generated_artefact`, `autonomous_prd_regenerate_artefact`), the CLI, the comm channel and the web settings and Automaton change-record panel, with five locales and an operator how-to.
+- Regenerating is audited (JSON-lines and CEF), and the REST guards run before any lookup so a peer without the capability cannot tell a missing id from an existing one.
+
 ## v9.81.0 — Model-to-node routing visibility
 
 A pinned model is now checked against the compute nodes, and you can see which models each node serves.
