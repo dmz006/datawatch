@@ -260,6 +260,7 @@ func TestAdoptUnlinkedSessionDropsStaleRecordedNode(t *testing.T) {
 
 	led := capacity.New(capacity.Options{PollInterval: 10 * time.Millisecond})
 	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"host"}, "" })
+	m.SetEntryNodes(func(backend, model string) int { return 1 }) // a node-taking backend
 	m.SetSessionNode(func(id string) string {
 		if id == "host-fresh" {
 			return "real-node"

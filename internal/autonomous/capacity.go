@@ -533,6 +533,16 @@ func (m *Manager) leaseNodeStale(taskID, backend, model string) bool {
 	return cur != "" && cur != node
 }
 
+// Backend-change paths for a task that already holds a lease:
+//   - adoptCapacity: reconciles the held lease (Rehome / Adopt refresh) so a
+//     backend with no node drops node:<name>.
+//   - acquireLease + pickFallthrough: runs before the grant; a holder that is
+//     already admitted returns at once, so no held lease is moved.
+//   - replaceStaleLease: releases the old lease, then re-acquires.
+//   - burn guard RouteBackend and policy_retarget free-slot move: act on
+//     waiting requests and new work only; a held lease is neither moved nor
+//     reused, and a retarget Take lease is a fresh one on the target.
+//
 // replaceStaleLease treats the leased node as advisory. When the node was
 // removed from the LLM entry's compute_nodes list after the lease was granted,
 // the lease is released and acquired again so placement chooses from the
@@ -707,8 +717,26 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	if len(pools) == 0 {
 		return
 	}
-	node = adoptedNode(t, sessionNode, node, entryNodes, backend, model)
 	choices := nodeChoicesFor(choicesFn, backend, model)
+	if node == "" && len(choices) == 0 && (entryNodes == nil || entryNodes(backend, model) == 0) {
+		// The backend takes no local compute node (claude-code, say). A node
+		// recorded while the task ran on another backend is stale: ignore it,
+		// drop it from the task so it is not re-used. The node the live session
+		// reports is ignored too: a backend that takes no node holds none.
+		if t.ComputeNode != "" {
+			t.ComputeNode = ""
+			m.store.MutateTask(t.ID, func(st *Task) { st.ComputeNode = "" })
+		}
+		base := poolsWithoutNodes(pools)
+		if ls := led.LeaseOf(t.ID); ls != nil && ls.Node != "" {
+			led.Rehome(t.ID, base, "")
+		}
+		led.Adopt(capacity.Request{
+			Holder: t.ID, PRDID: prd.ID, Priority: m.capacityPriorityOf(prd), Pools: base, Model: model, Consumer: consumerSessionSpawn,
+		}, t.SessionID, VerifyHolder(t.ID))
+		return
+	}
+	node = adoptedNode(t, sessionNode, node, entryNodes, backend, model)
 	unknown := node == "" && nodeExpected(entryNodes, len(choices), backend, model)
 	if unknown {
 		if ls := led.LeaseOf(t.ID); ls == nil || !ls.NodeUnknown {
