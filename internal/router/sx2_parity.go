@@ -775,6 +775,9 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		reply := prettyJSON(out)
+		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
+		}
 		if line := parallelMetricsStatusLine(out); line != "" {
 			reply += "\n" + line
 		}
