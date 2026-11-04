@@ -767,6 +767,16 @@ Times are shown with their zone (`14:30 UTC`), and "in 42m" or "in 2h05m"
 counts down from the moment you read it. A wait that has no reason recorded
 yet reads `waiting for a capacity slot`.
 
+The reason is live, not a snapshot from when the task entered the queue: the ledger
+recomputes it on every read and on every dispatch pass, so the queue always shows
+why the task is waiting *now*. A temporary hold shows only while it lasts — a task
+whose session survived a daemon restart briefly shows the restart adoption hold, and
+as soon as the adoption finishes the queue shows the reason actually blocking it
+(the node-engine reason, the same one the admission answer gives). And a task on a
+backend that takes no node (claude-code) holds no node engine at all: if it moves to
+such a backend, or is adopted on one after a restart, its old `node:<name>` lease is
+released instead of keeping a node slot busy.
+
 ### Where the reason appears
 
 The same text, from the same source, on every surface:
