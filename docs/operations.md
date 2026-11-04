@@ -6124,7 +6124,7 @@ The default remains `shadow` for the first release. That is a decision, not a ga
 | Surface | Set `git.secret_scan.mode` to `enforce` |
 |---|---|
 | YAML (config file) | the `mode: enforce` line inside the `git.secret_scan` block |
-| CLI | `datawatch configure git.secret_scan.mode=enforce` (the generic `configure` command; there is no dedicated secret-scan subcommand) |
+| CLI | `datawatch config set git.secret_scan.mode enforce` (the generic `config set` command; there is no dedicated secret-scan subcommand) |
 | Web UI Settings | the **Pre-push secret scan mode** select on the git settings card (`off` / `shadow` / `enforce`) |
 | REST | `PUT /api/config` with key `git.secret_scan.mode` |
 | comm channel | `configure git.secret_scan.mode=enforce` |
