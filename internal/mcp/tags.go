@@ -171,7 +171,7 @@ func (s *Server) handleSessionSetTags(_ context.Context, req mcpsdk.CallToolRequ
 
 func (s *Server) toolAutonomousAttentionList() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_attention_list",
-		mcpsdk.WithDescription("List the Automata that need the operator's attention: those whose status is in the attention statuses (blocked, needs_review, paused by default) plus Automata with a task held for operator review. Returns the statuses in force and the items."),
+		mcpsdk.WithDescription("List the Automata that need the operator's attention: those whose status is in the attention statuses (blocked, needs_review, paused by default) plus Automata with a task held for operator review. Each item carries rules_review_outcome (action, findings, retries) when the completion review blocked it. Returns the statuses in force and the items."),
 	)
 }
 func (s *Server) handleAutonomousAttentionList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
