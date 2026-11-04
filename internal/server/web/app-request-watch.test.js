@@ -230,15 +230,19 @@ test('the session detail header carries the chip', () => {
 
 // ── the loader and the timers ───────────────────────────────────────────────
 
-test('the Overview sub-tab carries the slot and the loader reads the route', () => {
+test('the Setup sub-tab carries the slot and the loader reads the route', () => {
   const sandbox = loadApp();
-  const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'overview').bodyHTML()", sandbox);
-  assert.ok(body.includes('id="automationRequestWatchCard"'), 'slot missing from the Overview body');
+  const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'setup').bodyHTML()", sandbox);
+  assert.ok(body.includes('id="automationRequestWatchCard"'), 'slot missing from the Setup body');
+  for (const other of ['inbox', 'automations', 'resources', 'progress', 'housekeeping']) {
+    const o = vm.runInContext(`_AUTOMATION_SUBTABS.find(s => s.id === '${other}').bodyHTML()`, sandbox);
+    assert.ok(!o.includes('id="automationRequestWatchCard"'), 'no request watch slot on ' + other);
+  }
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/request-watch'"), 'loader must read the route');
   assert.ok(/'automation_infra_retry', 'automation_request_watch'/.test(src), 'stop lists must include the loader');
-  assert.ok(src.includes("'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete'"), 'the Overview stop() must end the loader');
-  assert.ok(src.includes('_automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader()'), 'the Overview mount must start the loader');
+  assert.ok(src.includes("'automation_merge_pipeline', 'automation_request_watch']"), 'the Setup stop() must end the loader');
+  assert.ok(src.includes('_automationMergePipelineLoader(), _automationRequestWatchLoader()]'), 'the Setup mount must start the loader');
 });
 
 test('mounting the loader twice leaves one loader, and stop ends its timers', () => {

@@ -1279,6 +1279,7 @@ function listLoader(opts) {
         st.data = data; st.hasData = true; st.at = now(); st.fromCache = false;
         st.loadedOnce = true; st.loading = false; st.error = '';
         _listCacheWrite(key, st.at, data);
+        if (opts.onData) { try { opts.onData(data); } catch (e) { /* a failed hook never fails the load */ } }
       }).catch(err => {
         if (mySeq !== st.seq) return;
         st.loading = false; st.loadedOnce = true;
@@ -2694,9 +2695,10 @@ function navigate(view, sessionId, fromPopstate) {
   // the sub-tab and continues as the Automata view.
   if (view === 'automation') {
     _automataState.tab = 'automation';
-    // Every way in by link lands on Chains; only the Automata tab tap in
-    // the bottom navigation keeps the remembered second-row sub-tab.
-    _automationState.subtab = 'chains';
+    // Every way in by link lands on the default Inbox sub-tab; only the
+    // Automata tab tap in the bottom navigation keeps the remembered
+    // second-row sub-tab.
+    _automationState.subtab = _AUTOMATION_DEFAULT_SUBTAB;
     view = 'autonomous';
   }
   // Close the new-session modal on any navigation (Escape or nav tap).
@@ -24388,8 +24390,8 @@ function _automataSyncActions(tab) {
     automataFilterBtn: tab === 'automata',
     automataHistoryBtn: tab === 'automata',
     automataWatchFilterBtn: tab === 'automata',
-    automationFilterBtn: tab === 'automation' && _automationState.subtab === 'chains',
-    automationHistoryBtn: tab === 'automation' && _automationState.subtab === 'chains',
+    automationFilterBtn: tab === 'automation' && _automationState.subtab === 'automations',
+    automationHistoryBtn: tab === 'automation' && _automationState.subtab === 'automations',
   };
   Object.keys(show).forEach(id => {
     const el = document.getElementById(id);
@@ -24914,9 +24916,10 @@ window.openAutomataHowto = openAutomataHowto;
 
 function _toggleAutonomousFilters() {
   if (_automataNormalizeTab() === 'automation') {
-    // Filter acts on the list, so it lives on the Chains sub-tab: switch to
-    // Chains first when the second row is on Overview, then toggle.
-    if (_automationState.subtab !== 'chains') switchAutomationSubtab('chains');
+    // Filter acts on the list, so it lives on the Automations sub-tab: switch
+    // to Automations first when the second row is on another sub-tab, then
+    // toggle.
+    if (_automationState.subtab !== 'automations') switchAutomationSubtab('automations');
     toggleAutomationFilter();
   }
   else toggleAutomataFilter();
@@ -27039,7 +27042,7 @@ window.laneFillCardHtml = function(status) {
 
 // ── Infrastructure retries card ─────────────────────────────────────────────
 // infraRetryCardHtml(status) turns the decoded GET /api/autonomous/infra-retries
-// body into the Automation Overview card: whether automatic retry is on and how
+// body into the Automation Resources card: whether automatic retry is on and how
 // many tries a task gets, then one block per task that was retried or is held,
 // newest first. Each retry reads "Retry n of max" with its class, reason and
 // time; a held task also shows the cause and, when the daemon raised one, a
@@ -27155,7 +27158,7 @@ function _infraRetryLoadMax(prd) {
 
 // ── Merge pipeline card ─────────────────────────────────────────────────────
 // mergePipelineCardHtml(view, opts) turns the decoded GET
-// /api/autonomous/merge-pipeline body into the Automation Overview card for one
+// /api/autonomous/merge-pipeline body into the Automation Setup card for one
 // project: where the pipeline in effect comes from (file, record or default)
 // with the reason, the steps in order, the conflict policy and the conflict
 // model. The operator can edit the record the daemon keeps, choose the policy
@@ -30603,9 +30606,9 @@ window.proposeScanRules = function(prdId) {
 function _backToAutomataList() {
   // An Automaton opened from an Automation goes back to that Automation.
   const returnAutomationId = window._automationReturnId || null;
-  // Returning to an Automation lands on Chains; openAutomationLink below
+  // Returning to an Automation lands on Automations; openAutomationLink below
   // does the same, this just keeps the list consistent if it is skipped.
-  if (returnAutomationId) _automationState.subtab = 'chains';
+  if (returnAutomationId) _automationState.subtab = 'automations';
   // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
   // doesn't reset the PWA banner (back chevron, title, search icon)
   // OR the bottom-nav highlight. Operator hit "back goes to list but
@@ -30816,6 +30819,7 @@ function renderAutonomousView() {
   `;
   if (isAutomation) {
     _automationMount();
+    _automationSubtabsReveal();
   } else {
     const reuse = _automataReuseList;
     _automataReuseList = false;
@@ -30849,9 +30853,10 @@ const _automationState = {
   detailId: null,
   detail: null,
   // The selected second-row sub-tab. Plain module state, not localStorage:
-  // it is kept while the page stays open and a fresh load starts on Chains,
+  // it is kept while the page stays open and a fresh load starts on Inbox,
   // the same remembered-sub-tab rule the Automata sub-tab bar documents.
-  subtab: 'chains',
+  // localStorage is never touched.
+  subtab: 'inbox',
   search: '',
   statusFilter: new Set(['draft', 'active', 'paused', 'blocked', 'completed']),
   historyOn: false,
@@ -30894,10 +30899,10 @@ const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed
 
 // The Automation sub-tab's action buttons, drawn into the Automata tab bar:
 // filter and history. They are hidden on the other sub-tabs and while the
-// second row is off Chains: both act on the list.
+// second row is off Automations: both act on the list.
 function _automationActionButtonsHTML(visible) {
   const st = _automationState;
-  if (!visible || st.subtab !== 'chains') visible = false;
+  if (!visible || st.subtab !== 'automations') visible = false;
   const hide = visible ? '' : 'display:none;';
   const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
   return `<button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}" style="${hide}">⊞</button>
@@ -30907,51 +30912,162 @@ function _automationActionButtonsHTML(visible) {
 // _AUTOMATION_SUBTABS is the registry of the second-row sub-tabs of the
 // Automation sub-tab. Every entry carries its body builder and its mount()
 // and stop() for its loaders, and the bar, switchAutomationSubtab and
-// _automationMount all read from this registry — so a third sub-tab later
-// is one new entry and no change to the mechanism.
-const _AUTOMATION_DEFAULT_SUBTAB = 'chains';
+// _automationMount all read from this registry — so another sub-tab later is
+// one new entry and no change to the mechanism. An entry may also carry a
+// badge() that returns a count the bar draws beside its label.
+const _AUTOMATION_DEFAULT_SUBTAB = 'inbox';
+
+// The card slot registry. Each sub-tab renders its fixed cards in their order
+// and then the slots registered for it, sorted by order, so a later feature
+// adds a card to a tab with one registerAutomationCardSlot call and no edit to
+// the other tabs. A slot is { id, order, html, mount, stop }: html is a string
+// or a function returning one, mount() starts the slot's loaders when its tab
+// mounts, stop() ends them when the tab is left. Registering the same id on
+// the same tab again replaces the earlier slot.
+const _AUTOMATION_CARD_SLOTS = {
+  inbox: [], automations: [], resources: [], progress: [], setup: [], housekeeping: [],
+};
+
+function registerAutomationCardSlot(tabId, slot) {
+  if (!slot || !slot.id || !Object.prototype.hasOwnProperty.call(_AUTOMATION_CARD_SLOTS, tabId)) return false;
+  const list = _AUTOMATION_CARD_SLOTS[tabId];
+  const entry = {
+    id: String(slot.id),
+    order: Number.isFinite(slot.order) ? slot.order : 100,
+    html: slot.html,
+    mount: typeof slot.mount === 'function' ? slot.mount : null,
+    stop: typeof slot.stop === 'function' ? slot.stop : null,
+  };
+  const at = list.findIndex(x => x.id === entry.id);
+  if (at >= 0) list[at] = entry; else list.push(entry);
+  return true;
+}
+window.registerAutomationCardSlot = registerAutomationCardSlot;
+
+function _automationSlotsOf(tabId) {
+  return (_AUTOMATION_CARD_SLOTS[tabId] || []).slice().sort((a, b) => a.order - b.order);
+}
+// The registered slots' markup for one tab, in order.
+function _automationSlotsHTML(tabId) {
+  return _automationSlotsOf(tabId).map(sl => (typeof sl.html === 'function' ? sl.html() : (sl.html || ''))).join('\n      ');
+}
+function _automationSlotsMount(tabId) {
+  _automationSlotsOf(tabId).forEach(sl => { if (sl.mount) sl.mount(); });
+}
+function _automationSlotsStop(tabId) {
+  _automationSlotsOf(tabId).forEach(sl => { if (sl.stop) sl.stop(); });
+}
+
+// An empty, hidden placeholder for a card a later feature fills in. It keeps
+// the slot class and a stable id; display:none means it never shows a blank
+// card until the feature un-hides it.
+function _automationPlaceholderHTML(id) {
+  return `<div id="${id}" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>`;
+}
+[
+  ['automations', 'automationReleaseArcCard', 100],
+  ['automations', 'automationGanttCard', 110],
+  ['resources', 'automationLaneUtilizationCard', 100],
+  ['resources', 'automationVerifierSlotsCard', 110],
+  ['progress', 'automationAllProjectsGanttCard', 100],
+  ['progress', 'automationCostBillingCard', 110],
+  ['progress', 'automationCompletionForecastCard', 120],
+  ['setup', 'automationProjectPolicyCard', 100],
+  ['setup', 'automationDecomposeLintCard', 110],
+  ['setup', 'automationPriorityByKindCard', 120],
+  ['setup', 'automationGroupingTagsCard', 130],
+  ['setup', 'automationSupervisorLoopCard', 140],
+  ['housekeeping', 'automationStaleWorktreesCard', 100],
+].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
+
+// The Inbox sub-tab counts everything waiting on the operator, from the data
+// its own loaders already fetch: triage items, open questions, held questions,
+// security failures and open supervisor-watch findings. The counts live here
+// by source key so the badge stays current while another sub-tab is shown.
+const _automationInboxCounts = {};
+const _AUTOMATION_INBOX_KEYS = ['automation_triage', 'automation_questions', 'automation_held_questions', 'automation_security_failure', 'supervisor'];
+
+function _automationInboxCountOf(key, data) {
+  if (key === 'automation_triage') return (data && Array.isArray(data.records)) ? data.records.length : 0;
+  if (key === 'automation_security_failure') return Array.isArray(data) ? data.length : 0;
+  if (key === 'automation_questions') {
+    if (!data || data.__automationQuestionsDisabled) return 0;
+    const list = Array.isArray(data) ? data : (Array.isArray(data.questions) ? data.questions : []);
+    return list.length;
+  }
+  if (key === 'automation_held_questions') return (data && Array.isArray(data.open)) ? data.open.filter(e => e && typeof e === 'object').length : 0;
+  if (key === 'supervisor') {
+    const f = (data && typeof data === 'object' && Array.isArray(data.findings)) ? data.findings : [];
+    return f.filter(x => x && typeof x === 'object' && !x.resolved).length;
+  }
+  return 0;
+}
+
+// _automationInboxCountSet records one source's count and refreshes the badge
+// in place. The question loader's history mode lists decided questions, so
+// its data is not counted then and the last open count stays.
+function _automationInboxCountSet(key, data) {
+  if (key === 'automation_questions' && typeof _automationQuestionsState !== 'undefined' && _automationQuestionsState.history) return;
+  _automationInboxCounts[key] = _automationInboxCountOf(key, data);
+  _automationUpdateInboxBadge();
+}
+
+function _automationInboxBadgeCount() {
+  let n = 0;
+  _AUTOMATION_INBOX_KEYS.forEach(k => {
+    if (Object.prototype.hasOwnProperty.call(_automationInboxCounts, k)) { n += _automationInboxCounts[k]; return; }
+    const ctl = window._listLoaders && window._listLoaders[k];
+    if (ctl && ctl.state && ctl.state.hasData && !(k === 'automation_questions' && _automationQuestionsState.history)) n += _automationInboxCountOf(k, ctl.state.data);
+  });
+  return n;
+}
+
+function _automationBadgeLabel(n) {
+  return t('automation_subtab_inbox_badge_label', [n]);
+}
+
+// The badge is updated in place: no redraw of the body or the bar.
+function _automationUpdateInboxBadge() {
+  if (typeof document === 'undefined') return;
+  const el = document.querySelector('.automation-subtabs [data-subtab="inbox"] .automation-subtab-badge');
+  if (!el) return;
+  const n = _automationInboxBadgeCount();
+  el.textContent = String(n);
+  el.setAttribute('aria-label', _automationBadgeLabel(n));
+  el.style.display = n > 0 ? '' : 'none';
+}
+
+// The Inbox loaders poll while the Automation sub-tab is shown, whichever
+// second-row sub-tab is selected; they paint only when their slot element
+// exists (listLoader's paint skips a missing element). Leaving the Automation
+// sub-tab stops them through _automationStopLoaders with no keys.
+function _automationInboxLoaderActive() {
+  return _automataNormalizeTab() === 'automation';
+}
+function _automationInboxLoaders() {
+  return [_automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()];
+}
+// Start the Inbox polling behind another sub-tab: only the loaders that are
+// not already running are loaded.
+function _automationInboxBackgroundStart() {
+  _automationInboxLoaders().forEach(l => {
+    const s = l.state;
+    if (s.loading) return;
+    if (s.stopped || !s.pollTimer) l.load();
+  });
+  if (!window._supervisorWatchInterval) supervisorWatchStartPolling();
+}
 
 const _AUTOMATION_SUBTABS = [
   {
-    id: 'overview',
-    labelKey: 'automation_subtab_overview',
-    bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
-      <div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
-      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationChecksCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
-    mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationRequestWatchLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader(), _automationChecksLoader(), _automationShipLoader(), _automationMergePipelineLoader(), _automationOnboardingReportLoader()]);
-      // The progress card renders into its slot on this sub-tab; it has no
-      // listLoader of its own, so nothing for stop() to end.
-      if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
-    },
-    stop() { _automationStopLoaders(['automation_checks', 'automation_ship', 'automation_merge_pipeline', 'automation_onboarding_report', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_request_watch', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
-  },
-  {
-    id: 'chains',
-    labelKey: 'automation_subtab_chains',
-    bodyHTML: () => {
-      const st = _automationState;
-      return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
-        ${_tagFilterBarHTML('automation',
-          `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
-      </div>
+    id: 'inbox',
+    labelKey: 'automation_subtab_inbox',
+    badge: () => _automationInboxBadgeCount(),
+    bodyHTML: () => `
       <!-- Needs-attention/triage card: judgment call — it lists the failed
-           and blocked records that need an operator, so it stays on Chains,
-           above the list. Moving it behind the non-default Overview sub-tab
-           would hide items waiting on the operator and be a regression. -->
+           and blocked records that need an operator, so it stays first on
+           the default Inbox view. -->
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -30970,18 +31086,105 @@ const _AUTOMATION_SUBTABS = [
         </div>
         <div id="automationHeldQuestionsBody"></div>
       </div>
-      <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
-        <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
-      </div>`;
-    },
+      <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
+      ${_automationSlotsHTML('inbox')}`,
     mount() {
       _automationQuestionsLoadQuality();
-      listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()]);
+      listLoaderAll(_automationInboxLoaders());
       supervisorWatchStartPolling();
+      _automationSlotsMount('inbox');
+    },
+    // The Inbox loaders keep polling behind the other sub-tabs so the badge
+    // stays current; only the slots registered on this tab stop here. The
+    // stop-all path of _automationStopLoaders ends the loaders themselves.
+    stop() { _automationSlotsStop('inbox'); },
+  },
+  {
+    id: 'automations',
+    labelKey: 'automation_subtab_automations',
+    bodyHTML: () => {
+      const st = _automationState;
+      return `<div id="automationFilterBar" class="automata-filter-bar tag-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+        ${_tagFilterBarHTML('automation',
+          `<input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">`)}
+      </div>
+      <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
+        <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
+      </div>
+      ${_automationSlotsHTML('automations')}`;
+    },
+    mount() {
+      listLoaderAll([_automationLoader()]);
+      _automationSlotsMount('automations');
     },
     stop() {
-      _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_held_questions']);
-      supervisorWatchStopPolling();
+      _automationStopLoaders(['automation']);
+      _automationSlotsStop('automations');
+    },
+  },
+  {
+    id: 'resources',
+    labelKey: 'automation_subtab_resources',
+    bodyHTML: () => `<div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationLaneFillCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUsageCard" class="prd-capacity-slot" style="margin:6px 8px 0;min-width:0;"></div>
+      <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationChecksCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationShipCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      ${_automationSlotsHTML('resources')}`,
+    mount() {
+      listLoaderAll([_automationCapacityLoader(), _automationLaneFillLoader(), _automationUsageLoader(), _automationInfraRetryLoader(), _automationChecksLoader(), _automationShipLoader()]);
+      _automationSlotsMount('resources');
+    },
+    stop() {
+      _automationStopLoaders(['automation_capacity', 'automation_lane_fill', 'automation_usage', 'automation_infra_retry', 'automation_checks', 'automation_ship']);
+      _automationSlotsStop('resources');
+    },
+  },
+  {
+    id: 'progress',
+    labelKey: 'automation_subtab_progress',
+    bodyHTML: () => `<div id="progressCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
+      ${_automationSlotsHTML('progress')}`,
+    mount() {
+      // The progress card renders into its slot on this sub-tab; it has no
+      // listLoader of its own, so nothing for stop() to end.
+      if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
+      _automationSlotsMount('progress');
+    },
+    stop() { _automationSlotsStop('progress'); },
+  },
+  {
+    id: 'setup',
+    labelKey: 'automation_subtab_setup',
+    bodyHTML: () => `<div id="automationOnboardingReportCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationMergePipelineCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationRequestWatchCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      ${_automationSlotsHTML('setup')}`,
+    mount() {
+      listLoaderAll([_automationOnboardingReportLoader(), _automationMergePipelineLoader(), _automationRequestWatchLoader()]);
+      _automationSlotsMount('setup');
+    },
+    stop() {
+      _automationStopLoaders(['automation_onboarding_report', 'automation_merge_pipeline', 'automation_request_watch']);
+      _automationSlotsStop('setup');
+    },
+  },
+  {
+    id: 'housekeeping',
+    labelKey: 'automation_subtab_housekeeping',
+    bodyHTML: () => `<div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      ${_automationSlotsHTML('housekeeping')}`,
+    mount() {
+      listLoaderAll([_automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
+      _automationSlotsMount('housekeeping');
+    },
+    stop() {
+      _automationStopLoaders(['automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']);
+      _automationSlotsStop('housekeeping');
     },
   },
 ];
@@ -30989,11 +31192,20 @@ const _AUTOMATION_SUBTABS = [
 // The second-row sub-tab bar: the fixed automation-subtabs classes and the
 // data-subtab attribute are the contract for the styles, the node tests and
 // the browser story, so they do not move.
+// The count badge of a sub-tab entry that has a badge(): a span after the
+// label, hidden while the count is 0. _automationUpdateInboxBadge changes it
+// in place afterwards.
+function _automationBadgeHTML(s) {
+  if (typeof s.badge !== 'function') return '';
+  const n = s.badge();
+  return `<span class="automation-subtab-badge" aria-label="${escHtml(_automationBadgeLabel(n))}" style="${n > 0 ? '' : 'display:none;'}">${n}</span>`;
+}
+
 function _automationSubtabsBarHTML() {
   const st = _automationState;
   return `<div class="output-tabs automation-subtabs" role="tablist">`
     + _AUTOMATION_SUBTABS.map(s => `
-        <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}</button>`).join('')
+        <button class="output-tab ${st.subtab === s.id ? 'active' : ''}" role="tab" aria-selected="${st.subtab === s.id ? 'true' : 'false'}" data-subtab="${s.id}" onclick="switchAutomationSubtab('${s.id}')">${escHtml(t(s.labelKey))}${_automationBadgeHTML(s)}</button>`).join('')
     + `
       </div>`;
 }
@@ -31018,6 +31230,8 @@ function _automationMount() {
   _automationState.loaded = false;
   const def = _AUTOMATION_SUBTABS.find(s => s.id === _automationState.subtab) || _AUTOMATION_SUBTABS[0];
   def.mount();
+  // The Inbox count badge stays current behind the other sub-tabs.
+  if (def.id !== 'inbox') _automationInboxBackgroundStart();
 }
 
 // _automationStopLoaders ends the polling and tick timers of the Automation
@@ -31037,7 +31251,26 @@ function _automationStopLoaders(keys) {
 // ignored. It stops the loaders of the sub-tab being left, redraws the
 // Automation body for the selected sub-tab (the filter, search and history
 // state lives in _automationState, so it survives the redraw) and syncs the
-// action buttons so filter and history show on Chains only.
+// action buttons so filter and history show on Automations only.
+// _automationSubtabsReveal scrolls the active second-row tab into view inside
+// its horizontally scrolling strip, so a tab chosen by deep link or keyboard
+// is visible. Guarded for DOMs without scrollIntoView (the node stub).
+function _automationSubtabsReveal() {
+  try {
+    const btn = document.querySelector('.automation-subtabs .output-tab.active');
+    if (!btn) return;
+    if (typeof btn.scrollIntoView === 'function') {
+      btn.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+      return;
+    }
+    const strip = btn.parentElement;
+    if (strip && typeof btn.offsetLeft === 'number') {
+      strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+    }
+  } catch (e) { /* cosmetic only */ }
+}
+window._automationSubtabsReveal = _automationSubtabsReveal;
+
 function switchAutomationSubtab(id) {
   const def = _AUTOMATION_SUBTABS.find(s => s.id === id);
   if (!def) return;
@@ -31136,7 +31369,7 @@ function _automationInfraRetryLoader() {
 
 // ── Onboarding report card ──────────────────────────────────────────────────
 // onboardingReportCardHtml(report) turns the decoded
-// GET /api/automation/onboarding-report body into the Automation Overview card
+// GET /api/automation/onboarding-report body into the Automation Setup card
 // with three parts: what is configured, what is missing (each check with its
 // reason) and what to try next (each suggestion with its how-to link). A report
 // that is switched off shows one line. A refresh button reads the report again.
@@ -31241,7 +31474,7 @@ function _automationMergePipelineLoader() {
   });
 }
 
-// _automationSafeDeleteLoader reads the safe-to-delete report on the Overview
+// _automationSafeDeleteLoader reads the safe-to-delete report on the Housekeeping
 // sub-tab. The read runs git, so it polls slowly; its failed state is the list
 // loader's banner. The card is a report only and offers no action.
 function _automationSafeDeleteLoader() {
@@ -31256,7 +31489,7 @@ function _automationSafeDeleteLoader() {
   });
 }
 
-// _automationCleanupLoader reads the cleanup status on the Overview sub-tab,
+// _automationCleanupLoader reads the cleanup status on the Housekeeping sub-tab,
 // beside the safe-to-delete report. The status is in memory on the server, so
 // it polls at a modest rate; its failed state is the list loader's banner. The
 // card is read-only and offers no action.
@@ -31270,7 +31503,7 @@ function _automationCleanupLoader() {
 }
 
 // _automationUncommittedWorkLoader reads the uncommitted-work holds on the
-// Overview sub-tab, beside the cleanup card. The read is built from the stored
+// Housekeeping sub-tab, beside the cleanup card. The read is built from the stored
 // Automata and makes no git call, so it polls at the cleanup rate; its failed
 // state is the list loader's banner. The card is read-only.
 function _automationUncommittedWorkLoader() {
@@ -31304,7 +31537,7 @@ function _automationShipLoader() {
 }
 
 // _automationRequestWatchLoader reads the observed model requests on the
-// Overview sub-tab, beside the uncommitted-work card. The read is built from
+// Setup sub-tab, beside the uncommitted-work card. The read is built from
 // the daemon's in-memory observations; its failed state is the list loader's
 // banner. The card is read-only.
 function _automationRequestWatchLoader() {
@@ -31323,7 +31556,8 @@ function _automationTriageLoader() {
   return window._listLoaders.automation_triage || listLoader({
     key: 'automation_triage', el: 'automationTriageCard', url: '/api/autonomous/triage', pollMs: 5000,
     failedText: msg => t('triage_failed', [msg]),
-    active: () => !!document.getElementById('automationTriageCard'),
+    active: _automationInboxLoaderActive,
+    onData: data => _automationInboxCountSet('automation_triage', data),
     render: body => window.triageListHtml(body),
   });
 }
@@ -31335,12 +31569,13 @@ function _automationSecurityFailureLoader() {
   return window._listLoaders.automation_security_failure || listLoader({
     key: 'automation_security_failure', el: 'automationSecurityFailureCard', url: '/api/autonomous/security-failures', pollMs: 5000,
     failedText: msg => t('automation_security_failure_failed', [msg]),
-    active: () => !!document.getElementById('automationSecurityFailureCard'),
+    active: _automationInboxLoaderActive,
+    onData: data => _automationInboxCountSet('automation_security_failure', data),
     render: body => window.securityFailureListHtml(body),
   });
 }
 
-// ── Supervisor watch card (the Automaton view, Chains sub-tab)
+// ── Supervisor watch card (the Automaton view, Inbox sub-tab)
 // The card shows the daemon-side supervisor watch state read from
 // GET /api/autonomous/supervisor-watch: the mode in effect, how long ago
 // the coordinator last polled, the findings (kind and text), and the
@@ -31425,6 +31660,7 @@ function supervisorWatchCardHtml(view, nowMs) {
 }
 
 function supervisorWatchRenderCard(view, nowMs) {
+  _automationInboxCountSet('supervisor', view);
   const el = document.getElementById(SUPERVISOR_WATCH_CARD_ELEMENT_ID);
   if (!el) return;
   const html = supervisorWatchCardHtml(view, nowMs);
@@ -31634,7 +31870,8 @@ function _automationQuestionsLoader() {
     key: 'automation_questions', el: 'automationQuestionsBody', url: '/api/questions?state=open&limit=50', pollMs: 5000,
     fetch: (url, opts) => _automationQuestionsListFetch(opts),
     failedText: msg => t('automation_questions_failed', [msg]),
-    active: () => !!document.getElementById('automationQuestionsBody'),
+    active: _automationInboxLoaderActive,
+    onData: data => _automationInboxCountSet('automation_questions', data),
     render: body => _automationQuestionsState.history
       ? window.questionsHistoryHtml(body)
       : window.questionsCardHtml(body),
@@ -31924,7 +32161,7 @@ window.openQuestion = function(id) {
 // v1 held-questions — the held section on the Automation queue card
 //
 // The held section, GET /api/autonomous/held-questions (mode, held_states,
-// open[], shadow[]), is its own listLoader on the Chains sub-tab — one
+// open[], shadow[]), is its own listLoader on the Inbox sub-tab — one
 // card directly beneath the open-questions card — and it paints:
 //
 //   • a mode badge — off / shadow / on, exactly the effective mode the
@@ -32054,7 +32291,8 @@ function _automationHeldQuestionsLoader() {
   return window._listLoaders.automation_held_questions || listLoader({
     key: 'automation_held_questions', el: 'automationHeldQuestionsBody', url: '/api/autonomous/held-questions', pollMs: 5000,
     failedText: msg => t('held_question_failed', [msg]),
-    active: () => !!document.getElementById('automationHeldQuestionsBody'),
+    active: _automationInboxLoaderActive,
+    onData: data => _automationInboxCountSet('automation_held_questions', data),
     render: body => window.heldQuestionsCardHtml(body),
   });
 }
@@ -32279,9 +32517,9 @@ function _automationLoader() {
       if (_automationState.detailId) renderAutomationStrip();
       _tagFacetsRefresh('automation');
       // Refresh the progress card on each 30-second automation poll; the
-      // sub-tab guard makes this a no-op while the card lives on the
-      // Overview sub-tab, and the card's own refetch guard covers a recent load.
-      if (_automationState.subtab === 'overview' && typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
+      // sub-tab guard makes this a no-op unless the card's Progress sub-tab
+      // is shown, and the card's own refetch guard covers a recent load.
+      if (_automationState.subtab === 'progress' && typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
   });
 }
@@ -33218,7 +33456,7 @@ function _automationDetailBackHTML() {
 
 function openAutomationDetail(id) {
   const st = _automationState;
-  st.subtab = 'chains'; // an open Automation always belongs to Chains
+  st.subtab = 'automations'; // an open Automation always belongs to Automations
   if (st.detailId !== id) st.expanded.clear();
   st.detailId = id;
   return renderAutomationDetail(id);
@@ -33227,10 +33465,11 @@ window.openAutomationDetail = openAutomationDetail;
 
 // openAutomationLink is the entry for every link that targets one Automation:
 // it selects the Automation sub-tab on the Automata view, then opens the item.
-// With no id it lands on the sub-tab's list.
+// With no id it lands on the default sub-tab (Inbox); with an id it lands on
+// Automations and opens the item.
 function openAutomationLink(id) {
   _automataState.tab = 'automation';
-  _automationState.subtab = 'chains'; // links always land on Chains
+  _automationState.subtab = id ? 'automations' : _AUTOMATION_DEFAULT_SUBTAB;
   navigate('autonomous');
   if (!id) return Promise.resolve();
   return openAutomationDetail(id);
@@ -33300,7 +33539,7 @@ window.renderAutomationStrip = renderAutomationStrip;
 function automationDetailBack() {
   _automationState.detailId = null;
   _automationState.detail = null;
-  _automationState.subtab = 'chains'; // back from the detail page lands on Chains
+  _automationState.subtab = 'automations'; // back from the detail page lands on Automations
   closeAutomationMemberDrawer();
   renderAutomationView();
 }

@@ -1657,7 +1657,7 @@ autonomous:
     remediation_options: [keep_waiting, end_worker, retry_other_backend, unload_reload_model]   # unset reads as all four
 ```
 
-**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automation Overview sub-tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
+**Surfaces.** The same read is available as the MCP tool `autonomous_request_watch` (read-only; optional `session` and `automaton`), the CLI `datawatch autonomous request-watch [--session ID] [--automaton ID] [--json]` and the comm verb `autonomous request-watch [session <id> | automaton <id>]`. The web app shows it as a card on the Automation Setup and policy sub-tab and as chips on the session and task views. At the no-progress threshold the daemon raises one alert and one non-blocking operator question; answering it only records the choice.
 
 ## Merge state and safe-to-delete report (`GET /api/autonomous/merge`, `GET /api/autonomous/safe-to-delete`)
 
@@ -1800,7 +1800,7 @@ The existing optional `triage` record on an Automaton (see *Triage records* abov
 
 ### Surfaces and configuration
 
-The same reads are served by MCP `autonomous_merge` and `autonomous_safe_to_delete`, the CLI `datawatch autonomous merge [--json]` and `datawatch autonomous safe-to-delete [--json]`, the comm verbs `autonomous merge` and `autonomous safe-to-delete`, and the PWA (a merge badge on finished Automata and a safe-to-delete card on the Automation Overview sub-tab). The same contract for the mobile and wear surfaces is in [mobile-surface.md](mobile-surface.md). There are exactly two configuration keys, both under `autonomous.automation`, both in the Automata config object and `PUT /api/config`:
+The same reads are served by MCP `autonomous_merge` and `autonomous_safe_to_delete`, the CLI `datawatch autonomous merge [--json]` and `datawatch autonomous safe-to-delete [--json]`, the comm verbs `autonomous merge` and `autonomous safe-to-delete`, and the PWA (a merge badge on finished Automata and a safe-to-delete card on the Automation Housekeeping sub-tab). The same contract for the mobile and wear surfaces is in [mobile-surface.md](mobile-surface.md). There are exactly two configuration keys, both under `autonomous.automation`, both in the Automata config object and `PUT /api/config`:
 
 | Key | Values | Default | Notes |
 |---|---|---|---|

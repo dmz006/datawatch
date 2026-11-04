@@ -34,7 +34,9 @@ test("navigate('automation') selects the Automation sub-tab on the Automata view
   assert.equal(run(sb, 'state.activeView'), 'autonomous');
   assert.equal(tabState(sb), 'automation');
   assert.match(out.view, /class="output-tab active" data-tab="automation"/);
-  assert.match(out.view, /id="automationPanel"/);
+  assert.match(out.view, /data-subtab="inbox"/);
+  assert.match(out.view, /id="automationTriageCard"/, 'a bare link lands on Inbox');
+  assert.doesNotMatch(out.view, /id="automationPanel"/, 'the list is on Automations, not Inbox');
   assert.equal(sb.localStorage.getItem('cs_active_view'), 'autonomous');
 });
 

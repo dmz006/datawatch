@@ -166,10 +166,14 @@ test('the loader reads the route and draws the card into the Overview slot', asy
   }
 });
 
-test('the Overview sub-tab carries the slot and the stop-all list ends the loader', () => {
+test('the Housekeeping sub-tab carries the slot and the stop-all list ends the loader', () => {
   const sb = loadApp({});
-  const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'overview').bodyHTML()", sb);
-  assert.ok(body.includes('id="automationUncommittedWorkCard"'), 'slot missing from the Overview body');
+  const body = vm.runInContext("_AUTOMATION_SUBTABS.find(s => s.id === 'housekeeping').bodyHTML()", sb);
+  assert.ok(body.includes('id="automationUncommittedWorkCard"'), 'slot missing from the Housekeeping body');
+  for (const other of ['inbox', 'automations', 'resources', 'progress', 'setup']) {
+    const o = vm.runInContext(`_AUTOMATION_SUBTABS.find(s => s.id === '${other}').bodyHTML()`, sb);
+    assert.ok(!o.includes('id="automationUncommittedWorkCard"'), 'no uncommitted-work slot on ' + other);
+  }
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/uncommitted-work'"), 'loader must read the route');
   assert.ok(/'automation_cleanup', 'automation_uncommitted_work'\]/.test(src), 'stop lists must include the loader');

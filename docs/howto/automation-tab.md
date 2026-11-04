@@ -11,13 +11,25 @@ Automata in the bottom navigation and Automation is selected on the sub-tab bar,
 left of **Automata** and **Templates**. It shows every Automation as a card, draws the chain
 of the one you open as a strip, and puts the controls (pause, resume, cancel,
 skip, insert, remove, edit edges) next to the members they act on. Inside the
-Automation sub-tab, a second row of sub-tabs splits the view: **Overview**, with
-the Progress card, the Capacity and queue card, and the other summary cards that
-sit with them; and **Chains**, with the status badges, the search and filter
-bar, the list of Automations, and the open Automation with its pipeline strip
-and controls. Chains is the one open by default. A **Questions** sub-tab will
-join the second row when the question queue lands; no Questions sub-tab exists
-today.
+Automation sub-tab, a second row of six sub-tabs splits the view, in this
+order: **Inbox**, **Automations**, **Resources**, **Progress and cost**,
+**Setup and policy** and **Housekeeping**. Inbox is the one open by default.
+
+The second row works like the About and Settings strips: one row that scrolls
+sideways with momentum on touch, a hidden scrollbar, sticky at the top, the
+active tab scrolled into view, no wrapping, and it fits at phone width. Cards
+for features that have not shipped yet are listed below as "appears here when it
+ships"; until then the tab shows nothing for them. A later feature adds its card
+to its tab without changing the other tabs.
+
+| Sub-tab | What is on it |
+|---|---|
+| **Inbox** | Everything waiting on you: the needs-attention card, the questions, the held questions, the security failure report and the supervisor watch. A count badge on the tab totals what is waiting. |
+| **Automations** | The list of Automations with the status badges. The filter and history buttons show here only. The release arc and its stages, and the Gantt per Automation, appear here when they ship. |
+| **Resources** | Capacity, lane fill, usage against the plan, infrastructure retries, the Automata checks card and the Automata ship status card. Lane utilization and verifier slots appear here when they ship. |
+| **Progress and cost** | The Progress card. The all-projects Gantt, the cost and billing report and the completion forecast appear here when they ship. |
+| **Setup and policy** | The onboarding and requirements report, the merge pipeline and the model request watch. Project policy, decompose lint, priority by kind, automatic grouping tags and the supervisor loop appear here when they ship. |
+| **Housekeeping** | The safe-to-delete report, cleanup and uncommitted work. Stale worktrees appears here when it ships. |
 
 ## What an Automation is
 
@@ -36,32 +48,30 @@ that connect them.
 ## Opening it, the remembered sub-tab and saved links
 
 - **First visit.** Tapping Automata in the bottom navigation opens on the
-  Automation sub-tab, on its Chains sub-tab. Tap **Automata** or **Templates**
-  on the sub-tab bar, or **Overview** or **Chains** on the second row under it,
+  Automation sub-tab, on its Inbox sub-tab. Tap **Automata** or **Templates**
+  on the sub-tab bar, or any of the six sub-tabs on the second row under it,
   to switch. There is no New Automation button in the bar: an Automation is
   created with the round button at the bottom right, or with **＋ Create
   Automation** on the empty state, both opening the same form. The action
   buttons at the right of the bar (select, filter, history, watch) change with
   the sub-tab, and so does the round button; on the Automation sub-tab, filter
-  and history show on Chains, because both act on the list.
+  and history show on Automations only, because both act on the list.
 - **Remembered sub-tab.** While the web app stays open, the sub-tab you chose
   stays selected when you leave the Automata tab and come back. The same rule
-  holds on the second row: the sub-tab you chose is kept while the page stays
-  open, and a fresh load of the page starts the view on Chains again. Storing a
-  chosen sub-tab across loads is switched off until the operator decides how it
-  should behave.
-- **Saved links.** A link to `#automation` opens the Automata tab on the
-  Automation sub-tab, on Chains, and shows its list. `#automation/<id>` and
-  `?automation=<id>` land the same way and open that Automation. Older links and
-  history entries that name the Automation view land in the same place, and the
-  back control on a member's Automaton page returns to the Automation that holds
-  it, on Chains.
+  holds on the second row: the tab you chose is kept while the page stays
+  open, and a fresh load of the page starts on Inbox again. The choice is not
+  stored across loads.
+- **Saved links.** A bare `#automation` link opens the Automata tab on the
+  Automation sub-tab, on Inbox. `#automation/<id>` and `?automation=<id>` open
+  that Automation on Automations, and the back control on a member's Automaton
+  page returns to the Automation that holds it, on Automations. Older links and
+  history entries that name the Automation view land in the same place.
 - **Subsystem off.** When the autonomous subsystem is not enabled, the
   Automation sub-tab is not offered and every one of these links lands on the
   Automata sub-tab.
-- **Phone width.** On a narrow screen the two rows of sub-tabs fit at 360 px
-  without scrolling or clipping, and every sub-tab in both rows is at least
-  40 px tall and wide enough to tap.
+- **Phone width.** On a narrow screen the first row fits at 360 px, and the
+  second row scrolls sideways instead of wrapping; every sub-tab in both rows
+  is at least 40 px tall and wide enough to tap.
 
 ## Base requirements
 
@@ -71,25 +81,38 @@ that connect them.
 
 ## The list
 
-On the Chains sub-tab, one card per Automation, ordered by status (active,
+On the Automations sub-tab, one card per Automation, ordered by status (active,
 blocked, paused, draft, completed, cancelled) and then by name.
 
 ### The needs-attention card
 
-On Chains, between the filter bar and the list, sits the needs-attention card:
+On Inbox, at the top, sits the needs-attention card:
 one card per Automaton that needs an operator because it failed or is blocked,
 with the reason it needs attention. While nothing is stuck it shows a one-line
 empty note. See the *Triage records* entry under [Related](#related) for the
 record itself and how it fills and clears.
 
-### The Overview cards
+### The cards on the other sub-tabs
 
-On the Overview sub-tab sit the summary cards: the Progress card, the same
-capacity and queue summary card the Automata sub-tab shows (the pools and their
-usage, any usage back-off, budgets, and the Automata waiting for capacity), and
-the other summary cards that sit with them. Each card loads with its own
-loading skeleton and, if the request fails, its own error with a Retry button;
-a failed card never blanks the list, and a failed list never blanks the cards.
+Each card loads with its own loading skeleton and, if the request fails, its own
+error with a Retry button; a failed card never blanks the list, and a failed list
+never blanks the cards.
+
+- **Inbox:** the needs-attention card above, the open questions (see
+  [Questions](#questions-rest-only-for-now)), the held-question card, the
+  security failure card and the supervisor watch card. The badge on the tab
+  counts what is waiting on you.
+- **Resources:** the capacity and queue card (the pools and their usage, any
+  usage back-off, budgets, and the Automata waiting for capacity), the lane fill
+  card, the usage card (usage against the plan), the infrastructure retries
+  card, the Automata checks card (the four report-only checks) and the Automata
+  ship status card (the push, tag and release steps).
+- **Progress and cost:** the Progress card, with the kind table, work left and
+  completion range.
+- **Setup and policy:** the onboarding and requirements report, the merge
+  pipeline card and the model request watch card.
+- **Housekeeping:** the safe-to-delete report, the cleanup card and the
+  uncommitted work card.
 
 ### Reading the merge state and the safe-to-delete report
 
@@ -106,7 +129,7 @@ No badge means the Automaton is merged, has nothing ahead of `main`, or has not 
 
 **Trying it first with shadow mode.** Set the check to `shadow` and it records what it would have done (state, commits ahead, whether it would have alerted) without raising any alert or writing any merge-pending record. Read that history with `datawatch autonomous merge` or `GET /api/autonomous/merge` (`shadow_decisions`, newest first) and switch to `on` once the states match what you expect. The badge also appears in shadow mode, so you can see the states on your own branches before anything alerts.
 
-**The safe-to-delete report.** On the Overview sub-tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
+**The safe-to-delete report.** On the Housekeeping sub-tab, the **Automaton safe-to-delete report** card lists two things. **Automaton branches safe to delete** are branches whose commits are all on `main` (or that have none) and whose worktree has nothing uncommitted. **Automaton branches held** must stay: still merge pending, needing a look, not comparable, or merged but with a worktree that has uncommitted changes (the card shows "The Automaton worktree has uncommitted changes."). Each row shows the branch, its worktree path, and why. The card refreshes every 60 seconds, wraps long branch names and paths on a phone, and shows **Could not load the Automaton safe-to-delete report** if the read fails (for example when no worktree base repository is configured). Where the report carries it, the card also shows when the report was computed, and a stale badge when the daemon told the reader the result was past its 60-second lifetime.
 
 **The report never deletes anything.** The card has no delete, merge or push button, and no command acts on the report. It tells you what is safe; removing a branch or a worktree is a step you take yourself after checking it. The read is not slow each time: the daemon keeps the report in memory for 60 seconds per base repository, so the first read within a lifetime does the git work and the rest get the stored result at once. A read that misses the lifetime still returns at once (marked stale) and starts at most one background refresh, bounded at 60 seconds — further reads in the same window start none, and while that refresh is still running they keep serving the last successful result, so a slow or failing refresh never leaves the card blank or blocked; a failed refresh is counted in the daemon stats. The same two reads are available as `datawatch autonomous merge` and `datawatch autonomous safe-to-delete`, as the chat verbs `autonomous merge` and `autonomous safe-to-delete`, and over MCP as `autonomous_merge` and `autonomous_safe_to_delete`. The states, the alert and the config keys are described in the *Merge-pending check* section of [operations.md](../operations.md), and the response shapes in [the API reference](../api/autonomous.md#merge-state-and-safe-to-delete-report-get-apiautonomousmerge-get-apiautonomoussafe-to-delete).
 

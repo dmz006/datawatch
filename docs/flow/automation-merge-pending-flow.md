@@ -158,7 +158,7 @@ is cleared, so a later pending episode starts again and alerts again. An
 | MCP | `autonomous_merge` | `autonomous_safe_to_delete` |
 | CLI | `datawatch autonomous merge` | `datawatch autonomous safe-to-delete` |
 | Comm channel | `autonomous merge` | `autonomous safe-to-delete` |
-| PWA | merge badge on a finished Automaton and its Automation card | card on the Automation Overview sub-tab |
+| PWA | merge badge on a finished Automaton and its Automation card | card on the Automation Housekeeping sub-tab |
 
 The safe-to-delete report reuses the same comparison for each local
 `automaton/*` branch but is not part of the poll tick: it is computed when it

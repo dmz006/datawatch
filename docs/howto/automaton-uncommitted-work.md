@@ -220,7 +220,7 @@ Every surface reads the same status and none of them changes anything.
 | MCP | `autonomous_uncommitted_work` (read-only), with the optional `automaton` argument |
 | CLI | `datawatch autonomous uncommitted-work`; add `--automaton <id>` to narrow it, `--json` for the raw body |
 | Comm channel | `autonomous uncommitted-work [automaton-id]` |
-| PWA | Automata tab → Automation view → **Overview** sub-tab → the **Automata uncommitted work** card, refreshed every 30 seconds; a **Uncommitted work (N)** chip on a held task; a banner on a held Automaton's detail page |
+| PWA | Automata tab → Automation view → **Housekeeping** sub-tab → the **Automata uncommitted work** card, refreshed every 30 seconds; a **Uncommitted work (N)** chip on a held task; a banner on a held Automaton's detail page |
 | Mobile and wear | The same REST contract, described in `docs/api/openapi.yaml` |
 
 The status is built from what the daemon has stored. It runs no git command, so
@@ -248,7 +248,7 @@ the whole worktree.
 
 | Location | What you see |
 |---|---|
-| **Web UI** | Automation view → Overview sub-tab → **Automata uncommitted work** card; a chip on a held task row; a banner on a held Automaton |
+| **Web UI** | Automation view → Housekeeping sub-tab → **Automata uncommitted work** card; a chip on a held task row; a banner on a held Automaton |
 | **REST API** | `GET /api/autonomous/uncommitted-work` → `policy`, `scope`, `held[]` |
 | **MCP** | `autonomous_uncommitted_work` |
 | **CLI** | `datawatch autonomous uncommitted-work` |

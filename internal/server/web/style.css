@@ -752,37 +752,41 @@ body {
   }
 }
 
-/* Second row of sub-tabs (Automation | Automata | Templates) — sits directly
-   below the first sub-tab bar and shares its look: same padding, bottom
-   border and background. Unlike the first bar it never scrolls horizontally
-   on a phone: the buttons flex to fill the width evenly and long labels
-   truncate with an ellipsis instead of overflowing. */
+/* Second row of sub-tabs — sits directly below the first sub-tab bar and
+   shares its look: same padding, bottom border and background. The strip now
+   scrolls horizontally like the About and Settings strips and never wraps:
+   six tabs do not fit a phone row, so it slides with momentum on touch and
+   the active tab is scrolled into view by _automationSubtabsReveal. */
 .automation-subtabs {
   display: flex;
+  flex-wrap: nowrap;
   gap: 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg2);
-  overflow: hidden;          /* no horizontal scroll — flex children fit the row */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  position: sticky;
+  top: 0;
+  z-index: 10;
   box-sizing: border-box;
   max-width: 100%;
 }
+.automation-subtabs::-webkit-scrollbar { display: none; }
 .automation-subtabs .output-tab {
-  flex: 1 1 0;               /* all buttons share the row evenly */
-  min-width: 0;
+  flex: 0 0 auto;            /* tabs keep their natural width; the strip scrolls */
   margin-right: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;   /* long label truncates instead of pushing the row */
   white-space: nowrap;
 }
 
-/* Phone width: three sub-tabs must fit in a single row at 360 px (and even at
-   320 px) with 40 px tap targets and no horizontal page scroll — the first
-   and second sub-tab rows stack without either one spilling sideways. */
+/* Phone width: 40 px tap targets; the strip slides sideways instead of
+   squeezing the tabs, so no horizontal page scroll. */
 @media (max-width: 600px), (pointer: coarse) {
   .automation-subtabs .output-tab {
     min-height: 40px;
-    min-width: 64px;
     box-sizing: border-box;
   }
 }
@@ -7336,6 +7340,22 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   #channelDiagBlock summary,
   #channelDiagBlock button { margin-top: -12px; margin-bottom: -12px; }
 }
+
+/* Count badge on the Automation Inbox sub-tab: everything waiting on the operator. */
+.automation-subtab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.automation-subtab-badge[hidden] { display: none; }
 
 /* Very narrow screens (a phone at 200% zoom is 160px wide): the add-memory
    row cannot hold an input and its button side by side, so it wraps. */
