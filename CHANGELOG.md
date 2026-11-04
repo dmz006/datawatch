@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.89.0 — Secret scan follow-up: audit events, stats and smoke
+
+The pre-push secret scan gets its follow-up work: tests, audit events, stats, a smoke check and the decision on its default.
+
+- **Audit events.** A refused push (enforce mode) and a shadow-mode finding now write audit entries in JSON lines and CEF (`secret_scan_refused`, `secret_scan_shadow`), with format tests including log-injection escaping.
+- **Stats.** Scan runs, findings and refusals are counted: a `secret_scan` block on the system stats, `GET /api/git/secret-scan/stats` and the `secret_scan_stats` MCP tool.
+- **Tests.** Session and Automata push-path tests for the scan policy and shadow recording, MCP handler tests and a web settings test.
+- **Smoke.** A release smoke section for the secret scan settings and stats.
+- **Default.** The default stays `shadow` for the first release, as documented in the operations guide.
+- Known gaps: no Prometheus counter or web Monitor card yet, and the smoke section does not scan or push a sandbox repository (its push checks are skipped).
+
 ## v9.88.0 — Project automation policy
 
 A project can now carry its own automation policy, between an Automaton's settings and the daemon's defaults.
