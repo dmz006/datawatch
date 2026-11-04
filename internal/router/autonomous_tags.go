@@ -182,7 +182,13 @@ func (r *Router) handleAutonomousTagVerb(verb string, args []string) {
 		r.reply(name, "ok")
 		return
 	}
-	r.reply(name, prettyJSON(out))
+	reply := prettyJSON(out)
+	if strings.ReplaceAll(verb, "_", "-") == "attention" {
+		if lines := rulesReviewOutcomeLines([]byte(out)); len(lines) > 0 {
+			reply += "\n" + strings.Join(lines, "\n")
+		}
+	}
+	r.reply(name, reply)
 }
 
 // registryObjectFromTagsReply extracts the "registry" object from a

@@ -1251,7 +1251,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 
 | Subcommand | Description |
 |---|---|
-| `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
+| `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts). An Automaton whose completion review blocked it carries `rules_review_outcome`; `get <id>` (CLI `prd-get`) prints the same action line and finding bullets, and a parked Automaton accepts add-task and a re-run |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
 | `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
@@ -1280,7 +1280,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `tag-registry-dismiss <note-id>` | Dismiss one merge or removed-on-keeper note on this daemon; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`. An unknown note is refused with 404 |
 | `prd-set-tags <prd-id> [--tags <id1,id2,...>] [--primary <tag-id>]` | Replace the tags on an Automaton (an empty `--tags` value clears them) and/or set its primary tag, used for sorting (an empty `--primary` clears it). Give `--primary` alone to keep the tags; `POST /api/autonomous/prds/{id}/set_tags` |
 | `session tags <session-id> --tags <id1,id2,...>` | Replace the tags a session carries itself (an empty `--tags` value clears them). Inherited tags come from the Automaton and are not set here; `POST /api/sessions/tags` |
-| `attention` | List the Automata that need attention: the attention statuses (`blocked`, `needs_review`, `paused` by default) plus any with a task held for review; `GET /api/autonomous/attention` |
+| `attention` | List the Automata that need attention: the attention statuses (`blocked`, `needs_review`, `paused` by default) plus any with a task held for review; `GET /api/autonomous/attention`. When the completion review blocked an Automaton, its item carries `rules_review_outcome`: the CLI and chat print an action line (`fix task created`, `fix task failed`, `retries spent` or `auto-fix off`) with the retries spent of the budget, then each finding (the problem the completion review found) as a bullet; chat shows up to five findings and `+N more`. `--json` prints only the raw body. A parked Automaton accepts add-task and a re-run |
 | `prd-set-kind <id> <feature\|bug\|other>` | Set the Automaton kind the progress figures count it under; an unknown kind is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_kind` (body `{"kind": ...}`, an empty kind derives it again) |
 | `prd-create <spec> --kind <feature\|bug\|other>` | Give the kind at creation; omit it to derive the kind from the title and spec |
 | `prd-set-lane-preference <id> <gpu\|claude\|any>` | Set which lane an Automaton may take; an unknown value is refused before anything is sent; `POST /api/autonomous/prds/{id}/set_lane_preference` (body `{"lane_preference": ...}`) |
