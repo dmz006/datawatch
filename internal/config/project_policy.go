@@ -442,12 +442,7 @@ func failureEscalationStepsFromConfig(steps []FailureEscalationStepConfig) []Fai
 	}
 	out := make([]FailureEscalationStepPolicy, 0, len(steps))
 	for _, s := range steps {
-		out = append(out, FailureEscalationStepPolicy{
-			Backend:  s.Backend,
-			Model:    s.Model,
-			Effort:   s.Effort,
-			Attempts: s.Attempts,
-		})
+		out = append(out, FailureEscalationStepPolicy(s))
 	}
 	return out
 }
