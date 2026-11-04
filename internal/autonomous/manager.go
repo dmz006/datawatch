@@ -598,6 +598,11 @@ type Config struct {
 	// LaneFill holds the autonomous.lane_fill.* knobs.
 	LaneFill LaneFillConfig `json:"lane_fill"`
 
+	// Requirements holds the autonomous.requirements.* overrides (per-
+	// capability minimum Ollama versions). See RequirementsConfig in
+	// capability_requirements.go; the built-in table ships in code.
+	Requirements RequirementsConfig `json:"requirements"`
+
 	// NotifyDefaultEvents — the most general (global) tier of notify
 	// event-kind resolution (ResolveNotifyEvents): the Automaton's own
 	// notify_events list wins, then the assigned guardrail profile's list,
@@ -890,6 +895,7 @@ func DefaultConfig() Config {
 		// (internal/config resume_max_age) that main.go's bridge picks up.
 		ResumeMaxAgeSeconds: bootResumeDefaultMaxAgeSeconds,
 		LaneFill:            DefaultLaneFillConfig(),
+		Requirements:        DefaultRequirementsConfig(),
 	}
 }
 
@@ -1078,6 +1084,10 @@ type Manager struct {
 	cfg         Config
 	store       *Store
 	automations *AutomationStore
+	// Capability minimum-version enforcement (capability_requirements.go):
+	// per-capability → per-node enablement and flag state. Guarded by mu;
+	// nil until EnableCapability/RecheckCapability first touch it.
+	capabilityState map[string]map[string]capabilityNodeState
 	repoCIWatch *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
