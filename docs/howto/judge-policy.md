@@ -1,10 +1,10 @@
 ---
 docs:
   index: true
-  topics: [judge, judges, size, threshold, changed lines, guardrail, plan review, verifier, routing, routing policy, time limit, timeout, needs review, hold, alerts, capacity, lease, automaton, autonomous]
+  topics: [judge, judges, size, threshold, changed lines, strong backend, guardrail, plan review, verifier, routing, routing policy, time limit, timeout, needs review, hold, review state, timed out, retry, reroute, verdict cache, rejudge, alerts, capacity, lease, automaton, autonomous]
 exec_steps:
   - tool: autonomous_config_get
-    description: Read the judge settings (judge_policy, judge_timeout_seconds, judge_size_threshold_lines) and the verifier routing policy the judges follow when judge_policy is empty
+    description: Read the judge settings (judge_policy, judge_timeout_seconds, judge_size_threshold_lines, judge_strong_backend, judge_verdict_cache_enabled) and the verifier routing policy the judges follow when judge_policy is empty
     args: {}
     read_only: true
 ---
@@ -228,8 +228,12 @@ three limits, and nothing else.
 A large change is slow for a small local model to judge. On 2026-10-26 an
 Automaton of about 1,000 changed lines timed out on the local judge, and the
 whole 30-minute limit was spent on a model that could not finish. Size-aware
-routing sends a large change to `claude-code` first so the limit is not spent
-on a backend that cannot finish.
+routing sends a large change to the strong backend first so the limit is not
+spent on a backend that cannot finish. The strong backend is
+`autonomous.judge_strong_backend` — an LLM backend name, empty by default —
+and when that key is empty it is the last backend in the judge chain, the
+strong Claude judge per [The judge role](#the-judge-role). When the key names
+a backend that is not in the chain, the order stays unchanged.
 
 `autonomous.judge_size_threshold_lines` is the number of changed lines above
 which the rule applies.
@@ -243,11 +247,11 @@ which the rule applies.
   order. A change of 401 or more is a large change.
 - **`0` turns it off.** Nothing is measured and the judge backends are tried in
   their usual order. A negative value is refused.
-- **Above the threshold, `claude-code` is tried first.** It moves to the front of
-  the judge's backend list, and the other backends follow in their usual order.
-  It is still one attempt per backend (see [One attempt per backend](#one-attempt-per-backend)),
-  so the number of attempts does not change. If `claude-code` is not in the
-  list, the order is unchanged.
+- **Above the threshold, the strong backend is tried first.** It moves to the
+  front of the judge's backend list, and the other backends follow in their
+  usual order. It is still one attempt per backend (see [One attempt per
+  backend](#one-attempt-per-backend)), so the number of attempts does not
+  change.
 - **Balance mode still picks by load.** In `balance` mode the load decides which
   backend runs, and the size rule only breaks ties between equally loaded
   backends. The decision log says so.
@@ -385,16 +389,113 @@ fix the cause, then pick the route that matches the hold.
      have. The steps are in [Recover a stuck, failed, or incorrectly-terminal Automaton](autonomous-recovery.md).
 4. **Or decide the work is not wanted.** Reject it, or cancel the Automaton.
 
+## The review state
+
+Every Automaton carries a review state next to its status. It is computed
+from the verdicts on the Automaton — its own, and those of its stories and
+tasks — every time you read it. It is never stored, and it never changes the
+status by itself. The state is one of `passed`, `blocked`, `timed_out`,
+`pending`, and it carries a `cause` (what the newest judgment found, or what
+failed to be found) and an `action`: the next step it suggests.
+
+- **`passed`** — the newest completed verdict is a pass. Nothing to do.
+- **`blocked`** — the newest completed verdict is a block with a real finding.
+  The `cause` is what the guardrail judged and the verdict says; the
+  `action` is **`fix`** — address the finding, then re-judge, or accept the
+  block.
+- **`timed_out`** — no completed verdict exists: every judge attempt hit its
+  time limit. This is the hold described in
+  [The needs-review hold](#the-needs-review-hold): the Automaton is in
+  `needs_review` (reason `judge_timeout_hold`), nothing has been approved or
+  passed, and only your decision moves it on. The `cause` names the backends
+  that timed out, how many, and their limit (for example, "judge timed out
+  on 2 backend(s): ollama-a, ollama-b, limit 30m0s"). The `action` is one
+  of two:
+  - **`retry`** — every timed-out attempt came from a backend in the judge
+    policy, so re-judging on the same judge order is the sensible next step.
+  - **`reroute`** — the Automaton has a guardrail backend (a stronger judge)
+    that none of the timed-out attempts tried, so re-judging pinned to that
+    backend beats another round of the same order.
+- **`pending`** — there is no pass or block verdict at all (no verdicts yet,
+  or only warnings). When the newest verdict is a warning, its content is
+  the `cause`; otherwise the state stands alone with no cause and no action.
+
+Where you see it:
+
+- **PRD JSON** — `review_state` (`state`, `cause`, `action`, `attempts`) on
+  the Automaton's list and detail views (`GET /api/autonomous/prds`,
+  `GET /api/autonomous/prds/{id}`, `datawatch autonomous prd-get <id>`).
+- **PWA** — an amber **Review timed out** badge beside the status badge (a
+  real block keeps its block badge), with the cause and the hold's actions
+  shown as a **Retry** button and, when the action is `reroute`, a **Reroute**
+  button.
+- **CLI / comm review line** — one line on the Automaton:
+  `review timed out: <cause> -> <action>`, or `review blocked: <cause> ->
+  fix`.
+
+How you act on it:
+
+- **A blocked Automaton whose tasks are all completed** accepts re-judgment:
+  the completion guardrail runs again as a fresh judgment, without resetting
+  any task (see the re-judge action in [Recover a stuck, failed, or
+  incorrectly-terminal Automaton](autonomous-recovery.md)). MCP
+  `autonomous_prd_rejudge(id="…")`; REST `POST
+  /api/autonomous/prds/{id}/rejudge` with `{"actor":"operator"}` — or, for a
+  `reroute`, pin that re-judgment on a named judge backend with
+  `{"actor":"operator","backend":"<backend>"}`, typically the Automaton's own
+  guardrail backend. Re-judging an Automaton that is not blocked, or one that
+  still has incomplete tasks, is refused (naming the first such task).
+- **A held review (`timed_out`, `needs_review`) is not a re-judge target** —
+  the re-judge endpoint applies only to blocked Automata. Resolve it through
+  [How to resolve a hold](#how-to-resolve-a-hold): fix the capacity or the
+  settings, cancel, reset the held task, and run the Automaton again. The
+  PWA badge's Retry / Reroute buttons submit to the re-judge endpoint, so on
+  a held review they are refused; the cancel → reset → run path is what works.
+
+## The per-commit verdict cache
+
+A completed pass, or a block with a real finding, is a judgment that
+re-running the same judge on the same input would simply repeat — so the
+daemon replays it from a per-commit cache instead of paying for another judge
+run. A cached verdict is keyed on the triple **(commit, judge policy,
+rules)**:
+
+- **Commit** — the commit under review. A judged unit with no recorded commit
+  sha has no anchor for its judgment, so the cache is bypassed for both
+  lookup and storage.
+- **Judge policy** — the backends that produced the verdict: a pinned
+  backend is one key, the configured judge chain (`judge:a|b`) another, and
+  an empty chain (the judges follow the verifier routing policy) a third.
+  Changing any of them is a cache miss.
+- **Rules** — a SHA-256 over the guardrail name and the exact inputs the
+  judge saw for that unit (its prompt, the unit's title and spec, and the
+  judge model). Changing the rules, the prompt, or the judge model is a cache
+  miss.
+
+Only completed verdicts are stored — a pass, or a block whose category is a
+real finding (content, or the empty pre-category value). A judge that timed
+out, crashed, or returned unparseable output — the `infra`,
+`invalid-response` and `judge-timeout` categories, or a hard error — produced
+no completed judgment, so it is never cached and never replayed as a verdict:
+a later infra retry still gets its genuine chance to run.
+
+The cache lives in `judge_verdict_cache.json` inside the PRD store directory
+(next to the Automaton files), is written atomically, and survives daemon
+restarts. It is on by default: `autonomous.judge_verdict_cache_enabled`
+reads `true` when unset, and an explicit `false` disables it, re-judging
+every guardrailed commit for real. It is validated on write, and a running
+daemon takes a change from the next judgment, like the other judge settings.
+
 ## Setting the judge policy on each surface
 
 | Surface | Read | Write |
 |---|---|---|
-| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_size_threshold_lines` | Edit the keys and restart the daemon |
-| REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400}`; or `PUT /api/config` with the dotted keys |
-| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number) and `judge_size_threshold_lines` (number) |
-| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400` |
-| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_size_threshold_lines=400`; or `configure autonomous.judge_timeout_seconds=1800` |
-| PWA | Settings, autonomous card | The `judge_policy` comma list, the `judge_timeout_seconds` field and the `judge_size_threshold_lines` field (Judge size threshold) on the same card |
+| YAML (`~/.datawatch/config.yaml`) | `autonomous.judge_policy`, `autonomous.judge_timeout_seconds`, `autonomous.judge_size_threshold_lines`, `autonomous.judge_strong_backend`, `autonomous.judge_verdict_cache_enabled` | Edit the keys and restart the daemon |
+| REST | `GET /api/autonomous/config` and `GET /api/config` | `PUT /api/autonomous/config` with `{"judge_policy": ["a","b"], "judge_timeout_seconds": 1800, "judge_size_threshold_lines": 400, "judge_strong_backend": "claude-code", "judge_verdict_cache_enabled": false}`; or `PUT /api/config` with the dotted keys |
+| MCP | `autonomous_config_get` | `autonomous_config_set` with `judge_policy` (array), `judge_timeout_seconds` (number), `judge_size_threshold_lines` (number), `judge_strong_backend` (string) and `judge_verdict_cache_enabled` (boolean) |
+| CLI | `datawatch autonomous config-get` | `datawatch autonomous config-set --judge-policy ollama-a,claude-code --judge-timeout-seconds 1800 --judge-size-threshold-lines 400 --judge-strong-backend claude-code --judge-verdict-cache=false` |
+| Comm channel | `autonomous judge-policy` | `autonomous judge-policy-set judge_policy=ollama-a,claude-code judge_timeout_seconds=1800 judge_size_threshold_lines=400 judge_strong_backend=claude-code judge_verdict_cache_enabled=false`; or `configure autonomous.judge_strong_backend=claude-code` |
+| PWA | Settings, autonomous card | The `judge_policy` comma list, the `judge_timeout_seconds` field, the `judge_size_threshold_lines` field (Judge size threshold), the `judge_strong_backend` text field (Strong judge backend (large-diff reroute)) and the `judge_verdict_cache_enabled` toggle (Judge verdict cache) on the same card |
 
 Notes on the write forms:
 
@@ -405,6 +506,12 @@ Notes on the write forms:
   is refused.
 - `judge_size_threshold_lines` is a whole number of 0 or more. `0` turns the size
   rule off, and a negative value is refused. See [Size-aware routing](#size-aware-routing).
+- `judge_strong_backend` names the strong judge a large diff is routed to
+  first; empty (the default) resolves to the last backend in the judge
+  chain, and a value not in the chain leaves the judge order unchanged.
+- `judge_verdict_cache_enabled` is a boolean; an unset value reads `true`, so
+  the verdict cache is on unless you turn it off with an explicit `false`
+  ([The per-commit verdict cache](#the-per-commit-verdict-cache)).
 - A change made through the API, MCP, CLI, comm channel or PWA applies to the
   next judge call, with no restart. A YAML edit takes effect on restart.
 
@@ -432,6 +539,17 @@ autonomous_config_set(judge_policy=["ollama-a","ollama-b","claude-code"], judge_
 - **A hold appeared after a restart.** Timed-out backends are kept on the
   Automaton, so the restart does not retry them. Read the attempt summary: the
   hold reflects the attempts before the restart as well.
+- **The review state says `timed_out`, and the Automaton is in `needs_review`
+  with reason `judge_timeout_hold`.** That is the judge hold in [The
+  needs-review hold](#the-needs-review-hold) — the review timed out; it is a
+  hold, not a judgment, and not a block. Decide with the review state's
+  action (retry or reroute, see [The review state](#the-review-state)) and
+  resolve it as in [How to resolve a hold](#how-to-resolve-a-hold).
+- **A re-judged commit comes back with the same verdict in an instant.** The
+  per-commit verdict cache replays a completed pass or block on an unchanged
+  (commit, judge policy, rules) triple — that is the point, not a bug. If you
+  want a fresh judgment, change the judge chain or the rules, or turn the
+  cache off with `autonomous.judge_verdict_cache_enabled=false`.
 
 ## See also
 

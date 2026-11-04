@@ -2424,6 +2424,25 @@ autonomous:
   # In balance mode the load still decides and the order only breaks ties.
   # 0 turns the rule off. Default 400.
   judge_size_threshold_lines: 400
+  # Strong judge backend for size-aware routing: the backend a diff at or
+  # above judge_size_threshold_lines is routed to first. Empty (the default)
+  # resolves to the last backend in judge_policy (the strong Claude judge
+  # when the chain is "local then Claude"); a value not in judge_policy
+  # leaves the judge backend order unchanged. Any LLM backend name is
+  # accepted; the key is not validated against a backend list.
+  judge_strong_backend: ""
+  # Per-commit judge verdict cache, on by default (an unset value reads
+  # true). A completed pass, or a block whose category is a real finding,
+  # is stored keyed on (commit sha, judge policy, rules) and replayed on
+  # the same triple instead of running the judge again. A review timed out
+  # (a judge that hit its limit; category judge-timeout) never produces a
+  # completed verdict, so it is never cached; the same is true of a
+  # verdict that crashed or returned unparseable output, so a later retry
+  # still gets its genuine chance to run. An explicit false
+  # disables the cache and re-judges every guardrailed commit for real.
+  # Cache file: judge_verdict_cache.json in the PRD store directory; it
+  # survives daemon restarts.
+  judge_verdict_cache_enabled: true
   # --- Plan review before approval (off by default) ---
   # LLM backend that reviews each PRD's plan (spec vs. decomposed stories/
   # tasks) after decompose. Empty (default) = no review; the PRD goes to
