@@ -7255,9 +7255,6 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .dash-console-link { align-self:center; font-size:11px; color:var(--accent); text-decoration:none; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:ellipsis; }
 .dash-console-link:hover { text-decoration:underline; }
 
-/* Observer sections below System Statistics: fluid rows, wrapping text and
-   40px tap targets at phone widths. The classes carry no rule above the
-   breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
 /* Count badge on the Automation Inbox sub-tab: everything waiting on the operator. */
 .automation-subtab-badge {
   display: inline-block;
@@ -7274,6 +7271,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 }
 .automation-subtab-badge[hidden] { display: none; }
 
+/* Observer sections below System Statistics: fluid rows, wrapping text and
+   40px tap targets at phone widths. The classes carry no rule above the
+   breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
 .obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
 .obs-row-nowrap { flex-wrap: nowrap; }
 .obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }

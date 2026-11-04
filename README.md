@@ -62,6 +62,7 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Runs steps at the same time when it is safe
 - Stops to ask you instead of guessing
 - Warns you about failed work and about finished work that has not been merged
+- Groups the web app's Automation tab into six sub-tabs (Inbox, Automations, Resources, Progress, Setup, Housekeeping), with a count badge on Inbox for everything waiting on you
 
 More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md)
 
