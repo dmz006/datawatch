@@ -23,24 +23,24 @@ func (c *sdComputeCalls) snap() int {
 	return c.n
 }
 
-// fixedClock is a test clock: its current time is moved explicitly, so
+// safeDeleteFixedClock is a test clock: its current time is moved explicitly, so
 // the cache tests never sleep.
-type fixedClock struct {
+type safeDeleteFixedClock struct {
 	mu      sync.Mutex
 	current time.Time
 }
 
-func newFixedClock(start time.Time) *fixedClock {
-	return &fixedClock{current: start.Truncate(time.Second)}
+func newFixedClock(start time.Time) *safeDeleteFixedClock {
+	return &safeDeleteFixedClock{current: start.Truncate(time.Second)}
 }
 
-func (c *fixedClock) now() time.Time {
+func (c *safeDeleteFixedClock) now() time.Time {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.current
 }
 
-func (c *fixedClock) advance(d time.Duration) {
+func (c *safeDeleteFixedClock) advance(d time.Duration) {
 	c.mu.Lock()
 	c.current = c.current.Add(d)
 	c.mu.Unlock()
