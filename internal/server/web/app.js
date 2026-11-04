@@ -4369,6 +4369,7 @@ function renderSessionDetail(sessionId) {
       </div>
       <div id="sessionDetailTagRow" class="session-tag-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 10px;"></div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
+      <div id="sessionTraceCard" class="prd-capacity-slot session-trace-slot" style="margin:6px 8px 0;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
@@ -4547,6 +4548,7 @@ function renderSessionDetail(sessionId) {
     loadSavedCmdsQuick(sessionId);
   }
   loadSessionSchedules(sessionId);
+  window.mountTraceCard('sessionTraceCard', 'session', sessionId);
   loadSessionStats(sessionId);
   refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
@@ -5757,8 +5759,16 @@ function toggleSessionTimeline(sessionId) {
   panel.style.cssText = 'background:var(--surface2,#1e1e2e);border-top:1px solid var(--border);padding:12px;font-size:12px;font-family:monospace;max-height:260px;overflow-y:auto;color:var(--text2);';
   panel.innerHTML = `<div style="color:var(--text2);padding:8px 0;">${loadingEyeBlock(t('timeline_loading')||'Loading timeline…', 'panel')}</div>`;
   outputArea.insertAdjacentElement('afterend', panel);
-  fetch('/api/sessions/timeline?id=' + encodeURIComponent(sessionId), { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  // Trace events join the timeline lines; a missing trace is not an error.
+  const traceRead = fetch('/api/trace/session/' + encodeURIComponent(sessionId) + '?limit=200', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null).then(b => (b && Array.isArray(b.events)) ? window.traceTimelineLines(b.events) : []).catch(() => []);
+  Promise.all([fetch('/api/sessions/timeline?id=' + encodeURIComponent(sessionId), { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null), traceRead])
+    .then(([base, traceLines]) => {
+      const data = base || (traceLines.length ? { lines: [] } : null);
+      if (data) data.lines = (Array.isArray(data.lines) ? data.lines : []).concat(traceLines).sort();
+      return data;
+    })
     .then(data => {
       if (!data || !data.lines || data.lines.length === 0) {
         panel.innerHTML = `<div style="color:var(--text2);padding:4px 0;">${t('timeline_empty')||'No timeline events recorded yet.'}</div>`;
@@ -17642,6 +17652,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
     // Onboarding report — what is configured, what is missing and what to try next. The
     // list is comma separated; an id that names no check is ignored.
+    // Tracing — how much of each agent's activity is recorded for the Trace card.
+    { label: 'Tracing', labelKey: 'settings_tracing_group', type: 'group' },
+    { key: 'tracing.mode', label: 'Trace detail (off, summary or full; default summary)', labelKey: 'settings_tracing_mode', type: 'select', options: ['off', 'summary', 'full'], default: 'summary' },
+    { key: 'tracing.arg_cap_bytes', label: 'Trace argument size limit (bytes, whole number, 0 = default)', labelKey: 'settings_tracing_arg_cap_bytes', type: 'number', placeholder: '0' },
+    { key: 'tracing.retention_days', label: 'Trace retention (days, whole number, 0 = default)', labelKey: 'settings_tracing_retention_days', type: 'number', placeholder: '0' },
+    { key: 'tracing.backends', label: 'Trace per backend (JSON object of backend to true or false; a backend not listed is on)', labelKey: 'settings_tracing_backends', hintKey: 'settings_tracing_backends_hint', type: 'json_map', saveFn: 'saveTracingBackendsSetting', placeholder: '{"pi": false}' },
     { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
     { key: 'onboarding_report.enabled', label: 'Onboarding report (on by default)', labelKey: 'settings_onboarding_report_enabled', hintKey: 'settings_onboarding_report_enabled_hint', docsKey: 'onboarding_report.enabled', type: 'toggle' },
     { key: 'onboarding_report.include_next_steps', label: 'Onboarding report suggests what to try next (on by default)', labelKey: 'settings_onboarding_report_include_next_steps', hintKey: 'settings_onboarding_report_include_next_steps_hint', docsKey: 'onboarding_report.include_next_steps', type: 'toggle' },
@@ -18812,7 +18828,7 @@ function loadGeneralConfig() {
               <div class="settings-label">${escHtml(fLabel)}</div>
               <input type="text" class="form-input general-cfg-input" value="${escHtml(_mapText)}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
-                onchange="saveJSONMapSetting('${f.key}', this)" />
+                onchange="${f.saveFn || 'saveJSONMapSetting'}('${f.key}', this)" />
               ${_fieldHintHTML(f)}
             </div>`;
           } else if (f.type === 'priority_by_kind') {
@@ -19373,6 +19389,23 @@ function saveGeneralField(key, value) {
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
 // nothing is sent.
+// saveTracingBackendsSetting saves tracing.backends: a JSON object of backend
+// name to true or false. An empty box clears the map (every backend on).
+function saveTracingBackendsSetting(key, el) {
+  const text = String(el && el.value ? el.value : '').trim();
+  if (text === '') { saveGeneralConfigPut(key, {}); return; }
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { obj = null; }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj) ||
+      !Object.keys(obj).every(k => k.trim() !== '') ||
+      !Object.values(obj).every(v => typeof v === 'boolean')) {
+    showToast(t('settings_tracing_backends_invalid'), 'error');
+    return;
+  }
+  saveGeneralConfigPut(key, obj);
+}
+window.saveTracingBackendsSetting = saveTracingBackendsSetting;
+
 function saveJSONMapSetting(key, el) {
   const text = String(el && el.value ? el.value : '').trim();
   if (text === '') { saveGeneralConfigPut(key, {}); return; }
@@ -25338,10 +25371,12 @@ function _renderDetailContent(prd) {
     ${triageSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
+    <div id="automatonTraceCard" class="prd-capacity-slot automaton-trace-slot" style="margin-top:10px;"></div>
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
   window.loadDecisionLineCard(prd.id);
+  window.mountTraceCard('automatonTraceCard', 'automaton', prd.id);
   _tagsLoad().then(() => _renderDetailTagRow(prd));
   if (mergeSlot) window.loadMergeStatus().then(byId => {
     const el = document.getElementById('prdMergeBadge');
@@ -28153,6 +28188,231 @@ window.shipCardHtml = function(status) {
     _cleanupLine(wf ? t('ship_policy_ci_workflows', [wf]) : t('ship_policy_ci_workflows_none')),
   ];
   return _checksShipCardShell('ship-card', 'ship_card_title', 'ship_status_card', lines, s.findings);
+};
+
+// ── Trace card (session view and Automaton view) ────────────────────────────
+// traceCardHtml(model) draws one Trace card from { data, coverage, filter,
+// elId }: data is the body of GET /api/trace/session/{id} or
+// GET /api/trace/automaton/{id} ({ events, rollup, index? }), coverage the
+// body of GET /api/trace/coverage ({ sessions, by_backend }), filter the
+// operator's { tool, backend, kind, errors } choice. The filter is applied
+// here to the events already loaded, so changing it never refetches. The card
+// shows a per-backend coverage badge (a backend that records less detail is
+// not a backend that did nothing), a roll-up table, the filterable timeline
+// and the loop warnings. Every value is escaped; the loader owns the loading
+// and failed states. traceTimelineLines turns the same events into lines for
+// the session timeline panel.
+const TRACE_MAX_ROWS = 200;
+const TRACE_KINDS = ['tool_call', 'tool_result', 'model_request', 'state_change', 'capability_check', 'permission_decision', 'loop_warning', 'error'];
+const TRACE_COVERAGE_LEVELS = ['full', 'partial', 'events-only', 'unknown'];
+// Full key names, so each stays greppable and the locale coverage check sees it.
+const TRACE_KIND_KEYS = {
+  tool_call: 'trace_kind_tool_call', tool_result: 'trace_kind_tool_result', model_request: 'trace_kind_model_request',
+  state_change: 'trace_kind_state_change', capability_check: 'trace_kind_capability_check',
+  permission_decision: 'trace_kind_permission_decision', loop_warning: 'trace_kind_loop_warning', error: 'trace_kind_error',
+};
+const TRACE_COVERAGE_KEYS = { full: 'trace_coverage_full', partial: 'trace_coverage_partial', 'events-only': 'trace_coverage_events-only', unknown: 'trace_coverage_unknown' };
+const TRACE_COVERAGE_NOTE_KEYS = { full: 'trace_coverage_note_full', partial: 'trace_coverage_note_partial', 'events-only': 'trace_coverage_note_events-only', unknown: 'trace_coverage_note_unknown' };
+window._traceCards = window._traceCards || {};
+
+function _traceList(v) { return Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []; }
+function _traceNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+
+// traceEventIsError mirrors the daemon's notion of an error event.
+function traceEventIsError(ev) {
+  if (!ev) return false;
+  if (ev.kind === 'error') return true;
+  const o = String(ev.outcome || '').toLowerCase();
+  return o === 'error' || o === 'failed' || o === 'denied' || o === 'timeout';
+}
+window.traceEventIsError = traceEventIsError;
+
+function traceFilterEvents(events, filter) {
+  const f = filter || {};
+  return _traceList(events).filter(ev =>
+    (!f.tool || ev.name === f.tool) &&
+    (!f.backend || ev.backend === f.backend) &&
+    (!f.kind || ev.kind === f.kind) &&
+    (!f.errors || traceEventIsError(ev)));
+}
+window.traceFilterEvents = traceFilterEvents;
+
+function _traceKindText(k) {
+  return TRACE_KIND_KEYS[k] ? t(TRACE_KIND_KEYS[k]) : String(k || '');
+}
+
+// _traceCoverageRows keeps the coverage rows of the session or Automaton on screen.
+function _traceCoverageRows(cov, scope, id, data) {
+  const rows = _traceList(cov && cov.sessions);
+  const ids = new Set(Array.isArray(data && data.sessions) ? data.sessions.map(String) : []);
+  if (scope === 'session') ids.add(String(id));
+  return rows.filter(r => ids.has(String(r.session)));
+}
+
+// _traceCoverageByBackend: backend -> the least detailed coverage seen there.
+function _traceCoverageByBackend(rows) {
+  const rank = { full: 3, partial: 2, 'events-only': 1, unknown: 0 };
+  const out = {};
+  rows.forEach(r => {
+    const b = String(r.backend || 'unknown');
+    const c = TRACE_COVERAGE_LEVELS.includes(r.coverage) ? r.coverage : 'unknown';
+    if (!(b in out) || rank[c] < rank[out[b]]) out[b] = c;
+  });
+  return out;
+}
+
+function _traceCoverageHtml(rows) {
+  const by = _traceCoverageByBackend(rows);
+  const names = Object.keys(by).sort();
+  const colors = { full: 'var(--success,#22c55e)', partial: 'var(--warning,#f59e0b)', 'events-only': 'var(--warning,#f59e0b)', unknown: 'var(--text2)' };
+  const badges = names.map(b =>
+    `<span class="trace-coverage-badge trace-coverage-${escHtml(by[b])}" title="${escHtml(t(TRACE_COVERAGE_NOTE_KEYS[by[b]]))}" style="display:inline-block;margin:2px 6px 2px 0;padding:2px 8px;border-radius:8px;border:1px solid ${colors[by[b]]};color:${colors[by[b]]};font-size:11px;">${escHtml(t('trace_coverage_badge', [b, t(TRACE_COVERAGE_KEYS[by[b]])]))}</span>`).join('');
+  const notes = Array.from(new Set(names.map(b => by[b]))).filter(c => c !== 'full')
+    .map(c => _cleanupLine(t(TRACE_COVERAGE_NOTE_KEYS[c]), 'color:var(--text2);font-size:11px;')).join('');
+  return `<div class="trace-coverage" style="margin-top:4px;"><div style="color:var(--text2);font-size:11px;">${escHtml(t('trace_coverage_title'))}</div>` +
+    (badges || _cleanupLine(t('trace_coverage_none'))) + notes +
+    _cleanupLine(t('trace_coverage_missing_note'), 'color:var(--text2);font-size:11px;') + `</div>`;
+}
+
+function _traceRollupHtml(ro) {
+  if (!ro || typeof ro !== 'object') return `<div class="trace-rollup-empty" style="color:var(--text2);">${escHtml(t('trace_rollup_none'))}</div>`;
+  const tools = _traceList(ro.slowest_tools);
+  const counts = (ro.tool_counts && typeof ro.tool_counts === 'object') ? ro.tool_counts : {};
+  const byName = {};
+  tools.forEach(s => { byName[String(s.name)] = s; });
+  Object.keys(counts).forEach(n => { if (!byName[n]) byName[n] = { name: n, calls: counts[n], errors: 0, avg_ms: 0, max_ms: 0 }; });
+  const names = Object.keys(byName).sort((a, b) => _traceNum(byName[b].calls) - _traceNum(byName[a].calls) || a.localeCompare(b));
+  const th = k => `<th style="text-align:left;padding:2px 8px 2px 0;font-weight:600;">${escHtml(t(k))}</th>`;
+  const td = v => `<td style="padding:2px 8px 2px 0;overflow-wrap:anywhere;">${escHtml(String(v))}</td>`;
+  const rows = names.slice(0, TRACE_MAX_ROWS).map(n => {
+    const s = byName[n];
+    return `<tr class="trace-rollup-row">${td(n)}${td(_traceNum(s.calls))}${td(_traceNum(s.errors))}${td(_traceNum(s.avg_ms))}${td(_traceNum(s.max_ms))}</tr>`;
+  }).join('');
+  const summary = t('trace_rollup_summary', [_traceNum(ro.events), _traceNum(ro.tool_calls), _traceNum(ro.errors), _traceNum(ro.model_requests), _traceNum(ro.tokens_in), _traceNum(ro.tokens_out)]);
+  const loops = _traceList(ro.loop_warnings);
+  const loopText = loops.length ? _cleanupLine(t('trace_loop_warnings', [loops.map(l => String(l.tool || '') + ' x' + _traceNum(l.count)).join(', ')]), 'color:var(--warning,#f59e0b);') : '';
+  const table = names.length
+    ? `<div style="overflow-x:auto;"><table class="trace-rollup-table" style="border-collapse:collapse;font-size:12px;"><thead><tr>${th('trace_col_tool')}${th('trace_col_calls')}${th('trace_col_errors')}${th('trace_col_avg_ms')}${th('trace_col_max_ms')}</tr></thead><tbody>${rows}</tbody></table></div>`
+    : `<div class="trace-rollup-empty" style="color:var(--text2);">${escHtml(t('trace_rollup_none'))}</div>`;
+  return `<div class="trace-rollup"><div style="font-weight:600;margin-top:8px;">${escHtml(t('trace_rollup_title'))}</div>${_cleanupLine(summary)}${table}${loopText}</div>`;
+}
+
+function _traceSelectHtml(elId, field, labelKey, values, current) {
+  const opts = [`<option value="">${escHtml(t('trace_filter_all'))}</option>`].concat(values.map(v =>
+    `<option value="${escHtml(v.value)}"${v.value === current ? ' selected' : ''}>${escHtml(v.label)}</option>`)).join('');
+  return `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12px;">${escHtml(t(labelKey))}` +
+    `<select class="form-select trace-filter-${escHtml(field)}" onchange="window.traceCardSetFilter(${escHtml(JSON.stringify(elId))}, ${escHtml(JSON.stringify(field))}, this.value)">${opts}</select></label>`;
+}
+
+function _traceFilterBarHtml(elId, events, filter) {
+  const uniq = key => Array.from(new Set(events.map(e => String(e[key] || '')).filter(Boolean))).sort().map(v => ({ value: v, label: v }));
+  const kinds = TRACE_KINDS.map(k => ({ value: k, label: _traceKindText(k) }));
+  return `<div class="trace-filters" style="margin-top:8px;">` +
+    _traceSelectHtml(elId, 'tool', 'trace_filter_tool', uniq('name'), filter.tool || '') +
+    _traceSelectHtml(elId, 'backend', 'trace_filter_backend', uniq('backend'), filter.backend || '') +
+    _traceSelectHtml(elId, 'kind', 'trace_filter_kind', kinds, filter.kind || '') +
+    `<label style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 2px 0;font-size:12px;"><input type="checkbox" class="trace-filter-errors"${filter.errors ? ' checked' : ''} onchange="window.traceCardSetFilter(${escHtml(JSON.stringify(elId))}, 'errors', this.checked)" />${escHtml(t('trace_filter_errors'))}</label>` +
+    `<button type="button" class="btn-secondary trace-filter-clear" style="font-size:11px;" onclick="window.traceCardSetFilter(${escHtml(JSON.stringify(elId))}, 'clear', '')">${escHtml(t('trace_filter_clear'))}</button></div>`;
+}
+
+function _traceTimeText(ts) {
+  const ms = Date.parse(ts);
+  if (isNaN(ms) || ms < 0) return '';
+  return new Date(ms).toISOString().slice(11, 19);
+}
+
+function _traceEventLineText(ev) {
+  const parts = [_traceKindText(ev.kind)];
+  if (ev.name) parts.push(String(ev.name));
+  if (ev.arg_summary) parts.push(String(ev.arg_summary));
+  if (ev.outcome) parts.push('- ' + String(ev.outcome));
+  if (ev.duration_ms) parts.push(t('trace_duration_ms', [_traceNum(ev.duration_ms)]));
+  return parts.join(' ');
+}
+
+function _traceTimelineHtml(events, total) {
+  if (!total) return `<div class="trace-empty" style="color:var(--text2);margin-top:8px;">${escHtml(t('trace_empty'))}</div>`;
+  if (!events.length) return `<div class="trace-no-match" style="color:var(--text2);margin-top:8px;">${escHtml(t('trace_no_match'))}</div>`;
+  const shown = events.slice(-TRACE_MAX_ROWS);
+  const rows = shown.map(ev => {
+    const err = traceEventIsError(ev);
+    return `<div class="trace-event${err ? ' trace-event-error' : ''}" style="display:flex;gap:8px;padding:2px 0;border-bottom:1px solid var(--border,#333);min-width:0;">` +
+      `<span style="color:var(--text3,#666);flex-shrink:0;">${escHtml(_traceTimeText(ev.timestamp))}</span>` +
+      (ev.backend ? `<span style="color:var(--text2);flex-shrink:0;">${escHtml(String(ev.backend))}</span>` : '') +
+      `<span style="${err ? 'color:var(--error,#ef4444);' : ''}overflow-wrap:anywhere;min-width:0;">${escHtml(_traceEventLineText(ev))}</span></div>`;
+  }).join('');
+  const cut = events.length > TRACE_MAX_ROWS ? _cleanupLine(t('trace_more', [events.length - TRACE_MAX_ROWS])) : '';
+  return `<div class="trace-timeline" style="margin-top:6px;max-height:320px;overflow-y:auto;font-size:12px;font-family:monospace;">${cut}${rows}</div>`;
+}
+
+window.traceCardHtml = function(model) {
+  const m = (model && typeof model === 'object') ? model : {};
+  const data = (m.data && typeof m.data === 'object' && !Array.isArray(m.data)) ? m.data : {};
+  const filter = (m.filter && typeof m.filter === 'object') ? m.filter : {};
+  const elId = String(m.elId || '');
+  const head = `<div class="cap-title">${escHtml(t('trace_card_title'))}</div>`;
+  if (m.unavailable) return `<div class="prd-capacity-card trace-card" style="min-width:0;">${head}${_cleanupLine(t('trace_unavailable'))}</div>`;
+  const events = _traceList(data.events);
+  const shown = traceFilterEvents(events, filter);
+  const rows = _traceCoverageRows(m.coverage, m.scope, m.id, data);
+  if (m.empty) rows.length = 0;
+  const idx = data.index && typeof data.index === 'object' ? data.index : null;
+  if (idx && !rows.length) rows.push({ session: idx.session, backend: idx.backend, coverage: idx.coverage });
+  const count = events.length ? _cleanupLine(t('trace_shown', [shown.length, events.length])) : '';
+  return `<div class="prd-capacity-card trace-card" style="min-width:0;">${head}` +
+    (m.empty ? _cleanupLine(t('trace_empty')) + _cleanupLine(t('trace_coverage_missing_note'), 'color:var(--text2);font-size:11px;')
+      : _traceCoverageHtml(rows) + _traceRollupHtml(data.rollup) + _traceFilterBarHtml(elId, events, filter) + count + _traceTimelineHtml(shown, events.length)) +
+    `</div>`;
+};
+
+// traceTimelineLines turns trace events into "time | trace | text" lines the
+// session timeline panel shows beside its own lines.
+window.traceTimelineLines = function(events) {
+  // The first field is a full UTC timestamp so these lines sort with the daemon's own.
+  return _traceList(events).filter(ev => !isNaN(Date.parse(ev.timestamp))).map(ev =>
+    new Date(Date.parse(ev.timestamp)).toISOString().replace('.000Z', 'Z') + ' | ' + t('timeline_trace_label') + ' | ' + _traceEventLineText(ev));
+};
+
+// traceCardFetch reads the trace body and the coverage for one card. A
+// session or Automaton with no trace reads as empty and a daemon with tracing
+// off reads as unavailable, neither is a failure.
+function traceCardFetch(scope, id) {
+  const path = '/api/trace/' + (scope === 'automaton' ? 'automaton' : 'session') + '/' + encodeURIComponent(id) + '?limit=500';
+  return apiFetch(path).then(data => ({ data })).catch(err => {
+    const msg = String((err && err.message) || err);
+    if (/^no trace for/.test(msg)) return { empty: true, data: {} };
+    if (/^tracing is not available/.test(msg)) return { unavailable: true, data: {} };
+    throw err;
+  }).then(res => {
+    if (res.empty || res.unavailable) return res;
+    return apiFetch('/api/trace/coverage').then(c => Object.assign(res, { coverage: c }), () => res);
+  });
+}
+
+window.traceCardSetFilter = function(elId, field, value) {
+  const st = window._traceCards[elId];
+  if (!st) return;
+  if (field === 'clear') st.filter = {};
+  else st.filter = Object.assign({}, st.filter, { [field]: field === 'errors' ? !!value : String(value || '') });
+  const ld = window._listLoaders && window._listLoaders['trace_card_' + elId];
+  if (ld) ld.paint();
+};
+
+// mountTraceCard starts the Trace card in the element elId for a session or
+// an Automaton. The loader is keyed by the element, so mounting again replaces
+// the old loader (and its timer) instead of stacking a second one.
+window.mountTraceCard = function(elId, scope, id) {
+  const prev = window._traceCards[elId];
+  const filter = (prev && prev.scope === scope && prev.id === id) ? prev.filter : {};
+  const st = window._traceCards[elId] = { scope, id, filter };
+  const ld = listLoader({
+    key: 'trace_card_' + elId, el: elId, url: scope + ':' + id, pollMs: scope === 'session' ? 10000 : 30000,
+    fetch: () => traceCardFetch(scope, id),
+    failedText: msg => t('trace_failed', [msg]),
+    active: () => !!document.getElementById(elId) && window._traceCards[elId] === st,
+    render: body => window.traceCardHtml({ data: body && body.data, coverage: body && body.coverage, empty: body && body.empty, unavailable: body && body.unavailable, filter: st.filter, elId, scope, id }),
+  });
+  return ld.load();
 };
 
 // ── Automata model request progress ──────────────────────────────────────────
