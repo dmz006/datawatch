@@ -8,7 +8,7 @@ JSON validity checks and the web test file `<webtest>` (node --test, v24.15.0).
 ## Verdict
 
 **Green.** Every package `ok`; 87/87 test cases passed (0 failed, 0 skipped).
-5/5 locale bundles parse as valid JSON. Web test file: 26/26 passed (0 failed, 0 skipped).
+5/5 locale bundles parse as valid JSON. Web test file: 9/9 passed (0 failed, 0 skipped).
 
 ## Go test counts per package (subtests included)
 
@@ -30,7 +30,7 @@ All six packages finished `ok` (exit 0).
 
 ## Web test file
 
-- Run: **26** · Passed: **26** · Failed: **0** · Skipped: **0** (0 cancelled, 0 todo).
+- Run: **9** · Passed: **9** · Failed: **0** · Skipped: **0** (0 cancelled, 0 todo).
 
 ## Surfaces covered
 
