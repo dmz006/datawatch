@@ -3533,5 +3533,18 @@
   "settings_model_routing_probe_timeout": "Node probe timeout (seconds, whole number, minimum 1, default 8)",
   "settings_model_routing_probe_timeout_hint": "How long one read of a node's models may take before the node counts as unreachable.",
   "settings_model_routing_alert": "Alert when a run is refused for its model (on by default)",
-  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model."
+  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model.",
+  "rules_review_action_fix_task_created": "完了レビューがこのオートマトンをブロックしました。修正タスクを作成しました",
+  "rules_review_action_fix_task_failed": "完了レビューがこのオートマトンをブロックしました。修正タスクの作成に失敗しました",
+  "rules_review_action_retries_spent": "完了レビューがこのオートマトンをブロックしました。自動修正の再試行をすべて使い切りました",
+  "rules_review_action_auto_fix_disabled": "完了レビューがこのオートマトンをブロックしました。自動修正はオフです",
+  "rules_review_action_unknown": "完了レビューがこのオートマトンをブロックしました",
+  "rules_review_retries_of": "使用した自動修正の再試行: %1$d / %2$d",
+  "rules_review_findings_title": "指摘事項 (%1$d)",
+  "rules_review_findings_more": "ほか %1$d 件",
+  "rules_review_next_fix_task_failed": "次の手順: 修正タスクを自分で追加し、オートマトンを承認して実行してください。",
+  "rules_review_next_retries_spent": "次の手順: 指摘事項に対処するタスクを追加し、オートマトンを承認して実行してください。",
+  "rules_review_next_auto_fix_disabled": "次の手順: 指摘事項に対処するタスクを追加し（または設定で自動修正の再試行回数を増やし）、オートマトンを承認して実行してください。",
+  "settings_auto_fix_retries": "自動修正の再試行",
+  "settings_auto_fix_retries_help": "ブロックされた完了レビューが修正タスクを作成できる回数です。再試行を使い切ると、オートマトンはオペレーター向けに needs_review になります。"
 }

@@ -17387,7 +17387,7 @@ const GENERAL_CONFIG_FIELDS = [
     // turns the live loop detector compares ("Pi worker observability" in
     // docs/operations.md). 0 turns loop detection off (default 3).
     { key: 'autonomous.loop_detect_turns', label: 'Worker loop detection window (turns, 0=off, default 3)', labelKey: 'settings_loop_detect_turns', type: 'number', placeholder: '3' },
-    { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
+    { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', labelKey: 'settings_auto_fix_retries', helpKey: 'settings_auto_fix_retries_help', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },
     { key: 'autonomous.security_scan', label: 'Run security scan before commit', type: 'toggle' },
@@ -29509,6 +29509,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
+      ${_rulesReviewOutcomeHTML(prd.rules_review_outcome, { full: true })}
       ${_prdPlanCoverageBlock(prd)}
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
@@ -42567,7 +42568,7 @@ function loadAutomataSettingsPanel() {
             onchange="saveGeneralField('autonomous.capacity_rate_window_seconds',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
-          <div class="settings-label">Auto-fix retries</div>
+          <div class="settings-label" title="${escHtml(t('settings_auto_fix_retries_help'))}">${escHtml(t('settings_auto_fix_retries'))}</div>
           <input type="number" min="0" value="${ac.auto_fix_retries||0}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.auto_fix_retries',+this.value)">
         </div>
@@ -43725,18 +43726,56 @@ function _tagViewSwitchHTML(scope, view) {
   return `<div class="tag-view-switch" role="group">${attention}${btn('list', t('tag_view_list'))}${btn('tags', t('tag_view_tags'))}</div>`;
 }
 
+// Completion-review outcome block, shared by the attention row and the Automaton
+// detail view. The action line names what happened; the findings sit in a
+// collapsed <details> (capped at `cap`, then a "+N more" line). Every finding is
+// escaped. A datawatch-app parity issue is owed for the rules_review_* keys (the
+// supervisor files it at merge).
+const _RULES_REVIEW_ACTION_KEYS = {
+  fix_task_created: 'rules_review_action_fix_task_created',
+  fix_task_failed: 'rules_review_action_fix_task_failed',
+  retries_spent: 'rules_review_action_retries_spent',
+  auto_fix_disabled: 'rules_review_action_auto_fix_disabled',
+};
+const _RULES_REVIEW_NEXT_KEYS = {
+  fix_task_failed: 'rules_review_next_fix_task_failed',
+  retries_spent: 'rules_review_next_retries_spent',
+  auto_fix_disabled: 'rules_review_next_auto_fix_disabled',
+};
+function _rulesReviewOutcomeHTML(o, opts) {
+  if (!o || typeof o !== 'object') return '';
+  const full = !!(opts && opts.full);
+  const act = Object.prototype.hasOwnProperty.call(_RULES_REVIEW_ACTION_KEYS, o.action) ? o.action : '';
+  const line = act ? t(_RULES_REVIEW_ACTION_KEYS[act]) : t('rules_review_action_unknown');
+  const findings = Array.isArray(o.findings) ? o.findings : [];
+  const cap = full ? findings.length : 5;
+  const shown = findings.slice(0, cap);
+  const more = findings.length - shown.length;
+  const budget = Number(o.retry_budget) || 0;
+  const spent = Number(o.retries_spent) || 0;
+  const retries = full ? `<div class="rules-review-retries">${escHtml(t('rules_review_retries_of', [spent, budget]))}</div>` : '';
+  const list = shown.length
+    ? `<details class="rules-review-findings"${full ? ' open' : ''}><summary>${escHtml(t('rules_review_findings_title', [findings.length]))}</summary><ul>${shown.map(f => `<li>${escHtml(String(f))}</li>`).join('')}${more > 0 ? `<li class="rules-review-more">${escHtml(t('rules_review_findings_more', [more]))}</li>` : ''}</ul></details>`
+    : '';
+  const next = full && _RULES_REVIEW_NEXT_KEYS[act]
+    ? `<div class="rules-review-next">${escHtml(t(_RULES_REVIEW_NEXT_KEYS[act]))}</div>` : '';
+  return `<div class="rules-review-outcome" style="font-size:12px;color:var(--text2);margin:4px 0;"><div class="rules-review-action">${escHtml(line)}</div>${retries}${list}${next}</div>`;
+}
+
 // _tagPinnedRowHTML is one Automaton line in a pinned group; a tap opens it.
 function _tagPinnedRowHTML(it, reason) {
   const status = String(it.status || 'draft');
   const label = t('automata_status_' + status) || status;
   const open = `renderPRDDetailView(${escHtml(JSON.stringify(it.id))})`;
   const why = reason ? `<span class="tag-pinned-reason">${escHtml(reason)}</span>` : '';
-  return `<button type="button" class="tag-pinned-row" onclick="${open}"><span class="tag-pinned-title">${escHtml(it.title || it.id)}</span><span class="tag-pinned-status automata-filter-badge status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(label)}</span>${why}</button>`;
+  const outcome = _rulesReviewOutcomeHTML(it.rules_review_outcome);
+  return `<button type="button" class="tag-pinned-row" onclick="${open}"><span class="tag-pinned-title">${escHtml(it.title || it.id)}</span><span class="tag-pinned-status automata-filter-badge status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(label)}</span>${why}</button>${outcome}`;
 }
 
 // _tagPinnedReason: the blocked reason where one exists, else how many tasks are
 // held for review.
 function _tagPinnedReason(it) {
+  if (it.rules_review_outcome && typeof it.rules_review_outcome === 'object') return '';
   if (it.blocked_reason) return it.blocked_reason;
   if (_tagHeldForReview(it)) return t('tag_attention_review_held', [Array.isArray(it.review_needed) ? it.review_needed.length : 1]);
   return '';

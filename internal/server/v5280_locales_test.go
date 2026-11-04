@@ -457,6 +457,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_uncommitted_work_scope",
 		// The Served models card in the compute node view.
 		"model_routing_served_models_title",
+		// The completion-review outcome on the attention row and Automaton detail.
+		"rules_review_action_retries_spent",
+		"rules_review_action_fix_task_failed",
+		"settings_auto_fix_retries_help",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

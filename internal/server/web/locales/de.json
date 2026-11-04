@@ -3533,5 +3533,18 @@
   "settings_model_routing_probe_timeout": "Node probe timeout (seconds, whole number, minimum 1, default 8)",
   "settings_model_routing_probe_timeout_hint": "How long one read of a node's models may take before the node counts as unreachable.",
   "settings_model_routing_alert": "Alert when a run is refused for its model (on by default)",
-  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model."
+  "settings_model_routing_alert_hint": "Raises an alert when a task is refused because its node does not serve the model.",
+  "rules_review_action_fix_task_created": "Die Abschlussprüfung hat diesen Automaten blockiert; eine Korrekturaufgabe wurde erstellt",
+  "rules_review_action_fix_task_failed": "Die Abschlussprüfung hat diesen Automaten blockiert; die Korrekturaufgabe konnte nicht erstellt werden",
+  "rules_review_action_retries_spent": "Die Abschlussprüfung hat diesen Automaten blockiert; alle automatischen Korrekturversuche sind verbraucht",
+  "rules_review_action_auto_fix_disabled": "Die Abschlussprüfung hat diesen Automaten blockiert; die automatische Korrektur ist ausgeschaltet",
+  "rules_review_action_unknown": "Die Abschlussprüfung hat diesen Automaten blockiert",
+  "rules_review_retries_of": "Verbrauchte Korrekturversuche: %1$d von %2$d",
+  "rules_review_findings_title": "Befunde (%1$d)",
+  "rules_review_findings_more": "+%1$d weitere",
+  "rules_review_next_fix_task_failed": "Nächster Schritt: Fügen Sie selbst eine Korrekturaufgabe hinzu, genehmigen Sie dann den Automaten und starten Sie ihn.",
+  "rules_review_next_retries_spent": "Nächster Schritt: Fügen Sie eine Aufgabe hinzu, die die Befunde behebt, genehmigen Sie dann den Automaten und starten Sie ihn.",
+  "rules_review_next_auto_fix_disabled": "Nächster Schritt: Fügen Sie eine Aufgabe hinzu, die die Befunde behebt (oder erhöhen Sie die Korrekturversuche in den Einstellungen), genehmigen Sie dann den Automaten und starten Sie ihn.",
+  "settings_auto_fix_retries": "Automatische Korrekturversuche",
+  "settings_auto_fix_retries_help": "Wie oft eine blockierte Abschlussprüfung eine Korrekturaufgabe erstellen darf. Sind die Versuche verbraucht, wechselt der Automat für den Operator zu needs_review."
 }
