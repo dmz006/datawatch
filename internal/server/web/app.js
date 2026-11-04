@@ -43775,7 +43775,6 @@ function _tagPinnedRowHTML(it, reason) {
 // _tagPinnedReason: the blocked reason where one exists, else how many tasks are
 // held for review.
 function _tagPinnedReason(it) {
-  if (it.rules_review_outcome && typeof it.rules_review_outcome === 'object') return '';
   if (it.blocked_reason) return it.blocked_reason;
   if (_tagHeldForReview(it)) return t('tag_attention_review_held', [Array.isArray(it.review_needed) ? it.review_needed.length : 1]);
   return '';

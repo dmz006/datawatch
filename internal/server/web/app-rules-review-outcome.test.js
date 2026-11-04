@@ -71,6 +71,13 @@ test('an item without an outcome renders as before', () => {
   assert.doesNotMatch(html, /rules-review/);
 });
 
+test('an item with an outcome and a blocked reason still shows the reason', () => {
+  const sb = loadApp();
+  const html = row(sb, item({ blocked_reason: 'waiting on X', rules_review_outcome: outcome() }));
+  assert.match(html, /waiting on X/);
+  assert.match(html, /all auto-fix retries are spent/);
+});
+
 test('the detail block shows every finding, the retries and the next step', () => {
   const sb = loadApp();
   sb.__o = outcome({ action: 'fix_task_failed', findings: ['a', 'b', 'c', 'd', 'e', 'f'], retries_spent: 1, retry_budget: 3 });
