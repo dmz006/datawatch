@@ -726,7 +726,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 		// drop it from the task so it is not re-used. The node the live session
 		// reports is ignored too: a backend that takes no node holds none.
 		if t.ComputeNode != "" {
-			t.ComputeNode = ""
+			m.store.WithLock(func() { t.ComputeNode = "" })
 			m.store.MutateTask(t.ID, func(st *Task) { st.ComputeNode = "" })
 		}
 		base := poolsWithoutNodes(pools)

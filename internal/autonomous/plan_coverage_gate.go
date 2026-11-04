@@ -148,7 +148,7 @@ func (m *Manager) recordPlanCoverage(prd *PRD, s []Story, settings config.PlanCo
 		Filters: filters,
 		Ack:     carryAck,
 	}
-	prd.PlanCoverage = pc
+	m.store.WithLock(func() { prd.PlanCoverage = pc })
 
 	if pc.IsFailing() && settings.Mode == config.PlanCoverageWarn {
 		unmatched := len(pc.Report.Unmatched)
@@ -269,19 +269,21 @@ func (m *Manager) AcknowledgePlanCoverage(prdID, actor, note string) (*PRD, erro
 	}
 	now := time.Now()
 	fp := prd.PlanCoverage.Fingerprint()
-	prd.PlanCoverage.Ack = &PlanCoverageAck{
-		By:          actor,
-		At:          &now,
-		Note:        note,
-		Fingerprint: fp,
-	}
-	prd.UpdatedAt = now
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:             now,
-		Kind:           "plan_coverage_ack",
-		Actor:          actor,
-		Note:           "acknowledged failing plan coverage (fingerprint " + fp[:8] + "): " + note,
-		VerdictOutcome: "warn",
+	m.store.WithLock(func() {
+		prd.PlanCoverage.Ack = &PlanCoverageAck{
+			By:          actor,
+			At:          &now,
+			Note:        note,
+			Fingerprint: fp,
+		}
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:             now,
+			Kind:           "plan_coverage_ack",
+			Actor:          actor,
+			Note:           "acknowledged failing plan coverage (fingerprint " + fp[:8] + "): " + note,
+			VerdictOutcome: "warn",
+		})
 	})
 	if m.auditFn != nil {
 		m.auditFn("plan_coverage_ack", map[string]any{

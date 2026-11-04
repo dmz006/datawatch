@@ -67,11 +67,13 @@ func (m *Manager) moveTagAssignments(fromID, toID string) (int, error) {
 		if !hit && !primaryHit {
 			continue
 		}
-		p.TagIDs = next
-		if primaryHit {
-			p.PrimaryTagID = toID
-		}
-		p.UpdatedAt = time.Now()
+		m.store.WithLock(func() {
+			p.TagIDs = next
+			if primaryHit {
+				p.PrimaryTagID = toID
+			}
+			p.UpdatedAt = time.Now()
+		})
 		if err := m.store.SavePRD(p); err != nil {
 			return changed, err
 		}

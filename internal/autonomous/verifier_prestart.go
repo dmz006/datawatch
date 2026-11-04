@@ -108,11 +108,16 @@ func (m *Manager) gateVerifierPrestart(prd *PRD, t *Task, taskDir string) error 
 	}
 	note := fmt.Sprintf("task %s: pre-start verifier check: %s", t.ID, res.Reason)
 	if !pol.Blocks() {
-		prd.Decisions = append(prd.Decisions, Decision{
-			At: time.Now(), Kind: "verifier_prestart_shadow", Actor: "autonomous",
-			Note: note + " (shadow: task starts anyway)",
-		})
-		if m.store != nil {
+		shadow := func() {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At: time.Now(), Kind: "verifier_prestart_shadow", Actor: "autonomous",
+				Note: note + " (shadow: task starts anyway)",
+			})
+		}
+		if m.store == nil {
+			shadow()
+		} else {
+			m.store.WithLock(shadow)
 			if err := m.store.SavePRD(prd); err != nil {
 				log.Printf("[autonomous] %s/%s verifier prestart shadow: save PRD: %v", prd.ID, t.ID, err)
 			}

@@ -300,11 +300,13 @@ func (m *Manager) recordBootResume(entry BootResumeEntry) {
 // the status the PRD held before the park (PRDRunning or PRDFailed) and is
 // used for the emitted status change and the alert wording.
 func (m *Manager) parkPRDForBootResume(prd *PRD, prior PRDStatus, reason string) error {
+	m.store.WithLock(func() {
+		prd.Status = PRDBlocked
+		prd.BlockedReason = reason
+		prd.UpdatedAt = time.Now()
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: bootResumeParkedKind, Actor: "autonomous", Note: reason})
+	})
 	m.mu.Lock()
-	prd.Status = PRDBlocked
-	prd.BlockedReason = reason
-	prd.UpdatedAt = time.Now()
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: bootResumeParkedKind, Actor: "autonomous", Note: reason})
 	alert := m.alertFn
 	m.mu.Unlock()
 

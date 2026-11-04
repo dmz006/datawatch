@@ -302,9 +302,11 @@ func (m *Manager) savePlanReview(prd *PRD, verdict *PlanReviewVerdict, actor str
 	}
 	// Mutate the store-fresh PRD in place (the shared stored pointer, as
 	// Decompose/Approve do) and persist; SavePRD trims Decisions.
-	prd.PlanReview = verdict
-	prd.Decisions = append(prd.Decisions, decision)
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.PlanReview = verdict
+		prd.Decisions = append(prd.Decisions, decision)
+		prd.UpdatedAt = time.Now()
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] plan-review: save failed: %v", err)
 	}

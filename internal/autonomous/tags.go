@@ -268,9 +268,11 @@ func (m *Manager) SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *s
 	} else if primaryID != "" && !seen[primaryID] {
 		primaryID = ""
 	}
-	prd.TagIDs = out
-	prd.PrimaryTagID = primaryID
-	prd.UpdatedAt = time.Now()
+	m.store.WithLock(func() {
+		prd.TagIDs = out
+		prd.PrimaryTagID = primaryID
+		prd.UpdatedAt = time.Now()
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}

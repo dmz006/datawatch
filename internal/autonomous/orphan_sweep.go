@@ -190,7 +190,10 @@ func (m *Manager) recordOrphanDecision(prd *PRD, kind, note string) {
 	if prd == nil {
 		return
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: m.orphanClock(), Kind: kind, Actor: "autonomous", Note: note})
+	at := m.orphanClock()
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{At: at, Kind: kind, Actor: "autonomous", Note: note})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] orphan-sweep: save prd %s: %v", prd.ID, err)
 	}
