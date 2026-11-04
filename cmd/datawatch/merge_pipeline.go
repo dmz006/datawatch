@@ -88,6 +88,42 @@ func readPipelineText(cmd *cobra.Command, path string) (string, error) {
 	return string(data), nil
 }
 
+// mergePipelineProjectRequiredLine is the plain line the CLI and the MCP tool
+// both add when the daemon refuses a merge pipeline read because no project
+// is known (no project argument and no merge base repository set).
+const mergePipelineProjectRequiredLine = "a project is needed, pass the project argument or set the merge base repository"
+
+const mergePipelineHTTP400Prefix = "HTTP 400: "
+
+// mergePipelineProjectRequired reports whether a non-2xx error from a merge
+// pipeline read is the daemon's structured project_required refusal: an HTTP
+// 400 whose body parses as JSON with code project_required. The second result
+// is the body the error text carries. A body that is not JSON, every other
+// status and every other code never match and keep today's error text.
+func mergePipelineProjectRequired(err error) (body string, ok bool) {
+	if err == nil {
+		return "", false
+	}
+	msg := err.Error()
+	if !strings.HasPrefix(msg, mergePipelineHTTP400Prefix) {
+		return "", false
+	}
+	body = strings.TrimSpace(msg[len(mergePipelineHTTP400Prefix):])
+	var code struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal([]byte(body), &code) != nil || code.Code != "project_required" {
+		return "", false
+	}
+	return body, true
+}
+
+// mergePipelineProjectRequiredError builds the error returned for the
+// project_required refusal: the daemon's JSON body followed by one plain line.
+func mergePipelineProjectRequiredError(body string) error {
+	return fmt.Errorf("%s\n%s", body, mergePipelineProjectRequiredLine)
+}
+
 func newAutonomousMergePipelineCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "merge-pipeline",
@@ -125,6 +161,16 @@ func newMergePipelineShowCmd() *cobra.Command {
 			}
 			body, err := mergePipelineSend(http.MethodGet, mergePipelineAPI, q, nil)
 			if err != nil {
+				if b, ok := mergePipelineProjectRequired(err); ok {
+					cmd.SilenceUsage = true // the body already says what is needed; no usage dump
+					if asJSON {
+						// The raw daemon body belongs on stdout; the error names what is needed.
+						if _, werr := cmd.OutOrStdout().Write([]byte(b)); werr != nil {
+							return werr
+						}
+					}
+					return mergePipelineProjectRequiredError(b)
+				}
 				return err
 			}
 			if asJSON {

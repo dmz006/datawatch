@@ -56,9 +56,41 @@ func TestMergePipelineCLI_ShowDaemonRefusalAndBadBody(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "HTTP 400") || !strings.Contains(err.Error(), "project is empty") {
 		t.Errorf("err=%v", err)
 	}
+	if strings.Contains(err.Error(), "a project is needed, pass the project argument") {
+		t.Errorf("a plain-text refusal must not get the plain line: %v", err)
+	}
 	newLaneFillCLIDaemon(t, http.StatusOK, "not json")
 	if _, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"show"}); err == nil {
 		t.Error("an unreadable body must be an error")
+	}
+}
+
+func TestMergePipelineCLI_ShowProjectRequired(t *testing.T) {
+	const body = `{"code":"project_required","error":"Choose a project with the project parameter, or set the merge base repository (the worktree_base_repo setting)."}`
+	newLaneFillCLIDaemon(t, http.StatusBadRequest, body)
+	_, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"show"})
+	if err == nil || !strings.Contains(err.Error(), "project_required") {
+		t.Fatalf("err=%v", err)
+	}
+	if !strings.Contains(err.Error(), "a project is needed, pass the project argument or set the merge base repository") {
+		t.Errorf("the plain line is missing: %v", err)
+	}
+
+	// --json writes the raw daemon body to stdout first, then fails.
+	newLaneFillCLIDaemon(t, http.StatusBadRequest, body)
+	out, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"show", "--json"})
+	if err == nil || !strings.Contains(err.Error(), "project_required") {
+		t.Fatalf("--json: err=%v out=%s", err, out)
+	}
+	if out != body {
+		t.Errorf("--json stdout: want the raw daemon body %s, got %s", body, out)
+	}
+
+	// A 200 with --json is unchanged: the body, no error.
+	newLaneFillCLIDaemon(t, http.StatusOK, mergePipelineCLIView)
+	out, err = runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"show", "--json"})
+	if err != nil || out != mergePipelineCLIView {
+		t.Errorf("200 --json: err=%v out=%s", err, out)
 	}
 }
 
