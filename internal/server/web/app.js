@@ -27030,11 +27030,21 @@ function _safeDeleteSection(title, rows, emptyText) {
   return `<div style="margin-top:8px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(title)}</div>` +
     (rows.length ? rows.join('') : _safeDeleteLine(emptyText));
 }
+// _safeDeleteStaleBadge marks a report the server says is stale (computed from
+// an old read of the repository); it is a marker, not an action.
+function _safeDeleteStaleBadge(stale) {
+  if (stale !== true) return '';
+  return ` <span class="safe-delete-stale-badge" title="${escHtml(t('safe_delete_stale'))}" style="display:inline-block;margin-left:8px;padding:1px 8px;border:1px solid var(--warning,#a06b00);border-radius:10px;font-size:11px;font-weight:700;color:var(--warning,#a06b00);">${escHtml(t('safe_delete_stale'))}</span>`;
+}
 window.safeDeleteCardHtml = function(report) {
   const r = (report && typeof report === 'object') ? report : {};
   const safe = Array.isArray(r.safe) ? r.safe.filter(e => e && typeof e === 'object') : [];
   const held = Array.isArray(r.held) ? r.held.filter(e => e && typeof e === 'object') : [];
-  const head = `<div class="cap-title">${escHtml(t('safe_delete_card_title'))}</div>`;
+  // computed_at is a server time; the shared _triageTime helper renders the
+  // zero time as nothing, so no line is drawn for it.
+  const computedAt = (typeof r.computed_at === 'string' && r.computed_at !== '') ? _triageTime(r.computed_at) : '';
+  const head = `<div class="cap-title">${escHtml(t('safe_delete_card_title'))}${_safeDeleteStaleBadge(r.stale)}</div>`;
+  const computedLine = computedAt ? _safeDeleteLine(t('safe_delete_computed_at', [computedAt])) : '';
   const note = _safeDeleteLine(t('safe_delete_read_only'));
   const safeRows = safe.map(e => _safeDeleteRow([
     _safeDeleteLine(String(e.branch || ''), 'font-weight:600;'),
@@ -27052,7 +27062,7 @@ window.safeDeleteCardHtml = function(report) {
       e.note ? _safeDeleteLine(String(e.note)) : '',
     ]);
   });
-  return `<div class="prd-capacity-card safe-delete-card" style="min-width:0;">${head}${note}` +
+  return `<div class="prd-capacity-card safe-delete-card" style="min-width:0;">${head}${computedLine}${note}` +
     _safeDeleteSection(t('safe_delete_safe_heading', [safe.length]), safeRows, t('safe_delete_safe_empty')) +
     _safeDeleteSection(t('safe_delete_held_heading', [held.length]), heldRows, t('safe_delete_held_empty')) + `</div>`;
 };
@@ -30240,6 +30250,9 @@ function _automationMergePipelineLoader() {
 function _automationSafeDeleteLoader() {
   return window._listLoaders.automation_safe_delete || listLoader({
     key: 'automation_safe_delete', el: 'automationSafeDeleteCard', url: '/api/autonomous/safe-to-delete', pollMs: 60000,
+    // The report runs git on the worktree base repository and can take longer
+    // than the listLoader default of 15 s, so allow 45 s per read.
+    timeoutMs: 45000,
     failedText: msg => t('safe_delete_failed', [msg]),
     active: () => !!document.getElementById('automationSafeDeleteCard'),
     render: report => window.safeDeleteCardHtml(report),

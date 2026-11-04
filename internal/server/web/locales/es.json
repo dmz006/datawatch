@@ -2569,6 +2569,8 @@
   "safe_delete_state": "Automaton branch state: %1$s",
   "safe_delete_dirty": "The Automaton worktree has uncommitted changes.",
   "safe_delete_failed": "Could not load the Automaton safe-to-delete report: %1$s",
+  "safe_delete_computed_at": "Informe del autómata calculado: %1$s",
+  "safe_delete_stale": "El informe del autómata está desactualizado",
   "lane_fill_pref_label": "Preferencia de carril",
   "lane_fill_pref_any": "Cualquier carril",
   "settings_lane_fill_mode": "Modo de llenado de carriles (off, shadow u on; predeterminado shadow)",
