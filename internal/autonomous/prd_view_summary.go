@@ -79,6 +79,15 @@ type SummaryView struct {
 	// UncommittedWork is the Automaton's own worktree hold (files no single
 	// task owns), copied from the PRD. It is omitted when there is none.
 	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
+
+	// ReviewState is the review view derived from the verdicts recorded on
+	// the PRD and its stories and tasks (see ReviewStateOf): the state
+	// (passed/blocked/timed_out/pending), the one-line cause, the action
+	// the next operator should take, and the judge attempts behind the
+	// deciding verdict. Always present (never omitempty) — a list row
+	// with no verdicts serializes pending — and derived at build time,
+	// never stored.
+	ReviewState ReviewResult `json:"review_state"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -97,7 +106,9 @@ type StorySummary struct {
 // decisions themselves are not copied.
 func BuildSummaryView(prd *PRD) SummaryView {
 	if prd == nil {
-		return SummaryView{}
+		// A nil PRD has no verdicts: the review stands at pending, which a
+		// list row must still say (ReviewState never omits).
+		return SummaryView{ReviewState: ReviewResult{State: ReviewStatePending}}
 	}
 	view := SummaryView{
 		ID:            prd.ID,
@@ -111,6 +122,9 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Stories:       make([]StorySummary, 0, len(prd.Story)),
 		StoryCount:    len(prd.Story),
 		CIWatch:       prd.CIWatch,
+		// Derived once for the row and carried along: it is a scalar-ish
+		// view of the verdicts this summary deliberately does not copy.
+		ReviewState:   ReviewStateOf(prd),
 		PushState:     prd.Git.PushState,
 		PushWarning:   prd.Git.PushWarning,
 		TotalTasks:    prd.TotalTasks,
