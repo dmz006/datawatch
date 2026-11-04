@@ -22,6 +22,7 @@ package autonomous
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -32,10 +33,16 @@ import (
 // per decomposition profile, so a planner admission never clears and a
 // retarget is directly observable on the ledger. The profile names ("pa",
 // "pb") double as the planner backends for the fixture.
+//
+// The ledger clock is INJECTED (fakeCapClock): its After channels never fire,
+// so queued requests admit only when a lease is released (or a retarget
+// dispatches) — the tests never depend on wall-clock poll ticks or wait
+// expiries. pollUntil below is test-side observation of the goroutine
+// reaching the ledger, not the thing that drives the queue.
 func twoPoolPlanningFixture(t *testing.T) (*Manager, *capacity.Ledger) {
 	t.Helper()
 	m, _, _, _ := apiFixture(t)
-	led := capacity.New(capacity.Options{PollInterval: 5 * time.Millisecond})
+	led := capacity.New(capacity.Options{PollInterval: time.Second, Clock: newFakeCapClock()})
 	// One slot per pool, each busy-held by another consumer, so a planner
 	// admission always ends up queued and retargets are observable.
 	led.SetLimit("llm:pa", 1)
@@ -136,14 +143,91 @@ func TestPlanningRequeue_QueuedRun_RetargetsToNewPool(t *testing.T) {
 	}
 }
 
+// a — the END state of the requeue: the retargeted run, once its NEW pool
+// admits it, executes the decompose with the NEW profile's backend AND
+// model — the pair the run is admitted on is the one it runs with, not the
+// pair captured before the capacity wait (the branch the last verification
+// flagged as missing). The queue entry also carries Role planner with the
+// "host" pool already dropped (the waiter's pool is exactly llm:pb).
+func TestPlanningRequeue_RetargetedRunExecutesWithNewPair(t *testing.T) {
+	m, led := twoPoolPlanningFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "pa", "oldmodel", EffortNormal)
+	seedPlanningProfile(t, m, prd.ID, "pa", "oldmodel")
+
+	var ranReq DecomposeRequest
+	var ranMu sync.Mutex
+	done := make(chan struct{})
+	orig := m.decompose
+	m.decompose = func(req DecomposeRequest) (string, error) {
+		ranMu.Lock()
+		ranReq = req
+		ranMu.Unlock()
+		return orig(req)
+	}
+	go func() { _, _ = m.Decompose(prd.ID); close(done) }()
+	pollUntil(t, 3*time.Second, "planner queued on the old pool", func() bool {
+		return plannerWaiter(led, prd.ID) != nil
+	})
+
+	// The operator switches the plan to the second profile/model pair while
+	// the run sits in the queue: exactly one queue entry, now on llm:pb.
+	sp := func(s string) *string { return &s }
+	_, res, err := m.SetPRDLLM(prd.ID, nil, nil, nil, sp("pb"), sp("newmodel"), "test")
+	if err != nil {
+		t.Fatalf("SetPRDLLM: %v", err)
+	}
+	if res == nil || res.Outcome != PlanningRequeued {
+		t.Fatalf("res=%v; want requeued", res)
+	}
+	if got := plPoolJoin(waiterPools(t, led, prd.ID)); got != "llm:pb" {
+		t.Fatalf("waiter pools=%s; want llm:pb (no leaked old slot, no host pool)", got)
+	}
+
+	// The NEW pool frees up: the retargeted waiter admits and runs.
+	led.Release("busy:pb")
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("decompose did not run after the new pool admitted the retargeted waiter")
+	}
+	got, _ := m.store.GetPRD(prd.ID)
+	if got.Status != PRDNeedsReview {
+		t.Fatalf("want PRDNeedsReview after decompose, got %s", got.Status)
+	}
+	ranMu.Lock()
+	run := ranReq
+	ranMu.Unlock()
+	if run.Backend != "pb" {
+		t.Errorf("executed decompose backend=%q; want pb (the new profile, not the pre-wait \"pa\")", run.Backend)
+	}
+	if run.Model != "newmodel" {
+		t.Errorf("executed decompose model=%q; want newmodel (the new model, not \"oldmodel\")", run.Model)
+	}
+	if held := heldBy(led, plannerHolder(prd.ID)); held {
+		t.Error("planner lease leaked after decompose finished")
+	}
+}
+
 // e — changing the profile twice leaves exactly one queued request on the
-// latest pool; the retarget moves the same queue entry in place.
+// latest pool; the retarget moves the same queue entry in place. And when
+// the latest pool finally admits it, the run that actually executes carries
+// the LATEST pair (backend AND model), not the pre-wait one.
 func TestPlanningRequeue_TwoChanges_SingleQueueEntry(t *testing.T) {
 	m, led := twoPoolPlanningFixture(t)
-	prd, _ := m.CreatePRD("s", "/w/proj", "pa", "pm", EffortNormal)
-	seedPlanningProfile(t, m, prd.ID, "pa", "pm")
+	prd, _ := m.CreatePRD("s", "/w/proj", "pa", "mold", EffortNormal)
+	seedPlanningProfile(t, m, prd.ID, "pa", "ma")
 
-	go func() { _, _ = m.Decompose(prd.ID) }()
+	var ranReq DecomposeRequest
+	var ranMu sync.Mutex
+	done := make(chan struct{})
+	orig := m.decompose
+	m.decompose = func(req DecomposeRequest) (string, error) {
+		ranMu.Lock()
+		ranReq = req
+		ranMu.Unlock()
+		return orig(req)
+	}
+	go func() { _, _ = m.Decompose(prd.ID); close(done) }()
 	pollUntil(t, 3*time.Second, "planner queued", func() bool { return plannerWaiter(led, prd.ID) != nil })
 
 	sp := func(s string) *string { return &s }
@@ -155,10 +239,10 @@ func TestPlanningRequeue_TwoChanges_SingleQueueEntry(t *testing.T) {
 		}
 		return res
 	}
-	if res := update(sp("pb"), nil); res.Outcome != PlanningRequeued {
+	if res := update(sp("pb"), sp("mb")); res.Outcome != PlanningRequeued {
 		t.Fatalf("first change: res=%v", res)
 	}
-	if res := update(sp("pa"), nil); res.Outcome != PlanningRequeued {
+	if res := update(sp("pa"), sp("mc")); res.Outcome != PlanningRequeued {
 		t.Fatalf("second change: res=%v", res)
 	}
 	if got := plPoolJoin(waiterPools(t, led, prd.ID)); got != "llm:pa" {
@@ -169,6 +253,31 @@ func TestPlanningRequeue_TwoChanges_SingleQueueEntry(t *testing.T) {
 	}
 	if reason := prdWaitReason(t, m, prd.ID); !strings.Contains(reason, "llm:pa") {
 		t.Errorf("wait reason=%q; must name the current pool llm:pa", reason)
+	}
+
+	// The latest pool finally frees up: the retargeted waiter admits, and
+	// the decompose that RAN must carry the latest pair — not the one that
+	// was resolved before the wait.
+	led.Release("busy:pa")
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("decompose did not run after the latest pool admitted the planner")
+	}
+	ranMu.Lock()
+	run, ran := ranReq, ranReq != (DecomposeRequest{})
+	ranMu.Unlock()
+	if !ran {
+		t.Fatal("the planner's decompose never executed")
+	}
+	if run.Backend != "pa" {
+		t.Errorf("executed decompose backend=%q; want pa (the LATEST profile)", run.Backend)
+	}
+	if run.Model != "mc" {
+		t.Errorf("executed decompose model=%q; want mc (the LATEST model)", run.Model)
+	}
+	if held := heldBy(led, plannerHolder(prd.ID)); held {
+		t.Error("planner lease leaked after decompose finished")
 	}
 }
 
@@ -212,7 +321,7 @@ func TestPlanningRequeue_NoMoveIsUnchanged(t *testing.T) {
 // asks for (d — RestartPlanning returns it too instead of double-spawning).
 func TestPlanningRequeue_StartedRunDeferred(t *testing.T) {
 	m, _, _, _ := apiFixture(t)
-	led := capacity.New(capacity.Options{PollInterval: 5 * time.Millisecond})
+	led := capacity.New(capacity.Options{PollInterval: time.Second, Clock: newFakeCapClock()})
 	led.SetLimit("llm:pa", 1)
 	led.SetLimit("llm:pb", 0)
 	m.SetCapacity(led, func(backend, model string) ([]string, string) {

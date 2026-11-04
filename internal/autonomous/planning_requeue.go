@@ -91,6 +91,40 @@ func (m *Manager) plannerPairFor(prd *PRD) (backend, model string) {
 	return backend, model
 }
 
+// planningRequestAtGrant re-resolves the planner's backend/model from the
+// CURRENT record for the decompose request that runs once the capacity
+// admission clears.
+//
+// Decompose and decomposeStreamingCore resolve the pair once, before the
+// wait, and hold it across the capacity wait inside
+// decomposeAdmitted. If the operator changes the decomposition profile or
+// its model while the planner is queued, requeuePlanningRun retargets the
+// queue entry onto the pool the NEW profile resolves to — and the request
+// follows with it (requirement a "run immediately on the new pool": the
+// execution must carry the NEW pair, not the one resolved before the
+// capacity wait). The admission was granted on the pool of the current
+// target (Retarget carried it), so the executing pair is the one the
+// capacity decision was made for.
+//
+// If the pair the record now resolves to is unresolvable (empty backend) or
+// fails the same pin check an admission requires (an unpinned pi-family
+// pair), the request keeps the pair it was handed: entry already validated
+// it, and requeuePlanningRun refuses the retarget in that very case
+// (keeping the entry on the old pool), so pool and pair stay consistent.
+func (m *Manager) planningRequestAtGrant(prd *PRD, in DecomposeRequest) DecomposeRequest {
+	backend, model := m.plannerPairFor(prd)
+	if backend == "" {
+		return in
+	}
+	if serr := RequirePinnedModel(backend, model,
+		"the PRD's decomposition_model", "autonomous.planning_model", "the PRD's model", "autonomous.verification_model"); serr != nil {
+		return in
+	}
+	in.Backend = backend
+	in.Model = model
+	return in
+}
+
 // plannerPoolsFor is the pool a planning run queues on for a backend/model
 // pair — the same resolution and "host" trim used at planner admission.
 func (m *Manager) plannerPoolsFor(backend, model string) []string {
