@@ -313,6 +313,11 @@ type PRD struct {
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string `json:"blocked_reason,omitempty"`
+	// RulesReviewOutcome is the structured record of the last completion
+	// rules review that blocked this automaton: the findings, the recovery
+	// action taken and the retry budget. It is set by the completion rollup
+	// when the rules review blocks and cleared when a later review passes.
+	RulesReviewOutcome *RulesReviewOutcome `json:"rules_review_outcome,omitempty"`
 	// WaitReason is a plain sentence saying why the PRD's planner is queued
 	// on capacity (which pool is full) while a decompose waits for admission.
 	// Same convention as Task.WaitReason for waiting tasks; empty unless the
