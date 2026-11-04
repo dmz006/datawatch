@@ -3031,6 +3031,44 @@ cross-cluster orchestration, plugin/external-tool integration, richer
 auto-pause / auto-resume across daemon restarts. Long-form PRD-DAG
 orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
 
+## Defect queue
+
+Groups defects into batch Automata and routes tiny fixes. Settings live under
+`autonomous.defect_queue.*`. Walkthrough:
+[howto/automata-defect-queue](../howto/automata-defect-queue.md).
+
+```
+POST   /api/autonomous/defects/intake            route one defect (tiny_fix / open_batch / new_batch)
+GET    /api/autonomous/defects/batches           open batches with the story-to-defect map; ?project= filters
+POST   /api/autonomous/defects/batches/{id}/split  move one story to its own Automaton
+POST   /api/autonomous/defects/tiny-fix/check    would this change be a tiny fix? (read-only)
+```
+
+| Endpoint | Body | Answer | Permission |
+|---|---|---|---|
+| `POST .../intake` | `{id, title, project, description?, files?, kind?, area?, priority?}` (`id`, `title`, `project` required) | `{route, batch_id?, reason, tiny_fix_refusal?}`; the decision is also appended to `defect_intake_decisions.jsonl` in the data dir | `autonomous:write` |
+| `GET .../batches` | none | `{batches: [{id, project, area, status, size, stories: [{story_id, defect_id, title}]}], total}` | `autonomous:read` |
+| `POST .../batches/{id}/split` | `{story_id}` | `{automaton_id, batch_id, story_id}` | `autonomous:write` |
+| `POST .../tiny-fix/check` | `{files, kind, project?}` | `{eligible, reason, refused_paths?}` | `autonomous:read` |
+
+Errors: `400` for a missing required field or bad JSON, `404` when the batch
+or story is unknown, `409` when the defect queue is disabled for the project,
+`503` when the queue is not wired.
+
+MCP tools: `autonomous_defect_intake`, `autonomous_defect_batches`,
+`autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`. CLI:
+`datawatch autonomous defect intake|batches|split|tiny-fix-check`. Comm:
+`autonomous defect-intake|defect-batches|defect-split`.
+
+Settings (`PUT /api/config`, one validator for every surface):
+`enabled`, `batch.size_cap`, `batch.grouping_keys`, `batch.allow_unrelated`,
+`batch.priority_rule`, `tiny_fix.enabled`, `tiny_fix.max_files`,
+`tiny_fix.allowed_path_globs`, `tiny_fix.allowed_kinds`,
+`tiny_fix.operator_visible_path_globs`, and per-project overrides under
+`projects.<project>.<batch|tiny_fix key>`.
+
+---
+
 ---
 
 <!-- BL279 see-also footer -->
@@ -3041,3 +3079,4 @@ orchestration with guardrail sub-agents is BL117 (Sprint S8 / v3.12.0+).
 - [howto/autonomous-review-approve](../howto/autonomous-review-approve.md)
 - [howto/automata-orchestrator](../howto/automata-orchestrator.md)
 - [howto/guardrail-library](../howto/guardrail-library.md)
+- [howto/automata-defect-queue](../howto/automata-defect-queue.md)
