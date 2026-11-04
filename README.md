@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.77.0 (2026-11-03).** Automata get a capacity priority from their kind, and defects can be filed into a configured bugs stage, with the source of each priority shown. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.78.0 (2026-11-03).** Read-only tasks can declare one report file they may write, so review and audit tasks can leave their findings without a write-capable tree. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

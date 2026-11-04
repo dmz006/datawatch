@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.78.0 — Read-only tasks may write a declared report
+
+A read-only task can now write a declared report file, so a review or audit task can leave its findings behind without a write-capable tree.
+
+- New `report_path` on `add_task` and `edit_task` (REST, MCP, CLI, comm channel): the one path a read-only task may write, usually under `docs/plans/reports/`. It needs the read-only flag; a path without it, an invalid path or a path outside the allowed folder is refused with 400.
+- The dirty-tree check ignores that one declared file, so the task does not fail for writing its own report.
+- Operator how-to for read-only tasks and report paths, a glossary entry, and the OpenAPI and MCP docs.
+- Known gap: the web UI does not edit `report_path` yet, and the release smoke check was not extended.
+
 ## v9.77.0 — Priority by kind and defect intake
 
 Automata now get a priority from their kind, and a defect can be filed straight into a bugs stage.
