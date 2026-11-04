@@ -755,3 +755,25 @@ CVE-2026-117610
 # that only git-http-push links libexpat. The installed expat in that image was
 # 2.5.0-1+deb12u4, the same package family as the scanned 2.5.0-1+deb12u5.
 CVE-2026-118370
+
+# libexpat1 -- CVE-2026-113351
+# severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
+# A denial of service in libexpat through improper memory tracking, triggered by
+# a crafted XML document. It needs attacker supplied XML handed to the parser.
+# In agent-base the only package that depends on libexpat1 is git, and the only
+# git program that links it is git-http-push, the WebDAV push helper. datawatch
+# clones and pushes over ssh and over smart HTTPS to configured remotes and
+# never runs git-http-push, so no XML from a remote reaches the parser. The
+# Python XML parser in the aider image is a separate finding (CVE-2026-7210)
+# accepted on its own entry.
+# The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351
+# (HIGH) on libexpat1 2.5.0-1+deb12u5 as affected with no fixed version;
+# re-check security-tracker.debian.org for a bookworm fix each release and
+# remove this entry when one ships.
+# TRACED: docker run --network none on a built agent-base image: apt-cache
+# rdepends --installed libexpat1 lists only git; ldd of /usr/bin/git,
+# /usr/lib/git-core/git-remote-http and /usr/lib/git-core/git-http-push shows
+# that only git-http-push links libexpat. The installed expat in that image was
+# 2.5.0-1+deb12u4, the same package family as the scanned 2.5.0-1+deb12u5; the
+# same package and the same dependents apply to this finding.
+CVE-2026-113351

@@ -3891,3 +3891,23 @@ entries:
     expires: "2026-12-02"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base in the 9.64.1 Release run lists CVE-2026-118370 (HIGH) on libexpat1 2.5.0-1+deb12u5 as affected with no fixed version; re-check security-tracker.debian.org for a bookworm fix each release and remove this entry when one ships."
+  - id: cve/CVE-2026-113351
+    kind: container
+    package: "libexpat1"
+    version: "2.5.0-1+deb12u5"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: apt-cache rdepends --installed libexpat1 lists only git; ldd of /usr/bin/git, /usr/lib/git-core/git-remote-http and /usr/lib/git-core/git-http-push shows that only git-http-push links libexpat. The installed expat in that image was 2.5.0-1+deb12u4, the same package family as the scanned 2.5.0-1+deb12u5; the same package and the same dependents apply to this finding."
+      analysis: "A denial of service in libexpat through improper memory tracking, triggered by a crafted XML document. It needs attacker supplied XML handed to the parser. In agent-base the only package that depends on libexpat1 is git, and the only git program that links it is git-http-push, the WebDAV push helper. datawatch clones and pushes over ssh and over smart HTTPS to configured remotes and never runs git-http-push, so no XML from a remote reaches the parser. The Python XML parser in the aider image is a separate finding (CVE-2026-7210) accepted on its own entry."
+    first_added: "2026-11-04"
+    added: "2026-11-04"
+    expires: "2026-12-04"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351 (HIGH) on libexpat1 2.5.0-1+deb12u5 as affected with no fixed version; re-check security-tracker.debian.org for a bookworm fix each release and remove this entry when one ships."
