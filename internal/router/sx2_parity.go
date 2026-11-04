@@ -1896,6 +1896,7 @@ func takeReadOnlyToken(args []string) ([]string, *bool, error) {
 func takeTaskTokens(args []string) ([]string, *bool, string, error) {
 	var ro *bool
 	var reportPath string
+tokens:
 	for len(args) > 0 {
 		k, v, ok := strings.Cut(args[0], "=")
 		if !ok {
@@ -1903,16 +1904,17 @@ func takeTaskTokens(args []string) ([]string, *bool, string, error) {
 		}
 		k = strings.TrimSpace(k)
 		v = strings.TrimSpace(v)
-		if k == "read_only" || k == "read-only" {
+		switch k {
+		case "read_only", "read-only":
 			b, err := strconv.ParseBool(v)
 			if err != nil {
 				return nil, nil, "", fmt.Errorf("read_only must be true or false, got %q", v)
 			}
 			ro = &b
-		} else if k == "report_path" {
+		case "report_path":
 			reportPath = v
-		} else {
-			break
+		default:
+			break tokens
 		}
 		args = args[1:]
 	}
