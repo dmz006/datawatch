@@ -155,7 +155,7 @@ func TestModelBackendRefusalSetStoryLLMLeavesRecordUnchanged(t *testing.T) {
 	prd := seedRefusalPRD(t, m, "claude-code", "claude-opus-5-5")
 	before := takeRefusalSnapshot(t, m, prd.ID)
 
-	_, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", "claude-haiku-5-5", "test")
+	_, _, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", "claude-haiku-5-5", "test")
 	assertRefused(t, err)
 	assertSnapshotUnchanged(t, before, takeRefusalSnapshot(t, m, prd.ID))
 }
@@ -167,14 +167,14 @@ func TestModelBackendRefusalSetTaskLLMUsesEffectiveBackend(t *testing.T) {
 	// Claude alias is refused even though the task's own backend is empty.
 	prd := seedRefusalPRD(t, m, "pi", "anthropic/qwen3.8:27b")
 	before := takeRefusalSnapshot(t, m, prd.ID)
-	_, err := m.SetTaskLLM(prd.ID, "t1", "", "", "claude-haiku-5-5", "test")
+	_, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", "claude-haiku-5-5", "test")
 	assertRefused(t, err)
 	assertSnapshotUnchanged(t, before, takeRefusalSnapshot(t, m, prd.ID))
 
 	// Case 2: the same call on a PRD running claude-code is accepted, because
 	// the effective backend is claude-code and the alias is valid there.
 	prd2 := seedRefusalPRD(t, m, "claude-code", "claude-opus-5-5")
-	if _, err := m.SetTaskLLM(prd2.ID, "t1", "", "", "claude-haiku-5-5", "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd2.ID, "t1", "", "", "claude-haiku-5-5", "test"); err != nil {
 		t.Fatalf("SetTaskLLM on claude-code PRD refused: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func TestModelBackendRefusalSetTaskLLMUsesEffectiveBackend(t *testing.T) {
 	// alias is refused even on a claude-code PRD.
 	prd3 := seedRefusalPRD(t, m, "claude-code", "claude-opus-5-5")
 	before3 := takeRefusalSnapshot(t, m, prd3.ID)
-	_, err = m.SetTaskLLM(prd3.ID, "t1", "pi", "", "claude-haiku-5-5", "test")
+	_, _, err = m.SetTaskLLM(prd3.ID, "t1", "pi", "", "claude-haiku-5-5", "test")
 	assertRefused(t, err)
 	assertSnapshotUnchanged(t, before3, takeRefusalSnapshot(t, m, prd3.ID))
 }

@@ -1983,8 +1983,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_story_llm", "automaton", id, map[string]any{"story_id": req.StoryID, "backend": req.Backend}) // GH#201 Phase 4
-		prd, _ := updated.(*autonomous.PRD)
-		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
+		p, override := autonomous.SplitSetLLMOut(updated)
+		s.writeAutonomousResultOverride(w, r, p, override, "", req.StoryID, "")
 	// BL203 (v5.4.0) — per-task worker LLM override.
 	case "set_task_llm":
 		if r.Method != http.MethodPost {
@@ -2050,8 +2050,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		detail := map[string]any{"task_id": req.TaskID, "backend": req.Backend}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
-		prd, _ := updated.(*autonomous.PRD)
-		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+		p, override := autonomous.SplitSetLLMOut(updated)
+		s.writeAutonomousResultOverride(w, r, p, override, req.TaskID, "", "")
 	// Failure escalation override on the Automaton (empty task_id) or on one
 	// task. Body: {task_id?, policy: {enabled?, max_failures?, steps?} | null,
 	// actor?}; a null policy clears the override at that level.

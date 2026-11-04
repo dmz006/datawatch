@@ -1068,6 +1068,113 @@ func (l *Ledger) remove(w *waiter) {
 	l.dispatchLocked()
 }
 
+// Retarget is the shared requeue helper for an in-flight wait: one holder's
+// single queued request is cancelled and immediately re-queued in place
+// against the placement req describes (its pools, node and node choices),
+// so the holder ends up waiting with exactly one live request, on the new
+// pool. It is the building block for re-routing a queued task or planning
+// run to another worker: the caller builds the new Request (a Refresh that
+// re-reads the current pools is honored exactly as on dispatch) and passes
+// it in.
+//
+// Semantics, all under the ledger lock so no poll tick or Release can run
+// in between:
+//
+//   - A holder with a live lease is left entirely alone (its grant stands),
+//     and Retarget reports false: there is no request to move, and no
+//     double-booking happens either.
+//   - A queued holder is retargeted in place: the same waiter keeps its
+//     queue position (seq, since, open grant channel), so no priority is
+//     lost and no second request for the holder can exist. Re-targeting a
+//     waiter that already sits on the same placement is a no-op and reports
+//     false — retargeting twice therefore can never produce two live
+//     requests.
+//   - When the new placement has room, dispatchLocked grants the waiter in
+//     the same call, so the grant happens immediately on a free pool.
+//   - Returns true when the queued request was actually re-targeted,
+//     false when there was no queued request for the holder (not queued, or
+//     already granted) or when it already carried that placement.
+//
+// The caller is still responsible for the lease-release half when the
+// holder was granted later: a Retargeted wait that is granted owns its
+// lease under the same holder key, so one Release(holder) frees it.
+func (l *Ledger) Retarget(holder string, req Request) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, held := l.leases[holder]; held {
+		return false
+	}
+	var w *waiter
+	for _, x := range l.waiters {
+		if x.req.Holder == holder {
+			w = x
+			break
+		}
+	}
+	if w == nil {
+		return false
+	}
+	if req.Refresh != nil {
+		cur := req.Refresh()
+		req.Pools, req.Node = cur.Pools, cur.Node
+		req.NodeChoices, req.ExcludeNodes = cur.NodeChoices, cur.ExcludeNodes
+	}
+	req = req.withoutStaleNode()
+	if samePlacement(req, w.req) {
+		return false
+	}
+	w.req = req
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	return true
+}
+
+// samePlacement reports whether a carries the placement b was queued with:
+// the pool set (all-or-nothing, so order-insensitive), the node, the node
+// choices and the excluded nodes. It is the comparison Retarget uses to tell
+// an already-correct queue entry from a move.
+func samePlacement(a, b Request) bool {
+	aPools := append([]string(nil), a.Pools...)
+	bPools := append([]string(nil), b.Pools...)
+	sort.Strings(aPools)
+	sort.Strings(bPools)
+	if len(aPools) != len(bPools) {
+		return false
+	}
+	for i := range aPools {
+		if aPools[i] != bPools[i] {
+			return false
+		}
+	}
+	if a.Node != b.Node {
+		return false
+	}
+	if !slicesEqualStrings(a.ExcludeNodes, b.ExcludeNodes) {
+		return false
+	}
+	if len(a.NodeChoices) != len(b.NodeChoices) {
+		return false
+	}
+	for i := range a.NodeChoices {
+		if a.NodeChoices[i] != b.NodeChoices[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func slicesEqualStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Adopt records a lease for work that is already running and must not wait:
 // a task whose session survived a daemon restart (BL462). Unlike Acquire it
 // never queues, because the session already occupies its slots; the host and

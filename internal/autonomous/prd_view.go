@@ -15,6 +15,7 @@ type WriteView struct {
 	ChangedStoryStatus StoryStatus `json:"changed_story_status,omitempty"`
 	KilledSessions     int         `json:"killed_sessions,omitempty"`
 	Message            string      `json:"message"`
+	Override           any         `json:"override,omitempty"`
 }
 
 // BuildWriteView builds a WriteView for prd after a change to one task or

@@ -274,7 +274,7 @@ type Config struct {
 	// live task worker session may stay unbound to any non-terminal task
 	// before the orphan sweep ends it. 0 or unset => 300
 	// (config.NormalizeOrphanGraceSeconds).
-	OrphanGraceSeconds int    `json:"orphan_grace_seconds,omitempty"`
+	OrphanGraceSeconds int `json:"orphan_grace_seconds,omitempty"`
 	// DuplicateSessionKeep mirrors autonomous.duplicate_session_keep: "older"
 	// (default) or "newer" — which live session survives when two match one
 	// task (config.NormalizeDuplicateSessionKeep).
@@ -287,7 +287,7 @@ type Config struct {
 	RestartPolicy              string `json:"restart_policy,omitempty"`
 	RestartQuietTimeoutSeconds int    `json:"restart_quiet_timeout_seconds,omitempty"`
 	RestartOnTimeout           string `json:"restart_on_timeout,omitempty"`
-	VerificationModel  string `json:"verification_model,omitempty"`
+	VerificationModel          string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (guardrail_model.go):
@@ -326,7 +326,12 @@ type Config struct {
 	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
 	// No omitempty, same round-trip reason as VerificationBackends.
 	TaskOverrideStatuses []string `json:"task_override_statuses"`
-	StaleTaskSeconds     int      `json:"stale_task_seconds,omitempty"`
+	// OverrideQueuedTasks mirrors autonomous.override_queued_tasks: nil =
+	// unset and reads as true (see EffectiveOverrideQueuedTasks); explicit
+	// false restores the pre-change refusal at locked statuses. No omitempty,
+	// same marshal/unmarshal round-trip reason as VerificationBackends above.
+	OverrideQueuedTasks *bool `json:"override_queued_tasks"`
+	StaleTaskSeconds    int   `json:"stale_task_seconds,omitempty"`
 	// StuckRunningSeconds mirrors autonomous.stuck_running_seconds: how long a
 	// PRD may sit in running with every task terminal, no live session and no
 	// live executor before the stuck-running watchdog re-fires its rollup once,
@@ -887,7 +892,7 @@ func DefaultConfig() Config {
 		// Snapshot-never-stage defaults match the daemon config's (nil =
 		// reads these in both packages), so a fresh manager GETs the same
 		// effective list as the daemon's /api/config does.
-		SnapshotNeverStage:   append([]string(nil), config.DefaultSnapshotNeverStage...),
+		SnapshotNeverStage:  append([]string(nil), config.DefaultSnapshotNeverStage...),
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
@@ -4564,13 +4569,26 @@ func (m *Manager) RecordTaskDeliveryFailure(prdID, taskID string, reason string,
 // override (falls back to PRD-level then global). Accepted-while is
 // governed by autonomous.task_override_statuses (default: needs_review /
 // revisions_asked / cancelled / blocked).
-func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, error) {
+//
+// When the PRD is in none of the accepted statuses (typically "running"),
+// the call is accepted only when override_queued_tasks is enabled
+// (unset = true — EffectiveOverrideQueuedTasks): the story record is
+// updated, the per-task outcome follows the queued-task rule (see
+// applyQueuedStoryLLM and the file queued_task_override.go), and the
+// structured LLMOverrideResult (changed / left_alone) is returned. The
+// result is nil on every classic-path and refused call, so existing
+// callers observing a successful change or the pre-change refusal see
+// exactly what they saw before.
+func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, *LLMOverrideResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
-		return nil, err
+		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+			return m.applyQueuedStoryLLM(prdID, storyID, backend, effort, model, actor)
+		}
+		return nil, nil, err
 	}
 	var story *Story
 	for i := range prd.Story {
@@ -4580,12 +4598,12 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 		}
 	}
 	if story == nil {
-		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+		return nil, nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
 	// Refuse before any field changes: check the pair the story's tasks
 	// will resolve to, using the story's new values over the record's.
 	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd, m.AutomationForPRD(prd)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	story.Backend = backend
 	story.Effort = Effort(effort)
@@ -4597,10 +4615,10 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 		Note: fmt.Sprintf("story=%s backend=%s effort=%s model=%s", storyID, backend, effort, model),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	return updated, nil, nil
 }
 
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
@@ -4608,24 +4626,33 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 // clears the override (falls back to story-level then PRD-level then global).
 // Accepted-while is governed by autonomous.task_override_statuses (default:
 // needs_review / revisions_asked / cancelled / blocked); outside those
-// statuses the worker is locked in.
-func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, error) {
+// statuses the worker is locked in — unless override_queued_tasks is
+// enabled (unset = true, EffectiveOverrideQueuedTasks), in which case a
+// locked status (typically "running") accepts the change when the task has
+// not started yet: the new pair is recorded, and a task waiting for a
+// capacity lease is retargeted to the new backend's pool with exactly one
+// live capacity request for it (applyQueuedTaskLLM). Running and finished
+// tasks are never modified; they come back in the result's left_alone list.
+func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, *LLMOverrideResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
-		return nil, err
+		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+			return m.applyQueuedTaskLLM(prdID, taskID, backend, effort, model, actor)
+		}
+		return nil, nil, err
 	}
 	task, story := findTaskInPRD(prd, taskID)
 	if task == nil {
-		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+		return nil, nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
 	// Refuse before any field changes: check the pair the task will run
 	// with, after the task's new values are applied over the story and
 	// PRD the executor falls back to.
 	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd, m.AutomationForPRD(prd)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	task.Backend = backend
 	task.Effort = Effort(effort)
@@ -4638,10 +4665,10 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 		Note: fmt.Sprintf("task=%s backend=%s effort=%s model=%s", taskID, backend, effort, model),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	return updated, nil, nil
 }
 
 // SetTaskGuardrailLLM (BL416) overrides the backend/model used for a
@@ -5205,6 +5232,19 @@ func EffectiveTaskOverrideStatuses(list []string) []string {
 		return TaskOverrideStatusesDefault()
 	}
 	return append([]string(nil), list...)
+}
+
+// EffectiveOverrideQueuedTasks resolves the nil-means-true convention for
+// override_queued_tasks (see config.AutonomousConfig.OverrideQueuedTasks):
+// a set pointer reads as itself, an unset (nil) one reads as true — a fleet
+// that never set the key gets the new behavior, running LLM overrides
+// accepted against unstarted tasks, refused behavior restored by an
+// explicit false.
+func EffectiveOverrideQueuedTasks(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
 }
 
 // ValidateTaskOverrideStatuses reports the first unknown name and the
