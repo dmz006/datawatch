@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Fixed: a blocked completion review no longer leaves an Automaton stuck.** A content block now creates a fix task from the findings and runs it, up to `autonomous.auto_fix_retries` (default 1, 0 turns it off). If the fix task cannot be created, or the retries are spent, the Automaton is held in `needs_review` with the reason or findings attached, and a parked Automaton accepts add-task and a re-run.
+- **New `rules_review_outcome` field.** The attention list (`GET /api/autonomous/attention`, `autonomous_attention_list`, CLI and chat `attention`) and the Automaton view show the action, the findings and the retries spent. How-to: `docs/howto/automata-completion-review-autofix.md`.
+
 ## v9.81.0 — Model-to-node routing visibility
 
 A pinned model is now checked against the compute nodes, and you can see which models each node serves.
