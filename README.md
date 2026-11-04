@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.84.2 (2026-11-04).** The agent-base container scan passes again: the libexpat denial-of-service finding is accepted for 30 days with a trace. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.85.0 (2026-11-04).** The safe-to-delete report is cached for 60 seconds with a stale marker and a computed-at time, and slow reports are counted on the stats. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

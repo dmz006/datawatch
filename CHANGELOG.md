@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.85.0 — Fast, cached safe-to-delete report
+
+The safe-to-delete report is fast to repeat and honest about its age.
+
+- **Cached read.** Each repository's report is kept in the daemon's memory for 60 seconds. A read inside that time returns the stored result at once with no git work. A read past it still returns at once, marked `stale`, while at most one background refresh (bounded to 60 seconds) runs. A failed refresh keeps the last good report, so the read never fails when usable data exists.
+- **Honest fields.** Every result carries `computed_at`, and a `safe` entry carries `dirty_check_skipped` when the worktree's uncommitted-changes check was skipped because its Automaton is running.
+- **Slow reports counted.** A computation over 3 seconds is counted and logged once; the counters appear on the system stats as `safe_delete_last_ms`, `safe_delete_slow_reports` and `safe_delete_refresh_failures`.
+- **Web.** The card on the Automation Overview sub-tab shows the computed-at line and a stale badge, and its read has a 45-second timeout (up from 15), so a slow first computation is not mistaken for a failure. Five locales.
+- No new setting; the lifetime, the refresh bound and the threshold are code constants.
+
 ## v9.84.2 — Accept the libexpat finding in agent-base for 30 days
 
 The agent-base container scan passes again.
