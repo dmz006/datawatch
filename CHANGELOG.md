@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Defect queue: related defects share one batch Automaton, and tiny fixes get a one-task lane.** A new intake step routes each incoming defect to `tiny_fix`, `open_batch` or `new_batch` and appends the decision to `defect_intake_decisions.jsonl`. A batch holds one story per defect plus a shared gate, documentation, changelog and parity-or-locale task; a failed story can be split out into its own Automaton. The tiny-fix lane accepts only test, docs, script, rule or lint changes within a file cap and refuses anything operator-visible. Settings live under `autonomous.defect_queue.*` (with per-project overrides) and share one validator on the config route, MCP, CLI, comm channel and the web settings (five locales). New surfaces: `POST /api/autonomous/defects/intake`, `GET /api/autonomous/defects/batches`, `POST /api/autonomous/defects/batches/{id}/split`, `POST /api/autonomous/defects/tiny-fix/check`; MCP `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`; CLI `datawatch autonomous defect intake|batches|split|tiny-fix-check`; comm `autonomous defect-intake|defect-batches|defect-split`. Walkthrough: [howto/automata-defect-queue.md](docs/howto/automata-defect-queue.md); API: [docs/api/autonomous.md](docs/api/autonomous.md#defect-queue).
+
 ## v9.73.2 — Peer view no longer reloads to the primary
 
 Opening a federated peer in the web UI no longer reloads the page back to the primary.
