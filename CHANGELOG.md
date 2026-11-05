@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.94.0 — Requeue queued planning runs and tasks when the backend changes
+
+Changing where a queued run will execute now moves it in the queue instead of waiting for it to finish.
+
+- **Planning runs.** Changing an Automaton's decomposition backend or model with `set_llm` while its planning run is queued retargets that run's queue entry in place to the pool the new pair resolves to (`requeued`). A run that already started is left alone and the new pair applies from the next run (`deferred_to_next_run`); a change that moves nothing is stored and reported as `unchanged`. A requeued run starts no new attempt, so the decompose retry budget and the wait time it was admitted with are untouched, and changing the setting twice leaves exactly one queue entry.
+- **Worker tasks.** The same applies to tasks that are queued and not started: a task or story LLM override on a running Automaton now moves the queued task to the pool the new backend needs, and a task that already started keeps running as it is.
+- **The result is shown everywhere.** The outcome and the old and new pools come back on REST, MCP, the CLI and the comm channel, and the web UI shows a short toast with the result when you save a story or task LLM change.
+- **Docs.** The planning and capacity how-tos describe the three outcomes.
+- Known gaps: there is no web settings toggle for the feature, and two of the new toasts are not yet in the five locales.
+
 ## v9.93.0 — Verifier slots per compute node
 
 Verifiers now run in their own per-node pool, so a verification no longer waits behind the workers on the same node.

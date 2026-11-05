@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.93.0 (2026-11-05).** Verifiers now run in a per-node pool with a free-memory floor, so verification no longer waits behind workers on the same node. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.94.0 (2026-11-05).** Changing the backend of a queued planning run or an unstarted task now moves it to the right queue instead of waiting. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
