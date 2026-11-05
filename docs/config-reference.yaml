@@ -2963,6 +2963,48 @@ autonomous:
     # the release verification script. When true the daemon runs it once per
     # start, in the background; failures are logged and never block startup.
     backfill_on_start: false
+  # ── Supervisor loop ──
+  # The standing loop that keeps every Automaton moving. Each pass runs eight
+  # mechanical steps (no model call) and three model jobs, and keeps a run
+  # record for each. Every key may be omitted; the value shown is the default.
+  # Read: GET /api/supervisor-loop/jobs and /runs, `datawatch supervisor-loop
+  # jobs|runs`, MCP supervisor_loop_jobs/_runs, comm `supervisor jobs|runs`.
+  # See docs/howto/supervisor-loop.md.
+  supervisor_loop:
+    # Master switch for the whole loop.
+    enabled: true
+    # Mechanical steps, each with its own switch (default on).
+    close_finished_records.enabled: true     # closes the records of finished Automata
+    deploy_after_ship.enabled: true          # runs your deploy step once per shipped release
+    retry_failed_infra.enabled: true         # retries tasks held after infrastructure retries ran out
+    cleanup_sweep.enabled: true              # sweeps leftover worktrees and scratch files
+    apply_answers.enabled: true              # applies your answers to held questions
+    lane_count.enabled: true                 # moves the lane count, only inside min..max
+    start_next_chain_step.enabled: true      # starts the next Automaton in a chain
+    run_merge_until_conflict.enabled: true   # runs merges until one conflicts
+    # Model jobs. style is oneshot (a single call) or session (a full session).
+    # An empty backend or model uses the decision assistant's; with none
+    # configured the job escalates to you and never falls back to a hosted model.
+    draft_spec.style: oneshot
+    draft_spec.backend: ""
+    draft_spec.model: ""
+    classify_ci_failure.style: oneshot
+    classify_ci_failure.backend: ""
+    classify_ci_failure.model: ""
+    pick_backend.style: oneshot
+    pick_backend.backend: ""
+    pick_backend.model: ""
+    # Extra attempts after a model answer fails its check (0 or more).
+    validator_retries: 2
+    # Failed attempts in one run before you are asked (1 or more). Keep it at or
+    # below validator_retries + 1.
+    escalate_after_failures: 2
+    # How many recent run records are kept (1 or more).
+    run_retention: 500
+    # Lane count bounds for the lane_count step. max 0 means no bounds, so the
+    # step moves nothing. When set, max must be at least min.
+    lane_count.min: 0
+    lane_count.max: 0
 # ── Dashboard (operator console + card visibility) ──
 # The dashboard.* block switches gate the PWA dashboard board and the
 # operator console one-glance summary (GET /api/dashboard/console, MCP

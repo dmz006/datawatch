@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation for the supervisor loop.** A new how-to, [howto/supervisor-loop.md](docs/howto/supervisor-loop.md), explains in plain words what each mechanical step and each model job does, every `autonomous.supervisor_loop` setting and its default, the five ways to change it (config file, CLI, Web UI, REST API, comm channel), where to see the jobs and runs on every surface, how to read a run record (validator failures, retries, escalations, duration), how to change a job's model, style or retry count, and how to run the eval that compares models. The definitions page has a Supervisor loop section with one entry per setting and per card, `docs/config-reference.yaml` has the full annotated block, and the four `supervisor_loop_*` MCP tools are listed in the MCP reference. A draft issue for the Android and iPhone apps is in `docs/plans/parity-issues/supervisor-loop.md`.
+
 ## v9.67.0 — Cost report
 
 ### Added
