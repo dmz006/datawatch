@@ -418,6 +418,84 @@ To give a whole chain of Automata one set of defaults, see
   completed only when none of its tasks failed. Reset the failed task
   after fixing the cause and the story rolls up again.
 
+## Changing the planning backend while planning
+
+If the PRD is sitting in `planning`, waiting for a capacity slot (see
+[`automata-capacity.md`](automata-capacity.md) — the planning call is
+capacity-gated like a task), you can still change where it will run. Change
+its decomposition pair — `decomposition_profile` (the planning backend) and/or
+`decomposition_model` — with `set_llm`; the change takes effect immediately,
+without waiting for the run to finish or being cancelled:
+
+- **The run is still queued (not started).** Its single queue entry is
+  retargeted in place to the pool the new pair resolves to, and the PRD's wait
+  reason is re-surfaced naming the pool it now waits on. The outcome is
+  `requeued`. Re-targeting an entry that already sits on the target pool is a
+  no-op, so changing the profile twice leaves exactly one queued request and
+  no leaked capacity.
+- **The run already started (holds a live lease).** It is left entirely
+  alone; the new pair applies from the next planning run. The outcome is
+  `deferred_to_next_run`, with a plain reason that says to wait for it to
+  finish or cancel it.
+- **Nothing to move** — the resolved pair is unchanged, no live planning run,
+  or the queue entry already sits on the target pool. The value is stored and
+  the outcome is `unchanged`.
+
+A requeued run starts no new attempt: it neither consumes the decompose retry
+budget nor rolls the PRD back to draft, and the wait budget is not reset — the
+run keeps the time bound it was admitted with. Cancelling or rejecting the PRD
+still drops a queued planner at once ("decompose cancelled").
+
+The outcome is the `planning` object of the reply (present on `set_llm`
+whenever a planning field — `decomposition_profile` or `decomposition_model`
+— is part of the call, and on the `decompose` reply while a planning run is
+already in flight):
+
+```json
+{
+  "prd": { "…": "…" },
+  "planning": {
+    "outcome": "requeued",
+    "old_backend": "ollama",
+    "new_backend": "claude-code",
+    "old_pools": ["llm:ollama"],
+    "new_pools": ["llm:claude-code"],
+    "reason": "queued planning run re-queued on llm:claude-code"
+  }
+}
+```
+
+`outcome` is `requeued`, `deferred_to_next_run` or `unchanged`; the
+`old_*` / `new_*` fields and `reason` are present whenever the answer is not
+a plain requeue.
+
+**Restart-decompose.** `decompose` (alias `plan`) is also the restart path:
+re-calling it while the planning run is still queued re-queues that same
+queued run on the pool the current profile resolves to — the reply carries the
+`planning` object above — instead of starting a second run. While the run is
+already started it answers plainly that the run is in progress and was left
+alone.
+
+```bash
+# CLI
+datawatch autonomous prd-set-llm <id> --decomposition-profile claude-code
+datawatch autonomous prd-plan <id>   # while queued: re-queues on the current pool
+
+# MCP
+autonomous_prd_set_llm(id="<id>", decomposition_profile="claude-code")
+autonomous_prd_decompose(id="<id>")  # while queued: re-queues on the current pool
+
+# REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"decomposition_profile":"claude-code"}'
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/decompose
+
+# Comm channel
+autonomous set-llm <id> decomposition_profile=claude-code
+autonomous decompose <id>
+```
+
 ## Linked references
 
 - See also: [`autonomous-review-approve.md`](autonomous-review-approve.md) — the review flow.

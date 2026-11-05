@@ -329,3 +329,68 @@ failed/blocked/review_needed refused), `internal/server/autonomous_view_test.go`
 view `.override` + `.planning` shape), plus signature updates in
 `internal/autonomous/{automation_set_llm_test,bl320_decomp_profile_test}.go` and
 `internal/router/automation_set_llm_cmd_test.go`.
+
+## 14. Changed files — operator docs (this task)
+
+Docs-only; no code, no version bump. Documents the queued-requeue + queued-task-
+override behaviour for operators (findings 1 and 7 of
+`docs/plans/2026-10-29-automation-dogfood-findings.md`, now marked addressed).
+
+Changed:
+- `docs/howto/autonomous-planning.md` — new section "Changing the planning
+  backend while planning": queued run retargeted in place (`requeued`, wait
+  reason names the new pool, no new attempt, retry budget untouched, wait
+  budget not reset), started run left alone (`deferred_to_next_run`), no-move
+  (`unchanged`), no-op re-target leaves one queue entry, restart-decompose via
+  `decompose`/`plan`, the `planning` reply object with example, and
+  CLI / MCP / REST / comm examples.
+- `docs/howto/automata-capacity.md` — "Planning waits too" bullet now points
+  at the retarget behaviour; new "Retargeting while queued" section (planner
+  retarget under the same rules, worker retarget with `capacity_moved`, link
+  out for the full report).
+- `docs/operations.md` — LLM override section: "Accepted while" split into the
+  classic gate (unchanged) and the new `autonomous.override_queued_tasks`
+  queued mode (default on, unstarted tasks changed, started/finished/parked
+  left alone with the reason, `waiting_capacity` retargeted, `override`
+  reply object with example, how to turn it off, CLI / MCP / REST / comm
+  examples); new "Planning requeue" subsection after the per-PRD planning
+  settings with the `planning` object, the three outcomes and the
+  restart-decompose path.
+- `docs/config-reference.yaml` — `autonomous.override_queued_tasks` entry
+  (nil reads true; explicit false restores the classic refusal; all config
+  surfaces listed), next to `task_override_statuses`.
+- `docs/mcp.md` — `autonomous_prd_set_llm` and `autonomous_prd_set_task_llm`
+  bullets document the `planning` / `override` reply objects and the queued
+  mode; the config-tool bullet gains `override_queued_tasks` beside
+  `task_override_statuses`.
+- `docs/api/autonomous.md` — new "Override outcomes on a running or queued
+  Automaton" section (queued mode, `override` object, `capacity_moved`,
+  classic mode, config surfaces) and new "Planning requeue" section (queued /
+  started / no-move, `planning` object, outcome table, no-op and cancel
+  semantics, links to the howtos).
+- `docs/plans/2026-10-29-automation-dogfood-findings.md` — findings 1 and 7
+  of the 2026-11-03 set marked addressed with pointers to the docs above
+  (finding 6 remains open: the retry/resolve-review admission path is not
+  covered by this work, per section 5b of this report).
+
+Not changed (out of scope here): the two openapi files' `override` /
+`planning` response schemas, the PWA settings field and locale strings for
+`override_queued_tasks`, and CLI/comm help text — the CLI already
+pretty-prints the full 2xx body and the comm channel passes the outcome
+through, so both surfaces work today; the PWA + openapi parity items stay
+with the merge per the parity rule (section 8).
+
+Corrections after final source cross-check (manager.go `SetPRDLLM`,
+`applyQueuedTaskLLM` / `applyQueuedStoryLLM` in queued_task_override.go):
+
+1. A task-level override call aimed at a task that already started or
+   finished is **not refused** — it answers 2xx with the task reported in
+   `left_alone` (record untouched). The docs no longer say it is refused
+   with the classic lock message (operations.md, api/autonomous.md,
+   mcp.md, config-reference.yaml).
+2. The `planning` object is present on `set_llm` whenever a planning field
+   (`decomposition_profile` / `decomposition_model`) is part of the call —
+   reading `unchanged` when nothing moves (effective pair unchanged,
+   no live planning run, or queue entry already on the target pool). The
+   outcome descriptions in autonomous-planning.md, operations.md and
+   api/autonomous.md now say so.

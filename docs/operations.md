@@ -2685,6 +2685,47 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
   -d '{"backend":"opencode","decomposition_profile":"opencode","effort":"thorough"}'
 ```
 
+**Planning requeue — changing the planning backend while the PRD is still
+planning.** A planning run is capacity-gated like a task: on a saturated pool
+the PRD sits in `planning` with a visible wait reason naming the pool it
+waits on. Changing the decomposition pair (`decomposition_profile`,
+`decomposition_model`) while the run is **still queued** retargets that run's
+single queue entry in place to the pool the new pair resolves to — the PRD
+stays in `planning`, the wait reason now names the new pool, and no new
+attempt starts (the decompose retry budget is untouched, the wait budget is
+not reset). The reply carries a `planning` object:
+
+```json
+{
+  "prd": { "…": "…" },
+  "planning": {
+    "outcome": "requeued",
+    "old_backend": "ollama",
+    "new_backend": "opencode",
+    "old_pools": ["llm:ollama"],
+    "new_pools": ["llm:opencode"],
+    "reason": "queued planning run re-queued on llm:opencode"
+  }
+}
+```
+
+`outcome` is `requeued` (moved in the queue), `deferred_to_next_run` (the run
+already started and holds a live lease — it is left alone, wait for it to
+finish or cancel it; the new pair applies to the next planning run) or
+`unchanged` (nothing to move — the resolved pair is unchanged, no live
+planning run, or the queue entry already sits on the target pool). The
+`old_*` / `new_*` fields and `reason`
+appear whenever the answer is not a plain requeue. Re-targeting an entry that
+already carries the desired placement is a no-op, so changing the pair twice
+leaves exactly one queue entry and no leaked capacity. `decompose` (alias
+`plan`) is the restart-decompose path: re-calling it while the planning run is
+still queued re-queues that same run on the pool the current profile resolves
+to (the reply carries the `planning` object) instead of starting a second
+run; while the run is already started it answers plainly that the run is in
+progress and was left alone. Cancelling or rejecting the PRD still drops a
+queued planner at once ("decompose cancelled", not consuming the retry
+budget).
+
 **Guardrail judge LLM** — `guardrail_backend` / `guardrail_model` choose
 the LLM that judges guardrail/verification results, per Automaton
 (`set_llm`) or per task (`set_task_llm`). Resolution: task →
@@ -2723,9 +2764,67 @@ repointing the next retry's LLM on a blocked Automaton used to be refused with
 MCP `autonomous_config_set`, or comm channel
 `configure autonomous.task_override_statuses=blocked,running`). Unknown
 status names are rejected with a 400 that lists the known statuses; an
-empty list restores the 4-item default. Automaton-level overrides (per-Automaton
-`set_llm`, per-Automaton guardrail / verification LLM) are not affected by this
-setting and remain locked to the 3 pre-Run statuses.
+empty list restores the 4-item default.
+
+**Overriding unstarted tasks while the Automaton is still running
+(`autonomous.override_queued_tasks`)** — by default (unset reads as `true`;
+set it explicitly to `false` to restore the classic refusal) the status gate
+above is not the end of the story: when it refuses — most often because the
+PRD is `running` and the target task has not started yet — the override call
+is still accepted, but it applies **only to tasks that have not started**
+(`pending`, `queued`, `waiting_capacity`, `waiting_decision`,
+`awaiting_approval`, or never scheduled). A task that is `waiting_capacity`
+gets its queued capacity request re-targeted to the pool the new backend and
+model resolve to, and is reported with `capacity_moved: true`. Started tasks
+(running, running tests, verifying), finished tasks (completed, failed,
+cancelled) and parked ones (blocked, waiting for review) are never modified
+— they are reported as left alone with the reason, and the override will take
+effect on their next run. A task-level call aimed at a task that already
+started or finished is not refused either — it answers 2xx with the task
+reported in `left_alone` (its record is left exactly as it was). Example:
+
+```json
+{
+  "prd": { "…": "…" },
+  "override": {
+    "changed": [
+      { "task_id": "t2", "reason": "not started: the override takes effect when the task runs; its queued capacity request was retargeted to the new pool", "capacity_moved": true }
+    ],
+    "left_alone": [
+      { "task_id": "t1", "reason": "task is running; the override takes no effect while it runs" }
+    ]
+  }
+}
+```
+
+The `override` object is present **only** in this queued mode: a
+classic-accepted call (status in `task_override_statuses`) and a refused call
+(setting disabled) return the plain PRD view, exactly as before. Turn the
+mode off with `datawatch config set autonomous.override_queued_tasks false`
+(or REST `PUT /api/config {"autonomous.override_queued_tasks": false}`, MCP
+`autonomous_config_set`, comm channel
+`configure autonomous.override_queued_tasks=false`).
+
+Automaton-level `set_llm` worker-pair changes are accepted while the Automaton
+is not `completed`; on a `running` Automaton they are applied per task under
+the same queued rule above (unstarted tasks changed, started tasks left alone
+and reported), and they are refused only when `override_queued_tasks` is off
+or there is no unstarted task to reach. Automaton-level guardrail / verification
+LLM setters are not affected by either setting.
+
+```bash
+# Re-point one unstarted task while its PRD is running (default mode)
+# CLI
+datawatch autonomous prd-set-task-llm <id> --task <task-id> --backend ollama --model qwen3.8:27b
+# MCP
+autonomous_prd_set_task_llm(id="<id>", task_id="<task-id>", backend="ollama", model="qwen3.8:27b")
+# REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_llm \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","backend":"ollama","model":"qwen3.8:27b"}'
+# Comm channel
+autonomous set-task-llm <id> <task-id> backend=ollama model=qwen3.8:27b
+```
 
 **Verification LLM** — `verification_backend` / `verification_model` /
 `verification_effort` choose the LLM that verifies a task's work, per
