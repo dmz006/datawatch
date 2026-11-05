@@ -1128,6 +1128,13 @@ type Manager struct {
 	// use, so an operator edit takes effect on the next placement. nil =
 	// placement tags are not applied.
 	placementTagsSettings func() config.PlacementConfig
+	// placementPeerSource names the federated peer a placed task runs on, for
+	// the peer axis of the placement tags (placement_tags_peer.go). Wired by
+	// the peer placement build; nil = the peer name comes from the placement
+	// record only, which is correct for today's local-only placements. The
+	// value is always an explicit peer name — never a DNS, IP or hostname
+	// inference (see PeerSource).
+	placementPeerSource PeerSource
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	tagEventFn func(TagEvent)
