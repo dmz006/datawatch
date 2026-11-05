@@ -285,6 +285,11 @@ func (m *Manager) rulesContextBlock(dir, backend, purpose string) (block string,
 		}
 		b.WriteString(f.label + " " + f.name + " was configured and not found in the project directory.")
 	}
+	if len(present) > 0 && purpose == rulesBlockPlanning {
+		if l := rulesSectionNamesLine(dir, p); l != "" {
+			b.WriteString("\n\n" + l)
+		}
+	}
 	if len(present) > 0 && rulesDigestDue(p, backend) {
 		if d := m.rulesDigestBlock(dir, p); d != "" {
 			b.WriteString("\n\n" + rulesDigestHeader + "\n" + d)
@@ -477,4 +482,46 @@ func planningRulesBackend(backend string) string {
 		return "ollama"
 	}
 	return backend
+}
+
+// rulesSectionNamesMaxBytes caps the section-name line given to the planner.
+const rulesSectionNamesMaxBytes = 600
+
+// rulesSectionNamesLine returns one short line naming the sections of the
+// rules file, the vocabulary for each task's rules_applied list. Empty when
+// the rules file is absent or has no headings.
+func rulesSectionNamesLine(dir string, p ResolvedRulesContext) string {
+	if strings.TrimSpace(p.RulesFile) == "" {
+		return ""
+	}
+	path := filepath.Join(dir, p.RulesFile)
+	if !fileExists(path) {
+		return ""
+	}
+	content, err := os.ReadFile(path) // #nosec G304 -- path is the resolved rules file inside the operator-owned project directory
+	if err != nil {
+		return ""
+	}
+	const lead = "Rules sections for rules_applied: "
+	line := lead
+	n := 0
+	for _, h := range RulesDigestSections(content) {
+		h = strings.Join(strings.Fields(h), " ")
+		if h == "" {
+			continue
+		}
+		add := h
+		if n > 0 {
+			add = "; " + h
+		}
+		if len(line)+len(add) > rulesSectionNamesMaxBytes {
+			break
+		}
+		line += add
+		n++
+	}
+	if n == 0 {
+		return ""
+	}
+	return line
 }

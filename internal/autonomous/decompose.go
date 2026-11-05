@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // planWriteFilesRuleBullet is the Rules bullet, shared by both planning
@@ -55,6 +56,16 @@ const planReadOnlyFlagRuleBullet = `- "read_only" (optional boolean): set it to 
   or set it false. When unsure, omit it.
 `
 
+// planRulesAppliedRuleBullet is the Rules bullet, shared by both planning
+// prompts, that asks for the per-task rules checklist. No percent sign:
+// PlanningPrompt goes through fmt.Sprintf.
+const planRulesAppliedRuleBullet = `- "rules_applied": for every task list the sections of the project's rules
+  file the task must follow (for example parity, documentation, tests,
+  localization, versioning, security, configuration), using the section
+  names from the rules file or the rules digest. Use an empty list only for
+  a read-only task.
+`
+
 // PlanningPrompt is the system+user prompt prefix the LLM sees.
 // Operators can override via autonomous.planning_prompt config.
 const PlanningPrompt = `You are planning a feature request into a structured Product Requirements Document with stories and tasks.
@@ -75,6 +86,7 @@ Return ONLY a JSON object with this shape:
           "files": ["<repo-relative path>", "..."],
           "depends_on": [],
           "read_only": false, // optional boolean, see the read_only rule below
+          "rules_applied": ["<rules section name>", "..."],
           "kind": "<smoke|final_gate>" // optional, see the kind rule below
         }
       ]
@@ -93,7 +105,7 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -164,6 +176,7 @@ The JSON must follow this schema exactly:
           "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
           "files_generated": ["<repo-relative path>", "..."],
           "read_only": false, // optional boolean — true only for a task that changes no files, see the read_only rule below
+          "rules_applied": ["<rules section name>", "..."],
           "kind": "<smoke|final_gate>" // optional — "smoke" for a live smoke-test task, "final_gate" for the end-to-end verification task
         }
       ]
@@ -184,7 +197,7 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
-` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + `- Verification scripts must check only the files their unit of work
+` + planWriteFilesRuleBullet + planReadOnlyFlagRuleBullet + planRulesAppliedRuleBullet + `- Verification scripts must check only the files their unit of work
   changes (e.g. list them from 'git diff --name-only' plus the untracked
   files, or name them explicitly) and must never run gofmt or a similar
   formatter over a whole package or directory — unrelated files that
@@ -259,6 +272,41 @@ func normalizeReadOnlyTasks(stories []Story) int {
 	return cleared
 }
 
+const (
+	rulesAppliedMaxEntries = 24
+	rulesAppliedMaxBytes   = 64
+)
+
+// normalizeRulesApplied trims, lower-cases and whitespace-collapses each
+// entry, drops empties and duplicates, keeps order, and caps the list at
+// rulesAppliedMaxEntries entries of at most rulesAppliedMaxBytes bytes.
+func normalizeRulesApplied(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, e := range in {
+		e = strings.ToLower(strings.Join(strings.Fields(e), " "))
+		if len(e) > rulesAppliedMaxBytes {
+			e = e[:rulesAppliedMaxBytes]
+			for !utf8.ValidString(e) {
+				e = e[:len(e)-1]
+			}
+			e = strings.TrimSpace(e)
+		}
+		if e == "" || seen[e] {
+			continue
+		}
+		seen[e] = true
+		out = append(out, e)
+		if len(out) == rulesAppliedMaxEntries {
+			break
+		}
+	}
+	return out
+}
+
 // ParsePlanning cleans common LLM JSON pathologies (fences,
 // smart quotes, // comments) and unmarshals into a Story slice. Task
 // objects may optionally carry a "kind" string ("smoke" / "final_gate" /
@@ -306,6 +354,12 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 			if task.Title == "" || task.Spec == "" {
 				return "", nil, fmt.Errorf("task in story %q (index %d) has empty title or spec", story.ID, ti)
 			}
+		}
+	}
+	for si := range doc.Stories {
+		for ti := range doc.Stories[si].Tasks {
+			t := &doc.Stories[si].Tasks[ti]
+			t.RulesApplied = normalizeRulesApplied(t.RulesApplied)
 		}
 	}
 	return doc.Title, doc.Stories, nil
