@@ -3729,7 +3729,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
-				httpServer.SetClassifierStatus(newClassifierStatusSource(expandHome(cfg.DataDir), nil))
+				// Classify runtime: the classifier.* config keys feed the client
+				// built for each verification; the status view shares its prober.
+				classifyWiring.reg = llmReg
+				classifyWiring.nodes = computeReg.Get
+				classifyWiring.dataDir = expandHome(cfg.DataDir)
+				classifyRuntimeProvider = newClassifyRuntimeProvider(cfg, &classifyWiring)
+				httpServer.SetClassifierStatus(newClassifierStatusSource(expandHome(cfg.DataDir), classifyWiring.prober))
 				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
@@ -7047,6 +7053,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
+			classifyWiring.ledger.Store(capLedger)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed
