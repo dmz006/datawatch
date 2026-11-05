@@ -1109,6 +1109,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	}
 	httpServer.SetCapacity(led)
 
+	// The verifier pairs for the REST surface — node detail and the node
+	// pools of GET /api/capacity read the same last-seen admission state
+	// (the cache VerifierNodeStatus() reads), so the two endpoints show the
+	// same figures. Reading this cache is instant; the reader performs no
+	// observer I/O.
+	httpServer.SetVerifierNodeStatus(func(name string) (server.VerifierNodeStatus, bool) {
+		st, ok := VerifierNodeStatus(name)
+		if !ok {
+			return server.VerifierNodeStatus{}, false
+		}
+		return server.VerifierNodeStatus{
+			ExecutorCap:    st.ExecutorCap,
+			VerifierCap:    st.VerifierCap,
+			FreeMB:         st.FreeMB,
+			HasData:        st.HasData,
+			HeadroomOK:     st.HeadroomOK,
+			HeadroomReason: st.HeadroomReason,
+			SuggestedCap:   st.SuggestedCap,
+		}, true
+	})
+
 	// v8.36.0 — interactive (non-autonomous) session starts also admit on
 	// the same node:/llm: pools an autonomous task would use for the same
 	// backend+model. See handleStartSession's req.OneShot check for why
