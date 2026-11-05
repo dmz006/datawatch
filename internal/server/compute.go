@@ -33,6 +33,41 @@ import (
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
 
+// VerifierNodeStatus is one compute node's verifier admission state as the
+// daemon's capacity wiring last saw it (cmd/datawatch's VerifierNodeState):
+// the caps it applied and reported, the free GPU memory in MB, the headroom
+// verdict for new verifier work, and the advice slot figure. SuggestedCap is
+// nil when the node has no usable figure — advice only, never applied
+// automatically.
+type VerifierNodeStatus struct {
+	ExecutorCap    int
+	VerifierCap    int
+	FreeMB         uint64
+	HasData        bool
+	HeadroomOK     bool
+	HeadroomReason string
+	SuggestedCap   *int
+}
+
+// VerifierNodeStatusReader reports one compute node's last cached verifier
+// admission state (ok=false until the node has been synced). It must read
+// only the cache — never an observer — so the REST handlers stay
+// observation-free, like the ledger's own VerifierHeadroom gate.
+type VerifierNodeStatusReader func(name string) (VerifierNodeStatus, bool)
+
+// SetVerifierNodeStatus wires the daemon's verifier admission state reader
+// into the REST surface (node detail + the capacity view). When nil (not
+// wired) the admission-state figures are simply absent from both responses.
+func (s *Server) SetVerifierNodeStatus(fn VerifierNodeStatusReader) { s.verifierNodeStatus = fn }
+
+// SetVerifierNodeStatus wires the verifier admission state reader on the
+// HTTP server (pass-through to the API server it wraps).
+func (s *HTTPServer) SetVerifierNodeStatus(fn VerifierNodeStatusReader) {
+	if s.api != nil {
+		s.api.SetVerifierNodeStatus(fn)
+	}
+}
+
 // ComputeRegistry returns the wired registry (nil when not set).
 // alpha.26 #238 — main.go uses this from the peer-registry init block
 // to run the leaked-auto-node sweep without holding a separate ref.
@@ -285,6 +320,14 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name mismatch (path vs body)", http.StatusBadRequest)
 			return
 		}
+		// Validate before probing so field errors return 400, not 502 —
+		// same contract as the POST path, so a negative verifier setting
+		// is refused on replace too ("compute node: verifier_slots %d must
+		// be >= 0"), not saved and rejected later at admission.
+		if verr := n.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
 		if r.URL.Query().Get("probe") != "skip" {
 			probeTimeout := 15 * time.Second
 			if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
@@ -353,10 +396,12 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 	writeJSONOK(w, out)
 }
 
-// handleComputeNodeDetail serves the node detail with the node's slot figures
-// added: session_slots is the operator's override (0 = derive from observer
-// data), and derived_slots is the slot count in effect, the pool limit syncPools
-// set from the same figures. The figures are added to a JSON object body only.
+// handleComputeNodeDetail serves the node detail with the node's slot
+// figures added: session_slots is the operator's override (0 = derive from
+// observer data), derived_slots the slot count in effect (the pool limit
+// syncPools set from the same figures), and the verifier settings and
+// admission state (see withNodeSlots). The figures are added to a JSON
+// object body only.
 func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request, name string) {
 	rec := httptest.NewRecorder()
 	s.serveComputeNodeDetail(rec, r, name)
@@ -372,9 +417,27 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 	w.Write(body) //nolint:errcheck
 }
 
-// withNodeSlots adds session_slots and derived_slots to a node detail body. A
-// body that is not a JSON object is returned unchanged. derived_slots is left
-// out when the node has no pool limit yet.
+// withNodeSlots adds the node's slot figures to a node detail body: the
+// operator's settings and the counts in effect — so operators set, see the
+// effect, and can judge their settings.
+//
+//	session_slots                  the operator's setting (0 = derive)
+//	derived_slots                  the executor pool limit (in effect), if any
+//	executor_slots                 the same figure as derived_slots — the
+//	                                executor pair shown beside the verifier pair
+//	verifier_slots                 the operator's verifier_slots or null (unset)
+//	verifier_min_free_mem_mb       the operator's setting or null (unset)
+//	verifier_min_free_mem_mb_effective the effective setting (1024 when unset)
+//	verifier_context_mb            the operator's setting
+//	verifier_slots_effective       the verifier cap last applied (reader)
+//	suggested_verifier_slots       the advice figure, null when no usable data
+//	headroom_ok / headroom_reason  the last headroom verdict (reader)
+//	free_gpu_mb                    the last free GPU memory in MB (reader)
+//
+// The reader-backed figures (verifier_slots_effective, suggested, headroom,
+// free_gpu_mb) are absent until the daemon's capacity wiring has synced the
+// node; withNodeSlots reads only the injected cache reader and performs no
+// observer I/O. A body that is not a JSON object is returned unchanged.
 func (s *Server) withNodeSlots(name string, body []byte) []byte {
 	var fields map[string]json.RawMessage
 	if json.Unmarshal(body, &fields) != nil || fields == nil {
@@ -385,13 +448,57 @@ func (s *Server) withNodeSlots(name string, body []byte) []byte {
 		return body
 	}
 	fields["session_slots"] = json.RawMessage(strconv.Itoa(n.SessionSlots))
+
+	// The verifier settings straight from the node record.
+	if n.VerifierSlots != nil {
+		fields["verifier_slots"] = json.RawMessage(strconv.Itoa(*n.VerifierSlots))
+	} else {
+		fields["verifier_slots"] = json.RawMessage("null")
+	}
+	if n.VerifierMinFreeMemMB != nil {
+		fields["verifier_min_free_mem_mb"] = json.RawMessage(strconv.Itoa(*n.VerifierMinFreeMemMB))
+	} else {
+		fields["verifier_min_free_mem_mb"] = json.RawMessage("null")
+	}
+	minFree := compute.EffectiveVerifierMinFreeMB(n.VerifierMinFreeMemMB)
+	fields["verifier_min_free_mem_mb_effective"] = json.RawMessage(strconv.Itoa(minFree))
+	fields["verifier_context_mb"] = json.RawMessage(strconv.Itoa(n.VerifierContextMB))
+
+	// The slot counts in effect, from the ledger pools: the executor pair
+	// (derived_slots) and, beside it, the verifier pair.
 	if s.capacityLedger != nil {
 		for _, p := range s.capacityLedger.Snapshot().Pools {
-			if p.Name == "node:"+name && p.Limit > 0 {
-				fields["derived_slots"] = json.RawMessage(strconv.Itoa(p.Limit))
+			switch p.Name {
+			case "node:" + name:
+				if p.Limit > 0 {
+					derived := json.RawMessage(strconv.Itoa(p.Limit))
+					fields["derived_slots"] = derived
+					fields["executor_slots"] = derived // the same figure, beside the verifier pair
+				}
+			case "node-verify:" + name:
+				if p.Limit > 0 {
+					fields["verifier_slots_effective"] = json.RawMessage(strconv.Itoa(p.Limit))
+				}
 			}
 		}
 	}
+
+	// The daemon's last-seen verifier admission state (advice + headroom).
+	if s.verifierNodeStatus != nil {
+		if st, ok := s.verifierNodeStatus(name); ok {
+			fields["verifier_slots_effective"] = json.RawMessage(strconv.Itoa(st.VerifierCap))
+			if st.SuggestedCap != nil {
+				fields["suggested_verifier_slots"] = json.RawMessage(strconv.Itoa(*st.SuggestedCap))
+			} else {
+				fields["suggested_verifier_slots"] = json.RawMessage("null")
+			}
+			fields["headroom_ok"] = json.RawMessage(strconv.FormatBool(st.HeadroomOK))
+			reason, _ := json.Marshal(st.HeadroomReason)
+			fields["headroom_reason"] = reason
+			fields["free_gpu_mb"] = json.RawMessage(strconv.FormatUint(st.FreeMB, 10))
+		}
+	}
+
 	out, err := json.Marshal(fields)
 	if err != nil {
 		return body

@@ -42,6 +42,9 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100, default 50")),
 		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set.")),
+		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused.")),
+		mcpsdk.WithString("verifier_min_free_mem_mb", mcpsdk.Description("free GPU memory in MB required before a new verifier slot starts here (unset = 1024 MB; 0 turns the check off). Negative values are refused.")),
+		mcpsdk.WithString("verifier_context_mb", mcpsdk.Description("extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Negative values are refused.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Requests with no explicit model run on it; an explicit request for another model is refused unless allow_model_swap is true. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Ignored when no node_pinned_model is set.")),
@@ -66,6 +69,9 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100")),
 		mcpsdk.WithString("max_concurrent_sessions", mcpsdk.Description("cap on autonomous sessions in flight on this node (0 = unlimited)")),
 		mcpsdk.WithString("session_slots", mcpsdk.Description("operator-set worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory). Capped by max_concurrent_sessions when set. Update replaces the whole node, so omitting this clears the override.")),
+		mcpsdk.WithString("verifier_slots", mcpsdk.Description("worker slots for verifiers on this node (unset = the node hosts a local engine, else none; explicit 0 = no verifier slots). Negative values are refused. Update replaces the whole node, so omitting this clears the override.")),
+		mcpsdk.WithString("verifier_min_free_mem_mb", mcpsdk.Description("free GPU memory in MB required before a new verifier slot starts here (unset = 1024 MB; 0 turns the check off). Negative values are refused. Update replaces the whole node, so omitting this resets the default.")),
+		mcpsdk.WithString("verifier_context_mb", mcpsdk.Description("extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Negative values are refused. Update replaces the whole node, so omitting this clears it.")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
 		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Update replaces the whole node, so omitting this clears the pin. Empty = no pin.")),
 		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Update replaces the whole node, so omitting this resets it to false.")),
@@ -100,7 +106,7 @@ func (s *Server) toolComputeNodeHealth() mcpsdk.Tool {
 
 func (s *Server) toolComputeNodeDetail() mcpsdk.Tool {
 	return mcpsdk.NewTool("compute_node_detail",
-		mcpsdk.WithDescription("On-demand pull from the Node's monitoring sidecar (--listen). Use for live process drill-down. The result also carries session_slots (the operator's override, 0 = derive) and derived_slots (the slot count in effect, when the node has a pool limit)."),
+		mcpsdk.WithDescription("On-demand pull from the Node's monitoring sidecar (--listen). Use for live process drill-down. The result also carries session_slots (the operator's override, 0 = derive), derived_slots (the slot count in effect, when the node has a pool limit) — and the verifier pair beside the executor pair: verifier_slots (null when unset), verifier_min_free_mem_mb and its effective value (1024 MB when unset), verifier_context_mb, verifier_slots_effective and suggested_verifier_slots (null when there is no usable figure), executor_slots (the same figure as derived_slots), plus headroom_ok, headroom_reason and free_gpu_mb from the daemon's last-seen verifier admission state (absent until the node has been synced)."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("ComputeNode name")),
 	)
 }
@@ -380,6 +386,24 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 		var n int
 		_, _ = fmt.Sscanf(v, "%d", &n)
 		body["session_slots"] = n
+	}
+	if v := optString(req, "verifier_slots"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			body["verifier_slots"] = n
+		}
+	}
+	if v := optString(req, "verifier_min_free_mem_mb"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			body["verifier_min_free_mem_mb"] = n
+		}
+	}
+	if v := optString(req, "verifier_context_mb"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			body["verifier_context_mb"] = n
+		}
 	}
 	cap := map[string]any{}
 	if v := optString(req, "max_concurrent_models"); v != "" {

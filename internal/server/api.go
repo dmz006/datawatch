@@ -360,6 +360,9 @@ type Server struct {
 	inferenceReg   *inference.Registry
 	roleMonitor    inference.RoleContentionMonitor
 	capacityLedger *capacity.Ledger
+	// verifierNodeStatus is the daemon's verifier admission state reader
+	// (nil = not wired); see VerifierNodeStatus in compute.go.
+	verifierNodeStatus VerifierNodeStatusReader
 	// capacityWatchdogThreshold lowers the ledger lock watchdog threshold in
 	// tests; zero uses capacity.DefaultLockWatchdogThreshold.
 	capacityWatchdogThreshold time.Duration

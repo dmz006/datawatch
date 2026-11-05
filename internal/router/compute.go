@@ -55,6 +55,12 @@ Common kv pairs:
   max_concurrent_models=<N>   gpu_mem_gb=<N>     scheduling_priority=<0..100>
   tags=<csv>                  cost_per_hour=<usd>
   session_slots=<N>           (0 = derive from observer GPU data)
+  verifier_slots=<N>          (worker slots for verifiers; leave out = 1 if
+                               the node hosts a local engine, else 0; 0 = none)
+  verifier_min_free_mem_mb=<N>(free GPU MB required before a verifier slot
+                               starts; leave out = 1024 MB; 0 = check off)
+  verifier_context_mb=<N>     (context MB one verifier slot holds, for the
+                               advice figure; leave out = 0)
 
 TLS keys (https nodes):
   tls_ca_file=<path>               extra PEM CA bundle to trust for this node
@@ -357,6 +363,15 @@ func parseKVPairs(s string) map[string]any {
 			out[k] = strings.TrimSpace(v)
 		case "scheduling_priority", "session_slots":
 			out[k] = atoiOrZero(v)
+		case "verifier_slots", "verifier_min_free_mem_mb", "verifier_context_mb":
+			// Atoi (not atoiOrZero) so a typed-in negative passes through and is
+			// refused by the daemon with its "must be >= 0" wording, instead of
+			// silently becoming 0 (= "no verifier slots", which is a different setting).
+			if n, err := strconv.Atoi(v); err == nil {
+				out[k] = n
+			} else {
+				out[k] = 0
+			}
 		case "cost_per_hour":
 			out[k] = parseFloatOrZero(v)
 		// BL322-S6: docker-network routing sub-fields.
