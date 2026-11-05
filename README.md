@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.95.0 (2026-11-05).** Judges can now give a reproducible verdict by picking an option, with a calibrated, fail-closed classify mode that is off by default. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.95.1 (2026-11-05).** The agent container scan accepts a Trivy finding that cannot apply to the image, so releases are not blocked by it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

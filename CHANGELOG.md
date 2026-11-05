@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.95.1 — Accept the zlib1g Trivy finding in the agent images
+
+The agent container scan no longer blocks releases on a finding that cannot apply to the image.
+
+- **The finding.** Trivy reports `CVE-2026-76844` (HIGH) on `zlib1g 1:1.2.13.dfsg-1` with no fixed version. Its title names a Node.js package (webpack-dev-middleware), and the built image has no webpack and no Node.js runtime, so it looks like a vulnerability database mapping error.
+- **The acceptance.** It is recorded for 30 days in `security/accepted-risks.yml` with the trace from the built image; re-check for a corrected mapping each release.
+
 ## v9.95.0 — Classification-based verdicts for verification and guardrails
 
 Verification and guardrail judges can now give a reproducible verdict by picking an option, instead of writing a sentence that has to be parsed.

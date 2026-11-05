@@ -3911,3 +3911,23 @@ entries:
     expires: "2026-12-04"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base in the 9.84.1 Release run lists CVE-2026-113351 (HIGH) on libexpat1 2.5.0-1+deb12u5 as affected with no fixed version; re-check security-tracker.debian.org for a bookworm fix each release and remove this entry when one ships."
+  - id: cve/CVE-2026-76844
+    kind: container
+    package: "zlib1g"
+    version: "1:1.2.13.dfsg-1"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l zlib1g shows 1:1.2.13.dfsg-1 installed; find / -iname '*webpack*' finds nothing; neither node nor npm is installed in the image."
+      analysis: "The finding is titled as an information disclosure by path traversal in webpack-dev-middleware, a Node.js package, but Trivy attributes it to the Debian zlib compression library. The image has no webpack and no Node.js runtime, so the described flaw cannot be present, and zlib1g itself is only a compression library linked by other programs, not a web server. This looks like a vulnerability database mapping error rather than a flaw in zlib."
+    first_added: "2026-11-05"
+    added: "2026-11-05"
+    expires: "2026-12-05"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.93.0 Release run lists CVE-2026-76844 (HIGH) on zlib1g 1:1.2.13.dfsg-1 as affected with no fixed version and a title that names a Node.js package; re-check security-tracker.debian.org and the Trivy database for a corrected mapping each release and remove this entry when one ships."
