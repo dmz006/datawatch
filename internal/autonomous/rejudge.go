@@ -129,8 +129,14 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	if !ok {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %q not found", prdID)
 	}
-	if prd.Status != PRDBlocked {
-		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD", prd.ID, prd.Status)
+	origStatus := prd.Status
+	heldReview := false
+	switch {
+	case prd.Status == PRDBlocked:
+	case prd.Status == PRDNeedsReview && rulesReviewHoldIsLast(prd):
+		heldReview = true
+	default:
+		return nil, fmt.Errorf("rejudge completion guardrail: prd %s is %s, not blocked; rejudgment only applies to a PRDBlocked PRD or a PRDNeedsReview PRD held by a rules-review retries-spent or auto-fix-disabled decision", prd.ID, prd.Status)
 	}
 	if storyID, taskID, status := firstNonCompletedTask(prd); taskID != "" {
 		return nil, fmt.Errorf("rejudge completion guardrail: prd %s task %s (story %s) is %s, not completed; every task must be completed before the completion guardrail can be re-run", prd.ID, taskID, storyID, status)
@@ -155,6 +161,22 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			return fmt.Errorf("rejudge completion guardrail: prd %s: record no-verdict decision: %w", prd.ID, serr)
 		}
 		return fmt.Errorf("rejudge completion guardrail: prd %s: %s", prd.ID, detail)
+	}
+
+	// A rules-review hold is re-judged only on new commits: the held
+	// verdict describes the old head, and an unchanged head would give the
+	// same answer. Refuse before touching anything.
+	if heldReview {
+		inv, _ := m.prdRulesReviewInvocation(prd)
+		head := judgeVerdictCommitSHA(prd, inv)
+		heldSHA := ""
+		if stored := lastBlockVerdict(prd.Verdicts); stored != nil {
+			heldSHA = stored.JudgedCommitSHA
+		}
+		if head == "" || head == heldSHA {
+			return nil, fmt.Errorf("rejudge completion guardrail: prd %s is held for review and the branch head %q is unchanged since the held verdict was made; new commits are needed before a rejudge", prd.ID, head)
+		}
+		ctx = withJudgeVerdictCacheLookupBypassed(ctx)
 	}
 
 	// Commit-anchored replay gate (judge verdict cache enabled only; with
@@ -185,9 +207,11 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "rules-review"
-	if cacheOn {
-		v.JudgedCommitSHA = headSHA
+	if headSHA == "" {
+		inv, _ := m.prdRulesReviewInvocation(prd)
+		headSHA = judgeVerdictCommitSHA(prd, inv)
 	}
+	v.JudgedCommitSHA = headSHA
 
 	// Record the verdict durably BEFORE anything else changes — the same
 	// guardrail_verdict Decision + save + judge-output cleanup
@@ -233,7 +257,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %q not found", prdID)
 		}
 		if cerr := m.store.CommitPRDIfRev(prd.ID, rev, func(p *PRD) bool {
-			if p.Status != PRDBlocked || !prdAllTasksTerminal(p) {
+			if p.Status != origStatus || !prdAllTasksTerminal(p) {
 				return false
 			}
 			p.Verdicts = append(p.Verdicts, v)
@@ -244,7 +268,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		}); cerr != nil {
 			return nil, fmt.Errorf("rejudge completion guardrail: prd %s: commit PRDCompleted: %w", prd.ID, cerr)
 		}
-		old := PRDBlocked
+		old := origStatus
 		m.store.WithLock(func() {
 			prd.Verdicts = append(prd.Verdicts, v)
 			prd.Decisions = append(prd.Decisions, rej)
@@ -276,4 +300,18 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 	m.EmitPRDUpdate(prd.ID)
 	return prd, nil
+}
+
+// rulesReviewHoldIsLast reports whether the most recent guardrail-related
+// decision on prd is a rules-review retries-spent or auto-fix-disabled hold.
+func rulesReviewHoldIsLast(prd *PRD) bool {
+	for i := len(prd.Decisions) - 1; i >= 0; i-- {
+		switch prd.Decisions[i].Kind {
+		case "rules_review_retries_spent", "rules_review_auto_fix_disabled":
+			return true
+		case "guardrail_verdict", "guardrail_rejudge", "rules_review_fix_failed":
+			return false
+		}
+	}
+	return false
 }

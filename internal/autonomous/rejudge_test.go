@@ -13,9 +13,9 @@ import (
 // and returns one fixed (verdict, error) pair, so a test can assert both
 // the judgment's effect and whether the judge was asked at all.
 type rejudgeJudge struct {
-	calls      int
-	v          GuardrailVerdict
-	err        error
+	calls       int
+	v           GuardrailVerdict
+	err         error
 	lastBackend string
 	lastPinned  bool
 }
@@ -598,5 +598,108 @@ func TestRejudgeCompletionGuardrailRejudgesWhenHeadChanged(t *testing.T) {
 	}
 	if got.Status != PRDBlocked {
 		t.Errorf("status = %s, want blocked on the fresh block", got.Status)
+	}
+}
+
+// newRejudgeHeldPRD builds a PRDNeedsReview PRD holding a content block
+// verdict judged on "sha-head-1" with the given hold decision kind.
+func newRejudgeHeldPRD(t *testing.T, kind string) (*Manager, *PRD) {
+	t.Helper()
+	m, prd, _ := newRejudgeBlockedPRD(t, TaskCompleted)
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-1")
+	fresh, _ := m.Store().GetPRD(prd.ID)
+	fresh.Verdicts = append(fresh.Verdicts, GuardrailVerdict{
+		Outcome: "block", Category: "content", Guardrail: "rules-review",
+		Summary: "held finding", JudgedCommitSHA: "sha-head-1",
+	})
+	fresh.Decisions = append(fresh.Decisions, Decision{Kind: kind, Actor: "autonomous", FailureCategory: "content"})
+	fresh.Status = PRDNeedsReview
+	if err := m.Store().SavePRD(fresh); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	return m, got
+}
+
+func TestRejudgeHeldReviewUnchangedHeadRefused(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_retries_spent")
+	j := newRejudgePassJudge(t)
+	m.SetGuardrail(j.fn)
+	nv, nd := len(prd.Verdicts), len(prd.Decisions)
+	_, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err == nil || !strings.Contains(err.Error(), "sha-head-1") || !strings.Contains(err.Error(), "new commits") {
+		t.Fatalf("err = %v, want refusal naming head and new commits", err)
+	}
+	if j.calls != 0 {
+		t.Errorf("judge calls = %d, want 0", j.calls)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	if got.Status != PRDNeedsReview || len(got.Verdicts) != nv || len(got.Decisions) != nd {
+		t.Errorf("PRD changed: status=%s verdicts=%d decisions=%d", got.Status, len(got.Verdicts), len(got.Decisions))
+	}
+}
+
+func TestRejudgeHeldReviewMovedHeadPassCompletes(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_auto_fix_disabled")
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-2")
+	j := newRejudgePassJudge(t)
+	m.SetGuardrail(j.fn)
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err != nil {
+		t.Fatalf("rejudge: %v", err)
+	}
+	if j.calls != 1 {
+		t.Errorf("judge calls = %d, want 1", j.calls)
+	}
+	if got.Status != PRDCompleted || got.BlockedReason != "" {
+		t.Errorf("status=%s reason=%q, want completed", got.Status, got.BlockedReason)
+	}
+}
+
+func TestRejudgeHeldReviewMovedHeadBlockLeavesBlocked(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_retries_spent")
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-2")
+	j := newRejudgeBlockJudge(t)
+	m.SetGuardrail(j.fn)
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err != nil {
+		t.Fatalf("rejudge: %v", err)
+	}
+	if got.Status != PRDBlocked || !strings.Contains(got.BlockedReason, "would cause an incident") {
+		t.Errorf("status=%s reason=%q, want blocked with new reason", got.Status, got.BlockedReason)
+	}
+}
+
+func TestRejudgeHeldReviewDoesNotReplayAcrossHead(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_retries_spent")
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-2")
+	j := newRejudgeContentBlockJudge(t, "judge-fresh")
+	m.SetGuardrail(j.fn)
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err != nil {
+		t.Fatalf("rejudge: %v", err)
+	}
+	if j.calls != 1 {
+		t.Fatalf("judge calls = %d, want 1 (held verdict must not replay)", j.calls)
+	}
+	last := got.Verdicts[len(got.Verdicts)-1]
+	if last.JudgeSessionID != "judge-fresh" {
+		t.Errorf("latest verdict session = %q, want judge-fresh", last.JudgeSessionID)
+	}
+}
+
+func TestRejudgeHeldReviewUnchangedHeadRefusedCacheDisabled(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_retries_spent")
+	m.mu.Lock()
+	m.judgeVerdictCacheEnabledFn = func() bool { return false }
+	m.mu.Unlock()
+	j := newRejudgePassJudge(t)
+	m.SetGuardrail(j.fn)
+	_, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err == nil || !strings.Contains(err.Error(), "new commits") {
+		t.Fatalf("err = %v, want unchanged-head refusal with the cache disabled", err)
+	}
+	if j.calls != 0 {
+		t.Errorf("judge calls = %d, want 0", j.calls)
 	}
 }
