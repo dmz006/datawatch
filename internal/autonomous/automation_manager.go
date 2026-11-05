@@ -3,6 +3,7 @@ package autonomous
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -218,6 +219,59 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		return nil, err
 	}
 	return a, nil
+}
+
+// RenameAutomationStage renames the Stage label from→to on every member of
+// automationID that currently carries from. Both names are trimmed and must
+// be non-empty and different; to must not already be another member's stage
+// in the same Automation. A stale expectedVersion, a terminal Automation or
+// a rename that matches no member is refused before anything mutates; on
+// success the Version is bumped (through the same compare-and-set the
+// coordinator uses) and one Decision is recorded and one audit record
+// emitted.
+func (m *Manager) RenameAutomationStage(automationID, from, to string, expectedVersion int64) (*Automation, error) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("a stage rename needs non-empty from and to names")
+	}
+	if from == to {
+		return nil, fmt.Errorf("a stage rename needs different from and to names")
+	}
+	allowed := []AutomationStatus{AutomationDraft, AutomationActive, AutomationPaused, AutomationBlocked}
+	if _, err := m.loadForControl(automationID, expectedVersion, allowed...); err != nil {
+		return nil, err
+	}
+	var renamed int
+	updated, err := m.automations.Update(automationID, expectedVersion, func(cur *Automation) error {
+		if err := checkControlStatus(cur, allowed); err != nil {
+			return err
+		}
+		for i := range cur.Members {
+			mm := &cur.Members[i]
+			if mm.Stage != from {
+				if mm.Stage == to {
+					return fmt.Errorf("409: automation %s already has stage %q on member %s", cur.ID, to, mm.ID)
+				}
+				continue
+			}
+			mm.Stage = to
+			renamed++
+		}
+		if renamed == 0 {
+			return fmt.Errorf("404: no member of automation %s carries stage %q", cur.ID, from)
+		}
+		controlDecision(cur, "automation_rename_stage", operatorActor, fmt.Sprintf("renamed stage %q to %q on %d member(s)", from, to, renamed))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.controlAudit("automation_rename_stage", map[string]any{
+		"automation_id": automationID, "from": from, "to": to,
+		"members": renamed, "version": updated.Version,
+	})
+	return updated, nil
 }
 
 // DeleteAutomation removes an Automation (the store enforces the

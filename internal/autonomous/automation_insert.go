@@ -38,6 +38,7 @@ type InsertMemberInput struct {
 	// the end of the chain. An urgent insert always takes the next slot, so it
 	// must leave this empty.
 	AfterMemberID   string
+	Stage           string // optional stage label recorded on the member
 	Urgent          bool   // take the next slot instead of the end of the chain
 	Actor           string // "operator" (default), "session:<id>" or "agent:<id>"
 	Reason          string // recorded as the member's AddedReason; required for a non-draft Automation
@@ -52,6 +53,7 @@ type PendingInsert struct {
 	Name          string       `json:"name,omitempty"`
 	Urgent        bool         `json:"urgent,omitempty"`
 	AfterMemberID string       `json:"after_member_id,omitempty"`
+	Stage         string       `json:"stage,omitempty"` // the member's stage label
 	Actor         string       `json:"actor"`
 	Reason        string       `json:"reason,omitempty"`
 	AddedAt       time.Time    `json:"added_at"`
@@ -135,14 +137,16 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 		if hold {
 			cur.PendingInserts = append(cur.PendingInserts, PendingInsert{
 				ID: memberID, PRDID: in.PRDID, Name: in.Name, Urgent: in.Urgent,
-				AfterMemberID: in.AfterMemberID, Actor: in.Actor, Reason: in.Reason,
+				AfterMemberID: in.AfterMemberID, Stage: strings.TrimSpace(in.Stage),
+				Actor: in.Actor, Reason: in.Reason,
 				AddedAt: now, Status: MemberPending,
 			})
 			controlDecision(cur, controlInsertMember, in.Actor, insertNote("held pending operator approval", memberID, in))
 			return nil
 		}
 		mem := AutomationMember{
-			ID: memberID, PRDID: in.PRDID, AddedAt: now, AddedBy: in.Actor,
+			ID: memberID, PRDID: in.PRDID, Stage: strings.TrimSpace(in.Stage),
+			AddedAt: now, AddedBy: in.Actor,
 			AddedReason: in.Reason, Status: MemberPending,
 		}
 		if err := spliceMember(cur, mem, in.Urgent, in.AfterMemberID); err != nil {
@@ -229,6 +233,9 @@ func insertNote(what, memberID string, in InsertMemberInput) string {
 	if in.Name != "" {
 		note += " (" + in.Name + ")"
 	}
+	if stage := strings.TrimSpace(in.Stage); stage != "" {
+		note += " [stage " + stage + "]"
+	}
 	if in.Reason != "" {
 		note += ": " + in.Reason
 	}
@@ -299,7 +306,8 @@ func (m *Manager) ApproveInsertedMember(id, pendingID, actor string, expectedVer
 		landed = *p
 		oldMembers = append([]AutomationMember(nil), cur.Members...)
 		mem := AutomationMember{
-			ID: landed.ID, PRDID: landed.PRDID, AddedAt: time.Now(), AddedBy: landed.Actor,
+			ID: landed.ID, PRDID: landed.PRDID, Stage: strings.TrimSpace(landed.Stage),
+			AddedAt: time.Now(), AddedBy: landed.Actor,
 			AddedReason: landed.Reason, Status: MemberPending,
 		}
 		if err := spliceMember(cur, mem, landed.Urgent, landed.AfterMemberID); err != nil {
