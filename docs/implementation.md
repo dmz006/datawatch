@@ -2461,3 +2461,63 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Verifier parallelism (autonomous.verifier_min_free_mem_mb, autonomous.verifier_headroom_max_age_hours, compute_nodes[].verifier_slots)
+
+How the verifier parallelism knobs live in config. They implement
+Decision 2026-11-03 in
+[`docs/plans/2026-10-14-concurrency-and-budget-design.md`](plans/2026-10-14-concurrency-and-budget-design.md)
+("verifier slots next to the executor cap ... yes, default 1 with a
+measured headroom check"): a per-node cap for the parallel verifiers of
+the classification-verdict traffic, plus the two global knobs that gate
+and bound the memory-headroom measurement used before the cap applies.
+Operator-facing behavior: the "Verifier parallelism" entry in
+[`docs/datawatch-definitions.md`](datawatch-definitions.md).
+
+- **`autonomous.verifier_min_free_mem_mb`** (default `2048`; must be
+  `>= 0`) — MB of free memory a compute node must still show before a
+  parallel verifier is admitted on top of the node's resident sessions.
+  Lives in the `AutonomousConfig` struct next to
+  `verifier_diff_max_bytes` (the verifier's diff-size gate)
+  (`internal/config/config.go`).
+- **`autonomous.verifier_headroom_max_age_hours`** (default `24`; must be
+  `> 0`) — a headroom measurement counts as fresh only when taken within
+  this many hours of now; a stale or missing measurement keeps the
+  verifier cap at the node default. The field stores `0` when unset and
+  the effective bound always reads `> 0` via
+  `AutonomousConfig.VerifierHeadroomMaxAge()`
+  (`internal/config/config.go`), the same 0-means-unset convention as
+  `normalizeStuckRunningSeconds`.
+- **`compute_nodes[].verifier_slots`** — the verifier cap for that node
+  (the parallel classification-verdict verifiers it may run at once).
+  Lives next to `session_slots` in both `compute.Node`
+  (`internal/compute/node.go`) and the YAML mirror `ComputeNodeYAML`
+  (`internal/config/config.go`). `0` means "use the default cap 1"
+  (constant `compute.DefaultNodeVerifierSlots`), mirroring how
+  `0`-`session_slots` falls back to derivation. A negative value is a
+  validation error: on the config side
+  `compute_nodes[<name>].verifier_slots: -N must be >= 0`
+  (rejected in `validateLoaded`, `internal/config/config.go`) and on the
+  node record side `compute node: verifier_slots -N must be >= 0 (0 =
+  default cap 1)` (rejected in `compute.Node.Validate`,
+  `internal/compute/node.go`).
+- **Eligibility:** every compute node is eligible for verifier slots in
+  this codebase — there is no per-node "classification verdicts
+  enabled" gate (no such key in `compute.Node`, `ComputeNodeYAML` or
+  `AutonomousConfig`). The verifier slots field is therefore always
+  present on every node and is always validatable and storable.
+- **Defaults:** `DefaultConfig()` seeds both global keys
+  (`internal/config/config.go`); the node key reads `0` when absent.
+- **Round-trip:** both global keys use `omitempty` and are persisted
+  through the usual config `Load`/`Save` path; `Save` writes the
+  defaults for absent keys exactly like the neighboring
+  `judge_size_threshold_lines` knob.
+
+### Tests
+
+- `internal/config/config_test.go` — default read-back for both global
+  keys, `0`/negative validation errors, `0`/positive round-trip, and
+  `verifier_slots` default/positive/negative per node.
+- `internal/compute/node_verifier_slots_test.go` — the
+  `DefaultNodeVerifierSlots` constant and the `Node.Validate`
+  accept/reject behavior for `verifier_slots`.

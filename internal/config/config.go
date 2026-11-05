@@ -838,6 +838,11 @@ type ComputeNodeYAML struct {
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+	// VerifierSlots is the verifier cap for this node (parallel
+	// classification-verdict verifiers, next to the executor slots). 0 =
+	// default cap 1; must not be negative (Decision 2026-11-03 in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md).
+	VerifierSlots int `yaml:"verifier_slots,omitempty" json:"verifier_slots,omitempty"`
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -2882,6 +2887,24 @@ type AutonomousConfig struct {
 	// prompt for evidence grounding (BL366). 0 = 8192. Raise for large
 	// PRDs; lower to reduce token cost.
 	VerifierDiffMaxBytes int `yaml:"verifier_diff_max_bytes,omitempty" json:"verifier_diff_max_bytes,omitempty"`
+
+	// VerifierMinFreeMemMB — MB of free memory a compute node must still
+	// show before a parallel verifier (classification-verdict traffic)
+	// is admitted on top of the resident sessions (Decision 2026-11-03 in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md: "yes,
+	// default 1 with a measured headroom check"). Default 2048; must be
+	// >= 0 (a negative value is a config error).
+	VerifierMinFreeMemMB int `yaml:"verifier_min_free_mem_mb,omitempty" json:"verifier_min_free_mem_mb,omitempty"`
+
+	// VerifierHeadroomMaxAgeHours — a memory-headroom measurement counts
+	// as fresh only when it was taken within this many hours of now; a
+	// stale (or missing) measurement keeps the verifier cap at the node
+	// default (Decision 2026-11-03 in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md). Default 24.
+	// 0 (or unset) reads the default (see
+	// AutonomousConfig.VerifierHeadroomMaxAge); a negative value is a
+	// config error — the effective bound must always be > 0.
+	VerifierHeadroomMaxAgeHours int `yaml:"verifier_headroom_max_age_hours,omitempty" json:"verifier_headroom_max_age_hours,omitempty"`
 	// SecurityScan — when true, run the nightwire-port pattern scan
 	// over modified files before marking a task complete.
 	SecurityScan bool `yaml:"security_scan,omitempty" json:"security_scan,omitempty"`
@@ -3169,6 +3192,31 @@ type AutonomousConfig struct {
 	// counting and release backfill at startup. See ShippedConfig and
 	// ValidateShippedSetting.
 	Shipped ShippedConfig `yaml:"shipped" json:"shipped"`
+}
+
+// Defaults of the verifier parallelism keys (Decision 2026-11-03 in
+// docs/plans/2026-10-14-concurrency-and-budget-design.md).
+const (
+	// VerifierMinFreeMemMBDefault is the default of
+	// autonomous.verifier_min_free_mem_mb: the minimum free memory (in MB)
+	// a compute node must keep free while running parallel verifiers.
+	VerifierMinFreeMemMBDefault = 2048
+	// VerifierHeadroomMaxAgeHoursDefault is the default of
+	// autonomous.verifier_headroom_max_age_hours: the maximum age (in
+	// hours) of a node memory-headroom measurement that still counts as
+	// fresh.
+	VerifierHeadroomMaxAgeHoursDefault = 24
+)
+
+// VerifierHeadroomMaxAge is the effective headroom-freshness bound in
+// hours: the configured value when positive, otherwise
+// VerifierHeadroomMaxAgeHoursDefault (0 = unset, same convention as
+// NormalizeStuckRunningSeconds). The result is always > 0.
+func (a AutonomousConfig) VerifierHeadroomMaxAge() int {
+	if a.VerifierHeadroomMaxAgeHours <= 0 {
+		return VerifierHeadroomMaxAgeHoursDefault
+	}
+	return a.VerifierHeadroomMaxAgeHours
 }
 
 // ShippedSettingPrefix is the dotted key prefix shared by every
@@ -5862,6 +5910,11 @@ func DefaultConfig() *Config {
 			LoopDetectTurns:       &loopDetectTurnsDefault,
 			StaleTaskSeconds:      900,
 			StuckRunningSeconds:   StuckRunningDefaultSeconds,
+			// Verifier parallelism (Decision 2026-11-03 in
+			// docs/plans/2026-10-14-concurrency-and-budget-design.md):
+			// headroom gate + fresh-measurement bound.
+			VerifierMinFreeMemMB:        VerifierMinFreeMemMBDefault,
+			VerifierHeadroomMaxAgeHours: VerifierHeadroomMaxAgeHoursDefault,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
@@ -6401,9 +6454,18 @@ func validateLoaded(cfg *Config) error {
 	if cfg.Autonomous.JudgeSizeThresholdLines < 0 {
 		return fmt.Errorf("autonomous.judge_size_threshold_lines: %d must be >= 0", cfg.Autonomous.JudgeSizeThresholdLines)
 	}
+	if cfg.Autonomous.VerifierMinFreeMemMB < 0 {
+		return fmt.Errorf("autonomous.verifier_min_free_mem_mb: %d must be >= 0", cfg.Autonomous.VerifierMinFreeMemMB)
+	}
+	if cfg.Autonomous.VerifierHeadroomMaxAgeHours < 0 {
+		return fmt.Errorf("autonomous.verifier_headroom_max_age_hours: %d must be > 0 (0 = default %d)", cfg.Autonomous.VerifierHeadroomMaxAgeHours, VerifierHeadroomMaxAgeHoursDefault)
+	}
 	for _, n := range cfg.ComputeNodes {
 		if n.SessionSlots < 0 {
 			return fmt.Errorf("compute_nodes[%s].session_slots: %d must be >= 0", n.Name, n.SessionSlots)
+		}
+		if n.VerifierSlots < 0 {
+			return fmt.Errorf("compute_nodes[%s].verifier_slots: %d must be >= 0", n.Name, n.VerifierSlots)
 		}
 	}
 	switch cfg.Autonomous.ProjectWriteSerialization {

@@ -1964,6 +1964,40 @@ Which choices the threshold question offers. Unset offers all four: `keep_waitin
 
 ---
 
+#### autonomous.verifier_min_free_mem_mb
+
+**Default** `2048`. **Accepted values** any integer `>= 0`; a negative value is refused by config load naming the key.
+
+MB of free memory a compute node must still show before a parallel verifier (the classification-verdict traffic) is admitted on top of the node's resident sessions. Part of Decision 2026-11-03 in [`plans/2026-10-14-concurrency-and-budget-design.md`](plans/2026-10-14-concurrency-and-budget-design.md): the per-node verifier slot cap is applied with a measured memory headroom check.
+
+**How to set it** — in YAML under `autonomous:` as `verifier_min_free_mem_mb: 700`.
+
+#### autonomous.verifier_headroom_max_age_hours
+
+**Default** `24`. **Accepted values** any integer `> 0`; `0` is stored as the unset sentinel and reads the default (same convention as `stuck_running_seconds`), and a negative value is refused by config load naming the key.
+
+How fresh a node memory-headroom measurement may be and still count: a measurement older than this many hours (or a missing one) keeps the node's verifier cap at its default instead of the raised value. Pairs with the per-node `verifier_slots` key.
+
+**How to set it** — in YAML under `autonomous:` as `verifier_headroom_max_age_hours: 48`.
+
+#### compute_nodes[].verifier_slots
+
+**Default** unset, stored as `0`, which reads as the default cap `1` (`compute.DefaultNodeVerifierSlots`). **Accepted values** any integer `>= 0`; a negative value is a validation error (`compute node: verifier_slots -1 must be >= 0 (0 = default cap 1)`.)
+
+The verifier cap for that one compute node: how many parallel verifiers of the classification-verdict traffic the node may run at once. Sits next to `session_slots`, the executor slots; it never replaces the executor pin (one session per node). Every node is eligible — this codebase has no per-node classification-verdicts gate. Decision 2026-11-03 in [`plans/2026-10-14-concurrency-and-budget-design.md`](plans/2026-10-14-concurrency-and-budget-design.md) sets default `1` with a measured headroom check.
+
+**How to set it** — under `compute_nodes:` in the node entry:
+
+```yaml
+compute_nodes:
+  - name: gpubox
+    kind: ollama
+    address: http://gpubox:11434
+    verifier_slots: 2   # omit for the default cap 1
+```
+
+---
+
 
 ## Core feature reference matrix
 

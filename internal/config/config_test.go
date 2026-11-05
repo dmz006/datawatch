@@ -1078,3 +1078,145 @@ func TestValidateUndeclaredEditMode(t *testing.T) {
 		}
 	}
 }
+
+// Verifier parallelism config surface (Decision 2026-11-03 in
+// docs/plans/2026-10-14-concurrency-and-budget-design.md):
+// autonomous.verifier_min_free_mem_mb, autonomous.verifier_headroom_max_age_hours,
+// compute_nodes[].verifier_slots.
+
+func TestVerifierMinFreeMem_Defaults(t *testing.T) {
+	if got := DefaultConfig().Autonomous.VerifierMinFreeMemMB; got != VerifierMinFreeMemMBDefault {
+		t.Fatalf("DefaultConfig: verifier_min_free_mem_mb = %d, want %d", got, VerifierMinFreeMemMBDefault)
+	}
+	cfg := loadYAMLBody(t, "autonomous:\n  enabled: true\n")
+	if got := cfg.Autonomous.VerifierMinFreeMemMB; got != VerifierMinFreeMemMBDefault {
+		t.Fatalf("absent key reads %d, want default %d", got, VerifierMinFreeMemMBDefault)
+	}
+}
+
+func TestVerifierMinFreeMem_ExplicitRoundTrip(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  verifier_min_free_mem_mb: 700\n")
+	if got := cfg.Autonomous.VerifierMinFreeMemMB; got != 700 {
+		t.Fatalf("verifier_min_free_mem_mb = %d, want 700", got)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	again, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := again.Autonomous.VerifierMinFreeMemMB; got != 700 {
+		t.Fatalf("after round trip = %d, want 700", got)
+	}
+	// An explicit 0 is legal (>= 0): it reads 0, not the default.
+	zero := loadYAMLBody(t, "autonomous:\n  verifier_min_free_mem_mb: 0\n")
+	if got := zero.Autonomous.VerifierMinFreeMemMB; got != 0 {
+		t.Fatalf("explicit 0 reads %d, want 0", got)
+	}
+}
+
+func TestVerifierMinFreeMem_NegativeRejected(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte("autonomous:\n  verifier_min_free_mem_mb: -1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "verifier_min_free_mem_mb") {
+		t.Fatalf("Load(negative) = %v, want an error naming verifier_min_free_mem_mb", err)
+	}
+}
+
+func TestVerifierHeadroomMaxAge_Defaults(t *testing.T) {
+	if got := DefaultConfig().Autonomous.VerifierHeadroomMaxAgeHours; got != VerifierHeadroomMaxAgeHoursDefault {
+		t.Fatalf("DefaultConfig: verifier_headroom_max_age_hours = %d, want %d", got, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	cfg := loadYAMLBody(t, "autonomous:\n  enabled: true\n")
+	if got := cfg.Autonomous.VerifierHeadroomMaxAgeHours; got != VerifierHeadroomMaxAgeHoursDefault {
+		t.Fatalf("absent key reads %d, want default %d", got, VerifierHeadroomMaxAgeHoursDefault)
+	}
+}
+
+func TestVerifierHeadroomMaxAge_ExplicitRoundTrip(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  verifier_headroom_max_age_hours: 48\n")
+	if got := cfg.Autonomous.VerifierHeadroomMaxAgeHours; got != 48 {
+		t.Fatalf("verifier_headroom_max_age_hours = %d, want 48", got)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	again, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := again.Autonomous.VerifierHeadroomMaxAgeHours; got != 48 {
+		t.Fatalf("after round trip = %d, want 48", got)
+	}
+}
+
+func TestVerifierHeadroomMaxAge_ExplicitZeroReadsDefault(t *testing.T) {
+	// 0 = unset, same convention as stuck_running_seconds: the stored
+	// value stays 0 and the effective bound reads the default (always > 0).
+	cfg := loadYAMLBody(t, "autonomous:\n  verifier_headroom_max_age_hours: 0\n")
+	if got := cfg.Autonomous.VerifierHeadroomMaxAgeHours; got != 0 {
+		t.Fatalf("explicit 0 stored as %d, want 0 (unset sentinel)", got)
+	}
+	if got := cfg.Autonomous.VerifierHeadroomMaxAge(); got != VerifierHeadroomMaxAgeHoursDefault {
+		t.Fatalf("VerifierHeadroomMaxAge() with 0 = %d, want default %d", got, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if got := DefaultConfig().Autonomous.VerifierHeadroomMaxAge(); got != VerifierHeadroomMaxAgeHoursDefault {
+		t.Fatalf("VerifierHeadroomMaxAge() default = %d, want %d", got, VerifierHeadroomMaxAgeHoursDefault)
+	}
+	if got := (AutonomousConfig{VerifierHeadroomMaxAgeHours: 72}).VerifierHeadroomMaxAge(); got != 72 {
+		t.Fatalf("VerifierHeadroomMaxAge() with 72 = %d, want 72", got)
+	}
+}
+
+func TestVerifierHeadroomMaxAge_NegativeRejected(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte("autonomous:\n  verifier_headroom_max_age_hours: -5\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "verifier_headroom_max_age_hours") {
+		t.Fatalf("Load(negative verifier_headroom_max_age_hours) = %v, want an error naming verifier_headroom_max_age_hours", err)
+	}
+}
+
+func TestVerifierSlots_DefaultAndExplicit(t *testing.T) {
+	// Absent key reads 0 on the config side: the sentinel "use the default cap"
+	// (compute.DefaultNodeVerifierSlots = 1).
+	cfg := loadYAMLBody(t, "compute_nodes:\n  - name: n1\n    kind: ollama\n    address: http://n1:11434\n")
+	if len(cfg.ComputeNodes) != 1 {
+		t.Fatalf("ComputeNodes = %d entries, want 1", len(cfg.ComputeNodes))
+	}
+	if got := cfg.ComputeNodes[0].VerifierSlots; got != 0 {
+		t.Fatalf("absent verifier_slots reads %d, want 0 (sentinel: default cap)", got)
+	}
+	cfg2 := loadYAMLBody(t, "compute_nodes:\n  - name: n1\n    kind: ollama\n    address: http://n1:11434\n    verifier_slots: 3\n")
+	if got := cfg2.ComputeNodes[0].VerifierSlots; got != 3 {
+		t.Fatalf("verifier_slots = %d, want 3", got)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg2, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	again, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got := again.ComputeNodes[0].VerifierSlots; got != 3 {
+		t.Fatalf("after round trip = %d, want 3", got)
+	}
+}
+
+func TestVerifierSlots_NegativeRejected(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	body := "compute_nodes:\n  - name: bad\n    kind: ollama\n    address: http://bad:11434\n    verifier_slots: -1\n"
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), "verifier_slots") {
+		t.Fatalf("Load(negative verifier_slots) = %v, want an error naming verifier_slots", err)
+	}
+}

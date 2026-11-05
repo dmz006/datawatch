@@ -148,6 +148,12 @@ var AllKinds = []NodeKind{
 	KindLocal, KindSSH, KindDocker, KindK8s, KindRemote, KindRemoteProxy,
 }
 
+// DefaultNodeVerifierSlots is the effective verifier cap on a node whose
+// verifier_slots key is absent or 0 (Decision 2026-11-03 in
+// docs/plans/2026-10-14-concurrency-and-budget-design.md: default 1 with a
+// measured headroom check).
+const DefaultNodeVerifierSlots = 1
+
 // IsDeprecated reports whether k is one of the pre-alpha.23 deployment
 // kinds that the operator must migrate away from. Used by the PWA
 // migration banner + the dispatcher's "refuse to route" gate.
@@ -263,6 +269,17 @@ type Node struct {
 	// from observer GPU data; see NodeSlots). The effective count is still
 	// capped by MaxConcurrentSessions when that is set.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+
+	// VerifierSlots is the verifier cap for this node: the number of
+	// parallel verifier sessions that use classification verdicts that may
+	// run on the node at once (Decision 2026-11-03 in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md). It sits next
+	// to the executor slots and never replaces the executor pin (one
+	// session per node). 0 = use the default cap 1
+	// (DefaultNodeVerifierSlots); a negative value is a validation error.
+	// Every node is eligible — this codebase has no per-node
+	// classification-verdicts gate.
+	VerifierSlots int `yaml:"verifier_slots,omitempty" json:"verifier_slots,omitempty"`
 
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
@@ -415,6 +432,9 @@ func (n *Node) Validate() error {
 	}
 	if n.SessionSlots < 0 {
 		return fmt.Errorf("compute node: session_slots %d must be >= 0", n.SessionSlots)
+	}
+	if n.VerifierSlots < 0 {
+		return fmt.Errorf("compute node: verifier_slots %d must be >= 0 (0 = default cap %d)", n.VerifierSlots, DefaultNodeVerifierSlots)
 	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
