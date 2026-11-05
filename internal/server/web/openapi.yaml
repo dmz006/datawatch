@@ -2325,6 +2325,154 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/supervisor-loop/jobs:
+    get:
+      summary: Supervisor loop jobs
+      description: |
+        The supervisor loop's jobs: the loop's enabled state (`enabled`) and, per
+        job, its name, kind (`mechanical` step or `model` job), the model job's
+        style, backend and model, whether the job is enabled, and its last outcome
+        and run instant. Read-only; needs the autonomous read capability when
+        called by a federated peer.
+      operationId: supervisorLoopJobs
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor loop jobs
+          content:
+            application/json:
+              schema: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/runs:
+    get:
+      summary: Supervisor loop run records
+      description: |
+        The loop's stored run records, newest first: job, style, backend, model,
+        outcome (`ok`, `validator_failed`, `escalated` or `error`), result,
+        validator failures, retries, escalations, duration and started instant.
+        Filters: `job`, `outcome`, `limit` (1..500, default 50). Read-only; needs
+        the autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopRuns
+      tags: [Autonomous]
+      parameters:
+        - {name: job, in: query, required: false, schema: {type: string}}
+        - {name: outcome, in: query, required: false, schema: {type: string, enum: [ok, validator_failed, escalated, error]}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 500}}
+      responses:
+        "200":
+          description: Supervisor loop run records
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: A filter value is not valid}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/stats:
+    get:
+      summary: Supervisor loop stats
+      description: |
+        The supervisor loop as numbers for monitoring: whether it is on
+        (`enabled`), its job count (`jobs`) and enabled jobs (`jobs_enabled`), the
+        stored runs (`runs`) split by outcome (`runs_ok`, `runs_validator_failed`,
+        `runs_escalated`, `runs_error`), the retries used (`retries`) and how many
+        seconds ago the last run started (`last_run_age_seconds`, -1 when none has
+        run). The same numbers ride in the stats snapshot (`supervisor_loop_*`),
+        the Monitor tab's Supervisor loop card and the Prometheus gauges
+        `datawatch_supervisor_loop_runs`, `datawatch_supervisor_loop_jobs_enabled`
+        and `datawatch_supervisor_loop_last_run_age_seconds`. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor loop stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorLoopStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/jobs/{name}/run:
+    post:
+      summary: Run one supervisor loop job now
+      description: |
+        Runs the named job once and returns its result; the run is recorded like
+        any other. The body may carry `input` (text for the job) and `candidates`
+        (a list, for the model jobs that choose among candidates). An unknown job
+        name is a 404. Needs the autonomous run capability when called by a
+        federated peer.
+      operationId: supervisorLoopRunJob
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: {type: string}
+                candidates: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: The run's result (`job`, `ok`, `result`, and `error` when it failed)
+          content:
+            application/json:
+              schema: {type: object}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "404": {description: Unknown job}
+        "405": {description: Method not allowed}
+        "503": {description: The supervisor loop is not running}
+
+  /api/supervisor-loop/eval:
+    post:
+      summary: Evaluate a supervisor loop model job
+      description: |
+        Runs a model job's eval cases against each listed model and returns, per
+        model, the cases, passed count, validator failures, retries, median and
+        maximum duration and escalations. When no listed model is reachable the
+        answer is a 502 naming each. Needs the autonomous run capability when
+        called by a federated peer.
+      operationId: supervisorLoopEval
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job, models]
+              properties:
+                job: {type: string, enum: [draft_spec, classify_ci_failure, pick_backend]}
+                models: {type: array, items: {type: string}}
+                cases_dir: {type: string}
+      responses:
+        "200":
+          description: The per-model eval report
+          content:
+            application/json:
+              schema: {type: object}
+        "400": {description: Bad job, models or cases_dir}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "405": {description: Method not allowed}
+        "502": {description: No listed model is reachable}
+        "503": {description: The supervisor loop is not running}
+
   /api/autonomous/progress:
     get:
       summary: Progress metrics
@@ -9364,6 +9512,21 @@ components:
           description: The stored findings, open first, most recently seen first; empty when none are stored
           items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
         comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+    SupervisorLoopStats:
+      type: object
+      description: The supervisor loop as numbers, as GET /api/supervisor-loop/stats returns it.
+      required: [enabled, jobs, jobs_enabled, runs, runs_ok, runs_validator_failed, runs_escalated, runs_error, retries, last_run_age_seconds]
+      properties:
+        enabled: {type: boolean, description: Whether the loop is on}
+        jobs: {type: integer, description: How many jobs the loop has}
+        jobs_enabled: {type: integer, description: How many jobs are enabled (0 when the loop is off)}
+        runs: {type: integer, description: Stored run records}
+        runs_ok: {type: integer}
+        runs_validator_failed: {type: integer}
+        runs_escalated: {type: integer}
+        runs_error: {type: integer}
+        retries: {type: integer, description: Extra attempts used across the stored runs}
+        last_run_age_seconds: {type: integer, description: Seconds since the last run started; -1 when none has run}
     SupervisorWatchStats:
       type: object
       description: >-

@@ -1390,6 +1390,210 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/supervisor-loop/jobs:
+    get:
+      summary: Supervisor loop jobs
+      description: |
+        Every job the supervisor loop runs: the eight mechanical steps and the three
+        model jobs. Each carries its `kind`, its `enabled` state (the master switch and
+        the job's own switch), the last outcome and when it ran. A model job also
+        carries its `style` (`oneshot` or `session`), `backend` and `model`; an empty
+        backend and model means the job escalates instead of calling a model. Needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopJobs
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: {type: string}
+                        kind: {type: string, enum: [mechanical, model]}
+                        style: {type: string, enum: [oneshot, session]}
+                        backend: {type: string}
+                        model: {type: string}
+                        enabled: {type: boolean}
+                        last_outcome: {type: string, description: "ok, validator_failed, escalated or error; empty when the job has not run"}
+                        last_run: {type: string, format: date-time}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/runs:
+    get:
+      summary: Supervisor loop run records
+      description: |
+        The run records, newest first. Each shows the job, its style, backend and model,
+        the outcome and `result`, the validator failures, the retries, the escalations
+        and the duration in milliseconds. Needs the autonomous read capability when
+        called by a federated peer.
+      operationId: supervisorLoopRuns
+      tags: [Autonomous]
+      parameters:
+        - {name: job, in: query, required: false, description: "Only runs of this job", schema: {type: string}}
+        - {name: outcome, in: query, required: false, description: "Only runs with this outcome", schema: {type: string, enum: [ok, validator_failed, escalated, error]}}
+        - {name: limit, in: query, required: false, description: "Records to return; a whole number from 1 to 500, default 50", schema: {type: integer, minimum: 1, maximum: 500, default: 50}}
+      responses:
+        "200":
+          description: The run records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        job: {type: string}
+                        style: {type: string}
+                        backend: {type: string}
+                        model: {type: string}
+                        outcome: {type: string}
+                        result: {type: string}
+                        validator_failures: {type: array, items: {type: string}}
+                        retries: {type: integer}
+                        escalations: {type: integer}
+                        duration_ms: {type: integer}
+                        started: {type: string, format: date-time}
+        "400": {description: outcome or limit is not valid}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/stats:
+    get:
+      summary: Supervisor loop stats
+      description: |
+        The supervisor loop as numbers for monitoring: whether it is on
+        (`enabled`), its job count (`jobs`) and enabled jobs (`jobs_enabled`), the
+        stored runs (`runs`) split by outcome (`runs_ok`, `runs_validator_failed`,
+        `runs_escalated`, `runs_error`), the retries used (`retries`) and how many
+        seconds ago the last run started (`last_run_age_seconds`, -1 when none has
+        run). The same numbers ride in the stats snapshot (`supervisor_loop_*`),
+        the Monitor tab's Supervisor loop card and the Prometheus gauges
+        `datawatch_supervisor_loop_runs`, `datawatch_supervisor_loop_jobs_enabled`
+        and `datawatch_supervisor_loop_last_run_age_seconds`. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor loop stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorLoopStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
+  /api/supervisor-loop/jobs/{name}/run:
+    post:
+      summary: Run one supervisor loop job now
+      description: |
+        Runs the named job once and records the run. A mechanical step runs whatever its
+        enabled switch says. A model job takes an optional body: `input` (the operator
+        answer, the CI log or the routing rule) and, for pick_backend, `candidates`.
+        Needs the autonomous run capability when called by a federated peer.
+      operationId: supervisorLoopRunJob
+      tags: [Autonomous]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input: {type: string}
+                candidates: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: The run's result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: {type: string}
+                  ok: {type: boolean}
+                  result: {type: string}
+                  error: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "404": {description: Unknown job}
+        "405": {description: Method not allowed}
+        "503": {description: The supervisor loop is not running}
+
+  /api/supervisor-loop/eval:
+    post:
+      summary: Compare models on a supervisor loop model job's eval cases
+      description: |
+        Runs the job's eval cases (`internal/supervisorloop/testdata/eval/<job>/*.json`
+        unless `cases_dir` names another relative directory) against each listed model and
+        returns per model: cases, passed, validator failures, retries, median and maximum
+        duration and escalations. When no listed model is reachable the answer is a 502
+        naming each model; no result is invented. Needs the autonomous run capability when
+        called by a federated peer.
+      operationId: supervisorLoopEval
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job, models]
+              properties:
+                job: {type: string, enum: [draft_spec, classify_ci_failure, pick_backend]}
+                models: {type: array, items: {type: string}}
+                cases_dir: {type: string}
+      responses:
+        "200":
+          description: Per-model eval results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: {type: string}
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        model: {type: string}
+                        cases: {type: integer}
+                        passed: {type: integer}
+                        validator_failures: {type: integer}
+                        retries: {type: integer}
+                        median_duration_ms: {type: integer}
+                        max_duration_ms: {type: integer}
+                        escalations: {type: integer}
+        "400": {description: Unknown job, no models or a bad cases_dir}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "405": {description: Method not allowed}
+        "502": {description: No listed model is reachable}
+        "503": {description: The supervisor loop is not running}
+
   /api/autonomous/decisions:
     get:
       summary: Operator decisions
@@ -7938,6 +8142,21 @@ components:
         config: {$ref: "#/components/schemas/RulesContextConfig"}
         policy: {$ref: "#/components/schemas/RulesContextPolicy"}
         record: {$ref: "#/components/schemas/RulesContextRecord"}
+    SupervisorLoopStats:
+      type: object
+      description: The supervisor loop as numbers, as GET /api/supervisor-loop/stats returns it.
+      required: [enabled, jobs, jobs_enabled, runs, runs_ok, runs_validator_failed, runs_escalated, runs_error, retries, last_run_age_seconds]
+      properties:
+        enabled: {type: boolean, description: Whether the loop is on}
+        jobs: {type: integer, description: How many jobs the loop has}
+        jobs_enabled: {type: integer, description: How many jobs are enabled (0 when the loop is off)}
+        runs: {type: integer, description: Stored run records}
+        runs_ok: {type: integer}
+        runs_validator_failed: {type: integer}
+        runs_escalated: {type: integer}
+        runs_error: {type: integer}
+        retries: {type: integer, description: Extra attempts used across the stored runs}
+        last_run_age_seconds: {type: integer, description: Seconds since the last run started; -1 when none has run}
     Identity:
       type: object
       description: The operator identity; every field is optional.

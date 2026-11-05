@@ -390,6 +390,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newChannelRoutingCmd(), // BL331 parity
 		// Sprint S6 (v3.10.0) — BL24+BL25 autonomous PRD decomposition.
 		newAutonomousCmd(),
+		newSupervisorLoopCmd(),
 		newQuestionCmd(),
 		// Sprint S7 (v3.11.0) — BL33 plugin framework.
 		newPluginsCmd(),
@@ -7518,6 +7519,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return gpu, claude
 			})
+			// Supervisor loop: the eight mechanical steps run once per idle
+			// tick, and an escalation raises a question in the queue.
+			wireSupervisorLoop(autoCoord, amgr, cfg, autonomousInferenceReg, httpServer)
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
@@ -8748,6 +8752,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SafeDeleteRefreshFailures = sd.RefreshFailures
 			})
 		}
+		// Supervisor loop stats in the WS broadcast and the Prometheus collector.
+		statsCollector.SetSupervisorLoopStatsFunc(func(s *statspkg.SystemStats) {
+			fillSupervisorLoopStats(s, httpServer.SupervisorLoopStats())
+		})
 		// Burn guard stats in the WS broadcast and the Prometheus collector.
 		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
 			fillBurnGuardStats(s, httpServer.BurnGuardStats())
@@ -8818,6 +8826,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
 			updateBurnGuardMetrics(s)
 			updateTraceMetrics(s)
+			updateSupervisorLoopMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

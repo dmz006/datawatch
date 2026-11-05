@@ -175,6 +175,20 @@ type SystemStats struct {
 	SupervisorWatchFindingsAlerted    int    `json:"supervisor_watch_findings_alerted,omitempty"`
 	SupervisorWatchAgreedDays         int    `json:"supervisor_watch_agreed_days,omitempty"`
 
+	// Supervisor loop: whether it is on, its job counts, the stored run
+	// counts by outcome, the retries used and the seconds since the last run
+	// (-1 when none has run).
+	SupervisorLoopEnabled           bool  `json:"supervisor_loop_enabled,omitempty"`
+	SupervisorLoopJobs              int   `json:"supervisor_loop_jobs,omitempty"`
+	SupervisorLoopJobsEnabled       int   `json:"supervisor_loop_jobs_enabled,omitempty"`
+	SupervisorLoopRuns              int   `json:"supervisor_loop_runs,omitempty"`
+	SupervisorLoopRunsOK            int   `json:"supervisor_loop_runs_ok,omitempty"`
+	SupervisorLoopRunsValidatorFail int   `json:"supervisor_loop_runs_validator_failed,omitempty"`
+	SupervisorLoopRunsEscalated     int   `json:"supervisor_loop_runs_escalated,omitempty"`
+	SupervisorLoopRunsError         int   `json:"supervisor_loop_runs_error,omitempty"`
+	SupervisorLoopRetries           int   `json:"supervisor_loop_retries,omitempty"`
+	SupervisorLoopLastRunAgeSeconds int64 `json:"supervisor_loop_last_run_age_seconds,omitempty"`
+
 	// Burn guard (usage.burn_guard): ladder state, projection and counters.
 	BurnGuardState         string  `json:"burn_guard_state,omitempty"`
 	BurnGuardLevel         int     `json:"burn_guard_level,omitempty"`
@@ -344,6 +358,8 @@ type Collector struct {
 
 	// burnGuardStatsFn populates the burn guard fields.
 	burnGuardStatsFn func(*SystemStats)
+	// supervisorLoopStatsFn populates the supervisor loop fields.
+	supervisorLoopStatsFn func(*SystemStats)
 
 	// traceStatsFn populates the agent tracing fields.
 	traceStatsFn func(*SystemStats)
@@ -473,6 +489,11 @@ func (c *Collector) SetTraceStatsFunc(fn func(*SystemStats)) {
 // SetBurnGuardStatsFunc sets a callback that populates the burn guard fields on each snapshot.
 func (c *Collector) SetBurnGuardStatsFunc(fn func(*SystemStats)) {
 	c.burnGuardStatsFn = fn
+}
+
+// SetSupervisorLoopStatsFunc sets a callback that populates the supervisor loop fields on each snapshot.
+func (c *Collector) SetSupervisorLoopStatsFunc(fn func(*SystemStats)) {
+	c.supervisorLoopStatsFn = fn
 }
 
 // SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
@@ -630,6 +651,9 @@ func (c *Collector) collect() {
 	}
 
 	// Episodic memory stats
+	if c.supervisorLoopStatsFn != nil {
+		c.supervisorLoopStatsFn(&s)
+	}
 	if c.burnGuardStatsFn != nil {
 		c.burnGuardStatsFn(&s)
 	}

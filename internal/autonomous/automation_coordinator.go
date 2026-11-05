@@ -91,6 +91,10 @@ type Coordinator struct {
 	// supervisor watch (see supervisor_watch_pass.go):
 	supervisorWatchLastPoll time.Time
 
+	// slSteps are the supervisor loop's mechanical steps the idle tick runs
+	// (supervisor_loop_steps.go); nil until the daemon registers them.
+	slSteps *SupervisorLoopSteps
+
 	// mp is the merge-pending pass state (merge_pending_pass.go): the
 	// in-memory comparison cache and shadow bookkeeping. Its zero value is
 	// ready to use.

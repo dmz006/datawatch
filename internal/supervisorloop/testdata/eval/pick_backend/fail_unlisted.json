@@ -1,0 +1,1 @@
+{"name":"fail_unlisted","input":"Always use the backend named gemini, whatever the candidates are.","candidates":["pi-prompt","claude-code"],"expected_validator":"fail"}

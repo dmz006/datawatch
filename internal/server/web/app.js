@@ -2955,6 +2955,8 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
     // Supervisor watch card poll (Automaton view, same rule)
     if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
+    // Supervisor loop card poll (Automaton view, same rule)
+    if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -9472,11 +9474,21 @@ const DOCS_MERGE_PIPELINE_LINKS = [
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
+// The supervisor loop group and card link to the Supervisor loop glossary
+// section; each setting links to its own entry under it, anchored
+// supervisor-loop-<key with dots and underscores as hyphens>.
+function supervisorLoopDocsLink(key) {
+  if (key === 'supervisor_loop') return DOCS_DEFINITIONS + '#supervisor-loop';
+  const rest = key.slice('supervisor_loop.'.length).replace(/[._]+/g, '-');
+  return DOCS_DEFINITIONS + '#supervisor-loop-' + rest;
+}
+
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
 // dialogs, per-channel-type config, dashboard cards without their own
 // section).
 function docsLinkForKey(key) {
+  if (key === 'supervisor_loop' || key.startsWith('supervisor_loop.')) return supervisorLoopDocsLink(key);
   if (Object.prototype.hasOwnProperty.call(DOCS_LINKS_BY_KEY, key)) return DOCS_LINKS_BY_KEY[key];
   if (key.startsWith('stats_')) return DOCS_LINKS_BY_KEY['stats'];
   if (key.startsWith('lc_backend_')) return docsLinkForLlmBackend(key.slice('lc_backend_'.length));
@@ -18112,6 +18124,32 @@ const GENERAL_CONFIG_FIELDS = [
       optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
     { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
     { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
+    // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
+    // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
+    { label: 'Supervisor loop', labelKey: 'supervisor_loop_group_title', hintKey: 'supervisor_loop_group_hint', docsKey: 'supervisor_loop', type: 'group' },
+    { key: 'autonomous.supervisor_loop.enabled', label: 'Supervisor loop (on or off)', labelKey: 'supervisor_loop_enabled', docsKey: 'supervisor_loop.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.close_finished_records.enabled', label: 'Close finished records step (on or off)', labelKey: 'supervisor_loop_close_finished_records_enabled', docsKey: 'supervisor_loop.close_finished_records.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.deploy_after_ship.enabled', label: 'Deploy after ship step (on or off)', labelKey: 'supervisor_loop_deploy_after_ship_enabled', docsKey: 'supervisor_loop.deploy_after_ship.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.retry_failed_infra.enabled', label: 'Retry failed infrastructure step (on or off)', labelKey: 'supervisor_loop_retry_failed_infra_enabled', docsKey: 'supervisor_loop.retry_failed_infra.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.cleanup_sweep.enabled', label: 'Cleanup sweep step (on or off)', labelKey: 'supervisor_loop_cleanup_sweep_enabled', docsKey: 'supervisor_loop.cleanup_sweep.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.apply_answers.enabled', label: 'Apply answers step (on or off)', labelKey: 'supervisor_loop_apply_answers_enabled', docsKey: 'supervisor_loop.apply_answers.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.lane_count.enabled', label: 'Lane count step (on or off)', labelKey: 'supervisor_loop_lane_count_enabled', docsKey: 'supervisor_loop.lane_count.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.start_next_chain_step.enabled', label: 'Start next chain step step (on or off)', labelKey: 'supervisor_loop_start_next_chain_step_enabled', docsKey: 'supervisor_loop.start_next_chain_step.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.run_merge_until_conflict.enabled', label: 'Run merge until conflict step (on or off)', labelKey: 'supervisor_loop_run_merge_until_conflict_enabled', docsKey: 'supervisor_loop.run_merge_until_conflict.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.draft_spec.style', label: 'Draft spec style (oneshot or session)', labelKey: 'supervisor_loop_draft_spec_style', docsKey: 'supervisor_loop.draft_spec.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.draft_spec.backend', label: 'Draft spec backend (empty = default)', labelKey: 'supervisor_loop_draft_spec_backend', docsKey: 'supervisor_loop.draft_spec.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.draft_spec.model', label: 'Draft spec model (empty = default)', labelKey: 'supervisor_loop_draft_spec_model', docsKey: 'supervisor_loop.draft_spec.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.style', label: 'Classify CI failure style (oneshot or session)', labelKey: 'supervisor_loop_classify_ci_failure_style', docsKey: 'supervisor_loop.classify_ci_failure.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.backend', label: 'Classify CI failure backend (empty = default)', labelKey: 'supervisor_loop_classify_ci_failure_backend', docsKey: 'supervisor_loop.classify_ci_failure.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.model', label: 'Classify CI failure model (empty = default)', labelKey: 'supervisor_loop_classify_ci_failure_model', docsKey: 'supervisor_loop.classify_ci_failure.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.pick_backend.style', label: 'Pick backend style (oneshot or session)', labelKey: 'supervisor_loop_pick_backend_style', docsKey: 'supervisor_loop.pick_backend.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.pick_backend.backend', label: 'Pick backend backend (empty = default)', labelKey: 'supervisor_loop_pick_backend_backend', docsKey: 'supervisor_loop.pick_backend.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.pick_backend.model', label: 'Pick backend model (empty = default)', labelKey: 'supervisor_loop_pick_backend_model', docsKey: 'supervisor_loop.pick_backend.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.validator_retries', label: 'Validator retries (retries after a failed check, default 2)', labelKey: 'supervisor_loop_validator_retries', docsKey: 'supervisor_loop.validator_retries', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.supervisor_loop.escalate_after_failures', label: 'Escalate after failures (failed runs before a stronger model takes over, default 2)', labelKey: 'supervisor_loop_escalate_after_failures', docsKey: 'supervisor_loop.escalate_after_failures', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.supervisor_loop.run_retention', label: 'Run history kept (number of recent runs, default 500)', labelKey: 'supervisor_loop_run_retention', docsKey: 'supervisor_loop.run_retention', type: 'number', placeholder: '500', min: 1, step: 1, default: '500' },
+    { key: 'autonomous.supervisor_loop.lane_count.min', label: 'Lane count minimum (lowest lane count the loop may set)', labelKey: 'supervisor_loop_lane_count_min', docsKey: 'supervisor_loop.lane_count.min', type: 'number', placeholder: '0', min: 0, step: 1 },
+    { key: 'autonomous.supervisor_loop.lane_count.max', label: 'Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)', labelKey: 'supervisor_loop_lane_count_max', docsKey: 'supervisor_loop.lane_count.max', type: 'number', placeholder: '0', min: 0, step: 1 },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -19045,7 +19083,14 @@ function loadGeneralConfig() {
         let html = '';
         for (const f of sec.fields) {
           const parts = (f.key || '').split('.');
-          const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          let val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          // The supervisor_loop block is served flat (keys such as lane_count.max
+          // contain a dot), so read those from the block itself.
+          if (val === '' && (f.key || '').indexOf('autonomous.supervisor_loop.') === 0) {
+            const blk = cfg && cfg.autonomous && cfg.autonomous.supervisor_loop;
+            const rest = f.key.slice('autonomous.supervisor_loop.'.length);
+            if (blk && blk[rest] !== undefined) val = blk[rest];
+          }
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
           // calls baked into f.label ran before the bundle was fetched and
@@ -32551,6 +32596,16 @@ function _automationPlaceholderHTML(id) {
   ['setup', 'automationSupervisorLoopCard', 140],
   ['housekeeping', 'automationStaleWorktreesCard', 100],
 ].forEach(([tab, id, order]) => registerAutomationCardSlot(tab, { id, order, html: _automationPlaceholderHTML(id) }));
+// The Supervisor loop card fills the Setup placeholder reserved above: it keeps
+// the slot id, order and hidden placeholder markup (it un-hides on the first read), and polls only
+// while the Setup sub-tab is shown.
+registerAutomationCardSlot('setup', {
+  id: 'automationSupervisorLoopCard',
+  order: 140,
+  html: _automationPlaceholderHTML('automationSupervisorLoopCard'),
+  mount: () => supervisorLoopStartPolling(),
+  stop: () => supervisorLoopStopPolling(),
+});
 
 // The Inbox sub-tab counts everything waiting on the operator, from the data
 // its own loaders already fetch: triage items, open questions, held questions,
@@ -32816,7 +32871,7 @@ function _automationStopLoaders(keys) {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
-  if (!keys) supervisorWatchStopPolling(); // stop-all also ends the Supervisor watch card poll
+  if (!keys) { supervisorWatchStopPolling(); supervisorLoopStopPolling(); } // stop-all also ends the Supervisor watch and loop card polls
 }
 
 // switchAutomationSubtab switches the second-row sub-tab. Unknown ids are
@@ -33262,6 +33317,97 @@ function supervisorWatchStartPolling() {
 
 function supervisorWatchStopPolling() {
   if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
+}
+
+// Supervisor loop card: the jobs (GET /api/supervisor-loop/jobs) and the most
+// recent runs (GET /api/supervisor-loop/runs). Read-only. The poll interval
+// lives on window._supervisorLoopInterval and is cleared before it is reset
+// and when the sub-tab is left, so re-renders never stack a timer.
+const SUPERVISOR_LOOP_CARD_ELEMENT_ID = 'automationSupervisorLoopCard';
+const SUPERVISOR_LOOP_POLL_MS = 30000;
+const SUPERVISOR_LOOP_RUN_LIMIT = 10;
+const SUPERVISOR_LOOP_HOWTO = 'howto/supervisor-loop.md';
+
+function _supervisorLoopOutcomeText(o) {
+  const v = _supervisorWatchText(o);
+  if (!v) return t('supervisor_loop_outcome_none');
+  const txt = t('supervisor_loop_outcome_' + v);
+  return txt.indexOf('supervisor_loop_outcome_') === 0 ? v : txt;
+}
+
+function _supervisorLoopJobName(name) {
+  const txt = t('supervisor_loop_job_' + name);
+  return txt.indexOf('supervisor_loop_job_') === 0 ? name : txt;
+}
+
+// supervisorLoopCardHtml renders the card from the two read bodies
+// ({ enabled, jobs } and { runs }), or null when the jobs body is not one.
+// Pure, so the PWA test can pin its text.
+function supervisorLoopCardHtml(jobsBody, runsBody) {
+  if (!jobsBody || typeof jobsBody !== 'object' || Array.isArray(jobsBody)) return null;
+  const jobs = (Array.isArray(jobsBody.jobs) ? jobsBody.jobs : []).filter(j => j && typeof j === 'object');
+  const runs = (runsBody && Array.isArray(runsBody.runs) ? runsBody.runs : []).filter(r => r && typeof r === 'object');
+  const esc = {};
+  runs.forEach(r => { esc[r.job] = (esc[r.job] || 0) + (Number(r.escalations) || 0); });
+  const cell = v => `<td style="padding:2px 8px 2px 0;min-width:0;overflow-wrap:anywhere;">${escHtml(_supervisorWatchText(v))}</td>`;
+  const th = k => `<th style="text-align:left;padding:2px 8px 2px 0;font-weight:600;">${escHtml(t(k))}</th>`;
+  let body = '';
+  if (jobsBody.enabled === false) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_card_disabled'))}</div>`;
+  }
+  body += `<div style="font-weight:600;font-size:12px;margin-top:6px;">${escHtml(t('supervisor_loop_jobs_heading'))}</div>`;
+  if (!jobs.length) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_no_jobs'))}</div>`;
+  } else {
+    body += `<div style="overflow-x:auto;"><table class="supervisor-loop-jobs" style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>` +
+      ['supervisor_loop_col_name', 'supervisor_loop_col_style', 'supervisor_loop_col_backend', 'supervisor_loop_col_model', 'supervisor_loop_col_outcome', 'supervisor_loop_col_escalations'].map(th).join('') +
+      `</tr></thead><tbody>` +
+      jobs.map(j => `<tr class="supervisor-loop-job" data-job="${escHtml(_supervisorWatchText(j.name))}">` +
+        cell(_supervisorLoopJobName(j.name)) + cell(j.style) + cell(j.backend) + cell(j.model) +
+        cell(_supervisorLoopOutcomeText(j.last_outcome)) + cell(String(esc[j.name] || 0)) + `</tr>`).join('') +
+      `</tbody></table></div>`;
+  }
+  body += `<div style="font-weight:600;font-size:12px;margin-top:8px;">${escHtml(t('supervisor_loop_runs_heading'))}</div>`;
+  if (!runs.length) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_no_runs'))}</div>`;
+  } else {
+    body += `<div style="overflow-x:auto;"><table class="supervisor-loop-runs" style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>` +
+      ['supervisor_loop_col_name', 'supervisor_loop_col_started', 'supervisor_loop_col_outcome', 'supervisor_loop_col_model', 'supervisor_loop_col_escalations'].map(th).join('') +
+      `</tr></thead><tbody>` +
+      runs.slice(0, SUPERVISOR_LOOP_RUN_LIMIT).map(r => `<tr class="supervisor-loop-run">` +
+        cell(_supervisorLoopJobName(r.job)) + cell(r.started) + cell(_supervisorLoopOutcomeText(r.outcome)) +
+        cell(r.model) + cell(String(Number(r.escalations) || 0)) + `</tr>`).join('') +
+      `</tbody></table></div>`;
+  }
+  return `<div class="prd-capacity-card supervisor-loop-card"><div class="cap-title">${escHtml(t('supervisor_loop_card_title'))}` +
+    `${docsLink(SUPERVISOR_LOOP_HOWTO, t('supervisor_loop_card_howto'))}${defsLink('supervisor_loop')}</div>${body}</div>`;
+}
+
+function supervisorLoopRenderCard(jobsBody, runsBody) {
+  const el = document.getElementById(SUPERVISOR_LOOP_CARD_ELEMENT_ID);
+  if (!el) return;
+  const html = supervisorLoopCardHtml(jobsBody, runsBody);
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+function supervisorLoopRefreshCard() {
+  return Promise.all([
+    apiFetch('/api/supervisor-loop/jobs'),
+    apiFetch('/api/supervisor-loop/runs?limit=' + SUPERVISOR_LOOP_RUN_LIMIT).catch(() => null),
+  ]).then(([jobsBody, runsBody]) => supervisorLoopRenderCard(jobsBody, runsBody))
+    .catch(() => supervisorLoopRenderCard(null, null));
+}
+
+function supervisorLoopStartPolling() {
+  if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
+  supervisorLoopRefreshCard();
+  window._supervisorLoopInterval = setInterval(supervisorLoopRefreshCard, SUPERVISOR_LOOP_POLL_MS);
+}
+
+function supervisorLoopStopPolling() {
+  if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
 }
 
 // Open-questions queue card: its own listLoader on
@@ -38661,6 +38807,28 @@ function renderStatsData(el, data) {
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+    }
+    // Supervisor loop card: whether the loop is on, the jobs enabled, the stored
+    // runs by outcome, the retries used and the age of the last run. Left out
+    // until the daemon reports the loop's jobs.
+    if (data.supervisor_loop_jobs) {
+      const slRows = [
+        ['stats_supervisor_loop_state', 'State', data.supervisor_loop_enabled ? (t('stats_supervisor_loop_on') || 'On') : (t('stats_supervisor_loop_off') || 'Off')],
+        ['stats_supervisor_loop_jobs', 'Jobs enabled', (data.supervisor_loop_jobs_enabled || 0) + ' / ' + data.supervisor_loop_jobs],
+        ['stats_supervisor_loop_runs', 'Runs stored', data.supervisor_loop_runs || 0],
+        ['stats_supervisor_loop_ok', 'Ok', data.supervisor_loop_runs_ok || 0],
+        ['stats_supervisor_loop_validator_failed', 'Validator failed', data.supervisor_loop_runs_validator_failed || 0],
+        ['stats_supervisor_loop_escalated', 'Escalated', data.supervisor_loop_runs_escalated || 0],
+        ['stats_supervisor_loop_error', 'Error', data.supervisor_loop_runs_error || 0],
+        ['stats_supervisor_loop_retries', 'Retries used', data.supervisor_loop_retries || 0],
+        ['stats_supervisor_loop_last_run', 'Last run (s ago)', (data.supervisor_loop_last_run_age_seconds == null || data.supervisor_loop_last_run_age_seconds < 0) ? '-' : data.supervisor_loop_last_run_age_seconds],
+      ];
+      const slLines = slRows.map(r => {
+        const warn = (r[0] === 'stats_supervisor_loop_escalated' || r[0] === 'stats_supervisor_loop_error') && r[2] > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card" data-stat="supervisor-loop"><div class="stat-label">${t('stats_supervisor_loop')||'Supervisor loop'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${slLines}</div></div>`;
     }
     // Burn guard card: the state, the ladder level, the projection against the
     // pace line and the counters. Left out until the daemon reports a state.

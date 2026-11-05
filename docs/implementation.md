@@ -2285,6 +2285,55 @@ for the poll's contract.
   cache), `internal/server/repo_ci_watch_rest_test.go` (the REST read), and
   the parity tests that cover the CLI and comm verbs.
 
+## Supervisor loop (autonomous.supervisor_loop)
+
+The daemon's standing loop that keeps every Automaton moving: eight mechanical
+steps (no model call) and three model jobs, each run recorded. See
+`docs/howto/supervisor-loop.md` for the operator view and
+`docs/plans/2026-11-02-supervisor-loop.md` for the plan.
+
+- **Config:** `autonomous.supervisor_loop` — a block inside the existing
+  `autonomous` section, held as flat dotted keys that each keep the full
+  `supervisor_loop.` prefix (`"supervisor_loop.lane_count.max": 4`). The type is
+  `config.SupervisorLoopConfig` (`internal/config/config.go`, a
+  `map[string]any`); `supervisorloop.ParseSettings` (`internal/supervisorloop/settings.go`)
+  reads it, an unprefixed or unknown key is reset to its default and logged,
+  and `Settings.Set` validates every write. Keys: `supervisor_loop.enabled`,
+  `supervisor_loop.<step>.enabled` for the eight steps
+  (`close_finished_records`, `deploy_after_ship`, `retry_failed_infra`,
+  `cleanup_sweep`, `apply_answers`, `lane_count`, `start_next_chain_step`,
+  `run_merge_until_conflict`), `supervisor_loop.<job>.style|backend|model` for
+  the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
+  `validator_retries` (default 2), `escalate_after_failures` (default 2),
+  `run_retention` (default 500) and `lane_count.min` / `lane_count.max` (default
+  0; max 0 means no bounds, so the lane count step moves nothing; max must be at
+  least min). Over `PUT /api/config`, the CLI `config set` and the comm
+  `configure` verb the key is `autonomous.supervisor_loop.<key>` without the
+  second prefix.
+- **Engine:** `internal/supervisorloop` holds the engine, the validators, the
+  model jobs (`jobs_model.go`), the eval harness (`eval.go`), the run store
+  (`store.go`, `supervisor_loop_runs.jsonl` in the data directory, trimmed to
+  `run_retention`) and the stats snapshot (`stats.go`). The mechanical steps
+  live in `internal/autonomous/supervisor_loop_steps.go` and run on the
+  coordinator's idle tick. An empty backend and model use the decision
+  assistant's; with none configured a model job escalates to the operator and
+  never falls back to a hosted model.
+- **Surfaces:** REST `GET /api/supervisor-loop/jobs|runs|stats`,
+  `POST /api/supervisor-loop/jobs/{name}/run` and `POST /api/supervisor-loop/eval`
+  (`internal/server/supervisor_loop.go`, federation capability
+  `autonomous:read` for reads and `autonomous:run` for runs); MCP
+  `supervisor_loop_jobs|runs|run_job|eval|stats`
+  (`internal/mcp/supervisor_loop_tools.go`); CLI `datawatch supervisor-loop
+  jobs|runs|stats|run|eval`; comm `supervisor jobs|runs|stats|run`
+  (`internal/router/supervisor_loop_comm.go`); the PWA card on the Automation
+  view and the settings group.
+- **Observability:** `SystemStats.SupervisorLoop*` (`internal/stats/collector.go`),
+  the Monitor tab's Supervisor loop card, `GET /api/supervisor-loop/stats`, the MCP
+  tool `supervisor_loop_stats` and the Prometheus gauges
+  `datawatch_supervisor_loop_runs{outcome}`,
+  `datawatch_supervisor_loop_jobs_enabled` and
+  `datawatch_supervisor_loop_last_run_age_seconds`.
+
 ## Supervisor watch (autonomous.automation.supervisor_watch)
 
 The coordinator runs the daemon-side version of the supervisor script on every

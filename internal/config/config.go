@@ -3517,6 +3517,11 @@ type AutonomousConfig struct {
 	// the planner; empty (default) means the guidance is generated from
 	// the configured decompose-lint rules (EffectiveDecomposeGuidance).
 	DecomposeGuidance string `yaml:"decompose_guidance" json:"decompose_guidance"`
+	// SupervisorLoop — the supervisor_loop settings as flat dotted keys
+	// (for example "supervisor_loop.lane_count.max": 4,
+	// "supervisor_loop.deploy_after_ship.enabled": false). Parsed by
+	// supervisorloop.ParseSettings; absent keys take their defaults.
+	SupervisorLoop SupervisorLoopConfig `yaml:"supervisor_loop,omitempty" json:"supervisor_loop,omitempty"`
 
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
@@ -7414,4 +7419,23 @@ type ClassifierCalibrationConfig struct {
 	FalsePassWeight       float64 `yaml:"false_pass_weight,omitempty" json:"false_pass_weight,omitempty"`
 	RotationBiasThreshold float64 `yaml:"rotation_bias_threshold,omitempty" json:"rotation_bias_threshold,omitempty"`
 	RotationFlipThreshold float64 `yaml:"rotation_flip_threshold,omitempty" json:"rotation_flip_threshold,omitempty"`
+}
+
+// SupervisorLoopConfig is the supervisor_loop block: the settings as flat
+// dotted keys (for example "supervisor_loop.lane_count.max": 4). Absent keys
+// take the defaults in supervisorloop.DefaultSettings; supervisorloop.ParseSettings
+// reads it and Settings.Set validates a change. It lives with the other
+// autonomous blocks (Autonomous.SupervisorLoop, yaml key supervisor_loop).
+type SupervisorLoopConfig map[string]any
+
+// Clone returns an independent copy.
+func (c SupervisorLoopConfig) Clone() SupervisorLoopConfig {
+	if c == nil {
+		return nil
+	}
+	out := make(SupervisorLoopConfig, len(c))
+	for k, v := range c {
+		out[k] = v
+	}
+	return out
 }

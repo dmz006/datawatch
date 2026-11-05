@@ -1,0 +1,1 @@
+{"name":"pass_simple","input":"Add a --verbose flag to the export command and print each file as it is written. Touch cmd/export.go only.","expected_validator":"pass"}

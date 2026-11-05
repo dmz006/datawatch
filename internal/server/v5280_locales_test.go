@@ -95,6 +95,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_priority_by_kind_hint",
 		"settings_defect_intake_automation",
 		"settings_defect_intake_automation_hint",
+		"supervisor_loop_card_title",
+		"stats_supervisor_loop",
 		"prd_scope_warnings_title",
 		"settings_defect_queue_group",
 		"settings_defect_queue_enabled",

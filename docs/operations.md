@@ -5394,6 +5394,19 @@ The security workflow set is read from `autonomous.automation.repo_ci_watch.secu
 
 ---
 
+## Supervisor loop (`autonomous.supervisor_loop`)
+
+The supervisor loop keeps every Automaton moving. See [howto/supervisor-loop.md](howto/supervisor-loop.md) for what each step and job does and every setting.
+
+| Where | What |
+|---|---|
+| REST | `GET /api/supervisor-loop/stats` — `enabled`, `jobs`, `jobs_enabled`, `runs`, `runs_ok`, `runs_validator_failed`, `runs_escalated`, `runs_error`, `retries`, `last_run_age_seconds` (-1 when no run is stored) |
+| MCP / CLI / comm | `supervisor_loop_stats`, `datawatch supervisor-loop stats [--json]`, `supervisor stats` |
+| Monitor tab | the **Supervisor loop** card, live over the stats broadcast (`supervisor_loop_*` fields); escalated and error counts above zero show as a warning |
+| Prometheus | `datawatch_supervisor_loop_runs{outcome}`, `datawatch_supervisor_loop_jobs_enabled`, `datawatch_supervisor_loop_last_run_age_seconds` |
+
+A rising `escalated` or `error` count, or a `last_run_age_seconds` far above the loop's pass interval, is the sign to read `GET /api/supervisor-loop/runs` and tune the model job's backend or model.
+
 ## Supervisor watch (`autonomous.automation.supervisor_watch`)
 
 The supervisor watch is the daemon-side version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs fourteen checks — twelve that the script also runs, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has and the comparison therefore shows as *only the watch* — and keeps one finding per kind and subject. The script also checks things the watch does not yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin); see [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md) for the differences to expect in the comparison. The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`; each is explained in plain words in [howto/automation-supervisor-watch.md](howto/automation-supervisor-watch.md). The watch is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. A check that cannot tell (a probe that failed, a node that cannot be reached) reports nothing. A finding closes by itself when its check stops reporting it, and re-opens in place, keeping its first-seen time, if the problem returns.
