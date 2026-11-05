@@ -27,8 +27,8 @@ func TestSupervisorLoopMCPToolsAreListed(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantNames := map[string]bool{
-		"supervisor_loop_jobs":   false,
-		"supervisor_loop_runs":   false,
+		"supervisor_loop_jobs":    false,
+		"supervisor_loop_runs":    false,
 		"supervisor_loop_run_job": false,
 	}
 	for _, tl := range tools {

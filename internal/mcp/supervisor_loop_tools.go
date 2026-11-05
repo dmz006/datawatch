@@ -15,8 +15,8 @@ import (
 // daemon's validation and state stay the single source of truth.
 
 const (
-	supervisorLoopJobsUsage   = "usage: supervisor_loop_jobs (takes no arguments)"
-	supervisorLoopRunsUsage   = `usage: supervisor_loop_runs [job=NAME] [outcome=RESULT] [limit=N]
+	supervisorLoopJobsUsage = "usage: supervisor_loop_jobs (takes no arguments)"
+	supervisorLoopRunsUsage = `usage: supervisor_loop_runs [job=NAME] [outcome=RESULT] [limit=N]
   job      only runs of this job (a job name, e.g. "draft_spec")
   outcome  only runs that ended this way: "ok", "validator_failed", "escalated" or "error"
   limit    whole number 1..500, how many recent runs to read (default 50)`

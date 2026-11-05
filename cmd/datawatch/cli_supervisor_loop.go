@@ -2,7 +2,7 @@
 // CLI:
 //
 //	datawatch supervisor-loop jobs [--json]
-//	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--json]
+//	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--format json]
 //	datawatch supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
 //
 // Thin REST proxies: the jobs and runs reads render the daemon's bodies,
@@ -78,7 +78,7 @@ func newSupervisorLoopJobsCmd() *cobra.Command {
 
 func newSupervisorLoopRunsCmd() *cobra.Command {
 	var asJSON bool
-	var job, outcome string
+	var job, outcome, format string
 	var limit int
 	c := &cobra.Command{
 		Use:   "runs",
@@ -90,6 +90,13 @@ func newSupervisorLoopRunsCmd() *cobra.Command {
 			"--json prints the raw response untouched.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			switch format {
+			case "", "text":
+			case "json":
+				asJSON = true
+			default:
+				return fmt.Errorf("unknown --format %q (use \"json\" or \"text\")", format)
+			}
 			q := url.Values{}
 			if job != "" {
 				q.Set("job", job)
@@ -119,6 +126,7 @@ func newSupervisorLoopRunsCmd() *cobra.Command {
 		},
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	c.Flags().StringVar(&format, "format", "", `output format: "json" for the raw response, "text" (default)`)
 	c.Flags().StringVar(&job, "job", "", `only the runs of this job (a job name, e.g. "draft_spec")`)
 	c.Flags().StringVar(&outcome, "outcome", "", `only runs that ended this way: "ok", "validator_failed", "escalated" or "error"`)
 	c.Flags().IntVar(&limit, "limit", 0, "how many recent runs to read (whole number 1..500, default 50)")
