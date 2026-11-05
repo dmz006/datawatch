@@ -25693,6 +25693,19 @@ let _automataDetailBreadcrumb = [];  // [{id, title}] chain from root to current
 let _automataDetailPRD = null;  // last-fetched PRD object for in-place tab switching
 // BL246 v6.6.0 — sub-tabs in detail view: 'overview' | 'stories' | 'decisions' | 'scan'
 let _automataDetailTab = 'overview';
+// _automataDetailTabsReveal scrolls only the Automaton detail tab strip
+// horizontally so the active tab is visible; the page itself never scrolls.
+function _automataDetailTabsReveal() {
+  try {
+    const btn = document.querySelector('.prd-detail-tabs .output-tab.active');
+    if (!btn) return;
+    const strip = btn.parentElement;
+    if (!strip || typeof btn.offsetLeft !== 'number') return;
+    strip.scrollLeft = btn.offsetLeft - Math.max(0, (strip.clientWidth - btn.offsetWidth) / 2);
+  } catch (e) { /* cosmetic only */ }
+}
+window._automataDetailTabsReveal = _automataDetailTabsReveal;
+
 function switchAutomataDetailTab(tab) {
   _automataDetailTab = tab;
   if (!_automataDetailId) return;
@@ -25701,7 +25714,10 @@ function switchAutomataDetailTab(tab) {
   if (_automataDetailPRD) {
     const prd = _automataDetailPRD;
     const tabsEl = document.querySelector('#automataDetailBody .prd-detail-tabs');
-    if (tabsEl) tabsEl.outerHTML = _renderDetailTabStrip(prd, tab);
+    if (tabsEl) {
+      tabsEl.outerHTML = _renderDetailTabStrip(prd, tab);
+      _automataDetailTabsReveal();
+    }
     const bodyEl = document.querySelector('#automataDetailBody .prd-detail-tab-body');
     if (bodyEl) {
       let html = '';
@@ -26107,6 +26123,8 @@ function _renderDetailContent(prd) {
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  _automataDetailTabsReveal();
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(_automataDetailTabsReveal);
   window.loadDecisionLineCard(prd.id);
   // Decompose-lint findings panel (task 4f3f): last recorded run for this
   // Automaton + dry-run recheck, under the plan coverage block. Silent on

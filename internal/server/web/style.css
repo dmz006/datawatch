@@ -2127,6 +2127,33 @@ body {
 /* PRD detail tabs — proper tab styling (not buttons). */
 .prd-detail-tabs.output-tabs {
   margin: 8px 0 6px;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+.prd-detail-tabs.output-tabs::-webkit-scrollbar { display: none; }
+.prd-detail-tabs .output-tab {
+  flex: 0 0 auto;            /* tabs keep their natural width; the strip scrolls */
+  white-space: nowrap;
+}
+@media (max-width: 600px), (pointer: coarse) {
+  .prd-detail-tabs .output-tab {
+    min-height: 40px;
+    box-sizing: border-box;
+  }
+}
+/* The detail view's wrappers must not let the tab strip widen the page. */
+#automataDetailBody,
+#automataDetailBody .prd-detail-tab-body {
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* v6.13.8 — PRD detail action row (lifecycle strip hoisted into the
