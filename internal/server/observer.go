@@ -117,10 +117,26 @@ func (s *Server) handleObserverEnvelopesAllPeers(w http.ResponseWriter, r *http.
 	if s.peerRegistry != nil {
 		for _, p := range s.peerRegistry.List() {
 			snap := s.peerRegistry.LastPayload(p.Name)
+			// Pull-merge — a pulled snapshot is fresher than a stale
+			// push: prefer it when the collector holds one for this peer.
+			if ps := s.pullSnapshotFor(p.Name); ps != nil {
+				snap = ps
+			}
 			if snap == nil {
 				continue
 			}
 			byPeer[p.Name] = append([]observer.Envelope{}, snap.Envelopes...)
+		}
+	}
+	// Pull-only peers — pulled by the collector but never registered for
+	// push. Shadow rows (federated, pull off) hold no pull state and are
+	// excluded from this view.
+	for _, name := range s.pulledPeerNames() {
+		if _, ok := byPeer[name]; ok {
+			continue
+		}
+		if ps := s.pullSnapshotFor(name); ps != nil {
+			byPeer[name] = append([]observer.Envelope{}, ps.Envelopes...)
 		}
 	}
 	observer.CorrelateAcrossPeers(byPeer, "local")
