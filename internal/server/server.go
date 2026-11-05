@@ -532,6 +532,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate) // POST checks a pipeline body or a repository file without saving
 	apiMux.HandleFunc("/api/autonomous/checks", api.handleAutonomousChecks)                       // resolved checks policy + recorded check findings
 	apiMux.HandleFunc("/api/autonomous/ship", api.handleAutonomousShip)                           // resolved ship policy + recorded push/tag/CI-watch outcomes
+	apiMux.HandleFunc("/api/autonomous/rules-context", api.handleAutonomousRulesContext) // GET config + resolved policy + planning record; PUT replaces the config
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                       // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                 // decisions: operator questions with their tasks and answers, newest first
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                  // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
