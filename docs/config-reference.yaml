@@ -1026,18 +1026,19 @@ profiles:
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
 # LLM registry entries (the `llms:` list; manage with `datawatch llm ...`).
-# Each entry may carry a verification_mode key:
-llms:
-  - name: example-judge
-    # verification_mode: how this LLM judges a verification. Default "generate".
-    # "" or "generate" asks the judge to write a verdict and parses it.
-    # "classify" reads the judge's option probabilities instead and fails closed
-    # (missing scores, timeouts, transport errors and abstains become a block
-    # with an infra category; a block is never downgraded). Set it with
-    # `datawatch llm update <name> --verification-mode classify`, MCP
-    # llm_update, PUT on the LLM entry, or the Verification mode selector in
-    # the web app LLM settings.
-    verification_mode: generate
+# Each entry may carry a per-LLM verification_mode key:
+#   llms:
+#     - name: <llm-name>
+#       verification_mode: generate    # default "generate" (empty string too)
+# verification_mode: how this LLM judges a verification.
+#   "" or "generate" (default) asks the judge to write a verdict and parses it.
+#   "classify" reads the judge's option probabilities instead and fails closed
+#   (missing scores, timeouts, transport errors and abstains become a block
+#   with an infra category; a block is never downgraded). Set it with
+#   `datawatch llm update <name> --verification-mode classify`, MCP
+#   llm_update, PUT on the LLM entry, or the Verification mode selector in
+#   the web app LLM settings. (The `llms:` block above is a documentation
+#   example, kept commented so this file is not a live registry entry.)
 
 classifier:
   # Publishers a classify-mode judge model may come from. Default empty: no
