@@ -858,6 +858,21 @@ A bad value is never applied: a negative whole number (for example -2) or non-nu
 
 In outcomes 2 and 3 the Automaton is `needs_review`, not `blocked` and not running: the review's findings are attached so the operator sees what was found, and lane fill does not self-approve and auto-run a held Automaton — an approval is what moves it along.
 
+### Blocked or needs-review Automaton: fix, commit, rejudge
+
+When the completion review has blocked an Automaton, or holds it in `needs_review` after the retries were spent (or with auto-fix turned off), and the fix is already in the work, you do not need to cancel the Automaton, add a task and reset it. Re-run the review on the new work instead:
+
+1. **Commit the fix on the Automaton's branch.** The rejudge looks at the branch head, so the fix must be a new commit on the branch the Automaton works on. Uncommitted changes in the working tree are not seen.
+2. **Run the rejudge.** Use the MCP tool `autonomous_prd_rejudge(id="<automaton id>")`, or the REST call `POST /api/autonomous/prds/<id>/rejudge`. No body is needed; the actor is recorded as the operator.
+3. **Read the result.**
+   - `pass` — the blocked reason is cleared and the Automaton completes.
+   - `block` — the Automaton stays `blocked` (or held) with the reason set from the new verdict. Read the findings, fix what they name, commit, and rejudge again.
+   - No verdict (the judge errored or returned nothing) — the call returns an error and the Automaton keeps its previous reason. Check the judge's backend and try again.
+
+**The decision log.** Each rejudge adds a `guardrail_rejudge` entry, attributed to the operator, that says whether a verdict was produced and what it was. The verdict itself is recorded as a `guardrail_verdict`. Read both with `autonomous_prd_get`, or with `GET /api/autonomous/prds/<id>` and look at the decision list. A rejudge with a fresh head shows a new verdict; a replayed stored verdict is only shown when the head has not moved.
+
+**When the head is unchanged.** If no new commit has landed on the branch since the held verdict was made, the rejudge is refused before any judge runs, and nothing is recorded. The error reads `branch head "<sha>" is unchanged since the held verdict was made; new commits are needed before a rejudge`. The fix is not on the branch yet. Commit it, check that the branch head has moved, and run the rejudge again. Do not reset tasks to force a rerun; a rejudge does not need one.
+
 
 ### Model routing
 
