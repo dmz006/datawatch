@@ -164,3 +164,26 @@ func TestClassifyVerifyRecordOptional(t *testing.T) {
 		t.Fatal("explicit false must disable")
 	}
 }
+
+func TestClassifyVerifyPlainResultInfraBlocks(t *testing.T) {
+	cases := map[string]*fakeClassifier{
+		"missing pass probability": {ok: res("A", map[string]float64{"B": 0.1}), sev: sevInfo},
+		"empty probabilities":      {ok: res("A", nil), sev: sevInfo},
+		"empty chosen (abstain)":   {ok: res("", map[string]float64{"A": 0.9, "B": 0.1}), sev: sevInfo},
+		"unknown chosen":           {ok: res("Z", map[string]float64{"A": 0.9, "B": 0.1}), sev: sevInfo},
+		"nil ok result":            {ok: nil, sev: sevInfo},
+		"empty severity chosen":    {ok: okPass(0.95), sev: res("", map[string]float64{"A": 0.9})},
+		"nil severity result":      {ok: okPass(0.95), sev: nil},
+	}
+	for name, f := range cases {
+		t.Run(name, func(t *testing.T) {
+			v := run(rt(f, 0.8))
+			if v.OK || v.Category != ClassifyCategoryInfra {
+				t.Fatalf("want infra block, got %+v", v)
+			}
+			if v.Severity == "" {
+				t.Fatalf("block must carry a severity, got %+v", v)
+			}
+		})
+	}
+}

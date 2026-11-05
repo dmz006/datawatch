@@ -6102,9 +6102,6 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Every result returned from here on records which LLM judged it.
 			defer func() {
 				vsel.stamp(&vres)
-				if vres.VerifierMode == "" {
-					vres.VerifierMode = autonomouspkg.VerifierModeGenerate
-				}
 			}()
 			if release == nil {
 				if verifierCapacityAdmit != nil {

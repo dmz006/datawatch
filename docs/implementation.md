@@ -413,7 +413,7 @@ medium, high, critical). Generate mode is unchanged and does not call it.
 
 Verdict rules, all fail closed:
 
-- Missing scores, timeout, transport error, abstain, capability, gate or stale calibration is a block with
+- Missing scores (no probability for the pass option), an empty or unknown `Chosen` (abstain), a nil result, timeout, transport error, abstain, capability, gate or stale calibration is a block with
   category `infra`. A missing runtime is a block with category `setup`. There is no fallback to generate mode.
 - The `ok` winner B is a content block (empty category) whatever the severity read says.
 - The `ok` winner A must reach the calibrated threshold of the model's calibration record; below it the
@@ -424,8 +424,9 @@ Verdict rules, all fail closed:
 - The summary and issues come from an optional separate generative call (`ClassifyRuntime.Explain`). It
   never affects `ok`, severity or category; a failed or garbled answer keeps the verdict and uses a fixed summary.
 
-`VerificationResult` records `verifier_mode` (`classify` or `generate`) on every verification. In classify
-mode it also records `scores` (ok and severity probability vectors, pass probability, threshold, calibration
+`VerificationResult` records `verifier_mode: classify` on every classify-mode verification. Generate mode is
+byte-for-byte unchanged, so it adds no field: an absent `verifier_mode` means generate (the byte-for-byte
+rule is read as overriding record-on-every-verification for generate results). In classify mode it also records `scores` (ok and severity probability vectors, pass probability, threshold, calibration
 fingerprint) and `route` (node, model, path) so the verdict is reproducible. The full record is returned
 by default; `autonomous.verification_record_scores: false` keeps only `verifier_mode`. The daemon supplies
 the classifier client, calibration store and explanation call through `classifyRuntimeProvider`
@@ -433,7 +434,7 @@ the classifier client, calibration store and explanation call through `classifyR
 
 | Key | Default | Meaning |
 |---|---|---|
-| `autonomous.verification_record_scores` | `true` | Keep the score vector and route on the verification result. REST `PUT /api/config` and `GET /api/autonomous/config` carry it. |
+| `autonomous.verification_record_scores` | `true` | Keep the score vector and route on the verification result. Set through the `PUT /api/config` key `autonomous.verification_record_scores` and shown in the autonomous section of `GET /api/config`, like its sibling `autonomous.*` keys. |
 
 ### Peer usage cache
 

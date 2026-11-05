@@ -145,20 +145,37 @@ func ClassifyVerify(ctx context.Context, rt ClassifyRuntime, promptBody string, 
 	if err != nil {
 		return block("medium", ClassifyCategoryInfra, "verifier: classify ok read failed: "+err.Error())
 	}
+	if okRes == nil {
+		return block("medium", ClassifyCategoryInfra, "verifier: classify ok read returned no result")
+	}
 	scores.OK = copyProbs(okRes.Probabilities)
-	scores.PassProbability = okRes.Probabilities["A"]
 	keep()
+	passP, havePass := okRes.Probabilities["A"]
+	if !havePass {
+		return block("medium", ClassifyCategoryInfra, "verifier: classify ok read carried no score for the pass option")
+	}
+	scores.PassProbability = passP
+	if c := strings.ToUpper(strings.TrimSpace(okRes.Chosen)); c != "A" && c != "B" {
+		// Empty or unknown choice: the classifier abstained.
+		return block("medium", ClassifyCategoryInfra, "verifier: classify ok read abstained (no usable choice)")
+	}
 
 	sevRes, sevErr := rt.Client.Classify(ctx, classifier.Request{
 		Node: route.Node, Model: route.Model, Mode: rt.Path, Stem: sevStem, Options: SeverityLabels})
 	sev := ""
+	if sevErr == nil && sevRes == nil {
+		sevErr = fmt.Errorf("no result")
+	}
 	if sevErr == nil {
 		scores.Severity = copyProbs(sevRes.Probabilities)
 		sev = severityFromLetter(sevRes.Chosen)
+		if sev == "" {
+			sevErr = fmt.Errorf("severity read abstained (no usable choice)")
+		}
 	}
 
 	// A block read stands whatever the severity read says.
-	if okRes.Chosen != "A" {
+	if strings.ToUpper(strings.TrimSpace(okRes.Chosen)) != "A" {
 		if sev == "" {
 			sev = "medium"
 		}
