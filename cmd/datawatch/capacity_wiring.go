@@ -849,6 +849,16 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// is the only writer, and it runs on one goroutine, so no lock is needed.
 	servedModel := map[string]uint64{}
 	servedCPUModel := map[string]uint64{}
+	// verifierHeadroom holds the headroom measurements behind each node's
+	// verifier cap (autonomous.VerifierCapPolicy). A Put from an idle
+	// measurement is what lifts a node's effective verifier cap above the
+	// default of 1; the store is memory only and cleared on daemon restart,
+	// so until a node is measured again its cap runs at the supported minimum.
+	verifierHeadroom := compute.NewHeadroomStore()
+	// verifierCapLog is the per-node last-reported verifier-cap state (the
+	// gate's refusal text, or "" when the configured cap runs as asked), so a
+	// refusal is logged once per node per change, not on every syncPools tick.
+	verifierCapLog := map[string]string{}
 
 	external := hostExternalCount(mgr)
 	backpressure := gpuNodeBackpressure(func() int { return cfg.Autonomous.CapacityGPUUtilPct }, &gpuMu, gpuUtil)
@@ -1168,6 +1178,30 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					limit = compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
 				}
 				led.SetLimit("node:"+n.Name, limit)
+				// Verifier-only cap for this node (verifier_slots gated by
+			// headroom): effective = min(configured, supported), and with no
+			// fresh measurement the supported cap is 1. Only verify: leases
+			// count against it; it is independent of the node pool's own limit.
+			// Log the gate's refusal once per node per change and expose
+			// configured/effective/refusal in the /api/capacity snapshot.
+				verCap := (&autonomous.VerifierCapPolicy{
+					Node:     n.Name,
+					Slots:    n.VerifierSlots,
+					Headroom: verifierHeadroom,
+				}).SnapshotCap()
+				refusalState := ""
+				if verCap.Effective < verCap.Configured {
+					refusalState = verCap.Refusal
+				}
+				if prev := verifierCapLog[n.Name]; prev != refusalState {
+					if refusalState != "" {
+						fmt.Printf("[capacity] node %s verifier cap: configured %d refused (%s), running %d\n", n.Name, verCap.Configured, refusalState, verCap.Effective)
+					} else if prev != "" {
+						fmt.Printf("[capacity] node %s verifier cap: refusal cleared, running %d\n", n.Name, verCap.Effective)
+					}
+					verifierCapLog[n.Name] = refusalState
+				}
+				led.SetVerifierNodeCap(n.Name, verCap)
 				if cfg.Autonomous.CapacityGPUUtilPct > 0 && len(obs.GPUs) > 0 {
 					gpuMu.Lock()
 					gpuUtil[n.Name] = obs.MaxUtilPct
