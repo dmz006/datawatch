@@ -6820,4 +6820,35 @@ type ClassifierConfig struct {
 	// with explicit operator confirmation (REST, MCP, CLI and chat) and each
 	// addition is written to the audit log.
 	PublisherAllowlist []string `yaml:"publisher_allowlist,omitempty" json:"publisher_allowlist,omitempty"`
+
+	// TimeoutSeconds bounds one classify call (classifier.timeout_seconds).
+	// Default 30. A timeout is a block with an infra category.
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	// TopLogprobs is top_logprobs on the generic path (classifier.top_logprobs). Default 10.
+	TopLogprobs int `yaml:"top_logprobs,omitempty" json:"top_logprobs,omitempty"`
+	// AbstainMargin is the least lead over the runner-up (classifier.abstain_margin). Default 0.10.
+	AbstainMargin float64 `yaml:"abstain_margin,omitempty" json:"abstain_margin,omitempty"`
+	// MinProbability is the least probability of the chosen option (classifier.min_probability). Default 0.50.
+	MinProbability float64 `yaml:"min_probability,omitempty" json:"min_probability,omitempty"`
+	// MinOptionMass is the least share of first-token probability held by the
+	// option tokens (classifier.min_option_mass). Default 0.50.
+	MinOptionMass float64 `yaml:"min_option_mass,omitempty" json:"min_option_mass,omitempty"`
+	// RotateOptions rotates option order across calls (classifier.rotate_options). Default false.
+	RotateOptions bool `yaml:"rotate_options,omitempty" json:"rotate_options,omitempty"`
+	// ThinkingOffModels lists model-name substrings whose templates get
+	// thinking disabled (classifier.thinking_off_models). Default ["qwen3"].
+	ThinkingOffModels []string `yaml:"thinking_off_models,omitempty" json:"thinking_off_models,omitempty"`
+	// Calibration holds the calibration tunables (classifier.calibration.*).
+	Calibration ClassifierCalibrationConfig `yaml:"calibration,omitempty" json:"calibration,omitempty"`
+}
+
+// ClassifierCalibrationConfig holds the classifier.calibration.* keys. A zero
+// value means the documented default applies.
+type ClassifierCalibrationConfig struct {
+	TestFraction          float64 `yaml:"test_fraction,omitempty" json:"test_fraction,omitempty"`
+	SplitSeed             string  `yaml:"split_seed,omitempty" json:"split_seed,omitempty"`
+	MinFitSamples         int     `yaml:"min_fit_samples,omitempty" json:"min_fit_samples,omitempty"`
+	FalsePassWeight       float64 `yaml:"false_pass_weight,omitempty" json:"false_pass_weight,omitempty"`
+	RotationBiasThreshold float64 `yaml:"rotation_bias_threshold,omitempty" json:"rotation_bias_threshold,omitempty"`
+	RotationFlipThreshold float64 `yaml:"rotation_flip_threshold,omitempty" json:"rotation_flip_threshold,omitempty"`
 }

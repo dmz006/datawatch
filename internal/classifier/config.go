@@ -1,6 +1,10 @@
 package classifier
 
-import "time"
+import (
+	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
+)
 
 // ClientConfig holds the classifier client tunables. Config keys (documented in
 // docs/implementation.md): classifier.timeout, classifier.top_logprobs,
@@ -114,4 +118,32 @@ func (c CalibrationConfig) withDefaults() CalibrationConfig {
 		c.RotationFlipThreshold = DefaultRotationFlipThreshold
 	}
 	return c
+}
+
+// ClientConfigFrom builds the client tunables from the config file; zero
+// values fall back to the documented defaults.
+func ClientConfigFrom(c config.ClassifierConfig) ClientConfig {
+	return ClientConfig{
+		Timeout:           time.Duration(c.TimeoutSeconds) * time.Second,
+		TopLogprobs:       c.TopLogprobs,
+		AbstainMargin:     c.AbstainMargin,
+		MinProbability:    c.MinProbability,
+		MinOptionMass:     c.MinOptionMass,
+		RotateOptions:     c.RotateOptions,
+		ThinkingOffModels: c.ThinkingOffModels,
+	}.withDefaults()
+}
+
+// CalibrationConfigFrom builds the calibration tunables from the config file;
+// zero values fall back to the documented defaults.
+func CalibrationConfigFrom(c config.ClassifierConfig) CalibrationConfig {
+	k := c.Calibration
+	return CalibrationConfig{
+		TestFraction:          k.TestFraction,
+		SplitSeed:             k.SplitSeed,
+		MinFitSamples:         k.MinFitSamples,
+		FalsePassWeight:       k.FalsePassWeight,
+		RotationBiasThreshold: k.RotationBiasThreshold,
+		RotationFlipThreshold: k.RotationFlipThreshold,
+	}.withDefaults()
 }

@@ -1025,7 +1025,7 @@ profiles:
 # LLM-driven Product Requirements Document → Stories → Tasks
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
-# Per-LLM verification_mode (a field on each LLM entry, not a top-level key):
+# llms.<name>.verification_mode (default "generate"; a field on each LLM entry):
 # "" or "generate" asks the judge to write a verdict and parses it (the default);
 # "classify" reads the judge's option probabilities instead and fails closed
 # (missing scores, timeouts, transport errors and abstains become a block with
@@ -1038,6 +1038,41 @@ classifier:
   # confirmation (REST/MCP/CLI/chat "add publisher ... confirm"); each
   # addition is audited. Not settable through PUT /api/config.
   publisher_allowlist: []
+  # Bound on one classify call, in seconds. Default 30. A timeout becomes a
+  # block with an infra category.
+  timeout_seconds: 30
+  # top_logprobs requested on the generic path. Default 10.
+  top_logprobs: 10
+  # The chosen option must lead the runner-up by at least this probability,
+  # otherwise the call abstains (a block). Default 0.10.
+  abstain_margin: 0.10
+  # The chosen option must reach this probability, otherwise the call
+  # abstains. Default 0.50.
+  min_probability: 0.50
+  # On the generic path the option tokens must hold at least this share of the
+  # first-token probability, otherwise scores count as missing. Default 0.50.
+  min_option_mass: 0.50
+  # Rotate option order across calls and average the scores (generic path
+  # only). Default false.
+  rotate_options: false
+  # Case-insensitive model-name substrings whose chat templates get thinking
+  # disabled on the generic path. Default ["qwen3"].
+  thinking_off_models: ["qwen3"]
+  calibration:
+    # Share of samples held out for scoring. Default 0.30.
+    test_fraction: 0.30
+    # Salt for the deterministic fit/test split. Default "classifier-calibration".
+    split_seed: "classifier-calibration"
+    # Least number of fit samples a threshold may be fitted on. Default 20.
+    min_fit_samples: 20
+    # False blocks one false pass costs when the threshold is chosen. Default 5.
+    false_pass_weight: 5
+    # Position-mass deviation from uniform at or above which rotation is
+    # recommended. Default 0.10.
+    rotation_bias_threshold: 0.10
+    # Share of items whose winner changes across rotations at or above which
+    # rotation is recommended. Default 0.10.
+    rotation_flip_threshold: 0.10
 
 autonomous:
   # Opt-in switch. When false every /api/autonomous/* returns 503.
