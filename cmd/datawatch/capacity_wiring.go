@@ -906,6 +906,14 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetEntryNodes(entryNodeCount(httpServer.InferenceRegistry))
 	amgr.SetSessionNode(sessionComputeNode(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }, httpServer.ComputeRegistry))
 	amgr.SetSessionEndpoint(sessionEndpoint(func(id string) (*session.Session, bool) { return mgr.GetSession(id) }))
+	// placement-tags: the session manager is the sink for a placed task's
+	// system tags, and the tags.placement block (autonomous.tags.placement)
+	// is the source. Both are wired here so an operator config edit takes
+	// effect on the next task.
+	amgr.SetPlacementTagSink(mgr)
+	amgr.SetPlacementTagSettings(func() config.PlacementConfig {
+		return cfg.Autonomous.Tags.Placement
+	})
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)

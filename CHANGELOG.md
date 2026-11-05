@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Placement tags are applied at placement time.** When a task is placed on a node, the tags derived from the placement record (node, peer, backend, lane, role, project, per the `autonomous.tags.placement` block) are stored in the session's `system_tags` list — the machine-managed list separate from the operator's own `tags`, which placement never touches. A retry that lands the task on another node re-tags the same session, replacing the old placement's tags; turning the master switch off stops the tags from being written and clears the list.
+
 - **`autonomous.tags.placement` (new block).** The placement tags — automatic tags that record where a piece of work ran — are now configurable: `enabled` is the master switch (default `true`), the built-in axes `compute`, `peer`, `backend`, `lane`, `role` default on and `project` off (each with an `enabled` switch and a `template` that must contain the axis's own placeholder), and `custom` is a list of user-defined axes that read one of the session fields `Name`, `Backend`, `Model`, `Node`, `PRDID`, `Role`, `Project` and build their tag from a template containing `{value}`. Names must be lowercase letters, digits and hyphens, unique and not a built-in axis name. Every value is checked at load time and a refusal stores nothing, and an unset block keeps its defaults (only `autonomous.tags.placement.enabled: false` stops the tags). See the `autonomous.tags` section of `docs/config-reference.yaml` and `docs/implementation.md`.
 
 ## v9.70.3 — Link-aware plans folder tidy

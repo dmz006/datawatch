@@ -85,6 +85,22 @@ func (m *Manager) SetSessionTags(id string, tagIDs []string) (*Session, error) {
 	return sess, nil
 }
 
+// SetSystemTags replaces the session's system tags (the machine-managed
+// list the autonomous executor writes for a placed task) and persists. id
+// is the full or short session ID. The operator tags in Session.Tags and
+// the inherited tags are never touched; the two lists stay independent
+// (store.go's Tags field documents the split). An empty list clears the
+// system tags.
+func (m *Manager) SetSystemTags(id string, tags []string) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrSessionNotFound, id)
+	}
+	sess.SystemTags = dedupeTagIDs(tags)
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
 // InheritedTags returns the tag IDs a session inherits from the Automaton
 // that spawned it (sess.PRDID). The set is computed on every call and is
 // never stored. A session outside any Automaton gets an empty, non-nil slice.
