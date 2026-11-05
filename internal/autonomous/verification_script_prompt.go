@@ -30,11 +30,31 @@ package autonomous
 // files are missing (Decision 7). Empty when ProjectDir is
 // unset — see this file's own top comment for why.
 func (m *Manager) verificationScriptSuffix(prd *PRD) string {
+	return m.verificationScriptSuffixFor(prd, "", true)
+}
+
+// verificationScriptSuffixFor is verificationScriptSuffix for the backend
+// that runs the prompt. The text already names every configured rules and
+// context file (the pointer, static whatever the repo holds). The digest
+// block is appended only when withDigest is set and the resolved digest
+// rule is due for backend; a planning prompt that already carries the
+// digest through rulesContextSuffixFor passes false so it is not doubled.
+func (m *Manager) verificationScriptSuffixFor(prd *PRD, backend string, withDigest bool) string {
 	if prd.ProjectDir == "" {
 		return ""
 	}
 	p := m.resolvedRulesContext(prd)
 	list := joinRulesContextNames(append([]string{p.RulesFile}, p.ContextFiles...))
+	base := m.verificationScriptText(list)
+	if withDigest && rulesDigestDue(p, backend) {
+		if d := m.rulesDigestBlock(prd.ProjectDir, p); d != "" {
+			return base + "\n\n" + rulesDigestHeader + "\n" + d
+		}
+	}
+	return base
+}
+
+func (m *Manager) verificationScriptText(list string) string {
 	return "\n\n--- Verification scripts ---\n" +
 		"Before finalizing your JSON plan, give each task (or story, when a" +
 		" story-level check fits that unit of work better) whose verification" +
