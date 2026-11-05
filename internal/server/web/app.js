@@ -16892,6 +16892,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
     { key: 'autonomous.capacity_strict_node_limit', label: 'Strict per-node limit (verifier and resumed workers never over-admit a node)', labelKey: 'settings_capacity_strict_node_limit', type: 'toggle' },
+    { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier minimum free memory on a node (MB)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', min: 0, placeholder: '2048' },
+    { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom measurement max age (hours)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', min: 0, placeholder: '24' },
     { key: 'autonomous.capacity_count_pool_by_node', label: 'Count each LLM pool by node', labelKey: 'settings_capacity_count_pool_by_node', type: 'toggle' },
     { key: 'autonomous.capacity_adopt_before_admit', label: 'After a restart, admit resumed workers before new work', labelKey: 'settings_capacity_adopt_before_admit', type: 'toggle' },
     { key: 'autonomous.capacity_adoption_wait_seconds', label: 'Restart adoption wait (sec, 0 = 30)', labelKey: 'settings_capacity_adoption_wait', type: 'number', min: 0, placeholder: '30' },

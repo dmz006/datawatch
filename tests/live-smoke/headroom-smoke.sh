@@ -33,26 +33,13 @@ NODE="fake-node"
 log(){ printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 die(){ printf '!! %s\n' "$*" >&2; exit 1; }
 
-cleaned=0
-cleanup(){
-  [ "$cleaned" = 1 ] && return 0
-  cleaned=1
-  log "cleaning up"
+. "$REPO/scripts/test-daemon-lib.sh"
+fake_cleanup(){
   if [ -f "$SANDBOX/fake.pid" ]; then kill "$(cat "$SANDBOX/fake.pid" 2>/dev/null)" 2>/dev/null || true; fi
-  if [ -f "$SANDBOX/daemon.pid" ]; then
-    p=$(cat "$SANDBOX/daemon.pid" 2>/dev/null || true)
-    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
-      cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)
-      case "$cmd" in
-        *datawatch*foreground*config.yaml*) kill "$p" 2>/dev/null || true;;
-        *) log "daemon.pid pid $p cmdline ('$cmd') is not this script's scratch daemon; not killing";;
-      esac
-    fi
-  fi
-  sleep 1
   return 0
 }
-trap cleanup EXIT
+TD_EXTRA_CLEANUP=fake_cleanup
+td_install_traps "$@" # EXIT / INT / TERM / HUP all end the daemon
 
 # --- 1. binary ---------------------------------------------------------------
 [ -x "$BINARY" ] || die "no executable BINARY at $BINARY (build first: go build -o datawatch .)"
@@ -149,14 +136,16 @@ if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | awk '{print $4}' | gre
   die "port $PORT is busy — kill a leftover daemon before re-running"
 fi
 log "starting scratch daemon"
-( cd "$SANDBOX" && { "$DW" start --foreground --config config.yaml > daemon.out 2>&1 & echo $! > daemon.pid; } )
+pushd "$SANDBOX" >/dev/null
+td_start "$DW" "$SANDBOX/config.yaml" "$SANDBOX/daemon.out" || die "scratch daemon failed to start; see $SANDBOX/daemon.out"
+popd >/dev/null
+DPID="$TD_LAST_PID"
 health=0
 for i in $(seq 1 30); do
   curl -sf "$U/healthz" >/dev/null 2>&1 && { health=1; break; }
   sleep 1
 done
 [ "$health" = 1 ] || { die "scratch daemon not healthy; see $SANDBOX/daemon.out"; }
-DPID=$(cat "$SANDBOX/daemon.pid")
 kill -0 "$DPID" 2>/dev/null || die "scratch daemon (pid $DPID) is not alive; see $SANDBOX/daemon.out"
 log "daemon up (pid $DPID)"
 

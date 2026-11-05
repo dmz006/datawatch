@@ -64,7 +64,7 @@ gate run itself passed with the same tree):
 
 ## Live result (quoted from the live-check report)
 
-From `docs/plans/historical-plans/2026-10-29-verifier-wait-lane-live-check.md` (2026-10-29, sandbox daemon on
+From `docs/plans/2026-10-29-verifier-wait-lane-live-check.md` (2026-10-29, sandbox daemon on
 loopback 127.0.0.1:18512 — "sandbox only: loopback listener, scratch data dir, no TLS, no
 bearer token, no sessions; daemon recorded by PID … and ended on every exit path"):
 

@@ -91,7 +91,7 @@ operator-facing command, option or setting changed.
 ## Round 3: alerts 661, 714, 715
 
 **Date:** 2026-10-27
-**Note (2026-10-28):** the result for 661 below is for the subprocess rewrite on the Automaton branch, which the operator dropped before merge; 661 is dismissed as "won't fix" and stays reported on `main` (see `historical-plans/2026-10-28-codeql-alert-661-decision.md`). The 714 and 715 results stand.
+**Note (2026-10-28):** the result for 661 below is for the subprocess rewrite on the Automaton branch, which the operator dropped before merge; 661 is dismissed as "won't fix" and stays reported on `main` (see `2026-10-28-codeql-alert-661-decision.md`). The 714 and 715 results stand.
 **Scope:** the final local scan for the last three open alerts, after their fixes on branch `automaton/24030001`: 661 `go/command-injection` (`internal/session/subprocess_resume.go`), 715 `go/reflected-xss` (`internal/mcp/transport_debug.go`) and 714 `js/insecure-randomness` (`internal/server/web/app.js`). The scan before the fixes is saved in `.datawatch/codeql/baseline-r3/` (see `docs/plans/2026-10-28-codeql-last-three-alerts.md`). The working files are in the gitignored `.datawatch/codeql/`, so they are not committed.
 
 ### Commands

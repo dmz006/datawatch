@@ -8,7 +8,7 @@ Confirmed: yes — operator answered 2026-11-01: option C, the checks feature pl
 
 ## Problem
 
-Registry row 54 asks the Automation coordinator to do what the supervisor does by hand: validate plans, triage failures, check verifiers, admit work to a tree, run the after-done checklist, keep registry and README consistent, alert on silent state, keep lanes occupied, and push and tag each completed minor version while watching its CI run. The 10.0.0 arc draft (`historical-plans/2026-10-28-ten-oh-arc-automation-draft.md`) showed the gap: the Automation starts the next member but the supervisor still merges, ships, fills lanes and orders work. BL609 (`historical-plans/2026-10-25-automation-supervisor-duties-proposal.md`) already owns eight duties (steps 1 to 8) and the daemon-side watch, lane-fill eligibility and merge mechanics (steps 9 to 11). This proposal covers what BL473 adds beyond BL609 and how the two fit.
+Registry row 54 asks the Automation coordinator to do what the supervisor does by hand: validate plans, triage failures, check verifiers, admit work to a tree, run the after-done checklist, keep registry and README consistent, alert on silent state, keep lanes occupied, and push and tag each completed minor version while watching its CI run. The 10.0.0 arc draft (`2026-10-28-ten-oh-arc-automation-draft.md`) showed the gap: the Automation starts the next member but the supervisor still merges, ships, fills lanes and orders work. BL609 (`historical-plans/2026-10-25-automation-supervisor-duties-proposal.md`) already owns eight duties (steps 1 to 8) and the daemon-side watch, lane-fill eligibility and merge mechanics (steps 9 to 11). This proposal covers what BL473 adds beyond BL609 and how the two fit.
 
 ## What exists today (verified)
 
