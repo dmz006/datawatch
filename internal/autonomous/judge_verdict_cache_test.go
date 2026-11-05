@@ -348,3 +348,27 @@ func TestJudgeVerdictCacheDisabled(t *testing.T) {
 		}
 	})
 }
+
+// TestJudgeVerdictCacheStoresEntryForNewHead: a rejudge on a moved head
+// stores its fresh verdict under the new head's key, and the entry for the
+// old head is left in place.
+func TestJudgeVerdictCacheStoresEntryForNewHead(t *testing.T) {
+	m, id, _, got := runRejudgeHeadChange(t)
+	inv, _ := m.prdRulesReviewInvocation(got)
+	c := m.judgeVerdictCacheRef()
+	if c == nil {
+		t.Fatal("manager has no judge verdict cache")
+	}
+
+	fresh, ok := c.Lookup("sha-head-2", judgeVerdictPolicyKey(m, inv), judgeVerdictRulesHash(inv))
+	if !ok {
+		t.Fatalf("no cache entry stored for the new head sha-head-2 (prd %s)", id)
+	}
+	if fresh.JudgeSessionID != "judge-head-b" {
+		t.Errorf("new-head cache entry judge session = %q, want %q", fresh.JudgeSessionID, "judge-head-b")
+	}
+	old, ok := c.Lookup("sha-head-1", judgeVerdictPolicyKey(m, inv), judgeVerdictRulesHash(inv))
+	if !ok || old.JudgeSessionID != "judge-head-a" {
+		t.Errorf("old-head cache entry = %+v ok=%v, want the untouched judge-head-a verdict", old, ok)
+	}
+}

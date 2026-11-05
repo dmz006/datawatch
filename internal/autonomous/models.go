@@ -1572,6 +1572,13 @@ type GuardrailVerdict struct {
 	// verdict. Empty when the judgment was a text-only call or a
 	// deterministic check.
 	JudgeSessionID string `json:"judge_session_id,omitempty"`
+	// JudgedCommitSHA is the commit sha the judgment was anchored to (the
+	// judgeVerdictCommitSHA head when the judge ran). Recorded on the PRD
+	// completion rules-review verdict when the judge verdict cache is
+	// enabled, so a rejudge can tell whether the stored verdict still
+	// describes the current head. Empty on verdicts recorded before this
+	// field existed and whenever the cache is disabled.
+	JudgedCommitSHA string `json:"judged_commit_sha,omitempty"`
 	// JudgeOutputPath is the full path of the judge output file that
 	// backed this verdict. Empty when there was no file.
 	JudgeOutputPath string `json:"judge_output_path,omitempty"`

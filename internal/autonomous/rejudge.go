@@ -157,6 +157,23 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		return fmt.Errorf("rejudge completion guardrail: prd %s: %s", prd.ID, detail)
 	}
 
+	// Commit-anchored replay gate (judge verdict cache enabled only; with
+	// the cache off the path below is exactly the pre-cache one). The
+	// stored blocking verdict is replayed only when it was judged on the
+	// PRD's current head; otherwise the cache lookup is bypassed so the
+	// judge runs fresh on the new head and its verdict is stored under the
+	// new key. A stored verdict with no recorded commit cannot be shown to
+	// match the head, so it is treated as stale too.
+	cacheOn := m.judgeVerdictCacheEnabled()
+	var headSHA string
+	if cacheOn {
+		inv, _ := m.prdRulesReviewInvocation(prd)
+		headSHA = judgeVerdictCommitSHA(prd, inv)
+		if stored := lastBlockVerdict(prd.Verdicts); stored != nil && headSHA != "" && stored.JudgedCommitSHA != headSHA {
+			ctx = withJudgeVerdictCacheLookupBypassed(ctx)
+		}
+	}
+
 	v, err := m.judgeCompletionRulesReview(ctx, prd, backend)
 	if err != nil {
 		return nil, recordNoVerdict(fmt.Sprintf("the guardrail judgment failed: %v", err))
@@ -168,6 +185,9 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "rules-review"
+	if cacheOn {
+		v.JudgedCommitSHA = headSHA
+	}
 
 	// Record the verdict durably BEFORE anything else changes — the same
 	// guardrail_verdict Decision + save + judge-output cleanup

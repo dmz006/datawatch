@@ -412,8 +412,10 @@ func orContentCategory(category string) string {
 // timed-out or otherwise unfinished judge is never cached, and with the
 // cache disabled the behavior is byte-for-byte the pre-cache loop.
 func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv GuardrailInvocation, fn GuardrailFn) (GuardrailVerdict, error) {
-	if v, ok := m.judgeVerdictCacheHit(prd, inv); ok {
-		return v, nil
+	if !judgeVerdictCacheLookupBypassed(ctx) {
+		if v, ok := m.judgeVerdictCacheHit(prd, inv); ok {
+			return v, nil
+		}
 	}
 	v, err := m.runGuardrailInfraRetry(ctx, prd, inv, fn)
 	m.judgeVerdictCacheRecord(prd, inv, v, err)
