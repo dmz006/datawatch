@@ -1893,6 +1893,23 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Backend: q.Get("backend"),
 		Alive:   q.Get("alive"),
 	}
+	// Tags repeatable; own or inherited. tag_match is any (default) or all; a
+	// value outside that set is rejected before anything is read.
+	tagSeen := map[string]bool{}
+	for _, v := range q["tag"] {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" && !tagSeen[part] {
+				tagSeen[part] = true
+				filter.Tags = append(filter.Tags, part)
+			}
+		}
+	}
+	filter.TagMatch = strings.TrimSpace(q.Get("tag_match"))
+	if filter.TagMatch != "" && filter.TagMatch != "any" && filter.TagMatch != "all" {
+		http.Error(w, `tag_match: must be "any" or "all"`, http.StatusBadRequest)
+		return
+	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL432 — ?view=summary / ?since= / ?states= (session_list_view.go).

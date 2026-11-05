@@ -1790,22 +1790,52 @@ func (r *Router) handleNew(cmd Command) {
 		r.hostname, sess.ID, cmd.Text, sess.TmuxSession, session.TmuxAttachCommand(sess.TmuxSession)))
 }
 
+// handleList answers the chat `list` command. After the optional active or
+// inactive state filter it accepts repeatable tag=<tag> tokens and a
+// tag_match=any|all token; the tag filter counts the session's own tags and
+// the tags it inherits from the Automaton that spawned it.
 func (r *Router) handleList(filter string) {
-	sessions := r.manager.ListSessions()
+	stateFilter := ""
+	tagMatch := ""
+	var tags []string
+	for _, tok := range strings.Fields(filter) {
+		tok = strings.TrimPrefix(tok, "--")
+		switch {
+		case strings.HasPrefix(tok, "tag="):
+			if v := strings.TrimSpace(strings.TrimPrefix(tok, "tag=")); v != "" {
+				tags = append(tags, v)
+			}
+		case strings.HasPrefix(tok, "tag_match="):
+			tagMatch = strings.TrimSpace(strings.TrimPrefix(tok, "tag_match="))
+		case tok == "active" || tok == "inactive" || tok == "":
+			stateFilter = tok
+		default:
+			r.send(fmt.Sprintf("[%s] list: unknown argument %q (filters: active|inactive, tag=<tag>, tag_match=any|all)", r.hostname, tok))
+			return
+		}
+	}
+	if tagMatch != "" && tagMatch != "any" && tagMatch != "all" {
+		r.send(fmt.Sprintf("[%s] list: tag_match must be any or all", r.hostname))
+		return
+	}
 	doneStates := map[session.State]bool{
 		session.StateComplete: true,
 		session.StateFailed:   true,
 		session.StateKilled:   true,
 	}
-
 	filterFn := func(s *session.Session) bool {
-		switch strings.TrimPrefix(filter, "--") {
+		switch stateFilter {
 		case "active":
 			return !doneStates[s.State]
 		case "inactive":
 			return doneStates[s.State]
 		}
 		return true
+	}
+	sessions := r.manager.ListSessions()
+	if len(tags) > 0 {
+		filter := session.SessionFilter{Tags: tags, TagMatch: tagMatch}
+		sessions = r.manager.ListSessionsFiltered(filter)
 	}
 
 	var mine []*session.Session

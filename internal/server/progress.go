@@ -114,10 +114,45 @@ func (s *Server) progressOptions(q map[string][]string, now time.Time) (autonomo
 	if v := q["automation_id"]; len(v) > 0 {
 		opts.AutomationID = strings.TrimSpace(v[0])
 	}
-	if v := q["tag_id"]; len(v) > 0 {
-		opts.TagID = strings.TrimSpace(v[0])
+	tags, tagMatch, err := progressTagParams(q)
+	if err != nil {
+		return opts, err
 	}
+	opts.TagIDs = tags
+	opts.TagMatch = tagMatch
 	return opts, nil
+}
+
+// progressTagParams reads the repeatable tag query value (the legacy singular
+// tag_id is merged in) and the tag_match rule. Both forms are repeatable and
+// their values may be comma-separated; blank and duplicate IDs are dropped and
+// first-seen order is kept. tag_match accepts "any" (the default) and "all" and
+// nothing else.
+func progressTagParams(q map[string][]string) ([]string, string, error) {
+	seen := map[string]bool{}
+	var tags []string
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			tags = append(tags, v)
+		}
+	}
+	for _, name := range []string{"tag", "tag_id"} {
+		for _, v := range q[name] {
+			for _, part := range strings.Split(v, ",") {
+				add(part)
+			}
+		}
+	}
+	match := ""
+	if v := q["tag_match"]; len(v) > 0 {
+		match = strings.TrimSpace(v[0])
+	}
+	if match != "" && !autonomous.ValidTagMatch(match) {
+		return nil, "", &progressParamError{`tag_match: must be "any" or "all"`}
+	}
+	return tags, match, nil
 }
 
 // progressBacklogPath is the resolved backlog file location, "" when no config
@@ -194,6 +229,7 @@ func (s *Server) handleAutonomousProgress(w http.ResponseWriter, r *http.Request
 // progressTrendResponse is the body of GET /api/autonomous/progress/trend.
 type progressTrendResponse struct {
 	Days      int                             `json:"days"`
+	Scope     string                          `json:"scope"`
 	Points    []autonomous.ProgressTrendPoint `json:"points"`
 	Direction string                          `json:"direction"`
 }
@@ -220,6 +256,12 @@ func (s *Server) handleAutonomousProgressTrend(w http.ResponseWriter, r *http.Re
 		}
 		days = n
 	}
+	q := r.URL.Query()
+	tags, tagMatch, err := progressTagParams(q)
+	if err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	var snaps []autonomous.ProgressSnapshot
 	if p, ok := s.autonomousMgr.(progressProvider); ok {
 		if store := p.ProgressSnapshots(); store != nil {
@@ -227,5 +269,10 @@ func (s *Server) handleAutonomousProgressTrend(w http.ResponseWriter, r *http.Re
 		}
 	}
 	t := autonomous.Trend(snaps)
-	writeJSONOK(w, progressTrendResponse{Days: days, Points: t.Points, Direction: t.Direction})
+	writeJSONOK(w, progressTrendResponse{
+		Days:      days,
+		Scope:     autonomous.ProgressScope(autonomous.ProgressOptions{TagIDs: tags, TagMatch: tagMatch}),
+		Points:    t.Points,
+		Direction: t.Direction,
+	})
 }

@@ -1683,6 +1683,13 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("since",
 			mcpsdk.Description("Only sessions updated after this time (RFC3339 or unix seconds). Always JSON."),
 		),
+		mcpsdk.WithArray("tags",
+			mcpsdk.WithStringItems(),
+			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags and the tags it inherits from the Automaton that spawned it both count."),
+		),
+		mcpsdk.WithString("tag_match",
+			mcpsdk.Description("any (default): the session needs at least one of tags; all: every tag in tags."),
+		),
 	)
 }
 
@@ -2062,10 +2069,12 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 
 	// BL361 — structured filter params.
 	filter := session.SessionFilter{
-		Name:    req.GetString("name", ""),
-		State:   req.GetString("state", ""),
-		Backend: req.GetString("backend", ""),
-		Alive:   req.GetString("alive", ""),
+		Name:     req.GetString("name", ""),
+		State:    req.GetString("state", ""),
+		Backend:  req.GetString("backend", ""),
+		Alive:    req.GetString("alive", ""),
+		Tags:     req.GetStringSlice("tags", nil),
+		TagMatch: req.GetString("tag_match", ""),
 	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 
