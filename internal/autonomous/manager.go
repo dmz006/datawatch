@@ -2688,9 +2688,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	}
 	// BL406 — see rules_context.go. Found live 2026-10-11: this was
 	// promised by the plan's own Context section and never implemented.
-	prompt += m.rulesContextSuffix(prd)
+	rulesSuffix, digestInjected, digestBytes := m.rulesContextSuffixFor(prd, planningRulesBackend(backend))
+	prompt += rulesSuffix
+	m.SetRulesContextDigest(prd, digestInjected, digestBytes)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
-	prompt += m.verificationScriptSuffix(prd)
+	// The digest, when due, is already in rulesSuffix above.
+	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
 
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — a pi-family decompose session must launch with an explicit
@@ -2856,9 +2859,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 	}
 	// BL406 — see rules_context.go and Decompose()'s identical call.
-	prompt += m.rulesContextSuffix(prd)
+	rulesSuffix, digestInjected, digestBytes := m.rulesContextSuffixFor(prd, planningRulesBackend(backend))
+	prompt += rulesSuffix
+	m.SetRulesContextDigest(prd, digestInjected, digestBytes)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
-	prompt += m.verificationScriptSuffix(prd)
+	// The digest, when due, is already in rulesSuffix above.
+	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
 
 	// Operator-reported: a PRD configured for claude-code kept running
 	// decompose against the daemon's global qwen default instead. Root

@@ -190,25 +190,211 @@ func nonBlankStrings(in []string) []string {
 	return out
 }
 
-// rulesContextSuffix returns a short pointer to the resolved rules
-// files of the PRD's own project directory (rules file first, then the
-// context files in configured order; only names that are actually
-// present are mentioned). Does not read or inline any file's content —
-// see this file's own top comment for why. Empty when ProjectDir is
-// unset (nothing to point at yet, e.g. before worktree creation) or no
-// named file exists.
+// rulesContextSuffix returns the rules/context block for the planning
+// prompt, for a planning backend that has file tools (the pointer only,
+// unless the digest mode is "all"). Planning call sites use
+// rulesContextSuffixFor, which knows the planning backend.
 func (m *Manager) rulesContextSuffix(prd *PRD) string {
-	if prd.ProjectDir == "" {
+	s, _, _ := m.rulesContextSuffixFor(prd, "")
+	return s
+}
+
+// rulesContextSuffixFor builds the planning-prompt block for the given
+// planning backend and reports whether a digest was appended and its
+// size in bytes (for the planning record). See rulesContextBlock.
+func (m *Manager) rulesContextSuffixFor(prd *PRD, backend string) (suffix string, digestInjected bool, digestBytes int) {
+	return m.rulesContextBlock(prd.ProjectDir, backend, rulesBlockPlanning)
+}
+
+// Purposes of a rules/context block; they only change the lead-in and
+// closing sentences so the same pointer reads right in each prompt.
+const (
+	rulesBlockPlanning = "planning"
+	rulesBlockWorker   = "worker"
+)
+
+// rulesDigestHeader introduces the digest in every prompt. Fixed text,
+// also used to detect a block that is already present in a prompt.
+const rulesDigestHeader = "--- Rules digest ---"
+
+// rulesBlockMarker starts every rules/context block; a prompt that
+// already holds it is never given a second one.
+const rulesBlockMarker = "\n\n--- Project rules ---\n"
+
+// backendHasFileTools reports whether a backend that runs a prompt can
+// read files in its working directory. Headless ask-style backends
+// (ollama, openwebui — the same pair the decompose wiring treats as
+// ask-compatible) have no file tools; every session backend does. An
+// empty name is treated as a session backend.
+func backendHasFileTools(backend string) bool {
+	switch strings.TrimSpace(backend) {
+	case "ollama", "openwebui":
+		return false
+	}
+	return true
+}
+
+// rulesDigestDue applies the resolved digest mode to a backend: "all"
+// always, "no_tools" only for a backend without file tools, "off" never.
+func rulesDigestDue(p ResolvedRulesContext, backend string) bool {
+	switch p.DigestMode {
+	case config.RulesContextDigestModeAll:
+		return true
+	case config.RulesContextDigestModeNoTools:
+		return !backendHasFileTools(backend)
+	}
+	return false
+}
+
+// rulesContextBlock builds the pointer (every present rules/context file
+// of the resolved policy), one line per configured file that is missing,
+// and — when the digest rule says so for backend — the digest block.
+// Empty when dir is unset or nothing is configured. File content is
+// only read to build the digest.
+func (m *Manager) rulesContextBlock(dir, backend, purpose string) (block string, digestInjected bool, digestBytes int) {
+	if dir == "" {
+		return "", false, 0
+	}
+	p := m.resolvedRulesContextDir(dir)
+	present, missing := rulesContextPresence(dir, p)
+	if len(present) == 0 && len(missing) == 0 {
+		return "", false, 0
+	}
+	var b strings.Builder
+	b.WriteString(rulesBlockMarker)
+	if len(present) > 0 {
+		names := make([]string, 0, len(present))
+		for _, f := range present {
+			names = append(names, f.name)
+		}
+		if purpose == rulesBlockWorker {
+			b.WriteString("Before starting this task, read " + joinRulesContextNames(names) +
+				" at the root of your working directory — they define this" +
+				" project's development/testing/documentation rules and" +
+				" current state. Follow them while doing this task.")
+		} else {
+			b.WriteString("Before planning, read " + joinRulesContextNames(names) +
+				" at the root of your working directory — they define this" +
+				" project's development/testing/documentation rules and" +
+				" current state. Follow them when decomposing this PRD.")
+		}
+	}
+	for i, f := range missing {
+		if len(present) > 0 || i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(f.label + " " + f.name + " was configured and not found in the project directory.")
+	}
+	if len(present) > 0 && rulesDigestDue(p, backend) {
+		if d := m.rulesDigestBlock(dir, p); d != "" {
+			b.WriteString("\n\n" + rulesDigestHeader + "\n" + d)
+			return b.String(), true, len(d)
+		}
+	}
+	return b.String(), false, 0
+}
+
+// rulesDigestBlock builds the digest text: the rules file's digest, then
+// the headings of each present context file (the same builder, with the
+// mandatory lines dropped), the whole kept within p.DigestMaxBytes.
+func (m *Manager) rulesDigestBlock(dir string, p ResolvedRulesContext) string {
+	limit := p.DigestMaxBytes
+	if limit <= 0 {
 		return ""
 	}
-	names := presentRulesContextNames(prd, m.resolvedRulesContext(prd))
-	if len(names) == 0 {
-		return ""
+	var out string
+	if fileExists(filepath.Join(dir, p.RulesFile)) {
+		if d, _, _, err := m.rulesDigestFor(dir, p.RulesFile, limit); err == nil {
+			out = d
+		}
 	}
-	return "\n\n--- Project rules ---\nBefore planning, read " + joinRulesContextNames(names) +
-		" at the root of your working directory — they define this" +
-		" project's development/testing/documentation rules and" +
-		" current state. Follow them when decomposing this PRD."
+	for _, c := range p.ContextFiles {
+		c = strings.TrimSpace(c)
+		if c == "" || c == p.RulesFile || !fileExists(filepath.Join(dir, c)) {
+			continue
+		}
+		d, _, _, err := m.rulesDigestFor(dir, c, limit)
+		if err != nil {
+			continue
+		}
+		var heads []string
+		for i, l := range strings.Split(d, "\n") {
+			if i == 0 || strings.HasPrefix(l, "  ") || strings.HasPrefix(l, "[digest truncated") {
+				continue
+			}
+			heads = append(heads, l)
+		}
+		if len(heads) == 0 {
+			continue
+		}
+		section := c + " headings:"
+		for _, h := range heads {
+			line := "\n  " + h
+			sep := 0
+			if out != "" {
+				sep = 1
+			}
+			if len(out)+sep+len(section)+len(line) > limit {
+				break
+			}
+			section += line
+		}
+		if section == c+" headings:" {
+			continue
+		}
+		if out != "" {
+			out += "\n"
+		}
+		out += section
+	}
+	return out
+}
+
+type rulesContextFile struct {
+	name  string
+	label string
+}
+
+// rulesContextPresence splits the policy's files (rules file first, then
+// context files in order, deduplicated) into present and missing at the
+// root of dir. A name that would leave dir is ignored.
+func rulesContextPresence(dir string, p ResolvedRulesContext) (present, missing []rulesContextFile) {
+	seen := map[string]bool{}
+	base := filepath.Clean(dir)
+	add := func(name, label string) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		target := filepath.Join(base, name)
+		if !strings.HasPrefix(target, base+string(filepath.Separator)) {
+			return
+		}
+		f := rulesContextFile{name: name, label: label}
+		if fileExists(target) {
+			present = append(present, f)
+		} else {
+			missing = append(missing, f)
+		}
+	}
+	add(p.RulesFile, "Rules file")
+	for _, c := range p.ContextFiles {
+		add(c, "Context file")
+	}
+	return present, missing
+}
+
+// withRulesContextBlock appends the worker-prompt rules block to spec
+// for the backend that will run the task. It is a no-op for an empty
+// dir and when spec already carries a block, so a retried task is never
+// given it twice.
+func (m *Manager) withRulesContextBlock(spec, dir, backend string) string {
+	if dir == "" || strings.Contains(spec, strings.TrimSpace(rulesBlockMarker)) {
+		return spec
+	}
+	block, _, _ := m.rulesContextBlock(dir, backend, rulesBlockWorker)
+	return spec + block
 }
 
 // resolvedRulesContext resolves the rules/context policy for this PRD's
@@ -217,11 +403,17 @@ func (m *Manager) rulesContextSuffix(prd *PRD) string {
 // rules_file/context_file keys this manager carries, ending in the
 // defaults.
 func (m *Manager) resolvedRulesContext(prd *PRD) ResolvedRulesContext {
+	return m.resolvedRulesContextDir(prd.ProjectDir)
+}
+
+// resolvedRulesContextDir is resolvedRulesContext for a bare directory
+// (a task may run in its own directory, not the PRD's).
+func (m *Manager) resolvedRulesContextDir(dir string) ResolvedRulesContext {
 	m.mu.Lock()
 	legacyRules := m.cfg.RulesFile
 	legacyContext := m.cfg.ContextFile
 	m.mu.Unlock()
-	p, err := ResolveRulesContext(rulesContextConfigSnapshot(), legacyRules, legacyContext, prd.ProjectDir)
+	p, err := ResolveRulesContext(rulesContextConfigSnapshot(), legacyRules, legacyContext, dir)
 	if err != nil {
 		p = defaultRulesContext()
 	}
@@ -275,4 +467,14 @@ func joinRulesContextNames(names []string) string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path) // #nosec G304 -- path is joined from operator-configured rules_file/context_file and a PRD's own worktree dir, same trust model as every other project-dir file read in this package
 	return err == nil
+}
+
+// planningRulesBackend names the backend for the digest rule on a
+// planning prompt: an unconfigured planning backend falls back to the
+// headless ollama default the decompose wiring uses.
+func planningRulesBackend(backend string) string {
+	if strings.TrimSpace(backend) == "" {
+		return "ollama"
+	}
+	return backend
 }
