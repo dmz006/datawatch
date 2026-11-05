@@ -50,6 +50,7 @@ Subcommands:
   insert <id> <prd>   Insert a member (--reason is required; --urgent, --after)
   remove <id> <member>  Remove a member that has not started
   edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
+  rename-stage <id> <from> <to>  Rename a member stage to a new name (auto-tag record migrates)
   approve <id> <member>  Approve an agent-inserted member
   set-llm <id>        Set the execution and planning LLM (--backend, --model, --effort,
                       --planning-backend, --planning-model; an empty value clears)
@@ -82,6 +83,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationInsertCmd())
 	cmd.AddCommand(newAutomationRemoveCmd())
 	cmd.AddCommand(newAutomationEdgesCmd())
+	cmd.AddCommand(newAutomationRenameStageCmd())
 	cmd.AddCommand(newAutomationApproveCmd())
 	cmd.AddCommand(newAutomationSetLLMCmd())
 	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
@@ -470,6 +472,7 @@ var automationControlOps = map[string]string{
 	"remove":  "remove_member",
 	"edges":   "reorder_edges",
 	"approve": "approve_insert",
+	"rename-stage": "stages/rename",
 
 	"set-llm":              "set_llm",
 	"set-verification-llm": "set_verification_llm",
@@ -718,6 +721,26 @@ func newAutomationApproveCmd() *cobra.Command {
 			body := f.body(cmd)
 			body["member_id"] = args[1]
 			return runAutomationControl(args[0], "approve", body)
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
+func newAutomationRenameStageCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "rename-stage <id> <from-stage> <to-stage>",
+		Short: "Rename a member stage to a new name", Long: `Rename every member that occupies the stage <from-stage> to the stage
+<to-stage> of an Automation (draft, active, paused or blocked). When auto tagging
+is on, the stage's auto-tag record is migrated in place so already-tagged members
+keep their tag. --reason and --expected-version are recorded as with other controls.`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := f.body(cmd)
+			body["from"] = args[1]
+			body["to"] = args[2]
+			return runAutomationControl(args[0], "rename-stage", body)
 		},
 	}
 	f.register(cmd)

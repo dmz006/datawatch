@@ -44,6 +44,7 @@ var MCPToolCap = map[string]string{
 	"automation_resume":                            CapAutonomousWrite,
 	"automation_cancel":                            CapAutonomousWrite,
 	"automation_skip_member":                       CapAutonomousWrite,
+	"automation_rename_stage":                      CapAutonomousWrite,
 	"automation_insert_member":                     CapAutonomousWrite,
 	"automation_remove_member":                     CapAutonomousWrite,
 	"automation_reorder_edges":                     CapAutonomousWrite,

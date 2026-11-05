@@ -735,6 +735,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationResume(), tracked(s.handleAutomationResume))
 	mcpSrv.AddTool(s.toolAutomationCancel(), tracked(s.handleAutomationCancel))
 	mcpSrv.AddTool(s.toolAutomationSkipMember(), tracked(s.handleAutomationSkipMember))
+	mcpSrv.AddTool(s.toolAutomationRenameStage(), tracked(s.handleAutomationRenameStage))
 	mcpSrv.AddTool(s.toolAutomationInsertMember(), tracked(s.handleAutomationInsertMember))
 	mcpSrv.AddTool(s.toolAutomationRemoveMember(), tracked(s.handleAutomationRemoveMember))
 	mcpSrv.AddTool(s.toolAutomationReorderEdges(), tracked(s.handleAutomationReorderEdges))
@@ -1445,6 +1446,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationResume, "automation_resume"},
 		{s.toolAutomationCancel, "automation_cancel"},
 		{s.toolAutomationSkipMember, "automation_skip_member"},
+		{s.toolAutomationRenameStage, "automation_rename_stage"},
 		{s.toolAutomationInsertMember, "automation_insert_member"},
 		{s.toolAutomationRemoveMember, "automation_remove_member"},
 		{s.toolAutomationReorderEdges, "automation_reorder_edges"},

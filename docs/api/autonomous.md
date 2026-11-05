@@ -105,6 +105,7 @@ DELETE /api/automations/{id}         delete (draft/completed/cancelled only); bo
 POST   /api/automations/{id}/set_llm               set the execution and planning defaults; body: {backend?, model?, effort?, planning_backend?, planning_model?, expected_version?, actor?, reason?}
 POST   /api/automations/{id}/set_verification_llm  set the verification default; body: {backend?, model?, effort?, expected_version?, actor?, reason?}
 POST   /api/automations/{id}/set_budget   set, replace or clear the spending limit of an Automation or one member (see "Spending limit" below); body: {member_id?, ceiling_type, ceiling_value, window, pacing?, on_breach?, backend?, allocation_estimate?, peer_window?, reset_time?, reset_weekday?, reset_day?, reset_zone?, estimated_cost_usd?, clear?, expected_version, actor?, reason?}
+POST   /api/automations/{id}/stages/rename   rename every member stage named `from` to `to` in place (see "Renaming a member stage" below); body: {from, to, expected_version, actor?, reason?}
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
 GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
@@ -1026,7 +1027,7 @@ The REST endpoints do not change. `GET/POST /api/automations` and
 ### Phase 3b — control operations
 
 An operator, or a session or agent acting through the API, can steer a
-running Automation with nine `POST` endpoints under
+running Automation with eleven `POST` endpoints under
 `/api/automations/{id}/`. They need the autonomous write capability, like
 the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 `405`.
@@ -1043,6 +1044,7 @@ the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 | `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
 | `POST /api/automations/{id}/set_budget` | `draft`, `active`, `paused`, `blocked` | Sets, replaces or clears the spending limit of the Automation, or of one member that has not finished (see "Spending limit"). Does not change the status. |
 | `POST /api/automations/{id}/set_decision_assistant` | `draft`, `active`, `paused`, `blocked` | Sets or clears the optional local-model decision assistant of the Automation, or of one member (default off; see "Decision assistant"). Does not change the status. |
+| `POST /api/automations/{id}/stages/rename` | `draft`, `active`, `paused`, `blocked` | Renames every member stage named `from` to `to` in place (see "Renaming a member stage"). Does not change the status. |
 
 **Request body.** Every endpoint takes a JSON object. All fields are
 optional on the wire, but each operation has the fields it needs.
@@ -1059,6 +1061,8 @@ optional on the wire, but each operation has the fields it needs.
 | `member` | `insert_member` | Object `{"prd_id": "...", "name": "..."}`. `prd_id` is required. `name` is an optional display name. |
 | `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
 | `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
+| `from` | `stages/rename` | The stage to rename; must be carried by at least one member. |
+| `to` | `stages/rename` | The new stage: a trimmed label of 1 to 64 characters that no other member already uses. |
 | `ceiling_type`, `ceiling_value`, `window`, `pacing`, `on_breach`, `backend`, `allocation_estimate`, `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | `set_budget` | The spending limit. They replace the whole limit; see "Spending limit". |
 | `estimated_cost_usd` | `set_budget` | With `member_id`: the member's expected cost in dollars (a number, `0` removes it). Alone it changes only the estimate. |
 | `clear` | `set_budget` | Boolean. `true` removes the limit; it cannot be combined with any policy field or `estimated_cost_usd`. |
@@ -1070,8 +1074,8 @@ optional on the wire, but each operation has the fields it needs.
 
 | HTTP | Meaning |
 |------|---------|
-| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without `member.prd_id`, or naming an unknown PRD. An invalid `edge`. A bad edge target in `reorder_edges`. A branch-naming rejection (below). |
-| 404 | No Automation with that ID, no such member, or no such pending insert. |
+| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without `member.prd_id`, or naming an unknown PRD. An invalid `edge`. A bad edge target in `reorder_edges`. `stages/rename` with an empty `from` or `to`, a `to` longer than 64 characters, or a `to` another member already uses. A branch-naming rejection (below). |
+| 404 | No Automation with that ID, no such member, no such pending insert, or (for `stages/rename`) no member carries the stage `from`. |
 | 405 | A method other than `POST`. |
 | 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
 | 500 | `cancel` only: the Automation is cancelled, but ending one or more in-flight member sessions failed. The message names the members. |
@@ -1257,6 +1261,38 @@ also a `400`: `member <member ID> is not an active branch of automation
 <id>; active branches are [<member IDs>]`. An Automation with no active
 member to act on is a `409`.
 
+#### Renaming member stages (`stages/rename`)
+
+Member stages are the optional operator labels on the members of one
+Automation (the `stage` field on each member, e.g. `build` or `review`).
+They are cosmetic — the graph edges, the advance rule and the budget never
+read them; with auto tagging on, a member's stage is part of the tag name
+it gets, and the stage name is read verbatim from the member's `stage`
+field (see [implementation.md](../implementation.md), Configuration Reference, `autonomous.auto_tags` rows).
+
+`POST /api/automations/{id}/stages/rename` renames every member stage
+named `from` to `to` in place, without touching the graph: the members
+keep their edges, their status and their order. It is allowed while the
+Automation is `draft`, `active`, `paused` or `blocked`. Body: `{from, to,
+expected_version, actor?, reason?}`.
+
+When auto tagging is on for the Automation, the stage tag of the
+Automation's members migrates to the new name in place, in the daemon's
+own registry; operator tags of other Automations are never touched. A
+member whose stage tag has a record is re-pointed from the old name to the
+new one; members without a record get none at this point.
+
+Failures: an empty `from` or `to` is a `400`; a `to` longer than 64
+characters is a `400`; a `to` already used by another member is a `400`;
+a `from` no member carries is a `404` (the automation's `404` is the
+same code); a stale `expected_version` is a `409`. Audited as
+`automation_rename_stage` with `from` and `to`.
+
+The same operation is the MCP tool `automation_rename_stage` (see
+[mcp.md](../mcp.md)), the CLI `datawatch automation rename-stage
+<id> <from-stage> <to-stage>` and the comm verb `automation rename-stage
+<id> <from-stage> <to-stage>`.
+
 #### Audit
 
 Every control operation writes an audit entry on the `automation`
@@ -1265,7 +1301,8 @@ resource: `automation_pause`, `automation_resume`, `automation_cancel`
 `automation_skip_member`, `automation_insert_member`,
 `automation_remove_member`, `automation_reorder_edges`,
 `automation_approve_insert`, `automation_set_decision_assistant` (with the
-backend, model, mode and hooks, or `cleared`) and `automation_set_budget` (with the policy
+backend, model, mode and hooks, or `cleared`), `automation_rename_stage`
+(with `from` and `to`) and `automation_set_budget` (with the policy
 that was set, or `clear`). The limit also writes `automation_budget_breach`
 (once per breach, again when a pause turns into a block; details: Automation,
 scope, spent, ceiling, window, what it did, and the reset time when known) and
@@ -1280,14 +1317,16 @@ The same operations are reachable as MCP tools (`automation_pause`,
 `automation_resume`, `automation_cancel`, `automation_skip_member`,
 `automation_insert_member`, `automation_remove_member`,
 `automation_reorder_edges`, `automation_approve_insert`,
-`automation_set_budget`; see
+`automation_rename_stage`, `automation_set_budget`; see
 [mcp.md](../mcp.md)), as `datawatch automation
-pause|resume|cancel|skip|insert|remove|edges|approve|set-budget` (`cancel`
-requires `--cancel-in-flight <true|false>`; `set-budget` takes
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+requires `--cancel-in-flight <true|false>`; `rename-stage` takes the
+Automation ID and the from/to stage names; `set-budget` takes
 `--ceiling-type`, `--ceiling-value`, `--window` and the optional flags, or
 `--clear`), and as the comm verbs `automation
-pause|resume|cancel|skip|insert|remove|edges|approve|set-budget` (`cancel`
-requires `in-flight=true` or `in-flight=false`; `set-budget <id>
+pause|resume|cancel|skip|insert|remove|edges|approve|rename-stage|set-budget` (`cancel`
+requires `in-flight=true` or `in-flight=false`; `rename-stage <id>
+<from-stage> <to-stage>`; `set-budget <id>
 ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`). `openapi.yaml` documents the
 endpoints.
 

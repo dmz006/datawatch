@@ -28,6 +28,7 @@ var parityMap = map[string]parityNames{
 	"insert_member":          {"automation_insert_member", "insert", "insert"},
 	"remove_member":          {"automation_remove_member", "remove", "remove"},
 	"reorder_edges":          {"automation_reorder_edges", "edges", "edges"},
+	"stages/rename":          {"automation_rename_stage", "rename-stage", "rename-stage"},
 	"approve_insert":         {"automation_approve_insert", "approve", "approve"},
 	"set_llm":                {"automation_set_llm", "set-llm", "set-llm"},
 	"set_verification_llm":   {"automation_set_verification_llm", "set-verification-llm", "set-verification-llm"},

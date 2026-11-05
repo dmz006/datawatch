@@ -20,6 +20,7 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"delete", http.MethodDelete},
 	{"activate", http.MethodPost},
 	{"shipped", http.MethodPost},
+	{"stages/rename", http.MethodPost},
 	{"pause", http.MethodPost},
 	{"resume", http.MethodPost},
 	{"cancel", http.MethodPost},

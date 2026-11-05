@@ -3599,6 +3599,10 @@ type automationReq struct {
 	ExpectedVersion     int64                         `json:"expected_version"`
 	Actor               string                        `json:"actor"`
 	Reason              string                        `json:"reason"`
+	// AutoTags is the optional per-Automation override of the daemon-level
+	// autonomous.auto_tags block; omitted (or null) on an update keeps the
+	// stored setting.
+	AutoTags            *autonomous.AutoTagsOverride  `json:"auto_tags,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -3617,6 +3621,7 @@ func automationInput(req automationReq) autonomous.AutomationInput {
 		VerificationBackend: req.VerificationBackend,
 		VerificationModel:   req.VerificationModel,
 		VerificationEffort:  req.VerificationEffort,
+		AutoTags:            req.AutoTags,
 	}
 }
 
@@ -4035,6 +4040,10 @@ type automationControlReq struct {
 	CancelInFlight  *bool  `json:"cancel_in_flight"`
 	MemberID        string `json:"member_id"`
 	Edge            string `json:"edge"`
+	// stages/rename: the member stage that is renamed (from) and the new name
+	// (to); both are required and must differ.
+	From string `json:"from"`
+	To   string `json:"to"`
 	OnComplete      string `json:"on_complete"`
 	OnBlocked       string `json:"on_blocked"`
 	OnFailed        string `json:"on_failed"`
@@ -4119,6 +4128,7 @@ func (r automationControlReq) decisionAssistant() (da *autonomous.DecisionAssist
 // automationController is the optional AutonomousAPI extension carrying the
 // operator control operations (autonomous.API implements it).
 type automationController interface {
+	RenameAutomationStage(id, from, to string, expectedVersion int64) (any, error)
 	PauseAutomation(id, actor string, expectedVersion int64) (any, error)
 	ResumeAutomation(id, actor string, expectedVersion int64) (any, error)
 	CancelAutomation(id, actor string, cancelInFlight, hasChoice bool, expectedVersion int64) (any, error)
@@ -4179,6 +4189,10 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 		action string
 	)
 	switch op {
+	case "stages/rename":
+		action = "automation_rename_stage"
+		details["from"], details["to"] = strings.TrimSpace(req.From), strings.TrimSpace(req.To)
+		a, err = ctl.RenameAutomationStage(id, req.From, req.To, req.ExpectedVersion)
 	case "pause":
 		action = "automation_pause"
 		a, err = ctl.PauseAutomation(id, req.Actor, req.ExpectedVersion)

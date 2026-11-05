@@ -66,6 +66,10 @@ func controlCases() []controlCase {
 			return s.handleAutomationApproveInsert
 		}, (*Server).toolAutomationApproveInsert, base(map[string]any{"member_id": "pend1"}), "/api/automations/ab12/approve_insert",
 			map[string]any{"expected_version": float64(3), "actor": "alice", "reason": "because", "member_id": "pend1"}},
+		{"automation_rename_stage", func(s *Server) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+			return s.handleAutomationRenameStage
+		}, (*Server).toolAutomationRenameStage, base(map[string]any{"from": "review", "to": "verify"}), "/api/automations/ab12/stages/rename",
+			map[string]any{"expected_version": float64(3), "actor": "alice", "reason": "because", "from": "review", "to": "verify"}},
 	}
 }
 
@@ -137,6 +141,14 @@ func TestAutomationMCPControlGuards(t *testing.T) {
 		"insert without reason": func() (*mcpsdk.CallToolResult, error) {
 			return s.handleAutomationInsertMember(context.Background(), callReq(map[string]any{
 				"automation_id": "ab12", "expected_version": float64(1), "prd_id": "p9"}))
+		},
+		"rename without from": func() (*mcpsdk.CallToolResult, error) {
+			return s.handleAutomationRenameStage(context.Background(), callReq(map[string]any{
+				"automation_id": "ab12", "expected_version": float64(1), "to": "verify"}))
+		},
+		"rename without to": func() (*mcpsdk.CallToolResult, error) {
+			return s.handleAutomationRenameStage(context.Background(), callReq(map[string]any{
+				"automation_id": "ab12", "expected_version": float64(1), "from": "review"}))
 		},
 	} {
 		res, err := call()
