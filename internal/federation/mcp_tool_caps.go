@@ -128,6 +128,10 @@ var MCPToolCap = map[string]string{
 	"autonomous_shipped_backfill":                  CapAutonomousWrite, // operator runs the shipped-state backfill from merge history (dry_run or writing)
 	"autonomous_shipped_counts":                    CapAutonomousRead,  // read the per-status shipped counts (PRD + Automation buckets) under the in-force settings
 	"autonomous_scan_config_get":                   CapAutonomousRead,
+	"planning_routing_get":                         CapAutonomousRead,
+	"planning_routing_set":                         CapConfigWrite,
+	"planning_scorecard":                           CapAutonomousRead,
+	"planning_routing_test":                        CapAutonomousRead,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,
 	"autonomous_status":                            CapAutonomousRead,
 	// BL427 lifecycle-event subscriptions.

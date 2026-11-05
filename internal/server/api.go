@@ -6309,6 +6309,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
 			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
 			"scope_lint":                s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
+			"planning_routing":          s.cfg.Autonomous.PlanningRouting,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -8382,6 +8383,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		// See https://github.com/dmz006/datawatch/issues/19.
 		case "autonomous.enabled":
 			cfg.Autonomous.Enabled = toBool(v)
+		// Planning routing switches; the rules, ladders and classes go
+		// through PUT /api/autonomous/planning-routing.
+		case "autonomous.planning_routing.enabled":
+			cfg.Autonomous.PlanningRouting.Enabled = toBool(v)
+		case "autonomous.planning_routing.shadow":
+			cfg.Autonomous.PlanningRouting.Shadow = toBool(v)
 		case "autonomous.poll_interval_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PollIntervalSeconds = n
