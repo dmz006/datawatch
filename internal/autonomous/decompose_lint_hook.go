@@ -132,6 +132,11 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 		return title, raw, stories
 	}
 	applyTemplates := func(s []Story) []Story {
+		// A freshly parsed plan has no ids yet (the store assigns them
+		// after validation), and a template task needs real ids: its own
+		// id is built from its story's, and its depends_on names the
+		// story's other tasks by id.
+		ensurePlanIDs(s)
 		s, _ = ApplyTaskTemplates(s, templateFeatureName(prd), prd.ProjectDir, m.decomposeLintTemplateCfg())
 		return s
 	}
@@ -248,4 +253,21 @@ func templateFeatureName(prd *PRD) string {
 		name = string(r[:maxName])
 	}
 	return name
+}
+
+// ensurePlanIDs gives every story and task of a parsed plan that has no id
+// one, in place. The store keeps ids that are already set, so assigning them
+// early changes nothing for the planner's own tasks and lets the task
+// templates build ids and dependencies from real values.
+func ensurePlanIDs(stories []Story) {
+	for i := range stories {
+		if stories[i].ID == "" {
+			stories[i].ID = newID()
+		}
+		for j := range stories[i].Tasks {
+			if stories[i].Tasks[j].ID == "" {
+				stories[i].Tasks[j].ID = newID()
+			}
+		}
+	}
 }
