@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Planning ladder executor.** `internal/autonomous/planning_ladder.go` implements `config.PlanningLadder`: with an injected planner (`PlannerFn`), `RunPlanningLadder` produces a plan that passes the same deterministic checks decompose already runs — scope lint (`LintPlanScope`), spec-requirement coverage (`CheckPlanCoverage`) and the structural rules (`CheckPlanStructure`) — by spending the ladder's budget across one `initial` plan per planner, up to `TouchUpMax` `touch_up` passes (the prompt names the flagged task titles and the findings and must return the full plan again with only the matched tasks replaced), up to `ReplanMax` `replan` passes (the findings are fed back), and escalation to the next planner in the chain after `EscalateAfterAttempts` failed attempts at the current planner (or when the budgets ran out), restarting fresh and spending whatever budget is left. When the planner chain and both budgets are exhausted the ladder terminates with `Passed=false`, `FinalStories` (the last plan it holds) and `Planner` (the planner that made it), alongside the full attempt record (`LadderResult.Attempts`, one `AttemptRecord` per attempt: 1-based `Index`, `Kind` — `initial`/`touch_up`/`replan`, `At` from the injected clock, the planner, `Outcome` — `pass`/`findings`/`planner_error`/`parse_failure` — and `FindingCount`/`Findings`). Touch-up and replay budgets are shared across the chain, so a planner that escalates early leaves budget for the planner it hands off to; `EscalateAfterAttempts` is per-planner. The ladder is the execution mechanism for a policy that already has a deterministic check, and it adds no new judgement: `TestPlanningRouting*` in this package drives the real state machine with scripted planners — pass-first, touch-up fixing only the flagged task, touch-up exhausted → replan, escalation to a second planner, exhaustion of all planners, planner error, and parse failure — without a live LLM.
+
 ## v9.67.0 — Cost report
 
 ### Added
