@@ -357,7 +357,12 @@ type Config struct {
 	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
 	// No omitempty, same round-trip reason as VerificationBackends.
 	TaskOverrideStatuses []string `json:"task_override_statuses"`
-	StaleTaskSeconds     int      `json:"stale_task_seconds,omitempty"`
+	// OverrideQueuedTasks mirrors autonomous.override_queued_tasks: nil =
+	// unset and reads as true (see EffectiveOverrideQueuedTasks); explicit
+	// false restores the pre-change refusal at locked statuses. No omitempty,
+	// same marshal/unmarshal round-trip reason as VerificationBackends above.
+	OverrideQueuedTasks *bool `json:"override_queued_tasks"`
+	StaleTaskSeconds    int   `json:"stale_task_seconds,omitempty"`
 	// StuckRunningSeconds mirrors autonomous.stuck_running_seconds: how long a
 	// PRD may sit in running with every task terminal, no live session and no
 	// live executor before the stuck-running watchdog re-fires its rollup once,
@@ -1180,10 +1185,16 @@ type Manager struct {
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).
 	capacityWaitSpent map[string]time.Duration
-	cfg               Config
-	store             *Store
-	automations       *AutomationStore
-	repoCIWatch       *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
+	// waitReqPools is the pool(s) a task is CURRENTLY waiting on, keyed by
+	// task id. Seeded with the pools the operator's backend resolved to at
+	// admit time and rewritten by a queued-mode retarget (requeueQueuedCapacity)
+	// so the wait-reason annotator names the up-to-date pool after the holder
+	// moved (capacity.go). Guarded by mu.
+	waitReqPools map[string][]string
+	cfg          Config
+	store        *Store
+	automations  *AutomationStore
+	repoCIWatch  *RepoCIWatchStore // repo CI watch records (head-of-main / tag runs): separate store, see repo_ci_watch_store.go
 	// supervisor watch (supervisor_watch_pass.go): the shared finding store,
 	// the host/views the pass runs the checks through (wired by
 	// cmd/datawatch), and the test seam that replaces the whole check run.
@@ -5014,13 +5025,26 @@ func (m *Manager) RecordTaskDeliveryFailure(prdID, taskID string, reason string,
 // override (falls back to PRD-level then global). Accepted-while is
 // governed by autonomous.task_override_statuses (default: needs_review /
 // revisions_asked / cancelled / blocked).
-func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, error) {
+//
+// When the PRD is in none of the accepted statuses (typically "running"),
+// the call is accepted only when override_queued_tasks is enabled
+// (unset = true — EffectiveOverrideQueuedTasks): the story record is
+// updated, the per-task outcome follows the queued-task rule (see
+// applyQueuedStoryLLM and the file queued_task_override.go), and the
+// structured LLMOverrideResult (changed / left_alone) is returned. The
+// result is nil on every classic-path and refused call, so existing
+// callers observing a successful change or the pre-change refusal see
+// exactly what they saw before.
+func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, *LLMOverrideResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
-		return nil, err
+		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+			return m.applyQueuedStoryLLM(prdID, storyID, backend, effort, model, actor)
+		}
+		return nil, nil, err
 	}
 	var story *Story
 	for i := range prd.Story {
@@ -5030,16 +5054,16 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 		}
 	}
 	if story == nil {
-		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+		return nil, nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
 	// Refuse before any field changes: check the pair the story's tasks
 	// will resolve to, using the story's new values over the record's.
 	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd, m.AutomationForPRD(prd)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	warning, err := m.checkPinnedModelHosted(prdID, "story "+storyID, &Task{}, &Story{Backend: backend, Model: model}, prd, model, effectiveNodePin(nil, story))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m.store.WithLock(func() {
 		story.Backend = backend
@@ -5054,10 +5078,10 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 		recordModelWarning(prd, warning, actor)
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	return updated, nil, nil
 }
 
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
@@ -5065,28 +5089,37 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 // clears the override (falls back to story-level then PRD-level then global).
 // Accepted-while is governed by autonomous.task_override_statuses (default:
 // needs_review / revisions_asked / cancelled / blocked); outside those
-// statuses the worker is locked in.
-func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, error) {
+// statuses the worker is locked in — unless override_queued_tasks is
+// enabled (unset = true, EffectiveOverrideQueuedTasks), in which case a
+// locked status (typically "running") accepts the change when the task has
+// not started yet: the new pair is recorded, and a task waiting for a
+// capacity lease is retargeted to the new backend's pool with exactly one
+// live capacity request for it (applyQueuedTaskLLM). Running and finished
+// tasks are never modified; they come back in the result's left_alone list.
+func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, *LLMOverrideResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
-		return nil, err
+		if EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+			return m.applyQueuedTaskLLM(prdID, taskID, backend, effort, model, actor)
+		}
+		return nil, nil, err
 	}
 	task, story := findTaskInPRD(prd, taskID)
 	if task == nil {
-		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+		return nil, nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
 	// Refuse before any field changes: check the pair the task will run
 	// with, after the task's new values are applied over the story and
 	// PRD the executor falls back to.
 	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd, m.AutomationForPRD(prd)); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	warning, err := m.checkPinnedModelHosted(prdID, "task "+taskID, &Task{Backend: backend, Model: model}, story, prd, model, effectiveNodePin(task, story))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m.store.WithLock(func() {
 		task.Backend = backend
@@ -5102,10 +5135,10 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 		recordModelWarning(prd, warning, actor)
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	return updated, nil, nil
 }
 
 // SetTaskGuardrailLLM (BL416) overrides the backend/model used for a
@@ -5531,29 +5564,54 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 }
 
 // prdLLMOverrideAllowed reports whether the worker backend and model of an
-// Automaton in the given status may still be changed: the overrides only apply
-// before a run, so a running or completed Automaton is locked. SetPRDLLM
-// enforces it and lane fill reads it to know whether a backend can move.
+// Automaton in the given status may still be moved by *lane fill*: the lane
+// retargets an already-admitted run, so a running or completed Automaton is
+// locked there. SetPRDLLM uses a separate, more permissive gate (a PRD-level
+// change flows to queued/unstarted tasks via resolution, so a running Automaton
+// can still accept it when override_queued_tasks is on).
 func prdLLMOverrideAllowed(status PRDStatus) bool {
 	return status != PRDRunning && status != PRDCompleted
 }
 
-func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, error) {
+// SetPRDLLM updates the PRD's LLM fields. The third return value reports
+// the planning-requeue outcome (requirement b): non-nil whenever a planning
+// field (decomposition_profile / decomposition_model) was part of the call —
+// PlanningUnchanged when there is nothing to move (effective pair unchanged,
+// no live planning run, or capacity accounting off), otherwise requeued /
+// deferred_to_next_run with the old and new pools plus a reason.
+func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, *PlanningRequeueResult, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
+		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if !prdLLMOverrideAllowed(prd.Status) {
-		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+	// Completed Automata are finished — there is nothing left to run, so a
+	// worker LLM/effort change reaches no task. A RUNNING Automaton still
+	// accepts the change while its queued tasks can be overridden (the new
+	// pair flows to unstarted tasks through resolveTaskBackendModel); with
+	// override_queued_tasks disabled (explicit false) a running Automaton has
+	// no queued task the change could reach and is refused. Same rule as the
+	// story/task setters (SetStoryLLM / SetTaskLLM).
+	if prd.Status == PRDCompleted {
+		return nil, nil, fmt.Errorf("prd %q is completed; worker LLM/effort overrides only apply while the Automaton can still run tasks", prdID)
+	}
+	if prd.Status == PRDRunning && !EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+		return nil, nil, fmt.Errorf("prd %q is running and override_queued_tasks is disabled, so the worker LLM/effort change would reach no queued task (enable autonomous.override_queued_tasks, or set it once the Automaton is no longer running)", prdID)
 	}
 	// The decomposition model is not checked: its backend is the planning
 	// backend, which resolvePlannedModel resolves separately.
 	if err := checkLevelPair(prdID, backend, model, prd.Backend, prd.Model); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	planChanged := decompositionProfile != nil || decompositionModel != nil
+	// The pair the CURRENT record still resolves to — captured before the
+	// mutation so the result can report what the run was queued on.
+	var oldBackend, oldModel string
+	if planChanged {
+		oldBackend, oldModel = m.plannerPairFor(prd)
 	}
 	warning, err := m.checkAutomatonModelHosted(prdID, prd, backend, model)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	m.store.WithLock(func() {
 		if backend != nil {
@@ -5600,10 +5658,17 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 		recordModelWarning(prd, warning, actor)
 	})
 	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
+	var planning *PlanningRequeueResult
+	if planChanged {
+		// The profile (or planning model) changed: move a QUEUED planning run
+		// onto the pool the CURRENT profile resolves to, or explain why the
+		// change applies from the next run (see requeuePlanningRun).
+		planning = m.requeuePlanningRun(prdID, actor, oldBackend, oldModel)
+	}
+	return updated, planning, nil
 }
 
 // SetPRDGuardrailLLM (BL416) overrides the PRD-level backend/model used
@@ -5704,6 +5769,19 @@ func EffectiveTaskOverrideStatuses(list []string) []string {
 		return TaskOverrideStatusesDefault()
 	}
 	return append([]string(nil), list...)
+}
+
+// EffectiveOverrideQueuedTasks resolves the nil-means-true convention for
+// override_queued_tasks (see config.AutonomousConfig.OverrideQueuedTasks):
+// a set pointer reads as itself, an unset (nil) one reads as true — a fleet
+// that never set the key gets the new behavior, running LLM overrides
+// accepted against unstarted tasks, refused behavior restored by an
+// explicit false.
+func EffectiveOverrideQueuedTasks(v *bool) bool {
+	if v == nil {
+		return true
+	}
+	return *v
 }
 
 // ValidateTaskOverrideStatuses reports the first unknown name and the

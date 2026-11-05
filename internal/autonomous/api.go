@@ -428,6 +428,17 @@ func (a *API) SetConfig(v any) error {
 			}
 		}
 	}
+	// override_queued_tasks is write-validated the same way: on every
+	// write path (REST partial merge, MCP autonomous_config_set, comm
+	// channel) a present key must be a JSON boolean, so "true" or 3.0
+	// land as errors instead of a silently skipped field. json.Unmarshal
+	// into a bool refuses everything but true/false.
+	if override, present := gateProbe["override_queued_tasks"]; present {
+		var bo bool
+		if json.Unmarshal(override, &bo) != nil {
+			return fmt.Errorf("autonomous.override_queued_tasks: must be a JSON boolean (true or false)")
+		}
+	}
 	// failure_escalation is checked the same way as the per-Automaton and
 	// per-task overrides: an out-of-range value or a malformed step is refused
 	// before anything is merged. An omitted key leaves the current policy.
@@ -1196,22 +1207,54 @@ func (a *API) InstantiateTemplate(templateID string, vars map[string]string, act
 	return newPRD, err
 }
 
-// BL381 — per-story LLM override.
+// BL381 — per-story LLM override. out is the PRD; the queued-mode override
+// result (nil outside that mode — see Manager.SetStoryLLM) travels along in
+// the returned pair's second element for surfaces that surface it.
 func (a *API) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error) {
-	out, err := a.M.SetStoryLLM(prdID, storyID, backend, effort, model, actor)
+	out, override, err := a.M.SetStoryLLM(prdID, storyID, backend, effort, model, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		if override != nil {
+			return SetLLMOut{PRD: out, Override: override}, nil
+		}
 	}
 	return out, err
 }
 
 // BL203 (v5.4.0) — flexible LLM overrides at PRD + task level.
 func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error) {
-	out, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
+	out, override, err := a.M.SetTaskLLM(prdID, taskID, backend, effort, model, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		if override != nil {
+			return SetLLMOut{PRD: out, Override: override}, nil
+		}
 	}
 	return out, err
+}
+
+// SetLLMOut pairs the updated PRD with the queued-mode override result
+// (changed / left_alone) and, whenever a planning field (decomposition_profile
+// / decomposition_model) was part of the call, the planning-requeue outcome
+// (see PlanningRequeueResult). It is returned only on calls accepted in queued
+// mode (override_queued_tasks enabled at a locked status); every other call
+// returns the bare PRD exactly as before, so existing clients that read the
+// full view keep their shape in the classic flow.
+type SetLLMOut struct {
+	PRD      *PRD
+	Override *LLMOverrideResult
+	Planning *PlanningRequeueResult
+}
+
+// SplitSetLLMOut unwraps an LLM override write's reply: a SetLLMOut hands
+// back its PRD and its override result; anything else is passed through
+// with a nil result, so non-queued replies (PRD, test doubles) keep working
+// unchanged.
+func SplitSetLLMOut(v any) (any, *LLMOverrideResult, *PlanningRequeueResult) {
+	if o, ok := v.(SetLLMOut); ok {
+		return o.PRD, o.Override, o.Planning
+	}
+	return v, nil, nil
 }
 
 // ResolveTaskReview is the operator's decision on a task held for review (see
@@ -1310,11 +1353,31 @@ func (a *API) SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error) {
 	return out, err
 }
 func (a *API) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (any, error) {
-	out, err := a.M.SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor)
+	out, planning, err := a.M.SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
+		// The bare PRD is passed through as before; the optional planning
+		// requeue outcome (set_llm with a planning field) rides along as
+		// SetLLMOut so the full view can carry it.
+		if planning != nil {
+			return SetLLMOut{PRD: out, Planning: planning}, nil
+		}
+		return out, nil
 	}
-	return out, err
+	return nil, err
+}
+
+// RestartPlanning exposes the shared planning-requeue helper (see
+// planning_requeue.go) for a decompose re-requested while the Automaton is
+// already planning: it re-queues the queued planning run on the pool the
+// CURRENT decomposition profile resolves to, or — when the run already
+// started — returns the explanation instead of double-spawning.
+func (a *API) RestartPlanning(prdID string) (any, error) {
+	res := a.M.RestartPlanning(prdID)
+	if res != nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return res, nil
 }
 
 // BL416 — presence-aware guardrail judge LLM overrides at PRD + task level.
@@ -2165,9 +2228,23 @@ func (a *API) PauseAutomation(id, actor string, expectedVersion int64) (any, err
 
 // SetAutomationLLM overrides the Automation's execution and planning defaults.
 // A nil pointer leaves a field unchanged; expectedVersion 0 skips the version check.
+//
+// A planning-pair change retargets member planning runs, and the folded outcome
+// rides back as a sibling "planning" key next to the Automation's own top-level
+// fields (the Automation is embedded so its fields are promoted) — never
+// re-wrapped under a new object, the same shape rule as the set_llm PRD replies.
 func (a *API) SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (any, error) {
-	got, err := a.M.SetAutomationLLM(id, backend, model, effort, planningBackend, planningModel, actor, expectedVersion)
-	return controlResult(got, err)
+	got, planning, err := a.M.SetAutomationLLM(id, backend, model, effort, planningBackend, planningModel, actor, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	if planning == nil {
+		return got, nil
+	}
+	return struct {
+		*Automation
+		Planning *PlanningRequeueResult `json:"planning"`
+	}{Automation: got, Planning: planning}, nil
 }
 
 // SetAutomationVerificationLLM overrides the Automation's verification defaults.

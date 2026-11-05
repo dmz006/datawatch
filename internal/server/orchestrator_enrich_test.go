@@ -25,12 +25,13 @@ func (f *fakeOrchAutonomous) Status() any         { return nil }
 func (f *fakeOrchAutonomous) CreatePRD(string, string, string, string, string) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) GetPRD(string) (any, bool)     { return nil, false }
-func (f *fakeOrchAutonomous) ListPRDs() []any               { return nil }
-func (f *fakeOrchAutonomous) Decompose(string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) Run(string) error              { return nil }
-func (f *fakeOrchAutonomous) Cancel(string) error           { return nil }
-func (f *fakeOrchAutonomous) ListLearnings() []any          { return nil }
+func (f *fakeOrchAutonomous) GetPRD(string) (any, bool)           { return nil, false }
+func (f *fakeOrchAutonomous) ListPRDs() []any                     { return nil }
+func (f *fakeOrchAutonomous) Decompose(string) (any, error)       { return nil, nil }
+func (f *fakeOrchAutonomous) RestartPlanning(string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) Run(string) error                    { return nil }
+func (f *fakeOrchAutonomous) Cancel(string) error                 { return nil }
+func (f *fakeOrchAutonomous) ListLearnings() []any                { return nil }
 func (f *fakeOrchAutonomous) SessionIDsForPRD(prdID string) []string {
 	return f.prdSessions[prdID]
 }
@@ -55,8 +56,10 @@ func (f *fakeOrchAutonomous) ResetTask(string, string, string, bool) (any, error
 func (f *fakeOrchAutonomous) ResetTaskWithOptions(string, string, string, bool, bool) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) RejudgeCompletionGuardrail(string, string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)            { return nil, nil }
+func (f *fakeOrchAutonomous) RejudgeCompletionGuardrail(string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) {
 	return nil, nil
 }
@@ -163,16 +166,16 @@ func (f *fakeOrchAutonomous) CloneToTemplate(string, string, string) (any, error
 func (f *fakeOrchAutonomous) InstantiateFromTemplateStore(string, map[string]string, string, string, string) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) RunScan(string) (any, error)          { return nil, nil }
-func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)     { return nil, false }
-func (f *fakeOrchAutonomous) GetScanConfig() any                   { return nil }
-func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error   { return nil }
-func (f *fakeOrchAutonomous) DecomposeLintConfig() any             { return nil }
+func (f *fakeOrchAutonomous) RunScan(string) (any, error)                 { return nil, nil }
+func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)            { return nil, false }
+func (f *fakeOrchAutonomous) GetScanConfig() any                          { return nil }
+func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error          { return nil }
+func (f *fakeOrchAutonomous) DecomposeLintConfig() any                    { return nil }
 func (f *fakeOrchAutonomous) SetDecomposeLintConfig(map[string]any) error { return nil }
 func (f *fakeOrchAutonomous) DecomposeLintDryRun(string) (any, error)     { return nil, nil }
-func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)     { return nil, nil }
-func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) ListAutomatonTypes() []any            { return nil }
+func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)            { return nil, nil }
+func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error)        { return nil, nil }
+func (f *fakeOrchAutonomous) ListAutomatonTypes() []any                   { return nil }
 func (f *fakeOrchAutonomous) RegisterAutomatonType(string, string, string, string) (any, error) {
 	return nil, nil
 }

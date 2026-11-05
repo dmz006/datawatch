@@ -804,7 +804,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous decompose failed", err.Error())
 			return
 		}
-		r.reply("autonomous decompose", prettyJSON(out))
+		r.reply("autonomous decompose", autonomousOutcomeReply(out))
 	case "run":
 		if len(args) < 2 {
 			r.reply("autonomous run failed", "usage: autonomous run <prd-id>")
@@ -1130,7 +1130,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-llm", prettyJSON(out))
+		r.reply("autonomous set-llm", autonomousOutcomeReply(out))
 	case "set-notify-events", "set_notify_events":
 		// Per-Automaton notify_events list: which lifecycle event kinds
 		// produce notifications. inherit (empty list) falls back to the
@@ -1182,7 +1182,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-story-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-story-llm", prettyJSON(out))
+		r.reply("autonomous set-story-llm", autonomousOutcomeReply(out))
 	case "set-task-llm", "set_task_llm":
 		args, guardrail := extractGuardrailLLMTokens(args)
 		if len(args) < 3 || (len(args) < 4 && len(guardrail) == 0) {
@@ -1208,7 +1208,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 			r.reply("autonomous set-task-llm failed", err.Error())
 			return
 		}
-		r.reply("autonomous set-task-llm", prettyJSON(out))
+		r.reply("autonomous set-task-llm", autonomousOutcomeReply(out))
 	case "set-task-node", "set_task_node":
 		r.replySetNodePin(args, false)
 	case "set-story-node", "set_story_node":

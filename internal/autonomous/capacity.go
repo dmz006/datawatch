@@ -305,6 +305,39 @@ func (m *Manager) resetCapacityWait(taskID string) {
 	delete(m.capacityWaitSpent, taskID)
 }
 
+// setWaitReqPools records the pool(s) taskID is currently waiting on so the
+// wait-reason annotator (nameRequestedPool) names the up-to-date pool. It is
+// seeded at admit time and rewritten by a queued-mode retarget before the next
+// wait reason renders. Guarded by mu; the value is copied so a later rewrite
+// of the caller's slice cannot corrupt the stored one.
+func (m *Manager) setWaitReqPools(taskID string, pools []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.waitReqPools == nil {
+		m.waitReqPools = map[string][]string{}
+	}
+	if taskID == "" || len(pools) == 0 {
+		return
+	}
+	m.waitReqPools[taskID] = append([]string(nil), pools...)
+}
+
+// waitReqPoolsNow returns the pools taskID is currently waiting on, or nil
+// when it is not waiting. Guarded by mu.
+func (m *Manager) waitReqPoolsNow(taskID string) []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.waitReqPools[taskID]
+}
+
+// clearWaitReqPools drops a task's current-wait record when its admission
+// ends. Guarded by mu.
+func (m *Manager) clearWaitReqPools(taskID string) {
+	m.mu.Lock()
+	delete(m.waitReqPools, taskID)
+	m.mu.Unlock()
+}
+
 func (m *Manager) capacityWait() time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -426,9 +459,13 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		req = pinned
 	}
 	req.Refresh = m.placementRefreshPinned(req, backend, model, nil, pin, exclude)
-	// requested is the pool(s) the task asked for; a fall-through swaps pools
-	// to the alternate, but a wait reason still names what was requested.
-	requested := pools
+	// The pools the task asked for are registered per-task (not captured in a
+	// local) so a queued-mode LLM override that retargets the holder
+	// (requeueQueuedCapacity) can rewrite them before the next wait reason
+	// renders. A fall-through then swaps the wait to the alternate pool while
+	// the reason still names what was requested.
+	m.setWaitReqPools(t.ID, pools)
+	defer m.clearWaitReqPools(t.ID)
 	m.setFallthrough(t.ID, nil)
 	var fell *CapacityAlternate
 	var fromPools []string
@@ -459,7 +496,7 @@ func (m *Manager) acquireLease(ctx context.Context, prd *PRD, t *Task, backend, 
 		if !waited {
 			waitStart = rec.Now()
 		}
-		reason = nameRequestedPool(reason, requested)
+		reason = nameRequestedPool(reason, m.waitReqPoolsNow(t.ID))
 		// The ledger reports every change of reason text (a holder joining a
 		// pool, a count moving); the audit log records only a change of cause.
 		if cause := ClassifyWaitReason(reason); !waited || cause != lastCause {
@@ -617,7 +654,11 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	}
 	defer led.Release(holder)
 	m.clearPRDWaitReason(prd.ID)
-	return m.decompose(req)
+	// Planning requeue (planning_requeue.go): the PRD's decomposition pair
+	// can change while this admission was queued — the queue entry is
+	// retargeted onto this pool — so the execution must carry the pair the
+	// PRD holds NOW, not the one resolved before the capacity wait.
+	return m.decompose(m.planningRequestAtGrant(prd, req))
 }
 
 // decomposePools drops the "host" pool from a decompose lease. The

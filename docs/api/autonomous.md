@@ -276,6 +276,107 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_llm \
   -d '{"task_id":"<task-id>","guardrail_model":""}'
 ```
 
+### Override outcomes on a running or queued Automaton (`set_llm` / `set_task_llm` / `set_story_llm`)
+
+`autonomous.override_queued_tasks` (boolean; unset reads as `true`, explicit
+`false` restores the classic refusal) controls what happens when
+`autonomous.task_override_statuses` would refuse an override — most often a
+PRD that is `running` while the target task has not started yet:
+
+- **On (default).** The call is accepted as long as it can reach an unstarted
+  task (`pending`, `queued`, `waiting_capacity`, `waiting_decision`,
+  `awaiting_approval`, or never scheduled). Unstarted tasks are changed; a
+  `waiting_capacity` task gets its queued capacity request retargeted to the
+  pool the new backend and model resolve to. Started tasks (running, running
+  tests, verifying), finished tasks (completed, failed, cancelled) and parked
+  ones (blocked, waiting for review) are never modified — they are reported
+  as left alone with the reason, and the override takes effect on their next
+  run. A task-level call aimed at a task that already started or finished is
+  not refused either — it answers 2xx with the task in `left_alone`, its
+  record left exactly as it was.
+- **Off.** Any status outside `autonomous.task_override_statuses` is a `400`
+  with the classic lock message, exactly as before.
+
+In queued mode the reply is the PRD view plus an `override` object:
+
+```json
+{
+  "prd": { "…": "…" },
+  "override": {
+    "changed": [
+      { "task_id": "t2", "reason": "not started: the override takes effect when the task runs; its queued capacity request was retargeted to the new pool", "capacity_moved": true },
+      { "task_id": "t3", "reason": "not started: the override takes effect when the task runs" }
+    ],
+    "left_alone": [
+      { "task_id": "t1", "reason": "task is running; the override takes no effect while it runs" }
+    ]
+  }
+}
+```
+
+`changed` / `left_alone` are arrays of `{task_id, reason}`; `capacity_moved`
+is present (and `true`) only on a `waiting_capacity` task whose queued
+request was retargeted. The `override` object is present **only** in this
+mode: a classic-accepted call (status in `task_override_statuses`) and a
+refused call (setting disabled) return the plain PRD view. A story-level call
+reports the story's tasks. The Automaton-level `set_llm` worker pair on a
+`running` PRD is applied per task under the same rule. Guardrail and
+verification LLM setters are never affected by the setting.
+
+The same key over REST (`PUT /api/config` `autonomous.override_queued_tasks`),
+MCP (`autonomous_config_set`), CLI (`datawatch config set
+autonomous.override_queued_tasks false`) and comm channel (`configure
+autonomous.override_queued_tasks=false`).
+
+### Planning requeue (`set_llm` / `decompose`)
+
+Changing the decomposition pair (`decomposition_profile`,
+`decomposition_model`) with `set_llm` while the PRD's planning run is still
+in the capacity queue retargets that run's single queue entry in place to the
+pool the new pair resolves to — the PRD stays in `planning`, the wait reason
+now names the new pool, and no new attempt starts (the decompose retry budget
+is untouched, the wait budget is not reset). `decompose` (alias `plan`) is the
+restart-decompose path: re-calling it while the planning run is still queued
+re-queues that same run on the pool the current profile resolves to instead of
+starting a second run; while the run is already started it answers plainly
+that the run is in progress and was left alone.
+
+Both replies carry a `planning` object (present on `set_llm` whenever a
+planning field — `decomposition_profile` or `decomposition_model` — is part
+of the call, and on the `decompose` reply while a planning run is in flight):
+
+```json
+{
+  "prd": { "…": "…" },
+  "planning": {
+    "outcome": "requeued",
+    "old_backend": "ollama",
+    "new_backend": "opencode",
+    "old_pools": ["llm:ollama"],
+    "new_pools": ["llm:opencode"],
+    "reason": "queued planning run re-queued on llm:opencode"
+  }
+}
+```
+
+`outcome` is one of:
+
+| Outcome | Meaning |
+|---|---|
+| `requeued` | The queued planning run was retargeted to the pool the current profile resolves to. |
+| `deferred_to_next_run` | The run already started and holds a live lease; it was left alone (wait for it to finish or cancel it) and the new pair applies from the next planning run. |
+| `unchanged` | Nothing to move — the resolved pair is unchanged, no live planning run, or the queue entry already sits on the target pool. |
+
+The `old_*` / `new_*` fields and `reason` are present whenever the answer is
+not a plain requeue. Re-targeting an entry that already carries the desired
+placement is a no-op, so changing the pair twice leaves exactly one queue
+entry and no leaked capacity. Cancelling or rejecting the PRD still drops a
+queued planner at once ("decompose cancelled"), not consuming the retry
+budget. See [`howto/autonomous-planning.md`](../howto/autonomous-planning.md)
+(“Changing the planning backend while planning”) and
+[`howto/automata-capacity.md`](../howto/automata-capacity.md) (“Retargeting
+while queued”).
+
 ### Per-task project dir override (`set_task_project_dir`)
 
 Each task carries an optional `project_dir` field (JSON `project_dir`).

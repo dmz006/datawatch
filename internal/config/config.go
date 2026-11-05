@@ -2925,6 +2925,26 @@ type AutonomousConfig struct {
 	// unaffected and stay locked to the pre-Run trio.
 	// No omitempty on purpose: an explicit empty list must round-trip as a clear.
 	TaskOverrideStatuses []string `yaml:"task_override_statuses" json:"task_override_statuses"`
+	// OverrideQueuedTasks (queued task override): accept task-level and
+	// story-level LLM override calls (set_task_llm, set_story_llm) while the
+	// Automaton is running, i.e. at a PRD status that is NOT in
+	// task_override_statuses (typically "running"). When enabled, the call
+	// touches only unstarted tasks (pending, queued, waiting for a capacity
+	// lease, waiting for a decision, awaiting approval): the new backend,
+	// effort and model are written to the record, and an unstarted task
+	// sitting in the capacity queue has its queued request retargeted in
+	// place to the new backend's pool (capacity.Ledger.Retarget) so there is
+	// exactly one live request for it, on the latest pool. Running and
+	// finished tasks are never modified; they come back in the result's
+	// left_alone list with a reason. When disabled, a locked status refuses
+	// the call, the pre-change behavior.
+	//
+	// *bool because the default is ON and "not present" must stay
+	// distinguishable from "explicit false": nil (unset) reads as true, an
+	// explicit false reads as false. Same convention as
+	// PlanCoverageSuppressCreatedFiles above. EffectiveOverrideQueuedTasks
+	// (internal/autonomous) applies the rule.
+	OverrideQueuedTasks *bool `yaml:"override_queued_tasks" json:"override_queued_tasks"`
 	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.

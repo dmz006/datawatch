@@ -51,7 +51,7 @@ func seedSetLLMRESTPRD(t *testing.T, mgr *autonomous.Manager, backend, effort, m
 		t.Fatalf("CreatePRD: %v", err)
 	}
 	if decompProfile != "" || decompModel != "" {
-		if _, err := mgr.SetPRDLLM(prd.ID, nil, nil, nil, spOr(decompProfile), spOr(decompModel), "seed"); err != nil {
+		if _, _, err := mgr.SetPRDLLM(prd.ID, nil, nil, nil, spOr(decompProfile), spOr(decompModel), "seed"); err != nil {
 			t.Fatalf("SetPRDLLM (seed): %v", err)
 		}
 	}

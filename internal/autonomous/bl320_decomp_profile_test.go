@@ -27,10 +27,11 @@ func TestBL320_SetPRDLLM_PersistsDecompositionProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp("qwen3:8b"), sp("my-planning-llm"), sp(""), "test")
+	updated, planning, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp("qwen3:8b"), sp("my-planning-llm"), sp(""), "test")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
+	_ = planning
 
 	if updated.DecompositionProfile != "my-planning-llm" {
 		t.Errorf("DecompositionProfile: got %q, want %q", updated.DecompositionProfile, "my-planning-llm")
@@ -57,7 +58,7 @@ func TestBL320_SetPRDLLM_DecisionLogContainsDecompProfile(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp("opencode"), sp(""), "operator")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp("opencode"), sp(""), "operator")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -86,7 +87,7 @@ func TestBL320_SetPRDLLM_EmptyDecompProfile_Accepted(t *testing.T) {
 		t.Fatalf("CreatePRD: %v", err)
 	}
 
-	updated, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(""), sp(""), "")
+	updated, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), sp(""), sp(""), "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM with empty DecompositionProfile should not error: %v", err)
 	}
@@ -108,7 +109,7 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 
 	// Absent args (nil) must not appear in the decision note; the field
 	// itself stays empty.
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "")
+	_, _, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "")
 	if err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
@@ -122,22 +123,70 @@ func TestBL320_SetPRDLLM_EmptyDecisionNote_WhenProfileEmpty(t *testing.T) {
 }
 
 func TestBL320_SetPRDLLM_LockedOnRunning(t *testing.T) {
-	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
+	newRunning := func(t *testing.T, m *Manager) *PRD {
+		t.Helper()
+		prd, err := m.CreatePRD("test spec", "/tmp/ts-dp5", "ollama", "", "")
+		if err != nil {
+			t.Fatalf("CreatePRD: %v", err)
+		}
+		prd.Status = PRDRunning
+		if err := m.Store().SavePRD(prd); err != nil {
+			t.Fatalf("SavePRD: %v", err)
+		}
+		return prd
 	}
 
-	prd, err := m.CreatePRD("test spec", "/tmp/ts-dp5", "ollama", "", "")
-	if err != nil {
-		t.Fatalf("CreatePRD: %v", err)
-	}
+	// Default config leaves override_queued_tasks unset (reads true): a
+	// running Automaton still accepts the worker LLM/effort change — the new
+	// pair flows to its queued/unstarted tasks through resolution.
+	t.Run("running with override_queued_tasks on (default): allowed", func(t *testing.T) {
+		m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+		if err != nil {
+			t.Fatalf("NewManager: %v", err)
+		}
+		prd := newRunning(t, m)
+		got, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode")
+		if err != nil {
+			t.Fatalf("a running PRD should accept the change under default override_queued_tasks: %v", err)
+		}
+		if got.Backend != "ollama" {
+			t.Errorf("backend %q, want ollama", got.Backend)
+		}
+	})
 
-	// Manually force PRD to running state
-	prd.Status = PRDRunning
-	_ = m.Store().SavePRD(prd)
+	// Explicitly disabling override_queued_tasks removes the queue of tasks a
+	// change could reach, so a running Automaton is refused again.
+	t.Run("running with override_queued_tasks off: refused", func(t *testing.T) {
+		cfg := DefaultConfig()
+		off := false
+		cfg.OverrideQueuedTasks = &off
+		m, err := NewManager(t.TempDir(), cfg, nil)
+		if err != nil {
+			t.Fatalf("NewManager: %v", err)
+		}
+		prd := newRunning(t, m)
+		if _, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode"); err == nil {
+			t.Error("a running PRD must refuse the change when override_queued_tasks is disabled")
+		}
+	})
 
-	_, err = m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode")
-	if err == nil {
-		t.Error("SetPRDLLM on PRDRunning should return error (LLM overrides locked)")
-	}
+	// A completed Automaton is finished — nothing left to run — and always
+	// refuses a worker LLM/effort change, regardless of override_queued_tasks.
+	t.Run("completed is always refused", func(t *testing.T) {
+		m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+		if err != nil {
+			t.Fatalf("NewManager: %v", err)
+		}
+		prd, err := m.CreatePRD("test spec", "/tmp/ts-dp5c", "ollama", "", "")
+		if err != nil {
+			t.Fatalf("CreatePRD: %v", err)
+		}
+		prd.Status = PRDCompleted
+		if err := m.Store().SavePRD(prd); err != nil {
+			t.Fatalf("SavePRD: %v", err)
+		}
+		if _, _, err := m.SetPRDLLM(prd.ID, sp("ollama"), sp(""), sp(""), nil, nil, "opencode"); err == nil {
+			t.Error("a completed PRD must refuse the worker LLM/effort change")
+		}
+	})
 }

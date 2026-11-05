@@ -770,6 +770,10 @@ type AutonomousAPI interface {
 	GetPRD(id string) (any, bool)
 	ListPRDs() []any
 	Decompose(id string) (any, error)
+	// Planning requeue (planning_requeue.go): decompose re-requested while
+	// the Automaton is already planning — re-queue the queued planning run
+	// on the current pool, or explain why the run was left alone.
+	RestartPlanning(id string) (any, error)
 	// BL328 — async decompose with per-story callback. Used by the
 	// SSE-streaming handler. The callback is called for each story as
 	// it becomes available; index is 0-based, total is total story count.
@@ -6278,6 +6282,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
 			// 4-item default in the PWA rather than an empty field.
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
+			// Render the EFFECTIVE value: unset (nil) reads as true — the
+			// new queued-task override behavior — only an explicit false in
+			// the config restores the pre-change refusal.
+			"override_queued_tasks": autonomous.EffectiveOverrideQueuedTasks(s.cfg.Autonomous.OverrideQueuedTasks),
 			// Plan requirement coverage gate — render the EFFECTIVE value
 			// so the unset state (empty mode / zero ratio) shows its safe
 			// defaults ("block", 1.0) rather than blanks.
@@ -6691,6 +6699,23 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// override_queued_tasks — a boolean (or a parseable boolean string from
+	// the comm channel); anything else rejects the whole PUT so a typo
+	// never stores a value that later resolves to the wrong behavior.
+	if v, ok := patch["autonomous.override_queued_tasks"]; ok {
+		valid := false
+		if _, ok := v.(bool); ok {
+			valid = true
+		} else if str, ok := v.(string); ok {
+			if _, perr := strconv.ParseBool(strings.TrimSpace(str)); perr == nil {
+				valid = true
+			}
+		}
+		if !valid {
+			http.Error(w, "autonomous.override_queued_tasks: must be a boolean (true or false)", http.StatusBadRequest)
 			return
 		}
 	}
@@ -8747,6 +8772,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		case "autonomous.override_queued_tasks":
+			// Boolean: true enables overriding the LLM of a not-yet-started
+			// task while the Automaton is at a locked (typically "running")
+			// status; false restores the pre-change refusal. Only a real
+			// boolean (or an "true"/"false" string, matching how comm-channel
+			// scalars land here) changes the value; anything else leaves
+			// the current setting alone.
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.OverrideQueuedTasks = &b
+			} else if s, ok := v.(string); ok {
+				if bs, err := strconv.ParseBool(strings.TrimSpace(s)); err == nil {
+					cfg.Autonomous.OverrideQueuedTasks = &bs
+				}
 			}
 		case "autonomous.snapshot_never_stage":
 			// Path patterns the autonomous snapshot must never `git add`.

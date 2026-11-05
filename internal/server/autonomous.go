@@ -1959,12 +1959,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// when at least one legacy key is present; a guardrail-only body
 		// leaves legacy fields untouched (and adds no decision-log entry).
 		var updated any
+		var planning any // planning-requeue outcome (set_llm with a planning field)
 		anyLegacy := req.Backend != nil || req.Effort != nil || req.Model != nil || req.DecompositionProfile != nil || req.DecompositionModel != nil
 		if anyLegacy {
 			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
 			if err != nil {
 				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
+			}
+			updated, _, planning = autonomous.SplitSetLLMOut(updated)
+			// SplitSetLLMOut hands back a typed nil pointer when no
+			// planning requeue happened; normalize it to a true nil so
+			// the != nil check below is reliable.
+			if pr, ok := planning.(*autonomous.PlanningRequeueResult); ok && pr == nil {
+				planning = nil
 			}
 		}
 		if hasGuardrail {
@@ -1988,6 +1996,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_llm", "automaton", id, detail) // GH#201 Phase 4
+		// The planning-requeue outcome (set_llm with a planning field) rides
+		// along in the reply — {"prd": …, "planning": …} in the full view,
+		// a planning key in the compact view — while every other call keeps
+		// the exact bare-PRD / write-view replies it had before.
+		if planning != nil {
+			s.writeAutonomousPlanningResult(w, r, updated, planning, "", "", "")
+			return
+		}
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 	// BL381 — per-story worker LLM override.
 	case "set_story_llm":
@@ -2028,8 +2044,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_story_llm", "automaton", id, map[string]any{"story_id": req.StoryID, "backend": req.Backend}) // GH#201 Phase 4
-		prd, _ := updated.(*autonomous.PRD)
-		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
+		p, override, _ := autonomous.SplitSetLLMOut(updated)
+		s.writeAutonomousResultOverride(w, r, p, override, "", req.StoryID, "")
 	// BL203 (v5.4.0) — per-task worker LLM override.
 	case "set_task_llm":
 		if r.Method != http.MethodPost {
@@ -2095,8 +2111,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		detail := map[string]any{"task_id": req.TaskID, "backend": req.Backend}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
-		prd, _ := updated.(*autonomous.PRD)
-		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+		p, override, _ := autonomous.SplitSetLLMOut(updated)
+		s.writeAutonomousResultOverride(w, r, p, override, req.TaskID, "", "")
 	// Pin a task's worker to a compute node; an empty node clears the pin.
 	case "set_task_node":
 		if r.Method != http.MethodPost {

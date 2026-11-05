@@ -71,7 +71,8 @@ func (f *laneFillFake) SetPRDLLM(id string, backend, effort, model, dp, dm *stri
 	if f.setErr != nil {
 		return nil, f.setErr
 	}
-	return f.m.SetPRDLLM(id, backend, effort, model, dp, dm, actor)
+	out, _, err := f.m.SetPRDLLM(id, backend, effort, model, dp, dm, actor)
+	return out, err
 }
 
 func deref(s *string) string {

@@ -2901,6 +2901,26 @@ autonomous:
   # `datawatch config set autonomous.task_override_statuses blocked,running`,
   # comm channel `configure autonomous.task_override_statuses=blocked,running`.
   task_override_statuses: []
+  # Whether a task-level or story-level LLM override call that the gate above
+  # refuses (most often: the PRD is `running` but the target task has not
+  # started yet) is still accepted and applied to the unstarted tasks. When
+  # on — the default; unset reads as true — the call is accepted and the
+  # reply reports the changed tasks (unstarted: pending, queued,
+  # waiting_capacity, waiting_decision, awaiting_approval, or never
+  # scheduled) and the tasks left alone (started, finished or parked) with
+  # the reason; a `waiting_capacity` task gets its queued capacity request
+  # retargeted to the new backend's pool (`capacity_moved: true`). A
+  # task-level call aimed at a task that already started or finished is not
+  # refused — it answers 2xx with the task in `left_alone`. When explicitly
+  # false the classic refusal is restored: any status outside
+  # task_override_statuses is a 400. Applies to set_task_llm /
+  # set_story_llm and the Automaton-level set_llm worker pair on a running
+  # PRD; guardrail / verification LLM setters are never affected.
+  # Settable through any config surface: YAML, REST PUT /api/config,
+  # MCP autonomous_config_set, CLI
+  # `datawatch config set autonomous.override_queued_tasks false`,
+  # comm channel `configure autonomous.override_queued_tasks=false`.
+  override_queued_tasks: true
   # Plan-requirement coverage gate mode — how the deterministic, no-LLM
   # plan-requirement coverage check (internal/autonomous/plan_coverage.go,
   # recorded on the PRD at decompose time) gates PRD approval. Valid values

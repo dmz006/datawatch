@@ -318,7 +318,7 @@ func TestNodePin_ModelChangeIsCheckedAgainstThePin(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Some node serves pinOtherModel, but the pinned one does not.
-	_, err := m.SetTaskLLM(prd.ID, "t1", "", "", pinOtherModel, "tester")
+	_, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", pinOtherModel, "tester")
 	if !errors.Is(err, ErrModelNotServed) || !strings.Contains(err.Error(), "gpu-a") {
 		t.Fatalf("SetTaskLLM on a task pinned to gpu-a: %v, want ErrModelNotServed naming gpu-a", err)
 	}
@@ -336,22 +336,22 @@ func TestNodePin_ModelChangeIsCheckedAgainstThePin(t *testing.T) {
 	if _, err := m.SetStoryNode(prd.ID, "s1", "gpu-a", "tester"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", pinOtherModel, "tester"); !errors.Is(err, ErrModelNotServed) {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", pinOtherModel, "tester"); !errors.Is(err, ErrModelNotServed) {
 		t.Fatalf("SetTaskLLM under a story pin: %v", err)
 	}
-	if _, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", pinOtherModel, "tester"); !errors.Is(err, ErrModelNotServed) {
+	if _, _, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", pinOtherModel, "tester"); !errors.Is(err, ErrModelNotServed) {
 		t.Fatalf("SetStoryLLM on a pinned story: %v", err)
 	}
 	// A model the pinned node serves is accepted.
-	if _, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", routeServedModel, "tester"); err != nil {
+	if _, _, err := m.SetStoryLLM(prd.ID, "s1", "pi", "", routeServedModel, "tester"); err != nil {
 		t.Fatalf("SetStoryLLM with a served model: %v", err)
 	}
 
 	// The Automaton-level setter checks the pins of the tasks that inherit.
-	if _, err := m.SetStoryLLM(prd.ID, "s1", "", "", "", "tester"); err != nil {
+	if _, _, err := m.SetStoryLLM(prd.ID, "s1", "", "", "", "tester"); err != nil {
 		t.Fatalf("clearing the story worker: %v", err)
 	}
-	if _, err := m.SetPRDLLM(prd.ID, nil, nil, strp(pinOtherModel), nil, nil, "tester"); !errors.Is(err, ErrModelNotServed) || !strings.Contains(err.Error(), "gpu-a") {
+	if _, _, err := m.SetPRDLLM(prd.ID, nil, nil, strp(pinOtherModel), nil, nil, "tester"); !errors.Is(err, ErrModelNotServed) || !strings.Contains(err.Error(), "gpu-a") {
 		t.Fatalf("SetPRDLLM with a pinned inheriting task: %v, want ErrModelNotServed naming gpu-a", err)
 	}
 	if cur, _ := m.Store().GetPRD(prd.ID); cur.Model != routeServedModel {

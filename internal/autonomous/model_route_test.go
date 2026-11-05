@@ -101,15 +101,15 @@ type routeSetter struct {
 func routeSetters() []routeSetter {
 	return []routeSetter{
 		{"set_task_llm", func(m *Manager, id, model string) error {
-			_, err := m.SetTaskLLM(id, "t1", "", "", model, "test")
+			_, _, err := m.SetTaskLLM(id, "t1", "", "", model, "test")
 			return err
 		}, func(s refusalSnapshot) string { return s.taskModel }},
 		{"set_story_llm", func(m *Manager, id, model string) error {
-			_, err := m.SetStoryLLM(id, "s1", "pi", "", model, "test")
+			_, _, err := m.SetStoryLLM(id, "s1", "pi", "", model, "test")
 			return err
 		}, func(s refusalSnapshot) string { return s.storyModel }},
 		{"set_prd_llm", func(m *Manager, id, model string) error {
-			_, err := m.SetPRDLLM(id, nil, nil, strp(model), nil, nil, "test")
+			_, _, err := m.SetPRDLLM(id, nil, nil, strp(model), nil, nil, "test")
 			return err
 		}, func(s refusalSnapshot) string { return s.prdModel }},
 		{"set_task_verification_llm", func(m *Manager, id, model string) error {
@@ -138,12 +138,12 @@ func routeDecisionKinds(t *testing.T, m *Manager, prdID string) []Decision {
 
 func TestModelRoute_RefusesWhenNoNodeServesModel(t *testing.T) {
 	m, prd, f, _ := newRouteManager(t, "refuse", true)
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeServedModel, "seed"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeServedModel, "seed"); err != nil {
 		t.Fatalf("seed pin refused: %v", err)
 	}
 	before := takeRefusalSnapshot(t, m, prd.ID)
 
-	_, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test")
+	_, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test")
 	if !errors.Is(err, ErrModelNotServed) {
 		t.Fatalf("err = %v, want one wrapping ErrModelNotServed", err)
 	}
@@ -159,7 +159,7 @@ func TestModelRoute_RefusesWhenNoNodeServesModel(t *testing.T) {
 
 func TestModelRoute_AcceptsWhenANodeServesModel(t *testing.T) {
 	m, prd, f, al := newRouteManager(t, "refuse", true)
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeServedModel, "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeServedModel, "test"); err != nil {
 		t.Fatalf("pin of a served model refused: %v", err)
 	}
 	if got := takeRefusalSnapshot(t, m, prd.ID).taskModel; got != routeServedModel {
@@ -181,13 +181,13 @@ func TestModelRoute_AcceptsWhenANodeServesModel(t *testing.T) {
 func TestModelRoute_NotApplicableAndUnwiredAndClearedPass(t *testing.T) {
 	m, prd, f, al := newRouteManager(t, "refuse", true)
 	f.applies = false
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
 		t.Fatalf("a not applicable verdict refused the pin: %v", err)
 	}
 	f.applies = true
 	// Clearing a pin (empty model) is never checked.
 	before := f.callCount()
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", "", "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", "", "test"); err != nil {
 		t.Fatalf("clearing the pin refused: %v", err)
 	}
 	if f.callCount() != before {
@@ -198,14 +198,14 @@ func TestModelRoute_NotApplicableAndUnwiredAndClearedPass(t *testing.T) {
 	}
 	// No check wired lets everything through.
 	m.SetModelHostCheck(nil)
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
 		t.Fatalf("pin refused with no check wired: %v", err)
 	}
 }
 
 func TestModelRoute_WarnModeProceedsAndRecords(t *testing.T) {
 	m, prd, _, _ := newRouteManager(t, "warn", true)
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "operator"); err != nil {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "operator"); err != nil {
 		t.Fatalf("warn mode refused the pin: %v", err)
 	}
 	if got := takeRefusalSnapshot(t, m, prd.ID).taskModel; got != routeUnservedModel {
@@ -229,7 +229,7 @@ func TestModelRoute_WarnModeProceedsAndRecords(t *testing.T) {
 func TestModelRoute_RefusalRaisesAlertWhenConfigured(t *testing.T) {
 	t.Run("alert on", func(t *testing.T) {
 		m, prd, _, al := newRouteManager(t, "refuse", true)
-		if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
+		if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
 			t.Fatalf("err = %v", err)
 		}
 		if al.count() != 1 {
@@ -247,7 +247,7 @@ func TestModelRoute_RefusalRaisesAlertWhenConfigured(t *testing.T) {
 	})
 	t.Run("alert off", func(t *testing.T) {
 		m, prd, _, al := newRouteManager(t, "refuse", false)
-		if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
+		if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
 			t.Fatalf("err = %v", err)
 		}
 		if al.count() != 0 {
@@ -256,7 +256,7 @@ func TestModelRoute_RefusalRaisesAlertWhenConfigured(t *testing.T) {
 	})
 	t.Run("warn mode alerts too", func(t *testing.T) {
 		m, prd, _, al := newRouteManager(t, "warn", true)
-		if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
+		if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); err != nil {
 			t.Fatal(err)
 		}
 		if al.count() != 1 {
@@ -266,7 +266,7 @@ func TestModelRoute_RefusalRaisesAlertWhenConfigured(t *testing.T) {
 	t.Run("no sink wired", func(t *testing.T) {
 		m, prd, _, _ := newRouteManager(t, "refuse", true)
 		m.SetAlertSink(nil)
-		if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
+		if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
 			t.Fatalf("err = %v", err)
 		}
 	})
@@ -274,7 +274,7 @@ func TestModelRoute_RefusalRaisesAlertWhenConfigured(t *testing.T) {
 
 func TestModelRoute_RefusalNamesModelAndNodesChecked(t *testing.T) {
 	m, prd, _, _ := newRouteManager(t, "refuse", true)
-	_, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test")
+	_, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test")
 	if err == nil {
 		t.Fatal("pin was not refused")
 	}
@@ -291,7 +291,7 @@ func TestModelRoute_RefusalNamesModelAndNodesChecked(t *testing.T) {
 func TestModelRoute_DefaultSettingsRefuseAndAlert(t *testing.T) {
 	m, prd, _, al := newRouteManager(t, "refuse", true)
 	m.SetModelRoutingSettings(nil)
-	if _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
+	if _, _, err := m.SetTaskLLM(prd.ID, "t1", "", "", routeUnservedModel, "test"); !errors.Is(err, ErrModelNotServed) {
 		t.Fatalf("err = %v, want a refusal with the default settings", err)
 	}
 	if al.count() != 1 {
@@ -362,7 +362,7 @@ func TestModelRoute_EverySetterRefusesAndWarns(t *testing.T) {
 // never refused over a model it did not touch.
 func TestModelRoute_CallWithoutModelIsNotChecked(t *testing.T) {
 	m, prd, f, _ := newRouteManager(t, "refuse", true)
-	if _, err := m.SetPRDLLM(prd.ID, nil, strp("high"), nil, nil, nil, "test"); err != nil {
+	if _, _, err := m.SetPRDLLM(prd.ID, nil, strp("high"), nil, nil, nil, "test"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := m.SetTaskVerificationLLM(prd.ID, "t1", nil, nil, strp("high"), "test"); err != nil {
