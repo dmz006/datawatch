@@ -2125,3 +2125,15 @@ A **read-only task** is a task flagged `read_only` because it changes no files, 
 ### Parallel speedup
 
 **Parallel speedup** is how much faster an Automaton's tasks finished than they would have one at a time: the sum of the task durations divided by the time from the first task start to the last task end. It is recorded when the Automaton completes and shown with the read-only share in the Parallel execution card; see "Parallel execution metrics" above for every field. A speedup of 1 means no overlap. The default settings are the operator's choice and other users may change them; the how-to is [howto/automaton-parallel-tasks.md](howto/automaton-parallel-tasks.md).
+
+### Planning route
+
+A **planning route** is the choice of planner (an LLM backend and a model, plus its escalation targets) that drafts an Automaton's plan when it is decomposed. It comes from the first rule in `autonomous.planning_routing.rules` whose match fields all pass; if routing is off or no rule matches, the global planner is used, and a planner set on the Automaton itself always wins. With `shadow` on, the route is recorded (and counted as would-route in the scorecard) but not applied. Routing is off by default with no rules, and the example rules are not active. How-to: [howto/automata-planning-routing.md](howto/automata-planning-routing.md).
+
+### Planning ladder
+
+A **planning ladder** is the retry budget a planning route uses when a plan fails the decompose checks: `touch_up_max` touch-up passes (defaults to 1), `replan_max` replans (defaults to 1), then escalation to the next planner in the rule after `escalate_after_attempts` failed attempts at one planner (defaults to 2). A named ladder is chosen by a rule's `ladder` field; the built-in `default` ladder is used when none is named. When every planner and budget is used up, the ladder stops with a failed plan and its full attempt record. The defaults are the operator's choice and other users may change them.
+
+### Risk class
+
+A **risk class** is a named set of tags and path globs that marks an Automaton as sensitive for planning routing. An Automaton belongs to a class when one of the class's tags is on it or a file its tasks touch matches one of the class's globs (`dir/**` matches everything under `dir`). The built-in classes are `security` (tag `security`; globs `security/**` and `internal/server/auth*`) and `design` (tags `design` and `ui`); a class defined under `autonomous.planning_routing.classes` with the same name replaces the built-in. A rule selects on classes with `match.risk_class`, and the scorecard counts decomposes per planner and risk class.

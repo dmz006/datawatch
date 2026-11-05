@@ -30,6 +30,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [pwa-setup.md](pwa-setup.md) | Browser PWA interface over Tailscale |
 | [howto/mcp-prompts.md](howto/mcp-prompts.md) | 10 MCP prompt slash commands — live context injection for every operator workflow (v7.1.0) |
 | [howto/automata-progress.md](howto/automata-progress.md) | Automata progress dashboard: counts by kind, rates per active day, known versus estimated work left, completion range, daily trend |
+| [howto/automata-planning-routing.md](howto/automata-planning-routing.md) | Automata planning routing: rules and first match, match fields, risk classes and path globs, retry ladders and escalation, shadow mode and would-route counts, the scorecard and counts-only gate report, the example rules (not active), access from every surface |
 | [howto/automata-tags.md](howto/automata-tags.md) | Nested tags for Automata and sessions: the tag tree, subtree counts, browsing with match ANY or ALL, primary tag, the attention group, session tags (own and inherited), settings |
 | [howto/automata-tag-registry.md](howto/automata-tag-registry.md) | One tag registry across federated daemons: the keeper, peers, stale copies, pending sync and merge notes |
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
