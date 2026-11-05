@@ -105,7 +105,7 @@ func TestPlanningRequeue_QueuedRun_RetargetsToNewPool(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "pa", "pm", EffortNormal)
 	seedPlanningProfile(t, m, prd.ID, "pa", "pm")
 
-	go func() { _, _ = m.Decompose(prd.ID) }()
+	goDecomposeAndWait(t, m, prd.ID)
 	pollUntil(t, 3*time.Second, "planner queued on the old pool", func() bool {
 		return plannerWaiter(led, prd.ID) != nil
 	})
@@ -300,7 +300,7 @@ func TestPlanningRequeue_NoMoveIsUnchanged(t *testing.T) {
 	}
 
 	// Queued on llm:pa, then re-set to the SAME pool: nothing to move.
-	go func() { _, _ = m.Decompose(prd.ID) }()
+	goDecomposeAndWait(t, m, prd.ID)
 	pollUntil(t, 3*time.Second, "planner queued", func() bool { return plannerWaiter(led, prd.ID) != nil })
 	_, res, errRes = m.SetPRDLLM(prd.ID, nil, nil, nil, nil, sp("pm"), "test")
 	if errRes != nil {
@@ -346,7 +346,7 @@ func TestPlanningRequeue_StartedRunDeferred(t *testing.T) {
 		<-release
 		return orig(req)
 	}
-	go func() { _, _ = m.Decompose(prd.ID) }()
+	goDecomposeAndWait(t, m, prd.ID)
 	led.Release("other")
 	select {
 	case <-started:
@@ -395,7 +395,7 @@ func TestPlanningRequeue_RestartWhileQueued(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "pa", "pm", EffortNormal)
 	seedPlanningProfile(t, m, prd.ID, "pa", "pm")
 
-	go func() { _, _ = m.Decompose(prd.ID) }()
+	goDecomposeAndWait(t, m, prd.ID)
 	pollUntil(t, 3*time.Second, "planner queued", func() bool { return plannerWaiter(led, prd.ID) != nil })
 
 	// No profile change yet: the run already sits on the current pool.
@@ -445,4 +445,23 @@ func TestSplitSetLLMOut_PlanningRoundsTrip(t *testing.T) {
 	if planningBare != nil {
 		t.Fatalf("bare reply carried a planning result (must stay nil): %v", planningBare)
 	}
+}
+
+// goDecomposeAndWait runs Decompose in the background and, when the test
+// ends, waits for it to return before the test's temporary directory is
+// removed, so a late write by the planner cannot race the cleanup. The wait
+// is bounded: a planner left queued by design is not waited for beyond it.
+func goDecomposeAndWait(t *testing.T, m *Manager, id string) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = m.Decompose(id)
+	}()
+	t.Cleanup(func() {
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+		}
+	})
 }
