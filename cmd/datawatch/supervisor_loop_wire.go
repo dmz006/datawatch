@@ -7,6 +7,7 @@ import (
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
@@ -31,7 +32,7 @@ func supervisorLoopSettingsFrom(cfg *config.Config) supervisorloop.Settings {
 // wireSupervisorLoop registers the eight mechanical steps on the coordinator's
 // idle tick and connects the escalator to the operator question queue. Run
 // records go to supervisor_loop_runs.jsonl in the data directory.
-func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, cfg *config.Config) {
+func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, cfg *config.Config, reg *inference.Registry) {
 	if coord == nil || amgr == nil || cfg == nil {
 		return
 	}
@@ -43,6 +44,11 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 		Clock:     supervisorLoopClock{},
 		Store:     supervisorloop.NewFileStore(filepath.Join(expandHome(cfg.DataDir), "supervisor_loop_runs.jsonl"), set.RunRetention),
 	}
+	// Model jobs: oneshot calls go through the decision assistant's call path
+	// (and its timeout) onto the LLM registry; session style starts a session.
+	amgr.SetDecisionAssistantModelFn(supervisorLoopAskFn(cfg, reg))
+	engine.Client = autonomouspkg.NewSupervisorModelClient(amgr, supervisorLoopSessionFn(cfg))
+	amgr.SetSupervisorModelJobs(&supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings})
 	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings)
 	coord.SetSupervisorLoopSteps(autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks))
 }
