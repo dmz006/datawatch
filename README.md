@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.91.0 (2026-11-04).** Agents now leave a readable trace of tool calls, model requests and capability decisions for every supported backend, with a Trace card in the web UI and a roll-up that feeds the cost views. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.91.1 (2026-11-04).** A session id from a request can no longer shape the trace file path (CodeQL path injection alert closed). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

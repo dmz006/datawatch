@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.91.1 — Trace store reads files only for indexed sessions
+
+A session id that arrives in a request can no longer shape the trace file path.
+
+- CodeQL flagged `go/path-injection` in the trace store: the id from a read reached the file open. The file path is now built from the stored index entry, and an id the store has not indexed reads nothing, so a traversal-shaped id never touches the file system.
+- A unit test covers traversal-shaped and empty ids.
+
 ## v9.91.0 — Agent tracing for every supported LLM
 
 Agents leave a trace of what they did, readable for one session or a whole Automaton.
