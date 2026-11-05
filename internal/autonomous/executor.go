@@ -1777,7 +1777,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				StoryID:          t.StoryID,
 				PRDID:            t.PRDID,
 				Title:            t.Title,
-				Spec:             TaskScopeBlock(prd, t) + "\n" + t.Spec,
+				Spec:             m.withRulesContextBlock(TaskScopeBlock(prd, t)+"\n"+t.Spec, taskDir, backend),
 				ProjectDir:       taskDir,
 				Backend:          backend,
 				Effort:           effort,

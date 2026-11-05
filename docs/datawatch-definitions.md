@@ -1765,6 +1765,22 @@ The after-done checklist (`autonomous.checks.after_done`) reviews a completed Au
 
 The registry check (`autonomous.checks.registry_readme`) compares the registry table in `docs/plans/README.md` with the plan documents under `docs/plans/` and reports a plan document no row links to, the same item or id listed twice, and a row whose linked file does not exist. It only reports; it never edits either file. `shadow` records the findings, `on` also alerts.
 
+### Rules and context
+
+The rules and context policy (`autonomous.rules_context.*`) names the files that carry a project's working rules and background. **Rules file** is one name relative to the project directory (default `AGENT.md`); **context files** are up to eight such names (default `CONTEXT.md`); **digest mode** is `off`, `no_tools` (only for backends without file tools, the default) or `all`; **digest size limit** is 0 for the default of 4096 or 512 to 65536 bytes. A project can override all four, and the older `autonomous.rules_file` and `autonomous.context_file` keys remain a fallback below the global values. Set them on the **Rules and context** card in Settings, with `GET`/`PUT /api/autonomous/rules-context`, the `rules_context_status` and `rules_context_set` MCP tools, `datawatch autonomous rules-context` or `autonomous rules` on the comm channel. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md).
+
+### Rules digest
+
+The rules digest is a short, deterministic summary of the rules file for a planning backend that cannot read files: every heading, and under each only the lines with a mandatory word (must, mandatory, required, never, always, "no exceptions"), plus the headings of each context file. It is cut to the digest size limit, built only for the backends the digest mode names, and cached by the file's content hash. The planning record states whether one was injected and how large it was. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md#the-rules-digest).
+
+### Rules checklist
+
+The rules checklist is the `rules_applied` list the planner gives each task: the sections of the project's rules file the task must follow. The plan check compares it with the areas the task touches (localization, parity and configuration, documentation, tests, versioning). A mismatch is an advisory **rules checklist gap** finding naming the task and the areas; it never fails a plan. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md#the-per-task-rules-checklist).
+
+### Planning record
+
+The planning record is what an Automaton stores about the rules and context its planner was pointed at: each file's name, kind, short hash and size, every named file that was missing, and whether a digest was injected with its size. It never holds file content. It is shown in the Automaton's **Planning record** section, by `datawatch autonomous rules-context --prd <id>`, `autonomous rules <id>`, `GET /api/autonomous/rules-context?prd=<id>` and `rules_context_status` with `prd`. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md#the-planning-record).
+
 ### Ship steps
 
 The ship steps run when a release is finished, in this order: **push** the branch to the configured remote, create an annotated **tag** named from `autonomous.ship.tag_format` (default `v{version}`, with the version read from the release's version file) and push the tag, then the **CI watch**. Each step has its own mode under `autonomous.ship.*` — `off` (skip), `shadow` (record the exact git commands without running them) or `on` (the default: run). The step never force-pushes and refuses a working tree with uncommitted changes. `autonomous.ship.remote` (default `origin`) names the remote. The outcomes, newest first, are shown on the **Automata ship status** card in the Automation view's Resources sub-tab, by `GET /api/autonomous/ship`, the `ship_status` MCP tool, `datawatch autonomous ship` and `autonomous ship [automaton-id]` on the comm channel. See [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md).

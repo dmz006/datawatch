@@ -6624,6 +6624,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// the ship step honours off and shadow instead of the built-in default.
 			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)
 			autonomouspkg.SetChecksConfig(cfg.Autonomous.Checks)
+			// autonomous.rules_context — install the per-project rules/context
+			// file names + digest settings so the decomposer's pointer (and the
+			// verification-script and completion-rule pointers) resolve them,
+			// falling back to rules_file/context_file and the defaults.
+			autonomouspkg.SetRulesContextConfig(cfg.Autonomous.RulesContext)
 			// Session-end scratch releases by the owner are counted into the
 			// cleanup status (owner bucket) so the safety-net sweep's count
 			// stays separate (cleanup_status.go).

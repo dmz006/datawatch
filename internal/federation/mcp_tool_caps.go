@@ -185,6 +185,8 @@ var MCPToolCap = map[string]string{
 	"checks_status":                        CapAutonomousRead,
 	"ship_status":                          CapAutonomousRead,
 	"restart_interruptions":                CapAutonomousRead,
+	"rules_context_status":                 CapAutonomousRead,
+	"rules_context_set":                    CapAutonomousWrite,
 	"autonomous_decisions":                 CapAutonomousRead,
 	"autonomous_repo_ci_watch":             CapAutonomousRead,
 	"question_stats":                       CapAutonomousRead,

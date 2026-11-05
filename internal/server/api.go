@@ -7350,10 +7350,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if err := validateRulesContextPatch(s.cfg.Autonomous.RulesContext, patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
 	autonomous.SetChecksConfig(s.cfg.Autonomous.Checks)
+	// Same for the per-project rules/context names: resolution reads the
+	// installed snapshot, so this keeps planning in step without a restart.
+	autonomous.SetRulesContextConfig(s.cfg.Autonomous.RulesContext)
 	// The question lifecycle events follow the switch at runtime: a flip
 	// attaches (or drops) the store's event sink, so no restart is needed.
 	if _, ok := patch["autonomous.questions.enabled"]; ok && s.questionEventsSwitch != nil {
@@ -9563,6 +9570,33 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.RulesFile = toString(v)
 		case "autonomous.context_file":
 			cfg.Autonomous.ContextFile = toString(v)
+		// Per-project rules/context names + digest sub-configuration.
+		// Validated in handlePutConfig (validateRulesContextPatch).
+		case "autonomous.rules_context.rules_file":
+			cfg.Autonomous.RulesContext.RulesFile = strings.TrimSpace(toString(v))
+		case "autonomous.rules_context.context_files":
+			if files, ok := contextFilesFromValue(v); ok {
+				cfg.Autonomous.RulesContext.ContextFiles = files
+			}
+		case "autonomous.rules_context.digest_mode":
+			cfg.Autonomous.RulesContext.DigestMode = strings.TrimSpace(toString(v))
+		case "autonomous.rules_context.digest_max_bytes":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RulesContext.DigestMaxBytes = n
+			}
+		case "autonomous.rules_context":
+			if raw, err := json.Marshal(v); err == nil {
+				if uerr := json.Unmarshal(raw, &cfg.Autonomous.RulesContext); uerr != nil {
+					// already rejected by validateRulesContextPatch
+					cfg.Autonomous.RulesContext = config.AutonomousRulesContextConfig{}
+				}
+			} else {
+				cfg.Autonomous.RulesContext = config.AutonomousRulesContextConfig{}
+			}
+		case "autonomous.rules_context.projects":
+			if prjs := parseRulesContextProjectList(v); prjs != nil {
+				cfg.Autonomous.RulesContext.Projects = prjs
+			}
 		// BL407 Phase 1 — local git-worktree isolation config.
 		case "autonomous.worktree_base_repo":
 			cfg.Autonomous.WorktreeBaseRepo = toString(v)

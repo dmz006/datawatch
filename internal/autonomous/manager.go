@@ -2933,6 +2933,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
 
+	// Record which rules/context files the planner is pointed at (see
+	// rules_context_record.go) before the prompt is built, so the plan it
+	// produces can be traced to the rules it was made under; a missing
+	// file is stated plainly in the record and on the decision timeline.
+	m.recordRulesContext(prd)
+
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
 	m.mu.Lock()
@@ -2945,9 +2951,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	}
 	// BL406 — see rules_context.go. Found live 2026-10-11: this was
 	// promised by the plan's own Context section and never implemented.
-	prompt += m.rulesContextSuffix(prd)
+	rulesSuffix, digestInjected, digestBytes := m.rulesContextSuffixFor(prd, planningRulesBackend(backend))
+	prompt += rulesSuffix
+	m.SetRulesContextDigest(prd, digestInjected, digestBytes)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
-	prompt += m.verificationScriptSuffix(prd)
+	// The digest, when due, is already in rulesSuffix above.
+	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go): the operator's
 	// autonomous.decompose_guidance — literal text, or a file whose
@@ -3113,6 +3122,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
 
+	// Record which rules/context files the planner is pointed at (see
+	// rules_context_record.go) before the prompt is built, so the plan it
+	// produces can be traced to the rules it was made under; a missing
+	// file is stated plainly in the record and on the decision timeline.
+	m.recordRulesContext(prd)
+
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
 	m.mu.Lock()
@@ -3124,9 +3139,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 	}
 	// BL406 — see rules_context.go and Decompose()'s identical call.
-	prompt += m.rulesContextSuffix(prd)
+	rulesSuffix, digestInjected, digestBytes := m.rulesContextSuffixFor(prd, planningRulesBackend(backend))
+	prompt += rulesSuffix
+	m.SetRulesContextDigest(prd, digestInjected, digestBytes)
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in Decompose(); keep both in sync.
-	prompt += m.verificationScriptSuffix(prd)
+	// The digest, when due, is already in rulesSuffix above.
+	prompt += m.verificationScriptSuffixFor(prd, planningRulesBackend(backend), false)
 	prompt += m.generatedArtefactPlanSuffix()
 	// Decompose guidance (decompose_guidance.go) — identical to
 	// Decompose()'s call above; one source for the block's format.

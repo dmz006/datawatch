@@ -278,6 +278,7 @@ Subcommands:
 		newAutonomousChecksCmd(),
 		newAutonomousShipCmd(),
 		newAutonomousRestartInterruptionsCmd(),
+		newAutonomousRulesContextCmd(),
 		// Repo CI watch read.
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),

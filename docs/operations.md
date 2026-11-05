@@ -5571,6 +5571,19 @@ The daemon runs four report-only checks around an Automaton's work — the pre-s
 
 MCP agents use `checks_status` and `ship_status` (both read-only, the same objects as the REST reads) and `config_set` for the settings. A value other than `off`, `shadow` or `on`, a non-boolean `block_when_missing`, or a `tag_format` without the `{version}` placeholder is refused and nothing is changed. The two cards read the same routes and poll every 30 seconds.
 
+## Rules and context for planning
+
+When the daemon plans an Automaton it points the planner at the project's rules file and context files, adds the same pointer to each worker and verification prompt, and, for a backend that cannot read files, adds a short rules digest. The names, the digest mode and the size limit are settings under `autonomous.rules_context`, with a per-project override; a planning record on each Automaton shows which files were used (names, hashes, sizes, missing files), never their content. The planner also gives each task a rules checklist; a task whose checklist misses an area it touches gets an advisory *rules checklist gap* finding. The walkthrough is [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md); the terms are in [datawatch-definitions.md](datawatch-definitions.md#rules-and-context).
+
+| Task | YAML | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Read the settings and a planning record | n/a | `datawatch autonomous rules-context [--prd ID] [--project-dir DIR] [--json]` | Settings, General, *Rules and context*; Automaton detail, *Planning record* | `GET /api/autonomous/rules-context[?prd=ID&project_dir=DIR]` | `autonomous rules [automaton-id]` |
+| Change them | `autonomous.rules_context.rules_file`, `context_files`, `digest_mode`, `digest_max_bytes`, `projects` | `datawatch autonomous rules-context set --rules-file RULES.md --context-file STATE.md [--project-dir DIR]` | Settings, General, *Rules and context* | `PUT /api/autonomous/rules-context` | `autonomous rules set <key> <value> [project-dir]` |
+
+MCP agents use `rules_context_status` (read-only) and `rules_context_set`. A file name that is absolute or contains `..`, more than eight context files, a digest mode other than `off`, `no_tools` or `all`, or a size outside 512 to 65536 is refused and nothing is written. Changes apply to the next Automaton that is decomposed, with no restart.
+
+---
+
 ## Model request progress (a hung request told from a slow one)
 
 A worker or verifier session can wait a long time on one model request, and a hung request looks the same from outside as a slow one. When the session's model runs on a registered compute node, the daemon watches the request and reports whether the node still shows signs of work. It is observation only: it makes no model call and never ends a worker, retries on another backend or unloads a model. The walkthrough is [howto/model-request-progress.md](howto/model-request-progress.md).

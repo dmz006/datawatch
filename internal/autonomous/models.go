@@ -59,7 +59,7 @@ type SessionDecision struct {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_review_fix_failed | rules_review_retries_spent | rules_review_auto_fix_disabled | rules_context_missing
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -407,7 +407,7 @@ type PRD struct {
 	Type string `json:"type,omitempty"`
 	// Kind classifies the work as "feature", "bug" or "other"; empty means
 	// derive at read time (old records keep working). See EffectiveKind.
-	Kind   string   `json:"kind,omitempty"`
+	Kind string `json:"kind,omitempty"`
 
 	// DefectIntake records the defect-intake outcome when this Automaton
 	// was filed kind bug (defect_intake.go): one of the DefectIntake* outcome
@@ -597,6 +597,16 @@ type PRD struct {
 	// decomposed, so nothing was recorded — an off run leaves this
 	// field absent from the stored row.
 	DecomposeLint *DecomposeLintRecord `json:"decompose_lint,omitempty"`
+	// RulesContext is the stored record of which rules/context files the
+	// planner was pointed at at decompose time (see
+	// rules_context_record.go): the captured timestamp, one reference per
+	// configured file (name, rules|context kind, presence, content sha256,
+	// size), the missing-file list, human-readable notes, and the
+	// digest-injection result once a later digest step has run. Captured
+	// at the start of every decompose (Decompose and the streaming path);
+	// nil = no decompose has recorded it yet. Counts and names only — no
+	// file content is stored.
+	RulesContext *RulesContextRecord `json:"rules_context,omitempty"`
 
 	// Triage is the single record a failed or blocked Automaton carries
 	// while it waits for operator attention (see triage_record.go): the
@@ -1397,6 +1407,11 @@ type Task struct {
 	// write (see validateReportPath); empty means it writes nothing. It
 	// is only honored when ReadOnly is set (see reportPathOf).
 	ReportPath string `json:"report_path,omitempty"`
+	// RulesApplied lists the sections of the project's rules file the
+	// planner said this task must follow. Normalised on parse (see
+	// normalizeRulesApplied); empty only for a read-only task or a plan
+	// that omits the field.
+	RulesApplied []string `json:"rules_applied,omitempty"`
 
 	// WorktreePath / WorktreeBranch name the task's own git worktree and
 	// branch while worktree_per_task is on (see EnsureTaskWorktree). Empty
