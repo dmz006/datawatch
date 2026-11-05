@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.96.3 (2026-11-05).** New Automata can plan again with the task template pack on: template tasks are exempt from the verification script check. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.96.4 (2026-11-05).** New Automata now plan with the task template pack on: the plan gets ids before the templates build their tasks and dependencies. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

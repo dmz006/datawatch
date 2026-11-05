@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.4 — Plans get ids before the task templates apply
+
+New Automata now actually plan when the task template pack is on.
+
+- **The bug.** The previous fix let the template tasks past the verification script check, but a freshly parsed plan has no story or task ids yet (the store assigns them later). The templates therefore built the same id in every story and `depends_on` entries that were empty strings, and the store rejected the plan as having an unresolvable dependency, so the Automaton still went back to draft.
+- **The fix.** The decompose hook now gives the plan ids before the templates apply. The store keeps ids that are already set, so the planner's own tasks are unchanged, and each template task gets a unique id and real dependencies. A test covers a two-story plan with no ids.
+- Known gap: a plan that still fails the checks returns to draft without raising an alert.
+
 ## v9.96.3 — Template tasks no longer fail decompose
 
 New Automata can plan again when the task template pack is on.
