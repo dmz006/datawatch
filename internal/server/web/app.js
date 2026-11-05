@@ -2730,6 +2730,8 @@ function navigate(view, sessionId, fromPopstate) {
     if (window._repoCIWatchInterval) { clearInterval(window._repoCIWatchInterval); window._repoCIWatchInterval = null; }
     // Supervisor watch card poll (Automaton view, same rule)
     if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
+    // Supervisor loop card poll (Automaton view, same rule)
+    if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
     const statsPanel = document.getElementById('statsPanel');
     if (statsPanel && statsPanel._statsInterval) {
       clearInterval(statsPanel._statsInterval);
@@ -17015,6 +17017,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.main_checkout', label: 'Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)', labelKey: 'settings_supervisor_watch_main_checkout', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.working_model', label: 'Supervisor watch working model (model every compute node should keep resident, empty = not checked)', labelKey: 'settings_supervisor_watch_working_model', type: 'text', placeholder: '' },
+    // Parallel task worktrees (autonomous.parallel.*) — each parallel task of an Automaton can run in its
+    // own worktree and branch; the branches are merged back in dependency order, and the merge conflict
+    // policy says what happens when one does not merge cleanly.
+    { label: 'Parallel task worktrees', labelKey: 'settings_parallel_task_group', docsKey: 'settings_parallel_task_group', type: 'group' },
+    { key: 'autonomous.parallel.worktree_per_task', label: 'Worktree per task (each parallel task of an Automaton runs in its own worktree and branch, merged back in order; on by default)', labelKey: 'settings_parallel_worktree_per_task', docsKey: 'autonomous.parallel.worktree_per_task', type: 'toggle' },
+    { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
+      optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
+    { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
     // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
     { label: 'Supervisor loop', labelKey: 'supervisor_loop_group_title', hintKey: 'supervisor_loop_group_hint', docsKey: 'supervisor_loop', type: 'group' },
@@ -17041,15 +17052,6 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.supervisor_loop.run_retention', label: 'Run history kept (number of recent runs, default 500)', labelKey: 'supervisor_loop_run_retention', docsKey: 'supervisor_loop.run_retention', type: 'number', placeholder: '500', min: 1, step: 1, default: '500' },
     { key: 'autonomous.supervisor_loop.lane_count.min', label: 'Lane count minimum (lowest lane count the loop may set)', labelKey: 'supervisor_loop_lane_count_min', docsKey: 'supervisor_loop.lane_count.min', type: 'number', placeholder: '0', min: 0, step: 1 },
     { key: 'autonomous.supervisor_loop.lane_count.max', label: 'Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)', labelKey: 'supervisor_loop_lane_count_max', docsKey: 'supervisor_loop.lane_count.max', type: 'number', placeholder: '0', min: 0, step: 1 },
-    // Parallel task worktrees (autonomous.parallel.*) — each parallel task of an Automaton can run in its
-    // own worktree and branch; the branches are merged back in dependency order, and the merge conflict
-    // policy says what happens when one does not merge cleanly.
-    { label: 'Parallel task worktrees', labelKey: 'settings_parallel_task_group', docsKey: 'settings_parallel_task_group', type: 'group' },
-    { key: 'autonomous.parallel.worktree_per_task', label: 'Worktree per task (each parallel task of an Automaton runs in its own worktree and branch, merged back in order; on by default)', labelKey: 'settings_parallel_worktree_per_task', docsKey: 'autonomous.parallel.worktree_per_task', type: 'toggle' },
-    { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
-      optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
-    { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
-    { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     { key: 'autonomous.automation.create_search_mode', label: 'Automaton create search (off, shadow records overlaps without showing them, on shows them, default shadow)', labelKey: 'settings_automation_create_search_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.automation.create_search_threshold', label: 'Automaton create search threshold (similarity above 0 and at most 1, default 0.5)', labelKey: 'settings_automation_create_search_threshold', type: 'number', placeholder: '0.5', min: 0.05, max: 1, step: 0.05, default: '0.5' },
     // Lane fill — shadow (default) computes and records every decision and starts nothing.
@@ -29965,7 +29967,7 @@ function _automationStopLoaders(keys) {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
   });
-  if (!keys) supervisorWatchStopPolling(); // stop-all also ends the Supervisor watch card poll
+  if (!keys) { supervisorWatchStopPolling(); supervisorLoopStopPolling(); } // stop-all also ends the Supervisor watch and loop card polls
 }
 
 // switchAutomationSubtab switches the second-row sub-tab. Unknown ids are
@@ -35846,6 +35848,28 @@ function renderStatsData(el, data) {
       }).join('');
       html += `<div class="stat-card"><div class="stat-label">${t('stats_supervisor_watch')||'Supervisor watch'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${swLines}</div></div>`;
+    }
+    // Supervisor loop card: whether the loop is on, the jobs enabled, the stored
+    // runs by outcome, the retries used and the age of the last run. Left out
+    // until the daemon reports the loop's jobs.
+    if (data.supervisor_loop_jobs) {
+      const slRows = [
+        ['stats_supervisor_loop_state', 'State', data.supervisor_loop_enabled ? (t('stats_supervisor_loop_on') || 'On') : (t('stats_supervisor_loop_off') || 'Off')],
+        ['stats_supervisor_loop_jobs', 'Jobs enabled', (data.supervisor_loop_jobs_enabled || 0) + ' / ' + data.supervisor_loop_jobs],
+        ['stats_supervisor_loop_runs', 'Runs stored', data.supervisor_loop_runs || 0],
+        ['stats_supervisor_loop_ok', 'Ok', data.supervisor_loop_runs_ok || 0],
+        ['stats_supervisor_loop_validator_failed', 'Validator failed', data.supervisor_loop_runs_validator_failed || 0],
+        ['stats_supervisor_loop_escalated', 'Escalated', data.supervisor_loop_runs_escalated || 0],
+        ['stats_supervisor_loop_error', 'Error', data.supervisor_loop_runs_error || 0],
+        ['stats_supervisor_loop_retries', 'Retries used', data.supervisor_loop_retries || 0],
+        ['stats_supervisor_loop_last_run', 'Last run (s ago)', (data.supervisor_loop_last_run_age_seconds == null || data.supervisor_loop_last_run_age_seconds < 0) ? '-' : data.supervisor_loop_last_run_age_seconds],
+      ];
+      const slLines = slRows.map(r => {
+        const warn = (r[0] === 'stats_supervisor_loop_escalated' || r[0] === 'stats_supervisor_loop_error') && r[2] > 0;
+        return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t(r[0])||r[1])}</span><span style="color:${warn ? 'var(--warning)' : 'var(--text)'};">${escHtml(r[2])}</span></div>`;
+      }).join('');
+      html += `<div class="stat-card" data-stat="supervisor-loop"><div class="stat-label">${t('stats_supervisor_loop')||'Supervisor loop'}</div>
+        <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${slLines}</div></div>`;
     }
     // Burn guard card: the state, the ladder level, the projection against the
     // pace line and the counters. Left out until the daemon reports a state.

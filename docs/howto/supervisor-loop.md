@@ -57,8 +57,11 @@ you at once**; it never falls back to a hosted model on its own.
 
 ## Settings and defaults
 
-In the config file these keys sit under `autonomous.supervisor_loop`. Everywhere
-else they are written `autonomous.supervisor_loop.<key>`. Each one has an entry in
+In the config file the keys sit in the `autonomous.supervisor_loop` block, and each
+key is a flat dotted name that keeps the full `supervisor_loop.` prefix, for example
+`"supervisor_loop.lane_count.max": 4`. A key without the prefix, such as
+`lane_count.max`, is rejected as an unknown setting and the default is used.
+Everywhere else they are written `autonomous.supervisor_loop.<key>`. Each one has an entry in
 the [definitions](../datawatch-definitions.md#supervisor-loop).
 
 | Key | Default | Meaning |
@@ -78,13 +81,13 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 
 | Method | How |
 |---|---|
-| YAML | Edit the `autonomous.supervisor_loop` block in your config file; see `docs/config-reference.yaml`. Example: `lane_count.max: 4`. |
+| YAML | Edit the `autonomous.supervisor_loop` block in your config file; see `docs/config-reference.yaml`. Example: `"supervisor_loop.lane_count.max": 4` (quote the key and keep the `supervisor_loop.` prefix). |
 | CLI | `datawatch config set autonomous.supervisor_loop.enabled false`. Read with `datawatch supervisor-loop jobs` and `datawatch supervisor-loop runs`; run one job with `datawatch supervisor-loop run <job>`. |
 | Web UI | **Settings → Automata → Supervisor loop** to change settings. The **Supervisor loop** card in the **Automation** view shows the jobs and runs. |
 | REST API | `PUT /api/config` with the `autonomous.supervisor_loop.*` key. `GET /api/supervisor-loop/jobs`, `GET /api/supervisor-loop/runs`, `POST /api/supervisor-loop/jobs/<job>/run`, `POST /api/supervisor-loop/eval`. |
-| Comm channel | `configure autonomous.supervisor_loop.enabled=false` to change a setting. `supervisor jobs`, `supervisor runs` and `supervisor run job=<job>` to read and run. |
+| Comm channel | `configure autonomous.supervisor_loop.enabled=false` to change a setting. `supervisor jobs`, `supervisor runs`, `supervisor stats` and `supervisor run job=<job>` to read and run. |
 
-MCP clients use `config_set` for settings and the four `supervisor_loop_*` tools
+MCP clients use `config_set` for settings and the five `supervisor_loop_*` tools
 listed in the [MCP reference](../mcp.md).
 
 ## Where to see
@@ -96,6 +99,7 @@ listed in the [MCP reference](../mcp.md).
 | CLI runs command | `datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--json]` |
 | MCP tool | `supervisor_loop_runs` (and `supervisor_loop_jobs`) |
 | Comm verb | `supervisor runs [job=NAME] [outcome=RESULT] [limit=N]` |
+| Monitor numbers | The **Supervisor loop** card on the **Monitor** tab; `GET /api/supervisor-loop/stats`; `datawatch supervisor-loop stats`; the MCP tool `supervisor_loop_stats`; `supervisor stats` on the comm channel. Prometheus: `datawatch_supervisor_loop_runs{outcome}`, `datawatch_supervisor_loop_jobs_enabled`, `datawatch_supervisor_loop_last_run_age_seconds`. |
 
 ## Reading a run record
 

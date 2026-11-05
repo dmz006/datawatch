@@ -225,3 +225,30 @@ func TestSupervisorLoopPutBadValueRefusesWholePut(t *testing.T) {
 		}
 	}
 }
+
+func TestSupervisorLoopStatsEndpoint(t *testing.T) {
+	now := time.Now()
+	s, _ := newLoopServer(t,
+		loopRec("draft_spec", supervisorloop.OutcomeOK, 1, now.Add(-time.Hour)),
+		loopRec("pick_backend", supervisorloop.OutcomeEscalated, 3, now.Add(-time.Minute)))
+	rr := httptest.NewRecorder()
+	s.handleSupervisorLoopStats(rr, httptest.NewRequest(http.MethodGet, "/api/supervisor-loop/stats", nil))
+	if rr.Code != 200 {
+		t.Fatalf("code %d", rr.Code)
+	}
+	var st supervisorloop.Stats
+	if err := json.Unmarshal(rr.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if !st.Enabled || st.Jobs != 11 || st.Runs != 2 || st.RunsOK != 1 || st.RunsEscalated != 1 || st.Retries != 2 {
+		t.Errorf("stats: %+v", st)
+	}
+	if st.LastRunAgeSeconds < 55 || st.LastRunAgeSeconds > 120 {
+		t.Errorf("age = %d", st.LastRunAgeSeconds)
+	}
+	rr = httptest.NewRecorder()
+	s.handleSupervisorLoopStats(rr, httptest.NewRequest(http.MethodPost, "/api/supervisor-loop/stats", nil))
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("POST code %d", rr.Code)
+	}
+}

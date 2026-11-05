@@ -60,7 +60,7 @@ func (s *Server) toolSupervisorLoopRunJob() mcpsdk.Tool {
 
 // SupervisorLoopToolNames lists the supervisor loop tools, for the parity test.
 func SupervisorLoopToolNames() []string {
-	return []string{"supervisor_loop_jobs", "supervisor_loop_runs", "supervisor_loop_run_job", "supervisor_loop_eval"}
+	return []string{"supervisor_loop_jobs", "supervisor_loop_runs", "supervisor_loop_run_job", "supervisor_loop_eval", "supervisor_loop_stats"}
 }
 
 func (s *Server) handleSupervisorLoopJobs(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -211,6 +211,28 @@ func (s *Server) handleSupervisorLoopEval(_ context.Context, req mcpsdk.CallTool
 	out, err := s.proxyJSON(http.MethodPost, "/api/supervisor-loop/eval", body)
 	if err != nil {
 		return toolError("supervisor_loop_eval", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolSupervisorLoopStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("supervisor_loop_stats",
+		mcpsdk.WithDescription(`Read the supervisor loop's numbers: whether the loop is enabled, how many jobs it has and how many are enabled, the stored run count and its split by outcome (ok, validator_failed, escalated, error), the retries used, and the seconds since the last run (-1 when none has run). Takes no arguments; any argument is refused. Read-only; the same object as GET /api/supervisor-loop/stats.`),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleSupervisorLoopStats(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if args := req.GetArguments(); len(args) > 0 {
+		var names []string
+		for k := range args {
+			names = append(names, k)
+		}
+		return toolErrorf("supervisor_loop_stats", "unknown argument(s) %s; usage: supervisor_loop_stats (takes no arguments)", strings.Join(names, ", ")), nil
+	}
+	out, err := s.proxyGet("/api/supervisor-loop/stats", nil)
+	if err != nil {
+		return toolError("supervisor_loop_stats", err), nil
 	}
 	return textOK(string(out)), nil
 }

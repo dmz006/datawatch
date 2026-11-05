@@ -231,3 +231,19 @@ func TestSupervisorLoopConfigureVerb(t *testing.T) {
 		t.Errorf("configure passed %q=%q", gotKey, gotVal)
 	}
 }
+
+func TestSupervisorLoopComm_StatsVerb(t *testing.T) {
+	body := `{"enabled":true,"jobs":11,"jobs_enabled":10,"runs":4,"runs_ok":2,"runs_validator_failed":1,"runs_escalated":1,"runs_error":0,"retries":3,"last_run_age_seconds":42}`
+	log, port := laneFillCommDaemon(t, http.StatusOK, body)
+	r := setupPeerRouter(t, port)
+	lines := supervisorLoopCommLines(t, r, "supervisor stats", "stats")
+	if log.path != "/api/supervisor-loop/stats" {
+		t.Errorf("path=%s", log.path)
+	}
+	got := strings.Join(lines, "\n")
+	for _, frag := range []string{"Supervisor loop on; 10 of 11 jobs enabled.", "Runs stored: 4 (ok 2, validator failed 1, escalated 1, error 0); retries used: 3.", "Last run 42 seconds ago."} {
+		if !strings.Contains(got, frag) {
+			t.Errorf("reply lacks %q:\n%s", frag, got)
+		}
+	}
+}

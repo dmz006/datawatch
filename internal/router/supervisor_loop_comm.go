@@ -24,7 +24,7 @@ const (
 	// supervisorLoopUsage is the usage for the supervisor loop comm verbs.
 	// jobs and runs take no positional arguments; the run verb takes its
 	// options as key=value pairs.
-	supervisorLoopUsage = "usage: supervisor jobs | supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | supervisor run job=NAME [input=TEXT] [candidates=A,B]"
+	supervisorLoopUsage = "usage: supervisor jobs | supervisor stats | supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | supervisor run job=NAME [input=TEXT] [candidates=A,B]"
 )
 
 // SupervisorLoopCommVerbs lists the supervisor loop comm verbs for the
@@ -44,6 +44,8 @@ func (r *Router) handleSupervisorLoopVerb(verb string, args []string) {
 	switch rest[0] {
 	case "jobs":
 		r.replySupervisorLoopJobs(rest[1:])
+	case "stats":
+		r.replySupervisorLoopStats(rest[1:])
 	case "runs":
 		r.replySupervisorLoopRuns(rest[1:])
 	case "run":
@@ -73,6 +75,27 @@ func (r *Router) replySupervisorLoopJobs(args []string) {
 	var b strings.Builder
 	supervisorloop.RenderJobs(&b, &body)
 	r.reply("autonomous supervisor-loop jobs", strings.TrimRight(b.String(), "\n"))
+}
+
+func (r *Router) replySupervisorLoopStats(args []string) {
+	if len(args) > 0 {
+		r.reply("autonomous supervisor-loop failed",
+			"unknown argument "+strings.Join(args, " ")+"\n"+supervisorLoopUsage)
+		return
+	}
+	out, err := r.commGet("/api/supervisor-loop/stats", nil)
+	if err != nil {
+		r.reply("autonomous supervisor-loop failed", err.Error())
+		return
+	}
+	var st supervisorloop.Stats
+	if err := json.Unmarshal([]byte(out), &st); err != nil {
+		r.reply("autonomous supervisor-loop failed", "unparseable stats body: "+err.Error())
+		return
+	}
+	var b strings.Builder
+	supervisorloop.RenderStats(&b, &st)
+	r.reply("autonomous supervisor-loop stats", strings.TrimRight(b.String(), "\n"))
 }
 
 func (r *Router) replySupervisorLoopRuns(args []string) {

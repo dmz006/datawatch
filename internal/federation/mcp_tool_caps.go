@@ -184,6 +184,7 @@ var MCPToolCap = map[string]string{
 	"supervisor_loop_runs":                 CapAutonomousRead,
 	"supervisor_loop_run_job":              CapAutonomousRun,
 	"supervisor_loop_eval":                 CapAutonomousRun,
+	"supervisor_loop_stats":                CapAutonomousRead,
 	"channel_diagnostics":                  CapCommRead,
 	"channel_info":                         CapCommRead,
 	"channel_routing_config_get":           CapConfigRead,

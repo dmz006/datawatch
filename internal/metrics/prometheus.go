@@ -193,6 +193,20 @@ var (
 		Help: "Seconds since the coordinator last ran a supervisor watch pass (-1 when it never has)",
 	})
 
+	// Supervisor loop gauges.
+	SupervisorLoopRuns = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_runs",
+		Help: "Stored supervisor loop run records by outcome (ok, validator_failed, escalated, error)",
+	}, []string{"outcome"})
+	SupervisorLoopJobsEnabled = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_jobs_enabled",
+		Help: "Supervisor loop jobs currently enabled (0 when the whole loop is off)",
+	})
+	SupervisorLoopLastRunAge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_supervisor_loop_last_run_age_seconds",
+		Help: "Seconds since the supervisor loop last ran a job (-1 when it never has)",
+	})
+
 	// BL397 — native ACME subsystem metrics.
 	AcmeCertExpirySeconds = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "datawatch_acme_cert_expiry_seconds",
@@ -264,6 +278,7 @@ func Register() {
 			WorkerQuestionsTotal,
 			UIPromptDismissalsTotal,
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
+			SupervisorLoopRuns, SupervisorLoopJobsEnabled, SupervisorLoopLastRunAge,
 			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
 			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
 		)

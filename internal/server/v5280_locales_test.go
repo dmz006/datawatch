@@ -74,6 +74,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// missing from a locale the user-visible regression is obvious
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
+		"supervisor_loop_card_title",
+		"stats_supervisor_loop",
 		"prd_scope_warnings_title",
 		"usage_calc_whatif_label",
 		"usage_calc_running_now",

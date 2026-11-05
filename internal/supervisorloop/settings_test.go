@@ -90,7 +90,7 @@ func TestSettingsLaneBounds(t *testing.T) {
 	if err := s.Set(KeyLaneMax, 0); err != nil || s.LaneMax != 0 {
 		t.Errorf("unset max: err=%v max=%d", err, s.LaneMax)
 	}
-	s.Set(KeyLaneMax, 4)
+	_ = s.Set(KeyLaneMax, 4)
 	if err := s.Set(KeyLaneMin, 5); err == nil {
 		t.Error("min above max accepted")
 	}

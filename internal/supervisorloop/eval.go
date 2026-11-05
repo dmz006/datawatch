@@ -229,13 +229,13 @@ func (e *Evaluator) evalModel(ctx context.Context, job, model string, cases []Ev
 
 // RenderEval writes the report as plain text, one line per model.
 func RenderEval(w interface{ Write([]byte) (int, error) }, rep *EvalReport) {
-	fmt.Fprintf(w, "eval job %s\n", rep.Job)
+	_, _ = fmt.Fprintf(w, "eval job %s\n", rep.Job)
 	for _, m := range rep.Models {
 		if m.Unreachable {
-			fmt.Fprintf(w, "  %s: unreachable (%s)\n", m.Model, m.UnreachableMessage)
+			_, _ = fmt.Fprintf(w, "  %s: unreachable (%s)\n", m.Model, m.UnreachableMessage)
 			continue
 		}
-		fmt.Fprintf(w, "  %s: passed %d/%d, validator failures %d, retries %d, escalations %d, median %dms, max %dms\n",
+		_, _ = fmt.Fprintf(w, "  %s: passed %d/%d, validator failures %d, retries %d, escalations %d, median %dms, max %dms\n",
 			m.Model, m.Passed, m.Cases, m.ValidatorFailures, m.Retries, m.Escalations, m.MedianDurationMS, m.MaxDurationMS)
 	}
 }
