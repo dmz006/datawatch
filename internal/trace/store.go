@@ -361,7 +361,13 @@ func (st *Store) SetCoverage(session string, c Coverage) error {
 }
 
 func (st *Store) readFile(session string) ([]Event, error) {
-	f, err := os.Open(st.sessionPath(session))
+	// The path is built from the stored index entry, never from the caller's
+	// id: a session the store has not indexed has no file to read.
+	e, ok := st.index[session]
+	if !ok {
+		return nil, nil
+	}
+	f, err := os.Open(st.sessionPath(e.Session))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
