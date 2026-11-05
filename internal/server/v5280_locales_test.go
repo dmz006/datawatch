@@ -388,6 +388,16 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"uncommitted_work_card_title",
 		"settings_automation_uncommitted_work_policy",
 		"settings_automation_uncommitted_work_scope",
+		// The Planning routing card in Settings → Automata.
+		"planning_routing_title",
+		"planning_routing_enabled",
+		"planning_routing_shadow",
+		"planning_routing_field_enabled",
+		"planning_routing_field_shadow",
+		"planning_routing_rules_title",
+		"planning_routing_json_save",
+		"planning_routing_test_run",
+		"planning_routing_scorecard_title",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
