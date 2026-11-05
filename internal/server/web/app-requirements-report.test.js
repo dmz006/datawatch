@@ -64,7 +64,7 @@ test('a satisfied report shows the three parts, the minimum and nothing missing'
   const html = render(report());
   assert.ok(html.includes('Requirements report'), 'card title missing: ' + html);
   assert.ok(html.includes('Capabilities'), 'capabilities part missing');
-  assert.ok(html.includes('Automation backends'), 'backends part missing');
+  assert.ok(html.includes('Requirement backends'), 'backends part missing');
   assert.ok(html.includes('Missing'), 'missing part missing');
   assert.ok(html.includes('memory'), 'capability name missing');
   assert.ok(html.includes('minimum 0.9.7'), 'minimum missing');
@@ -98,7 +98,7 @@ test('missing items are listed; an empty report still renders its parts', () => 
   assert.ok(html.includes('raw-item'), 'raw missing entry missing');
   const empty = render(report({ capabilities: [], automation_backends: [], missing: [] }));
   assert.ok(empty.includes('No capabilities in the report yet.'), empty);
-  assert.ok(empty.includes('No Automation backend minimums in the report yet.'), empty);
+  assert.ok(empty.includes('No requirement backend minimums in the report yet.'), empty);
   assert.ok(empty.includes('Nothing is missing.'), empty);
 });
 
