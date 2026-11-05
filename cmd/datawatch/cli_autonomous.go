@@ -919,7 +919,7 @@ func newAutonomousPRDPlanCmd() *cobra.Command {
 		Aliases: []string{"prd-decompose"},
 		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/decompose", nil)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/decompose", nil)
 		},
 	}
 }
@@ -1340,7 +1340,7 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body, _ := json.Marshal(prdSetLLMCLIBody(cmd))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&backend, "backend", "", "Worker LLM name (empty value clears to fallback; omit the flag to leave unchanged)")
@@ -1359,7 +1359,7 @@ func newAutonomousPRDSetStoryLLMCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			body, _ := json.Marshal(map[string]string{"story_id": storyID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
@@ -1379,7 +1379,7 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			legacy := map[string]string{"backend": backend, "effort": effort, "model": model}
 			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"task_id": taskID, "actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model"))
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
+			return daemonJSONWithOutcome(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
 		},
 	}
 	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")

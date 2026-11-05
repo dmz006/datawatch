@@ -102,3 +102,38 @@ test('renderPRDWaitReason shows the wait_reason when present and is empty when a
   assert.equal(s.window.renderPRDWaitReason({}), '');
   assert.equal(s.window.renderPRDWaitReason(null), '');
 });
+
+// 6cb90009 — web: PRD-level worker LLM/effort controls stay available for a
+// running Automaton (its queued tasks can still be retargeted; the toast
+// shows changed vs left-alone), and they close for completed PRDs; per-task
+// controls stay per-task overridable.
+function renderTop(s, expr) {
+  return vm.runInContext(expr, s);
+}
+
+test('renderPRDActions keeps the PRD-level LLM button for running PRDs and removes it for completed (6cb90009)', () => {
+  const prd = (status) => ({ id: 'p1', status });
+  const html = (status) => renderTop(loadApp(), `renderPRDActions(${JSON.stringify(prd(status))})`);
+  assert.match(html('running'), /openPRDSetLLMModal/);
+  assert.match(html('cancelled'), /openPRDSetLLMModal/);
+  assert.doesNotMatch(html('completed'), /openPRDSetLLMModal/);
+});
+
+test('renderStory keeps per-task LLM controls for queued tasks of a running PRD but disables them for started/finished tasks (6cb90009)', () => {
+  const story = {
+    id: 's1', title: 'S', status: 'running',
+    tasks: [
+      { id: 'tq', status: 'queued' },
+      { id: 'tr', status: 'running' },
+      { id: 'tf', status: 'failed' },
+    ],
+  };
+  const prd = { id: 'p1', status: 'running' };
+  const html = renderTop(loadApp(), `renderStory(${JSON.stringify(prd)}, ${JSON.stringify(story)})`);
+  // the LLM/spec editor is one button whose onclick names the task id
+  const editors = (html.match(/openPRDEditTaskModal/g) || []).length;
+  assert.equal(editors, 1, 'exactly one task has the LLM/spec editor');
+  assert.match(html, /openPRDEditTaskModal\(.{0,80}?tq/);
+  assert.doesNotMatch(html, /openPRDEditTaskModal\(.{0,80}?tr/);
+  assert.doesNotMatch(html, /openPRDEditTaskModal\(.{0,80}?tf/);
+});

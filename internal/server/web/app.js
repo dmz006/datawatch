@@ -15271,8 +15271,14 @@ function renderPRDActions(prd) {
   // A summary row from the paged list lacks the fields these three editors
   // prefill from, so their buttons fetch the full PRD first (prdPanelOpenFull).
   const summaryOnly = _prdIsSummaryOnly(prd);
-  if (status !== 'running' && status !== 'completed') {
+  // 6cb90009: PRD-level worker LLM/effort stays available for a running
+  // Automaton while queued (unstarted) tasks can still be retargeted — the
+  // server reports the per-task changed vs left-alone split; it is only
+  // disabled once the PRD is completed.
+  if (status !== 'completed' && (status !== 'running' || llmControlsEnabled(prd))) {
     btns.push(a('LLM', summaryOnly ? `prdPanelOpenFull(${idJ},'llm')` : `openPRDSetLLMModal(${idJ},${JSON.stringify(_prdLLMCurrent(prd))})`, ''));
+  }
+  if (status !== 'running' && status !== 'completed') {
     // GH#172 D75 — edit PRD permission_mode.
     btns.push(a(t('prd_action_permission')||'Permission', summaryOnly ? `prdPanelOpenFull(${idJ},'permission')` : `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
   }
@@ -15708,7 +15714,10 @@ function renderLifecycleStrip(prd) {
     : '';
   const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openCloneToTemplateModal(${idJ})">Clone to Template…</button>`;
   const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
-  const llmItem = !isRunning && status !== 'completed'
+  // 6cb90009: Set LLM… stays reachable for a running Automaton while its
+  // queued (unstarted) tasks can still be retargeted (the server reports the
+  // per-task changed vs left-alone split); it closes only for completed PRDs.
+  const llmItem = status !== 'completed' && (!isRunning || llmControlsEnabled(prd))
     ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||'',decomposition_profile:prd.decomposition_profile||'',decomposition_model:prd.decomposition_model||'',verification_backend:prd.verification_backend||'',verification_model:prd.verification_model||'',verification_effort:String(prd.verification_effort||'')}))})">Set LLM…</button>`
     : '';
   // v6.13.1 (C2) — operator: "since the buttons are there (and on all
