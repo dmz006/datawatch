@@ -73,6 +73,8 @@ async function sweepTabs(page, width, { full }) {
     const sel = `#automataDetailBody .prd-detail-tabs .output-tab[onclick="switchAutomataDetailTab('${key}')"]`;
     const btn = await page.$(sel);
     check(btn, `${width}px: no "${key}" tab in the strip`);
+    // Overview is the default active tab, so tapping it re-renders identical HTML: no body-change check there.
+    const wasActive = await page.$eval(sel, (e) => e.classList.contains('active'));
     await page.tap(sel);
     await page.waitForFunction((k) => {
       const a = document.querySelectorAll('#automataDetailBody .prd-detail-tabs .output-tab.active');
@@ -85,11 +87,13 @@ async function sweepTabs(page, width, { full }) {
     check(actives.length === 1 && actives[0].includes(`'${key}'`),
       `${width}px: tapping "${key}" left active tabs ${JSON.stringify(actives)}`);
 
-    if (full) {
+    if (full && !wasActive) {
       const cur = await tabBodyHTML(page);
       check(cur !== null, `${width}px: no tab body after tapping "${key}"`);
       check(cur !== prev, `${width}px: tab body innerHTML did not change after tapping "${key}"`);
       prev = cur;
+    } else if (full) {
+      prev = await tabBodyHTML(page);
     }
     await assertPageFits(page, `${width}px after tapping "${key}"`);
   }
