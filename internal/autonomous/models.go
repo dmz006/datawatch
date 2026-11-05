@@ -50,7 +50,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution | boot_resume_parked | resume | failure_escalation | review_needed | operator_decision | operator_answer | decision_gate_hold | decision_gate_shadow | rules_context_missing
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -562,6 +562,17 @@ type PRD struct {
 	// acknowledgement state (nil until acknowledged). Nil = no coverage
 	// check has been stored for this PRD yet.
 	PlanCoverage *PlanCoverage `json:"plan_coverage,omitempty"`
+
+	// RulesContext is the stored record of which rules/context files the
+	// planner was pointed at at decompose time (see
+	// rules_context_record.go): the captured timestamp, one reference per
+	// configured file (name, rules|context kind, presence, content sha256,
+	// size), the missing-file list, human-readable notes, and the
+	// digest-injection result once a later digest step has run. Captured
+	// at the start of every decompose (Decompose and the streaming path);
+	// nil = no decompose has recorded it yet. Counts and names only — no
+	// file content is stored.
+	RulesContext *RulesContextRecord `json:"rules_context,omitempty"`
 
 	// Triage is the single record a failed or blocked Automaton carries
 	// while it waits for operator attention (see triage_record.go): the

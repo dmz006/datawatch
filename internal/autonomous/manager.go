@@ -2670,6 +2670,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
 
+	// Record which rules/context files the planner is pointed at (see
+	// rules_context_record.go) before the prompt is built, so the plan it
+	// produces can be traced to the rules it was made under; a missing
+	// file is stated plainly in the record and on the decision timeline.
+	m.recordRulesContext(prd)
+
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
 	m.mu.Lock()
@@ -2832,6 +2838,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
+
+	// Record which rules/context files the planner is pointed at (see
+	// rules_context_record.go) before the prompt is built, so the plan it
+	// produces can be traced to the rules it was made under; a missing
+	// file is stated plainly in the record and on the decision timeline.
+	m.recordRulesContext(prd)
 
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
