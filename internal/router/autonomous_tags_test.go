@@ -95,6 +95,24 @@ func TestTagVerbDispatch(t *testing.T) {
 	}
 }
 
+func TestTagListVerbSurfacesSystemMarker(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" || r.URL.Path != "/api/autonomous/tags" {
+			t.Errorf("request = %s %s", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"tags":[{"id":"da39a3ee","name":"unsorted","parent_id":"","system":true,"color":"#888888"}]}`))
+	}))
+	defer srv.Close()
+	port, _ := strconv.Atoi(srv.URL[strings.LastIndex(srv.URL, ":")+1:])
+	r := bareSubsRouter()
+	r.SetWebPort(port)
+
+	out := joinReplies(r.HandleTestMessage("autonomous tags"))
+	if !strings.Contains(out, `"system": true`) && !strings.Contains(out, `"system":true`) {
+		t.Errorf("tag list reply does not surface the system marker: %q", out)
+	}
+}
+
 func TestTagHelpMentionsVerbs(t *testing.T) {
 	help := joinReplies((&Router{}).HandleTestMessage("autonomous"))
 	for _, v := range []string{"tags", "tag-create", "tag-rename", "tag-move", "tag-color", "tag-delete", "set-tags"} {

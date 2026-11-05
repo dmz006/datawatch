@@ -31,6 +31,7 @@ type ctlAutomation struct {
 	PendingInserts []struct {
 		ID    string `json:"id"`
 		PRDID string `json:"prd_id"`
+		Stage string `json:"stage"`
 	} `json:"pending_inserts"`
 }
 
@@ -203,12 +204,12 @@ func TestAutomationRESTControl(t *testing.T) {
 		// A reason is required.
 		ctl(t, s, a, "insert_member", map[string]any{"member": map[string]any{"prd_id": prdID}}, http.StatusBadRequest)
 		got := ctl(t, s, a, "insert_member", map[string]any{
-			"member": map[string]any{"prd_id": prdID, "name": "late addition"}, "reason": "found a gap", "actor": "alice",
+			"member":  map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review"}, "reason": "found a gap", "actor": "alice",
 		}, http.StatusOK)
-		if len(got.PendingInserts) != 1 || got.PendingInserts[0].PRDID != prdID || len(got.Members) != 3 {
+		if len(got.PendingInserts) != 1 || got.PendingInserts[0].PRDID != prdID || got.PendingInserts[0].Stage != "review" || len(got.Members) != 3 {
 			t.Fatalf("insert on a running automation should be held: pending=%+v members=%d", got.PendingInserts, len(got.Members))
 		}
-		wantAudit(t, al, "automation_insert_member", a.ID, map[string]any{"prd_id": prdID, "urgent": false, "reason": "found a gap", "actor": "alice"})
+		wantAudit(t, al, "automation_insert_member", a.ID, map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review", "urgent": false, "reason": "found a gap", "actor": "alice"})
 		// A missing prd_id is a 400.
 		ctl(t, s, got, "insert_member", map[string]any{"member": map[string]any{}, "reason": "x"}, http.StatusBadRequest)
 	})

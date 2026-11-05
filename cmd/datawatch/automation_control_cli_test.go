@@ -101,6 +101,11 @@ func TestAutomationCLIControl(t *testing.T) {
 		check(t, "/api/automations/ab12/insert_member", map[string]any{
 			"member": map[string]any{"prd_id": "prd-9"}, "urgent": true, "after": "m2", "reason": "fix the flaky step", "expected_version": float64(8),
 		})
+		// --stage is recorded on the member.
+		run(t, "insert", "ab12", "prd-9", "--reason", "stage it", "--stage", "review")
+		check(t, "/api/automations/ab12/insert_member", map[string]any{
+			"member": map[string]any{"prd_id": "prd-9", "stage": "review"}, "urgent": false, "reason": "stage it", "expected_version": float64(8),
+		})
 		c.gotPath = ""
 		if err := runCmd(t, newAutomationCmd(), "insert", "ab12", "prd-9"); err == nil || c.gotPath != "" {
 			t.Errorf("insert without --reason: err = %v, path = %q", err, c.gotPath)

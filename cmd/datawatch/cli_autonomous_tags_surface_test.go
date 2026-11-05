@@ -7,10 +7,26 @@ package main
 import (
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+// The tag list is a pass-through of the daemon reply, so the system marker
+// (system:true on daemon-created tags) must reach the CLI output untouched.
+func TestTagListCLISurfacesSystemMarker(t *testing.T) {
+	c := &captureDaemon{replyBody: `{"tags":[{"id":"da39a3ee","name":"unsorted","parent_id":"","system":true,"color":"#888888"}]}`}
+	withCaptureServer(t, c)
+	var err error
+	out := captureStdout(t, func() { err = runSubCmd(t, newAutonomousCmd(), "tag-list") })
+	if err != nil {
+		t.Fatalf("tag-list: %v", err)
+	}
+	if !strings.Contains(out, "\"system\": true") && !strings.Contains(out, "\"system\":true") {
+		t.Errorf("tag-list output does not surface the system marker:\n%s", out)
+	}
+}
 
 func TestTagCLIAttentionRegistered(t *testing.T) {
 	found := false

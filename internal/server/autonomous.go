@@ -4050,6 +4050,7 @@ type automationControlReq struct {
 	Member          struct {
 		PRDID string `json:"prd_id"`
 		Name  string `json:"name"`
+		Stage string `json:"stage"` // optional stage label recorded on the inserted member
 	} `json:"member"`
 	Urgent bool   `json:"urgent"`
 	After  string `json:"after"`
@@ -4229,11 +4230,12 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 			http.Error(w, "reason is required to insert a member", http.StatusBadRequest)
 			return
 		}
-		details["prd_id"], details["name"] = req.Member.PRDID, req.Member.Name
+		details["prd_id"], details["name"], details["stage"] = req.Member.PRDID, req.Member.Name, req.Member.Stage
 		details["urgent"], details["after"] = req.Urgent, req.After
 		a, err = ctl.InsertMember(id, autonomous.InsertMemberInput{
 			PRDID: req.Member.PRDID, Name: req.Member.Name, AfterMemberID: req.After,
-			Urgent: req.Urgent, Actor: req.Actor, Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
+			Stage: strings.TrimSpace(req.Member.Stage), Urgent: req.Urgent, Actor: req.Actor,
+			Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
 		})
 	case "approve_insert":
 		action = "automation_approve_insert"

@@ -1058,7 +1058,7 @@ optional on the wire, but each operation has the fields it needs.
 | `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget`, `set_decision_assistant` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
 | `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
 | `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
-| `member` | `insert_member` | Object `{"prd_id": "...", "name": "..."}`. `prd_id` is required. `name` is an optional display name. |
+| `member` | `insert_member` | Object `{"prd_id": "...", "name": "...", "stage": "..."}`. `prd_id` is required. `name` is an optional display name. `stage` is an optional stage label recorded on the inserted member (it shows on the member in `automation_get` and in the decision-log entry; the `stages/rename` rules apply to it like any other member stage). |
 | `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
 | `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
 | `from` | `stages/rename` | The stage to rename; must be carried by at least one member. |
@@ -1211,6 +1211,9 @@ belong to another Automation that has not ended.
   An urgent insert on a started Automation needs exactly one active member
   to follow, so in a forked Automation with several branches active it is a
   `409` that lists them.
+- **Stage.** `member.stage` optionally records a stage label on the inserted
+  member; the member then carries it in `automation_get`, and
+  `stages/rename` treats it like any other member stage.
 - **Draft.** On a draft Automation the member lands in the graph at once.
 - **Started Automation.** On an `active`, `paused` or `blocked` Automation
   the insert is always held as a **pending insert**: it appears in the

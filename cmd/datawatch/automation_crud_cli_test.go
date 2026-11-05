@@ -38,6 +38,44 @@ func TestAutomationCLIUpdate(t *testing.T) {
 	}
 }
 
+func TestAutomationCLIUpdateAutoTags(t *testing.T) {
+	c := &captureDaemon{replyBody: `{"id":"ab12","name":"chain","status":"draft","version":4,"members":[]}`}
+	withCaptureServer(t, c)
+
+	var err error
+	out := captureStdout(t, func() {
+		err = runCmd(t, newAutomationCmd(), "update", "ab12",
+			"--auto-tags", "off", "--auto-tags-stage-template", "stage:{stage}")
+	})
+	if err != nil {
+		t.Fatalf("update --auto-tags: %v", err)
+	}
+	if c.gotMethod != http.MethodPut || c.gotPath != "/api/automations/ab12" {
+		t.Errorf("proxied %s %s, want PUT /api/automations/ab12", c.gotMethod, c.gotPath)
+	}
+	body := c.body(t)
+	if len(body) != 1 {
+		t.Fatalf("body = %v, want only auto_tags", body)
+	}
+	tags, _ := body["auto_tags"].(map[string]any)
+	if len(tags) != 2 || tags["enabled"] != false || tags["stage_template"] != "stage:{stage}" {
+		t.Errorf("auto_tags = %v, want {enabled:false stage_template:stage:{stage}}", tags)
+	}
+	if !strings.Contains(out, "ab12") {
+		t.Errorf("output lacks the Automation id:\n%s", out)
+	}
+
+	// A bad --auto-tags value errors and never reaches the daemon.
+	c.gotPath = ""
+	err = runCmd(t, newAutomationCmd(), "update", "ab12", "--auto-tags", "maybe")
+	if err == nil || !strings.Contains(err.Error(), "--auto-tags") {
+		t.Errorf("bad --auto-tags: err = %v", err)
+	}
+	if c.gotPath != "" {
+		t.Errorf("bad --auto-tags still reached the daemon: %q", c.gotPath)
+	}
+}
+
 func TestAutomationCLIDelete(t *testing.T) {
 	c := &captureDaemon{replyCode: http.StatusNoContent}
 	withCaptureServer(t, c)

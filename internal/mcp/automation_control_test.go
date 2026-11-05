@@ -50,9 +50,9 @@ func controlCases() []controlCase {
 			map[string]any{"expected_version": float64(3), "actor": "alice", "reason": "because", "member_id": "m1", "edge": "on_failed"}},
 		{"automation_insert_member", func(s *Server) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 			return s.handleAutomationInsertMember
-		}, (*Server).toolAutomationInsertMember, base(map[string]any{"prd_id": "p9", "name": "late", "urgent": true}), "/api/automations/ab12/insert_member",
+		}, (*Server).toolAutomationInsertMember, base(map[string]any{"prd_id": "p9", "name": "late", "urgent": true, "stage": "review"}), "/api/automations/ab12/insert_member",
 			map[string]any{"expected_version": float64(3), "actor": "alice", "reason": "because", "urgent": true,
-				"member": map[string]any{"prd_id": "p9", "name": "late"}}},
+				"member": map[string]any{"prd_id": "p9", "name": "late", "stage": "review"}}},
 		{"automation_remove_member", func(s *Server) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 			return s.handleAutomationRemoveMember
 		}, (*Server).toolAutomationRemoveMember, base(map[string]any{"member_id": "m2"}), "/api/automations/ab12/remove_member",
