@@ -102,6 +102,11 @@ type Automation struct {
 	// whole Automation; nil = off. A member's own setting wins over it.
 	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
 
+	// AutoTags is the optional per-Automation override of the daemon-level
+	// autonomous.auto_tags block; nil = the daemon's block applies whole,
+	// and an override's unset fields inherit the daemon's.
+	AutoTags *AutoTagsOverride `json:"auto_tags,omitempty"`
+
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
 	CreatedAt  time.Time  `json:"created_at"`
@@ -157,6 +162,11 @@ type AutomationMember struct {
 	// EstimatedCostUSD is the operator-declared expected cost of the member's
 	// Automaton; only valid on kind prd and never negative.
 	EstimatedCostUSD float64 `json:"estimated_cost_usd,omitempty"`
+
+	// Stage is the optional operator label grouping members of one Automation
+	// (e.g. "build", "review"); empty means unstaged. It is cosmetic — the
+	// graph edges, advance rule and budget never read it.
+	Stage string `json:"stage,omitempty"`
 }
 
 // kind returns the member's kind, treating the empty kind as MemberKindPRD.
@@ -408,6 +418,9 @@ func validateAutomation(a *Automation) error {
 		return err
 	}
 	if err := validateDecisionAssistant(a.DecisionAssistant); err != nil {
+		return fmt.Errorf("automation invalid: %w", err)
+	}
+	if err := validateAutoTagsOverride(a.AutoTags); err != nil {
 		return fmt.Errorf("automation invalid: %w", err)
 	}
 	if !automationIsLinear(a) {

@@ -201,11 +201,15 @@ func TestProgressTextTrend(t *testing.T) {
 	if got := RenderTrendText(pts); got != want {
 		t.Errorf("trend text\n--- got ---\n%s--- want ---\n%s", got, want)
 	}
-	reply := RenderTrendReply(30, "converging", pts)
+	reply := RenderTrendReply(30, "all", "converging", pts)
 	if !strings.HasPrefix(reply, "Progress trend over the last 30 days: completion range converging\n") {
 		t.Errorf("reply header: %q", reply)
 	}
-	if !strings.HasPrefix(RenderTrendReply(7, "", nil), "Progress trend over the last 7 days: completion range unknown\n") {
+	if !strings.HasPrefix(RenderTrendReply(7, "", "", nil), "Progress trend over the last 7 days: completion range unknown\n") {
 		t.Error("empty direction should read unknown")
+	}
+	scoped := RenderTrendReply(14, "tags:web,perf", "converging", pts)
+	if !strings.HasPrefix(scoped, "Progress trend over the last 14 days: completion range converging (scope tags:web,perf)\n") {
+		t.Errorf("scoped reply header: %q", scoped)
 	}
 }

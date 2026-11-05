@@ -2281,6 +2281,14 @@ func (a *API) CancelAutomation(id, actor string, cancelInFlight, hasChoice bool,
 	return controlResult(got, err)
 }
 
+// RenameAutomationStage renames every member stage named `from` to `to`
+// (manager: draft, active, paused or blocked), migrating the stage's auto-tag
+// record in place when auto tagging is on for the Automation.
+func (a *API) RenameAutomationStage(id, from, to string, expectedVersion int64) (any, error) {
+	got, err := a.M.RenameAutomationStage(id, from, to, expectedVersion)
+	return controlResult(got, err)
+}
+
 // SkipMember skips an active member along the named edge.
 func (a *API) SkipMember(id, memberID, edge, actor string, expectedVersion int64) (any, error) {
 	got, err := a.M.SkipMember(id, memberID, edge, actor, expectedVersion)

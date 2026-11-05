@@ -51,6 +51,7 @@ Subcommands:
   insert <id> <prd>   Insert a member (--reason is required; --urgent, --after)
   remove <id> <member>  Remove a member that has not started
   edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
+  rename-stage <id> <from> <to>  Rename a member stage to a new name (auto-tag record migrates)
   approve <id> <member>  Approve an agent-inserted member
   set-llm <id>        Set the execution and planning LLM (--backend, --model, --effort,
                       --planning-backend, --planning-model; an empty value clears)
@@ -84,6 +85,7 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationInsertCmd())
 	cmd.AddCommand(newAutomationRemoveCmd())
 	cmd.AddCommand(newAutomationEdgesCmd())
+	cmd.AddCommand(newAutomationRenameStageCmd())
 	cmd.AddCommand(newAutomationApproveCmd())
 	cmd.AddCommand(newAutomationSetLLMCmd())
 	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
@@ -226,12 +228,17 @@ MCP tool documents each member field. The Automation stays a draft until activat
 func newAutomationUpdateCmd() *cobra.Command {
 	var f automationControlFlags
 	var name, description, entry, members string
+	var autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate string
 	cmd := &cobra.Command{
 		Use:   "update <id>",
-		Short: "Update an Automation (name, description, entry member, members)",
+		Short: "Update an Automation (name, description, entry member, members, auto-tags)",
 		Long: `Update an Automation. Only the flags that are set are sent, so every other
 field stays as it is. --members takes a JSON array, either inline (the value
-starts with "[") or as the path of a file that holds it; it replaces the member set.`,
+starts with "[") or as the path of a file that holds it; it replaces the member set.
+Auto-tags: --auto-tags on|off switches per-Automation tag assignment, and
+--auto-tags-automation-template, --auto-tags-stage-template and
+--auto-tags-kind-template set the per-Automation label templates (empty or unset
+keeps the daemon default; templates may use {date}, {time}, {automation}, {stage}).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := f.body(cmd)
@@ -251,6 +258,13 @@ starts with "[") or as the path of a file that holds it; it replaces the member 
 				}
 				body["members"] = parsed
 			}
+			tags, err := automationAutoTagsArg(cmd, autoTags, autoTagsAutomationTemplate, autoTagsStageTemplate, autoTagsKindTemplate)
+			if err != nil {
+				return err
+			}
+			if tags != nil {
+				body["auto_tags"] = tags
+			}
 			raw, err := automationAPI(http.MethodPut, "/api/automations/"+url.PathEscape(args[0]), body)
 			if err != nil {
 				return err
@@ -267,7 +281,40 @@ starts with "[") or as the path of a file that holds it; it replaces the member 
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&entry, "entry-member", "", "New entry member ID")
 	cmd.Flags().StringVar(&members, "members", "", "New members as a JSON array: inline, or the path of a file")
+	cmd.Flags().StringVar(&autoTags, "auto-tags", "", "Auto-tag this Automation: on or off")
+	cmd.Flags().StringVar(&autoTagsAutomationTemplate, "auto-tags-automation-template", "", "Automation label template (empty keeps the daemon default)")
+	cmd.Flags().StringVar(&autoTagsStageTemplate, "auto-tags-stage-template", "", "Stage label template (empty keeps the daemon default)")
+	cmd.Flags().StringVar(&autoTagsKindTemplate, "auto-tags-kind-template", "", "Kind label template (empty keeps the daemon default)")
 	return cmd
+}
+
+// automationAutoTagsArg assembles the auto_tags object the Automation update
+// takes, from the four --auto-tags* flags; it returns nil when none of them
+// was set, which leaves the Automation's override untouched. An empty template
+// flag clears that template back to the daemon default; the flags may be sent
+// one at a time, so only the flags that were set are included.
+func automationAutoTagsArg(cmd *cobra.Command, enabled, autoTpl, stageTpl, kindTpl string) (map[string]any, error) {
+	tags := map[string]any{}
+	if cmd.Flags().Changed("auto-tags") {
+		on, ok := map[string]bool{"on": true, "true": true, "off": false, "false": false}[strings.ToLower(strings.TrimSpace(enabled))]
+		if !ok {
+			return nil, fmt.Errorf("--auto-tags takes on or off (got %q)", enabled)
+		}
+		tags["enabled"] = on
+	}
+	if cmd.Flags().Changed("auto-tags-automation-template") {
+		tags["automation_template"] = autoTpl
+	}
+	if cmd.Flags().Changed("auto-tags-stage-template") {
+		tags["stage_template"] = stageTpl
+	}
+	if cmd.Flags().Changed("auto-tags-kind-template") {
+		tags["kind_template"] = kindTpl
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	return tags, nil
 }
 
 func newAutomationDeleteCmd() *cobra.Command {
@@ -493,6 +540,7 @@ var automationControlOps = map[string]string{
 	"edges":           "reorder_edges",
 	"approve":         "approve_insert",
 	"return-to-draft": "return_to_draft",
+	"rename-stage":    "stages/rename",
 
 	"set-llm":              "set_llm",
 	"set-verification-llm": "set_verification_llm",
@@ -658,20 +706,25 @@ func newAutomationSkipCmd() *cobra.Command {
 func newAutomationInsertCmd() *cobra.Command {
 	var f automationControlFlags
 	var urgent bool
-	var after string
+	var after, stage string
 	cmd := &cobra.Command{
 		Use:   "insert <id> <prd-id>",
 		Short: "Insert a member into a running Automation",
 		Long: `Insert a member that runs the given Automaton (prd-id). --reason is required and
 becomes the member's added reason. --urgent takes the urgent lane (one urgent member
-at a time); --after places the member after the named member.`,
+at a time); --after places the member after the named member; --stage records a
+stage label on the member.`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if strings.TrimSpace(f.reason) == "" {
 				return fmt.Errorf("--reason is required to insert a member")
 			}
 			body := f.body(cmd)
-			body["member"] = map[string]any{"prd_id": args[1]}
+			member := map[string]any{"prd_id": args[1]}
+			if stage = strings.TrimSpace(stage); stage != "" {
+				member["stage"] = stage
+			}
+			body["member"] = member
 			body["urgent"] = urgent
 			if after != "" {
 				body["after"] = after
@@ -682,6 +735,7 @@ at a time); --after places the member after the named member.`,
 	f.register(cmd)
 	cmd.Flags().BoolVar(&urgent, "urgent", false, "Use the urgent lane")
 	cmd.Flags().StringVar(&after, "after", "", "Member ID to insert after")
+	cmd.Flags().StringVar(&stage, "stage", "", "Stage label to record on the inserted member")
 	return cmd
 }
 
@@ -741,6 +795,26 @@ func newAutomationApproveCmd() *cobra.Command {
 			body := f.body(cmd)
 			body["member_id"] = args[1]
 			return runAutomationControl(args[0], "approve", body)
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
+func newAutomationRenameStageCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "rename-stage <id> <from-stage> <to-stage>",
+		Short: "Rename a member stage to a new name", Long: `Rename every member that occupies the stage <from-stage> to the stage
+<to-stage> of an Automation (draft, active, paused or blocked). When auto tagging
+is on, the stage's auto-tag record is migrated in place so already-tagged members
+keep their tag. --reason and --expected-version are recorded as with other controls.`,
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := f.body(cmd)
+			body["from"] = args[1]
+			body["to"] = args[2]
+			return runAutomationControl(args[0], "rename-stage", body)
 		},
 	}
 	f.register(cmd)

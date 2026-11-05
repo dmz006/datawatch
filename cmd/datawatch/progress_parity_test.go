@@ -293,7 +293,7 @@ func TestProgressSameObjectOnEverySurface(t *testing.T) {
 			t.Fatal(err)
 		}
 		reply := progressParityCommReply(t, srv, "progress trend 7")
-		for _, line := range strings.Split(strings.TrimRight(autonomous.RenderTrendReply(tb.Days, tb.Direction, tb.Points), "\n"), "\n") {
+		for _, line := range strings.Split(strings.TrimRight(autonomous.RenderTrendReply(tb.Days, tb.Scope, tb.Direction, tb.Points), "\n"), "\n") {
 			if !strings.Contains(reply, line) {
 				t.Errorf("comm reply lacks the line %q\nreply:\n%s", line, reply)
 			}

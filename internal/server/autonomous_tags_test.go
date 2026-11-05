@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 func newTagTestServer(t *testing.T) (*Server, *autonomous.Manager) {
@@ -40,6 +41,7 @@ type tagJSON struct {
 	Color    string `json:"color"`
 	Desc     string `json:"description"`
 	Count    int    `json:"count"`
+	System   bool   `json:"system"`
 }
 
 func listTags(t *testing.T, s *Server, query string) map[string]tagJSON {
@@ -150,6 +152,71 @@ func TestTagDeleteRefusedWithChildren(t *testing.T) {
 	}
 	if got := listTags(t, s, ""); len(got) != 0 {
 		t.Errorf("tags after deletes = %d, want 0", len(got))
+	}
+}
+
+func TestTagPatchSystemRefusedRenameReparentDelete(t *testing.T) {
+	s, m := newTagTestServer(t)
+	on := true
+	m.SetAutoTagsDaemon(func() config.AutoTagsConfig { return config.AutoTagsConfig{Enabled: &on} })
+	prd, err := m.CreatePRD("Ship the dark mode toggle", "test-project", "", "", "")
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	if _, err := m.CreateAutomation(autonomous.AutomationInput{
+		Name:    "Alpha",
+		Members: []autonomous.AutomationMember{{PRDID: prd.ID, Stage: "draft"}},
+	}, "operator"); err != nil {
+		t.Fatalf("CreateAutomation: %v", err)
+	}
+	var sys string
+	for _, tg := range m.ListTags() {
+		if tg.Name == "stage:draft" {
+			sys = tg.ID
+		}
+	}
+	if sys == "" {
+		t.Fatal("the engine did not create the system tag stage:draft")
+	}
+	// A second operator tag to reparent under.
+	other := createTag(t, s, `{"name":"operator-note"}`)
+
+	// The list payload carries the system flag.
+	if got := listTags(t, s, ""); !got[sys].System {
+		t.Fatalf("list: the engine tag %q must carry system=true: %+v", sys, got[sys])
+	}
+
+	// Rename, reparent and delete are all 409 with the system-tag refusal.
+	for _, c := range []struct{
+		label  string
+		method string
+		body   string
+	}{
+		{"rename", http.MethodPatch, `{"name":"renamed"}`},
+		{"reparent", http.MethodPatch, `{"parent_id":"` + other.ID + `"}`},
+		{"delete", http.MethodDelete, ""},
+	} {
+		rec := tagCall(t, s, c.method, "/api/autonomous/tags/"+sys, c.body)
+		if rec.Code != http.StatusConflict {
+			t.Fatalf("%s: %d %s, want 409", c.label, rec.Code, rec.Body.String())
+		}
+		if !strings.Contains(rec.Body.String(), "system tag") {
+			t.Errorf("%s: body %q does not name the system-tag refusal", c.label, rec.Body.String())
+		}
+	}
+
+	// The record survives every refused attempt, still named and at the root.
+	if got := listTags(t, s, ""); got[sys].Name != "stage:draft" || got[sys].ParentID != "" {
+		t.Fatalf("refused attempts changed the record: %+v", got[sys])
+	}
+
+	// Color and description stay editable on a system tag.
+	rec := tagCall(t, s, http.MethodPatch, "/api/autonomous/tags/"+sys, `{"color":"#123456","description":"engine tag"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("color/description on a system tag: %d %s, want 200", rec.Code, rec.Body.String())
+	}
+	if got := listTags(t, s, ""); got[sys].Color != "#123456" || got[sys].Desc != "engine tag" || !got[sys].System {
+		t.Fatalf("after patch: %+v", got[sys])
 	}
 }
 

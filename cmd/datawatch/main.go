@@ -12035,6 +12035,10 @@ func newSessionCmd() *cobra.Command {
 	sessionListCmd.Flags().Bool("summary", false, "compact JSON list: long text fields truncated, only the newest finished sessions kept")
 	sessionListCmd.Flags().String("states", "", "comma list of states to include (e.g. running,waiting_input); 'active' = every non-finished state")
 	sessionListCmd.Flags().String("since", "", "only sessions updated after this time (RFC3339 or unix seconds)")
+	var listTags []string
+	var listTagMatch string
+	sessionListCmd.Flags().StringArrayVar(&listTags, "tag", nil, "filter to sessions carrying this tag (repeatable); own or inherited from the Automaton that spawned it")
+	sessionListCmd.Flags().StringVar(&listTagMatch, "tag-match", "", "match at least one --tag (any, default) or every --tag (all)")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"

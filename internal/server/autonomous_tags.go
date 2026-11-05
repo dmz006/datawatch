@@ -125,7 +125,7 @@ func writeTagError(w http.ResponseWriter, err error) {
 			body["count"] = inUse.Count
 		}
 	case errors.Is(err, autonomous.ErrTagHasChildren), errors.Is(err, autonomous.ErrTagCycle),
-		errors.Is(err, tagregistry.ErrNotKeeper):
+		errors.Is(err, autonomous.ErrTagSystem), errors.Is(err, tagregistry.ErrNotKeeper):
 		status = http.StatusConflict
 	case errors.Is(err, tagregistry.ErrKeeperUnreachable):
 		status = http.StatusServiceUnavailable

@@ -278,8 +278,8 @@ written.
 
 | What you want | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
-| Read the numbers | - | `datawatch autonomous progress [--automation ID] [--tag ID] [--since D] [--until D] [--json]` | Automation sub-tab > *Progress and cost* > *Progress* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [since=D] [until=D]` |
-| Read the trend | - | `datawatch autonomous progress-trend [--days N] [--json]` | *Trend* section of the card | `GET /api/autonomous/progress/trend?days=N` | `progress trend [days]` |
+| Read the numbers | - | `datawatch autonomous progress [--automation ID] [--tag ID]... [--tag-match any|all] [--since D] [--until D] [--json]` | Automation sub-tab > *Progress and cost* > *Progress* card | `GET /api/autonomous/progress` | `progress [automation=ID] [tag=ID] [tag_match=any|all] [since=D] [until=D]` |
+| Read the trend | - | `datawatch autonomous progress-trend [--days N] [--tag ID]... [--tag-match any|all] [--json]` | *Trend* section of the card | `GET /api/autonomous/progress/trend?days=N[&tag=ID&tag_match=all]` | `progress trend [days] [tag=ID] [tag_match=all]` |
 | Set an Automaton kind | - | `datawatch autonomous prd-set-kind ID KIND` | Automaton settings > *Kind* | `POST /api/autonomous/prds/{id}/set_kind` | `autonomous set-kind ID KIND` |
 | Change a setting | `autonomous.progress.*` | `datawatch config set autonomous.progress.lanes 5` | Settings > General > Autonomous > *Progress ...* | `PUT /api/config` `{"autonomous.progress.lanes": 5}` | `configure autonomous.progress.lanes=5` |
 
@@ -289,8 +289,17 @@ MCP agents use `autonomous_progress`, `autonomous_progress_trend`,
 object** as the REST route, so every surface shows the same figures.
 
 `since` and `until` are dates (`YYYY-MM-DD`); `until` includes the whole day.
-`automation` narrows the count to the Automata of one Automation, `tag` to the
-Automata carrying one tag. A bad date is refused (HTTP 400).
+`automation` narrows the count to the Automata of one Automation. `tag` is
+repeatable and narrows the count to the Automata carrying the given tag(s):
+`--tag-match all` (or `tag_match=all`) requires every listed tag to be
+present; `any`, the default, takes at least one. Every surface takes tag
+IDs. A bad date or a bad `tag_match` is refused (HTTP 400).
+
+The progress object and every trend point report the **scope** the counts
+were taken over — `all`, `automation:<id>`, `tag:<id>`, `tags:<id1,id2>`
+(any) or `tags(all):<id1,id2>` (all), combined as needed — so a reader can
+tell exactly what the numbers cover. The trend reply appends
+` (scope …)` when it is narrower than the whole fleet.
 
 ## Where to see it
 

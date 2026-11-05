@@ -1935,6 +1935,23 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Backend: q.Get("backend"),
 		Alive:   q.Get("alive"),
 	}
+	// Tags repeatable; own or inherited. tag_match is any (default) or all; a
+	// value outside that set is rejected before anything is read.
+	tagSeen := map[string]bool{}
+	for _, v := range q["tag"] {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" && !tagSeen[part] {
+				tagSeen[part] = true
+				filter.Tags = append(filter.Tags, part)
+			}
+		}
+	}
+	filter.TagMatch = strings.TrimSpace(q.Get("tag_match"))
+	if filter.TagMatch != "" && filter.TagMatch != "any" && filter.TagMatch != "all" {
+		http.Error(w, `tag_match: must be "any" or "all"`, http.StatusBadRequest)
+		return
+	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL432 — ?view=summary / ?since= / ?states= (session_list_view.go).
@@ -6313,7 +6330,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"generated_artefacts": s.cfg.Autonomous.EffectiveGeneratedArtefacts(),
 			// Tag browser settings (autonomous.tags) — the effective values, so an
 			// unset block shows its defaults. Validated by ValidateTagSetting.
-			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			"tags":      tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			"auto_tags": autoTagsSettingsForDisplay(s.cfg.Autonomous.AutoTags),
 			// Defect queue (autonomous.defect_queue) — effective block values and
 			// per-project overrides. Validated by ValidateDefectQueueSetting.
 			"defect_queue": defectQueueSettingsForDisplay(s.cfg.Autonomous.DefectQueue),
@@ -6698,6 +6716,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// Defect queue settings (autonomous.defect_queue.*): same shared validator.
 	if verr := firstDefectQueueSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Auto tagging (autonomous.auto_tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstAutoTagsSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -7426,6 +7451,19 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	for _, k := range []string{"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds"} {
 		if _, ok := patch[k]; ok {
 			s.applyTagRegistrySettings()
+			break
+		}
+	}
+	// Auto tagging (autonomous.auto_tags.*) follows the live block without
+	// a restart: the engine-tag sync reads it at sync time (auto_tags.go),
+	// and a whole-PUT re-sync of every existing Automation applies a
+	// flip-off (strip engine tags, reclaim un-referenced records) or a
+	// template change at once.
+	for k := range patch {
+		if strings.HasPrefix(k, config.AutoTagsSettingPrefix) {
+			if a, ok := s.autonomousMgr.(autoTagsSyncAPI); ok {
+				a.SyncAutoTagsAll()
+			}
 			break
 		}
 	}
@@ -8849,6 +8887,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs; Set stores the
 			// normalized value and leaves the block unchanged on a refusal.
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
+			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
+			"autonomous.auto_tags.kind_labels":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			if updated, ok := cfg.Autonomous.AutoTags.Set(strings.TrimPrefix(k, config.AutoTagsSettingPrefix), v); ok {
+				cfg.Autonomous.AutoTags = updated
+			}
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
 			// "block"). handlePutConfig rejects invalid modes loudly; this

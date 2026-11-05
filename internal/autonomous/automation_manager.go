@@ -3,6 +3,7 @@ package autonomous
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,11 @@ type AutomationInput struct {
 	// DecisionAssistant is optional; an update that omits it keeps the stored
 	// setting (SetDecisionAssistant clears it).
 	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
+	// AutoTags is the optional per-Automation override of the daemon-level
+	// autonomous.auto_tags block; an update that omits it (nil) keeps the
+	// stored setting, and a non-nil override's unset fields inherit the
+	// daemon's.
+	AutoTags *AutoTagsOverride `json:"auto_tags,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -54,6 +60,7 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		VerificationModel:   in.VerificationModel,
 		VerificationEffort:  in.VerificationEffort,
 		DecisionAssistant:   in.DecisionAssistant,
+		AutoTags:            in.AutoTags,
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -63,6 +70,9 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		return nil, err
 	}
 	if err := m.syncAutomationMembership(a.ID, nil, a.Members, false); err != nil {
+		// A refused tag sync (e.g. a name an operator tag owns) must not
+		// leave an Automation behind: roll the creation back.
+		m.automations.Delete(a.ID)
 		return nil, err
 	}
 	return a, nil
@@ -159,6 +169,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		if in.DecisionAssistant != nil {
 			a.DecisionAssistant = in.DecisionAssistant
 		}
+		if in.AutoTags != nil {
+			a.AutoTags = in.AutoTags
+		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID
 		}
@@ -220,6 +233,77 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 	return a, nil
 }
 
+// RenameAutomationStage renames the Stage label from→to on every member of
+// automationID that currently carries from. Both names are trimmed and must
+// be non-empty and different; to must not already be another member's stage
+// in the same Automation. A stale expectedVersion, a terminal Automation or
+// a rename that matches no member is refused before anything mutates; on
+// success the Version is bumped (through the same compare-and-set the
+// coordinator uses) and one Decision is recorded and one audit record
+// emitted.
+func (m *Manager) RenameAutomationStage(automationID, from, to string, expectedVersion int64) (*Automation, error) {
+	from = strings.TrimSpace(from)
+	to = strings.TrimSpace(to)
+	if from == "" || to == "" {
+		return nil, fmt.Errorf("a stage rename needs non-empty from and to names")
+	}
+	if from == to {
+		return nil, fmt.Errorf("a stage rename needs different from and to names")
+	}
+	allowed := []AutomationStatus{AutomationDraft, AutomationActive, AutomationPaused, AutomationBlocked}
+	if _, err := m.loadForControl(automationID, expectedVersion, allowed...); err != nil {
+		return nil, err
+	}
+	var renamed int
+	updated, err := m.automations.Update(automationID, expectedVersion, func(cur *Automation) error {
+		if err := checkControlStatus(cur, allowed); err != nil {
+			return err
+		}
+		for i := range cur.Members {
+			mm := &cur.Members[i]
+			if mm.Stage != from {
+				if mm.Stage == to {
+					return fmt.Errorf("409: automation %s already has stage %q on member %s", cur.ID, to, mm.ID)
+				}
+				continue
+			}
+			mm.Stage = to
+			renamed++
+		}
+		if renamed == 0 {
+			return fmt.Errorf("404: no member of automation %s carries stage %q", cur.ID, from)
+		}
+		controlDecision(cur, "automation_rename_stage", operatorActor, fmt.Sprintf("renamed stage %q to %q on %d member(s)", from, to, renamed))
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	m.controlAudit("automation_rename_stage", map[string]any{
+		"automation_id": automationID, "from": from, "to": to,
+		"members": renamed, "version": updated.Version,
+	})
+	// Engine tags (auto_tags.go): the renamed stage's tag record is
+	// migrated in place first (same tag ID and assignments, new name and
+	// marker), then the Automation syncs so orphaned stage tags are
+	// reclaimed.
+	resolved := ResolveAutoTags(m.autoTagsDaemonCfg(), updated.AutoTags)
+	if resolved.Enabled {
+		if toName, err := RenderAutoTag(resolved, "stage", map[string]string{
+			"stage":      to,
+			"automation": updated.Name,
+		}); err == nil {
+			if err := m.migrateAutoStageTag(updated.ID, from, to, toName); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := m.syncAutoTags(updated); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
 // DeleteAutomation removes an Automation (the store enforces the
 // draft/completed/cancelled-only rule) and clears PRD.AutomationID on all
 // of its member PRDs.
@@ -263,9 +347,6 @@ func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newM
 			return fmt.Errorf("prd %q: %w", mem.PRDID, err)
 		}
 	}
-	if len(old) == 0 {
-		return nil
-	}
 	if !terminal {
 		newSet := make(map[string]struct{}, len(newMembers))
 		for _, mem := range newMembers {
@@ -289,6 +370,26 @@ func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newM
 		if err := m.store.SavePRD(prd); err != nil {
 			return fmt.Errorf("prd %q: %w", prdID, err)
 		}
+	}
+	// Engine tags (auto_tags.go): a membership write just landed, so the
+	// Automation's system tags sync now. Members that left are stripped of
+	// the Automation's tags (shared kind tags and operator tags stay); when
+	// the Automation itself is gone, its footprints are cleared and its
+	// un-referenced tag records reclaimed.
+	if a, ok := m.automations.Get(automationID); ok {
+		for prdID := range old {
+			prd, ok := m.store.GetPRD(prdID)
+			if !ok {
+				continue
+			}
+			if err := m.stripAutomationAutoTags(automationID, prd); err != nil {
+				return err
+			}
+		}
+		return m.syncAutoTags(a)
+	}
+	if len(old) > 0 {
+		return m.clearAutoTagsFor(&Automation{ID: automationID, Members: oldMembers})
 	}
 	return nil
 }

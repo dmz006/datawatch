@@ -18,7 +18,7 @@ func TestAutomationCLIControl(t *testing.T) {
 	for _, sub := range newAutomationCmd().Commands() {
 		registered[sub.Name()] = true
 	}
-	for _, name := range []string{"pause", "resume", "cancel", "skip", "insert", "remove", "edges", "approve"} {
+	for _, name := range []string{"pause", "resume", "cancel", "skip", "insert", "remove", "edges", "rename-stage", "approve"} {
 		if !registered[name] {
 			t.Errorf("automation subcommand %q is not registered", name)
 		}
@@ -101,6 +101,11 @@ func TestAutomationCLIControl(t *testing.T) {
 		check(t, "/api/automations/ab12/insert_member", map[string]any{
 			"member": map[string]any{"prd_id": "prd-9"}, "urgent": true, "after": "m2", "reason": "fix the flaky step", "expected_version": float64(8),
 		})
+		// --stage is recorded on the member.
+		run(t, "insert", "ab12", "prd-9", "--reason", "stage it", "--stage", "review")
+		check(t, "/api/automations/ab12/insert_member", map[string]any{
+			"member": map[string]any{"prd_id": "prd-9", "stage": "review"}, "urgent": false, "reason": "stage it", "expected_version": float64(8),
+		})
 		c.gotPath = ""
 		if err := runCmd(t, newAutomationCmd(), "insert", "ab12", "prd-9"); err == nil || c.gotPath != "" {
 			t.Errorf("insert without --reason: err = %v, path = %q", err, c.gotPath)
@@ -126,6 +131,17 @@ func TestAutomationCLIControl(t *testing.T) {
 	t.Run("approve", func(t *testing.T) {
 		run(t, "approve", "ab12", "m6")
 		check(t, "/api/automations/ab12/approve_insert", map[string]any{"member_id": "m6", "expected_version": float64(8)})
+	})
+
+	t.Run("rename-stage", func(t *testing.T) {
+		run(t, "rename-stage", "ab12", "review", "verify", "--reason", "stage drift")
+		check(t, "/api/automations/ab12/stages/rename", map[string]any{
+			"from": "review", "to": "verify", "reason": "stage drift", "expected_version": float64(8),
+		})
+		c.gotPath = ""
+		if err := runCmd(t, newAutomationCmd(), "rename-stage", "ab12", "review"); err == nil || c.gotPath != "" {
+			t.Errorf("rename-stage with two args: err = %v, path = %q", err, c.gotPath)
+		}
 	})
 
 	t.Run("version conflict is an error", func(t *testing.T) {

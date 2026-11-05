@@ -76,6 +76,23 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: tag
+          in: query
+          required: false
+          description: >-
+            Keep only the sessions that carry this tag — their own or one they
+            inherit from their Automaton; repeat the parameter for several (or
+            pass a comma list), combined with tag_match
+          schema:
+            type: string
+        - name: tag_match
+          in: query
+          required: false
+          description: Whether the listed tags must all be present (all) or any of them (any, the default)
+          schema:
+            type: string
+            enum: ["any", "all"]
+            default: "any"
         - name: view
           in: query
           required: false
@@ -2346,7 +2363,9 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: automation_id, in: query, required: false, description: Count only the Automata of this Automation, schema: {type: string}}
-        - {name: tag_id, in: query, required: false, description: Count only the Automata carrying this tag, schema: {type: string}}
+        - {name: tag, in: query, required: false, description: Count only the Automata carrying this tag; repeat the parameter for several (or pass a comma list), combined with tag_match, schema: {type: string}}
+        - {name: tag_id, in: query, required: false, description: "Legacy single-tag spelling of tag", schema: {type: string}}
+        - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
         - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
         - {name: until, in: query, required: false, description: "Last day counted, YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
       responses:
@@ -2359,7 +2378,7 @@ paths:
                 properties:
                   generated_at: {type: string, format: date-time}
                   since: {type: string, format: date-time}
-                  scope: {type: string, description: "all, automation:<id>, tag:<id> or the two joined with +"}
+                  scope: {type: string, description: "all, automation:<id>, tag:<id> (one tag), tags:<ids> (any), tags(all):<ids> (all); the automation and tag parts joined with +"}
                   calendar_days: {type: number}
                   active_days: {type: number}
                   lanes: {type: integer}
@@ -2376,7 +2395,7 @@ paths:
                   unfiled_rows: {type: array, items: {type: object}}
                   backlog_available: {type: boolean}
                   not_measured: {type: array, items: {type: string}}
-        "400": {description: Invalid since or until, or until before since}
+        "400": {description: Invalid since or until, until before since, or a tag_match other than any or all}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -2396,6 +2415,9 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: days, in: query, required: false, description: "How many days back to read, 1 to 365 (default 30)", schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+        - {name: tag, in: query, required: false, description: Count only the Automata carrying this tag; repeat the parameter for several (or pass a comma list), combined with tag_match, schema: {type: string}}
+        - {name: tag_id, in: query, required: false, description: "Legacy single-tag spelling of tag", schema: {type: string}}
+        - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
       responses:
         "200":
           description: Trend over the saved snapshots
@@ -2405,6 +2427,7 @@ paths:
                 type: object
                 properties:
                   days: {type: integer}
+                  scope: {type: string, description: "The scope the snapshots were counted over: all, automation:<id>, tag:<id>, tags:<ids> or tags(all):<ids>, joined with + as needed"}
                   points:
                     type: array
                     items:
@@ -2412,6 +2435,7 @@ paths:
                       properties:
                         date: {type: string, format: date}
                         reason: {type: string, description: "daily or milestone"}
+                        scope: {type: string, description: "Scope for this snapshot (absent on snapshots recorded before scopes were counted)"}
                         completion_low_days: {type: number, nullable: true}
                         completion_high_days: {type: number, nullable: true}
                         known_tasks: {type: integer}
@@ -2420,7 +2444,7 @@ paths:
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
-        "400": {description: days is not a whole number from 1 to 365}
+        "400": {description: days is not a whole number from 1 to 365, or a tag_match other than any or all}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -5088,6 +5112,46 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/{id}/stages/rename:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Rename a member stage in place
+      description: |
+        Renames every member stage named `from` to `to` (the Automation's manager
+        state: draft, active, paused or blocked), the operator's cosmetic grouping
+        label. When auto tagging is on for the Automation, the stage tag of the
+        recorded members is migrated to the new name in place; the operator tags
+        of other Automations are never touched. Body:
+        `{expected_version, from, to, actor?, reason?}`.
+      operationId: automationsRenameStage
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, from, to]
+              properties:
+                expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+                from: {type: string, description: "The stage name to rename; must exist on at least one member"}
+                to: {type: string, description: "The new stage name; at most 64 runes (1-64), no other member may already use it"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The Automation, now carrying the renamed stage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Malformed body, an empty `from` or `to`, a `to` longer than 64 runes, or a `to` already used by another member"}
+        "404": {description: "Automation not found, or no member carries the stage `from`"}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is in a state this operation does not allow"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   /api/automations/{id}/return_to_draft:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
@@ -5304,6 +5368,7 @@ paths:
           properties:
             prd_id: {type: string, description: "The member Automaton to insert"}
             name: {type: string, description: "Optional display name"}
+            stage: {type: string, description: "Optional stage label recorded on the inserted member"}
         urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
         after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
       responses:
@@ -10134,6 +10199,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AutomationMember"
+        auto_tags:
+          type: object
+          description: "Per-Automation override of the daemon's autonomous.auto_tags block; unset fields inherit the daemon's value. An empty template inherits the daemon's template; kind_labels cannot be overridden per Automation."
+          properties:
+            enabled: {type: boolean, description: "Only an explicit value wins over the daemon's; an unset value reads true, and an explicit false stays false after a save-and-reload"}
+            automation_template: {type: string, description: "Template for the Automation's tag; placeholder {automation} only; empty inherits the daemon's template"}
+            stage_template: {type: string, description: "Template for a member's stage tag; placeholders {automation} and {stage}; empty inherits the daemon's template"}
+            kind_template: {type: string, description: "Template for the kind tag; placeholders {automation}, {stage} and {kind}; empty inherits the daemon's template"}
         version: {type: integer, description: "Bumped on every write; send back as expected_version on update"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
         budget_state: {$ref: "#/components/schemas/BudgetState"}
@@ -10170,6 +10243,7 @@ components:
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
         added_at: {type: string, format: date-time}
+        stage: {type: string, maxLength: 64, description: "Optional operator label grouping members of one Automation (e.g. build, review); empty is unstaged. Cosmetic: edges, advance rule and budget never read it. Rename it in place with POST /api/automations/{id}/stages/rename; the Automation's stage auto-tag follows the rename"}
         added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
         added_reason: {type: string}
         status: {type: string, enum: [pending, running, completed, blocked, failed, skipped, cancelled]}

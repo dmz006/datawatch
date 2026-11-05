@@ -217,6 +217,7 @@ func (s *ProgressSnapshotStore) mutate(fn func([]ProgressSnapshot) ([]ProgressSn
 type ProgressTrendPoint struct {
 	Date               string   `json:"date"`
 	Reason             string   `json:"reason"`
+	Scope              string   `json:"scope,omitempty"` // what the snapshot was counting
 	CompletionLowDays  *float64 `json:"completion_low_days"`
 	CompletionHighDays *float64 `json:"completion_high_days"`
 	KnownTasks         int      `json:"known_tasks"`
@@ -249,6 +250,7 @@ func Trend(snaps []ProgressSnapshot) ProgressTrend {
 		p := ProgressTrendPoint{
 			Date:               s.Date,
 			Reason:             s.Reason,
+			Scope:              s.Metrics.Scope,
 			CompletionLowDays:  m.Completion.LowDays,
 			CompletionHighDays: m.Completion.HighDays,
 			KnownTasks:         m.Remaining.Known.Tasks,

@@ -132,7 +132,15 @@ func TestProgressCLIFlagsBecomeQuery(t *testing.T) {
 	if _, err := runProgressCmd(t, "progress", "--automation", "a1", "--tag", "t1", "--since", "2026-10-01", "--until", "2026-10-20"); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"automation_id=a1", "tag_id=t1", "since=2026-10-01", "until=2026-10-20"} {
+	for _, want := range []string{"automation_id=a1", "tag=t1", "since=2026-10-01", "until=2026-10-20"} {
+		if !strings.Contains(uri, want) {
+			t.Errorf("request %q lacks %s", uri, want)
+		}
+	}
+	if _, err := runProgressCmd(t, "progress", "--tag", "web", "--tag", "perf", "--tag-match", "all"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"tag=web", "tag=perf", "tag_match=all"} {
 		if !strings.Contains(uri, want) {
 			t.Errorf("request %q lacks %s", uri, want)
 		}
@@ -143,10 +151,10 @@ func TestProgressCLIFlagsBecomeQuery(t *testing.T) {
 	if uri != "/api/autonomous/progress" {
 		t.Errorf("no flags should give no query, got %q", uri)
 	}
-	if _, err := runProgressCmd(t, "progress-trend", "--days", "14"); err != nil {
+	if _, err := runProgressCmd(t, "progress-trend", "--days", "14", "--tag", "web"); err != nil {
 		t.Fatal(err)
 	}
-	if uri != "/api/autonomous/progress/trend?days=14" {
+	if uri != "/api/autonomous/progress/trend?days=14&tag=web" {
 		t.Errorf("trend request = %q", uri)
 	}
 }
@@ -162,7 +170,7 @@ func TestProgressCLITrendText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := autonomous.RenderTrendReply(30, "flat", trend.Points); out != want {
+	if want := autonomous.RenderTrendReply(30, "", "flat", trend.Points); out != want {
 		t.Errorf("trend text\n--- got ---\n%s--- want ---\n%s", out, want)
 	}
 	if uri != "/api/autonomous/progress/trend" {

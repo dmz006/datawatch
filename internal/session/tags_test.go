@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -57,6 +58,49 @@ func saveTagsTestSession(t *testing.T, mgr *Manager, id, prdID string, tags []st
 		t.Fatalf("SaveSession: %v", err)
 	}
 	return sess
+}
+
+func TestListSessionsFilteredByOwnedAndInheritedTags(t *testing.T) {
+	mgr, _ := newTagsTestManager(t, []string{"web", "owner-tag", "other"}, map[string][]string{
+		"11110001": {"owner-tag"},
+	})
+	saveTagsTestSession(t, mgr, "s-own", "", []string{"web"})
+	saveTagsTestSession(t, mgr, "s-inh", "11110001", []string{"other"}) // inherits owner-tag
+	saveTagsTestSession(t, mgr, "s-both", "", []string{"web", "owner-tag"})
+	saveTagsTestSession(t, mgr, "s-none", "", nil)
+
+	ids := func(list []*Session) []string {
+		got := make([]string, 0, len(list))
+		for _, s := range list {
+			got = append(got, s.ID)
+		}
+		sort.Strings(got)
+		return got
+	}
+	want := func(s ...string) []string { return s }
+
+	check := func(got, expected []string, note string) {
+		if !reflect.DeepEqual(got, expected) {
+			t.Fatalf("%s: got %v, want %v", note, got, expected)
+		}
+	}
+
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{Tags: []string{"web"}})),
+		want("s-both", "s-own"), "any (default) single tag")
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{Tags: []string{"owner-tag"}})),
+		want("s-both", "s-inh"), "inherited tags count")
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{Tags: []string{"web", "owner-tag"}})),
+		want("s-both", "s-inh", "s-own"), "any of several tags")
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{Tags: []string{"web", "owner-tag"}, TagMatch: "all"})),
+		want("s-both"), "all: every tag required")
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{Tags: []string{"web", "owner-tag"}, TagMatch: "ALL"})),
+		want("s-both"), "all (case-insensitive)")
+	check(ids(mgr.ListSessionsFiltered(SessionFilter{})),
+		want("s-both", "s-inh", "s-none", "s-own"), "no tag filter lists everything")
+
+	// A tag filter composes with the other filters.
+	running := mgr.ListSessionsFiltered(SessionFilter{State: "running", Tags: []string{"owner-tag"}})
+	check(ids(running), want("s-both", "s-inh"), "state plus tags")
 }
 
 func TestSessionTagsPersistAcrossStoreReload(t *testing.T) {

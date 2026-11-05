@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // fakeSessionTagRegistry knows only the tag IDs it was given and refuses the
@@ -247,5 +248,61 @@ func TestSessionTagsDeleteRefusedWhileSessionCarriesTag(t *testing.T) {
 	}
 	if del := tagCall(t, s, http.MethodDelete, "/api/autonomous/tags/"+tg.ID, ""); del.Code != http.StatusOK {
 		t.Errorf("delete after the session let go: %d %s, want 200", del.Code, del.Body.String())
+	}
+}
+
+// TestSessionOfMemberPRDInheritsEngineTags proves the full chain: the engine
+// sync writes the Automation's system tags onto the member PRD's tag list
+// (auto_tags.go), and a session of that PRD inherits exactly those at read
+// time, next to the operator's own tag on the PRD.
+func TestSessionOfMemberPRDInheritsEngineTags(t *testing.T) {
+	s, _, _ := fedCapFixture(t)
+	amgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("autonomous.NewManager: %v", err)
+	}
+	on := true
+	// Wire the server's tag bridge against the real manager's API.
+	s.autonomousMgr = newTestAPI(amgr)
+	s.wireSessionTags()
+	// Keep the daemon-level block pinned on regardless of the server config.
+	amgr.SetAutoTagsDaemon(func() config.AutoTagsConfig { return config.AutoTagsConfig{Enabled: &on} })
+
+	op, err := amgr.CreateTag("operator-note", "", "", "")
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	prd, err := amgr.CreatePRD("Ship the dark mode toggle", t.TempDir(), "", "", "")
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	if err := amgr.SetPRDTags(prd.ID, []string{op.ID}); err != nil {
+		t.Fatalf("SetPRDTags: %v", err)
+	}
+	if _, err := amgr.CreateAutomation(autonomous.AutomationInput{
+		Name:    "Alpha",
+		Members: []autonomous.AutomationMember{{PRDID: prd.ID, Stage: "draft"}},
+	}, "operator"); err != nil {
+		t.Fatalf("CreateAutomation: %v", err)
+	}
+
+	childID := startTagsSession(t, s, `{"task":"child","project_dir":"`+t.TempDir()+`","prd_id":"`+prd.ID+`"}`)
+	detail := httptest.NewRecorder()
+	s.handleSessionSubpath(detail, httptest.NewRequest(http.MethodGet, "/api/sessions/"+childID, nil))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("session detail: %d %s", detail.Code, detail.Body.String())
+	}
+	got := decodeSessionTagsFields(t, detail)
+	seen := map[string]bool{}
+	for _, id := range got.InheritedTags {
+		seen[id] = true
+	}
+	if !seen[op.ID] {
+		t.Fatalf("inherited tags %v: missing the operator tag %s", got.InheritedTags, op.ID)
+	}
+	// automation + stage + kind = exactly 4 tags: the operator tag and the
+	// three engine tags, all of them.
+	if len(got.InheritedTags) != 4 {
+		t.Fatalf("inherited tags = %v, want the operator tag plus 3 engine tags", got.InheritedTags)
 	}
 }

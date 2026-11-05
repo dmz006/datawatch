@@ -25,11 +25,13 @@ type ctlAutomation struct {
 		ID         string `json:"id"`
 		PRDID      string `json:"prd_id"`
 		Status     string `json:"status"`
+		Stage      string `json:"stage"`
 		OnComplete string `json:"on_complete"`
 	} `json:"members"`
 	PendingInserts []struct {
 		ID    string `json:"id"`
 		PRDID string `json:"prd_id"`
+		Stage string `json:"stage"`
 	} `json:"pending_inserts"`
 }
 
@@ -40,6 +42,15 @@ func (a ctlAutomation) member(id string) (status, onComplete string, ok bool) {
 		}
 	}
 	return "", "", false
+}
+
+func (a ctlAutomation) memberStage(id string) string {
+	for _, m := range a.Members {
+		if m.ID == id {
+			return m.Stage
+		}
+	}
+	return ""
 }
 
 func decodeCtl(t *testing.T, body string) ctlAutomation {
@@ -193,12 +204,12 @@ func TestAutomationRESTControl(t *testing.T) {
 		// A reason is required.
 		ctl(t, s, a, "insert_member", map[string]any{"member": map[string]any{"prd_id": prdID}}, http.StatusBadRequest)
 		got := ctl(t, s, a, "insert_member", map[string]any{
-			"member": map[string]any{"prd_id": prdID, "name": "late addition"}, "reason": "found a gap", "actor": "alice",
+			"member":  map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review"}, "reason": "found a gap", "actor": "alice",
 		}, http.StatusOK)
-		if len(got.PendingInserts) != 1 || got.PendingInserts[0].PRDID != prdID || len(got.Members) != 3 {
+		if len(got.PendingInserts) != 1 || got.PendingInserts[0].PRDID != prdID || got.PendingInserts[0].Stage != "review" || len(got.Members) != 3 {
 			t.Fatalf("insert on a running automation should be held: pending=%+v members=%d", got.PendingInserts, len(got.Members))
 		}
-		wantAudit(t, al, "automation_insert_member", a.ID, map[string]any{"prd_id": prdID, "urgent": false, "reason": "found a gap", "actor": "alice"})
+		wantAudit(t, al, "automation_insert_member", a.ID, map[string]any{"prd_id": prdID, "name": "late addition", "stage": "review", "urgent": false, "reason": "found a gap", "actor": "alice"})
 		// A missing prd_id is a 400.
 		ctl(t, s, got, "insert_member", map[string]any{"member": map[string]any{}, "reason": "x"}, http.StatusBadRequest)
 	})
@@ -290,4 +301,66 @@ func TestAutomationRESTApprove(t *testing.T) {
 		t.Errorf("approved member %s not in the graph", pendingID)
 	}
 	wantAudit(t, al, "automation_approve_insert", a.ID, map[string]any{"member_id": pendingID, "reason": "ok"})
+}
+
+// newActiveStagedAutomation is newActiveAutomation with member stages: m0 and
+// m1 carry the stage "build", m2 carries "test".
+func newActiveStagedAutomation(t *testing.T) (*Server, *autonomous.Manager, *audit.Log, ctlAutomation) {
+	t.Helper()
+	s, mgr, al := newActivateServer(t, true)
+	stages := map[string]string{"m0": "build", "m1": "build", "m2": "test"}
+	members := make([]any, 0, 3)
+	for i, edge := range []string{"m1", "m2", ""} {
+		prdID := makeMemberPRD(t, mgr)
+		prd, ok := mgr.Store().GetPRD(prdID)
+		if !ok {
+			t.Fatalf("member prd %s missing", prdID)
+		}
+		prd.Status = autonomous.PRDApproved
+		if err := mgr.Store().SavePRD(prd); err != nil {
+			t.Fatalf("SavePRD: %v", err)
+		}
+		members = append(members, map[string]any{"id": "m" + string(rune('0'+i)), "prd_id": prdID, "stage": stages["m"+string(rune('0'+i))], "on_complete": edge})
+	}
+	created := doAutomation(t, s, http.MethodPost, "/api/automations", map[string]any{
+		"name": "staged", "entry_member_id": "m0", "members": members,
+	}, http.StatusCreated)
+	id := decodeCtl(t, created).ID
+	a := decodeCtl(t, doAutomation(t, s, http.MethodPost, "/api/automations/"+id+"/activate", nil, http.StatusOK))
+	if a.Status != "active" {
+		t.Fatalf("activated status = %q, want active", a.Status)
+	}
+	return s, mgr, al, a
+}
+
+func TestAutomationRESTRenameStage(t *testing.T) {
+	s, _, al, a := newActiveStagedAutomation(t)
+
+	// Rename the shared stage "build" to "verify": s0 and s1 move, s2 keeps
+	// "test", the version bumps and an audit record is written.
+	got := ctl(t, s, a, "stages/rename", map[string]any{"from": "build", "to": "verify", "reason": "rename"}, http.StatusOK)
+	if got.Version != a.Version+1 {
+		t.Fatalf("version = %d, want %d", got.Version, a.Version+1)
+	}
+	// m0 and m1 moved build→verify; m2 keeps test.
+	for _, id := range []string{"m0", "m1"} {
+		if st := got.memberStage(id); st != "verify" {
+			t.Errorf("%s stage = %q, want verify", id, st)
+		}
+	}
+	if st := got.memberStage("m2"); st != "test" {
+		t.Errorf("m2 stage = %q, want test", st)
+	}
+	wantAudit(t, al, "automation_rename_stage", a.ID,
+		map[string]any{"from": "build", "to": "verify", "reason": "rename", "actor": "operator",
+			"expected_version": float64(a.Version), "version": float64(a.Version + 1)})
+
+	// Renaming to a stage another member already carries is a conflict.
+	ctl(t, s, got, "stages/rename", map[string]any{"from": "verify", "to": "test"}, http.StatusConflict)
+	// A stage no member carries is a 404. A stale version is a 409. from == to
+	// and an empty name are 400s.
+	ctl(t, s, got, "stages/rename", map[string]any{"from": "nope", "to": "x"}, http.StatusNotFound)
+	ctl(t, s, got, "stages/rename", map[string]any{"from": "verify", "to": "y", "expected_version": got.Version - 1}, http.StatusConflict)
+	ctl(t, s, got, "stages/rename", map[string]any{"from": "verify", "to": "verify"}, http.StatusBadRequest)
+	ctl(t, s, got, "stages/rename", map[string]any{"from": "", "to": "y"}, http.StatusBadRequest)
 }

@@ -21,6 +21,7 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"activate", http.MethodPost},
 	{"return_to_draft", http.MethodPost},
 	{"shipped", http.MethodPost},
+	{"stages/rename", http.MethodPost},
 	{"pause", http.MethodPost},
 	{"resume", http.MethodPost},
 	{"cancel", http.MethodPost},

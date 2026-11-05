@@ -282,19 +282,24 @@ func progressDaysShort(d *float64) string {
 	return fmt.Sprintf("%.1f", *d)
 }
 
-// RenderTrendReply is RenderTrendText with the days asked for and the way the
-// completion range is moving, as the CLI and the comm channels print it.
-func RenderTrendReply(days int, direction string, points []ProgressTrendPoint) string {
+// RenderTrendReply is RenderTrendText with the days asked for, the scope the
+// snapshots were counting and the way the completion range is moving, as the
+// CLI and the comm channels print it. A non-all scope is named.
+func RenderTrendReply(days int, scope, direction string, points []ProgressTrendPoint) string {
 	if direction == "" {
 		direction = ProgressTrendUnknown
 	}
-	return fmt.Sprintf("Progress trend over the last %d days: completion range %s\n%s",
-		days, direction, RenderTrendText(points))
+	head := fmt.Sprintf("Progress trend over the last %d days: completion range %s", days, direction)
+	if scope != "" && scope != progressScopeAll {
+		head += " (scope " + scope + ")"
+	}
+	return head + "\n" + RenderTrendText(points)
 }
 
 // ProgressTrendBody is the body of GET /api/autonomous/progress/trend.
 type ProgressTrendBody struct {
 	Days      int                  `json:"days"`
+	Scope     string               `json:"scope,omitempty"`
 	Points    []ProgressTrendPoint `json:"points"`
 	Direction string               `json:"direction"`
 }

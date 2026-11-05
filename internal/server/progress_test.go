@@ -185,6 +185,89 @@ func TestProgressRESTScopeFilters(t *testing.T) {
 	}
 }
 
+// The repeatable tag parameter: at least one tag by default, every tag with
+// tag_match=all, and an invalid tag_match refused before anything is read.
+func TestProgressRESTRepeatableTagAnyAndAll(t *testing.T) {
+	h := func(d, hr int) time.Time { return time.Date(2026, 10, d, hr, 0, 0, 0, time.UTC) }
+	one := func(id string, tags ...string) *autonomous.PRD {
+		story := autonomous.Story{Tasks: []autonomous.Task{progressTask(id+"-t", autonomous.TaskCompleted, h(10, 9), h(10, 10))}}
+		return &autonomous.PRD{ID: id, Title: id, Status: autonomous.PRDCompleted, CreatedAt: h(10, 8),
+			TagIDs: tags, Kind: autonomous.PRDKindFeature,
+			Story: []autonomous.Story{story}}
+	}
+	prds := []*autonomous.PRD{
+		one("bbbb0001", "web"),
+		one("bbbb0002", "web", "perf"),
+		one("bbbb0003", "perf"),
+		one("bbbb0004"),
+	}
+	s := progressServer(t, &progressFake{prds: prds}, t.TempDir())
+
+	m := decodeProgress(t, progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?tag=web"))
+	if m.Totals.PRDs != 2 || m.Scope != "tag:web" {
+		t.Fatalf("single tag: prds=%d scope=%q, want 2 tag:web", m.Totals.PRDs, m.Scope)
+	}
+	m = decodeProgress(t, progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?tag=web&tag=perf"))
+	if m.Totals.PRDs != 3 || m.Scope != "tags:web,perf" {
+		t.Fatalf("any-of: prds=%d scope=%q, want 3 tags:web,perf", m.Totals.PRDs, m.Scope)
+	}
+	m = decodeProgress(t, progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?tag=web,perf"))
+	if m.Totals.PRDs != 3 || m.Scope != "tags:web,perf" {
+		t.Fatalf("comma form: prds=%d scope=%q, want 3 tags:web,perf", m.Totals.PRDs, m.Scope)
+	}
+	m = decodeProgress(t, progressGet(s.handleAutonomousProgress,
+		"/api/autonomous/progress?tag=web&tag=perf&tag_match=all"))
+	if m.Totals.PRDs != 1 || m.Scope != "tags(all):web,perf" {
+		t.Fatalf("all-of: prds=%d scope=%q, want 1 tags(all):web,perf", m.Totals.PRDs, m.Scope)
+	}
+
+	some := progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?tag=web&tag_match=some")
+	if some.Code != http.StatusBadRequest || !bytes.Contains(some.Body.Bytes(), []byte("tag_match")) {
+		t.Fatalf("invalid tag_match: code=%d body=%s", some.Code, some.Body.String())
+	}
+	some = progressGet(s.handleAutonomousProgress, "/api/autonomous/progress/trend?days=7&tag=web&tag_match=some")
+	if some.Code != http.StatusBadRequest {
+		t.Fatalf("trend invalid tag_match: code=%d body=%s", some.Code, some.Body.String())
+	}
+}
+
+// The trend endpoint says what scope it was counted over, including a tag
+// scope chosen with the same repeatable tag parameters.
+func TestProgressRESTTrendScope(t *testing.T) {
+	store, _, err := autonomous.NewProgressSnapshotStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC)
+	if err := store.RecordDaily(at, autonomous.ProgressMetrics{CompletedPRDs: 2}); err != nil {
+		t.Fatal(err)
+	}
+	s := progressServer(t, &progressFake{snaps: store}, t.TempDir())
+
+	decode := func(target string) struct {
+		Scope string `json:"scope"`
+	} {
+		rec := progressGet(s.handleAutonomousProgressTrend, target)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: code=%d body=%s", target, rec.Code, rec.Body.String())
+		}
+		var out struct {
+			Scope string `json:"scope"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	if got := decode("/api/autonomous/progress/trend?days=7").Scope; got != "all" {
+		t.Fatalf("untagged trend scope = %q, want all", got)
+	}
+	if got := decode("/api/autonomous/progress/trend?days=7&tag=web&tag=perf&tag_match=all").Scope; got != "tags(all):web,perf" {
+		t.Fatalf("tagged trend scope = %q, want tags(all):web,perf", got)
+	}
+}
+
 func TestProgressRESTSinceAndUntil(t *testing.T) {
 	s := progressServer(t, &progressFake{prds: progressPRDs()}, t.TempDir())
 
@@ -411,7 +494,10 @@ func TestProgressRESTTrendFromSeededSnapshots(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &keys); err != nil {
 		t.Fatal(err)
 	}
-	if len(keys) != 3 {
-		t.Fatalf("want exactly days, points and direction, got %v", keys)
+	if len(keys) != 4 {
+		t.Fatalf("want exactly days, scope, points and direction, got %v", keys)
+	}
+	if scope := string(keys["scope"]); scope != `"all"` {
+		t.Fatalf("an untagged trend reports its scope, got %s", scope)
 	}
 }

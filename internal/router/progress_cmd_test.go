@@ -98,7 +98,7 @@ func TestProgressCommReplyIsTheRenderedText(t *testing.T) {
 			t.Errorf("reply lacks the line %q\nreply:\n%s", line, got)
 		}
 	}
-	for _, k := range []string{"automation_id=a1", "tag_id=t1", "since=2026-10-01", "until=2026-10-20"} {
+	for _, k := range []string{"automation_id=a1", "tag=t1", "since=2026-10-01", "until=2026-10-20"} {
 		if !strings.Contains(query, k) {
 			t.Errorf("query %q lacks %s", query, k)
 		}

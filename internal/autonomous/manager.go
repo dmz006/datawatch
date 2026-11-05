@@ -1263,6 +1263,12 @@ type Manager struct {
 	// Guarded by mu.
 	tagEventFn   func(TagEvent)
 	defectIntake DefectIntake
+	// autoTagsDaemon supplies the daemon-level autonomous.auto_tags block
+	// that the engine-tag sync resolves against (auto_tags.go). Wired by
+	// the server at call time so a live config change takes effect on the
+	// next sync; nil = the block's defaults (auto tagging on). Guarded by
+	// mu.
+	autoTagsDaemon func() config.AutoTagsConfig
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
 	// mergeRunStore is the merge pipeline run history, opened on first use.
@@ -7045,6 +7051,18 @@ func (m *Manager) SetPRDKind(prdID, kind string) error {
 			return true
 		})
 		if !errors.Is(err, ErrPRDStale) {
+			if err == nil {
+				// Engine tags (auto_tags.go): the kind label may have
+				// moved, so the owning Automation's sync runs now; a
+				// same-label change is a no-op there.
+				if prd, ok := m.store.GetPRD(prdID); ok && m.automations != nil {
+					if a := m.AutomationForPRD(prd); a != nil {
+						if serr := m.syncAutoTags(a); serr != nil {
+							return serr
+						}
+					}
+				}
+			}
 			return err
 		}
 	}

@@ -333,6 +333,8 @@ An empty tag list clears an Automaton's or a session's own tags.
 
 ## Next steps
 
+- [automata-auto-tags](automata-auto-tags.md) — the automation, stage and kind
+  tags the daemon keeps on every Automaton, and the filters they power.
 - [automata-tag-registry](automata-tag-registry.md) — one tag registry across
   federated daemons, the keeper, stale copies and merge notes.
 - [autonomous-planning](autonomous-planning.md) — create and run Automata.

@@ -310,6 +310,15 @@ func TestProgressEngineScopeFilters(t *testing.T) {
 	if m.Totals.PRDs != 2 || m.Scope != "tag:t2" {
 		t.Fatalf("tag scope: prds=%d scope=%q", m.Totals.PRDs, m.Scope)
 	}
+	// Several tags: at least one by default, all of them with the all rule.
+	m = run(func(o *ProgressOptions) { o.TagIDs = []string{"t2", "t1"} })
+	if m.Totals.PRDs != 3 || m.Scope != "tags:t2,t1" {
+		t.Fatalf("any-of tags scope: prds=%d scope=%q, want 3 tags:t2,t1", m.Totals.PRDs, m.Scope)
+	}
+	m = run(func(o *ProgressOptions) { o.TagIDs = []string{"t2", "t1"}; o.TagMatch = TagMatchAll })
+	if m.Totals.PRDs != 1 || m.Scope != "tags(all):t2,t1" {
+		t.Fatalf("all-of tags scope: prds=%d scope=%q, want 1 tags(all):t2,t1", m.Totals.PRDs, m.Scope)
+	}
 	m = run(func(o *ProgressOptions) { o.AutomationID = "auto-2"; o.TagID = "t2" })
 	if m.Totals.PRDs != 1 {
 		t.Fatalf("both filters: prds=%d, want 1", m.Totals.PRDs)

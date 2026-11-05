@@ -3179,7 +3179,7 @@ function _sessionsFetchPage(cursor, server) {
   const timer = setTimeout(() => { if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } } }, 15000);
   // History on asks for the archive too; finished sessions older than the
   // window are in the live list and come back through the same paging.
-  const q = _sessionsProxyPrefix(server) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (state.showHistory ? '&history=1' : '') + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  const q = _sessionsProxyPrefix(server) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (state.showHistory ? '&history=1' : '') + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '') + (_tagFilterQuery('session') ? '&' + _tagFilterQuery('session') : '');
   const init = { headers: tokenHeader() };
   if (ac) init.signal = ac.signal;
   return fetch(q, init).then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))).then(data => {
@@ -18285,6 +18285,15 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
     { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
     { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
+    // Automatic tags — the tags datawatch gives every Automaton for its
+    // Automation, stage and kind. The templates may use {automation},
+    // {stage} and {kind}; kind_labels is a "kind:label" comma list.
+    { label: 'Automatic tags', labelKey: 'settings_auto_tags_group', type: 'group', hintKey: 'settings_auto_tags_group_help' },
+    { key: 'autonomous.auto_tags.enabled', label: 'Tag Automata automatically (automation, stage and kind)', labelKey: 'settings_auto_tags_enabled', type: 'toggle', default: true },
+    { key: 'autonomous.auto_tags.automation_template', label: 'Automation tag template', labelKey: 'settings_auto_tags_automation_template', type: 'text', placeholder: 'automation:{automation}', default: 'automation:{automation}' },
+    { key: 'autonomous.auto_tags.stage_template', label: 'Stage tag template', labelKey: 'settings_auto_tags_stage_template', type: 'text', placeholder: 'stage:{stage}', default: 'stage:{stage}' },
+    { key: 'autonomous.auto_tags.kind_template', label: 'Kind tag template', labelKey: 'settings_auto_tags_kind_template', type: 'text', placeholder: 'kind:{kind}', default: 'kind:{kind}' },
+    { key: 'autonomous.auto_tags.kind_labels', label: 'Kind labels (kind:label, comma-separated)', labelKey: 'settings_auto_tags_kind_labels', type: 'text', placeholder: 'feature:feature, bug:bug, other:maintenance', default: 'feature:feature, bug:bug, other:maintenance' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -19066,6 +19075,15 @@ function _priorityByKindTableText(val) {
     .join(', ');
 }
 
+// settingsValueText renders a config value as the text a Settings input
+// holds: a list joins with commas, a mapping becomes "key:value" pairs (the
+// form the daemon accepts back), anything else is its string.
+function settingsValueText(val) {
+  if (Array.isArray(val)) return val.join(', ');
+  if (val && typeof val === 'object') return Object.keys(val).map(k => k + ':' + val[k]).join(', ');
+  return String(val);
+}
+
 function loadGeneralConfig() {
   // Settings-tab federation pass (2026-10-08): all three were raw,
   // non-proxy-aware fetch()es with a silently-swallowed failure.
@@ -19091,6 +19109,8 @@ function loadGeneralConfig() {
             const rest = f.key.slice('autonomous.supervisor_loop.'.length);
             if (blk && blk[rest] !== undefined) val = blk[rest];
           }
+          // A toggle the config does not report takes its declared default.
+          if (val === '' && f.type === 'toggle' && f.default !== undefined) val = f.default;
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
           // calls baked into f.label ran before the bundle was fetched and
@@ -19466,7 +19486,7 @@ function loadGeneralConfig() {
             // the effective zone as placeholder and note the source — saving
             // the server's zone into the config would pin it.
             let defVal = (val !== '' && val !== undefined)
-              ? (Array.isArray(val) ? val.join(', ') : String(val))
+              ? settingsValueText(val)
               : (f.default !== undefined ? String(f.default) : '');
             const txtOnchange = f.onchange || `saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})`;
             let zPlaceholder = (f.placeholder || '');
@@ -30169,7 +30189,10 @@ window.paintProgressCard = function() {
   if (!slot) return;
   const onTab = _automataState && _automataState.tab === 'automation';
   slot.style.display = onTab ? 'block' : 'none';
-  if (onTab) slot.innerHTML = window.progressCardHtml(window._progressCardState);
+  if (onTab) {
+    slot.innerHTML = '<div id="progressCardTagFilter" class="progress-card-tag-filter"></div>' + window.progressCardHtml(window._progressCardState);
+    _tagFilterMount('progress', 'progressCardTagFilter');
+  }
 };
 
 // loadProgressCard fetches the metrics (and, best effort, the trend) through
@@ -30186,8 +30209,8 @@ window.loadProgressCard = function(force) {
   S.attemptedAt = t0;
   if (!S.data) { S.status = 'loading'; S.error = ''; window.paintProgressCard(); }
   const p = Promise.all([
-    apiFetch('/api/autonomous/progress'),
-    apiFetch('/api/autonomous/progress/trend?days=14').catch(() => null),
+    apiFetch(_tagFilterAppend('/api/autonomous/progress', 'progress')),
+    apiFetch(_tagFilterAppend('/api/autonomous/progress/trend?days=14', 'progress')).catch(() => null),
   ]).then(([data, trend]) => {
     if (!data || typeof data !== 'object') throw new Error(t('progress_card_not_measured'));
     S.data = data; S.status = 'ok'; S.error = ''; S.fetchedAt = Date.now();
@@ -34756,6 +34779,7 @@ function _automationMemberCardHTML(m, c, active, actions) {
     + '<span class="automation-dot"></span>'
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
+    + _automationMemberStageHTML(m)
     + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
     + heldBadge + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
 }
@@ -35320,7 +35344,7 @@ function automationControl(id, op, body) {
     expected_version: st.detail ? st.detail.version : 0,
     actor: 'operator',
   });
-  const path = '/api/automations/' + encodeURIComponent(id) + '/' + encodeURIComponent(op);
+  const path = '/api/automations/' + encodeURIComponent(id) + '/' + String(op).split('/').map(encodeURIComponent).join('/');
   return automationRequest('POST', path, payload).then(data => {
     if (data && typeof data === 'object' && st.detailId === id) {
       st.detail = data;
@@ -35618,6 +35642,47 @@ function openAutomationSkipDialog(memberId) {
 }
 window.openAutomationSkipDialog = openAutomationSkipDialog;
 
+// ── Member stage ─────────────────────────────────────────────────────────────
+// A member's stage is a short operator label (1 to 64 characters). The card
+// shows it as a chip with a Rename stage action that renames the stage on every
+// member that carries it, in place.
+
+const _AUTOMATION_STAGE_MAX = 64;
+const _AUTOMATION_STAGE_RENAME_STATUSES = ['draft', 'active', 'paused', 'blocked'];
+
+// _automationMemberStageHTML is the stage chip and Rename stage button of a
+// member card; empty for a member without a stage.
+function _automationMemberStageHTML(m) {
+  const stage = String((m && m.stage) || '');
+  if (!stage) return '';
+  const detail = _automationState.detail;
+  const canRename = !detail || _AUTOMATION_STAGE_RENAME_STATUSES.includes(String(detail.status || ''));
+  const btn = canRename
+    ? `<button type="button" class="automation-member-action-btn automation-stage-rename-btn" data-op="rename_stage" data-stage="${escHtml(stage)}" onclick="event.stopPropagation(); openAutomationRenameStageDialog(this.getAttribute('data-stage'))">${escHtml(t('automation_rename_stage'))}</button>`
+    : '';
+  return `<span class="automation-chip automation-member-stage" title="${escHtml(t('automation_stage_label'))}">${escHtml(stage)}</span>${btn}`;
+}
+
+// openAutomationRenameStageDialog asks for the new name of a stage, then renames
+// the stage on every member that carries it.
+function openAutomationRenameStageDialog(from) {
+  const id = _automationCurrentId();
+  showModal({
+    title: t('automation_rename_stage') + ' — ' + from,
+    body: `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t('automation_rename_stage_to'))}</span>`
+      + `<input type="text" id="automationRenameStageTo" class="automation-dialog-input" maxlength="${_AUTOMATION_STAGE_MAX}" style="width:100%;" value="${escHtml(from)}"></label>`,
+    confirmLabel: t('automation_rename_stage'),
+    onConfirm: () => {
+      const to = _automationFieldValue('automationRenameStageTo').trim();
+      if (!to || to === from) return false;
+      if (to.length > _AUTOMATION_STAGE_MAX) { showToast(t('automation_stage_too_long', [_AUTOMATION_STAGE_MAX]), 'error'); return false; }
+      automationControl(id, 'stages/rename', { from, to });
+      return true;
+    },
+  });
+}
+window.openAutomationRenameStageDialog = openAutomationRenameStageDialog;
+
 // automationRemoveMember confirms, then removes a member that has not started.
 function automationRemoveMember(memberId) {
   const id = _automationCurrentId();
@@ -35904,9 +35969,12 @@ const _automationForm = {
   forkRule: 'all_must_succeed',
   nestedChild: '',
   defaultsEdited: false,
+  autoTagsEdited: false,
 };
 
-const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason'];
+const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason', 'stage'];
+// The member kinds that carry no stage: the graph's own fork and join nodes.
+const _AUTOMATION_FORM_NO_STAGE_KINDS = ['fork', 'join'];
 // The member fields only one kind may carry.
 const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join' };
 const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
@@ -36149,7 +36217,8 @@ function buildAutomationFormPayload(formState) {
       if (kind === 'prd') out.prd_id = m.prd_id || '';
       _AUTOMATION_FORM_MEMBER_KEEP.forEach(k => {
         if (k in _AUTOMATION_FORM_KIND_FIELDS && _AUTOMATION_FORM_KIND_FIELDS[k] !== kind) return;
-        const v = m[k];
+        if (k === 'stage' && _AUTOMATION_FORM_NO_STAGE_KINDS.includes(kind)) return;
+        const v = k === 'stage' ? String(m[k] || '').trim() : m[k];
         if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
       });
       if (kind === 'join' && !out.on_branch_failure) out.on_branch_failure = _AUTOMATION_JOIN_RULES[0];
@@ -36172,6 +36241,9 @@ function buildAutomationFormPayload(formState) {
     if (f.budgetPolicy) body.budget_policy = f.budgetPolicy;
     else delete body.budget_policy;
   }
+  // The auto-tags override goes only once the operator touched it; left out,
+  // the Automation keeps the setting it has.
+  if (f.autoTags && typeof f.autoTags === 'object') body.auto_tags = f.autoTags;
   body.actor = 'operator';
   if (f.expectedVersion !== undefined && f.expectedVersion !== null) body.expected_version = Number(f.expectedVersion);
   const reason = String(f.reason || '').trim();
@@ -36249,6 +36321,54 @@ function _automationBudgetSectionHTML(policy) {
     <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('prd_new_backend_label'))}</span>${renderBackendSelect('automationBudgetBackend', p.backend || '', '')}</label>
   </details>`;
 }
+
+// ── Auto-tags override ──────────────────────────────────────────────────────
+// An Automation may override the daemon's autonomous.auto_tags block: an
+// on/off choice (inherit, on, off) and the three tag templates. An empty
+// template inherits the daemon's. Nothing is sent until a field is touched.
+
+const _AUTOMATION_AUTO_TAG_TEMPLATES = [
+  ['automation_template', 'automation_auto_tags_automation_template', 'automation:{automation}'],
+  ['stage_template', 'automation_auto_tags_stage_template', 'stage:{stage}'],
+  ['kind_template', 'automation_auto_tags_kind_template', 'kind:{kind}'],
+];
+
+function _automationAutoTagsSectionHTML(override) {
+  const o = override || {};
+  const mode = o.enabled === true ? 'on' : (o.enabled === false ? 'off' : 'inherit');
+  const modeLabels = { inherit: 'automation_auto_tags_mode_inherit', on: 'automation_auto_tags_mode_on', off: 'automation_auto_tags_mode_off' };
+  const modeOpts = Object.keys(modeLabels).map(v =>
+    `<option value="${v}"${v === mode ? ' selected' : ''}>${escHtml(t(modeLabels[v]))}</option>`).join('');
+  const fields = _AUTOMATION_AUTO_TAG_TEMPLATES.map(([key, labelKey, placeholder]) =>
+    `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t(labelKey))}</span>`
+    + `<input type="text" class="form-input" id="automationAutoTags_${key}" data-auto-tag-field="${key}" value="${escHtml(String(o[key] || ''))}" placeholder="${escHtml(placeholder)}"></label>`).join('');
+  const hasOverride = o.enabled === true || o.enabled === false || _AUTOMATION_AUTO_TAG_TEMPLATES.some(([k]) => o[k]);
+  return `<details id="automationFormAutoTags" class="automation-form-collapsible"${hasOverride ? ' open' : ''} onchange="automationFormAutoTagsChanged()" oninput="automationFormAutoTagsChanged()">`
+    + `<summary class="automation-form-section">${escHtml(t('automation_auto_tags_section'))}</summary>`
+    + `<div class="automation-form-hint" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_auto_tags_hint'))}</div>`
+    + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_auto_tags_mode'))}</span>`
+    + `<select id="automationAutoTags_enabled" class="form-input">${modeOpts}</select></label>${fields}</details>`;
+}
+
+function automationFormAutoTagsChanged() {
+  _automationForm.autoTagsEdited = true;
+}
+window.automationFormAutoTagsChanged = automationFormAutoTagsChanged;
+
+// automationReadAutoTags collects the override: enabled only when the choice
+// is on or off, and each template only when filled in.
+function automationReadAutoTags() {
+  const out = {};
+  const mode = _automationFieldValue('automationAutoTags_enabled');
+  if (mode === 'on') out.enabled = true;
+  else if (mode === 'off') out.enabled = false;
+  _AUTOMATION_AUTO_TAG_TEMPLATES.forEach(([key]) => {
+    const v = _automationFieldValue('automationAutoTags_' + key).trim();
+    if (v) out[key] = v;
+  });
+  return out;
+}
+window.automationReadAutoTags = automationReadAutoTags;
 
 // automationFormDefaultsChanged notes that a model or budget field was
 // touched, and shows the estimate hint while the ceiling is a share of the
@@ -36439,6 +36559,30 @@ function _automationFormJoinRuleHTML(m, editable) {
     + `<select class="automation-form-edge-select" data-join-rule="true" onchange="automationFormSetJoinRule('${escJsAttr(m.id)}',this.value)">${opts}</select></label>`;
 }
 
+// _automationFormStageHTML draws the Stage field of one member: an input while
+// the member can still be edited, the label alone once it cannot, and nothing
+// for a fork or join (they carry no stage).
+function _automationFormStageHTML(m, editable) {
+  const kind = String(m.kind || 'prd');
+  if (_AUTOMATION_FORM_NO_STAGE_KINDS.includes(kind)) return '';
+  const label = escHtml(t('automation_stage_label'));
+  const stage = String(m.stage || '');
+  if (!editable) {
+    return stage
+      ? `<div class="automation-form-member-stage"><span class="automation-form-label">${label}</span> <span class="automation-chip automation-member-stage">${escHtml(stage)}</span></div>`
+      : '';
+  }
+  return `<label class="automation-form-field automation-form-member-stage"><span class="automation-form-label">${label}</span>`
+    + `<input type="text" class="form-input automation-form-stage-input" maxlength="64" data-stage-for="${escHtml(m.id)}" value="${escHtml(stage)}" placeholder="${escHtml(t('automation_stage_placeholder'))}" oninput="automationFormSetStage('${escJsAttr(m.id)}',this.value)"></label>`;
+}
+
+// automationFormSetStage records the Stage typed on one member row.
+function automationFormSetStage(memberId, value) {
+  const m = _automationForm.members.find(x => x.id === memberId);
+  if (m) m.stage = String(value == null ? '' : value);
+}
+window.automationFormSetStage = automationFormSetStage;
+
 // _automationFormMemberRowHTML draws one member. opts.branch marks a branch
 // row: it sits under its fork and has no edges and no buttons of its own.
 function _automationFormMemberRowHTML(m, opts) {
@@ -36488,6 +36632,7 @@ function _automationFormMemberRowHTML(m, opts) {
   return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-readonly="${!editable}">`
     + `<div class="automation-form-member-head"><span class="automation-member-title">${escHtml(_automationFormMemberTitle(m))}</span>`
     + `${kindChip}<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
+    + _automationFormStageHTML(m, editable)
     + (edges ? `<div class="automation-form-member-edges">${edges}</div>` : '')
     + (ops.length ? `<div class="automation-member-actions">${ops.join('')}</div>` : '')
     + '</div>';
@@ -36603,6 +36748,7 @@ function _automationFormHTML() {
     ${editsMembers ? `<div id="automationFormPanel" class="automation-form-panel-host">${_automationFormPanelHTML()}</div>` : ''}
     ${_automationModelsSectionHTML(f.source)}
     ${_automationBudgetSectionHTML(f.source && f.source.budget_policy)}
+    ${_automationAutoTagsSectionHTML(f.source && f.source.auto_tags)}
     <div class="automation-form-buttons">
       <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
       ${editsMembers ? `<button type="button" class="btn-secondary" data-op="add_fork" onclick="automationFormOpenPanel('fork')">${escHtml(t('automation_add_fork'))}</button>
@@ -36649,6 +36795,7 @@ function openAutomationForm(automation) {
   f.forkRule = _AUTOMATION_JOIN_RULES[0];
   f.nestedChild = '';
   f.defaultsEdited = false;
+  f.autoTagsEdited = false;
   // The detail dialogs (insert, remove, edges) and the stale prompt act on
   // the open Automation.
   if (src && src.id) {
@@ -36926,6 +37073,7 @@ function saveAutomationForm() {
     formState.modelDefaults = automationReadModelDefaults();
     formState.budgetPolicy = budget;
   }
+  if (f.autoTagsEdited) formState.autoTags = automationReadAutoTags();
   const payload = buildAutomationFormPayload(formState);
   _automationFormShowError('');
   f.saving = true;
@@ -42558,10 +42706,29 @@ function _dashFetchPRDs() {
   const isAllServers = state.activeServer === 'all';
   // Single server: the summary list narrowed to the three statuses kept below
   // (the all-servers aggregate has no summary or filter form).
-  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500').then(d => {
+  return apiFetch(_tagFilterAppend(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500', 'dashboard')).then(d => {
     const list = Array.isArray(d) ? d : ((d && d.prds) || []);
-    _dash._prds = list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+    _dash._prds = _dashTagFilter(list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning'));
   });
+}
+
+// _dashTagFilter keeps the Automata that pass the dashboard tag selection (the
+// server already narrowed the list; this covers an aggregate that ignores it).
+function _dashTagFilter(list) {
+  const sc = _tagBrowse.dashboard;
+  if (!sc.sel.length) return list;
+  const tree = _tagBrowseTree(_tagsState.list);
+  const ids = sc.sel.filter(id => tree.byId[id]);
+  if (!ids.length) return list;
+  const mode = _tagBrowseMode('dashboard');
+  return list.filter(p => _tagBrowseMatches(_tagBrowseItemSet(p, tree), ids, mode));
+}
+
+// _dashTagFilterChanged refetches the dashboard's Automata for a new selection
+// and redraws the control.
+function _dashTagFilterChanged() {
+  _tagFilterMount('dashboard', 'dashTagFilter');
+  return _dashFetchPRDs().catch(e => _dashSetFedError('prds', e));
 }
 
 function _dashFetchCost() {
@@ -42606,6 +42773,7 @@ function renderDashboardView() {
         <button id="dashEditBtn" onclick="window._dashStartEdit()" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--text2);font-size:10px;padding:2px 8px;cursor:pointer;margin-left:4px;">✎ Edit</button>
       </div>
       <div id="dashFedErrorBanner"></div>
+      <div id="dashTagFilter" class="dboard-tag-filter"></div>
       <div class="dboard-card-grid" id="dashCardGrid">
         <div style="grid-column:1/-1;text-align:center;padding:40px 16px;">${loadingEyeBlock(null, 'panel')}</div>
       </div>
@@ -42625,6 +42793,8 @@ function renderDashboardView() {
     </div>
   `;
 
+  _tagFilterMount('dashboard', 'dashTagFilter');
+
   // BL317 — "all servers" mode: the _automataState.allPrds cache is
   // populated from the single-server /api/autonomous/prds fetch
   // elsewhere, so it's bypassed here and _dashFetchPRDs() always hits
@@ -42632,7 +42802,7 @@ function renderDashboardView() {
   // _dashFetchCost (shared with the periodic re-fetch in _dashLoop).
   const prdData = state.activeServer === 'all' ? null : _automataState.allPrds;
   if (prdData && prdData.length > 0) {
-    _dash._prds = prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
+    _dash._prds = _dashTagFilter(prdData.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning'));
   } else {
     // Coordinator-flagged (2026-10-08), extended 2026-10-08: Dashboard's
     // many cards all poll silently and swallow errors by design
@@ -45044,7 +45214,7 @@ function toggleTagsMenu() {
 // watch and tag-edit actions for that session.
 function _tagsMenuHTML() {
   const watched = `<label class="tags-menu-row"><input type="checkbox" ${state.sessionWatchFilter ? 'checked' : ''} onchange="toggleSessionWatchFilter()"><span>${escHtml(t('tags_menu_watched_only'))}</span></label>`;
-  const rows = _tagMultiRowsHTML('session');
+  const rows = _tagFilterRowsHTML('session');
   const list = rows
     ? `<div class="tags-menu-list">${rows}</div>`
     : `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
@@ -45625,6 +45795,8 @@ const _tagBrowse = {
   automata: _tagBrowseLoad('automata'),
   automation: _tagBrowseLoad('automation'),
   session: _tagBrowseLoad('session'),
+  progress: _tagBrowseLoad('progress'),
+  dashboard: _tagBrowseLoad('dashboard'),
   cfg: { defaultMode: 'any', directCounts: false, defaultView: 'auto', attentionStatuses: ['blocked', 'needs_review', 'paused'], loaded: false },
   layout: '',
 };
@@ -46076,6 +46248,86 @@ function _tagBrowseBodyHTML(scope, items, base, renderTile, emptyHtml) {
 
 // ── Facets and the filter bar ────────────────────────────────────────────────
 
+// The tag filter control shared by the session list, the Progress card and the
+// dashboard. Tags the daemon applies itself are named automation:<name>,
+// stage:<name> and kind:<name>; the control lists each of those three kinds as
+// its own group, then every other tag in tree order.
+const _TAG_FILTER_AUTO_GROUPS = ['automation', 'stage', 'kind'];
+// The heading of each group (literal keys, so the locale scan sees them).
+const _TAG_FILTER_GROUP_KEYS = { automation: 'tag_filter_group_automation', stage: 'tag_filter_group_stage', kind: 'tag_filter_group_kind', other: 'tag_filter_group_other' };
+
+// _tagFilterGroupOf names the group a tag is listed under.
+function _tagFilterGroupOf(tag) {
+  const name = String((tag && tag.name) || '');
+  const i = name.indexOf(':');
+  const prefix = i > 0 ? name.slice(0, i) : '';
+  return _TAG_FILTER_AUTO_GROUPS.includes(prefix) ? prefix : 'other';
+}
+
+// _tagFilterRowsHTML draws the checkbox rows of a scope grouped by
+// _tagFilterGroupOf, each non-empty group under its heading.
+function _tagFilterRowsHTML(scope, counts) {
+  const sc = _tagBrowse[scope];
+  const groups = {};
+  _tagTreeOrder(_tagsState.list).forEach(({ tag, depth }) => {
+    const g = _tagFilterGroupOf(tag);
+    (groups[g] = groups[g] || []).push({ tag, depth: g === 'other' ? depth : 0 });
+  });
+  return _TAG_FILTER_AUTO_GROUPS.concat(['other']).filter(g => groups[g]).map(g => {
+    const rows = groups[g].map(({ tag, depth }) => {
+      const count = counts ? `<span class="tag-facet-count">${counts[tag.id] || 0}</span>` : '';
+      const lock = tag.system ? '<span class="tag-system-mark" aria-hidden="true">&#128274;</span>' : '';
+      return `<label class="tag-multi-row" style="padding-left:${depth * 14}px;"><input type="checkbox" value="${escHtml(tag.id)}" ${sc.sel.includes(tag.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('${escJsAttr(scope)}','${escJsAttr(tag.id)}',this.checked)"><span class="tag-multi-name">${escHtml(tag.name)}</span>${lock}${count}</label>`;
+    }).join('');
+    return `<div class="tag-filter-group" data-tag-group="${g}"><div class="tag-filter-group-head">${escHtml(_tagT(_TAG_FILTER_GROUP_KEYS[g], g))}</div>${rows}</div>`;
+  }).join('');
+}
+
+// _tagFilterQuery is the query string a scope's selection sends: one tag
+// parameter per selected tag and the match mode. Empty with nothing selected.
+function _tagFilterQuery(scope) {
+  const sc = _tagBrowse[scope];
+  if (!sc || !sc.sel.length) return '';
+  const parts = sc.sel.map(id => 'tag=' + encodeURIComponent(id));
+  parts.push('tag_match=' + _tagBrowseMode(scope));
+  return parts.join('&');
+}
+
+// _tagFilterAppend adds a scope's tag query to a request path.
+function _tagFilterAppend(path, scope) {
+  const q = _tagFilterQuery(scope);
+  if (!q) return path;
+  return path + (path.indexOf('?') >= 0 ? '&' : '?') + q;
+}
+
+// _tagFilterControlHTML draws the filter for a scope: a summary with the
+// selection count, the grouped rows, the ANY/ALL toggle and a Clear button.
+function _tagFilterControlHTML(scope) {
+  const sc = _tagBrowse[scope];
+  const sj = escJsAttr(scope);
+  const rows = _tagFilterRowsHTML(scope);
+  const body = rows || `<div class="tag-multi-empty">${escHtml(t('tags_menu_no_tags'))}</div>`;
+  const mode = _tagBrowseMode(scope);
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const modeBtn = `<button type="button" class="tag-mode-btn" data-op="tag_filter_mode" aria-pressed="${mode === 'all'}" title="${escHtml(t('tag_browse_mode_title'))}" onclick="tagBrowseToggleMode('${sj}')">${escHtml(modeLabel)}</button>`;
+  const clearBtn = sc.sel.length
+    ? `<button type="button" class="tags-menu-btn" data-op="tag_filter_clear" onclick="tagBrowseClear('${sj}')">${escHtml(t('tags_menu_clear'))}</button>`
+    : '';
+  return `<details class="tag-multi tag-filter-control" data-tag-filter="${escHtml(scope)}"><summary class="tag-multi-summary">${escHtml(t('tag_browse_filter_tags'))}${sc.sel.length ? ` (${sc.sel.length})` : ''}</summary><div class="tag-multi-list">${body}</div><div class="tags-menu-actions">${modeBtn}${clearBtn}</div></details>`;
+}
+
+// _tagFilterMount draws a scope's control into the element with that id,
+// loading the registry first when it is not loaded yet.
+function _tagFilterMount(scope, elId) {
+  return _tagsLoad().then(() => {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const open = !!el.querySelector('details[open]');
+    el.innerHTML = _tagFilterControlHTML(scope);
+    if (open) { const d = el.querySelector('details'); if (d) d.open = true; }
+  });
+}
+
 // _tagMultiRowsHTML draws one checkbox row per tag in tree order, indented by depth
 // and checked from the scope's selection. counts, when given, adds each tag's count.
 // The list facet dropdowns and the header Tags menu both draw their rows with it.
@@ -46185,8 +46437,12 @@ function _tagBrowseRepaint(scope) {
   if (scope === 'session') {
     renderSessionsView();
     _tagsMenuRefresh();
+    // The server applies the same filter to the list it pages.
+    try { Promise.resolve(loadSessionsList()).catch(() => {}); } catch (_) { /* list not loadable here */ }
     return;
   }
+  if (scope === 'progress') { loadProgressCard(true); return; }
+  if (scope === 'dashboard') { _dashTagFilterChanged(); return; }
   if (scope === 'automation') _automationRenderCards();
   else _automataRenderCards();
   _tagFacetsRefresh(scope);
@@ -46383,6 +46639,17 @@ function _tagPendingBadgeHTML(tg) {
 
 // _tagRegistryNotesHTML lists the merge and removal notes, each with a Dismiss
 // button. A note names a tag, so the whole line is escaped like every other value.
+// _tagSystemLockedText is the tooltip on a system tag's disabled controls.
+function _tagSystemLockedText() {
+  return _tagT('tag_system_locked', 'A system tag: datawatch keeps its name and parent, and it cannot be deleted');
+}
+
+// _tagSystemBadgeHTML marks a system tag with a lock; empty for any other tag.
+function _tagSystemBadgeHTML(tag) {
+  if (!tag || !tag.system) return '';
+  return `<span class="tag-system-badge" title="${escHtml(_tagSystemLockedText())}">&#128274; ${escHtml(_tagT('tag_system_badge', 'system'))}</span>`;
+}
+
 function _tagRegistryNotesHTML(reg) {
   const notes = (reg && reg.notes) || [];
   if (!_tagRegistryActive(reg) || !notes.length) return '';
@@ -46614,13 +46881,15 @@ function loadAutomataTagRegistryPanel() {
     const ctl = label => ` title="${escHtml(blocked ? _tagRegistryPausedText() : label)}"${dis}`;
     const rows = _tagTreeOrder(tags).map(({ tag, depth }) => {
       const idJ = escHtml(JSON.stringify(tag.id));
+      // A system tag keeps its name, parent and life: only its color changes.
+      const lock = label => tag.system ? ` title="${escHtml(_tagSystemLockedText())}" disabled` : ctl(label);
       return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;padding-left:${depth * 18}px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
         <input type="color" class="tag-registry-control" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;"${ctl(_tagT('tag_color', 'Color'))} onchange="automataTagUpdate(${idJ},{color:this.value})">
-        <input type="text" class="tag-registry-control" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;"${ctl(_tagT('tag_rename', 'Rename'))} onchange="automataTagUpdate(${idJ},{name:this.value})">
-        ${_tagPendingBadgeHTML(tag)}
-        <select class="tag-registry-control" style="${inp}max-width:150px;"${ctl(_tagT('tag_parent', 'Parent'))} onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
+        <input type="text" class="tag-registry-control" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;"${lock(_tagT('tag_rename', 'Rename'))} onchange="automataTagUpdate(${idJ},{name:this.value})">
+        ${_tagSystemBadgeHTML(tag)}${_tagPendingBadgeHTML(tag)}
+        <select class="tag-registry-control" style="${inp}max-width:150px;"${lock(_tagT('tag_parent', 'Parent'))} onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
         <span style="font-size:11px;opacity:0.6;">${tag.count || 0}${_tagStaleMarkHTML()}</span>
-        <button class="btn-secondary tag-registry-control" style="font-size:11px;padding:2px 8px;color:var(--error);"${ctl(_tagT('tag_delete', 'Delete'))} onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
+        <button class="btn-secondary tag-registry-control" style="font-size:11px;padding:2px 8px;color:var(--error);"${lock(_tagT('tag_delete', 'Delete'))} onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
       </div>`;
     }).join('');
     const empty = `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(_tagT('tag_registry_empty', 'No tags defined yet.'))}</div>`;

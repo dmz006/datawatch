@@ -785,6 +785,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationResume(), tracked(s.handleAutomationResume))
 	mcpSrv.AddTool(s.toolAutomationCancel(), tracked(s.handleAutomationCancel))
 	mcpSrv.AddTool(s.toolAutomationSkipMember(), tracked(s.handleAutomationSkipMember))
+	mcpSrv.AddTool(s.toolAutomationRenameStage(), tracked(s.handleAutomationRenameStage))
 	mcpSrv.AddTool(s.toolAutomationInsertMember(), tracked(s.handleAutomationInsertMember))
 	mcpSrv.AddTool(s.toolAutomationRemoveMember(), tracked(s.handleAutomationRemoveMember))
 	mcpSrv.AddTool(s.toolAutomationReorderEdges(), tracked(s.handleAutomationReorderEdges))
@@ -1500,6 +1501,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationResume, "automation_resume"},
 		{s.toolAutomationCancel, "automation_cancel"},
 		{s.toolAutomationSkipMember, "automation_skip_member"},
+		{s.toolAutomationRenameStage, "automation_rename_stage"},
 		{s.toolAutomationInsertMember, "automation_insert_member"},
 		{s.toolAutomationRemoveMember, "automation_remove_member"},
 		{s.toolAutomationReorderEdges, "automation_reorder_edges"},
@@ -1735,6 +1737,13 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("since",
 			mcpsdk.Description("Only sessions updated after this time (RFC3339 or unix seconds). Always JSON."),
+		),
+		mcpsdk.WithArray("tags",
+			mcpsdk.WithStringItems(),
+			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags and the tags it inherits from the Automaton that spawned it both count."),
+		),
+		mcpsdk.WithString("tag_match",
+			mcpsdk.Description("any (default): the session needs at least one of tags; all: every tag in tags."),
 		),
 	)
 }
@@ -2115,10 +2124,12 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 
 	// BL361 — structured filter params.
 	filter := session.SessionFilter{
-		Name:    req.GetString("name", ""),
-		State:   req.GetString("state", ""),
-		Backend: req.GetString("backend", ""),
-		Alive:   req.GetString("alive", ""),
+		Name:     req.GetString("name", ""),
+		State:    req.GetString("state", ""),
+		Backend:  req.GetString("backend", ""),
+		Alive:    req.GetString("alive", ""),
+		Tags:     req.GetStringSlice("tags", nil),
+		TagMatch: req.GetString("tag_match", ""),
 	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 

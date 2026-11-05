@@ -332,14 +332,18 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | Parameter | Required | Description |
   |---|---|---|
   | `automation_id` | no | Count only the Automata of this Automation |
-  | `tag_id` | no | Count only the Automata carrying this tag |
+  | `tags` | no | Count only the Automata carrying these tags (array) |
+  | `tag_match` | no | With several `tags`: `any` (default) counts an Automaton carrying at least one; `all` requires every tag named |
   | `since` | no | First day counted, `YYYY-MM-DD` (default: the configured date, else the first record's creation date) |
   | `until` | no | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
 
   ```
-  autonomous_progress()
-  autonomous_progress(tag_id="t-ui", since="2026-10-10")
+  autonomous_progress()                                  # the whole fleet
+  autonomous_progress(tags=["1a2b3c4d"], since="2026-10-10")                    # the tag with name "stage:build"
+  autonomous_progress(tags=["4f5e6d7c", "1a2b3c4d"], tag_match="all")  # "automation:release" ∩ "stage:build"
   ```
+
+  A `tag_match` that is neither `any` nor `all` is refused with a message that names it. A tag id that is not in the registry simply matches no Automaton — an empty count means the id is stale, so re-read the ids from `autonomous_tag_list`.
 
   A missing backlog file is not an error: the reply carries `backlog_available: false`. A bad date, or `until` before `since`, is refused. Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_progress_trend`** — read the progress trend from the saved daily snapshots. Read-only; returns the same body as `GET /api/autonomous/progress/trend`: `days`, `points` (one per snapshot, oldest first: `date`, `reason`, `completion_low_days`, `completion_high_days`, `known_tasks`, `estimated_tasks`, `throughput_3d`, `utilization`, `completed_prds`) and `direction` (`converging`, `widening`, `flat` or `unknown`).
@@ -347,10 +351,13 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | Parameter | Required | Description |
   |---|---|---|
   | `days` | no | How many days back to read, a whole number from 1 to 365 (default 30) |
+  | `tags` | no | The tag scope the trend reply reports (array) |
+  | `tag_match` | no | With several `tags`: `any` (default) was at least one; `all` every tag named |
 
   ```
   autonomous_progress_trend()
   autonomous_progress_trend(days=90)
+  autonomous_progress_trend(days=14, tags=["1a2b3c4d"])   # the tag with name "stage:build"
   ```
 
   Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
@@ -917,7 +924,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 - **`automation_list/create/get/update/delete`** — manage Automation records: a named chain of member Automatons (PRDs) connected by per-outcome edges (`on_complete` / `on_blocked` / `on_failed`), with an entry member, an optional budget policy, and Automation-level execution/verification defaults. These tools manage the records. Activating a draft Automation is a separate action (`automation_activate`); from then on the daemon advances it through its members on its own. Tool shape mirrors `retry_profile_*` / `guardrail_profile_*`; same surface over REST at `GET/POST /api/automations` and `GET/PUT/DELETE /api/automations/{id}`.
 - **`automation_import_graph`** — convert an orchestrator graph into a draft Automation (`id` = graph ID, optional `dry_run` to preview without storing). The graph is only read. Over REST it is `POST /api/automations/import-graph/{graph_id}`.
 - **Deprecated:** `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run` still work but their results end with a deprecation notice naming `automation_import_graph`; the daemon logs the warning once per tool per process.
-- **`automation_pause`, `automation_resume`, `automation_cancel`, `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_approve_insert`, `automation_set_budget`, `automation_set_decision_assistant`** (Phase 3b) — operator control of a running Automation; see "Automation control tools" below. Over REST these are `POST /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|remove_member|reorder_edges|approve_insert|set_budget}`. `automation_get` and `automation_list` return each Automation with its computed `budget` view, and `autonomous_status` carries the same `budget` on each Automation row. `automation_get` also returns the record's `pending_inserts` (omitted when none); each entry's `id` is the `member_id` to pass to `automation_approve_insert`.
+- **`automation_pause`, `automation_resume`, `automation_cancel`, `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_approve_insert`, `automation_set_budget`, `automation_set_decision_assistant`, `automation_rename_stage`** (Phase 3b) — operator control of a running Automation; see "Automation control tools" below. Over REST these are `POST /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|remove_member|reorder_edges|approve_insert|set_budget|stages/rename}`. `automation_get` and `automation_list` return each Automation with its computed `budget` view, and `autonomous_status` carries the same `budget` on each Automation row. `automation_get` also returns the record's `pending_inserts` (omitted when none); each entry's `id` is the `member_id` to pass to `automation_approve_insert`.
 
   Parameters shared by the create/update family (`list` takes none; `get` and `delete` take only `id`; `update` sends only the fields to change):
 
@@ -934,6 +941,8 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `id` | get, update, delete | Automation ID (required). |
   | `expected_version` | update | The `version` you last read; the update is rejected (`409`) if the record moved since (optimistic concurrency). |
   | `reason` | update | Reason for this update; recorded alongside the change and the operator audit log. |
+
+  The per-Automation auto-tags override is **not** a parameter of these tools: it lives in the `auto_tags` object of the REST body (`POST /api/automations`, `PUT /api/automations/{id}`), in CLI `datawatch automation update <id> --auto-tags on|off` (plus the `--auto-tags-{automation,stage,kind}-template` flags), and in the *Auto tags* section of the Automation's settings in the web app. See the [Auto tags how-to](howto/automata-auto-tags.md).
 
   Example — create a two-member chain (member 2 follows only when member 1 completes):
   ```
@@ -968,7 +977,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   )
   ```
 
-- **Automation control tools (Phase 3b).** Eight tools steer a running Automation. Each proxies to `POST /api/automations/{id}/<operation>` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Every tool takes these arguments, and a call that leaves out a required one is refused before any request is sent:
+- **Automation control tools (Phase 3b).** The tools below steer a running Automation. Each proxies to `POST /api/automations/{id}/<operation>` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Every tool takes these arguments, and a call that leaves out a required one is refused before any request is sent:
 
   | Argument | Required | Description |
   |---|---|---|
@@ -983,12 +992,13 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `automation_resume` | none | Resumes a `paused` Automation and starts the next member. |
   | `automation_cancel` | `cancel_in_flight` (boolean, **required**, no default) | Cancels the Automation. `true` ends the session of every running member. `false` leaves running members alone. Members that had not started are cancelled either way. A missing, `null` or non-boolean value is refused with a message naming `cancel_in_flight=true` and `cancel_in_flight=false`. |
   | `automation_skip_member` | `member_id`, `edge` (`on_complete` default, `on_blocked` or `on_failed`) | Skips an active member and follows that edge. A session the member is running is not ended. In a forked Automation with several active branches, `member_id` is required and must name an active branch; a rejection lists the active branch member IDs. |
-  | `automation_insert_member` | `prd_id` (**required**), `reason` (**required**), `name`, `urgent`, `after` | Inserts a PRD as a member. `urgent` takes the next slot and `false` appends to the end (or goes after `after`); an urgent insert must leave `after` empty. On a draft the member lands at once. On an `active`, `paused` or `blocked` Automation it is held as a pending insert until `automation_approve_insert`, and only one urgent insert may be pending at a time (`409` otherwise). |
+  | `automation_insert_member` | `prd_id` (**required**), `reason` (**required**), `name`, `stage`, `urgent`, `after` | Inserts a PRD as a member. `urgent` takes the next slot and `false` appends to the end (or goes after `after`); an urgent insert must leave `after` empty. `stage` is an optional stage label recorded on the inserted member (it shows on the member in `automation_get`; `automation_rename_stage` treats it like any other member stage). On a draft the member lands at once. On an `active`, `paused` or `blocked` Automation it is held as a pending insert until `automation_approve_insert`, and only one urgent insert may be pending at a time (`409` otherwise). |
   | `automation_remove_member` | `member_id` (required) | Removes a member that has not started and has no outgoing edges. The entry member, forks, joins and branches are refused. |
   | `automation_reorder_edges` | `member_id` (required), `on_complete`, `on_blocked`, `on_failed` | Rewires the edges of a member that has not started. Each argument is the member ID the edge now names; an edge left out is cleared, so pass every edge to keep. |
   | `automation_approve_insert` | `member_id` (required) | Promotes a pending insert into the graph. `member_id` is the pending insert's `id` — the one `automation_insert_member` returned in `pending_inserts[].id`, or the same `pending_inserts[].id` you read on `automation_get`. Only the operator may approve. |
   | `automation_set_budget` | `member_id`, `ceiling_type` (`dollar` or `allocation_pct`), `ceiling_value`, `window` (`automation`, `day`, `week` or `month`), `pacing` (`none` or `even`), `on_breach` (`pause` or `block`), `backend`, `allocation_estimate`, `peer_window` (array of peer names), `reset_time`, `reset_weekday`, `reset_day`, `reset_zone`, `estimated_cost_usd` (member only), `clear` | Sets, replaces or clears the budget policy of the Automation, or the override of one member when `member_id` is given. The policy fields replace the whole policy; `clear` removes it and cannot be combined with them. The status is not changed by this call. On a breach the Automation pauses and resumes by itself at the window rollover only when the reset time is known (a window the daemon defines itself, anchored at the declared reset or the calendar default, or a reset time parsed from a rate-limit message); when the reset time is unknown it goes to `blocked` and waits for the operator. An alert is raised either way. `allocation_estimate` is off by default, is always labelled estimated and never pauses or blocks. Another daemon's spend counts toward the ceiling only for peers named in `peer_window`; that is off by default and a shared account is not confirmed automatically. |
   | `automation_set_decision_assistant` | `member_id`, `backend`, `model`, `mode` (`shadow` or `live`), `hooks` (array of `empty_edge`, `skip_member`, `insert_member`, `budget_breach`), `thresholds` (object, hook to a number in (0,1]), `clear` | Sets or clears the optional local-model decision assistant of the Automation, or of one member when `member_id` is given. Off by default. The fields replace the whole setting; `clear`, or an empty `backend`, turns it off. `shadow` (the default) only records what the assistant would have done; `live` acts at or above the hook threshold (default 0.9, `budget_breach` 0.95). The assistant only picks among already-allowed options. The setting comes back as `decision_assistant` on `automation_get`. |
+  | `automation_rename_stage` | `from` (**required**), `to` (**required**) | Renames every member stage named `from` to `to` in place, while the Automation is `draft`, `active`, `paused` or `blocked`. Stages are the optional operator label on a member (`stage` on each member in the `automation_get` record) — cosmetic: edges, advance rule and budget never read it. When auto tagging is on, the stage tag of the Automation's members migrates to the new name in place; operator tags are never touched. A missing or empty `from` or `to` is refused before any request goes out (`400`). |
 
   The global setting `autonomous.automation.agent_insert_policy` (`allow`, the default, or `require_operator`) decides whether an insert by an agent or session into a draft Automation lands at once or is held for `automation_approve_insert`; every insert into a started Automation is held whatever the policy. Set it with `PUT /api/config`, the comm `configure` verb, or `config_set` when `mcp.allow_self_config` is on.
 
@@ -1110,6 +1120,8 @@ List all AI coding sessions on this host, including their state and task descrip
 | `alive` | string | No | BL361 — filter by `claude_alive` field: `true`, `false`, or `any` (default). Empty = any. |
 | `format` | string | No | BL361 — output format: `text` (default) or `json`. `json` returns a structured JSON array. |
 | `orphaned` | boolean | No | BL350 — when `true`, return only sessions whose `parent_id` points to a session that no longer exists (orphaned by parent death or eviction). |
+| `tags` | array of strings | No | Count only sessions that carry at least one of the tags — their own tags or the tags inherited from the Automaton that started them (the auto tags of the Automation, stage and kind) |
+| `tag_match` | string | No | With several `tags`: `any` (default) needs at least one, `all` needs every tag named |
 
 **Example response:**
 ```

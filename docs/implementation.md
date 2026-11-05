@@ -1321,6 +1321,15 @@ None of these four values is hard-coded: `cmd/datawatch/main.go` hands `session.
 | `autonomous.tags.direct_counts_visible` | bool | `false` | When `true`, each tag shows its direct count as a tooltip beside the subtree count. Same surfaces as `autonomous.tags.default_view`. |
 | `autonomous.tags.registry_keeper` | string | `""` | Federation peer name of the daemon that keeps the shared tag registry. Empty means this daemon is its own keeper and nothing syncs. Same surfaces as `autonomous.tags.default_view`. |
 | `autonomous.tags.registry_sync_seconds` | int | `30` | Interval, in whole seconds, at which the shared tag registry syncs with the keeper peer named in `autonomous.tags.registry_keeper`. Must be 5 or more; a smaller value is refused. Same surfaces as `autonomous.tags.default_view`. |
+| `autonomous.auto_tags.enabled` | bool | `true` | Whether auto tagging runs at all: the tags an Automaton gives itself as it runs (automation, stage, kind), kept current in the tag browser and its counts without a human (`internal/config/auto_tags_settings.go`, `internal/autonomous/auto_tags.go`). `false` turns it off daemon-wide, and it is operative in both senses — an unset `enabled` reads `true`, and an explicitly stored `false` stays `false` after a save-and-reload. Same surfaces (REST `PUT /api/config`, MCP `config_set`, CLI `datawatch config set`, comm `configure`) as `autonomous.tags.default_view`, with the same message on every surface; an invalid value is refused everywhere with the same message and nothing is written. |
+| `autonomous.auto_tags.automation_template` | string | `automation:{automation}` | Template for the Automation's tag. Same surfaces as `autonomous.auto_tags.enabled`. |
+| `autonomous.auto_tags.stage_template` | string | `stage:{stage}` | Template for the stage tag. Same surfaces as `autonomous.auto_tags.enabled`. |
+| `autonomous.auto_tags.kind_template` | string | `kind:{kind}` | Template for the kind tag. `{kind}` renders as the kind's label from `autonomous.auto_tags.kind_labels`. Same surfaces as `autonomous.auto_tags.enabled`. |
+| Template placeholders | — | — | Any of the three templates may reference only the placeholders `{automation}`, `{stage}` and `{kind}` — any other `{name}` is refused with a message naming the placeholder (`autonomous.auto_tags.<field>: placeholder {owner} is not one of {automation}, {stage}, {kind}`). The template must not be empty, must contain no newline, and must render to a non-empty name. |
+| `autonomous.auto_tags.kind_labels` | map | `{feature: feature, bug: bug, other: maintenance}` | What `{kind}` renders as per Automaton kind (`internal/autonomous/auto_tags.go`): the kind's own label from `feature`, `bug`, `other`, then the default vocabulary (`feature` → `feature`, `bug` → `bug`, `other` → `maintenance`), then the kind itself as a last resort. Rename a label (e.g. `other: support`) to change what kind tags say. Shipped as a map in the config file and accepted as `kind:label` pairs in the CLI/comm surfaces (for example `datawatch config set autonomous.auto_tags.kind_labels other:support`). kind_labels are daemon-global: a per-Automation override cannot carry its own. |
+| Per-Automation override | — | — | An Automation may carry an `auto_tags` override (`AutoTagsOverride`, set through the same validation) with `enabled` (only an explicit value wins over the daemon's), and any of the three templates (an empty one inherits the daemon's). The override is stored on the Automation and survives an update that does not name it. `ResolveAutoTags(daemonCfg, override)` is the single merge point; `RenderAutoTag` renders one tag and refuses when auto tagging is off or the rendered name is empty. |
+| Sync engine | — | — | The tags are reconciled, not hand-managed: `Manager.syncAutoTags` runs on every membership join or leave, member move, stage rename, Automation rename, kind change, delete, and daemon flip (`SyncAutoTagsAll`), and after a config save that changed the block (REST `PUT /api/config`, MCP `config_set`, CLI `config set`, comm `configure`) (internal/autonomous/auto_tags.go). It gets or creates the engine's system tags (colour-neutral, under the root), renames the record in place when the rendered name changes (tag ID and assignments survive a rename), keeps operator tags and tags of other Automations untouched, strips the engine's own stale tags from a PRD, and reclaims an engine tag record no member carries anymore (an empty stage's stage tag goes; the shared kind vocabulary stays). A tag name an operator tag already owns is refused loudly everywhere the engine would create it — it is never silently renamed or overwritten; a refused create leaves no Automation behind. Sessions read the tags live: a session of a member PRD inherits the three engine tags (`internal/session/InheritedTags`) with no session write. |
+| System tags | — | — | Tags datawatch creates for its own vocabulary (the automation/stage/kind auto tags) carry `Tag.System` (`internal/autonomous/models.go`). `RenameTag`, `SetTagParent` and `DeleteTag` refuse a system tag with `ErrTagSystem` (REST 409) so an operator's rename can never orphan an Automaton's tags, while `SetTagColor` and `SetTagDescription` stay allowed (`internal/autonomous/tags.go`). |
 | `web_search.enabled` | bool | `false` | Inject a `web_search` MCP tool into opencode and goose sessions via SearXNG. |
 | `web_search.provider` | string | `searxng` | Search provider. Only `"searxng"` is supported. |
 | `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
@@ -2969,3 +2978,83 @@ error, missing scores or abstain is a block with category `infra` (set by the ha
 no fallback to generate-and-parse. Scan guardrails, project-rules-scan and the scripted-pass
 short-circuit stay deterministic and never reach the gate. The verdict records `mode`, `scores` and
 `route` (scores and route follow `autonomous.verification_record_scores`).
+
+## Progress and session tag filters (repeatable `tag` + `tag_match=any|all`, trend scope)
+
+The Automaton-progress filter accepts one `tag` before; it now accepts
+several, on every surface, with an explicit match rule, and the session list
+gains the same tag filter (a session matches when one of its tags — its own
+or the ones it inherits from its Automaton — is present). The progress trend
+reports the scope its snapshots were counted over.
+
+### Components
+
+- `internal/autonomous/progress_engine.go` — `ProgressOptions.TagIDs []string`
+  + `TagMatch` (`any` default, `all`); the legacy singular `TagID` is merged
+  in by `tagFilterIDs()`. `tagsMatch(record, filter, needAll)` does the
+  any/all test. `ProgressScope()` builds the scope string (`all`,
+  `automation:<id>`, `tag:<id>`, `tags:<a>,<b>`, `tags(all):<a>,<b>`,
+  combined); it is stamped on the metrics (`Scope`) and on every
+  `ProgressTrendPoint` / `ProgressTrendBody`. `RenderTrendReply(days, scope,
+  direction, points)` appends ` (scope …)` when narrower than `all`;
+  `RenderProgressText` prints a `Scope:` line likewise.
+- `internal/server/progress.go` — `progressTagParams()` reads the repeatable
+  `tag` query parameter (comma lists split, deduped, first-seen order),
+  validates `tag_match` (`any`/`all`) with HTTP 400 on anything else, and
+  feeds both `ProgressOptions`. The trend REST response carries `scope`.
+- `internal/server/api.go` — `handleSessions` parses the same `tag` /
+  `tag_match` parameters and routes them into `session.SessionFilter`.
+- `internal/session/manager.go` — `SessionFilter.Tags + TagMatch`;
+  `sessionEffectiveTagIDs()` = own + inherited (via
+  `Manager.InheritedTags` → `TagOwnerLookup`), deduped;
+  `sessionMatchesTagFilter()` applies any/all. `ListSessions` and
+  `ListArchivedSessions` honour it alongside the existing state/search
+  filters.
+- `internal/mcp/progress_tools.go`, `internal/mcp/server.go`,
+  `internal/mcp/list_sessions_view.go` — `autonomous_progress` and
+  `autonomous_progress_trend` take `tags` (array) + `tag_match`;
+  `list_sessions` takes `tags` + `tag_match`; the low-bandwidth
+  `list_sessions_view` proxy forwards them verbatim.
+- `internal/router/progress_cmd.go` — `progress` and `progress trend` accept
+  repeatable `tag=<id>` and `tag_match=any|all`; trend renders with scope.
+- `internal/router/router.go` — the `list` comm verb parses `tag=<id>` (repeatable)
+  and `tag_match=<any|all>` tokens from the free-form filter.
+- `cmd/datawatch/cli_progress.go` — `--tag` (repeatable) + `--tag-match` on
+  both commands; the tag is sent as repeatable `tag=` query parameters.
+- `cmd/datawatch/main.go`, `cmd/datawatch/cli_list_views.go` — `session list`
+  (and the shared query builder) gain `--tag` (repeatable) / `--tag-match`,
+  forwarded as repeatable `tag` + `tag_match`.
+- `cmd/datawatch/progress_parity_test.go` — the trend parity check now passes
+  the scope through `RenderTrendReply` so the comm, CLI, REST and MCP
+  surfaces must agree on it.
+
+### Knobs
+
+No new configuration key. The match rule is a per-read parameter
+(`tag_match=any|all`), matching the behaviour the web list views already
+expose (`match ANY` / `match ALL`).
+
+### Tests
+
+- `internal/autonomous/progress_engine_test.go` — one tag, several tags
+  under `any` and `all`, empty filter, and the scope string for each
+  combination (including automation + tag).
+- `internal/autonomous/progress_text_test.go` — the `Scope:` line and the
+  trend ` (scope …)` suffix appear only when narrower than `all`.
+- `internal/server/progress_test.go` — the repeatable `tag` parameter under
+  both match rules, the legacy singular `tag_id`, a refused `tag_match`, and
+  the `scope` field on the trend response.
+- `internal/mcp/progress_tools_test.go` — `tags` arrays and `tag_match`
+  reach the backend as repeated `tag=` parameters.
+- `internal/session/tags_test.go` — own vs inherited tags, any vs all, and
+  untagged sessions against a tag filter.
+- `internal/server/session_list_tag_test.go` — `GET /api/sessions?tag=…`
+  matches own and inherited tags under both rules; a bad `tag_match` is 400.
+- `internal/mcp/list_sessions_tag_test.go` — the `list_sessions` `tags` +
+  `tag_match` parameters (legacy path) and the `list_sessions_view`
+  forwarding.
+- `internal/router/comm_list_tag_test.go`, `progress_cmd_test.go` — the `list`
+  and `progress` comm verbs parse, forward and reply.
+- `cmd/datawatch/cli_progress_test.go`, `cli_list_views_test.go` — the flag
+  wiring: repeatable `--tag`, the `--tag-match` default (empty = any) and the
+  emitted query.

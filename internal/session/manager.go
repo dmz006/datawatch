@@ -5906,7 +5906,9 @@ func (m *Manager) GetSessionOrArchived(id string) (*Session, bool) {
 func (m *Manager) ListArchivedSessions(f SessionFilter, extra func(*Session) bool, text string, before time.Time, limit int) []*Session {
 	out, _, err := m.store.ListArchivedFiltered(ArchivedQuery{
 		Text: text, Before: before, Limit: limit,
-		Match: func(sess *Session) bool { return f.matches(sess) && (extra == nil || extra(sess)) },
+		Match: func(sess *Session) bool {
+			return f.matches(sess) && m.sessionMatchesTagFilter(f, sess) && (extra == nil || extra(sess))
+		},
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[warn] list archived sessions: %v\n", err)
@@ -5947,6 +5949,13 @@ type SessionFilter struct {
 	State   string // exact State match, empty = all
 	Backend string // exact BackendFamily match, empty = all
 	Alive   string // "true", "false", "" or "any" = no filter
+	// Tags are the tag IDs a session must carry, counting the tags the
+	// session itself has and the tags it inherits from the Automaton that
+	// spawned it; empty = no filter.
+	Tags []string
+	// TagMatch is "any" (default): the session needs at least one of Tags,
+	// or "all": every tag in Tags.
+	TagMatch string
 }
 
 // matches reports whether sess passes every non-empty criterion in f.
@@ -5980,16 +5989,59 @@ func (f SessionFilter) matches(sess *Session) bool {
 // BL361 — structured session listing with filter support.
 func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
 	all := m.store.List()
-	if f.Name == "" && f.State == "" && f.Backend == "" && (f.Alive == "" || f.Alive == "any") {
+	if f.Name == "" && f.State == "" && f.Backend == "" && (f.Alive == "" || f.Alive == "any") && len(f.Tags) == 0 {
 		return all
 	}
 	out := make([]*Session, 0, len(all))
 	for _, sess := range all {
-		if f.matches(sess) {
+		if f.matches(sess) && m.sessionMatchesTagFilter(f, sess) {
 			out = append(out, sess)
 		}
 	}
 	return out
+}
+
+// sessionEffectiveTagIDs returns the session's own tag IDs followed by the
+// tags it inherits from the Automaton that spawned it, duplicates dropped.
+func (m *Manager) sessionEffectiveTagIDs(sess *Session) []string {
+	if sess == nil {
+		return nil
+	}
+	inherited := m.InheritedTags(sess)
+	return dedupeTagIDs(append(append([]string{}, sess.Tags...), inherited...))
+}
+
+// sessionMatchesTagFilter reports whether sess satisfies f's tag criteria,
+// counting the session's own tags and the tags it inherits from the Automaton
+// that spawned it. An empty Tags list passes every session.
+func (m *Manager) sessionMatchesTagFilter(f SessionFilter, sess *Session) bool {
+	wanted := dedupeTagIDs(f.Tags)
+	if len(wanted) == 0 {
+		return true
+	}
+	effective := m.sessionEffectiveTagIDs(sess)
+	have := func(id string) bool {
+		for _, t := range effective {
+			if t == id {
+				return true
+			}
+		}
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(f.TagMatch), "all") {
+		for _, id := range wanted {
+			if !have(id) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, id := range wanted {
+		if have(id) {
+			return true
+		}
+	}
+	return false
 }
 
 // ResumeRateLimitedSession resumes a session that was paused due to rate limiting.

@@ -29,8 +29,9 @@ import (
 
 const (
 	automationUsage = "usage: automation activate <id> | return-to-draft <id> | list | get <id> | status <id> | shipped <id> commit=<c> [release=<r>] [source=merge_step|backfill] [merged_at=<RFC3339>] | pause <id> [reason] | resume <id> [reason] | " +
-		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] <reason> | " +
+		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] [stage=<stage>] <reason> | " +
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
+		"rename-stage <id> <from-stage> <to-stage> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
 		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] | " +
 		"set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] [hooks=<a,b>] [threshold.<hook>=<n>] [member=<id>] | " +
@@ -41,11 +42,12 @@ const (
 	automationCancelUsage = "usage: automation cancel <id> in-flight=true|false. The choice is required: " +
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
-	automationSkipUsage    = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
-	automationInsertUsage  = "usage: automation insert <id> <prd-id> [urgent] <reason...>. A reason is required."
-	automationRemoveUsage  = "usage: automation remove <id> <member-id>"
-	automationApproveUsage = "usage: automation approve <id> <member-id>"
-	automationSetLLMUsage  = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
+	automationSkipUsage        = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
+	automationRenameStageUsage = "usage: automation rename-stage <id> <from-stage> <to-stage>"
+	automationInsertUsage      = "usage: automation insert <id> <prd-id> [urgent] [stage=<stage>] <reason...>. A reason is required."
+	automationRemoveUsage      = "usage: automation remove <id> <member-id>"
+	automationApproveUsage     = "usage: automation approve <id> <member-id>"
+	automationSetLLMUsage      = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
 		"(name at least one; an empty value such as model= clears the field)"
 	automationSetVerificationLLMUsage = "usage: automation set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] " +
 		"(name at least one; an empty value such as model= clears the field)"
@@ -67,7 +69,7 @@ const (
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
 	return []string{"activate", "return-to-draft", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
-		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
+		"skip", "insert", "remove", "edges", "approve", "rename-stage", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
 }
 
 func (r *Router) handleAutomationCmd(cmd Command) {
@@ -172,17 +174,37 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			return
 		}
 		rest := args[3:]
-		urgent := len(rest) > 0 && rest[0] == "urgent"
-		if urgent {
-			rest = rest[1:]
+		urgent, stage, reasons := false, "", []string{}
+		for _, tok := range rest {
+			switch {
+			case tok == "urgent":
+				urgent = true
+			case tok == "stage":
+				r.send(automationInsertUsage)
+				return
+			default:
+				if v, ok := strings.CutPrefix(tok, "stage="); ok {
+					if v == "" {
+						r.send(automationInsertUsage)
+						return
+					}
+					stage = v
+					continue
+				}
+				reasons = append(reasons, tok)
+			}
 		}
-		reason := strings.Join(rest, " ")
+		reason := strings.Join(reasons, " ")
 		if reason == "" {
 			r.send(automationInsertUsage)
 			return
 		}
+		member := map[string]any{"prd_id": args[2]}
+		if stage != "" {
+			member["stage"] = stage
+		}
 		r.automationControl("insert", args[1], "insert_member", "member inserted", map[string]any{
-			"member": map[string]any{"prd_id": args[2]},
+			"member": member,
 			"urgent": urgent,
 			"reason": reason,
 		})
@@ -207,6 +229,12 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			body[k] = v
 		}
 		r.automationControl("edges", args[1], "reorder_edges", "edges rewired", body)
+	case "rename-stage":
+		if len(args) != 4 {
+			r.send(automationRenameStageUsage)
+			return
+		}
+		r.automationControl("rename-stage", args[1], "stages/rename", "stage renamed", map[string]any{"from": args[2], "to": args[3]})
 	case "approve":
 		if len(args) != 3 {
 			r.send(automationApproveUsage)
@@ -224,7 +252,7 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, return-to-draft, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, return-to-draft, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, rename-stage, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
 	}
 }
 

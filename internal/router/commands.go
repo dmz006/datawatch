@@ -334,7 +334,12 @@ const (
 	CmdRetry CommandType = "retry"
 
 	// Automation lifecycle over chat.
+	// Automation lifecycle over chat: activate, list, get, status, shipped, pause,
+	// resume, cancel, skip, insert, remove, edges, approve, rename-stage, set-llm,
+	// set-verification-llm, set-decision-assistant, set-budget, set-effort-ceiling,
+	// import-graph (see router.AutomationCommVerbs).
 	//   "automation activate <id>" → start a draft Automation
+	//   "automation rename-stage <id> <from> <to>" → rename a member stage
 	CmdAutomation CommandType = "automation"
 
 	// BL302 S1 — MCP resources over chat.

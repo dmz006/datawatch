@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -33,10 +34,32 @@ func sessionListQuery(cmd *cobra.Command) url.Values {
 			q.Set(f.param, v)
 		}
 	}
+	for _, v := range flagStringArray(cmd, "tag") {
+		if v != "" {
+			q.Add("tag", v)
+		}
+	}
+	if v, _ := cmd.Flags().GetString("tag-match"); v != "" {
+		q.Set("tag_match", v)
+	}
 	if summary, _ := cmd.Flags().GetBool("summary"); summary {
 		q.Set("view", "summary")
 	}
 	return q
+}
+
+// flagStringArray reads a --flag that may have been registered as a repeatable
+// string-array or a comma-separated string, so both registrations work.
+func flagStringArray(cmd *cobra.Command, name string) []string {
+	if cmd.Flags().Changed(name) {
+		if vs, err := cmd.Flags().GetStringArray(name); err == nil {
+			return vs
+		}
+	}
+	if v, _ := cmd.Flags().GetString(name); v != "" {
+		return strings.Split(v, ",")
+	}
+	return nil
 }
 
 // sessionsPath appends q to /api/sessions.
