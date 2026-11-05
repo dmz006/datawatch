@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.98.1 — Phone-friendly Automaton detail tab strip
+
+
 ## v9.98.0 — Automatic grouping tags for Automation stages
 
 Every Automaton now carries automatic grouping tags for its Automation, its stage and its kind, and Automation members can be given a stage.
