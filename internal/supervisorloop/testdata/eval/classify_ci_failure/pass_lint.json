@@ -1,0 +1,1 @@
+{"name":"pass_lint","input":"golangci-lint run: internal/foo/bar.go:12:2: exported function Bar should have comment or be unexported (revive)","expected_validator":"pass","expected_value":"lint"}

@@ -536,6 +536,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                     // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
 	apiMux.HandleFunc("/api/supervisor-loop/jobs", api.handleSupervisorLoopJobs)                  // supervisor loop jobs: style, backend, model, enabled, last outcome
 	apiMux.HandleFunc("/api/supervisor-loop/jobs/", api.handleSupervisorLoopJobRun)               // POST .../{name}/run runs one job now
+	apiMux.HandleFunc("/api/supervisor-loop/eval", api.handleSupervisorLoopEval)                  // POST runs a model job's eval cases against listed models
 	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                  // supervisor loop run records, newest first
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                         // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                  // run a merge through the resolved pipeline, recording each step

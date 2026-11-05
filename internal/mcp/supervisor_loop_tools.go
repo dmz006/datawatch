@@ -60,7 +60,7 @@ func (s *Server) toolSupervisorLoopRunJob() mcpsdk.Tool {
 
 // SupervisorLoopToolNames lists the supervisor loop tools, for the parity test.
 func SupervisorLoopToolNames() []string {
-	return []string{"supervisor_loop_jobs", "supervisor_loop_runs", "supervisor_loop_run_job"}
+	return []string{"supervisor_loop_jobs", "supervisor_loop_runs", "supervisor_loop_run_job", "supervisor_loop_eval"}
 }
 
 func (s *Server) handleSupervisorLoopJobs(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -158,6 +158,59 @@ func (s *Server) handleSupervisorLoopRunJob(_ context.Context, req mcpsdk.CallTo
 	out, err := s.proxyJSON(http.MethodPost, "/api/supervisor-loop/jobs/"+url.PathEscape(job)+"/run", body)
 	if err != nil {
 		return toolError("supervisor_loop_run_job", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+const supervisorLoopEvalUsage = `usage: supervisor_loop_eval job=NAME models=A,B [cases_dir=DIR]
+  job        the model job to evaluate: draft_spec, classify_ci_failure or pick_backend
+  models     comma-separated model ids to compare
+  cases_dir  optional relative directory holding <job>/*.json cases`
+
+func (s *Server) toolSupervisorLoopEval() mcpsdk.Tool {
+	return mcpsdk.NewTool("supervisor_loop_eval",
+		mcpsdk.WithDescription(`Run a supervisor loop model job's eval cases against each listed model and return, per model: cases, passed, validator failures, retries, median and maximum duration (ms) and escalations. If no listed model is reachable the call fails naming each model; no result is invented. job and models are required; cases_dir is optional. The same request as POST /api/supervisor-loop/eval.`),
+		mcpsdk.WithString("job",
+			mcpsdk.Description(`Required — the model job: "draft_spec", "classify_ci_failure" or "pick_backend".`)),
+		mcpsdk.WithString("models",
+			mcpsdk.Description(`Required — comma-separated model ids to compare (e.g. "qwen3.8:27b,sonnet").`)),
+		mcpsdk.WithString("cases_dir",
+			mcpsdk.Description(`Optional — relative directory holding <job>/*.json eval cases.`)),
+	)
+}
+
+func (s *Server) handleSupervisorLoopEval(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	job := strings.TrimSpace(req.GetString("job", ""))
+	modelsStr := strings.TrimSpace(req.GetString("models", ""))
+	casesDir := strings.TrimSpace(req.GetString("cases_dir", ""))
+	var extra []string
+	for k := range req.GetArguments() {
+		if k != "job" && k != "models" && k != "cases_dir" {
+			extra = append(extra, k)
+		}
+	}
+	if len(extra) > 0 {
+		return toolErrorf("supervisor_loop_eval", "unknown argument(s) %s; %s", strings.Join(extra, ", "), supervisorLoopEvalUsage), nil
+	}
+	if job == "" {
+		return toolErrorf("supervisor_loop_eval", "job is required; %s", supervisorLoopEvalUsage), nil
+	}
+	models := []string{}
+	for _, m := range strings.Split(modelsStr, ",") {
+		if m = strings.TrimSpace(m); m != "" {
+			models = append(models, m)
+		}
+	}
+	if len(models) == 0 {
+		return toolErrorf("supervisor_loop_eval", "models is required (comma-separated model ids); %s", supervisorLoopEvalUsage), nil
+	}
+	body := map[string]any{"job": job, "models": models}
+	if casesDir != "" {
+		body["cases_dir"] = casesDir
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/supervisor-loop/eval", body)
+	if err != nil {
+		return toolError("supervisor_loop_eval", err), nil
 	}
 	return textOK(string(out)), nil
 }
