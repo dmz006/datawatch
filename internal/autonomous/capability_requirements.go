@@ -344,60 +344,73 @@ func (m *Manager) CapabilityNodeState(capability, node string) (CapabilityNodeSt
 // the local model pool), each of which is optional but at least one must
 // be present.
 type AutomationBackends struct {
-	Execution    []string // backends serving execution lanes
-	Planning     []string // backends serving planning
-	Verification []string // backends serving verification
+	Execution    []string `json:"execution"`
+	Planning     []string `json:"planning"`
+	Verification []string `json:"verification"`
 	// ClaudeConfigured is true when a Claude backend is configured.
-	ClaudeConfigured bool
+	ClaudeConfigured bool `json:"claude_configured"`
 	// LocalPoolConfigured is true when the local model pool is configured.
-	LocalPoolConfigured bool
+	LocalPoolConfigured bool `json:"local_pool_configured"`
 }
 
 // ReportCapabilityNode is one node's report row under a capability.
 type ReportCapabilityNode struct {
-	Name     string
-	Found    string
-	Required string
-	Enabled  bool
-	Flagged  bool
+	Name     string `json:"name"`
+	Found    string `json:"found,omitempty"`
+	Required string `json:"required"`
+	Enabled  bool   `json:"enabled"`
+	Flagged  bool   `json:"flagged"`
 }
 
 // ReportCapability is one capability's report block: its effective minimum
 // (and whether it is an override), the nodes under it, and satisfaction.
 type ReportCapability struct {
-	Capability    string
-	MinimumOllama string
-	Override      bool
-	Nodes         []ReportCapabilityNode
-	Satisfied     bool // at least one enabled, unflagged node
+	Capability    string                 `json:"capability"`
+	MinimumOllama string                 `json:"minimum_ollama"`
+	Override      bool                   `json:"override"`
+	Nodes         []ReportCapabilityNode `json:"nodes"`
+	Satisfied     bool                   `json:"satisfied"` // at least one enabled, unflagged node
 }
 
 // RequirementsReport is the requirements report: what is configured
 // (minimums + overrides + per-capability nodes), what is missing, and the
 // automation backend minimums.
 type RequirementsReport struct {
-	GeneratedAt  time.Time
-	Capabilities []ReportCapability
-	Backends     AutomationBackends
-	Missing      []string // every unmet requirement, human-readable
-	OK           bool     // true when Missing is empty
+	GeneratedAt  time.Time      `json:"generated_at"`
+	Capabilities []ReportCapability `json:"capabilities"`
+	Backends     AutomationBackends `json:"backends"`
+	Missing      []string           `json:"missing"` // every unmet requirement, human-readable
+	OK           bool               `json:"ok"`      // true when Missing is empty
 }
 
-// RequirementsReport builds the requirements report from the manager's
-// requirements config, its capability enablement state and the caller's
-// backend summary. Backend minimums enforced: at least one execution
-// backend, a planning backend, a verification backend, and at least one of
-// the two optional providers (Claude, local model pool).
-func (m *Manager) RequirementsReport(b AutomationBackends) RequirementsReport {
+// RequirementsReportInput is everything a requirements report needs. It
+// exists so any surface (REST, MCP, CLI, comm, tests with fakes) can build
+// the report without a Manager: the builder is a pure function of this input.
+type RequirementsReportInput struct {
+	// Overrides is autonomous.requirements.min_ollama.* (nil = built-in table).
+	Overrides map[string]string
+	// Nodes maps capability → the node rows under it (already resolved and
+	// sorted; typically from Manager.CapabilityNodeRows).
+	Nodes map[string][]ReportCapabilityNode
+	// Backends is the automation backend summary.
+	Backends AutomationBackends
+}
+
+// BuildRequirementsReport builds the requirements report from the input.
+// Pure: no I/O, no locks, no manager. Backend minimums enforced: at least
+// one execution backend, a planning backend, a verification backend, and at
+// least one of the two optional providers (Claude, local model pool).
+func BuildRequirementsReport(in RequirementsReportInput) RequirementsReport {
 	rep := RequirementsReport{
 		GeneratedAt: time.Now().UTC(),
-		Backends:    b,
+		Backends:    in.Backends,
+		Missing:     []string{},
 	}
 
 	for _, capability := range KnownCapabilities() {
-		required, _ := EffectiveMinimumOllama(m.cfg.Requirements.MinOllama, capability)
+		required, _ := EffectiveMinimumOllama(in.Overrides, capability)
 		overridden := false
-		if required, set := m.cfg.Requirements.MinOllama[capability]; set {
+		if required, set := in.Overrides[capability]; set {
 			overridden = true
 			required = strings.TrimSpace(required)
 		}
@@ -406,25 +419,10 @@ func (m *Manager) RequirementsReport(b AutomationBackends) RequirementsReport {
 			MinimumOllama: required,
 			Override:      overridden,
 		}
-		m.mu.Lock()
-		sts := m.capabilityState[capability]
-		names := make([]string, 0, len(sts))
-		for name := range sts {
-			names = append(names, name)
+		nodes := in.Nodes[capability]
+		if nodes == nil {
+			nodes = []ReportCapabilityNode{}
 		}
-		sort.Strings(names)
-		nodes := make([]ReportCapabilityNode, 0, len(sts))
-		for _, name := range names {
-			st := sts[name]
-			nodes = append(nodes, ReportCapabilityNode{
-				Name:     name,
-				Found:    st.lastFound,
-				Required: required,
-				Enabled:  st.enabled,
-				Flagged:  st.flagged,
-			})
-		}
-		m.mu.Unlock()
 		rc.Nodes = nodes
 		for _, n := range nodes {
 			if n.Enabled && !n.Flagged {
@@ -439,22 +437,129 @@ func (m *Manager) RequirementsReport(b AutomationBackends) RequirementsReport {
 		rep.Capabilities = append(rep.Capabilities, rc)
 	}
 
-	if len(b.Execution) == 0 {
+	if len(in.Backends.Execution) == 0 {
 		rep.Missing = append(rep.Missing, "automation: no execution backend configured (at least one required)")
 	}
-	if len(b.Planning) == 0 {
+	if len(in.Backends.Planning) == 0 {
 		rep.Missing = append(rep.Missing, "automation: no planning backend configured")
 	}
-	if len(b.Verification) == 0 {
+	if len(in.Backends.Verification) == 0 {
 		rep.Missing = append(rep.Missing, "automation: no verification backend configured")
 	}
-	if !b.ClaudeConfigured && !b.LocalPoolConfigured {
+	if !in.Backends.ClaudeConfigured && !in.Backends.LocalPoolConfigured {
 		rep.Missing = append(rep.Missing,
 			"automation: neither a Claude backend nor a local model pool is configured (each optional, at least one required)")
 	}
 
 	rep.OK = len(rep.Missing) == 0
 	return rep
+}
+
+// CapabilityNodeRows snapshots the node rows under capability for the
+// report (resolved and sorted by name, as BuildRequirementsReport expects).
+func (m *Manager) CapabilityNodeRows(capability string) []ReportCapabilityNode {
+	required, known := EffectiveMinimumOllama(m.cfg.Requirements.MinOllama, capability)
+	if !known {
+		return nil
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sts := m.capabilityState[capability]
+	names := make([]string, 0, len(sts))
+	for name := range sts {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	nodes := make([]ReportCapabilityNode, 0, len(sts))
+	for _, name := range names {
+		st := sts[name]
+		nodes = append(nodes, ReportCapabilityNode{
+			Name:     name,
+			Found:    st.lastFound,
+			Required: required,
+			Enabled:  st.enabled,
+			Flagged:  st.flagged,
+		})
+	}
+	return nodes
+}
+
+// RequirementsReport builds the requirements report from the manager's
+// requirements config, its capability enablement state and the caller's
+// backend summary.
+func (m *Manager) RequirementsReport(b AutomationBackends) RequirementsReport {
+	in := RequirementsReportInput{
+		Overrides: m.cfg.Requirements.MinOllama,
+		Nodes:     map[string][]ReportCapabilityNode{},
+		Backends:  b,
+	}
+	for _, capability := range KnownCapabilities() {
+		in.Nodes[capability] = m.CapabilityNodeRows(capability)
+	}
+	return BuildRequirementsReport(in)
+}
+
+// Text renders the report for the text surfaces (CLI, comm channel, MCP
+// text format). It states what is configured, what is missing, and the
+// automation backend minimums.
+func (r RequirementsReport) Text() string {
+	var sb strings.Builder
+	sb.WriteString("Automation requirements\n")
+	for _, rc := range r.Capabilities {
+		fmt.Fprintf(&sb, "%s\n  Ollama minimum: %s (%s)\n", rc.Capability, minimumVersionWord(rc.MinimumOllama), minimumSource(rc.Override))
+		if len(rc.Nodes) == 0 {
+			sb.WriteString("  nodes: none enabled\n")
+		} else {
+			for _, n := range rc.Nodes {
+				state := "disabled"
+				switch {
+				case n.Enabled && !n.Flagged:
+					state = "enabled, meets the minimum"
+				case n.Enabled && n.Flagged:
+					state = "enabled, FLAGGED: below the minimum (fails closed)"
+				}
+				fmt.Fprintf(&sb, "  node %s: Ollama %s, requires %s — %s\n", n.Name, n.Found, n.Required, state)
+			}
+		}
+		sb.WriteString("  " + yesNo(rc.Satisfied, "satisfied", "not satisfied") + "\n")
+	}
+	sb.WriteString("\nAutomation backends\n")
+	sb.WriteString("  execution: " + joinOrNone(r.Backends.Execution) + "\n")
+	sb.WriteString("  planning: " + joinOrNone(r.Backends.Planning) + "\n")
+	sb.WriteString("  verification: " + joinOrNone(r.Backends.Verification) + "\n")
+	fmt.Fprintf(&sb, "  claude configured: %s\n", yesNo(r.Backends.ClaudeConfigured, "yes", "no"))
+	fmt.Fprintf(&sb, "  local model pool configured: %s\n", yesNo(r.Backends.LocalPoolConfigured, "yes", "no"))
+	sb.WriteString("\n")
+	if r.OK {
+		sb.WriteString("All requirements are met.\n")
+	} else {
+		fmt.Fprintf(&sb, "%d requirement(s) unmet:\n", len(r.Missing))
+		for _, m := range r.Missing {
+			fmt.Fprintf(&sb, "  - %s\n", m)
+		}
+	}
+	return sb.String()
+}
+
+func minimumVersionWord(v string) string {
+	if v == "" {
+		return "(none — floor cleared)"
+	}
+	return v
+}
+
+func joinOrNone(items []string) string {
+	if len(items) == 0 {
+		return "(none)"
+	}
+	return strings.Join(items, ", ")
+}
+
+func yesNo(b bool, yes, no string) string {
+	if b {
+		return yes
+	}
+	return no
 }
 
 // minimumSource states where a capability's minimum comes from.

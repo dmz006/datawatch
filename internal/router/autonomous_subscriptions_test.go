@@ -510,7 +510,8 @@ func TestAutonomousHelp_ListsSubscriptionVerbs(t *testing.T) {
 	for _, frag := range []string{
 		"subscribe <kinds|short-names> [prd=<id>] [task=<id>]",
 		"unsubscribe <id>",
-		"subscriptions}",
+		"requirements-report [text|json]",
+		"node-versions <name>}",
 	} {
 		if !strings.Contains(joined, frag) {
 			t.Errorf("help text misses %q:\n%s", frag, joined)

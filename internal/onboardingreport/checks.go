@@ -1,6 +1,9 @@
 package onboardingreport
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Check ids. They are stable: onboarding_report.disabled_checks names them.
 const (
@@ -10,6 +13,7 @@ const (
 	CheckChannels      = "channels"
 	CheckMemory        = "memory"
 	CheckMergePipeline = "merge_pipeline"
+	CheckRequirements  = "requirements"
 )
 
 // AllCheckIDs returns every check id in report order.
@@ -129,6 +133,39 @@ func checkDefs() []checkDef {
 				Title: "Give a project its own merge pipeline", HowTo: "docs/howto/automation-merged-member.md",
 				Anchor:  definitionsPage + "#automation-detail-and-pipeline-strip",
 				Command: "datawatch autonomous merge-pipeline show", MCPTool: "autonomous_merge_pipeline_get", PWAPlace: "Settings > Automation > Merge pipeline",
+			},
+		},
+		{
+			ID: CheckRequirements, Title: "The automation backend requirements are met",
+			eval: func(c Configured) (Status, string) {
+				if len(c.Requirements) == 0 {
+					// No source (a surface without the requirements engine): the
+					// requirement cannot be judged, so it is optional, not missing.
+					return StatusOptional, "No requirements report is provided by this surface."
+				}
+				var unmet []string
+				for _, rq := range c.Requirements {
+					if !rq.Satisfied {
+						if rq.Detail != "" {
+							unmet = append(unmet, rq.Detail)
+						} else if rq.Capability != "" && rq.Required != "" {
+							unmet = append(unmet, fmt.Sprintf("%s requires %s", rq.Capability, rq.Required))
+						} else if rq.Capability != "" {
+							unmet = append(unmet, rq.Capability)
+						} else {
+							unmet = append(unmet, "an automation requirement")
+						}
+					}
+				}
+				if len(unmet) > 0 {
+					return StatusMissing, fmt.Sprintf("%d requirement(s) unmet: %s", len(unmet), strings.Join(unmet, "; "))
+				}
+				return StatusOK, fmt.Sprintf("All %d requirement(s) are met.", len(c.Requirements))
+			},
+			Step: Step{
+				Title: "Meet the automation backend requirements", HowTo: "docs/howto/automation-requirements.md",
+				Anchor:  definitionsPage + "#automation-requirements",
+				Command: "datawatch automation requirements-report", MCPTool: "automation_requirements_report",
 			},
 		},
 	}

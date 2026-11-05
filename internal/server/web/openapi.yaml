@@ -1725,6 +1725,146 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The daemon configuration is not available}
 
+  /api/automation/requirements-report:
+    get:
+      summary: Automation backend requirements report
+      description: |
+        Read-only report of what automation needs to run: one block per
+        capability (its effective Ollama minimum, whether it is an operator
+        override, and the node rows under it — each with the version found, the
+        required minimum, and whether it is enabled and flagged); the configured
+        automation backends (execution, planning, verification, plus the
+        Claude and local-pool flags); and `missing`, the list of every unmet
+        requirement in words (empty when `ok` is true).
+        With `?format=text` the answer is the plain text every surface shows.
+        The report never changes configuration. A federated peer needs the
+        autonomous read capability. 503 when the requirements engine is not
+        wired into the daemon.
+      operationId: automationRequirementsReport
+      tags: [Automation]
+      parameters:
+        - {name: format, in: query, required: false, description: "json (default) or text", schema: {type: string, enum: [json, text]}}
+      responses:
+        "200":
+          description: The report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  generated_at: {type: string, format: date-time}
+                  ok: {type: boolean, description: "True when Missing is empty"}
+                  missing: {type: array, items: {type: string}, description: "Every unmet requirement, human-readable; empty when ok"}
+                  capabilities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        capability: {type: string}
+                        minimum_ollama: {type: string}
+                        override: {type: boolean, description: "True when the operator overrode the built-in minimum"}
+                        satisfied: {type: boolean}
+                        nodes:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              name: {type: string}
+                              found: {type: string, description: "The node's reported version; absent when unknown"}
+                              required: {type: string}
+                              enabled: {type: boolean}
+                              flagged: {type: boolean}
+                  backends:
+                    type: object
+                    properties:
+                      execution: {type: array, items: {type: string}}
+                      planning: {type: array, items: {type: string}}
+                      verification: {type: array, items: {type: string}}
+                      claude_configured: {type: boolean}
+                      local_pool_configured: {type: boolean}
+            text/plain:
+              schema: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: The requirements engine is not available}
+
+  /api/automation/model-consent:
+    get:
+      summary: Model-pull consent policy
+      description: |
+        The consent policy that gates model pulls: the listed models with
+        their allowed flag (and note), the publisher allow-list, and
+        `decision_rule` — the rule the gate implements, in words. A federated
+        peer needs the autonomous read capability.
+      operationId: automationModelConsentGet
+      tags: [Automation]
+      responses:
+        "200":
+          description: The policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, allowed]
+                      properties:
+                        name: {type: string, description: "The model name, with or without its :tag suffix (matching ignores case and tag)"}
+                        publisher: {type: string, description: "The model's publisher hint; optional"}
+                        allowed: {type: boolean}
+                        note: {type: string, description: "Operator note; typical on refused entries"}
+                  publishers: {type: array, items: {type: string}, description: "The publisher allow-list; each allows every model of that publisher"}
+                  decision_rule: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+    put:
+      summary: Set the model-pull consent policy
+      description: |
+        Replaces the stored policy with the complete policy in the body
+        (it does not append). A model item may be a name (string, allowed)
+        or an object `{name, allowed, note, publisher?}`. Invalid input is
+        400; on success the change is audited as `model_pull_consent_changed`
+        and 200 `\"status\":\"ok\"`. A federated peer needs the config-write
+        capability.
+      operationId: automationModelConsentSet
+      tags: [Automation]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                models:
+                  type: array
+                  items:
+                    oneOf:
+                      - {type: string}
+                      - type: object
+                        required: [name, allowed]
+                        properties:
+                          name: {type: string}
+                          publisher: {type: string}
+                          allowed: {type: boolean}
+                          note: {type: string}
+                publishers: {type: array, items: {type: string}}
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema: {type: object, properties: {status: {type: string, example: ok}}}
+        "400": {description: The body is not a valid consent policy}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the config-write capability}
+
   /api/autonomous/merge-pipeline:
     get:
       summary: Merge pipeline in effect for a project
@@ -2321,6 +2461,51 @@ paths:
                     description: The slot count in effect, the node's pool limit. Equals session_slots when that is set. Absent when the node has no pool limit yet.
         "503":
           description: The node has no monitoring endpoint and no cached observer snapshot
+
+  /api/compute/nodes/{name}/versions:
+    get:
+      summary: Compute node backend versions
+      description: |
+        The node's reported backend version (with when it was recorded) and the
+        per-capability minimums applied to it.
+        Each capability row has the required minimum, `ok` (null when the
+        version is unknown), `unknown` and a `reason`. An unknown version
+        fails closed. The Ollama minimums are applied only to Ollama nodes
+        (or legacy nodes whose version was probed against Ollama).
+        The node must exist (404 otherwise). A federated peer needs the
+        compute read capability.
+      operationId: computeNodeBackendVersions
+      tags: [Compute]
+      parameters:
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The version rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: {type: string}
+                  kind: {type: string}
+                  address: {type: string}
+                  backend: {type: string, description: "The backend the version belongs to; absent when none"}
+                  backend_version: {type: string, description: "The reported version; empty when never recorded"}
+                  version_probed_at: {type: string, format: date-time, description: "When the version was recorded; absent when never recorded"}
+                  capabilities:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        capability: {type: string}
+                        minimum: {type: string}
+                        ok: {type: boolean, nullable: true, description: "Null when the version is unknown"}
+                        unknown: {type: boolean}
+                        reason: {type: string}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the compute read capability}
+        "404": {description: The node is not found}
 
   /api/capacity:
     get:

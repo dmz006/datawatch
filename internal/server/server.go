@@ -526,7 +526,14 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/progress/trend", api.handleAutonomousProgressTrend)
 	apiMux.HandleFunc("/api/autonomous/lane-fill", api.handleAutonomousLaneFill)                  // lane fill status: lanes, decisions, alerts
 	apiMux.HandleFunc("/api/autonomous/infra-retries", api.handleAutonomousInfraRetries)          // infrastructure retry policy and the tasks retried or held, newest first
-	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport)            // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)
+	apiMux.HandleFunc("/api/automation/onboarding-report", api.handleOnboardingReport)
+
+	// Requirements surfaces: the capability minimum-backend-versions /
+	// automation backend minimums report, the model-pull consent policy
+	// (get/set), and a compute node's backend version.
+	apiMux.HandleFunc("/api/automation/requirements-report", api.handleRequirementsReport)
+	apiMux.HandleFunc("/api/automation/model-consent", api.handleModelConsent)
+	apiMux.HandleFunc("/api/compute/nodes/{name}/versions", api.handleNodeBackendVersions)            // Automation onboarding report: what is configured, what is missing, what to try next (?format=text for plain text)
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                  // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)     // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate) // POST checks a pipeline body or a repository file without saving
