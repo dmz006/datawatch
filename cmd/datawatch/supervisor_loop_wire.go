@@ -32,23 +32,29 @@ func supervisorLoopSettingsFrom(cfg *config.Config) supervisorloop.Settings {
 // wireSupervisorLoop registers the eight mechanical steps on the coordinator's
 // idle tick and connects the escalator to the operator question queue. Run
 // records go to supervisor_loop_runs.jsonl in the data directory.
-func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, cfg *config.Config, reg *inference.Registry) {
+func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Manager, cfg *config.Config, reg *inference.Registry, srv *server.HTTPServer) {
 	if coord == nil || amgr == nil || cfg == nil {
 		return
 	}
 	settings := func() supervisorloop.Settings { return supervisorLoopSettingsFrom(cfg) }
 	set := settings()
+	store := supervisorloop.NewFileStore(filepath.Join(expandHome(cfg.DataDir), "supervisor_loop_runs.jsonl"), set.RunRetention)
 	engine := &supervisorloop.Engine{
 		Settings:  set,
 		Escalator: amgr.SupervisorLoopEscalator(),
 		Clock:     supervisorLoopClock{},
-		Store:     supervisorloop.NewFileStore(filepath.Join(expandHome(cfg.DataDir), "supervisor_loop_runs.jsonl"), set.RunRetention),
+		Store:     store,
 	}
 	// Model jobs: oneshot calls go through the decision assistant's call path
 	// (and its timeout) onto the LLM registry; session style starts a session.
 	amgr.SetDecisionAssistantModelFn(supervisorLoopAskFn(cfg, reg))
 	engine.Client = autonomouspkg.NewSupervisorModelClient(amgr, supervisorLoopSessionFn(cfg))
-	amgr.SetSupervisorModelJobs(&supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings})
+	jobs := &supervisorloop.ModelJobs{Engine: engine, SettingsFn: settings}
+	amgr.SetSupervisorModelJobs(jobs)
 	hooks := server.NewSupervisorLoopHooks(amgr, cfg, settings)
-	coord.SetSupervisorLoopSteps(autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks))
+	steps := autonomouspkg.NewSupervisorLoopSteps(coord, engine, hooks)
+	coord.SetSupervisorLoopSteps(steps)
+	if srv != nil {
+		srv.SetSupervisorLoop(server.NewSupervisorLoopControl(steps, jobs, store))
+	}
 }

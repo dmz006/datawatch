@@ -540,6 +540,8 @@ type Server struct {
 	questionEventsSwitch func(enabled bool)
 	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
 	autonomousEvents PendingEventsAPI
+	// supervisorLoop serves the supervisor-loop run history and manual runs.
+	supervisorLoop SupervisorLoopControl
 	// BL427 phase 5 — receiving side of peer forwarding for
 	// /api/autonomous/events/forward; nil → 503.
 	autonomousFwd ForwardedEventsAPI
@@ -6417,6 +6419,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
 			},
 			"lane_fill":   laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
+			// Effective, not raw: every supervisor_loop key with its default
+			// filled in, keyed without the supervisor_loop. prefix.
+			"supervisor_loop": supervisorLoopConfigSurface(s.cfg.Autonomous.SupervisorLoop),
 			"infra_retry": infraRetryConfigSurface(s.cfg.Autonomous.InfraRetry),
 			// Effective, not raw: the merge pipeline values with defaults filled in.
 			"merge_pipeline": mergePipelineConfigSurface(s.cfg.Autonomous.MergePipeline),
@@ -6868,6 +6873,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+	}
+	// Supervisor loop: every autonomous.supervisor_loop.* value is applied to a
+	// copy of the block first, so one bad value or unknown key rejects the whole
+	// PUT with an error naming the key.
+	if verr := validateSupervisorLoopPatch(s.cfg.Autonomous.SupervisorLoop, patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
 	}
 	// Progress engine parameters: every autonomous.progress.* value is checked
 	// before anything is applied, so one bad value rejects the whole PUT.
@@ -7374,6 +7386,11 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
 	for k, v := range patch {
+		if _, ok := supervisorLoopPatchKey(k); ok {
+			// Validated in handlePutConfig; stored under its plan key.
+			applySupervisorLoopPatch(cfg, map[string]interface{}{k: v})
+			continue
+		}
 		switch k {
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)

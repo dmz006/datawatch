@@ -542,3 +542,21 @@ func truncateUTF8(s string, max int) string {
 	}
 	return s[:cut]
 }
+
+// RunStep runs the named mechanical step once now, through the engine so the
+// run is recorded. It runs whatever the step's enabled setting says: the
+// operator asked for this run. found is false for a name that is no step.
+func (s *SupervisorLoopSteps) RunStep(ctx context.Context, name string) (detail string, found bool, err error) {
+	if s == nil {
+		return "", false, nil
+	}
+	eng := *s.engine
+	eng.Settings = s.settings()
+	for _, job := range s.jobs() {
+		if job.Name == name {
+			detail, err = eng.Run(ctx, job, "")
+			return detail, true, err
+		}
+	}
+	return "", false, nil
+}
