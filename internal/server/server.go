@@ -534,6 +534,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                 // decisions: operator questions with their tasks and answers, newest first
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                  // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
 	apiMux.HandleFunc("/api/autonomous/repo-ci-watch", api.handleRepoCIWatch)                     // repo CI watch state: mode, repos, alert threshold, last poll, records newest first
+	apiMux.HandleFunc("/api/supervisor-loop/jobs", api.handleSupervisorLoopJobs)                  // supervisor loop jobs: style, backend, model, enabled, last outcome
+	apiMux.HandleFunc("/api/supervisor-loop/jobs/", api.handleSupervisorLoopJobRun)               // POST .../{name}/run runs one job now
+	apiMux.HandleFunc("/api/supervisor-loop/runs", api.handleSupervisorLoopRuns)                  // supervisor loop run records, newest first
 	apiMux.HandleFunc("/api/autonomous/merge", api.handleAutonomousMerge)                         // merge status: mode, alert minutes, completed Automata with a branch, shadow decisions
 	apiMux.HandleFunc("/api/autonomous/merge/run", api.handleAutonomousMergeRun)                  // run a merge through the resolved pipeline, recording each step
 	apiMux.HandleFunc("/api/autonomous/safe-to-delete", api.handleAutonomousSafeToDelete)         // safe-to-delete report of finished Automaton branches and worktrees
@@ -1205,6 +1208,12 @@ func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
 // /api/questions) into the API server.
 func (s *HTTPServer) SetQuestions(api QuestionsAPI) {
 	s.api.SetQuestions(api)
+}
+
+// SetSupervisorLoop wires the supervisor loop control behind the
+// /api/supervisor-loop endpoints. Nil leaves them without run history.
+func (s *HTTPServer) SetSupervisorLoop(c SupervisorLoopControl) {
+	s.api.SetSupervisorLoop(c)
 }
 
 // SetAutonomousEvents wires the pending-events queue behind the mcp_queue

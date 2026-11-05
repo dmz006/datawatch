@@ -206,3 +206,48 @@ func ParseSettings(raw map[string]any) (Settings, []string) {
 	}
 	return s, reset
 }
+
+// Keys lists every setting key, in a stable order.
+func Keys() []string {
+	keys := []string{KeyEnabled}
+	for _, n := range StepNames {
+		keys = append(keys, settingsPrefix+n+keyStepSuffixEnabled)
+	}
+	for _, n := range ModelJobNames {
+		p := settingsPrefix + n
+		keys = append(keys, p+keyJobSuffixStyle, p+keyJobSuffixBackend, p+keyJobSuffixModel)
+	}
+	return append(keys, KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyLaneMin, KeyLaneMax)
+}
+
+// Flat returns the settings in effect as a flat map keyed like Keys.
+func (s Settings) Flat() map[string]any {
+	out := map[string]any{
+		KeyEnabled: s.Enabled, KeyValidatorRetries: s.ValidatorRetries, KeyEscalateAfter: s.EscalateAfter,
+		KeyRunRetention: s.RunRetention, KeyLaneMin: s.LaneMin, KeyLaneMax: s.LaneMax,
+	}
+	for _, n := range StepNames {
+		on, ok := s.Steps[n]
+		out[settingsPrefix+n+keyStepSuffixEnabled] = !ok || on
+	}
+	for _, n := range ModelJobNames {
+		j := s.Jobs[n]
+		style := j.Style
+		if style == "" {
+			style = StyleOneshot
+		}
+		p := settingsPrefix + n
+		out[p+keyJobSuffixStyle], out[p+keyJobSuffixBackend], out[p+keyJobSuffixModel] = string(style), j.Backend, j.Model
+	}
+	return out
+}
+
+// IsKey reports whether key is a supervisor_loop setting key.
+func IsKey(key string) bool {
+	for _, k := range Keys() {
+		if k == key {
+			return true
+		}
+	}
+	return false
+}
