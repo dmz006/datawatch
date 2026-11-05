@@ -845,6 +845,347 @@ when it is built; excluded surfaces state the reason.
 | Android        | Include           | Capability parity via the shared REST/WS contracts above; idiomatic delivery (no web-specific affordances assumed). **A `datawatch-app` issue is required when the feature is built** (Mobile-Parity Rule): the new placement-set editor affordances, status chips, and any new strings get filed against the Compose Multiplatform client in the same release that ships them on the PWA. |
 | iPhone/iOS     | Include           | Same parity clause as Android: parity standard is PWA == Android == iPhone, capability parity required with native (SwiftUI) delivery. **A `datawatch-app` issue is required when the feature is built** (Mobile-Parity Rule) so the iOS client tracks the same API contract and affordances; excluded from *this doc* only because this doc implements nothing. |
 
+## Federation rules and controls
+
+Placement moves *operator* work onto a *peer* machine across an untrusted
+boundary, so the capability model, the policy, and the audit trail are one
+control plane: no code path may place, refuse, shadow, or cancel
+differently from what this section describes. Everything here is operator
+config — the Configuration Accessibility Rule applies (every key readable
+and writable on REST, MCP, CLI, the comm channel, in the YAML/config
+template, and in the web UI) — is deny-by-default (every default below
+reads "nothing is placed, anywhere"), and is shadow-first (the first
+*live* decision any peer ever executes follows shadow entries an operator
+has actually watched).
+
+### New placement capabilities
+
+Two capabilities join the existing `surface:action` vocabulary in
+`internal/federation/capabilities.go` (whose `Resolve()`/`Check()`
+chokepoint every other surface already funnels through):
+
+| Capability | Gates |
+|---|---|
+| `placement:advertise` | The peer may *contribute* placement material: its nodes may enter this coordinator's candidate sets. Inbound direction. A peer without the grant is unaffected in everything else — its session tokens, its reads, its own work all keep running — only its nodes stay invisible to placement, and the dropped advertisement is an audited decision, not a silence. |
+| `placement:submit` | The coordinator may *submit* work to the peer: the session-start write to a `<peer>/<node>` node, and the cancel write back to the same peer (one who may start may also stop, per the task-lifecycle section). Outbound direction; the reciprocal grant lives in the *other* daemon's peer list for *this* one — per peer, per direction, two independent decisions. |
+
+Both are checked on the coordinator side at decision time against the
+acting credential (admin bypasses; session tokens and peer tokens go
+through the same `Check()`), and independently re-checked on the peer side
+when the submit write arrives (peer-side enforcement below) — a grant here
+authorizes the coordinator's act, it does not force the peer's compliance.
+
+**Built-in group placement** (following the file's own least-privilege
+precedent — `federation:fingerprint`, `plugin:read`/`plugin:write`, and
+`alerts:write` are each deliberately in `allCaps`/`full-control` *only*):
+
+- `full-control`: both capabilities added to `allCaps`.
+- New builtin group **`placement-partner`**: exactly `placement:submit` +
+  `placement:advertise` — the convenience grant for a peer that both
+  advertises and receives.
+- **No other builtin group** (not `federation-peer`, which keeps its v9.0.0
+  SEC-009 default of health + own-entry only) gains either capability by
+   default. A newly registered peer is placement-invisible in both directions
+   until an operator grants — open question 8's recommendation, now enforced
+   in the capability layer instead of just intended. Advertise-only or
+   submit-only postures stay available as single-capability grants, so the
+   builtins can grant each direction independently ("per direction" is a
+   grant-level property, not a config afterthought).
+
+### Tool-to-capability table
+
+`internal/federation/mcp_tool_caps.go` (the `MCPToolCap` map, enforced at
+the `POST /api/mcp/call` chokepoint, with the `internal/server/
+route_caps_a3_test.go` completeness test) gains the placement control
+surface, mirroring the existing `alert_rule_*` convention of gating a
+control plane on `config:read`/`config:write` rather than minting another
+read capability:
+
+| MCP tool | Capability | Note |
+|---|---|---|
+| `placement_status` | `config:read` | Switches, shadow entries, approvals, per-peer effective policy, candidate-set freshness |
+| `placement_policy_get` | `config:read` | The per-peer allow/deny + limits set |
+| `placement_policy_set` | `config:write` | Allow/deny lists, limits, per-peer switch |
+| `placement_master_set` | `config:write` | The master switch (off by default) |
+| `placement_shadow_set` | `config:write` | Flip a *specific peer* into or out of shadow — per peer, deliberately no global version |
+| `placement_approve` | `config:write` | Record the first-live-placement approval for a peer |
+| `placement_cancel` | `placement:submit` | The only placement *action* in the table — canceling a placed task is a submission-side act, the capability of the thing it undoes (the same pairing as `sessions:kill` on a session its holder could have started) |
+
+REST, CLI, comm-channel, and MCP all resolve the *same* capability for
+the same logical act (the comm-channel `placement cancel` and the REST
+cancel route are one guard), which is the Federation-Parity rule's
+"every remote write/run operation maps to a capability with a guard
+requirement" satisfied with one chokepoint in `internal/federation` and no
+surface re-implementing policy.
+
+### Per-peer allow/deny and limits
+
+```yaml
+federation:
+  placement:
+    enabled: false          # master switch; default off — nothing placed, anywhere
+    shadow: true            # shadow mode while enabled: log would-be placements, place nothing
+    peers:
+      <peer-id>:
+        enabled: false      # per-peer switch; default off even with the master on
+        approved: false     # first-live-placement approval recorded? an audited act, not a hand-edit
+        nodes:    { allow: [], deny: [] }   # node names from the peer's advertisement
+        models:   { allow: [], deny: [] }   # LLM ids, not raw token pools
+        automata: { allow: [], deny: [] }   # Automaton names, or `kind:<kind>` tokens for whole kinds
+        projects: { allow: [], deny: [] }   # project slugs
+        limits:
+          max_concurrent_tasks: 2   # simultaneous live-placed sessions on this peer; default 2
+          max_slot_share: 0.25      # max fraction of that peer's advertised concurrency any one coordinator may claim; default 0.25
+          max_task_hours: 8         # per-task runtime ceiling before the task is a hung-candidate (task-lifecycle section); default 8
+          cost_class: high          # admit task models whose cost tier is low, mid, or <= high (default: no cost gate until an operator tightens it)
+```
+
+**Allow/deny semantics** (identical across the four axes): a non-empty
+`allow` list restricts to its entries; a non-empty `deny` list always wins
+over `allow` for the entries it names; *both empty means no restriction on
+this axis* — denial-by-default lives at the peer-entry level (`enabled:
+false`) and in the switches, and the per-axis defaults must not silently
+re-deney a peer the operator already enabled, which would make "allow
+anything but `kind:billing`" read as "allow nothing". Operators start the
+first entry with one axis populated (usually `models.deny`) and widen
+deliberately, one axis at a time, with each change a `config:write`-guarded,
+audit-logged policy write.
+
+**Limits** are evaluated at decision time against the peer's *current*
+advertised concurrency and the task's projected cost, and a limit refusal
+names which limit (concurrent, share, hours, or cost) in the audit entry
+— an operator reading the feed cannot tell at a glance whose gate closed
+unless the refusal says. `max_slot_share` and `max_concurrent_tasks` are
+deliberately finite by default: a peer that silently becomes a 50-task
+destination is an operator surprise, and the override is one policy write
+with an audit line, so the default costs nothing to raise when a dedicated
+peer (an operator's own second instance, say) should take everything.
+
+### The decision gate (order is the audit)
+
+A candidate (task, model, `<peer>/<node>`) is placed on peer P **iff every**
+step passes, in this order — the *first failing* step is the audit
+entry's `deciding_rule`, and the order is part of the contract so that
+refusals read the same in the feed, the PWA, the CLI, and the comm channel:
+
+1. **Master switch** on (`federation.placement.enabled`).
+2. **Per-peer switch** on (`peers.<P>.enabled`).
+3. **Capability**: this daemon holds `placement:submit` for P, and P held
+   `placement:advertise` when its advertisement was accepted (also
+   re-checked at decision time — a revocation pulls the peer's nodes out
+   of candidate sets within one advertisement TTL, the same freshness
+   window as a dead peer, rather than waiting for a manual purge).
+4. **Allow/deny** on all four axes (the semantics above), per axis.
+5. **Limits**: concurrent, share, task-hours, cost class.
+6. **Approval**: if this would be the peer's first-ever *live* submission,
+   the operator's prior approval act must exist (shadow submissions never
+   require it).
+
+### Shadow mode (default on while placement is newly enabled)
+
+With the master on and `shadow: true` — the posture an operator adopts on
+first enable, and the default for any peer whose per-entry `enabled` flips
+`false → true` without an explicit `placement_shadow_set … off` act — the
+coordinator runs the full decision gate above on every candidate as if it
+were live, then **logs the would-be decision and submits nothing**: the
+audit entry records the candidate, the passing path or the first failing
+rule, and a `placement:shadow` marker; no session starts, no token is
+spent on placement transport, and the peer never sees the task. The shadow
+entries are the review surface: the PWA card, the
+`datawatch placement status` CLI view, and the comm-channel
+`placement status` query list them per peer with a deciding-rule breakdown
+("14 would-be placements to `peer-2` over the last 7 days: 11 would pass
+to `node-b`, 3 refused on `automata.deny: kind:billing`"), which is the
+evidence the operator needs before the two acts that follow. Flipping a
+specific peer out of shadow is `placement_shadow_set <peer> off` — a
+per-peer, audit-logged act with the peer's name in it — and there is
+deliberately **no global shadow-off**, because "I watched `peer-2` for a
+week, now turn everything on" is two different decisions bundled into one
+click. Peers go live one at a time; enabling one changes nothing about
+the others' shadow posture.
+
+### First-live-placement approval
+
+The *first live submission to a given peer* requires an explicit operator
+act, separate from any switch: `datawatch placement approve <peer>
+(config:write)`, the MCP `placement_approve`, the REST
+`POST /api/federation/placement/<peer>/approved`, and the comm
+`placement approve <peer>` channel are all the same act on the same guard,
+and each is itself an audit-logged write that sets
+`peers.<P>.approved: true` with the actor and timestamp. The act is
+deliberately separate from the per-peer switch and from shadow-off:
+operators who enable a peer, watch its shadow entries, and then approve it
+are doing three auditable decisions instead of one, and a peer can sit in
+shadow indefinitely — approved or not — without ever having placed a
+single live task, which is the posture a cautious operator should be able
+to hold forever without a config contradiction. Approval is per **peer**
+(not per task, not per Automaton — open decision 4 below weighs the
+granularity); revoking a peer's approval is a policy write that takes
+effect on the peer's next *candidate*, and already-running tasks keep
+cancel rights per the task-lifecycle section's single best-effort write.
+
+### Audit entries (every placement, refusal, cancellation)
+
+Every placement *attempt* — placed, refused by any gate step, shadowed,
+withdrawn as stale, canceled, or rejected on the peer side — is one audit
+entry, in the formats the Audit Logging Rule (`AGENT.md`) requires:
+JSON-lines by default and CEF for SIEM forwarding (the escape rules and
+severity assignments in that rule apply, and the CEF mapping is per-event
+as it is for every other federation write-class event):
+
+```
+{"event":"placement:refused", "peer":"peer-2", "node":"node-b",
+ "run":"task-17", "model":"claude-opus-4-8", "deciding_rule":"automata.deny",
+ "failed_entry":"kind:billing", "actor":"operator@…",
+ "ts":"2026-…"}
+{"event":"placement:shadow", "peer":"peer-2", "node":"node-b",
+ "run":"task-18", "deciding_rule":"gate_passed", "would_place":true, "ts":"…"}
+{"event":"placement:submitted", "peer":"peer-2", "node":"node-b",
+ "run":"task-19", "task_id":"…", "deciding_rule":"none", "ts":"…"}
+{"event":"placement:rejected_by_peer", "peer":"peer-2", "node":"node-b",
+ "run":"task-19", "peer_reason":"local-concurrency", "ts":"…"}
+{"event":"placement:cancelled", "peer":"peer-2", "node":"node-b",
+ "run":"task-19", "remote_confirmed":true|false, "ts":"…"}
+```
+
+The `deciding_rule` field is the point of the audit requirement: a refusal
+is never just "denied" — it names *which control* denied, so an operator
+reading the feed can distinguish a capability gap, a deny-list hit,
+a limit hit, an approval-pending refusal, and a peer's own local denial
+without reading the daemon's source. It is the same field the PWA, the
+CLI, and the comm channel surface when an operator asks *why* a candidate
+was or wasn't placed, and it is what makes shadow mode a reviewable record
+rather than a log dump.
+
+### Control surfaces (parity, same act, same guard)
+
+| Surface | Entry point | Capability (same act, same guard as the MCP table) |
+|---|---|---|
+| REST | `GET /api/federation/placement/status`; `GET/PUT …/policy`; `PUT …/master`; `PUT …/shadow/<peer>`; `POST …/approve/<peer>`; `POST …/cancel/<run>` | `config:read` for the reads, `config:write` for the settings/switch/approval writes, `placement:submit` for cancel (the table's `placement_cancel`) |
+| MCP | The seven tools in the table above | per tool, as the table says |
+| CLI | `datawatch placement status \| policy <set\|get> \| master <on\|off> \| shadow <peer> <on\|off> \| approve <peer> \| cancel <run>` | same mapping: status/policy → `config:read`; the rest by their tool's capability |
+| comm channel | `placement status`, `placement policy set …`, `placement master off`, `placement shadow <peer> off`, `placement approve <peer>`, `placement cancel <run>` — enough to run the whole control plane over Signal/Telegram without opening the PWA | same mapping |
+| YAML/config | The `federation.placement.*` block above, every field present-and-commented in the template (Configuration Accessibility Rule); `approved` is the same field whether hand-edited or set via the audited act — hand-editing it *is* the act, and the audit line for it says "policy write" rather than "approve" so the two entry paths are distinguishable in the feed | n/a |
+| PWA | Federation → Placement card: per-peer switch, shadow entry list with deciding-rule breakdown, approval state and actor, candidate-set freshness per peer; mobile parity issue required at build time (Mobile-Parity Rule in the Parity surface above) | n/a |
+
+Parity here is the requirement, not the aspiration: the *same logical act*
+resolved on any surface holds the *same capability* (`MCPToolCap` /
+`internal/federation` chokepoint), so a surface that forgets a guard is
+caught by the route-completeness test, not discovered by an operator in
+production at 2 a.m. reading audit lines that don't match what they typed
+on the PWA.
+
+### What the peer enforces independently
+
+The coordinator's gate is necessary, not sufficient — the peer is the
+machine that receives the work and remains the single writer for its own
+bytes (the worktree decision's premise). On the peer side of the same
+submit write, independently of anything the coordinator decided:
+
+- **Token and registry check**: the session-start write arrives under the
+  peer's own peer-scoped node token (the token section's model), and the
+  peer's local registry is authoritative for whether that token is still
+  valid, which node it binds, and whether that node is still *enabled on its
+  own side* — a grant the coordinator believes exists is no more binding
+  than the peer's own registry says at the moment the write arrives, and
+  the peer's refusal is a `placement:rejected_by_peer` the coordinator
+  records with the peer's stated reason.
+- **Local concurrency and budget**: the peer's own lane caps, its own
+  autonomous-concurrency ceiling (open question 3's answer — peer sessions
+  count toward the *global* cap, not local-lane caps), its own model token
+  budget, and its own cost policy all apply to a received task exactly as
+  they apply to any local task on that machine; a peer at capacity simply
+  refuses, and the coordinator's ledger records the refusal rather than a
+  silent retry elsewhere (a retry to a *different* peer is a new candidate
+  evaluation, a new decision gate run, a new audit entry — not a re-use of
+  the first one).
+- **Its own trust posture**: a peer that is also a coordinator for its own
+  fleet enforces *this same section* on its own nodes with its own peer
+  list, its own switches, its own approvals, its own audit trail — there
+  is no "a coordinator already said yes, so skip the gate" fast path
+  anywhere, which is the Federation-Parity rule's untrusted-caller premise
+  holding on both sides of the boundary in both directions, and the reason
+  a peer with `placement:submit` granted *by* the coordinator is a
+  different, independently-gated relationship than a peer with that
+  capability *on* the coordinator's own peer list.
+
+Deny-by-default is thus **structural**, not just a config default: a
+submission the coordinator's six-step gate passes can still fail the
+peer's own checks, and neither side's audit trail needs to trust the
+other's to explain why the task isn't running — the operator reads two
+lines (one `placement:submitted`, one
+`placement:rejected_by_peer: local-concurrency`) and knows exactly which
+machine said no and on which rule, without a second support pass.
+
+### Open decisions (each with a recommendation)
+
+Per this document's convention for operator-owned decisions, each is
+stated with its recommendation so the design can be built as-written if
+the operator agrees with all of them; open question 9 below is the
+index entry for this list.
+
+1. **What `max_concurrent_tasks` should default to per peer.**
+   **Recommendation:** 2. Two is enough to prove the full pipeline
+   (placement, worktree, run, verify, result, cancel) works across the
+   boundary without the peer becoming a de-facto fleet, and the override
+   is one audited `placement_policy_set` write — so the default's
+   conservatism costs nothing to raise when a dedicated peer should take
+   everything, and it costs an operator's own surprise to have skipped it.
+2. **What `max_slot_share` should default to per peer.**
+   **Recommendation:** 0.25. A peer's advertised concurrency was declared
+   *by that peer's operator* as theirs; 25% is a visible, overridable
+   fraction that keeps any one coordinator from monopolizing a shared
+   peer's slots by default, and a dedicated peer can be set to 1.0
+   explicitly — the honest statement of "this machine is fully mine" —
+   rather than left implicit in a default that reads as shared.
+3. **What `cost_class` means as a value and where it comes from.**
+   **Recommendation:** `cost_class` is three values ordered low < mid <
+   high, with `high` as the admission default so an untouched peer gate
+   is the open end and tightening is always a deliberate act. The source
+   of a model's class is the per-backend rate the daemon already prices
+   from — `session.CostRate` (USD per 1K input/output tokens per backend,
+   the table the cost report and `AddUsage` already read, already
+   operator-overridable) — so a model's class is *"its rate is at or
+   below this class's ceiling"*: the operator sets the two class
+   ceilings once in the placement config (present-and-commented in the
+   template, per the Configuration Accessibility Rule), and no new
+   per-entry cost field has to be kept in sync with the registry, the
+   PWA entry editor, or the parity surfaces — that sync burden is the
+   reason this design does not mint a separate class field per LLM
+   entry, even though a `cost_hint`-style field on the entry is the more
+   obvious shape at first glance. A peer whose operator wants every
+   class admitted leaves `cost_class: high`; a peer that should only
+   take low-class (local) work sets `cost_class: low`. This is a
+   design-level constraint on admission, not a budget on execution —
+   the runtime token budget stays where it is (the cost-report and
+   burn-guard territory); what changes is that a peer's cost posture
+   is an auditable part of its placement trust surface, not an afterthought read out of the PWA.
+   **Fallback if the operator wants per-model control instead:** the
+   placement config also accepts an explicit `cost_class_overrides`
+   map of LLM-id → class (low/mid/high) that wins over the ceiling
+   derivation, so a model whose rate looks mid but whose traffic is
+   actually low (a self-hosted copy, say) can be admitted to a
+   low-class peer without changing its rate.
+4. **Approval granularity: per peer vs. per (peer, Automaton kind).**
+   **Recommendation:** per peer, one act. Approval is a trust decision
+   about *the machine and its operator*; the *work* is already split by
+   the allow/deny axes (which include `kind:<kind>` tokens). Two axes
+   doing different jobs beats one axis doing both, and per-kind approval
+   is available later as a filter on the `approved` record without
+   changing the gate's six-step shape — it is not needed to make the
+   first deployment safe, only to make the second one more granular, and
+   that granularity should earn its complexity by being asked for rather
+   than assumed.
+5. **Whether shadow-off is per peer or also global.**
+   **Recommendation:** per peer only — the one-button "watched it, now
+   on for all" is the exact path an operator takes at 2 a.m. under incident
+   pressure, and the per-peer `placement_shadow_set <peer> off` act with
+   the peer's name in it is the same decision with a name the audit trail
+   can hold the operator to. A global off could be added, but that
+   addition is the thing that makes a peer go live on the strength of a
+   click, and this section's whole premise is that peers go live on the
+   strength of a *named, per-peer, audited* act.
+
 ## Open questions
 
 Each is an operator-owned decision. The recommended answer is stated with
@@ -941,4 +1282,17 @@ with every recommendation.
    operator explicitly decides that *this* peer may be placed on, and
    deny-by-default makes the audit story one sentence instead of a diff
    against implicit grants. The cost is one extra grant step at
-   registration, which is the point.
+   registration, which is the point. (The Federation rules and controls
+   section makes this structural: only `full-control` and the new narrow
+   `placement-partner` builtin carry either `placement:*` capability, so
+   a `federation-peer` default grant cannot silently open either
+   direction.)
+9. What defaults should ship for the placement control plane — the
+   Federation rules and controls section's five open decisions
+   (`max_concurrent_tasks` default, `max_slot_share` default, the
+   `cost_class` value and its source, approval granularity, and
+   per-peer-only shadow-off), each of which carries its own
+   Recommendation in that section; this entry is the index so this list
+   remains the single place operator decisions are enumerated. (Per the
+   section's conventions, each is already recommended in place — the
+   recommendation is not deferred to this list.)
