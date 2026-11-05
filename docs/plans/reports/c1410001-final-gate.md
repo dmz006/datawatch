@@ -13,3 +13,15 @@
 5. `.datawatch/verify/review-fix-tests.sh` — all four node test files (`app-requirements-report.test.js`, `app-model-consent.test.js`, `app-node-versions.test.js`, `app-requirements-min-ollama.test.js`) pass and all four tracker rows exist in `docs/testing-tracker.md`; exit 0.
 
 **Result:** All gates pass. No version bump, no changelog entry.
+
+## Re-verification 2026-11-05
+
+Commands run again from the repository root on 2026-11-05, with the counts they printed:
+
+1. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-requirements-report.test.js` — 11 tests, 11 pass, 0 fail, 0 cancelled, 0 skipped; exit 0.
+2. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-model-consent.test.js` — 14 tests, 14 pass, 0 fail, 0 cancelled, 0 skipped; exit 0.
+3. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-node-versions.test.js` — 7 tests, 7 pass, 0 fail, 0 cancelled, 0 skipped; exit 0.
+4. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-requirements-min-ollama.test.js` — 10 tests, 10 pass, 0 fail, 0 cancelled, 0 skipped; exit 0.
+5. Tracker rows: `grep -c '<file>' docs/testing-tracker.md` returned 1 for each of `app-requirements-report.test.js`, `app-model-consent.test.js`, `app-node-versions.test.js` and `app-requirements-min-ollama.test.js` (4 files, 4 rows).
+
+Total across the four files: 42 tests, 42 pass, 0 fail.
