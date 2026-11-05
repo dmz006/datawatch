@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 )
@@ -45,6 +46,9 @@ func ValidateSpecDraft(output string) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&d); err != nil {
 		return fmt.Errorf("not valid decompose JSON: %v", err)
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return errors.New("trailing data after the decompose JSON")
 	}
 	if len(d.Stories) == 0 {
 		return errors.New("no stories")
@@ -93,6 +97,19 @@ func oneOf(what string, choices []string) Validator {
 // ModelJobs builds and runs the three model jobs from settings.
 type ModelJobs struct {
 	Engine *Engine
+	// SettingsFn, when set, supplies the settings live on every call; nil
+	// uses Engine.Settings.
+	SettingsFn func() Settings
+}
+
+// engine returns the engine for one call, with live settings applied.
+func (m *ModelJobs) engine() *Engine {
+	if m.SettingsFn == nil {
+		return m.Engine
+	}
+	e := *m.Engine
+	e.Settings = m.SettingsFn()
+	return &e
 }
 
 // DraftSpecPrompt builds the draft_spec prompt around a quoted operator answer.
@@ -117,27 +134,28 @@ func PickBackendPrompt(rule string, candidates []string) string {
 }
 
 func (m *ModelJobs) job(name string, v Validator) Job {
-	set := m.Engine.Settings.Jobs[name]
+	set := m.engine().Settings.Jobs[name]
 	return Job{Name: name, Kind: KindModel, Validator: v}.WithSetting(set)
 }
 
 func (m *ModelJobs) run(ctx context.Context, j Job, prompt string) (string, error) {
-	if j.Backend == "" && j.Model == "" {
+	if j.Backend == "" || j.Model == "" {
 		return "", m.refuse(ctx, j)
 	}
-	return m.Engine.Run(ctx, j, prompt)
+	return m.engine().Run(ctx, j, prompt)
 }
 
 // refuse escalates a job that has no model; nothing is called.
 func (m *ModelJobs) refuse(ctx context.Context, j Job) error {
-	rec := RunRecord{Job: j.Name, Style: j.Style, Started: m.Engine.Clock.Now(), Outcome: OutcomeEscalated, Detail: ErrNoModel.Error()}
-	rec.Finished = m.Engine.Clock.Now()
+	e := m.engine()
+	rec := RunRecord{Job: j.Name, Style: j.Style, Started: e.Clock.Now(), Outcome: OutcomeEscalated, Detail: ErrNoModel.Error()}
+	rec.Finished = e.Clock.Now()
 	rec.ValidatorErrors = []string{ErrNoModel.Error()}
-	if m.Engine.Store != nil {
-		_ = m.Engine.Store.Append(rec)
+	if e.Store != nil {
+		_ = e.Store.Append(rec)
 	}
-	if m.Engine.Escalator != nil {
-		if err := m.Engine.Escalator.Escalate(ctx, Escalation{Job: j.Name, Attempts: []Attempt{{ValidatorError: ErrNoModel.Error()}}}); err != nil {
+	if e.Escalator != nil {
+		if err := e.Escalator.Escalate(ctx, Escalation{Job: j.Name, Attempts: []Attempt{{ValidatorError: ErrNoModel.Error()}}}); err != nil {
 			return fmt.Errorf("%w: %v", ErrEscalated, err)
 		}
 	}

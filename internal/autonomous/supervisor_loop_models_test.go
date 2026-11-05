@@ -48,3 +48,15 @@ func TestSupervisorLoopModelClientUsesDecisionPath(t *testing.T) {
 		t.Fatal("unwired session should error")
 	}
 }
+
+func TestSupervisorLoopModelJobsAccessor(t *testing.T) {
+	m := &Manager{}
+	if m.SupervisorModelJobs() != nil {
+		t.Fatal("expected none before wiring")
+	}
+	j := &supervisorloop.ModelJobs{}
+	m.SetSupervisorModelJobs(j)
+	if m.SupervisorModelJobs() != j {
+		t.Fatal("not stored")
+	}
+}

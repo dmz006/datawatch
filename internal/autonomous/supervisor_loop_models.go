@@ -59,3 +59,18 @@ func (c *SupervisorModelClient) Ask(ctx context.Context, req supervisorloop.Requ
 	}
 	return "", fmt.Errorf("unknown style %q", req.Style)
 }
+
+// SetSupervisorModelJobs stores the loop's model jobs so callers (CI triage,
+// spec drafting, backend routing) reach them through the Manager.
+func (m *Manager) SetSupervisorModelJobs(j *supervisorloop.ModelJobs) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.supervisorModelJobs = j
+}
+
+// SupervisorModelJobs returns the wired model jobs, or nil when none.
+func (m *Manager) SupervisorModelJobs() *supervisorloop.ModelJobs {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.supervisorModelJobs
+}

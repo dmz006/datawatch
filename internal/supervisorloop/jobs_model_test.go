@@ -49,6 +49,8 @@ func TestSupervisorLoopModelValidators(t *testing.T) {
 	}
 	bad := []string{
 		"nope",
+		goodSpec + " trailing junk",
+		goodSpec + goodSpec,
 		`{"stories":[]}`,
 		`{"stories":[{"name":"s","tasks":[{"name":"t","spec":"","files":["a"]}]}]}`,
 		`{"stories":[{"name":"s","tasks":[{"name":"t","spec":"x","files":[]}]}]}`,
@@ -109,5 +111,34 @@ func TestSupervisorLoopModelStyleRouting(t *testing.T) {
 		if c.reqs[0].Style != st {
 			t.Errorf("style %q sent as %q", st, c.reqs[0].Style)
 		}
+	}
+}
+
+func TestSupervisorLoopModelRefusesPartialSetting(t *testing.T) {
+	for _, bm := range [][2]string{{"ollama", ""}, {"", "qwen"}} {
+		c := &fakeClient{replies: []string{"infra"}}
+		m, esc := modelJobs(c, bm[0], bm[1], StyleOneshot)
+		if _, err := m.ClassifyCIFailure(context.Background(), "log"); !errors.Is(err, ErrNoModel) {
+			t.Fatalf("%v: got %v", bm, err)
+		}
+		if len(c.reqs) != 0 || len(esc.got) != 1 {
+			t.Fatalf("%v: called=%d escalations=%d", bm, len(c.reqs), len(esc.got))
+		}
+	}
+}
+
+func TestSupervisorLoopModelLiveSettings(t *testing.T) {
+	c := &fakeClient{replies: []string{"infra"}}
+	m, _ := modelJobs(c, "", "", StyleOneshot)
+	m.SettingsFn = func() Settings {
+		s := m.Engine.Settings
+		s.Jobs = map[string]JobSetting{"classify_ci_failure": {Style: StyleSession, Backend: "pi", Model: "q"}}
+		return s
+	}
+	if _, err := m.ClassifyCIFailure(context.Background(), "log"); err != nil {
+		t.Fatal(err)
+	}
+	if c.reqs[0].Style != StyleSession || c.reqs[0].Backend != "pi" {
+		t.Fatalf("%+v", c.reqs[0])
 	}
 }

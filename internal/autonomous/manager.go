@@ -22,6 +22,7 @@ import (
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
 // maxDecisionsPerPRD (BL291, v5.5.0) — cap on PRD.Decisions to prevent
@@ -1492,6 +1493,8 @@ type Manager struct {
 	// model call (nil = unreachable, every decision escalates) and its per-call
 	// timeout (zero = DefaultDecisionModelTimeout).
 	decisionModelFn func(ctx context.Context, backend, model, prompt string) (string, error)
+	// supervisorModelJobs are the supervisor loop's model jobs (see supervisor_loop_models.go).
+	supervisorModelJobs *supervisorloop.ModelJobs
 	decisionTimeout time.Duration
 
 	// memoryCrossSeedFn (BL387 Phase 2b) — when set, called at PRD first-run
