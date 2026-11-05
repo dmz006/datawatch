@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.97.1 — Eval job names cannot steer the cases path
+
+A model job name in an eval request can no longer steer the file path.
+
+- CodeQL flagged `go/path-injection` in the supervisor loop eval: the job name from the request was joined into the folder the eval cases are read from, so a name like `../secret` could have read `*.json` files outside it. The folder name now comes from a fixed list of the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`), and an unknown name is refused before any file is read.
+- Two tests cover traversal-shaped names and the three real jobs.
+
 ## v9.97.0 — Supervisor loop in the daemon
 
 The daemon now runs a standing supervisor loop that keeps Automata moving without a live model session holding the context.
