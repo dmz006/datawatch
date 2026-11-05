@@ -348,6 +348,19 @@ type Server struct {
 	// it so staleness is deterministic.
 	verifierHeadroomNow func() time.Time
 
+	// headroomProbe is the concrete probe behind the compute-node
+	// headroom measurement routes (compute_headroom.go); nil = the
+	// daemon's default probe (observer read plus Ollama probe request).
+	// Tests inject a fake.
+	headroomProbe compute.HeadroomProbe
+	// headroomAllowedModels is the pull-allowed model list for headroom
+	// measurement; the caller keeps it smallest first (Measure always
+	// uses the first as the probe request's model). Empty = every
+	// measurement is refused (403).
+	headroomAllowedModels []string
+	// headroomClock is the measurement's clock; nil = time.Now.
+	headroomClock func() time.Time
+
 	// Per-node usage cache for the node:<name> capacity pools. Lazily
 	// created by (s *Server) nodeUsageCache(); see node_usage.go.
 	nodeUsageCacheOnce sync.Once
