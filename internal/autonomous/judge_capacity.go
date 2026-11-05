@@ -16,6 +16,8 @@ type JudgeAdmit struct {
 	// Holder is the judge's own lease name (VerifyHolder for the verifier).
 	Holder string
 	// WorkerHolder is the task's worker lease to hand over, or "" for none.
+	// On a node with a verifier pool (see verifierPoolOnWorkerNode) it is
+	// released instead, so the verifier takes node-verify:<node>.
 	WorkerHolder string
 	PRDID        string
 	Backend      string
@@ -38,10 +40,14 @@ type JudgeAdmit struct {
 // the judge holds, with the release func that frees the lease.
 //
 // The worker's lease is handed over when the judge can run on it (see
-// judgeHandoff). Otherwise the worker's slot is released first and the judge
-// acquires its own lease on its pools, with its candidate nodes so the ledger
-// picks one. The node is returned only for an entry with two or more
-// candidates; a single-node judge gets "" and starts as it always has.
+// judgeHandoff). On a node that has a verifier pool the hand-over is skipped
+// and the worker's slot is released instead: the ledger places the judge on
+// node-verify:<node> so it runs while executor may still hold the node's
+// executor pool. Otherwise the worker's slot is released first (or handed
+// over) and the judge acquires its own lease on its pools, with its candidate
+// nodes so the ledger picks one. The node is returned only for an entry with
+// two or more candidates; a single-node judge gets "" and starts as it always
+// has.
 //
 // For a multi-node entry the model is loaded on the node the lease landed on.
 // A load that fails raises the node-load alert, releases the lease and acquires
@@ -69,8 +75,10 @@ func (m *Manager) AdmitJudge(ctx context.Context, j JudgeAdmit) (string, func(),
 		led.Release(j.Holder)
 	}
 	if j.WorkerHolder != "" {
-		if _, ok := judgeHandoff(led, keysFn, choicesFn, j.WorkerHolder, j.Holder, j.Backend, j.Model); ok {
-			return m.placeJudge(ctx, j, led, choices)
+		if !verifierPoolOnWorkerNode(led, j.WorkerHolder) {
+			if _, ok := judgeHandoff(led, keysFn, choicesFn, j.WorkerHolder, j.Holder, j.Backend, j.Model); ok {
+				return m.placeJudge(ctx, j, led, choices)
+			}
 		}
 		led.Release(j.WorkerHolder)
 	}
@@ -166,6 +174,26 @@ func (m *Manager) placeJudge(ctx context.Context, j JudgeAdmit, led *capacity.Le
 		}
 	}
 	return node, release, nil
+}
+
+// verifierPoolOnWorkerNode reports whether the node the worker lease holds
+// has a verifier pool — the ledger admits a limit of verifier sessions on
+// node-verify:<node> there (Ledger.VerifierSlotsOn above 0). It is the
+// AdmitJudge condition for skipping the worker-lease hand-over: a judge that
+// can run on the verifier pool does not take a slot out of the executor pool
+// node:<node>, so the worker's executor lease is released (and the judge's own
+// lease lands on node-verify:<node> through the ledger as usual) instead of
+// being handed over.
+//
+// No I/O under a lock: VerifierSlotsOn is the ledger's read of a map under its
+// own lock, and LeaseOf is the same — nothing here calls another ledger method
+// with side effects, so the LOCK RULE holds.
+func verifierPoolOnWorkerNode(led *capacity.Ledger, workerHolder string) bool {
+	ls := led.LeaseOf(workerHolder)
+	if ls == nil || ls.Node == "" {
+		return false
+	}
+	return led.VerifierSlotsOn(ls.Node) > 0
 }
 
 // judgeKeys resolves the judge's pools through the wired resolver.
