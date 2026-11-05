@@ -27,6 +27,10 @@ const (
 	// FindingMissingModelPin — the plan's rules require a model pin and
 	// the task has none.
 	FindingMissingModelPin = "missing_model_pin"
+	// FindingRulesChecklistGap — a task's rules_applied list does not cover
+	// the rules areas its files and spec touch, or is empty although the
+	// planning record shows a rules file was present.
+	FindingRulesChecklistGap = "rules_checklist_gap"
 )
 
 var (
@@ -87,7 +91,7 @@ func applyPlanRulesMode(mode string, prd *PRD, stories []Story, report *PlanStru
 	}
 }
 
-// CheckPlanRules evaluates the four rules, ignoring the checks policy. It is
+// CheckPlanRules evaluates the plan rules, ignoring the checks policy. It is
 // deterministic and returns an empty (non-nil) slice for an empty plan.
 func CheckPlanRules(prd *PRD, stories []Story) []StructuralFinding {
 	out := []StructuralFinding{}
@@ -117,6 +121,9 @@ func CheckPlanRules(prd *PRD, stories []Story) []StructuralFinding {
 					out = append(out, StructuralFinding{Kind: FindingReleaseFixedVersion, StoryID: s.ID, TaskID: t.ID,
 						Detail: "release task " + t.ID + " names fixed version " + v + "; say 'next release above main' instead"})
 				}
+			}
+			if f, ok := rulesChecklistGap(prd, s, t); ok {
+				out = append(out, f)
 			}
 			if (pinRequired || planRulePinReqRe.MatchString(t.Spec)) && !hasModelPin(prd, s, t) {
 				out = append(out, StructuralFinding{Kind: FindingMissingModelPin, StoryID: s.ID, TaskID: t.ID,
