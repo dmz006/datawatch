@@ -143,3 +143,16 @@ this package:
 All driven by scripted `PlannerFn` values; the real state machine, the
 real prompt builder, and the real finding pipeline (`LintPlanScope`,
 `CheckPlanCoverage`, `CheckPlanStructure`) run unmodified.
+
+## Parity surface
+
+| Surface | Status | Detail |
+|---|---|---|
+| REST | Included | `/api/autonomous/planning-routing` (GET, PUT), `/test` (POST), `/scorecard` (GET). |
+| MCP | Included | Four tools proxy the REST routes, registered with caps. |
+| CLI | Included | A `planning-routing` group; `set` merges flags onto the current config. |
+| comm channel | Included | A routing verb with show and scorecard proxies to REST. |
+| YAML/config | Included | Routing rules live in the autonomous config block and are editable as YAML. |
+| PWA | Included | A Settings card with a test form, result and counts-only scorecard. |
+| Android | Excluded | Not built in this release; a datawatch-app parity issue is filed at merge. |
+| iPhone/iOS | Excluded | Not built in this release; tracked by the same parity issue. |
