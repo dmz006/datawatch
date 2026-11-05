@@ -1910,3 +1910,11 @@ The operator opened a second Claude lane at 17:41 for six hours ("Yes open 2nd f
 ### Reading, 2026-11-05 12:32
 
 The operator's words: "Claude at 59%". Pace line 59.8, headroom 0.8 points, 2.81 days left. The previous reading was 46% at 17:19 on 2026-11-04, so 13 points in 19.2 hours, about 0.68 per hour (16.3 per 24 hours); the transcript burn script reported 0.62 per hour over the same window, so it under-counts by about 9 percent. At the recent burn the weekly projection is 104.7% and the allowance runs out Sunday 01:07, about 6.9 hours before the reset; at the week average it is 98.6%. Policy is run until used up, one Claude lane. The burn guard has been holding Claude for part of each hour since last night (`hold_claude`); no guard setting was changed. The lane count and the guard are the operator's decisions.
+
+### Decision, 2026-11-05 18:00: where the per-node verifier cap control goes
+
+Question (asked in chat, one of two): where should the per-node verifier cap control (`verifier_slots`) go in the web app? Options: A, in the node detail under the supported cap (recommended); B, in the node edit dialog; C, no web control for now.
+
+Operator answer, quoted: "is the node detail in the settings section?> that seems right. go with recommended if so"
+
+Check made before acting: the node detail is in Settings, on the Compute tab under Compute Nodes, and opens as a modal titled with the node name and "live detail". That modal re-renders every second while it is open, so an editable field placed in the polled body would be overwritten while typing. Decision: option A, with the constraint that the control sits in a part the one-second poll does not re-render, or the poll skips the redraw while the field has focus or unsaved input. The control is a "Parallel verifiers" number with Save under the supported cap, goes through the same write gate as every other surface (a cap above 1 is refused without a fresh measurement, with the refusal text shown), and has labels in all five locales. Applies to Automaton `718a0001`.
