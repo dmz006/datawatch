@@ -33,6 +33,15 @@ type PipelineChoice struct {
 	Source  string `json:"source"`
 }
 
+// RequirementLine is one automation-requirement the report saw: what is
+// required, and whether it is satisfied in the current configuration.
+type RequirementLine struct {
+	Capability string `json:"capability"`
+	Required   string `json:"required,omitempty"`
+	Satisfied  bool   `json:"satisfied"`
+	Detail     string `json:"detail,omitempty"`
+}
+
 // BackendSource lists the enabled LLM backends. Implementations adapt live
 // daemon state; tests use fakes.
 type BackendSource interface{ Backends() []Backend }
@@ -49,13 +58,18 @@ type MemorySource interface{ MemoryEnabled() bool }
 // PipelineSource reports the merge pipeline source in effect for a project.
 type PipelineSource interface{ PipelineSource(project string) string }
 
+// RequirementsSource lists the automation requirements lines (backend
+// minimums + automation backend minimums) and their satisfaction.
+type RequirementsSource interface{ Requirements() []RequirementLine }
+
 // Sources are the live-state inputs. A nil source reads as "nothing there".
 type Sources struct {
-	Backends BackendSource
-	Projects ProjectSource
-	Channels ChannelSource
-	Memory   MemorySource
-	Pipeline PipelineSource
+	Backends     BackendSource
+	Projects     ProjectSource
+	Channels     ChannelSource
+	Memory       MemorySource
+	Pipeline     PipelineSource
+	Requirements RequirementsSource
 }
 
 // Settings are the report switches (the onboarding_report block).
@@ -70,12 +84,13 @@ func DefaultSettings() Settings { return Settings{Enabled: true, IncludeNextStep
 
 // Configured is the answer to "what is configured".
 type Configured struct {
-	Backends      []string         `json:"backends"`
-	Models        []string         `json:"models"`
-	Projects      []Project        `json:"projects"`
-	Channels      []string         `json:"channels"`
-	Memory        bool             `json:"memory"`
-	MergePipeline []PipelineChoice `json:"merge_pipeline"`
+	Backends      []string          `json:"backends"`
+	Models        []string          `json:"models"`
+	Projects      []Project         `json:"projects"`
+	Channels      []string          `json:"channels"`
+	Memory        bool              `json:"memory"`
+	MergePipeline []PipelineChoice  `json:"merge_pipeline"`
+	Requirements  []RequirementLine `json:"requirements,omitempty"`
 }
 
 // Check is one entry of "what is missing".
@@ -165,6 +180,9 @@ func gather(src Sources) Configured {
 		for _, p := range c.Projects {
 			c.MergePipeline = append(c.MergePipeline, PipelineChoice{Project: p.Name, Source: src.Pipeline.PipelineSource(p.Name)})
 		}
+	}
+	if src.Requirements != nil {
+		c.Requirements = src.Requirements.Requirements()
 	}
 	return c
 }

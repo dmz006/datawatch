@@ -693,6 +693,29 @@ The five settings under **Settings → Automate → Shipped** (config block `aut
 
 ---
 
+## Automation requirements
+
+The **automation requirements report** answers one question: *can this daemon actually run the automations it is configured to run?* It reads the requirement minimums, the Compute Nodes with their reported backend versions, and the configured backends, then lists every requirement that is unmet. It is a report, not a gate: nothing is blocked on it, but every read surface shows the same lines.
+
+### Requirement minimums
+
+A minimum is a floor on a backend's version for a named capability. The built-in one: **Ollama 0.35.0** for the `classification_verdict` capability — the version that ships `systemone`, the verdict primitive the triage classification rides on. An operator can raise a floor per capability (`autonomous.requirements.min_ollama.classification_verdict`); the effective minimum is the override when present, otherwise the built-in floor. Each registered Compute Node that is an Ollama node gets a verdict per capability — **meets**, **fails**, or **unknown** when the node has not reported a version yet.
+
+### Backends
+
+Automation needs a backend for each workload: an **execution** backend (at least one is required to run anything), a **planning** backend and a **verification** backend. The report lists the names configured for each slot and names each missing slot in **missing**.
+
+### Model pull consent
+
+**Model pull consent** (`autonomous.model_pull_consent`) is the pull gate for the model registry. Per model it records `allowed` (may be pulled) and a free-text `note`; a separate publisher list is allow-listed by name. The rule is: a model may be pulled when it is listed as allowed **or** its publisher is allow-listed; a listed-but-refused entry is refused with its note, and everything else is refused by the default-deny rule that keeps pulls operator-driven. The policy is stored in `datawatch.yaml`, and every read surface reports the same body: `models[]` (name, allowed, note), `publishers[]` and the decision rule in words.
+
+**See also:**
+[howto/automation-requirements.md](howto/automation-requirements.md) ·
+[howto/model-pull-consent.md](howto/model-pull-consent.md) ·
+[howto/llm-registry.md](howto/llm-registry.md)
+
+---
+
 ## Dashboard
 
 Mission control for your entire fleet — a live, full-screen view of every running session, active Automata, and system health indicators. Requires `autonomous.enabled: true` in `datawatch.yaml`; the nav button is hidden otherwise.

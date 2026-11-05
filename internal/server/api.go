@@ -491,6 +491,12 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// Requirements engine (internal/autonomous or a test fake) + the
+	// automation backend summary provider it reports over. Nil =
+	// /api/automation/requirements-report reports 503.
+	requirementsReporter requirementsReporter
+	automationBackends   automationBackendsSummary
+
 	// requestWatch reads the in-flight model request observations; nil until
 	// SetRequestWatch wires it, and the request-watch route answers 503 then.
 	requestWatch    requestwatch.Reader
@@ -993,6 +999,12 @@ func (s *Server) applyStoreConfig() {
 func (s *Server) SetAutonomousAPI(a AutonomousAPI) {
 	s.autonomousMgr = a
 	s.wireSessionTags()
+	// Requirements surface: the concrete manager also implements the
+	// requirements-report engine — wire it plus a config-derived backend
+	// summary (nil API leaves the route reporting 503).
+	if a != nil {
+		s.wireRequirementsFromAuto(a)
+	}
 }
 
 // SummarizerSvc is the interface for the response summarizer.

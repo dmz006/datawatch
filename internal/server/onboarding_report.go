@@ -11,7 +11,9 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -101,6 +103,41 @@ func (o onboardingState) PipelineSource(project string) string {
 	return string(res.Source)
 }
 
+// Requirements adapts the requirements engine's report to the onboarding
+// report's lines: one line per capability minimum, plus one unmet line per
+// unmet automation backend minimum. Nil when the engine is not wired,
+// which the check reads as optional (not missing).
+func (o onboardingState) Requirements() []onboardingreport.RequirementLine {
+	rep, ok := o.s.requirementsReport()
+	if !ok {
+		return nil
+	}
+	lines := make([]onboardingreport.RequirementLine, 0, len(rep.Capabilities)+len(rep.Missing))
+	for _, c := range rep.Capabilities {
+		detail := "Ollama minimum " + c.MinimumOllama
+		if c.Override {
+			detail += " (operator override)"
+		}
+		nodes := make([]string, 0, len(c.Nodes))
+		for _, n := range c.Nodes {
+			nodes = append(nodes, fmt.Sprintf("%s has Ollama %s", n.Name, n.Found))
+		}
+		if len(nodes) > 0 {
+			detail += "; " + strings.Join(nodes, ", ")
+		}
+		lines = append(lines, onboardingreport.RequirementLine{
+			Capability: c.Capability, Required: c.MinimumOllama,
+			Satisfied: c.Satisfied, Detail: detail,
+		})
+	}
+	for _, m := range rep.Missing {
+		lines = append(lines, onboardingreport.RequirementLine{
+			Capability: "automation backends", Satisfied: false, Detail: m,
+		})
+	}
+	return lines
+}
+
 func sortOnboardingProjects(p []onboardingreport.Project) {
 	for i := 1; i < len(p); i++ {
 		for j := i; j > 0 && p[j].Name < p[j-1].Name; j-- {
@@ -134,7 +171,7 @@ func (s *Server) handleOnboardingReport(w http.ResponseWriter, r *http.Request) 
 	}
 	rep := onboardingreport.Build(onboardingreport.Sources{
 		Backends: onboardingState{s}, Projects: onboardingState{s}, Channels: onboardingState{s},
-		Memory: onboardingState{s}, Pipeline: onboardingState{s},
+		Memory: onboardingState{s}, Pipeline: onboardingState{s}, Requirements: onboardingState{s},
 	}, onboardingSettings(s.cfg.OnboardingReport))
 	switch r.URL.Query().Get("format") {
 	case "", "json":
