@@ -264,6 +264,21 @@ type Node struct {
 	// capped by MaxConcurrentSessions when that is set.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
 
+	// VerifierSlots is the operator's verifier worker count for this node.
+	// Nil (unset) = resolved by default in a later task; explicit 0 =
+	// verifier disabled on this node. Must not be negative.
+	VerifierSlots *int `yaml:"verifier_slots,omitempty" json:"verifier_slots,omitempty"`
+
+	// VerifierMinFreeMemMB is the free GPU memory in MB a new verifier
+	// needs on this node. Nil (unset) = default (resolved in a later
+	// task); explicit 0 turns the headroom check off. Must not be negative.
+	VerifierMinFreeMemMB *int `yaml:"verifier_min_free_mem_mb,omitempty" json:"verifier_min_free_mem_mb,omitempty"`
+
+	// VerifierContextMB is the extra context memory in MB one parallel
+	// verifier request needs on this node. 0 = unknown, so no suggestion
+	// is shown. Must not be negative.
+	VerifierContextMB int `yaml:"verifier_context_mb,omitempty" json:"verifier_context_mb,omitempty"`
+
 	// Operator-declared blackouts.
 	MaintenanceWindows []MaintenanceWindow `yaml:"maintenance_windows,omitempty" json:"maintenance_windows,omitempty"`
 
@@ -415,6 +430,15 @@ func (n *Node) Validate() error {
 	}
 	if n.SessionSlots < 0 {
 		return fmt.Errorf("compute node: session_slots %d must be >= 0", n.SessionSlots)
+	}
+	if n.VerifierSlots != nil && *n.VerifierSlots < 0 {
+		return fmt.Errorf("compute node: verifier_slots %d must be >= 0", *n.VerifierSlots)
+	}
+	if n.VerifierMinFreeMemMB != nil && *n.VerifierMinFreeMemMB < 0 {
+		return fmt.Errorf("compute node: verifier_min_free_mem_mb %d must be >= 0", *n.VerifierMinFreeMemMB)
+	}
+	if n.VerifierContextMB < 0 {
+		return fmt.Errorf("compute node: verifier_context_mb %d must be >= 0", n.VerifierContextMB)
 	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
