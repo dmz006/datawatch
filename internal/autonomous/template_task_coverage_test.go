@@ -51,18 +51,18 @@ func TestTemplateTasksOnAnIdlessPlanResolveCleanly(t *testing.T) {
 	if len(applied) == 0 {
 		t.Fatalf("the built-in templates must apply, got none")
 	}
+	// The store maps are empty: this plan is not stored yet, exactly as in
+	// SetStories, which resolves before it adds the plan to its maps.
 	storyByID := map[string]*Story{}
 	taskByID := map[string]*Task{}
 	seen := map[string]bool{}
 	for i := range out {
-		storyByID[out[i].ID] = &out[i]
 		for j := range out[i].Tasks {
 			tk := &out[i].Tasks[j]
 			if tk.ID == "" || seen[tk.ID] {
 				t.Fatalf("task %q has an empty or duplicate id %q", tk.Title, tk.ID)
 			}
 			seen[tk.ID] = true
-			taskByID[tk.ID] = tk
 			for _, d := range tk.DependsOn {
 				if strings.TrimSpace(d) == "" {
 					t.Fatalf("task %q has an empty depends_on entry", tk.Title)
