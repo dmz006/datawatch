@@ -40,7 +40,6 @@ package autonomous
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"slices"
 	"time"
 )
@@ -73,31 +72,14 @@ func (m *Manager) rulesReviewSuffix(prd *PRD) string {
 		" invent an issue just to have something to report."
 }
 
-// presentRulesContextFiles returns whichever of the configured rules/
-// context files (m.rulesContextFilenames) actually exist at the root of
+// presentRulesContextFiles returns whichever of the resolved rules/
+// context files (m.resolvedRulesContext) actually exist at the root of
 // prd.ProjectDir, joined for prose ("AGENT.md" or "AGENT.md and
-// CONTEXT.md"), or "" when ProjectDir is empty or neither exists.
-// Shared by rulesReviewSuffix and ciWatchSuffix so both completion-time
-// judgments point at exactly the same files.
+// CONTEXT.md" or "A, B and C"), or "" when ProjectDir is empty or none
+// exists. Shared by rulesReviewSuffix and ciWatchSuffix so both
+// completion-time judgments point at exactly the same files.
 func (m *Manager) presentRulesContextFiles(prd *PRD) string {
-	if prd.ProjectDir == "" {
-		return ""
-	}
-	rulesFile, contextFile := m.rulesContextFilenames()
-	var names []string
-	if fileExists(filepath.Join(prd.ProjectDir, rulesFile)) {
-		names = append(names, rulesFile)
-	}
-	if fileExists(filepath.Join(prd.ProjectDir, contextFile)) {
-		names = append(names, contextFile)
-	}
-	if len(names) == 0 {
-		return ""
-	}
-	if len(names) > 1 {
-		return names[0] + " and " + names[1]
-	}
-	return names[0]
+	return joinRulesContextNames(presentRulesContextNames(prd, m.resolvedRulesContext(prd)))
 }
 
 // runPRDCompletionRulesReview fires once, right before a PRD rolls up

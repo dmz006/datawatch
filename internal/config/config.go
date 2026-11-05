@@ -3083,6 +3083,11 @@ type AutonomousConfig struct {
 	// operator with a differently-named file sets this instead of
 	// renaming their file to match.
 	ContextFile string `yaml:"context_file,omitempty" json:"context_file,omitempty"`
+	// RulesContext — the per-project rules-file and context-file names
+	// plus the rules/context digest sub-configuration
+	// (autonomous.rules_context); the empty values above keep working as
+	// the legacy fallback. See AutonomousRulesContextConfig.
+	RulesContext AutonomousRulesContextConfig `yaml:"rules_context" json:"rules_context"`
 	// UpstreamRepos — named targets a project-rules "file_upstream_issue"
 	// action can reference, for gaps this repo's own PRD can't close
 	// alone (e.g. a parity gap needing a companion-app issue).
