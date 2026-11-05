@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.0 — Planning routing and a retry ladder for plans
+
+Automata can now be sent to different planners by rule, and a plan that fails the checks gets a bounded recovery before it is given up on.
+
+- **Planning routing, off by default.** `autonomous.planning_routing` has no rules until you add them. Ordered rules (first match wins) match an Automaton's kind, tags, project, risk class and spec size and choose a planner (backend and model) plus a named ladder. Risk classes are set by tag and path pattern, with `security` and `design` built in. Settings on the Automaton itself still win over routing, and routing wins over the global planner.
+- **A retry ladder.** A plan that fails the decompose checks (scope lint, spec coverage and plan structure) gets a touch-up of only the flagged tasks, then a replan with the findings fed back, then escalation to the next planner in the ladder, each with its own budget. When everything is spent the ladder stops and keeps the last plan with the full attempt record.
+- **Shadow mode and a scorecard.** Shadow mode records which rule would have fired without changing the planner. A counts-only scorecard and gate report show first-attempt, touch-up, replan, escalation and error counts per planner and class, plus the would-route counts.
+- **Everywhere.** The config file, `datawatch autonomous planning-routing`, a Settings card, `GET` and `PUT /api/autonomous/planning-routing` with `/test` and `/scorecard`, the comm channel, and MCP tools `planning_routing_get`, `planning_routing_set`, `planning_routing_test` and `planning_scorecard`, in five locales, with a how-to. The two example rules in the docs are not active.
+- Known gaps: the live-daemon validation of the new routes is not done, and the commits lack the tracker and locale-guard trailers.
+
 ## v9.95.1 — Accept the zlib1g Trivy finding in the agent images
 
 The agent container scan no longer blocks releases on a finding that cannot apply to the image.
