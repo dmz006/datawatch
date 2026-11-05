@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.97.2 — Eval cases folder stays inside the working directory
+
+The eval cases folder in a request can no longer leave the working directory.
+
+- CodeQL still flagged `go/path-injection` in the supervisor loop eval after the job name was fixed: the optional `cases_dir` from the request reached the folder read. The handler now resolves it under the working directory, with the relative part cleaned against a leading separator and a prefix check, so `..` and absolute-looking text can never leave it. Requests without `cases_dir` use the default folder as before.
+- A test covers traversal and absolute-looking text.
+
 ## v9.97.1 — Eval job names cannot steer the cases path
 
 A model job name in an eval request can no longer steer the file path.
