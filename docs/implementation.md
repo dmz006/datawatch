@@ -2440,3 +2440,129 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Automation requirements and the model pull gate (autonomous.requirements, autonomous.model_pull_consent)
+
+Operator-facing behavior:
+[`docs/howto/automation-requirements.md`](howto/automation-requirements.md)
+(what the report shows) and
+[`docs/howto/model-pull-consent.md`](howto/model-pull-consent.md)
+(the pull gate). The operator reference lives in
+[`docs/operations.md`](operations.md), section 4, "Automation requirements
+report" and "Model pull consent".
+
+### Requirements report
+
+The requirements report answers "can this daemon run the automations it is
+configured to run?" It states what is configured, what is missing and the
+backend minimums: at least one execution backend plus a planning and a
+verification backend; Claude and the local model pool are each optional
+but at least one provider is required; and, per capability, the minimum
+backend versions against each known node (meets / fails / unknown —
+unknown fails closed). It is a report, not a gate: nothing is blocked on
+it. The text rendering is produced by one shared renderer
+(`RenderRequirementsReport` in `internal/autonomous`) so every surface —
+REST, MCP, CLI, comm and web — prints the same bytes.
+
+- **`internal/autonomous/capability_requirements.go`** — the single
+  in-code minimum-version table keyed by capability
+  (`minimumOllamaByCapability`; today exactly one floor,
+  `classification_verdict` → Ollama 0.35.0 for the `/v1/systemone`
+  decision endpoint), `KnownCapabilities()`, `EffectiveMinimumOllama`
+  (operator override wins; an empty override clears the floor), the
+  version comparison, the enable/refusal enforcement (a capability
+  enabled on a node below its effective minimum is refused naming the
+  node, the found and the required versions; a node that later falls
+  below is flagged and the capability fails closed — unavailable until a
+  recheck finds it back at or above the minimum) and the report builder
+  (`RequirementsReport`).
+- **`internal/autonomous/requirements_config.go`** —
+  `ValidateMinOllamaOverrides` / `NormalizeMinOllamaOverrides`, the one
+  reject rule every config write surface reuses: an empty capability key,
+  a capability not in `KnownCapabilities()`, or a non-empty value that
+  does not parse as a dotted semantic version ("0.35.0") is refused; on
+  a REST write surface that is a 400 and nothing is written; an empty
+  value under a known capability clears that capability's floor.
+- **`internal/server/requirements_surfaces.go`** — the REST routes
+  `GET /api/automation/requirements-report` (JSON, or the shared text
+  with `?format=text`), and `GET /api/compute/nodes/{name}/versions` (the
+  node's kind, address, backend, reported backend version with when it
+  was recorded, and the per-capability Ollama minimums applied to that
+  version).
+- **`internal/mcp/requirements_surfaces.go`** — the MCP tools
+  `automation_requirements_report` (optional `format`: `text` default or
+  `json`) and `compute_node_backend_versions` (`name` required, a known
+  compute node or 404). Both proxy the REST routes.
+- **`cmd/datawatch/requirements_surfaces.go`** and
+  `cmd/datawatch/cli_compute.go` — `datawatch automation
+  requirements-report [--format text|json]` (text is the shared render,
+  `--format json` prints the REST body untouched) and `datawatch compute
+  node versions <name>`.
+- **`internal/router/requirements_surfaces_comm.go`** — the comm verbs
+  `requirements-report [text|json]` and `node-versions <name>` (under
+  the `autonomous` / `automation` help group), which read the same
+  routes over the loopback and print the shared text.
+- **`internal/server/requirements_config_surfaces*`** — the
+  `autonomous.requirements.min_ollama.<capability>` keys on `GET/PUT
+  /api/config` with the shared validator; the comm `configure` verb
+  forwards them.
+
+### Model pull consent (the pull gate)
+
+`autonomous.model_pull_consent` is the operator's allow-list that gates
+every model pull — both the compute-node model pull and the marketplace
+task pull are checked before anything is pulled. The rule is default-deny:
+a model may be pulled when it is listed with `allowed: true`, or when it
+is unlisted and its publisher is on the publisher allow-list. A listed
+model with `allowed: false` is an explicit refusal (its `note` travels
+with the refusal); everything else is refused and the refusal says
+exactly which key to set. Matching is case-insensitive and ignores the
+`:tag` suffix, so a listed `gpt-oss` matches a pull of `gpt-oss:20b`. A
+model's publisher is the entry's `Publisher` when the model is listed,
+else the leading `publisher/model` segment of the name; plain names
+carry no publisher. The stored policy is *complete*: a set replaces what
+is stored, it does not append.
+
+- **`internal/config/model_pull_consent.go`** — the shape:
+  `ModelConsentEntry {name, publisher?, allowed, note?}`,
+  `ModelPullConsent {models[], publishers[]}`, and
+  `ValidateModelPullConsent`, the one reject rule every write surface
+  reuses (empty model names, duplicate model names — case-insensitive,
+  tag-ignoring — and empty publisher entries are 400 on write surfaces
+  and nothing is written). The block is validated on config load and on
+  every operator write path; `config.Save` persists it and the autonomous
+  manager is re-synced in-process, so it applies without a restart.
+- **`internal/autonomous/model_pull_consent.go`** — the decision rule:
+  `ModelPullConsentCheck` (pure: model listed → entry decides; unlisted
+  with an allow-listed publisher → allowed via the publisher; anything
+  else refused with the reason), `ModelPullDecision` and
+  `ModelPullPublisher`.
+- **`internal/server/marketplace.go`** — the two guarded pull paths call
+  the check before pulling.
+- **`internal/server/requirements_surfaces.go`** — the REST routes
+  `GET /api/automation/model-consent` (models with `allowed`/`note`,
+  publishers, and the decision rule in words) and `PUT
+  /api/automation/model-consent` (the complete policy; validated, saved,
+  synced, and audited as `model_pull_consent_changed`).
+- **`internal/mcp/requirements_surfaces.go`** — the MCP tools
+  `automation_model_pull_consent_get` (read) and
+  `automation_model_pull_consent_set` (`models`: JSON array of model-name
+  strings — each stored as allowed — or `{name, allowed, note}` objects;
+  `publishers`: JSON array of names; both replace the stored lists).
+- **`cmd/datawatch/requirements_surfaces.go`** — `datawatch automation
+  model-consent get` and `datawatch automation model-consent set
+  --model <name> [--deny <name> ...] [--publisher <p> ...] | --clear`
+  (the repeated flags compose the complete list to store; `--deny`
+  records a refusal; `--clear` wipes the policy, after which every pull
+  is denied).
+- **`internal/router/requirements_surfaces_comm.go`** — the comm verbs
+  `autonomous model-pull-consent-get` and
+  `autonomous model-pull-consent-set model=<name> [deny=<name> ...]
+  [publisher=<p> ...]`, or `… model-pull-consent-set clear`.
+- **`internal/server/web`** — the PWA settings section "Model pull
+  consent" (the `model_pull_consent` settings block: per-model allow
+  toggles and publisher chips) and the five locale bundles.
+
+For the write-path rules per surface and the operator workflow, see the
+two how-to guides above and the "Model pull consent" / "Automation
+requirements report" entries in `docs/operations.md`.
