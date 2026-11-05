@@ -147,3 +147,12 @@ func CalibrationConfigFrom(c config.ClassifierConfig) CalibrationConfig {
 		RotationFlipThreshold: k.RotationFlipThreshold,
 	}.withDefaults()
 }
+
+// ProbeConfigFrom builds the capability probe tunables from the config file;
+// zero values fall back to the documented defaults.
+func ProbeConfigFrom(c config.ClassifierConfig) Config {
+	return Config{
+		ProbeTTL:     time.Duration(c.ProbeTTLSeconds) * time.Second,
+		ProbeTimeout: time.Duration(c.ProbeTimeoutSeconds) * time.Second,
+	}.withDefaults()
+}

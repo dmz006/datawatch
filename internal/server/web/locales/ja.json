@@ -3364,5 +3364,20 @@
   "classif_threshold": "しきい値",
   "classif_severity_scores": "重大度",
   "classif_category": "カテゴリ",
-  "classif_low_confidence": "信頼度が低い: 手動で確認"
+  "classif_low_confidence": "信頼度が低い: 手動で確認",
+  "settings_classifier_timeout_seconds": "分類器の呼び出しタイムアウト（秒、0 = 既定 30。タイムアウトはインフラ区分でブロック）",
+  "settings_classifier_top_logprobs": "汎用パスの分類器 top_logprobs（0 = 既定 10）",
+  "settings_classifier_abstain_margin": "分類器の棄権マージン（2位に対する最小のリード、0〜1、0 = 既定 0.10）",
+  "settings_classifier_min_probability": "分類器の最小確率（選ばれた選択肢の最小確率、0〜1、0 = 既定 0.50）",
+  "settings_classifier_min_option_mass": "分類器の最小選択肢質量（選択肢が保持すべき最初のトークン確率の割合、0〜1、0 = 既定 0.50）",
+  "settings_classifier_rotate_options": "分類器が呼び出しごとに選択肢の順序を回転しスコアを平均する（汎用パスのみ、既定はオフ）",
+  "settings_classifier_thinking_off_models": "分類器の思考オフモデル（モデル名の一部をカンマ区切り、既定 qwen3）",
+  "settings_classifier_probe_ttl_seconds": "分類器の機能プローブのキャッシュ時間（秒、0 = 既定 600）",
+  "settings_classifier_probe_timeout_seconds": "分類器の機能プローブのタイムアウト（秒、0 = 既定 5）",
+  "settings_classifier_calibration_test_fraction": "分類器キャリブレーションの保留割合（0 以上 1 未満、0 = 既定 0.30）",
+  "settings_classifier_calibration_split_seed": "分類器キャリブレーションの分割シード（空 = 既定 classifier-calibration）",
+  "settings_classifier_calibration_min_fit_samples": "キャリブレーションの最小フィットサンプル数（0 = 既定 20）",
+  "settings_classifier_calibration_false_pass_weight": "キャリブレーションの誤通過の重み（誤通過1件が誤ブロック何件分か、0 = 既定 5）",
+  "settings_classifier_calibration_rotation_bias_threshold": "キャリブレーションの回転バイアス閾値（0〜1、0 = 既定 0.10）",
+  "settings_classifier_calibration_rotation_flip_threshold": "キャリブレーションの回転反転閾値（0〜1、0 = 既定 0.10）"
 }

@@ -361,12 +361,14 @@ value is rejected (a stored file with an unknown value fails to load with the en
 ### Classifier capability probe (`classifier.*`)
 
 `internal/classifier` reads a guardrail verdict as a classification (native `/v1/systemone` or
-generic logprobs). The keys below are Go `classifier.Config` fields; no config-file surface is wired yet.
+generic logprobs). The keys below are read from the `classifier:` block of the config file
+(`classifier.ProbeConfigFrom`) and are settable through `PUT /api/config`, `datawatch config set`,
+comm `configure` and the web Settings → Classifier section.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `classifier.probe_ttl` | `10m` | How long a supported or unsupported probe result is cached per (node, model, path). Unknown is never cached. |
-| `classifier.probe_timeout` | `5s` | Per-probe HTTP timeout. A timeout is state `unknown`. |
+| `classifier.probe_ttl_seconds` | `600` | Whole seconds. How long a supported or unsupported probe result is cached per (node, model, path). Unknown is never cached. |
+| `classifier.probe_timeout_seconds` | `5` | Whole seconds. Per-probe HTTP timeout. A timeout is state `unknown`. |
 
 ### Classifier client and calibration (`classifier.*`)
 
@@ -375,12 +377,16 @@ set), calls the native endpoint or the generic logprobs path (`logprobs: true`, 
 `max_tokens: 1`, `chat_template_kwargs.enable_thinking: false` for matching models), and returns
 `{Chosen, Probabilities, Route, Mode}`. Token variants (`A`, ` A`, `▁a`, `(A`, `A.`) are summed per
 option on the generic path. Missing scores, timeouts, transport errors and abstains return a typed
-`*InfraError` (category `infra`); there is no fallback to generate-and-parse. Keys are Go
-`classifier.ClientConfig` / `classifier.CalibrationConfig` fields; no config-file surface is wired yet.
+`*InfraError` (category `infra`); there is no fallback to generate-and-parse. Keys are read from the
+`classifier:` block of the config file on every call (`classifier.ClientConfigFrom` /
+`classifier.CalibrationConfigFrom`), so a change applies without a restart. Each is settable through
+`PUT /api/config` (and shown, with effective defaults, by `GET /api/config`), `datawatch config set
+classifier.<key>=<value>`, comm `configure classifier.<key>=<value>` and the web Settings → Classifier
+section (five locales). A zero reads as the default; an invalid value rejects the whole PUT.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `classifier.timeout` | `30s` | Per-call timeout. A timeout is an `infra` error. |
+| `classifier.timeout_seconds` | `30` | Whole seconds. Per-call timeout. A timeout is an `infra` error. |
 | `classifier.top_logprobs` | `10` | `top_logprobs` on the generic path. |
 | `classifier.abstain_margin` | `0.10` | The winner must lead the runner-up by this much, else abstain. |
 | `classifier.min_probability` | `0.50` | The winner must reach this probability, else abstain. |

@@ -71,7 +71,10 @@ More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/au
 - Name a model and list backups for when a machine is busy
 - Browse models that fit your hardware
 
-More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md)
+- Can read a judge's answer as option probabilities instead of parsing prose (classify mode), and blocks rather than guesses when the numbers are missing
+- `datawatch llm classifier status|publishers|add-publisher|verdicts|review` shows what the judge is allowed to do and why a verdict came out as it did; a model's publisher must be on the allowlist you maintain
+
+More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md) · [classification verdicts](docs/howto/classification-verdicts.md)
 
 ### Memory
 

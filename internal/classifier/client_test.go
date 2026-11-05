@@ -319,7 +319,7 @@ func TestRotationAveragesAndMapsBack(t *testing.T) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		lines := strings.Split(b.Messages[0].Content, "\n")
-		a, bb := 0.05, 0.05
+		var a, bb float64
 		if strings.HasPrefix(lines[1], "A) the diff implements") {
 			a, bb = 0.9, 0.05
 		} else {

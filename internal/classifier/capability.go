@@ -37,7 +37,8 @@ const (
 )
 
 // Config holds the tunables. Config keys (documented in docs/implementation.md):
-// classifier.probe_ttl (default 10m) and classifier.probe_timeout (default 5s).
+// classifier.probe_ttl_seconds (default 600) and classifier.probe_timeout_seconds
+// (default 5).
 type Config struct {
 	ProbeTTL     time.Duration
 	ProbeTimeout time.Duration

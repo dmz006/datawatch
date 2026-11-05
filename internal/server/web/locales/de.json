@@ -3364,5 +3364,20 @@
   "classif_threshold": "Schwellwert",
   "classif_severity_scores": "Schweregrad",
   "classif_category": "Kategorie",
-  "classif_low_confidence": "Geringe Sicherheit - manuell prüfen"
+  "classif_low_confidence": "Geringe Sicherheit - manuell prüfen",
+  "settings_classifier_timeout_seconds": "Klassifikator-Aufruf-Timeout (Sekunden, 0 = Standard 30; ein Timeout blockiert mit Infra-Kategorie)",
+  "settings_classifier_top_logprobs": "Klassifikator top_logprobs im generischen Pfad (0 = Standard 10)",
+  "settings_classifier_abstain_margin": "Klassifikator-Enthaltungsabstand (kleinster Vorsprung vor dem Zweiten, 0 bis 1, 0 = Standard 0,10)",
+  "settings_classifier_min_probability": "Klassifikator-Mindestwahrscheinlichkeit (kleinste Wahrscheinlichkeit der gewählten Option, 0 bis 1, 0 = Standard 0,50)",
+  "settings_classifier_min_option_mass": "Klassifikator-Mindest-Optionsmasse (Anteil der Erst-Token-Wahrscheinlichkeit der Optionen, 0 bis 1, 0 = Standard 0,50)",
+  "settings_classifier_rotate_options": "Klassifikator rotiert die Optionsreihenfolge pro Aufruf und mittelt die Werte (nur generischer Pfad, Standard aus)",
+  "settings_classifier_thinking_off_models": "Klassifikator-Modelle ohne Denkmodus (kommagetrennte Modellnamen-Teile, Standard qwen3)",
+  "settings_classifier_probe_ttl_seconds": "Klassifikator-Fähigkeitsprobe Cache-Zeit (Sekunden, 0 = Standard 600)",
+  "settings_classifier_probe_timeout_seconds": "Klassifikator-Fähigkeitsprobe Timeout (Sekunden, 0 = Standard 5)",
+  "settings_classifier_calibration_test_fraction": "Klassifikator-Kalibrierung zurückgehaltener Anteil (0 bis ausschließlich 1, 0 = Standard 0,30)",
+  "settings_classifier_calibration_split_seed": "Klassifikator-Kalibrierung Split-Seed (leer = Standard classifier-calibration)",
+  "settings_classifier_calibration_min_fit_samples": "Klassifikator-Kalibrierung Mindestzahl Fit-Proben (0 = Standard 20)",
+  "settings_classifier_calibration_false_pass_weight": "Klassifikator-Kalibrierung Gewicht für falsches Bestehen (falsche Blockaden pro falschem Bestehen, 0 = Standard 5)",
+  "settings_classifier_calibration_rotation_bias_threshold": "Klassifikator-Kalibrierung Rotations-Bias-Schwelle (0 bis 1, 0 = Standard 0,10)",
+  "settings_classifier_calibration_rotation_flip_threshold": "Klassifikator-Kalibrierung Rotations-Flip-Schwelle (0 bis 1, 0 = Standard 0,10)"
 }

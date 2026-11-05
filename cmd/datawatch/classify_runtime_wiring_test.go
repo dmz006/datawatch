@@ -13,7 +13,7 @@ func TestClassifyRuntimeProvider(t *testing.T) {
 	if _, err := p("n1", "", "m"); err == nil {
 		t.Fatal("no compute registry must fail closed")
 	}
-	d.nodes = func(string) (*compute.Node, error) { return &compute.Node{Address: "10.0.0.1:11434"}, nil }
+	d.nodes = func(string) (*compute.Node, error) { return &compute.Node{Address: "gpu-node.example.test:11434"}, nil }
 	if _, err := p("", "", "m"); err == nil {
 		t.Fatal("unresolved node must fail closed")
 	}
@@ -25,7 +25,7 @@ func TestClassifyRuntimeProvider(t *testing.T) {
 		t.Fatal("prober not shared")
 	}
 	u, err := classifyBaseURL(d, "n1")
-	if err != nil || u != "http://10.0.0.1:11434" {
+	if err != nil || u != "http://gpu-node.example.test:11434" {
 		t.Fatalf("base url %q %v", u, err)
 	}
 	g := &ledgerGate{led: &d.ledger}

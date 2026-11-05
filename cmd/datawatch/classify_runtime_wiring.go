@@ -52,7 +52,7 @@ func (g *ledgerGate) Acquire(ctx context.Context, node, model string) (func(), e
 // without a restart.
 func newClassifyRuntimeProvider(cfg *config.Config, d *classifyDeps) func(node, backend, model string) (autonomouspkg.ClassifyRuntime, error) {
 	gate := &ledgerGate{led: &d.ledger}
-	d.prober = classifier.NewProber(nil, func(name string) (string, error) { return classifyBaseURL(d, name) }, classifier.Config{}, nil)
+	d.prober = classifier.NewProber(nil, func(name string) (string, error) { return classifyBaseURL(d, name) }, classifier.ProbeConfigFrom(cfg.Classifier), nil)
 	return func(node, backend, model string) (autonomouspkg.ClassifyRuntime, error) {
 		if d.nodes == nil {
 			return autonomouspkg.ClassifyRuntime{}, fmt.Errorf("compute registry not ready")
