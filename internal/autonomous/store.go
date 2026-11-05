@@ -496,10 +496,21 @@ var dependsOnRePlainNumber = regexp.MustCompile(`^[1-9][0-9]*$`)
 func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) error {
 	taskIDByTitle := make(map[string]string, len(taskByID))
 	storyIDByTitle := make(map[string]string, len(stories))
+	// The ids of the plan being resolved. The store maps only hold plans that
+	// are already stored, so an entry that names an id inside this very plan
+	// (the task templates build theirs from real ids) is matched here.
+	planStoryIDs := make(map[string]bool, len(stories))
+	planTaskIDs := make(map[string]bool, len(taskByID))
 	for i := range stories {
 		storyIDByTitle[stories[i].Title] = stories[i].ID
+		if stories[i].ID != "" {
+			planStoryIDs[stories[i].ID] = true
+		}
 		for j := range stories[i].Tasks {
 			taskIDByTitle[stories[i].Tasks[j].Title] = stories[i].Tasks[j].ID
+			if stories[i].Tasks[j].ID != "" {
+				planTaskIDs[stories[i].Tasks[j].ID] = true
+			}
 		}
 	}
 
@@ -513,14 +524,14 @@ func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map
 	resolve := func(raw string, storyLevel bool) (string, bool) {
 		e := strings.TrimSpace(raw)
 		if storyLevel {
-			if _, ok := storyByID[e]; ok {
+			if _, ok := storyByID[e]; ok || planStoryIDs[e] {
 				return e, true
 			}
 			if id, ok := storyIDByTitle[e]; ok {
 				return id, true
 			}
 		} else {
-			if _, ok := taskByID[e]; ok {
+			if _, ok := taskByID[e]; ok || planTaskIDs[e] {
 				return e, true
 			}
 			if id, ok := taskIDByTitle[e]; ok {
