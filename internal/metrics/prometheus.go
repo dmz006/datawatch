@@ -145,6 +145,24 @@ var (
 		Help: "Quality gate evaluations that detected a test regression",
 	})
 
+	// Agent tracing (tracing.*).
+	TraceEventsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_trace_events_total",
+		Help: "Trace events written to the trace store",
+	})
+	TraceAppendErrorsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_trace_append_errors_total",
+		Help: "Trace store writes that failed",
+	})
+	TraceStoredEvents = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_trace_stored_events",
+		Help: "Events currently held in the trace store",
+	})
+	TraceStoredSessions = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_trace_stored_sessions",
+		Help: "Sessions with a trace currently held in the trace store",
+	})
+
 	// Burn guard (usage.burn_guard).
 	BurnGuardLevel = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "datawatch_burn_guard_level",
@@ -266,6 +284,7 @@ func Register() {
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
 			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
+			TraceEventsTotal, TraceAppendErrorsTotal, TraceStoredEvents, TraceStoredSessions,
 		)
 	})
 }

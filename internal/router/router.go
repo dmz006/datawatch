@@ -1161,6 +1161,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleCostCmd(cmd)
 	case CmdCostReport:
 		r.handleCostReportCmd(cmd)
+	case CmdTrace:
+		r.handleTraceCmd(cmd)
 	case CmdCooldown:
 		r.handleCooldown(cmd)
 	case CmdUsageBackoff:

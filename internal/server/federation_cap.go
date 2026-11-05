@@ -104,6 +104,7 @@ func (s *Server) fedCap(w http.ResponseWriter, r *http.Request, required string)
 	// Resolve() is needed here; Check() alone is enough.
 	if sessionCaps := sessionCapsFromContext(r.Context()); sessionCaps != nil {
 		if !federation.Check(sessionCaps, required) {
+			s.traceCapabilityDenied(r.Context(), required)
 			http.Error(w, "session token lacks capability: "+required, http.StatusForbidden)
 			return false
 		}
@@ -220,6 +221,7 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 				ctx = federation.ContextWithPrincipal(ctx, "session-scoped")
 				r2 := r.WithContext(ctx)
 				s.logAccess(r2, http.StatusOK, "session-scoped")
+				s.traceRESTCall(r, s.sessionTokens.SessionIDForToken(tok))
 				next.ServeHTTP(w, r2)
 				return
 			}

@@ -13,6 +13,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/trace"
+	"github.com/dmz006/datawatch/internal/trace/observe"
 	"io"
 	"log"
 	"net/http"
@@ -377,6 +379,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
+		newTraceCmd(),          // agent trace views
 		newAuditCmd(),          // BL9
 		// Sprint S4 (v3.8.0).
 		newAssistCmd(),      // BL42
@@ -1096,6 +1099,40 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Daemon-observed trace events for the ollama, openwebui and shell
+	// backends: register the recorder hooks against the trace store.
+	var traceObserver *observe.Observer
+	var traceIngestor *session.TraceIngestor
+	var traceStore *trace.Store
+	if cfg.Tracing.WithDefaults().Mode != trace.ModeOff {
+		if ts, terr := trace.NewStore(expandHome(cfg.DataDir), cfg.Tracing.WithDefaults(), nil); terr != nil {
+			debugf("trace store unavailable, daemon-observed tracing off: %v", terr)
+		} else {
+			traceStore = ts
+			traceObserver = observe.Install(ts, cfg.Tracing, func(tmux string) string {
+				for _, s := range mgr.ListSessions() {
+					if s.TmuxSession == tmux {
+						return s.FullID
+					}
+				}
+				return ""
+			}, nil)
+			defer traceObserver.Close()
+			// Transcript ingest (incremental + at session end) and the
+			// capability/permission/call events of sessions, all on one
+			// background goroutine; each event is also appended to the
+			// session timeline.
+			traceIngestor = session.NewTraceIngestor(session.TraceIngestConfig{
+				Sink: ts, Settings: cfg.Tracing,
+				Locate:   session.DefaultTranscriptLocator(""),
+				Timeline: func(id, line string) { _ = mgr.AppendTimeline(id, line) },
+			})
+			mgr.SetTraceIngestor(traceIngestor)
+			traceCtx, traceCancel := context.WithCancel(context.Background())
+			go traceIngestor.Run(traceCtx)
+			defer func() { traceCancel(); traceIngestor.Close() }()
+		}
+	}
 	// Old terminal sessions move to the archive file (age and field cap are
 	// the store defaults until the config wiring sets them).
 	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
@@ -1727,6 +1764,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		})
 		mgr.SetOnSessionEnd(func(sess *session.Session) {
+			// Shell sessions: report the command's exit code from the
+			// daemon's own session record to the trace recorder.
+			if traceObserver != nil && sess.BackendFamily == "shell" && sess.TmuxSession != "" {
+				code := 0
+				if sess.State != session.StateComplete {
+					code = sess.FailureExitCode
+					if code == 0 {
+						code = 1
+					}
+				}
+				traceObserver.SessionEnded(sess.TmuxSession, code)
+			}
 			// Design A3 — revoke this session's scoped credential
 			// immediately; its bridge process can no longer authenticate
 			// to the daemon at all once this returns.
@@ -3468,6 +3517,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetResultStore(resultStore)               // BL360
 		httpServer.SetScheduleResultStore(scheduleResultStore)
 		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
+		if traceIngestor != nil {
+			httpServer.SetTraceRecorder(traceIngestor)
+		}
+		if traceStore != nil {
+			httpServer.SetTraceStore(traceStore)
+		}
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -8645,6 +8700,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
 			fillBurnGuardStats(s, httpServer.BurnGuardStats())
 		})
+		// Agent tracing stats in the WS broadcast and the Prometheus collector.
+		if traceStore != nil {
+			statsCollector.SetTraceStatsFunc(func(s *statspkg.SystemStats) {
+				fillTraceStats(s, traceStore.Stats(), time.Now())
+			})
+		}
 		// BL372 — wire web search stats into the collector.
 		statsCollector.SetWebSearchStatsFunc(func(s *statspkg.SystemStats) {
 			s.WebSearchEnabled = cfg.WebSearch.Enabled
@@ -8704,6 +8765,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
 			updateBurnGuardMetrics(s)
+			updateTraceMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

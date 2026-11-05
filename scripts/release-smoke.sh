@@ -6675,6 +6675,30 @@ else
   ko "merge pipeline: the bare read answered HTTP $MP_CODE, expected 400 (project_required) or 200"
 fi
 rm -f "$MP_BODY_FILE"
+H "Agent tracing (tracing.*)"
+# GET /api/trace/{session/<id>,automaton/<id>,rollup,coverage} and GET /api/trace/stats.
+# All are read-only. Each answers 200 when the trace store is open, 404 for an
+# id that has no events, and 503 when tracing is off or the store could not open.
+for TR_ROUTE in rollup coverage stats session/smoke-no-such-id automaton/smoke-no-such-id; do
+  TR_CODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/trace/$TR_ROUTE" 2>/dev/null || echo "000")
+  if [[ "$TR_CODE" =~ ^(200|404|503)$ ]]; then
+    ok "tracing: GET /api/trace/$TR_ROUTE answered HTTP $TR_CODE"
+  else
+    ko "tracing: GET /api/trace/$TR_ROUTE answered HTTP $TR_CODE, expected 200, 404 or 503"
+  fi
+done
+TR_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/trace/rollup?loop_threshold=0" 2>/dev/null || echo "000")
+if [[ "$TR_BAD" =~ ^(400|503)$ ]]; then
+  ok "tracing: a bad loop_threshold answered HTTP $TR_BAD (400, or 503 when tracing is off)"
+else
+  ko "tracing: a bad loop_threshold answered HTTP $TR_BAD, expected 400 or 503"
+fi
+TR_POST=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/trace/rollup" 2>/dev/null || echo "000")
+if [[ "$TR_POST" == "405" ]]; then
+  ok "tracing: POST /api/trace/rollup refused with 405 (read-only surface)"
+else
+  ko "tracing: POST /api/trace/rollup answered HTTP $TR_POST, expected 405"
+fi
 
 # ---------------------------------------------------------------------------
 H "Summary"

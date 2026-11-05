@@ -1018,6 +1018,19 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 
 
 
+### `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`
+
+Read-only views of the agent trace the daemon records (tool calls, results, model requests, state changes, capability and permission decisions, loop warnings, errors). Each proxies the matching `GET /api/trace/*` route; event text is redacted when it is stored.
+
+| Tool | Parameters | What it returns |
+|------|-----------|-----------------|
+| `trace_session` | `session` (required); optional `tool`, `backend`, `kind`, `errors`, `limit`, `loop_threshold` | The session's events in order, its roll-up and index entry |
+| `trace_automaton` | `automaton` (required); same optional filters | Events of every session that ran for the Automaton, plus its roll-up |
+| `trace_rollup` | optional `dimension` (session, task, story, automaton, agent, backend), `key`, `loop_threshold` | Roll-ups: tool counts, slowest tools, error rate, loop warnings, capability denials, model requests and tokens |
+| `trace_coverage` | optional `backend` | Per-session coverage (full, partial, events-only, unknown) and counts per backend |
+
+The `tracing.*` settings are changed with `config_set` and read with `get_config`.
+
 ### `cost_report`
 
 Cost report over the daemon's recorded session spend: the `internal/costreport` engine, the same engine call `GET /api/cost/report` makes, with the daemon's `cost_report` config block as the source of every default. Grouped by automaton, automation, backend or week (the `group_by=release` grouping is REST/CLI-only — it needs shipped-unit state this tool does not expose, and is rejected with a clear message); token totals always, USD estimates when rates are configured, and — where the owning provider has a `usage.billing` profile — the billing label (a bundled plan reads “bundled plan — API-equivalent, not billed”) with the point figures. Read-only.

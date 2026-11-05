@@ -507,6 +507,7 @@ The per-topic design documents live alongside this file, named
 `2026-10-DD-<topic>.md`:
 
 - Burn guard: [burn guard plan](2026-11-02-burn-guard.md)
+- Agent tracing: [agent tracing plan](2026-11-04-agent-tracing.md) (parity surface, decisions on audit logging and the live run). Testing: `go test ./...` 93 packages pass and the node suite 2219 tests pass; the smoke section and story TS-847 are written and owe a sandbox run at merge (see [testing.md](../testing.md) "Agent tracing (results)" and the testing-tracker section).
 - Cost report and billing profile: [cost report plan](2026-11-02-cost-report.md) (billing profile, release grouping and the parity surface; the companion [billing-profile parity draft](parity-issues/2026-11-03-billing-profile-parity.md))
 - Splash dwell settings: [splash dwell plan](2026-11-03-splash-dwell.md) (`ui.splash_min_seconds` and `ui.splash_min_seconds_new_version`, the early dismiss and the previous-version line; the companion [splash-dwell parity draft](parity-issues/splash-dwell-settings.md))
 - Operating rules: [supervisor rules and lessons learned](2026-10-17-supervisor-rules-and-lessons.md)

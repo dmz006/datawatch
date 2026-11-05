@@ -346,6 +346,24 @@ daemons already on the host), and it reported nothing new.
 | Diff scope vs main | `env -u TMUX -u TMUX_TMPDIR git diff --name-only $(git merge-base main HEAD)` plus a line-by-line read of the added lines | PASS — 36 files (6 new, 30 modified), each one belonging to this change: the six new files are exactly the new helper, guard, audit, release smoke and regression tests above; the 30 modified are the daemon-starting story/e2e/matrix/sandbox/smoke/integration scripts, the session live tests, the runner, the Makefile and the docs that state the rule. No tracker id (B/BL/F series) or release version number appears in any added file or function name, in any added operator-facing (echo/ko/skip) string, or in any added doc text — the only scenario-number mentions in added lines are code comments referencing the repository's pre-existing story scenario names. Three of the added echo messages had initially carried their scenario number as a label; the labels were removed before this gate so the claim is true by inspection, not by convention |
 | Leftover-daemon guard, gate end | `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-leftover-test-daemons.sh check .datawatch/final-gate-daemon-snapshot.txt` | PASS — "OK: no leftover test daemons", nothing new since the snapshot |
 
+## Agent tracing (results)
+
+How the trace store, its reads and its monitoring were checked. Every Go command ran with `env -u TMUX -u TMUX_TMPDIR`; no daemon or real LLM session was started.
+
+| Check | Command | Result |
+|---|---|---|
+| Whole Go suite | `go test ./...` | PASS, 93 packages ok, 0 failed |
+| Whole node suite | `node --test internal/server/web/*.test.js` | PASS, 2219 tests, 0 failed |
+| Trace packages, vet | `go vet ./internal/trace/... ./internal/server/ ./internal/stats/ ./internal/metrics/ ./cmd/datawatch/` | PASS |
+| Howto coverage | `bash scripts/check-howto-coverage.sh` | PASS, `agent-tracing.md` carries `exec_steps` |
+| Curated howto tools | `bash scripts/check-curated-howtos.sh` | PASS, every `tool:` is a registered MCP tool |
+| Local-environment leak check | `bash scripts/check-no-local-leaks.sh` | PASS, 0 findings (path fixtures in `internal/trace` are built at runtime) |
+| Internal-ref leak check | `bash scripts/check-no-internal-refs.sh` | PASS |
+| Smoke script syntax | `bash -n scripts/release-smoke.sh` | PASS (section "Agent tracing" added; not run against a daemon) |
+| Browser story syntax | `node --check scripts/test-stories/pwa/trace-card.mjs` | PASS (TS-848 not run; needs the harness) |
+
+Not done here: the live run against a sandbox daemon. The automaton that built this runs under a no-daemon rule, which conflicts with the Phase Completion Checklist item for a live test. The run is owed at the merge step: `bash scripts/release-smoke.sh` and `bash scripts/run-tests.sh --stories=TS-847`. See [the agent tracing plan](plans/2026-11-04-agent-tracing.md) and the "Agent tracing" section of [testing-tracker.md](testing-tracker.md).
+
 ## Historical Feature Tests
 
 ### 1. Splash Screen

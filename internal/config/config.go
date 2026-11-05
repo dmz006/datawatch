@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/inference"
+	"github.com/dmz006/datawatch/internal/trace"
 	"gopkg.in/yaml.v3"
 )
 
@@ -525,6 +526,12 @@ type Config struct {
 
 	// Git lifecycle settings: push-on-complete policies and push remote.
 	Git GitConfig `yaml:"git" json:"git"`
+
+	// Tracing holds the normalized agent trace settings (tracing.mode,
+	// tracing.arg_cap_bytes, tracing.retention_days, tracing.backends).
+	// Unset values read as the defaults (summary mode, every backend on)
+	// through Tracing.WithDefaults.
+	Tracing trace.Settings `yaml:"tracing" json:"tracing"`
 
 	// Server configuration for the PWA/WebSocket server
 	Server ServerConfig `yaml:"server"`
@@ -6796,6 +6803,9 @@ func validateLoaded(cfg *Config) error {
 			cfg.Autonomous.ProjectWriteSerialization,
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 	}
+	if err := ValidateTracing(cfg.Tracing); err != nil {
+		return err
+	}
 	if err := ValidateMergeConflictPolicy(cfg.Autonomous.Parallel.MergeConflictPolicy); err != nil {
 		return err
 	}
@@ -7286,4 +7296,10 @@ func ValidateMergeConflictPolicy(v string) error {
 	}
 	return fmt.Errorf("autonomous.parallel.merge_conflict_policy: invalid value %q (valid values: %q, %q, %q)",
 		v, MergeConflictPolicyAdditiveThenModel, MergeConflictPolicyBlock, MergeConflictPolicyTriage)
+}
+
+// ValidateTracing validates the tracing.* block for the write paths; an
+// unset (zero) value is valid and reads as its default.
+func ValidateTracing(t trace.Settings) error {
+	return t.Validate()
 }

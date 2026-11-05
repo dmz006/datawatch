@@ -81,6 +81,10 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_splash_min_seconds_hint",
 		"settings_splash_min_seconds_new_version",
 		"settings_splash_min_seconds_new_version_hint",
+		// 70c90001 — agent tracing: settings group, the Trace card title and the Monitor card title.
+		"settings_tracing_group",
+		"trace_card_title",
+		"stats_trace",
 		// e3db0001 — capacity priority-source chip + kind table / defect intake settings.
 		"priority_source_badge",
 		"priority_source_explicit",

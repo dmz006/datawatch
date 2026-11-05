@@ -1,0 +1,4 @@
+{"timestamp":"2026-01-02T03:04:05Z","attributes":{"event.name":"gemini_cli.tool_call","function_name":"read_file","function_args":{"path":"a.go"},"duration_ms":120,"success":true}}
+{"timestamp":"2026-01-02T03:04:06Z","attributes":{"event.name":"gemini_cli.tool_call","function_name":"run_shell_command","duration_ms":900,"success":false}}
+{"timestamp":"2026-01-02T03:04:07Z","attributes":{"event.name":"gemini_cli.api_response","model":"gemini-2.5-pro","input_token_count":500,"output_token_count":60}}
+{"attributes":{"event.name":"gemini_cli.user_prompt"}}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/tagregistry"
+	"github.com/dmz006/datawatch/internal/trace"
 	"io"
 	"log"
 	"math"
@@ -234,10 +235,13 @@ func (s *Server) broadcastSessionsAsync() {
 
 // Server holds all HTTP handler dependencies
 type Server struct {
-	hub      *Hub
-	manager  *session.Manager
-	hostname string
-	token    string
+	// traceStore feeds the additive trace_usage field of the cost report
+	// (nil when tracing is not wired).
+	traceStore *trace.Store
+	hub        *Hub
+	manager    *session.Manager
+	hostname   string
+	token      string
 	// broadcastWG tracks the fire-and-forget sessions broadcasts started by
 	// broadcastSessionsAsync so a test can wait for them.
 	broadcastWG sync.WaitGroup
@@ -450,6 +454,8 @@ type Server struct {
 	// token" by fedAuthMiddleware, falling through to admin/peer
 	// checks). Wired from main.go via SetSessionTokenStore.
 	sessionTokens *auth.SessionTokenStore
+	// traceRecorder receives session trace events (observe only); nil until wired.
+	traceRecorder SessionTraceRecorder
 
 	// BL302 S3 — sampling/elicitation dispatchers (nil when MCP disabled).
 	// Wired from main.go via SetMCPSamplingDispatcher / SetMCPElicitationDispatcher.
@@ -673,6 +679,10 @@ type Server struct {
 
 // SetWebSearchRegistry wires the shared *websearch.Registry (BL391) used by
 // the /api/websearch/* REST handlers for stats/history/provider-test.
+// SetTraceStore wires the trace store whose model-request and token totals
+// the cost report carries as an additive field.
+func (s *Server) SetTraceStore(st *trace.Store) { s.traceStore = st }
+
 func (s *Server) SetWebSearchRegistry(r *websearch.Registry) { s.websearchReg = r }
 
 // SetWebSearchAPIKeyRefs wires the pre-ResolveConfig snapshot of each
@@ -1339,6 +1349,7 @@ func (s *Server) handleMCPCall(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	s.traceMCPCall(r.Context(), req.Tool)
 	data, err := s.mcpBridge.MCPCallJSON(ctx, req.Tool, req.Args)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -6037,6 +6048,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// never null, so a fresh daemon's config has the same shape.
 			"billing": billingProfilesForDisplay(s.cfg.Usage.Billing),
 		},
+		"tracing": s.cfg.Tracing.WithDefaults(),
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
 			"push_remote":      s.cfg.Git.EffectivePushRemote(),
@@ -7283,6 +7295,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// tracing.* — pre-validate like git.secret_scan below: a bad mode, cap,
+	// retention or backend map rejects the whole PUT.
+	if terr := validateTracingPatch(s.cfg.Tracing, patch); terr != nil {
+		http.Error(w, terr.Error(), http.StatusBadRequest)
+		return
+	}
 	// git.secret_scan.mode — pre-validate like pi.thinking_level above: an
 	// unknown mode (a security-critical setting) rejects the whole PUT
 	// instead of silently no-op'ing in applyConfigPatch.
@@ -7606,6 +7624,10 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
 	for k, v := range patch {
+		if strings.HasPrefix(k, "tracing.backends.") {
+			_ = applyTracingKey(&cfg.Tracing, k, v)
+			continue
+		}
 		switch k {
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)
@@ -7865,6 +7887,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Trimmed; empty resets to the built-in default (origin),
 			// resolved via GitConfig.EffectivePushRemote.
 			cfg.Git.PushRemote = strings.TrimSpace(toString(v))
+		case "tracing.mode", "tracing.arg_cap_bytes", "tracing.retention_days", "tracing.backends":
+			// Pre-validated by the PUT handler (validateTracingPatch).
+			_ = applyTracingKey(&cfg.Tracing, k, v)
 		case "git.secret_scan.mode":
 			// Pre-validated by the PUT handler (unknown modes reject the
 			// whole PUT); empty clears the flag back to the shadow default.
@@ -12216,6 +12241,7 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 		"subtype":    body.Type,
 		"request_id": body.RequestID,
 	}
+	s.tracePermissionRelay(r.Context(), body.Type, body.RequestID)
 	raw, _ := json.Marshal(notifyData)
 	outMsg := WSMessage{Type: MsgChannelNotify, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)

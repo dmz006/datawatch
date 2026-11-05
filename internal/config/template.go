@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -78,6 +79,26 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 					fmt.Fprintf(&b, "        - %s\n", f)
 				}
 			}
+		}
+	}
+	b.WriteString("\n")
+
+	section(&b, "Tracing", "Normalized agent trace events (tool calls, model requests, state changes).")
+	b.WriteString("tracing:\n")
+	tr := cfg.Tracing.WithDefaults()
+	fieldi(&b, "mode", tr.Mode, "Trace detail: off (no tracing), summary (default) or full")
+	fieldi(&b, "arg_cap_bytes", tr.ArgCapBytes, "Maximum bytes of a tool-call argument summary stored per event (default 512)")
+	fieldi(&b, "retention_days", tr.RetentionDays, "Days trace events are kept (default 14)")
+	b.WriteString("  # Per-backend switches, e.g. {pi: false}; a backend not listed is traced.\n")
+	if len(tr.Backends) > 0 {
+		b.WriteString("  backends:\n")
+		names := make([]string, 0, len(tr.Backends))
+		for n := range tr.Backends {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		for _, n := range names {
+			fmt.Fprintf(&b, "    %s: %t\n", n, tr.Backends[n])
 		}
 	}
 	b.WriteString("\n")

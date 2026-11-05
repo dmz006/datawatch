@@ -7566,6 +7566,173 @@ paths:
                   resumed: {type: integer}
         "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
         "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+  /api/trace/session/{id}:
+    get:
+      summary: Trace of one session
+      description: |
+        The recorded trace events of one session (tool calls, results, model requests,
+        state changes, capability and permission decisions, loop warnings, errors), in the
+        order they happened, plus the session roll-up and its index entry (counts, first and
+        last event, how much of the backend's activity the trace covers). Event text is
+        redacted when it is stored. `tool`, `backend`, `kind` and `errors` narrow the events;
+        `limit` keeps the last N. The roll-up always covers the whole session. A federated
+        peer needs the analytics read capability.
+      operationId: traceSession
+      tags: [Trace]
+      parameters:
+        - {name: id, in: path, required: true, description: Session full id, schema: {type: string}}
+        - {name: tool, in: query, required: false, description: Keep events with this tool name, schema: {type: string}}
+        - {name: backend, in: query, required: false, description: Keep events from this backend, schema: {type: string}}
+        - {name: kind, in: query, required: false, description: Keep one event kind, schema: {type: string, enum: [tool_call, tool_result, model_request, state_change, capability_check, permission_decision, loop_warning, error]}}
+        - {name: errors, in: query, required: false, description: "true keeps only error events and failed outcomes", schema: {type: boolean}}
+        - {name: limit, in: query, required: false, description: Keep the last N events (0 = all), schema: {type: integer, minimum: 0}}
+        - {name: loop_threshold, in: query, required: false, description: "Repeat count that raises a loop warning in the roll-up (default 5)", schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The session trace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session: {type: string}
+                  total: {type: integer, description: Events matching the filters before `limit`}
+                  events: {type: array, items: {$ref: "#/components/schemas/TraceEvent"}}
+                  rollup: {$ref: "#/components/schemas/TraceRollup"}
+                  index: {type: object, description: "Index entry: session, task, story, automaton, agent, backend, counts, total, errors, coverage, first_at, last_at", additionalProperties: true}
+        "400": {description: Bad filter value, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: No trace for that session, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/trace/automaton/{id}:
+    get:
+      summary: Trace of one Automaton
+      description: |
+        The trace events of every session that ran for an Automaton, ordered by time, and the
+        Automaton roll-up. Takes the same filters as the session trace.
+      operationId: traceAutomaton
+      tags: [Trace]
+      parameters:
+        - {name: id, in: path, required: true, description: Automaton id, schema: {type: string}}
+        - {name: tool, in: query, required: false, schema: {type: string}}
+        - {name: backend, in: query, required: false, schema: {type: string}}
+        - {name: kind, in: query, required: false, schema: {type: string}}
+        - {name: errors, in: query, required: false, schema: {type: boolean}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 0}}
+        - {name: loop_threshold, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The Automaton trace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automaton: {type: string}
+                  sessions: {type: array, items: {type: string}}
+                  total: {type: integer}
+                  events: {type: array, items: {$ref: "#/components/schemas/TraceEvent"}}
+                  rollup: {$ref: "#/components/schemas/TraceRollup"}
+        "400": {description: Bad filter value, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: No trace for that Automaton, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/trace/rollup:
+    get:
+      summary: Trace roll-ups
+      description: |
+        Roll-ups of the whole trace store along one dimension (`session`, `task`, `story`,
+        `automaton`, `agent` or `backend`): tool counts, slowest tools, error rate, repeated-call
+        loop warnings, capability denials, and model requests with tokens. `key` keeps one group.
+      operationId: traceRollup
+      tags: [Trace]
+      parameters:
+        - {name: dimension, in: query, required: false, description: "Grouping axis (default session)", schema: {type: string, enum: [session, task, story, automaton, agent, backend]}}
+        - {name: key, in: query, required: false, description: Keep only this group, schema: {type: string}}
+        - {name: loop_threshold, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The roll-ups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dimension: {type: string}
+                  rollups: {type: array, items: {$ref: "#/components/schemas/TraceRollup"}}
+        "400": {description: Unknown dimension or bad value, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/trace/coverage:
+    get:
+      summary: Trace coverage list
+      description: |
+        How much of each traced session's backend activity the trace captures: `full`,
+        `partial`, `events-only` or `unknown` (not recorded). Lists each session and counts
+        the levels per backend, so a gap in a backend's trace is visible before relying on it.
+      operationId: traceCoverage
+      tags: [Trace]
+      parameters:
+        - {name: backend, in: query, required: false, description: Only this backend, schema: {type: string}}
+      responses:
+        "200":
+          description: The coverage list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        session: {type: string}
+                        backend: {type: string}
+                        automaton: {type: string}
+                        coverage: {type: string, enum: [full, partial, events-only, unknown]}
+                        events: {type: integer}
+                  by_backend:
+                    type: object
+                    additionalProperties: {type: object, additionalProperties: {type: integer}}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/trace/stats:
+    get:
+      summary: Trace store stats
+      description: |
+        Totals held in the trace store (sessions, events, error events) and the write counters
+        since the daemon started (events appended, failed writes, events pruned by retention),
+        with the time of the newest event. The same numbers appear on the Monitor Tracing card
+        and as `trace_*` fields of the system stats and `datawatch_trace_*` Prometheus series.
+      operationId: traceStats
+      tags: [Trace]
+      responses:
+        "200":
+          description: The trace store stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: {type: integer}
+                  events: {type: integer}
+                  error_events: {type: integer}
+                  appended_total: {type: integer, format: int64}
+                  append_errors_total: {type: integer, format: int64}
+                  pruned_total: {type: integer, format: int64}
+                  last_event_at: {type: string, format: date-time}
+        "403": {description: Missing the analytics read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Tracing is not available, content: {"text/plain": {schema: {type: string}}}}
 
 components:
   securitySchemes:
