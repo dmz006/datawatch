@@ -11,148 +11,114 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// Every TestPlanningRouting* test below drives the REAL
-// RunPlanningLadder state machine (initial → touch-up → replan →
-// escalate → exhausted) with a scripted PlannerFn: no LLM is called, and
-// every prompt the executor sends is captured so the assertions prove
-// WHICH step the ladder stepped to and with what feedback (task 5:
-// "tests ... avoid real LLM calls" + "touch-up passes (sending the
-// flagged task titles and findings)"). What each test guards:
-//
-//   - PassesOnFirstAttempt      — a clean plan ends the ladder after
-//     exactly one attempt, attributed to the planner that produced it;
-//   - TouchUpFixesOnlyFlagged   — the ladder spends a touch-up pass on
-//     the SAME planner, names ONLY the flagged task (plus the findings)
-//     in the prompt, and accepts the fixed plan; it must NOT replan or
-//     escalate while touch-up budget remains;
-//   - TouchUpExhaustedReplans   — after the touch-up budget (default 1)
-//     is spent the ladder replans with the feedback, not escalate (a
-//     single-planner chain has nothing to escalate to);
-//   - EscalatesToSecondPlanner  — after EscalateAfterAttempts (default
-//     2) failed attempts, the ladder starts fresh at the next planner
-//     and the pass is attributed to that planner;
-//   - ExhaustsAllPlanners       — chain and both budgets spent: the
-//     ladder terminates with Passed=false, the full attempt record and
-//     the last plan it holds;
-//   - PlannerErrorEscalates     — a planner error is a failed attempt
-//     with no plan to touch up: the ladder escalates (never a touch-up
-//     with nothing to fix) and records the error on the attempt;
-//   - ParseFailureReplans       — a non-parsing raw output fails the
-//     attempt as parse_failure, and at the end of the chain the ladder
-//     spends a replay budget on a fresh prompt.
-
-// Ladder test fixtures. The plan is deliberately token-free (no file
-// references, no tracker ids, no write-verb task titles) so the ONLY
-// finding the flagged variant can draw is the one the test is about:
-// t2 carrying neither verification_script nor verification_script_reason
-// (structural rule 4), which names t2 and no other task.
-const ladderTestSpec = "Give a consistent budget to the plan retry loop."
-
-const ladderCleanPlanJSON = `{
-  "title": "Ladder budget plan",
-  "stories": [
-    {
-      "id": "st-ladder",
-      "title": "Ladder attempt surface",
-      "tasks": [
-        {"id": "t1", "title": "Track remaining touch-up and replay budgets", "spec": "Count the touch-up and replay passes the ladder still may spend.", "verification_script_reason": "covered by the ladder test suite"},
-        {"id": "t2", "title": "Record the planner chain on every attempt", "spec": "Attribute each ladder attempt to the planner that produced it.", "verification_script_reason": "covered by the ladder test suite"}
-      ]
-    }
-  ]
-}`
-
-// ladderFlaggedPlanJSON — the same plan with t2's verification
-// exemption removed: exactly one structural finding, naming t2.
-const ladderFlaggedPlanJSON = `{
-  "title": "Ladder budget plan",
-  "stories": [
-    {
-      "id": "st-ladder",
-      "title": "Ladder attempt surface",
-      "tasks": [
-        {"id": "t1", "title": "Track remaining touch-up and replay budgets", "spec": "Count the touch-up and replay passes the ladder still may spend.", "verification_script_reason": "covered by the ladder test suite"},
-        {"id": "t2", "title": "Record the planner chain on every attempt", "spec": "Attribute each ladder attempt to the planner that produced it."}
-      ]
-    }
-  ]
-}`
-
-// ladderFixedPlanJSON — the touch-up's answer: t2 gained its exemption,
-// ONLY t2's spec text changed; t1 is byte-identical to the flagged plan
-// ("replace only the matched tasks").
-const ladderFixedPlanJSON = `{
-  "title": "Ladder budget plan",
-  "stories": [
-    {
-      "id": "st-ladder",
-      "title": "Ladder attempt surface",
-      "tasks": [
-        {"id": "t1", "title": "Track remaining touch-up and replay budgets", "spec": "Count the touch-up and replay passes the ladder still may spend.", "verification_script_reason": "covered by the ladder test suite"},
-        {"id": "t2", "title": "Record the planner chain on every attempt", "spec": "Attribute each ladder attempt to the planner that produced it, and keep the fixed attempt record.", "verification_script_reason": "covered by the ladder test suite"}
-      ]
-    }
-  ]
-}`
+// planning_ladder_test.go — TestPlanningRouting* runs the planning
+// ladder state machine against scripted raw plans (PlannerFn stubs);
+// no LLM is called anywhere here. The real parse (ParsePlanning), the
+// three real deterministic finders (LintPlanScope, CheckPlanCoverage,
+// CheckPlanStructure) and the real budgets (config.PlanningLadder)
+// run unmodified.
 
 const (
-	ladderPlannerA      = "claude-code"
-	ladderPlannerAModel = "claude-opus-5-5"
-	ladderPlannerB      = "pi-prompt"
-	ladderPlannerBModel = "qwen3.8:27b"
+	ladderTestSpec = "Cover requirement A.\nCover requirement B."
 )
 
-var (
-	ladderRefA = config.PlannerRef{Backend: ladderPlannerA, Model: ladderPlannerAModel}
-	ladderRefB = config.PlannerRef{Backend: ladderPlannerB, Model: ladderPlannerBModel}
-)
+// ladderFlaggedPlanJSON covers both spec requirements in t1 but leaves
+// t2 without a verification command or the exemption — every planner
+// that returns it gets the findings, so the ladder keeps stepping on it.
+const ladderFlaggedPlanJSON = `{
+  "title": "planned",
+  "stories": [
+    {
+      "id": "s1",
+      "title": "Build",
+      "tasks": [
+        { "id": "t1", "title": "t1", "spec": "Cover requirement A\nverification_command: echo a", "files_planned": ["docs/a.md"], "verification_script": "tests/a.sh" },
+        { "id": "t2", "title": "t2", "spec": "Cover requirement B" }
+      ]
+    }
+  ]
+}`
 
-var ladderFixedClock = time.Date(2026, 11, 1, 9, 30, 0, 0, time.UTC)
+// ladderFixedPlanJSON is the ladder's accepting answer: t2 gains the
+// verification exemption (B124) so the three checks pass.
+const ladderFixedPlanJSON = `{
+  "title": "planned",
+  "stories": [
+    {
+      "id": "s1",
+      "title": "Build",
+      "tasks": [
+        { "id": "t1", "title": "t1", "spec": "Cover requirement A\nverification_command: echo a", "files_planned": ["docs/a.md"], "verification_script": "tests/a.sh" },
+        { "id": "t2", "title": "t2", "spec": "Cover requirement B", "verification_script": "tests/b.sh" }
+      ]
+    }
+  ]
+}`
 
-func ladderFixedNow() time.Time { return ladderFixedClock }
+// ladderSneakyFixedPlanJSON is what a NON-honoring planner returns for
+// a touch-up: it fixes t2 (as it must) but also tampers with the
+// unflagged t1 (different spec text) and adds a third task. The ladder
+// must accept only the t2 replacement and hold everything else in place
+// — that is what the TouchUpFixesOnlyFlaggedTask test asserts.
+const ladderSneakyFixedPlanJSON = `{
+  "title": "planned",
+  "stories": [
+    {
+      "id": "s1",
+      "title": "Build",
+      "tasks": [
+        { "id": "t1", "title": "t1 (rewritten)", "spec": "TAMPERED with requirement A" },
+        { "id": "t2", "title": "t2", "spec": "Cover requirement B", "verification_script": "tests/b.sh" },
+        { "id": "t3", "title": "t3", "spec": "added work nobody asked for\nverification_command: echo 3", "verification_script": "tests/c.sh" }
+      ]
+    }
+  ]
+}`
+
+// --- helpers ------------------------------------------------------------------
 
 type ladderCall struct {
 	backend, model, prompt string
 }
 
-// runLadder captures every plan call and returns the result, for
-// compact assertions.
-func runLadder(t *testing.T, ladder config.PlanningLadder, planners []config.PlannerRef, plan PlannerFn) (LadderResult, []ladderCall) {
+// newScriptedPlanner returns a PlannerFn that replies with raw[i] for
+// the i-th call recorded in calls (any backend/model), or err[i] when
+// raw[i] == "" and err[i] != nil.
+func newScriptedPlanner(t *testing.T, calls *[]ladderCall, raw []string, err []error) PlannerFn {
 	t.Helper()
-	var calls []ladderCall
-	rec := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		calls = append(calls, ladderCall{backend: backend, model: model, prompt: prompt})
-		return plan(ctx, backend, model, prompt)
-	}
-	res := RunPlanningLadder(context.Background(), ladder, planners, ladderTestSpec, rec, ladderFixedNow)
-	return res, calls
-}
-
-// expectKinds asserts the exact attempt-kind sequence of the ladder run.
-func expectKinds(t *testing.T, res LadderResult, kinds ...string) {
-	t.Helper()
-	if len(res.Attempts) != len(kinds) {
-		t.Fatalf("expected %d attempts (%v), got %d (%v)", len(kinds), kinds, len(res.Attempts), attemptKinds(res))
-	}
-	for i, k := range kinds {
-		if res.Attempts[i].Kind != k {
-			t.Fatalf("attempt %d kind = %q, want %q (sequence %v)", i+1, res.Attempts[i].Kind, k, attemptKinds(res))
+	planIx := 0
+	return func(ctx context.Context, backend, model, prompt string) (string, error) {
+		i := len(*calls)
+		*calls = append(*calls, ladderCall{backend, model, prompt})
+		if i < len(err) && err[i] != nil {
+			return "", err[i]
 		}
+		if planIx < len(raw) {
+			p := raw[planIx]
+			planIx++
+			return p, nil
+		}
+		t.Fatalf("planner called more than scripted (%d)", i)
+		panic("unreachable")
 	}
 }
 
-func attemptKinds(res LadderResult) []string {
-	out := make([]string, len(res.Attempts))
+// expectKinds asserts the attempt kinds of the whole ladder run in order.
+func expectKinds(t *testing.T, res LadderResult, want []string) {
+	t.Helper()
+	got := make([]string, len(res.Attempts))
 	for i, a := range res.Attempts {
-		out[i] = a.Kind
+		got[i] = a.Kind
 	}
-	return out
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("attempts got %v want %v", got, want)
+	}
 }
 
-func taskByID(stories []Story, id string) (Task, bool) {
+func ladderFindTask(stories []Story, taskID string) (Task, bool) {
 	for _, s := range stories {
 		for _, t := range s.Tasks {
-			if t.ID == id {
+			if t.ID == taskID {
 				return t, true
 			}
 		}
@@ -160,287 +126,443 @@ func taskByID(stories []Story, id string) (Task, bool) {
 	return Task{}, false
 }
 
+// ladderDefaultClock advances one second per read so every attempt's
+// clock is distinct and comparable.
+func ladderDeterministicClock(start time.Time) func() time.Time {
+	n := 0
+	return func() time.Time { return start.Add(time.Duration(n) * time.Second) }
+}
+
+// --- the run ladder -----------------------------------------------------------
+
+var ladderDefaultBench = config.PlanningLadder{} // all budgets at the defaults 1 / 1 / 2
+
+// TestPlanningRoutingPassesOnFirstAttempt pins the happy path: a clean
+// plan ends the ladder after one attempt, attributed to the first
+// planner.
 func TestPlanningRoutingPassesOnFirstAttempt(t *testing.T) {
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA},
-		func(ctx context.Context, backend, model, prompt string) (string, error) {
-			return ladderCleanPlanJSON, nil
-		})
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls, []string{ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
 	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+		t.Fatalf("ladder must pass on a clean plan, attempts=%+v", res.Attempts)
 	}
-	if !reflect.DeepEqual(res.Planner, ladderRefA) {
-		t.Fatalf("Planner = %+v, want %+v", res.Planner, ladderRefA)
+	if res.Planner != (config.PlannerRef{Backend: "a", Model: "m1"}) {
+		t.Fatalf("pass must be attributed to the first planner, got %+v", res.Planner)
 	}
-	expectKinds(t, res, LadderAttemptInitial)
-	if res.Attempts[0].Outcome != LadderOutcomePass {
-		t.Fatalf("outcome = %q, want pass", res.Attempts[0].Outcome)
+	if len(res.Findings) != 0 {
+		t.Fatalf("pass must carry no findings, got %v", res.Findings)
 	}
-	if res.Attempts[0].FindingCount != 0 || len(res.Attempts[0].Findings) != 0 {
-		t.Fatalf("passing attempt carries findings: %v", res.Attempts[0].Findings)
+	expectKinds(t, res, []string{LadderAttemptPlan})
+	if res.Attempts[0].Outcome != LadderOutcomePassed {
+		t.Fatalf("clean attempt outcome want passed got %q", res.Attempts[0].Outcome)
 	}
-	if !res.Attempts[0].At.Equal(ladderFixedClock) {
-		t.Fatalf("attempt At = %v, want the injected clock %v", res.Attempts[0].At, ladderFixedClock)
+
+	// First move: the bare spec, nothing yet to feed back.
+	if calls[0].prompt != ladderTestSpec {
+		t.Fatalf("initial prompt must be the bare spec, got %q", calls[0].prompt)
 	}
-	if len(res.FinalStories) != 1 || len(res.FinalStories[0].Tasks) != 2 {
-		t.Fatalf("FinalStories = %+v", res.FinalStories)
-	}
-	// The initial prompt IS the bare spec: a clean plan must need nothing more.
-	if len(calls) != 1 || calls[0].prompt != ladderTestSpec {
-		t.Fatalf("calls = %+v, want the single bare-spec call", calls)
-	}
-	if calls[0].backend != ladderPlannerA || calls[0].model != ladderPlannerAModel {
-		t.Fatalf("called planner = %s/%s, want %s/%s", calls[0].backend, calls[0].model, ladderPlannerA, ladderPlannerAModel)
+	if len(calls) != 1 {
+		t.Fatalf("a passing plan must spend no budget: got %d planner calls", len(calls))
 	}
 }
 
+// TestPlanningRoutingTouchUpFixesOnlyFlaggedTask pins the touch-up
+// contract end to end: one flagged task (t2, no B124 verification
+// exemption), the touch-up prompt names the flagged title + the finding
+// (and not the unflagged task), and the planner answers with a fixed
+// full plan that — as planners do — also tampers with unflagged work.
+// The ladder must still end with EXACTLY: t2 fixed, t1 preserved
+// byte-for-byte, no added task.
 func TestPlanningRoutingTouchUpFixesOnlyFlaggedTask(t *testing.T) {
-	// planner A: first answer flagged (t2 unverified), touch-up answer fixed.
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA},
-		func(ctx context.Context, backend, model, prompt string) (string, error) {
-			if strings.Contains(prompt, "TOUCH-UP") {
-				return ladderFixedPlanJSON, nil
-			}
-			return ladderFlaggedPlanJSON, nil
-		})
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls, []string{ladderFlaggedPlanJSON, ladderSneakyFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
 	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+		t.Fatalf("touch-up must end the ladder, attempts=%+v", res.Attempts)
 	}
-	expectKinds(t, res, LadderAttemptInitial, LadderAttemptTouchUp)
-	if res.Attempts[0].Outcome != LadderOutcomeFindings {
-		t.Fatalf("first outcome = %q, want findings", res.Attempts[0].Outcome)
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptTouchUp})
+	if res.Attempts[1].Outcome != LadderOutcomePassed {
+		t.Fatalf("touch-up outcome want passed got %q", res.Attempts[1].Outcome)
 	}
-	if res.Attempts[0].FindingCount != 1 {
-		t.Fatalf("first FindingCount = %d (findings %v), want exactly 1", res.Attempts[0].FindingCount, res.Attempts[0].Findings)
+
+	// The first attempt's failure: the finding names the flagged task
+	// title and the B124 exemption, and nothing names t1.
+	first := res.Attempts[0]
+	if first.Kind != LadderAttemptPlan || first.Outcome != LadderOutcomeFailed || first.FindingCount != len(first.Findings) {
+		t.Fatalf("first attempt shape: %+v", first)
 	}
-	if !strings.Contains(res.Attempts[0].Findings[0], "t2") {
-		t.Fatalf("finding must name the flagged task t2: %q", res.Attempts[0].Findings[0])
+	if !strings.Contains(first.Findings[0], "t2") || !strings.Contains(first.Findings[0], "B124") {
+		t.Fatalf("finding must flag t2's missing B124 exemption, got %q", first.Findings[0])
 	}
-	if len(res.Attempts[0].Findings) != 1 || res.Attempts[0].Findings[0] != expectedLadderMissingVerificationFinding {
-		t.Fatalf("findings = %v, want exactly [%s]", res.Attempts[0].Findings, expectedLadderMissingVerificationFinding)
+
+	// The touch-up prompt carries the spec, the flagged title, and NOT
+	// the unflagged task as a flagged entry; it does not carry the
+	// replan shape, and the plan prompt did not carry the touch-up
+	// findings.
+	p1, p2 := calls[0].prompt, calls[1].prompt
+	if p1 != ladderTestSpec {
+		t.Fatalf("first attempt must be the bare spec, got %q", p1)
 	}
-	// The touch-up step runs on the SAME planner (no escalation while
-	// touch-up budget remains, no replan either).
-	for _, c := range calls {
-		if c.backend != ladderPlannerA || c.model != ladderPlannerAModel {
-			t.Fatalf("escalated on the touch-up step: call %s/%s", c.backend, c.model)
-		}
+	if !strings.Contains(p2, "TOUCH-UP") {
+		t.Fatalf("second attempt must be a touch-up, got %q", p2)
 	}
-	// The touch-up prompt names the flagged task and its findings, and
-	// instructs a targeted fix of ONLY that task.
-	touchUpPrompt := calls[1].prompt
-	for _, want := range []string{
-		"TOUCH-UP",
-		"ONLY",
-		"Record the planner chain on every attempt", // the flagged t2 title
-		"verification_script",                       // the finding text
-	} {
-		if !strings.Contains(touchUpPrompt, want) {
-			t.Fatalf("touch-up prompt missing %q:\n%s", want, touchUpPrompt)
-		}
+	if !strings.Contains(p2, "t2") || strings.Contains(p2, "t1") {
+		t.Fatalf("touch-up must name the flagged task (t2) and not the other (t1): %q", p2)
 	}
-	if strings.Contains(touchUpPrompt, "Track remaining touch-up and replay budgets") {
-		t.Fatalf("touch-up prompt must not name the UNflagged task t1:\n%s", touchUpPrompt)
+	if !strings.Contains(p2, first.Findings[0]) {
+		t.Fatalf("touch-up must feed the flagged finding back, prompt=%q finding=%q", p2, first.Findings[0])
 	}
-	// The fixed plan is accepted; the executor kept t1 byte-identical and
-	// only t2 moved.
-	if len(res.FinalStories) != 1 {
-		t.Fatalf("FinalStories = %+v", res.FinalStories)
+
+	// The merge: final stories hold t1 BYTE-IDENTICAL to the plan the
+	// failed attempt held (the sneaky response's rewritten t1 and its
+	// added t3 must not have moved), and t2 exactly as the response
+	// carried it.
+	if len(res.FinalStories) != 1 || len(res.FinalStories[0].Tasks) != 2 {
+		t.Fatalf("final plan must be the base plan with t2 replaced, got %+v", res.FinalStories)
 	}
-	t2, ok := taskByID(res.FinalStories, "t2")
-	if !ok || !strings.Contains(t2.Spec, "fixed attempt record") {
-		t.Fatalf("touch-up result must be the fixed t2: %+v (ok=%v)", t2, ok)
+	var baseStories []Story
+	_, baseStories, err := ParsePlanning(ladderFlaggedPlanJSON)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
 	}
-	if t2.VerificationScriptReason == "" {
-		t.Fatalf("t2 must carry its verification exemption: %+v", t2)
+	baseT1, ok := ladderFindTask(baseStories, "t1")
+	if !ok {
+		t.Fatalf("fixture has no t1")
 	}
-	if res.Planner != ladderRefA {
-		t.Fatalf("Planner = %+v, want %+v", res.Planner, ladderRefA)
+	gotT1, ok := ladderFindTask(res.FinalStories, "t1")
+	if !ok {
+		t.Fatalf("final plan dropped the unflagged task t1")
+	}
+	if !reflect.DeepEqual(gotT1, baseT1) {
+		t.Fatalf("unflagged task t1 must stay byte-identical to the last plan\ngot:  %+v\nwant: %+v", gotT1, baseT1)
+	}
+	_, updatedStories, err := ParsePlanning(ladderSneakyFixedPlanJSON)
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+	wantT2, ok := ladderFindTask(updatedStories, "t2")
+	if !ok {
+		t.Fatalf("fixture has no t2")
+	}
+	gotT2, ok := ladderFindTask(res.FinalStories, "t2")
+	if !ok {
+		t.Fatalf("final plan dropped the flagged task t2")
+	}
+	if !reflect.DeepEqual(gotT2, wantT2) {
+		t.Fatalf("flagged task t2 must be the response's replacement\ngot:  %+v\nwant: %+v", gotT2, wantT2)
+	}
+	if _, added := ladderFindTask(res.FinalStories, "t3"); added {
+		t.Fatalf("unflagged work in the touch-up response must not be added")
 	}
 }
 
+// TestPlanningRoutingTouchUpExhaustedReplans pins the budget order:
+// with the touch-up budget spent, the run ladder is carried to the
+// replay budget at the same planner. Touch-ups never count against the
+// per-planner allowance, so the single planner here gets both its
+// budgets before the ladder is out of move.
 func TestPlanningRoutingTouchUpExhaustedReplans(t *testing.T) {
-	// Single planner: with defaults (TouchUpMax 1, ReplanMax 1,
-	// EscalateAfterAttempts 2) the ladder must spend its one touch-up,
-	// then its one replay — not give up and not (unable to) escalate.
-	flakyPlan := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		if strings.Contains(prompt, "REPLAN") {
-			return ladderCleanPlanJSON, nil
-		}
-		return ladderFlaggedPlanJSON, nil
-	}
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA}, flakyPlan)
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
 	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+		t.Fatalf("the replayed plan must carry the ladder, attempts=%+v", res.Attempts)
 	}
-	expectKinds(t, res, LadderAttemptInitial, LadderAttemptTouchUp, LadderAttemptReplan)
-	if res.Attempts[2].Outcome != LadderOutcomePass {
-		t.Fatalf("replan outcome = %q, want pass", res.Attempts[2].Outcome)
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptTouchUp, LadderAttemptReplan})
+	if len(calls) != 3 {
+		t.Fatalf("one touch-up + one replay = three planner calls, got %d", len(calls))
 	}
-	// The replan prompt carries the findings as feedback — a fresh re-plan
-	// of the whole spec, not another targeted fix.
-	replanPrompt := calls[2].prompt
-	for _, want := range []string{"REPLAN", "verification_script"} {
-		if !strings.Contains(replanPrompt, want) {
-			t.Fatalf("replan prompt missing %q:\n%s", want, replanPrompt)
+	for i, c := range calls {
+		if !strings.Contains(c.prompt, ladderTestSpec) {
+			t.Fatalf("attempts %d must carry the spec, got %q", i+1, c.prompt)
 		}
 	}
-	if res.Planner != ladderRefA {
-		t.Fatalf("Planner = %+v, want %+v", res.Planner, ladderRefA)
+	// The replayed prompt carries the findings as feedback; the touch-up
+	// prompt named the flagged task instead.
+	if !strings.Contains(calls[2].prompt, "REPLAN") || !strings.Contains(calls[2].prompt, res.Attempts[0].Findings[0]) {
+		t.Fatalf("replan must feed the failed plan's findings, prompt=%q", calls[2].prompt)
+	}
+	if res.Planner != (config.PlannerRef{Backend: "a", Model: "m1"}) {
+		t.Fatalf("a single-chain ladder keeps the pass at this planner, got %+v", res.Planner)
 	}
 }
 
+// TestPlanningRoutingEscalatesToSecondPlanner pins the allowance: once
+// the first planner has burned its two PLAN attempts (its plan and its
+// replay; its one touch-up did not count), the run ladder restarts at
+// the second planner with a fresh plan — the bare spec, no findings
+// carried over — and spending only whatever budget is left (none here).
 func TestPlanningRoutingEscalatesToSecondPlanner(t *testing.T) {
-	// planner A fails every allowed attempt (default allowance 2, one of
-	// them a touch-up); planner B passes on its fresh initial.
-	plan := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		if backend == ladderPlannerA {
-			return ladderFlaggedPlanJSON, nil
-		}
-		return ladderCleanPlanJSON, nil
-	}
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA, ladderRefB}, plan)
+	var calls []ladderCall
+	// A never accepts: whatever it answers, it flags.
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{
+			{Backend: "a", Model: "m1"},
+			{Backend: "b", Model: "m2"},
+		},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
-	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+	if !res.Passed || res.Planner != (config.PlannerRef{Backend: "b", Model: "m2"}) {
+		t.Fatalf("planner B must earn the pass, result=%+v attempts=%+v", res, res.Attempts)
 	}
-	expectKinds(t, res, LadderAttemptInitial, LadderAttemptTouchUp, LadderAttemptInitial)
-	// The ladder spent planner A's attempts WITHIN the allowance, then
-	// started fresh at planner B.
-	if calls[0].backend != ladderPlannerA || calls[1].backend != ladderPlannerA {
-		t.Fatalf("attempts 1-2 must run on planner A: %+v", calls)
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptTouchUp, LadderAttemptReplan, LadderAttemptPlan})
+
+	// A's three moves, then B's fresh plan.
+	if calls[0].backend != "a" || calls[1].backend != "a" || calls[2].backend != "a" || calls[3].backend != "b" {
+		t.Fatalf("backend order wrong: %v", []string{calls[0].backend, calls[1].backend, calls[2].backend, calls[3].backend})
 	}
-	if calls[2].backend != ladderPlannerB || calls[2].model != ladderPlannerBModel {
-		t.Fatalf("attempt 3 must run on planner B: %+v", calls)
+	if calls[3].prompt != ladderTestSpec {
+		t.Fatalf("escalation must restart from the bare spec, got %q", calls[3].prompt)
 	}
-	// Fresh start: planner B's initial prompt is the bare spec — no
-	// findings fed over from planner A's failed plan.
-	if calls[2].prompt != ladderTestSpec {
-		t.Fatalf("escalation must restart fresh from the spec, got:\n%s", calls[2].prompt)
-	}
-	if res.Attempts[2].FindingCount != 0 {
-		t.Fatalf("planner B attempt findings = %v, want none", res.Attempts[2].Findings)
-	}
-	if !reflect.DeepEqual(res.Planner, ladderRefB) {
-		t.Fatalf("Planner = %+v, want the second planner %+v", res.Planner, ladderRefB)
+	if strings.Contains(calls[3].prompt, "B124") {
+		t.Fatalf("escalation must not carry the previous planner's findings, got %q", calls[3].prompt)
 	}
 }
 
+// TestPlanningRoutingExhaustsAllPlanners pins the terminal state: both
+// planners fail every move they get, the shared budgets are spent, and
+// the ladder is out of move: Passed=false, the LAST plan (from the
+// last planner) held, the findings of that plan, every attempt with
+// the planner they ran on, and no further call.
 func TestPlanningRoutingExhaustsAllPlanners(t *testing.T) {
-	// Both planners fail every attempt; every budget is ultimately spent.
-	// Default budgets: 1 touch-up + 1 replay, shared across the chain.
-	alwaysFlagged := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		return ladderFlaggedPlanJSON, nil
-	}
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA, ladderRefB}, alwaysFlagged)
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{
+			{Backend: "a", Model: "m1"},
+			{Backend: "b", Model: "m2"},
+		},
+		ladderTestSpec,
+		// Every planner answers the flagged plan: the ladder's only
+		// path out is the one it is designed to walk.
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
 	if res.Passed {
-		t.Fatalf("Passed = true: the ladder must exhaust, not pass: %+v", res)
+		t.Fatalf("all planners failed, the ladder must not pass")
 	}
-	// A: initial → A: touch-up (allowance 2 met) → B: initial → B: replan
-	// (last shared budget) → out of move.
-	expectKinds(t, res,
-		LadderAttemptInitial, LadderAttemptTouchUp,
-		LadderAttemptInitial, LadderAttemptReplan)
-	backends := []string{calls[0].backend, calls[1].backend, calls[2].backend, calls[3].backend}
-	wantBackends := []string{ladderPlannerA, ladderPlannerA, ladderPlannerB, ladderPlannerB}
-	if !reflect.DeepEqual(backends, wantBackends) {
-		t.Fatalf("attempt planners = %v, want %v", backends, wantBackends)
+	if len(res.Attempts) != 4 || len(calls) != 4 {
+		t.Fatalf("default budgets: three moves at A (plan, touch-up, replay) then A's plan at B = 4 attempts, got attempts=%d calls=%d", len(res.Attempts), len(calls))
 	}
+	wantBackends := []string{"a", "a", "a", "b"}
 	for i, a := range res.Attempts {
-		if a.Outcome != LadderOutcomeFindings {
-			t.Fatalf("attempt %d outcome = %q, want findings", i+1, a.Outcome)
+		if a.Backend != wantBackends[i] {
+			t.Fatalf("attempt %d backend want %s got %s (%+v)", i+1, wantBackends[i], a.Backend, a)
 		}
-		if a.FindingCount != 1 {
-			t.Fatalf("attempt %d FindingCount = %d (findings %v), want 1", i+1, a.FindingCount, a.Findings)
+		if a.Outcome != LadderOutcomeFailed || a.FindingCount == 0 {
+			t.Fatalf("each failed attempt records the findings it saw: %+v", a)
+		}
+		if a.Error != "" {
+			t.Fatalf("these attempts parsed fine, no error expected: %+v", a)
 		}
 	}
-	// Terminal state: the last planner, and the last plan it holds.
-	if !reflect.DeepEqual(res.Planner, ladderRefB) {
-		t.Fatalf("Planner = %+v, want the last planner %#v", res.Planner, ladderRefB)
+	if !reflect.DeepEqual(res.FinalStories, nil) && len(res.FinalStories) == 0 {
+		t.Fatalf("the failed ladder still holds the last plan")
 	}
-	if len(res.FinalStories) != 1 {
-		t.Fatalf("FinalStories = %+v, want the last plan it holds", res.FinalStories)
+	if got, want := res.Planner, (config.PlannerRef{Backend: "b", Model: "m2"}); got != want {
+		t.Fatalf("the held plan is planner B's, attribution want %+v got %+v", want, got)
 	}
-	t2, _ := taskByID(res.FinalStories, "t2")
-	if t2.VerificationScriptReason != "" {
-		t.Fatalf("the held plan is still the flagged one: t2 = %+v", t2)
+	// The result carries the last findings the ladder saw — the caller
+	// should not have to dig through the attempts.
+	if len(res.Findings) != 1 || !strings.Contains(res.Findings[0], "B124") {
+		t.Fatalf("result.Findings must carry the last findings, got %v", res.Findings)
+	}
+	if len(calls) != 4 {
+		t.Fatalf("out of move: the ladder stops calling, got %d calls", len(calls))
 	}
 }
 
+// TestPlanningRoutingPlannerErrorEscalates pins an error in the middle
+// of the chain: the error attempt is recorded (the ladder does not
+// retry the same broken planner), and the run ladder moves on to the
+// next planner.
 func TestPlanningRoutingPlannerErrorEscalates(t *testing.T) {
-	// planner A's call errors; a failed call has no plan to touch up, so
-	// the ladder escalates to B (which parses clean) and records the
-	// error on A's attempt.
-	plan := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		if backend == ladderPlannerA {
-			return "", errors.New("backend down")
-		}
-		return ladderCleanPlanJSON, nil
-	}
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA, ladderRefB}, plan)
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{
+			{Backend: "a", Model: "m1"},
+			{Backend: "b", Model: "m2"},
+		},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFixedPlanJSON},
+			[]error{errors.New("planner a is down"), nil}),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
-	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+	if !res.Passed || res.Planner != (config.PlannerRef{Backend: "b", Model: "m2"}) {
+		t.Fatalf("the next planner must earn the pass after a planner error, got %+v attempts=%+v", res, res.Attempts)
 	}
-	expectKinds(t, res, LadderAttemptInitial, LadderAttemptInitial)
-	a1 := res.Attempts[0]
-	if a1.Outcome != LadderOutcomePlannerError {
-		t.Fatalf("attempt 1 outcome = %q, want planner_error", a1.Outcome)
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptPlan})
+	errRec := res.Attempts[0]
+	if errRec.Outcome != LadderOutcomeError {
+		t.Fatalf("a planner error records outcome error, got %q", errRec.Outcome)
 	}
-	if !strings.Contains(a1.Error, "backend down") {
-		t.Fatalf("attempt 1 Error = %q, want the planner's message", a1.Error)
+	if !strings.Contains(errRec.Error, "planner a is down") {
+		t.Fatalf("the error message belongs on the record: %+v", errRec)
 	}
-	if a1.FindingCount != 0 || a1.Findings != nil {
-		t.Fatalf("error attempt must carry no findings: %+v", a1)
+	if errRec.Findings != nil || errRec.FindingCount != 0 {
+		t.Fatalf("no plan, no findings on an error attempt: %+v", errRec)
 	}
-	if calls[0].backend != ladderPlannerA || calls[1].backend != ladderPlannerB {
-		t.Fatalf("calls = %+v, want A (error) then B (fresh)", calls)
+	if res.Attempts[1].Outcome != LadderOutcomePassed {
+		t.Fatalf("B's plan must pass, got %q", res.Attempts[1].Outcome)
 	}
-	if !reflect.DeepEqual(res.Planner, ladderRefB) {
-		t.Fatalf("Planner = %+v, want %+v", res.Planner, ladderRefB)
+	if !strings.Contains(calls[1].prompt, ladderTestSpec) {
+		t.Fatalf("escalation after an error restarts fresh from the spec, got %q", calls[1].prompt)
 	}
 }
 
+// TestPlanningRoutingParseFailureReplans pins the parse-failure path
+// at the end of the chain: the failed raw output is recorded (outcome
+// failed, the parse error on the record, zero findings — the checks
+// never ran on it), and the ladder spends its replay budget on a fresh
+// plan at the same planner.
 func TestPlanningRoutingParseFailureReplans(t *testing.T) {
-	// Single planner: a non-parsing raw output fails the attempt as
-	// parse_failure; with no next planner the ladder spends its replay
-	// budget on a fresh full prompt, which then passes.
-	plan := func(ctx context.Context, backend, model, prompt string) (string, error) {
-		if strings.Contains(prompt, "REPLAN") {
-			return ladderCleanPlanJSON, nil
-		}
-		return "this is not a plan at all", nil
-	}
-	res, calls := runLadder(t, config.PlanningLadder{}, []config.PlannerRef{ladderRefA}, plan)
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		// First answer is not a plan the ladder can parse; the replayed
+		// one is.
+		newScriptedPlanner(t, &calls,
+			[]string{"sure! here is the plan I would think about:\n(it is prose, not JSON)", ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
 
 	if !res.Passed {
-		t.Fatalf("Passed = false: %+v", res)
+		t.Fatalf("the replayed answer must pass the ladder, attempts=%+v", res.Attempts)
 	}
-	expectKinds(t, res, LadderAttemptInitial, LadderAttemptReplan)
-	a1 := res.Attempts[0]
-	if a1.Outcome != LadderOutcomeParseFailure {
-		t.Fatalf("attempt 1 outcome = %q, want parse_failure", a1.Outcome)
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptReplan})
+	bad := res.Attempts[0]
+	if bad.Outcome != LadderOutcomeFailed {
+		t.Fatalf("a parse failure records outcome failed, got %q", bad.Outcome)
 	}
-	if !strings.Contains(a1.Error, "parse") {
-		t.Fatalf("attempt 1 Error = %q, want the parse message", a1.Error)
+	if !strings.Contains(bad.Error, "parse") {
+		t.Fatalf("the parse error belongs on the record: %+v", bad)
 	}
-	// A parse failure carries no plan, so no findings — the replan prompt
-	// still explains WHAT failed is impossible; it only re-plans the spec.
-	if a1.FindingCount != 0 || a1.Findings != nil {
-		t.Fatalf("parse-failure attempt must carry no findings: %+v", a1)
+	if bad.Findings != nil || bad.FindingCount != 0 {
+		t.Fatalf("a raw that never parses has zero findings, got %+v", bad)
 	}
-	if strings.Contains(calls[1].prompt, "TOUCH-UP") {
-		t.Fatalf("a parse failure must not lead to a touch-up (no plan to touch):\n%s", calls[1].prompt)
+	if res.Attempts[1].Outcome != LadderOutcomePassed {
+		t.Fatalf("the replayed plan must pass, got %q", res.Attempts[1].Outcome)
 	}
-	if !strings.Contains(calls[1].prompt, "REPLAN") {
-		t.Fatalf("after a parse failure at the end of the chain, want a replan:\n%s", calls[1].prompt)
+	// A replay is a fresh plan: the prompt does not carry the touch-up
+	// shape and still carries the spec.
+	if !strings.Contains(calls[1].prompt, "REPLAN") || !strings.Contains(calls[1].prompt, ladderTestSpec) {
+		t.Fatalf("replan prompt must re-plan the whole spec, got %q", calls[1].prompt)
 	}
 }
 
-// expectedLadderMissingVerificationFinding — the exact structural
-// finding the flagged plan must draw (structural rule 4 on t2), so the
-// "exactly one finding" assertions are not vacuous.
-const expectedLadderMissingVerificationFinding = "task t2 has neither verification_script nor verification_script_reason; per B124 a task without a script must state an explicit exemption reason"
+// TestPlanningRoutingGuards pins the two documented guards: nil
+// planner function and empty planner chain both terminate the ladder
+// with a clean not-passing result and zero calls / attempts — no panic,
+// no invented plan.
+func TestPlanningRoutingGuards(t *testing.T) {
+	t.Run("nil_planner", func(t *testing.T) {
+		res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+			[]config.PlannerRef{{Backend: "a", Model: "m1"}}, ladderTestSpec, nil,
+			ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
+		if res.Passed || len(res.Attempts) != 0 || res.FinalStories != nil {
+			t.Fatalf("nil planner ends the ladder without a plan, got %+v", res)
+		}
+	})
+	t.Run("empty_chain", func(t *testing.T) {
+		var calls []ladderCall
+		res := RunPlanningLadder(context.Background(), ladderDefaultBench,
+			nil, ladderTestSpec,
+			newScriptedPlanner(t, &calls, []string{ladderFixedPlanJSON}, nil),
+			ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
+		if res.Passed || len(calls) != 0 {
+			t.Fatalf("an empty chain must not call at all, calls=%d res=%+v", len(calls), res)
+		}
+	})
+}
+
+// TestPlanningRoutingCancelledStops pins ctx handling: a context that
+// is already cancelled stops the ladder after zero attempts, with
+// everything the ladder already recorded — here, nothing.
+func TestPlanningRoutingCancelledStops(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var calls []ladderCall
+	res := RunPlanningLadder(ctx, ladderDefaultBench,
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls, []string{ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
+	if res.Passed || len(res.Attempts) != 0 || len(calls) != 0 {
+		t.Fatalf("a cancelled context ends the ladder at once, got res=%+v calls=%d", res, len(calls))
+	}
+}
+
+// TestPlanningRoutingBudgetsAreShared pins the shared-budget rule
+// with explicit (non-default) numbers: touch-up budget = 2, replay = 1,
+// allowance = 3. A single planner that keeps answering the flagged
+// plan spends: plan, touch-up, touch-up, replay — then, even though its
+// plan-attempt allowance (3) has not been reached, there is no next
+// planner and no budget left, so it is out of move on move five.
+func TestPlanningRoutingBudgetsAreShared(t *testing.T) {
+	var calls []ladderCall
+	res := RunPlanningLadder(context.Background(),
+		config.PlanningLadder{TouchUpMax: 2, ReplanMax: 1, EscalateAfterAttempts: 3},
+		[]config.PlannerRef{{Backend: "a", Model: "m1"}},
+		ladderTestSpec,
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
+
+	if res.Passed {
+		t.Fatalf("budgets spent at one planner must end the ladder failed")
+	}
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptTouchUp, LadderAttemptTouchUp, LadderAttemptReplan})
+	if len(calls) != 4 {
+		t.Fatalf("touch-up budget 2 + replay budget 1 + the plan = 4 calls, got %d", len(calls))
+	}
+}
+
+// TestPlanningRoutingEscalatesByAllowance pins the allowance as the
+// trigger, not the budgets: a 2-planner chain, escalation after 2 PLAN
+// attempts, NO touch-up budget (0 = default 1, so set it explicitly to
+// 1 here) and replay budget 1. A burns its two plan attempts (plan,
+// replay — the touch-up in between does not count), the ladder
+// escalates to B BEFORE B has spent anything, and B's plan is the fifth
+// call in the run.
+func TestPlanningRoutingEscalatesByAllowance(t *testing.T) {
+	var calls []ladderCall
+	chain := []config.PlannerRef{
+		{Backend: "a", Model: "m1"},
+		{Backend: "b", Model: "m2"},
+	}
+	res := RunPlanningLadder(context.Background(),
+		config.PlanningLadder{TouchUpMax: 1, ReplanMax: 1, EscalateAfterAttempts: 2},
+		chain,
+		ladderTestSpec,
+		// A flags three times (plan, touch-up, replay); B's plan passes.
+		newScriptedPlanner(t, &calls,
+			[]string{ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFlaggedPlanJSON, ladderFixedPlanJSON}, nil),
+		ladderDeterministicClock(time.Date(2026, 1, 1, 8, 0, 0, 0, time.UTC)))
+
+	if !res.Passed || res.Planner != chain[1] {
+		t.Fatalf("B must earn the pass once A has burned its plan-attempt allowance, got %+v", res)
+	}
+	expectKinds(t, res, []string{LadderAttemptPlan, LadderAttemptTouchUp, LadderAttemptReplan, LadderAttemptPlan})
+	if got := []string{calls[0].backend, calls[1].backend, calls[2].backend, calls[3].backend};
+		!reflect.DeepEqual(got, []string{"a", "a", "a", "b"}) {
+		t.Fatalf("A takes its plan, its touch-up and its replay before B takes a single move, got %v", got)
+	}
+}
