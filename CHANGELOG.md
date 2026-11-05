@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.97.4 — Rejudge reviews the current branch head instead of replaying a stale verdict
+
+Rejudge now reviews the current branch head instead of replaying a stale verdict, and a rules-review hold accepts a rejudge once new commits have landed.
+
+- **Head-aware verdict.** The rules-review verdict records the commit it was judged on. A rejudge replays the stored verdict only when the branch head and the judge inputs (the judge policy and the guardrail's rules and prompt) are unchanged and the judge verdict cache is on; otherwise a fresh judge runs on the current head and its verdict replaces the stored one. With the cache off, every rejudge runs a fresh judge.
+- **Rules-review holds.** An Automaton held in `needs_review` after the retries were spent, or with auto-fix turned off, accepts a rejudge once new commits are on its branch, with no cancel, add-task or task reset. With the head unchanged the rejudge is refused before any judge runs, with the error `branch head "<sha>" is unchanged since the held verdict was made; new commits are needed before a rejudge`, and nothing is recorded.
+- **Docs.** The MCP reference and the operations guide describe the four paths and the fix, commit, rejudge routine.
+
 ## v9.97.3 — Eval cases folder comes from the directory listing
 
 The eval cases folder in a request now has to name a real folder; the request text never reaches the file system.
