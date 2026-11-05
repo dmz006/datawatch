@@ -33,7 +33,7 @@ method: YAML, CLI, web UI, REST API, MCP, and the comm channel.
 - The node's model loaded — a measurement reads free memory **with the
   resident model loaded**, so it must be resident.
 - A pull-allowed model list on the node. An empty list refuses every
-  measurement with **403 no-allowed-models**.
+  measurement with **403 `model not allowed`**.
 - Autonomous mode running, for the cap to matter: the cap bounds how many
   verifier sessions the admission path may admit on the node at once. The
   cap sits next to the worker slots and never replaces the executor pin —

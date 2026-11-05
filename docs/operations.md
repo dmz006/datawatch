@@ -738,6 +738,15 @@ A node's verifier cap (`compute_nodes[].verifier_slots`, default 1) may only be 
 | **Comm channel** | `compute headroom measure <node>`; `compute headroom <node>` (show); `capacity` status for the per-node cap |
 | **MCP** | `compute_node_headroom_measure`, `compute_node_headroom_get`, `capacity_status` |
 
+**Where to see.**
+
+| Surface | What you see |
+|---------|--------------|
+| PWA node detail | The **Headroom** block: stored measurement (measured at, age, free, per-request, supported cap), fresh/stale badge, **Measure now** |
+| `GET /api/capacity` (CLI `datawatch capacity show`, MCP `capacity_status`) | Per-node `verifier_cap` — `configured`, `effective`, and the gate's refusal text when the cap is refused |
+| Daemon log | `[capacity] node N verifier cap: configured C refused (… reason …), running R` — once per node per change, and `refusal cleared, running R` when it lifts |
+| Any node-save refusal | The 409 body with the gate's message, `free_mb` and `shortfall_mb` |
+
 The operator walkthrough — the gate's three refusal messages word for word, a full measure-then-raise example, what a restart does, and every status/body pair — is in [howto/verifier-headroom-measurement.md](howto/verifier-headroom-measurement.md). Parity: config input and node detail only; Android and iPhone (iOS) have no surface for it.
 
 ### Infrastructure retry
