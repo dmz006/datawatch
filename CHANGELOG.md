@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.3 — Template tasks no longer fail decompose
+
+New Automata can plan again when the task template pack is on.
+
+- **The bug.** The built-in task templates (changelog entry, parity issue draft, docs set, final gate and version note) add tasks that list files but carry no verification script. The check that every file-changing task has a script then rejected the whole plan, so an Automaton created with a project directory went back to draft with no tasks and no alert.
+- **The fix.** Tasks the templates add are exempt from that check. The planner's own tasks are still held to it, and a plan whose only unscripted task is the planner's still fails and names only that task.
+- **Template text.** The templates now call the work by the Automaton's title (or the first line of its spec, at most 120 characters), not by its whole spec, so words in a long spec no longer end up in the template tasks.
+- Known gap: a plan that fails these checks still returns to draft without raising an alert.
+
 ## v9.96.2 — Planning routing test no longer double-unescapes
 
 A test helper for the planning routing JSON editor decoded `&amp;` before the other entities, which CodeQL flagged as a double unescape. It now decodes it last. The version check also treats `*.test.js` files as test-only, like `*_test.js`, so a test-only change no longer needs a version bump.
