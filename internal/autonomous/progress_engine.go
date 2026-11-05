@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"strings"
 	"time"
 )
 
@@ -28,6 +29,8 @@ const (
 	progressScopeAll            = "all"
 	progressScopeAutomationPart = "automation:"
 	progressScopeTagPart        = "tag:"
+	progressScopeTagsPart       = "tags:" // several tags, at-least-one rule
+	progressScopeTagsAllPart    = "tags(all):" // several tags, all-of-them rule
 )
 
 // ProgressOptions tunes one computation.
@@ -38,7 +41,9 @@ type ProgressOptions struct {
 	Lanes        int             `json:"lanes"`     // 0 means 5
 	GapHours     float64         `json:"gap_hours"` // 0 means 3
 	AutomationID string          `json:"automation_id"`
-	TagID        string          `json:"tag_id"`
+	TagID        string          `json:"tag_id"`     // legacy single-tag filter; merged into TagIDs
+	TagIDs       []string        `json:"tag_ids,omitempty"`
+	TagMatch     string          `json:"tag_match,omitempty"` // TagMatchAny (default) or TagMatchAll
 	MemberIDs    map[string]bool `json:"member_ids"` // explicit member filter for an Automation
 }
 
@@ -278,17 +283,65 @@ func progressScope(o ProgressOptions) string {
 	if o.AutomationID != "" {
 		scope = progressScopeAutomationPart + o.AutomationID
 	}
-	if o.TagID != "" {
+	if ids := o.tagFilterIDs(); len(ids) > 0 {
 		if scope != "" {
 			scope += "+"
 		}
-		scope += progressScopeTagPart + o.TagID
+		if len(ids) == 1 {
+			scope += progressScopeTagPart + ids[0] // legacy single-tag label
+		} else if o.tagWantsAll() {
+			scope += progressScopeTagsAllPart + strings.Join(ids, ",")
+		} else {
+			scope += progressScopeTagsPart + strings.Join(ids, ",")
+		}
 	}
 	if scope == "" {
 		return progressScopeAll
 	}
 	return scope
 }
+
+// TagMatchAny and TagMatchAll are the two matching rules for the progress
+// tag filter. They mirror the autonomous.tags.match-mode values
+// (config.TagMatchAny / config.TagMatchAll) so the tag browser and the
+// progress filter speak the same vocabulary.
+const (
+	TagMatchAny = "any"
+	TagMatchAll = "all"
+)
+
+// ValidTagMatch reports whether v is a progress tag-match rule.
+func ValidTagMatch(v string) bool {
+	return v == TagMatchAny || v == TagMatchAll
+}
+
+// ProgressScope returns the human-readable scope label the options produce,
+// so the trend and progress surfaces can say what they were counting.
+func ProgressScope(o ProgressOptions) string { return progressScope(o) }
+
+// tagFilterIDs merges the legacy TagID with TagIDs, trimming, de-duplicating
+// and keeping first-seen order, so the engine's tag filter never holds a
+// blank or a repeated ID.
+func (o ProgressOptions) tagFilterIDs() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	add(o.TagID)
+	for _, v := range o.TagIDs {
+		add(v)
+	}
+	return out
+}
+
+// tagWantsAll reports whether the tag filter is TagMatch "all": the record
+// must carry every filter tag. The default is TagMatchAny.
+func (o ProgressOptions) tagWantsAll() bool { return o.TagMatch == TagMatchAll }
 
 // progressTasks returns every task of every story of p.
 func progressTasks(p *PRD) []*Task {
@@ -358,15 +411,33 @@ func inProgressScope(p *PRD, o ProgressOptions) bool {
 			return false
 		}
 	}
-	if o.TagID != "" {
-		found := false
-		for _, id := range p.TagIDs {
-			if id == o.TagID {
-				found = true
-				break
+	if !tagsMatch(p.TagIDs, o.tagFilterIDs(), o.tagWantsAll()) {
+		return false
+	}
+	return true
+}
+
+// tagsMatch reports whether a record carrying the record tag IDs has at least
+// one of the filter tags (needAll false) or every one of them (needAll true).
+// An empty filter matches everything.
+func tagsMatch(record, filter []string, needAll bool) bool {
+	if len(filter) == 0 {
+		return true
+	}
+	have := make(map[string]bool, len(record))
+	for _, id := range record {
+		have[id] = true
+	}
+	if !needAll {
+		for _, id := range filter {
+			if have[id] {
+				return true
 			}
 		}
-		if !found {
+		return false
+	}
+	for _, id := range filter {
+		if !have[id] {
 			return false
 		}
 	}

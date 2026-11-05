@@ -11,18 +11,20 @@ import (
 
 // Comm verbs for the progress metrics:
 //
-//	progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]
-//	progress trend [days]
+//	progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]
+//	progress trend [days] [tag=<id> ...] [tag_match=<any|all>]
 //
 // Both read the REST routes over the loopback and print the text the CLI
 // prints, so the two cannot diverge.
 
-const progressUsage = "usage: progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>] | progress trend [days]"
+const progressUsage = "usage: progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]\nusage: progress trend [days] [tag=<id> ...] [tag_match=<any|all>]"
 
-// progressQueryKeys maps a comm argument to its REST query parameter.
+// progressQueryKeys maps a comm argument to its REST query parameter. tag is
+// repeatable; the rest are single values.
 var progressQueryKeys = map[string]string{
 	"automation": "automation_id",
-	"tag":        "tag_id",
+	"tag":        "tag",
+	"tag_match":  "tag_match",
 	"since":      "since",
 	"until":      "until",
 }
@@ -33,7 +35,8 @@ func ProgressCommVerbs() []string {
 	return []string{"progress", "progress trend"}
 }
 
-// progressQuery turns "automation=ID tag=ID since=DATE" into REST query values.
+// progressQuery turns "automation=ID tag=ID since=DATE" into REST query
+// values. tag is repeatable; the other arguments keep their last value.
 func progressQuery(fields []string) (url.Values, error) {
 	q := url.Values{}
 	for _, f := range fields {
@@ -41,6 +44,10 @@ func progressQuery(fields []string) (url.Values, error) {
 		key, known := progressQueryKeys[strings.ToLower(k)]
 		if !ok || !known || v == "" {
 			return nil, fmt.Errorf("unknown argument %q", f)
+		}
+		if key == "tag" {
+			q.Add(key, v)
+			continue
 		}
 		q.Set(key, v)
 	}
@@ -73,16 +80,38 @@ func (r *Router) handleProgress(args string) {
 
 func (r *Router) handleProgressTrend(fields []string) {
 	q := url.Values{}
-	if len(fields) > 1 {
-		r.send(fmt.Sprintf("[%s] %s", r.hostname, progressUsage))
-		return
-	}
-	if len(fields) == 1 {
-		if _, err := strconv.Atoi(fields[0]); err != nil {
-			r.send(fmt.Sprintf("[%s] days must be a whole number\n%s", r.hostname, progressUsage))
+	for _, f := range fields {
+		k, v, isKV := strings.Cut(f, "=")
+		if !isKV {
+			if q.Get("days") != "" {
+				r.send(fmt.Sprintf("[%s] %s", r.hostname, progressUsage))
+				return
+			}
+			if _, err := strconv.Atoi(f); err != nil {
+				r.send(fmt.Sprintf("[%s] days must be a whole number\n%s", r.hostname, progressUsage))
+				return
+			}
+			q.Set("days", f)
+			continue
+		}
+		key := strings.ToLower(k)
+		switch key {
+		case "tag":
+			if v == "" {
+				r.send(fmt.Sprintf("[%s] tag needs an id\n%s", r.hostname, progressUsage))
+				return
+			}
+			q.Add(key, v)
+		case "tag_match":
+			if v != "any" && v != "all" {
+				r.send(fmt.Sprintf("[%s] tag_match must be any or all\n%s", r.hostname, progressUsage))
+				return
+			}
+			q.Set(key, v)
+		default:
+			r.send(fmt.Sprintf("[%s] %s", r.hostname, progressUsage))
 			return
 		}
-		q.Set("days", fields[0])
 	}
 	body, err := r.commGet("/api/autonomous/progress/trend", q)
 	if err != nil {
@@ -94,5 +123,5 @@ func (r *Router) handleProgressTrend(fields []string) {
 		r.reply("progress trend failed", err.Error())
 		return
 	}
-	r.reply("Progress trend:", strings.TrimRight(autonomous.RenderTrendReply(t.Days, t.Direction, t.Points), "\n"))
+	r.reply("Progress trend:", strings.TrimRight(autonomous.RenderTrendReply(t.Days, t.Scope, t.Direction, t.Points), "\n"))
 }

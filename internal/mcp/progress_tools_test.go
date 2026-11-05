@@ -55,7 +55,7 @@ func TestProgressToolShapes(t *testing.T) {
 	if p.Name != "autonomous_progress" {
 		t.Fatalf("name = %q", p.Name)
 	}
-	for _, k := range []string{"automation_id", "tag_id", "since", "until"} {
+	for _, k := range []string{"automation_id", "tags", "tag_match", "since", "until"} {
 		if _, ok := p.InputSchema.Properties[k]; !ok {
 			t.Errorf("autonomous_progress lacks the %s parameter", k)
 		}
@@ -67,8 +67,13 @@ func TestProgressToolShapes(t *testing.T) {
 	if tr.Name != "autonomous_progress_trend" {
 		t.Fatalf("name = %q", tr.Name)
 	}
-	if _, ok := tr.InputSchema.Properties["days"]; !ok || len(tr.InputSchema.Required) != 0 {
-		t.Errorf("autonomous_progress_trend takes one optional days parameter: %+v", tr.InputSchema)
+	for _, k := range []string{"days", "tags", "tag_match"} {
+		if _, ok := tr.InputSchema.Properties[k]; !ok {
+			t.Errorf("autonomous_progress_trend lacks the %s parameter", k)
+		}
+	}
+	if len(tr.InputSchema.Required) != 0 {
+		t.Errorf("every autonomous_progress_trend parameter is optional, got required %v", tr.InputSchema.Required)
 	}
 	for _, tool := range []mcpsdk.Tool{p, tr} {
 		if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
@@ -102,7 +107,7 @@ func TestProgressToolProxiesRESTBody(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	})
 	res, err := s.handleAutonomousProgress(context.Background(), callReq(map[string]any{
-		"automation_id": "a1", "tag_id": "t1", "since": "2026-10-10", "until": "2026-10-20",
+		"automation_id": "a1", "tags": []string{"t1", "t2"}, "tag_match": "all", "since": "2026-10-10", "until": "2026-10-20",
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -113,7 +118,7 @@ func TestProgressToolProxiesRESTBody(t *testing.T) {
 	if method != http.MethodGet || path != "/api/autonomous/progress" {
 		t.Fatalf("proxied %s %s", method, path)
 	}
-	for _, want := range []string{"automation_id=a1", "tag_id=t1", "since=2026-10-10", "until=2026-10-20"} {
+	for _, want := range []string{"automation_id=a1", "tag=t1", "tag=t2", "tag_match=all", "since=2026-10-10", "until=2026-10-20"} {
 		if !strings.Contains(rawQuery, want) {
 			t.Errorf("query %q lacks %s", rawQuery, want)
 		}
@@ -146,6 +151,15 @@ func TestProgressTrendToolProxiesRESTBody(t *testing.T) {
 		if path != "/api/autonomous/progress/trend" || rawQuery != "days=7" {
 			t.Fatalf("proxied %s?%s", path, rawQuery)
 		}
+	}
+	// The same tag filter as the progress tool: repeatable tag plus match rule.
+	if _, err := s.handleAutonomousProgressTrend(context.Background(), callReq(map[string]any{
+		"days": float64(7), "tags": []string{"web"}, "tag_match": "all",
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if rawQuery != "days=7&tag=web&tag_match=all" {
+		t.Fatalf("trending over a tag scope proxied %q", rawQuery)
 	}
 	if _, err := s.handleAutonomousProgressTrend(context.Background(), callReq(nil)); err != nil {
 		t.Fatal(err)

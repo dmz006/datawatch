@@ -53,6 +53,17 @@ func listSessionsViewQuery(req mcpsdk.CallToolRequest) (q url.Values, ok bool, e
 			q.Set(k, v)
 		}
 	}
+	for _, v := range req.GetStringSlice("tags", nil) {
+		if v != "" {
+			q.Add("tag", v)
+		}
+	}
+	if tm := req.GetString("tag_match", ""); tm != "" {
+		if tm != "any" && tm != "all" {
+			return nil, false, `Error: tag_match: must be "any" or "all".`
+		}
+		q.Set("tag_match", tm)
+	}
 	return q, true, ""
 }
 

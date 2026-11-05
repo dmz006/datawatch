@@ -2449,3 +2449,83 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Progress and session tag filters (repeatable `tag` + `tag_match=any|all`, trend scope)
+
+The Automaton-progress filter accepts one `tag` before; it now accepts
+several, on every surface, with an explicit match rule, and the session list
+gains the same tag filter (a session matches when one of its tags — its own
+or the ones it inherits from its Automaton — is present). The progress trend
+reports the scope its snapshots were counted over.
+
+### Components
+
+- `internal/autonomous/progress_engine.go` — `ProgressOptions.TagIDs []string`
+  + `TagMatch` (`any` default, `all`); the legacy singular `TagID` is merged
+  in by `tagFilterIDs()`. `tagsMatch(record, filter, needAll)` does the
+  any/all test. `ProgressScope()` builds the scope string (`all`,
+  `automation:<id>`, `tag:<id>`, `tags:<a>,<b>`, `tags(all):<a>,<b>`,
+  combined); it is stamped on the metrics (`Scope`) and on every
+  `ProgressTrendPoint` / `ProgressTrendBody`. `RenderTrendReply(days, scope,
+  direction, points)` appends ` (scope …)` when narrower than `all`;
+  `RenderProgressText` prints a `Scope:` line likewise.
+- `internal/server/progress.go` — `progressTagParams()` reads the repeatable
+  `tag` query parameter (comma lists split, deduped, first-seen order),
+  validates `tag_match` (`any`/`all`) with HTTP 400 on anything else, and
+  feeds both `ProgressOptions`. The trend REST response carries `scope`.
+- `internal/server/api.go` — `handleSessions` parses the same `tag` /
+  `tag_match` parameters and routes them into `session.SessionFilter`.
+- `internal/session/manager.go` — `SessionFilter.Tags + TagMatch`;
+  `sessionEffectiveTagIDs()` = own + inherited (via
+  `Manager.InheritedTags` → `TagOwnerLookup`), deduped;
+  `sessionMatchesTagFilter()` applies any/all. `ListSessions` and
+  `ListArchivedSessions` honour it alongside the existing state/search
+  filters.
+- `internal/mcp/progress_tools.go`, `internal/mcp/server.go`,
+  `internal/mcp/list_sessions_view.go` — `autonomous_progress` and
+  `autonomous_progress_trend` take `tags` (array) + `tag_match`;
+  `list_sessions` takes `tags` + `tag_match`; the low-bandwidth
+  `list_sessions_view` proxy forwards them verbatim.
+- `internal/router/progress_cmd.go` — `progress` and `progress trend` accept
+  repeatable `tag=<id>` and `tag_match=any|all`; trend renders with scope.
+- `internal/router/router.go` — the `list` comm verb parses `tag=<id>` (repeatable)
+  and `tag_match=<any|all>` tokens from the free-form filter.
+- `cmd/datawatch/cli_progress.go` — `--tag` (repeatable) + `--tag-match` on
+  both commands; the tag is sent as repeatable `tag=` query parameters.
+- `cmd/datawatch/main.go`, `cmd/datawatch/cli_list_views.go` — `session list`
+  (and the shared query builder) gain `--tag` (repeatable) / `--tag-match`,
+  forwarded as repeatable `tag` + `tag_match`.
+- `cmd/datawatch/progress_parity_test.go` — the trend parity check now passes
+  the scope through `RenderTrendReply` so the comm, CLI, REST and MCP
+  surfaces must agree on it.
+
+### Knobs
+
+No new configuration key. The match rule is a per-read parameter
+(`tag_match=any|all`), matching the behaviour the web list views already
+expose (`match ANY` / `match ALL`).
+
+### Tests
+
+- `internal/autonomous/progress_engine_test.go` — one tag, several tags
+  under `any` and `all`, empty filter, and the scope string for each
+  combination (including automation + tag).
+- `internal/autonomous/progress_text_test.go` — the `Scope:` line and the
+  trend ` (scope …)` suffix appear only when narrower than `all`.
+- `internal/server/progress_test.go` — the repeatable `tag` parameter under
+  both match rules, the legacy singular `tag_id`, a refused `tag_match`, and
+  the `scope` field on the trend response.
+- `internal/mcp/progress_tools_test.go` — `tags` arrays and `tag_match`
+  reach the backend as repeated `tag=` parameters.
+- `internal/session/tags_test.go` — own vs inherited tags, any vs all, and
+  untagged sessions against a tag filter.
+- `internal/server/session_list_tag_test.go` — `GET /api/sessions?tag=…`
+  matches own and inherited tags under both rules; a bad `tag_match` is 400.
+- `internal/mcp/list_sessions_tag_test.go` — the `list_sessions` `tags` +
+  `tag_match` parameters (legacy path) and the `list_sessions_view`
+  forwarding.
+- `internal/router/comm_list_tag_test.go`, `progress_cmd_test.go` — the `list`
+  and `progress` comm verbs parse, forward and reply.
+- `cmd/datawatch/cli_progress_test.go`, `cli_list_views_test.go` — the flag
+  wiring: repeatable `--tag`, the `--tag-match` default (empty = any) and the
+  emitted query.
