@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.97.3 — Eval cases folder comes from the directory listing
+
+The eval cases folder in a request now has to name a real folder; the request text never reaches the file system.
+
+- **The change.** CodeQL still flagged `go/path-injection` where the supervisor loop eval reads a case file, even after the job name was mapped to a fixed list and the folder was confined under the working directory. `cases_dir` now has to name a folder that exists directly under the bundled cases folder, and the path is built from the directory listing. An unknown name is refused with a clear message.
+- **Behavior change.** `cases_dir` used to accept any relative folder; it is now the name of a folder under `internal/supervisorloop/testdata/eval`. Requests without `cases_dir` use the bundled cases as before. The MCP tool text, the docs, OpenAPI and the CLI `--cases` flag say so.
+- A test covers the empty name, a real folder, and traversal, absolute and nested names.
+
 ## v9.97.2 — Eval cases folder stays inside the working directory
 
 The eval cases folder in a request can no longer leave the working directory.

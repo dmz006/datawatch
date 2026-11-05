@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.97.2 (2026-11-05).** The cases_dir of a supervisor loop eval request is confined under the working directory (CodeQL path injection alert). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.97.3 (2026-11-05).** The cases_dir of a supervisor loop eval request must name a folder under the bundled cases folder (CodeQL path injection alert). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
