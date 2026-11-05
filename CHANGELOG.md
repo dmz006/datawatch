@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.97.0 — Supervisor loop in the daemon
+
+The daemon now runs a standing supervisor loop that keeps Automata moving without a live model session holding the context.
+
+- **Eight mechanical steps, no model call.** Each pass runs `close_finished_records`, `deploy_after_ship`, `retry_failed_infra`, `cleanup_sweep`, `apply_answers`, `lane_count`, `start_next_chain_step` and `run_merge_until_conflict`. A step that fails is recorded and not retried in the same pass; with no deploy step configured, deploy records "not configured" and does nothing.
+- **Three narrow model jobs.** `draft_spec`, `classify_ci_failure` and `pick_backend` each ask a model one question and check the answer with a validator before using it. Each runs on a selectable style (`oneshot` or `session`), backend and model, retries a failed check, and escalates to you after repeated failure. With no model configured a job escalates and never falls back to a hosted one. Every run is recorded.
+- **Settings and read-outs everywhere.** The `autonomous.supervisor_loop` block on the config file, REST (`GET /api/supervisor-loop/jobs`, `/runs`, `/stats`, `POST /api/supervisor-loop/jobs/{name}/run`, and `POST /api/supervisor-loop/eval` to compare models), MCP (`supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`), the CLI (`datawatch supervisor-loop`), the comm channel (`supervisor`) and the PWA (a Supervisor loop card on the Setup sub-tab of the Automation view, and a Settings group), in five locales, with a how-to.
+- **Monitoring.** `supervisor_loop_*` stats fields, a Supervisor loop card on the Monitor tab and Prometheus gauges for runs, enabled jobs and last-run age.
+- Known gaps: commit messages lack some tracker evidence trailers, and the phone-width browser story (TS-849) was not run against a daemon.
+
 ## v9.96.5 — Plans resolve dependencies on their own ids
 
 New Automata plan when the task template pack is on: the third and last cause is fixed.
