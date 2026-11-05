@@ -2566,6 +2566,22 @@ autonomous:
   # 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
   verifier_no_progress_timeout_seconds: 900   # a verifier session with no output file, no pane activity, no live runner process and no held capacity slot for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 900
+
+  # Verifier headroom (Decision 2026-11-03 in
+  # docs/plans/2026-10-14-concurrency-and-budget-design.md): the free-memory
+  # floor a node must keep free to run its extra verifier slots, in MB. The
+  # gate accepts a node's verifier cap N above 1 only while a fresh headroom
+  # measurement shows free_mb - min_free_mb >= (N-1) * per_request_mb. Whole
+  # number >= 0 (negative is a config error). Absent or 0 means 2048.
+  verifier_min_free_mem_mb: 2048
+
+  # How old a headroom measurement may be and still count as fresh for a
+  # node's verifier cap. Whole number >= 0. Absent or 0 means 24 hours;
+  # negative is a config error. A stale (or missing) measurement drops the
+  # node's effective cap to 1 until the node is measured again while idle.
+  # See docs/howto/verifier-headroom-measurement.md.
+  verifier_headroom_max_age_hours: 24
+
   session_start_confirm_seconds: 120
   # Orphan sweep grace period, in seconds. A live task worker session
   # (name "autonomous:<title>", with a PRD/task link) that is not the current
@@ -3146,6 +3162,18 @@ orchestrator:
 # `datawatch compute node update <name> --session-slots N`, or REST
 # PUT /api/compute/nodes/{name}.
 #
+# verifier_slots, next to it: the node's verifier cap — how many parallel
+# verifier sessions may run on the node at once. It never replaces the
+# executor pin (one worker session per node still holds). Absent or 0 reads
+# the default cap 1; a negative value is rejected when the config loads.
+# A value above 1 is accepted at save time only while a fresh headroom
+# measurement covers it (free_mb - autonomous.verifier_min_free_mem_mb >=
+# (cap-1) * per_request_mb); the admission path re-checks the same gate on
+# every sync, and with no fresh measurement — or after a daemon restart,
+# which clears the in-memory store — the node runs at 1 and the refusal is
+# logged once per node per change. Operator guide:
+# docs/howto/verifier-headroom-measurement.md.
+#
 # A node served over https is verified against the system roots by default. For a
 # node whose certificate the system roots do not cover, use one of the TLS keys
 # below. tls_ca_file and tls_cert_fingerprint may be used together (the chain must
@@ -3156,6 +3184,7 @@ orchestrator:
 #     kind: ollama
 #     address: http://gpu-1:11434
 #     session_slots: 2
+#     verifier_slots: 2              # runs at 2 while a fresh headroom measurement covers it; else 1
 #     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
 #     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)
