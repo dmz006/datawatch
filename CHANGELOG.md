@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **`autonomous.tags.placement` (new block).** The placement tags — automatic tags that record where a piece of work ran — are now configurable: `enabled` is the master switch (default `true`), the built-in axes `compute`, `peer`, `backend`, `lane`, `role` default on and `project` off (each with an `enabled` switch and a `template` that must contain the axis's own placeholder), and `custom` is a list of user-defined axes that read one of the session fields `Name`, `Backend`, `Model`, `Node`, `PRDID`, `Role`, `Project` and build their tag from a template containing `{value}`. Names must be lowercase letters, digits and hyphens, unique and not a built-in axis name. Every value is checked at load time and a refusal stores nothing, and an unset block keeps its defaults (only `autonomous.tags.placement.enabled: false` stops the tags). See the `autonomous.tags` section of `docs/config-reference.yaml` and `docs/implementation.md`.
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.
