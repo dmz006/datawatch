@@ -842,19 +842,24 @@ func gpuNodeBackpressure(limitPct func() int, mu *sync.Mutex, util map[string]fl
 // limits current with config, compute nodes and LLMs, refreshes GPU
 // backpressure, reaps leaked leases and raises long-wait alerts. It returns
 // the ledger so the pin keepers can tell when a node is in use.
-func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string), nodeAlerts autonomous.NodeLoadAlerts) *capacity.Ledger {
+func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string), nodeAlerts autonomous.NodeLoadAlerts, verifierHeadroom *compute.HeadroomStore) *capacity.Ledger {
+	if verifierHeadroom == nil {
+		verifierHeadroom = compute.NewHeadroomStore()
+	}
 	var gpuMu sync.Mutex
 	gpuUtil := map[string]float64{}
 	// servedModel is the size of the model each node last had loaded. syncPools
 	// is the only writer, and it runs on one goroutine, so no lock is needed.
 	servedModel := map[string]uint64{}
 	servedCPUModel := map[string]uint64{}
-	// verifierHeadroom holds the headroom measurements behind each node's
-	// verifier cap (autonomous.VerifierCapPolicy). A Put from an idle
-	// measurement is what lifts a node's effective verifier cap above the
-	// default of 1; the store is memory only and cleared on daemon restart,
-	// so until a node is measured again its cap runs at the supported minimum.
-	verifierHeadroom := compute.NewHeadroomStore()
+	// verifierHeadroom (passed in; never nil here) holds the headroom
+	// measurements behind each node's verifier cap (autonomous.VerifierCap
+	// Policy). It is the same store the daemon wires to the REST surface
+	// before this call, so a measurement taken through the idle-measure
+	// routes (CLI, MCP or PWA) lifts the node's effective verifier cap
+	// above the default of 1. The store only exists in memory, cleared by
+	// daemon restart; until the node is measured again, the cap operates
+	// at the supported minimum.
 	// verifierCapLog is the per-node last-reported verifier-cap state (the
 	// gate's refusal text, or "" when the configured cap runs as asked), so a
 	// refusal is logged once per node per change, not on every syncPools tick.
@@ -1188,6 +1193,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					Node:     n.Name,
 					Slots:    n.VerifierSlots,
 					Headroom: verifierHeadroom,
+					MinFreeMB: cfg.Autonomous.VerifierMinFreeMemMB,
+					MaxAge:    time.Duration(cfg.Autonomous.VerifierHeadroomMaxAge()) * time.Hour,
 				}).SnapshotCap()
 				refusalState := ""
 				if verCap.Effective < verCap.Configured {

@@ -17,7 +17,7 @@ had already burned their time. This bound PRD, **f3420001**, already handles the
 *descendant* stall — the shape where the runner has died but a hung child process
 keeps the pane alive — with its default of 2700 seconds in
 `internal/config/descendant_stall.go`; the hang investigated in
-docs/plans/2026-10-29-hung-pi-request-findings.md is a different case, because the
+docs/plans/historical-plans/2026-10-29-hung-pi-request-findings.md is a different case, because the
 worker's live runner and its open socket to the node are the only signs of life:
 per the findings' "Why the detectors stayed quiet" section, every existing detector
 keys off runner liveness, descendant count, log mtimes, state flips or error text,
@@ -173,7 +173,7 @@ the findings' "Why the detectors stayed quiet" section shows that every current
 detector is silent for exactly this shape, so building one of them without the
 in-flight-request signal first would be acting blind on the only node the
 autonomous pipeline can currently use (PRD f3420001;
-docs/plans/2026-10-29-hung-pi-request-findings.md).
+docs/plans/historical-plans/2026-10-29-hung-pi-request-findings.md).
 
 ## Question for the operator
 

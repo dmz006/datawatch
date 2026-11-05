@@ -2025,7 +2025,7 @@ Example:
 ```
 Tool:    compute_node_headroom_measure
 Inputs:  name "gpu-box-1"
-Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":3,"fresh":true,"min_free_mb":1500,"max_age_hours":72,"supported_cap":4}
+Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":3,"fresh":true,"min_free_mb":2048,"max_age_hours":24,"supported_cap":4}
 ```
 
 ### `compute_node_headroom_get`
@@ -2045,7 +2045,7 @@ Example:
 ```
 Tool:    compute_node_headroom_get
 Inputs:  name "gpu-box-1"
-Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":86400,"fresh":false,"min_free_mb":1500,"max_age_hours":72,"supported_cap":1}
+Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":86400,"fresh":false,"min_free_mb":2048,"max_age_hours":24,"supported_cap":1}
 ```
 
 ## Example Workflows in Cursor
