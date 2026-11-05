@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.96.0 (2026-11-05).** Automata can be routed to different planners by rule, and a failing plan gets a bounded touch-up, replan and escalation. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.96.1 (2026-11-05).** The Trace card moved to a Trace sub-tab under a session's Status tab and a Trace tab in the Automaton view. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

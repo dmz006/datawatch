@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.1 — Trace is a sub-tab under Status, not a card above the session
+
+The Trace card is now a Trace sub-tab, not a card above the session.
+
+- **Session.** The Trace card no longer sits in the session header above the output. It is a third sub-tab, Trace, beside Status and Stats under the session's Status tab.
+- **Automaton.** On an Automaton the Trace card is now a Trace tab in the detail tab strip, instead of showing on every tab.
+- **Polling.** The card loads and polls only while its tab is open.
+- No new strings; the docs describe the new place.
+
 ## v9.96.0 — Planning routing and a retry ladder for plans
 
 Automata can now be sent to different planners by rule, and a plan that fails the checks gets a bounded recovery before it is given up on.
