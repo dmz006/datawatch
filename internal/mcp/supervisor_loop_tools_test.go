@@ -30,6 +30,7 @@ func TestSupervisorLoopMCPToolsAreListed(t *testing.T) {
 		"supervisor_loop_jobs":    false,
 		"supervisor_loop_runs":    false,
 		"supervisor_loop_run_job": false,
+		"supervisor_loop_eval":    false,
 	}
 	for _, tl := range tools {
 		if _, ok := wantNames[tl.Name]; ok {

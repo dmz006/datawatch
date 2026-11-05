@@ -3,6 +3,7 @@
 //	GET  /api/supervisor-loop/jobs            every job with style, backend, model, enabled, last outcome
 //	GET  /api/supervisor-loop/runs            run records, newest first (job, outcome, limit filters)
 //	POST /api/supervisor-loop/jobs/{name}/run run one job now (404 for an unknown job)
+//	POST /api/supervisor-loop/eval            run a model job's eval cases against listed models
 //
 // The settings come from the supervisor_loop config block, read live.
 
@@ -13,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -60,10 +62,29 @@ type SupervisorLoopControl interface {
 // leaves the run history empty and makes a manual run a 503.
 func (s *Server) SetSupervisorLoop(c SupervisorLoopControl) { s.supervisorLoop = c }
 
+// SupervisorLoopEvaluator runs the eval harness. A control that also
+// implements it serves POST /api/supervisor-loop/eval.
+type SupervisorLoopEvaluator interface {
+	Eval(ctx context.Context, job string, models []string, casesDir string) (*supervisorloop.EvalReport, error)
+}
+
 type supervisorLoopControl struct {
 	steps *autonomous.SupervisorLoopSteps
 	jobs  *supervisorloop.ModelJobs
 	store supervisorloop.Store
+}
+
+// Eval runs the eval harness through the loop's own model client.
+func (c *supervisorLoopControl) Eval(ctx context.Context, job string, models []string, casesDir string) (*supervisorloop.EvalReport, error) {
+	if c.jobs == nil || c.jobs.Engine == nil {
+		return nil, fmt.Errorf("model jobs are not wired")
+	}
+	set := c.jobs.Engine.Settings
+	if c.jobs.SettingsFn != nil {
+		set = c.jobs.SettingsFn()
+	}
+	ev := &supervisorloop.Evaluator{Client: c.jobs.Engine.Client, Settings: set}
+	return ev.EvalRun(ctx, job, models, casesDir)
 }
 
 // NewSupervisorLoopControl builds the control over the mechanical steps, the
@@ -360,4 +381,59 @@ func (s *Server) handleSupervisorLoopJobRun(w http.ResponseWriter, r *http.Reque
 		resp["error"] = err.Error()
 	}
 	writeJSONOK(w, resp)
+}
+
+// SupervisorLoopEvalRequest is the POST /api/supervisor-loop/eval body.
+type SupervisorLoopEvalRequest struct {
+	Job      string   `json:"job"`
+	Models   []string `json:"models"`
+	CasesDir string   `json:"cases_dir,omitempty"`
+}
+
+// handleSupervisorLoopEval implements POST /api/supervisor-loop/eval. It runs
+// the job's eval cases against each listed model and returns the per-model
+// report; when no listed model is reachable the answer is a 502 naming each.
+func (s *Server) handleSupervisorLoopEval(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRun) {
+		return
+	}
+	var in SupervisorLoopEvalRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	known := false
+	for _, n := range supervisorloop.ModelJobNames {
+		if n == in.Job {
+			known = true
+		}
+	}
+	if !known {
+		http.Error(w, fmt.Sprintf("bad request: job must be one of %s", strings.Join(supervisorloop.ModelJobNames, ", ")), http.StatusBadRequest)
+		return
+	}
+	if len(in.Models) == 0 {
+		http.Error(w, "bad request: models must list at least one model id", http.StatusBadRequest)
+		return
+	}
+	if in.CasesDir != "" && (filepath.IsAbs(in.CasesDir) || strings.Contains(filepath.ToSlash(filepath.Clean(in.CasesDir)), "..")) {
+		http.Error(w, "bad request: cases_dir must be a relative path without ..", http.StatusBadRequest)
+		return
+	}
+	ev, ok := s.supervisorLoop.(SupervisorLoopEvaluator)
+	if !ok {
+		http.Error(w, "supervisor loop is not running", http.StatusServiceUnavailable)
+		return
+	}
+	rep, err := ev.Eval(r.Context(), in.Job, in.Models, in.CasesDir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	writeJSONOK(w, rep)
 }

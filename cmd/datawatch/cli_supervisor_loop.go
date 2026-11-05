@@ -40,6 +40,7 @@ body untouched.`,
 	c.AddCommand(newSupervisorLoopJobsCmd())
 	c.AddCommand(newSupervisorLoopRunsCmd())
 	c.AddCommand(newSupervisorLoopRunCmd())
+	c.AddCommand(newSupervisorLoopEvalCmd())
 	return c
 }
 

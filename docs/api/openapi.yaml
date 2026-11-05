@@ -1512,6 +1512,59 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The supervisor loop is not running}
 
+  /api/supervisor-loop/eval:
+    post:
+      summary: Compare models on a supervisor loop model job's eval cases
+      description: |
+        Runs the job's eval cases (`internal/supervisorloop/testdata/eval/<job>/*.json`
+        unless `cases_dir` names another relative directory) against each listed model and
+        returns per model: cases, passed, validator failures, retries, median and maximum
+        duration and escalations. When no listed model is reachable the answer is a 502
+        naming each model; no result is invented. Needs the autonomous run capability when
+        called by a federated peer.
+      operationId: supervisorLoopEval
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [job, models]
+              properties:
+                job: {type: string, enum: [draft_spec, classify_ci_failure, pick_backend]}
+                models: {type: array, items: {type: string}}
+                cases_dir: {type: string}
+      responses:
+        "200":
+          description: Per-model eval results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job: {type: string}
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        model: {type: string}
+                        cases: {type: integer}
+                        passed: {type: integer}
+                        validator_failures: {type: integer}
+                        retries: {type: integer}
+                        median_duration_ms: {type: integer}
+                        max_duration_ms: {type: integer}
+                        escalations: {type: integer}
+        "400": {description: Unknown job, no models or a bad cases_dir}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous run capability}
+        "405": {description: Method not allowed}
+        "502": {description: No listed model is reachable}
+        "503": {description: The supervisor loop is not running}
+
   /api/autonomous/decisions:
     get:
       summary: Operator decisions
