@@ -33,6 +33,67 @@ import (
 // server. Called from cmd/datawatch/main.go after registry init.
 func (s *Server) SetComputeRegistry(r *compute.Registry) { s.computeReg = r }
 
+// SetVerifierHeadroom wires the headroom-measurement store behind the
+// verifier_slots write gate (verifierSlotsRefusal); nil clears the source,
+// so a cap above 1 is refused until a measurement is Put.
+func (s *Server) SetVerifierHeadroom(hs *compute.HeadroomStore) { s.verifierHeadroom = hs }
+
+// SetVerifierHeadroomNow fixes the write gate's clock; tests drive it with
+// a fixed time so staleness is deterministic. nil restores time.Now.
+func (s *Server) SetVerifierHeadroomNow(fn func() time.Time) { s.verifierHeadroomNow = fn }
+
+// verifierSlotsRefusal is the write-time headroom gate for
+// compute_nodes[].verifier_slots. It runs the same gate as admission
+// (autonomous.VerifierCapPolicy over compute.CapCoverage): 0 (unset, reads
+// the default cap 1) and 1 always pass; a cap above 1 is refused unless
+// the node has a headroom measurement that is fresh enough and covers
+// (cap-1) extra requests beyond the free-memory floor. The measurement
+// comes from s.verifierHeadroom (nil = no measurement source), the clock
+// from s.verifierHeadroomNow (nil = time.Now), and the floor and
+// freshness bound from the autonomous config's effective values.
+func (s *Server) verifierSlotsRefusal(nodeName string, slots int) *compute.CapRefusal {
+	if slots <= compute.DefaultNodeVerifierSlots {
+		return nil
+	}
+	var m *compute.HeadroomMeasurement
+	if s.verifierHeadroom != nil {
+		if got, ok := s.verifierHeadroom.Get(nodeName); ok {
+			m = &got
+		}
+	}
+	now := time.Now()
+	if s.verifierHeadroomNow != nil {
+		now = s.verifierHeadroomNow()
+	}
+	minFreeMB := 0
+	maxAgeHours := 0
+	if s.cfg != nil {
+		minFreeMB = s.cfg.Autonomous.VerifierMinFreeMemMB
+		maxAgeHours = s.cfg.Autonomous.VerifierHeadroomMaxAge()
+	}
+	supported, refusal := compute.CapCoverage(m, slots, minFreeMB, now, time.Duration(maxAgeHours)*time.Hour)
+	if refusal == nil || supported >= slots {
+		return nil
+	}
+	if refusal.Node == "" || refusal.Node == "unknown" {
+		refusal.Node = nodeName
+	}
+	return refusal
+}
+
+// writeVerifierCapRefusal answers a refused verifier_slots write with 409
+// and the gate's message: {error, node, free_mb, shortfall_mb}.
+func writeVerifierCapRefusal(w http.ResponseWriter, refusal *compute.CapRefusal) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusConflict)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"error":        refusal.Error(),
+		"node":         refusal.Node,
+		"free_mb":      refusal.FreeMB,
+		"shortfall_mb": refusal.ShortfallMB,
+	})
+}
+
 // ComputeRegistry returns the wired registry (nil when not set).
 // alpha.26 #238 — main.go uses this from the peer-registry init block
 // to run the leaked-auto-node sweep without holding a separate ref.
@@ -88,6 +149,13 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		// Validate before probing so field errors return 400, not 502.
 		if verr := n.Validate(); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+		// Same headroom gate as admission: a verifier_slots cap above 1 is
+		// refused (409) without a fresh, covering measurement; 0 and 1
+		// always pass.
+		if refusal := s.verifierSlotsRefusal(n.Name, n.VerifierSlots); refusal != nil {
+			writeVerifierCapRefusal(w, refusal)
 			return
 		}
 		// v7.0.0-alpha.19 #245 Q3 — operator-spec’d save-time probe for
@@ -283,6 +351,13 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		}
 		if n.Name != rest {
 			http.Error(w, "name mismatch (path vs body)", http.StatusBadRequest)
+			return
+		}
+		// Same headroom gate as admission: raising verifier_slots above 1
+		// is refused (409) without a fresh, covering measurement; 0 and 1
+		// always pass, and the node keeps its current cap.
+		if refusal := s.verifierSlotsRefusal(n.Name, n.VerifierSlots); refusal != nil {
+			writeVerifierCapRefusal(w, refusal)
 			return
 		}
 		if r.URL.Query().Get("probe") != "skip" {

@@ -340,6 +340,14 @@ type Server struct {
 	// v7.0.0 S1 — ComputeNode registry (nil when disabled).
 	computeReg *compute.Registry
 
+	// verifierHeadroom is the headroom-measurement store behind the
+	// verifier_slots write gate (verifierSlotsRefusal in compute.go);
+	// nil = no measurement source, so a cap above 1 is refused on write.
+	verifierHeadroom *compute.HeadroomStore
+	// verifierHeadroomNow is the gate's clock; nil = time.Now. Tests fix
+	// it so staleness is deterministic.
+	verifierHeadroomNow func() time.Time
+
 	// Per-node usage cache for the node:<name> capacity pools. Lazily
 	// created by (s *Server) nodeUsageCache(); see node_usage.go.
 	nodeUsageCacheOnce sync.Once
@@ -6306,17 +6314,25 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// resolveDriftMode), matching EffectiveTaskOverrideStatuses above.
 			"drift_mode": effectiveDriftMode(s.cfg.Autonomous.DriftMode),
 			// Undeclared-edit enforcement: off|warn|block; unset/unknown renders "warn".
-			"undeclared_edit_mode":      effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
-			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
-			"task_max_attempt_seconds":  s.cfg.Autonomous.TaskMaxAttemptSeconds,
-			"task_no_progress_seconds":  s.cfg.Autonomous.TaskNoProgressSeconds,
-			"preserve_attempt_work":     s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
-			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
-			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
-			"security_scan":             s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
-			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
-			"scope_lint":                s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
+			"undeclared_edit_mode":     effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
+			"stale_task_seconds":       s.cfg.Autonomous.StaleTaskSeconds,
+			"task_max_attempt_seconds": s.cfg.Autonomous.TaskMaxAttemptSeconds,
+			"task_no_progress_seconds": s.cfg.Autonomous.TaskNoProgressSeconds,
+			"preserve_attempt_work":    s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
+			"auto_fix_retries":         s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":  s.cfg.Autonomous.VerifierDiffMaxBytes,
+			// Verifier parallelism gate (compute_nodes[].verifier_slots):
+			// the daemon-wide default cap a node at 0 reads, the free-memory
+			// floor the write gate applies, and the headroom-freshness bound
+			// in hours (effective value, so unset renders the 24-hour
+			// default rather than 0).
+			"verifier_slots":                  compute.DefaultNodeVerifierSlots,
+			"verifier_min_free_mem_mb":        s.cfg.Autonomous.VerifierMinFreeMemMB,
+			"verifier_headroom_max_age_hours": s.cfg.Autonomous.VerifierHeadroomMaxAge(),
+			"security_scan":                   s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":              s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure":       s.cfg.Autonomous.ContinueOnStoryFailure,
+			"scope_lint":                      s.cfg.Autonomous.ScopeLintMode(), // off, warn or enforce
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -9116,6 +9132,25 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.verifier_diff_max_bytes":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierDiffMaxBytes = n
+			}
+		case "autonomous.verifier_min_free_mem_mb":
+			// The free-memory floor the verifier_slots write gate applies
+			// (0 = no requirement). Negative values are a config-validation
+			// error, so a non-integer or negative write is skipped rather
+			// than stored.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierMinFreeMemMB = n
+			} else {
+				skipped = append(skipped, k)
+			}
+		case "autonomous.verifier_headroom_max_age_hours":
+			// The headroom-measurement freshness bound in hours (0 = unset,
+			// reads the 24-hour default). Same skip-on-bad-value rule as the
+			// floor above; the read surface renders the effective value.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierHeadroomMaxAgeHours = n
+			} else {
+				skipped = append(skipped, k)
 			}
 		case "autonomous.security_scan":
 			cfg.Autonomous.SecurityScan = toBool(v)
