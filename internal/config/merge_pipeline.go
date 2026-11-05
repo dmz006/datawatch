@@ -43,6 +43,26 @@ const (
 	ConflictPolicyMechanicalAndModel = "mechanical_and_model"
 )
 
+// Post-ship hook built-in names. A hook uses exactly one of a built-in and
+// a command; the built-in says which setting provides its target.
+const (
+	// PostShipHookBuiltinRegistryRow appends or updates a row in the
+	// registry file the project names (targets: registry_file,
+	// registry_row_pattern).
+	PostShipHookBuiltinRegistryRow = "registry_row"
+	// PostShipHookBuiltinParityIssue files an issue in the companion
+	// repository (targets: companion_repository, issue_title_template).
+	PostShipHookBuiltinParityIssue = "parity_issue"
+	// PostShipHookBuiltinTag tags the release (no target setting).
+	PostShipHookBuiltinTag = "tag"
+	// PostShipHookBuiltinNotify sends a message (target: notify_template).
+	PostShipHookBuiltinNotify = "notify"
+)
+
+// PostShipMaxHooks bounds the hook list so a project cannot configure an
+// unbounded tail after deploy.
+const PostShipMaxHooks = 20
+
 const (
 	// MergePipelineDefaultFileName is the pipeline file looked for in a project.
 	MergePipelineDefaultFileName = ".datawatch/merge-pipeline.yaml"
@@ -89,6 +109,11 @@ type MergePipelineConfig struct {
 	// Unset means none: a pipeline that bumps the version fails that step
 	// until the operator names the files.
 	VersionFiles []string `yaml:"version_files,omitempty" json:"version_files,omitempty"`
+	// PostShip holds the post-ship hook list: the small steps that run
+	// after the ship's deploy step. Off by default; a hook is a named
+	// built-in or a shell command, and every target a built-in touches is
+	// a setting in this block, never a value in code.
+	PostShip PostShipConfig `yaml:"post_ship,omitempty" json:"post_ship,omitempty"`
 	// Projects holds per-project overrides keyed by project name.
 	Projects map[string]MergePipelineOverride `yaml:"projects,omitempty" json:"projects,omitempty"`
 }
@@ -96,7 +121,8 @@ type MergePipelineConfig struct {
 // IsZero reports whether no key is set, so yaml.v3 can drop an unset block.
 func (c MergePipelineConfig) IsZero() bool {
 	return c.FileName == "" && c.SourceOrder == nil && c.FallbackOnBadFile == "" &&
-		c.ConflictPolicy == "" && c.ConflictModel == nil && c.VersionFiles == nil && len(c.Projects) == 0
+		c.ConflictPolicy == "" && c.ConflictModel == nil && c.VersionFiles == nil &&
+		c.PostShip.IsZero() && len(c.Projects) == 0
 }
 
 // Clone returns a deep copy.
@@ -105,6 +131,7 @@ func (c MergePipelineConfig) Clone() MergePipelineConfig {
 	out.SourceOrder = cloneStrings(c.SourceOrder)
 	out.VersionFiles = cloneStrings(c.VersionFiles)
 	out.ConflictModel = cloneStringPtr(c.ConflictModel)
+	out.PostShip = c.PostShip.Clone()
 	if c.Projects != nil {
 		out.Projects = make(map[string]MergePipelineOverride, len(c.Projects))
 		for k, v := range c.Projects {
@@ -190,6 +217,12 @@ func (c MergePipelineConfig) EffectiveConflictPolicy(project string) string {
 	return ConflictPolicyMechanicalAndModel
 }
 
+// EffectivePostShip returns the post-ship block as a copy. An unset
+// block reads as: disabled, no hooks, no targets.
+func (c MergePipelineConfig) EffectivePostShip() PostShipConfig {
+	return c.PostShip.Clone()
+}
+
 // EffectiveConflictModel returns the model name for project. An explicit
 // empty string is returned as is, meaning no model.
 func (c MergePipelineConfig) EffectiveConflictModel(project string) string {
@@ -200,6 +233,183 @@ func (c MergePipelineConfig) EffectiveConflictModel(project string) string {
 		return *c.ConflictModel
 	}
 	return MergePipelineDefaultConflictModel
+}
+
+// PostShipHook is one entry of the post-ship hook list. Exactly one of
+// Builtin and Command is set: a built-in hook runs against the target
+// setting named by its built-in, a command hook runs the shell line.
+// Enabled is false by default: listing a hook does not turn it on.
+type PostShipHook struct {
+	// Name identifies the hook inside the list; required and unique.
+	Name string `yaml:"name" json:"name"`
+	// Builtin is one of the post-ship built-in names. Empty when Command
+	// is set.
+	Builtin string `yaml:"builtin,omitempty" json:"builtin,omitempty"`
+	// Command is a shell command line. Empty when Builtin is set.
+	Command string `yaml:"command,omitempty" json:"command,omitempty"`
+	// Enabled turns the hook on. False by default.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// PostShipConfig is the autonomous.merge_pipeline.post_ship block: the
+// hook list that runs after the ship's deploy step, and the target
+// settings its built-ins use. Off by default (Enabled false, no hooks),
+// and no target has a hard-coded default: a target that is unset is
+// empty, and an enabled built-in whose target is empty is rejected by
+// validation rather than guessed.
+type PostShipConfig struct {
+	// Enabled turns the whole block on. False by default: with the block
+	// off, not one hook runs.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Hooks lists the steps, run in order after a hook's predecessor.
+	Hooks []PostShipHook `yaml:"hooks,omitempty" json:"hooks,omitempty"`
+	// RegistryFile is the registry file the registry_row hook writes,
+	// relative to the project. It may contain the {project} placeholder.
+	// No default.
+	RegistryFile string `yaml:"registry_file,omitempty" json:"registry_file,omitempty"`
+	// RegistryRowPattern is the line-matching text template the
+	// registry_row hook writes. It may contain the {version} placeholder.
+	// No default.
+	RegistryRowPattern string `yaml:"registry_row_pattern,omitempty" json:"registry_row_pattern,omitempty"`
+	// CompanionRepository is the owner/name the parity_issue hook files
+	// its issue in. No default.
+	CompanionRepository string `yaml:"companion_repository,omitempty" json:"companion_repository,omitempty"`
+	// IssueTitleTemplate is the parity_issue hook's issue title. It may
+	// contain the {project} and {version} placeholders. No default.
+	IssueTitleTemplate string `yaml:"issue_title_template,omitempty" json:"issue_title_template,omitempty"`
+	// NotifyTemplate is the notify hook's message body. It may contain
+	// the {version} placeholder. No default.
+	NotifyTemplate string `yaml:"notify_template,omitempty" json:"notify_template,omitempty"`
+}
+
+// IsZero reports whether no key is set, so yaml.v3 can drop an unset
+// block.
+func (s PostShipConfig) IsZero() bool {
+	return !s.Enabled && len(s.Hooks) == 0 && s.RegistryFile == "" &&
+		s.RegistryRowPattern == "" && s.CompanionRepository == "" &&
+		s.IssueTitleTemplate == "" && s.NotifyTemplate == ""
+}
+
+// Clone returns a deep copy; callers may mutate the copy's hooks.
+func (s PostShipConfig) Clone() PostShipConfig {
+	out := s
+	if s.Hooks != nil {
+		out.Hooks = append([]PostShipHook{}, s.Hooks...)
+	}
+	return out
+}
+
+// EffectiveHooks returns the hook list as a copy; empty when unset.
+func (s PostShipConfig) EffectiveHooks() []PostShipHook {
+	return s.Clone().Hooks
+}
+
+// HookEnabled reports whether the hook called name is listed and enabled.
+func (s PostShipConfig) HookEnabled(name string) bool {
+	for _, h := range s.Hooks {
+		if h.Name == name {
+			return h.Enabled
+		}
+	}
+	return false
+}
+
+// EffectiveRegistryFile returns the registry_file setting; empty when
+// unset, so nothing names a registry path of its own.
+func (s PostShipConfig) EffectiveRegistryFile() string { return s.RegistryFile }
+
+// EffectiveRegistryRowPattern returns the registry_row_pattern setting;
+// empty when unset.
+func (s PostShipConfig) EffectiveRegistryRowPattern() string {
+	return s.RegistryRowPattern
+}
+
+// EffectiveCompanionRepository returns the companion_repository setting;
+// empty when unset, so nothing names a repository of its own.
+func (s PostShipConfig) EffectiveCompanionRepository() string {
+	return s.CompanionRepository
+}
+
+// EffectiveIssueTitleTemplate returns the issue_title_template setting;
+// empty when unset, so nothing names a title of its own.
+func (s PostShipConfig) EffectiveIssueTitleTemplate() string {
+	return s.IssueTitleTemplate
+}
+
+// EffectiveNotifyTemplate returns the notify_template setting; empty when
+// unset, so nothing names a message body of its own.
+func (s PostShipConfig) EffectiveNotifyTemplate() string { return s.NotifyTemplate }
+
+func validPostShipBuiltin(v string) bool {
+	switch v {
+	case PostShipHookBuiltinRegistryRow, PostShipHookBuiltinParityIssue, PostShipHookBuiltinTag, PostShipHookBuiltinNotify:
+		return true
+	}
+	return false
+}
+
+// Validate rejects an invalid post-ship block, naming the offending key in
+// every error. Unset keys are valid and read as "off, no hooks".
+func (s PostShipConfig) Validate() error {
+	const p = "autonomous.merge_pipeline.post_ship."
+	if err := validFileName(p+"registry_file", s.RegistryFile); err != nil {
+		return err
+	}
+	if len(s.Hooks) > PostShipMaxHooks {
+		return fmt.Errorf("%shooks: at most %d hooks are allowed", p, PostShipMaxHooks)
+	}
+	first := make(map[string]int, len(s.Hooks))
+	for i, h := range s.Hooks {
+		k := fmt.Sprintf("%shooks[%d]", p, i)
+		if strings.TrimSpace(h.Name) == "" {
+			return fmt.Errorf("%s.name: a hook name is required", k)
+		}
+		if at, dup := first[h.Name]; dup {
+			return fmt.Errorf("%s.name: hook %q is listed twice (first at hooks[%d])", k, h.Name, at)
+		}
+		first[h.Name] = i
+		switch {
+		case h.Builtin != "" && h.Command != "":
+			return fmt.Errorf("%s: set either builtin or command, not both", k)
+		case h.Builtin == "" && h.Command == "":
+			return fmt.Errorf("%s: set either builtin or command", k)
+		}
+		if h.Builtin != "" && !validPostShipBuiltin(h.Builtin) {
+			return fmt.Errorf("%s.builtin: %q is unknown; use %q, %q, %q or %q", k, h.Builtin,
+				PostShipHookBuiltinRegistryRow, PostShipHookBuiltinParityIssue, PostShipHookBuiltinTag,
+				PostShipHookBuiltinNotify)
+		}
+		if !h.Enabled || h.Builtin == "" {
+			continue
+		}
+		need := func(key, value, hook string) error {
+			if strings.TrimSpace(value) == "" {
+				return fmt.Errorf("%s%s: required because hook %q is enabled", p, key, hook)
+			}
+			return nil
+		}
+		switch h.Builtin {
+		case PostShipHookBuiltinRegistryRow:
+			if err := need("registry_file", s.RegistryFile, h.Name); err != nil {
+				return err
+			}
+			if err := need("registry_row_pattern", s.RegistryRowPattern, h.Name); err != nil {
+				return err
+			}
+		case PostShipHookBuiltinParityIssue:
+			if err := need("companion_repository", s.CompanionRepository, h.Name); err != nil {
+				return err
+			}
+			if err := need("issue_title_template", s.IssueTitleTemplate, h.Name); err != nil {
+				return err
+			}
+		case PostShipHookBuiltinNotify:
+			if err := need("notify_template", s.NotifyTemplate, h.Name); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // LLMLookup is the part of the LLM registry the conflict policy needs: it
@@ -317,6 +527,9 @@ func (c MergePipelineConfig) Validate() error {
 		return err
 	}
 	if err := validModelName(p+"conflict_model", c.ConflictModel); err != nil {
+		return err
+	}
+	if err := c.PostShip.Validate(); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(c.Projects))
