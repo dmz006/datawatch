@@ -1,4 +1,4 @@
-package classifier
+package classifier_test
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/classifier"
 )
 
 // strictParse mirrors the verifier contract parse in cmd/datawatch
@@ -22,22 +23,22 @@ func strictParse(s string) error {
 }
 
 func TestFixturesAreLabelledSynthetic(t *testing.T) {
-	for _, name := range []string{FixturePrompt, FixtureUnparseableReply, FixtureSystemOne, FixtureLogprobs} {
+	for _, name := range []string{classifier.FixturePrompt, classifier.FixtureUnparseableReply, classifier.FixtureSystemOne, classifier.FixtureLogprobs} {
 		var m map[string]any
-		if err := LoadFixture(name, &m); err != nil {
+		if err := classifier.LoadFixture(name, &m); err != nil {
 			t.Fatal(err)
 		}
 		if l, _ := m["_fixture"].(string); !strings.HasPrefix(l, "SYNTHETIC") {
 			t.Errorf("%s: missing SYNTHETIC label", name)
 		}
 	}
-	if err := LoadFixture("missing.json", &struct{}{}); err == nil {
+	if err := classifier.LoadFixture("missing.json", &struct{}{}); err == nil {
 		t.Error("missing fixture must error")
 	}
 }
 
 func TestLoadFixtureBadJSON(t *testing.T) {
-	if err := LoadFixture(FixturePrompt, &[]int{}); err == nil {
+	if err := classifier.LoadFixture(classifier.FixturePrompt, &[]int{}); err == nil {
 		t.Error("decoding into the wrong type must error")
 	}
 }
@@ -49,8 +50,8 @@ func TestLoadFixtureBadJSON(t *testing.T) {
 // it as an infra-retryable failure either. Only the classifier's own failures
 // are infra (see FailureCategory).
 func TestReplayUnparseableReplyExistingBehaviour(t *testing.T) {
-	var r VerifierReply
-	if err := LoadFixture(FixtureUnparseableReply, &r); err != nil {
+	var r classifier.VerifierReply
+	if err := classifier.LoadFixture(classifier.FixtureUnparseableReply, &r); err != nil {
 		t.Fatal(err)
 	}
 	if err := strictParse(r.Reply); err == nil {
@@ -69,11 +70,11 @@ func TestReplayUnparseableReplyExistingBehaviour(t *testing.T) {
 }
 
 func TestReplayNativeAndLogprobsAgree(t *testing.T) {
-	var p Prompt
-	var n SystemOneResponse
-	var l LogprobsResponse
-	for name, v := range map[string]any{FixturePrompt: &p, FixtureSystemOne: &n, FixtureLogprobs: &l} {
-		if err := LoadFixture(name, v); err != nil {
+	var p classifier.Prompt
+	var n classifier.SystemOneResponse
+	var l classifier.LogprobsResponse
+	for name, v := range map[string]any{classifier.FixturePrompt: &p, classifier.FixtureSystemOne: &n, classifier.FixtureLogprobs: &l} {
+		if err := classifier.LoadFixture(name, v); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -101,11 +102,11 @@ func TestReplayNativeAndLogprobsAgree(t *testing.T) {
 }
 
 func TestHasLogprobsFalseCases(t *testing.T) {
-	var r LogprobsResponse
+	var r classifier.LogprobsResponse
 	if r.HasLogprobs() {
 		t.Error("empty response")
 	}
-	r.Choices = []LogprobsChoice{{}}
+	r.Choices = []classifier.LogprobsChoice{{}}
 	if r.HasLogprobs() {
 		t.Error("nil logprobs")
 	}

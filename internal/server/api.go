@@ -6278,6 +6278,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
 			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
+			"verification_record_scores":           autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
 
@@ -8893,6 +8894,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierInfraEscalationThreshold = n
 			}
+		case "autonomous.verification_record_scores":
+			b := toBool(v)
+			cfg.Autonomous.VerificationRecordScores = &b
 		case "autonomous.fallback_verification_backend":
 			cfg.Autonomous.FallbackVerificationBackend = toString(v)
 		case "autonomous.verifier_no_progress_timeout_seconds":

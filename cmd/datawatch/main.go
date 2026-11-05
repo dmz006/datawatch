@@ -4412,6 +4412,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
+			VerificationRecordScores:         acfgIn.VerificationRecordScores,
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
@@ -6099,7 +6100,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				vGrantedAt = time.Now()
 			}
 			// Every result returned from here on records which LLM judged it.
-			defer func() { vsel.stamp(&vres) }()
+			defer func() {
+				vsel.stamp(&vres)
+				if vres.VerifierMode == "" {
+					vres.VerifierMode = autonomouspkg.VerifierModeGenerate
+				}
+			}()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
 					// A pick the policy made from the load is re-run while the
@@ -6151,6 +6157,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			if release != nil {
 				defer release()
+			}
+			// Classify mode: the verdict (ok and severity) is read from the
+			// classifier's option scores; there is no generate-and-parse
+			// fallback. Generate mode skips this block entirely and runs the
+			// unchanged path below.
+			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
+				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
 			// tool-using backend and taskDir exists to run it in:
