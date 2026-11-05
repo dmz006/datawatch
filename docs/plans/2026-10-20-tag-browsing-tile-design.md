@@ -584,3 +584,11 @@ in the decisions document, under `## Parity surface`.
 Operator direction (quoted): the Automata cards "stack left to right as well as up and down" and the sessions list "could use a block vs list mode and be able to show more sessions - esp with tagging as a way to group/sub-task list them"; and federated peer placement "should also auto-tag so we can not only see automation/automata tagging but tag by compute or federated etc".
 
 Decisions recorded as Automata: sessions tile mode, density, grouping by tag or tag prefix and sub-task nesting under the owning Automaton (the sessions list feature); placement auto-tags compute:, peer:, backend:, lane:, role: and project: next to the automation:, stage: and kind: tags (the placement auto-tags feature); and the peer placement build placeholder now requires its tags to come from the placement record.
+
+### Decision, 2026-11-05 18:05: the tile, compact and group-by-tag modes cover the Automation list too
+
+Question (asked in chat, option 1 of 3 recommended): should the sessions tile work (Automaton `a12f0001`) also cover the Automation list? Options: 1, yes, extend it so Sessions, Automata and Automations share the same tile, compact and group-by-tag modes; 2, sessions only, Automation list as a follow-up; 3, leave the Automation list as full-width cards.
+
+Operator answer, quoted: "1 yes"
+
+Decision: option 1. `a12f0001` is revised so the Sessions list, the Automata list and the Automation list all offer the list, tile and compact modes, the remembered per-device choice, and grouping by a tag or tag prefix, state, node or project, with collapsible groups, counts and the state mix. The Automata cards already tile, so that list gets the mode toggle and grouping rather than a new grid; the Automation list gets the same grid. The mode toggle sits in each list's header in the same position as on the sessions list.
