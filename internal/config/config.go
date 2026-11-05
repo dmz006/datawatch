@@ -3124,6 +3124,13 @@ type AutonomousConfig struct {
 	// interval). See TagsConfig and ValidateTagSetting.
 	Tags TagsConfig `yaml:"tags" json:"tags"`
 
+	// AutoTags — the autonomous auto-tagging block (autonomous.auto_tags):
+	// per-Automation, per-stage and per-kind tag name templates, and the
+	// kind → tag-value labels. Unset templates and kind labels default, and
+	// enabled is on unless set to false. See AutoTagsConfig and
+	// ValidateAutoTagsSetting in auto_tags_settings.go.
+	AutoTags AutoTagsConfig `yaml:"auto_tags" json:"auto_tags"`
+
 	// Shipped — shipped-state surface for Automata (PRDs) and Automation:
 	// master switch, chip display, default browser filter, separate shipped
 	// counting and release backfill at startup. See ShippedConfig and
@@ -6523,6 +6530,9 @@ func Load(path string) (*Config, error) {
 	if err := loadTags(cfg); err != nil {
 		return nil, err
 	}
+	if err := loadAutoTags(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -6570,6 +6580,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 		return nil, err
 	}
 	if err := loadTags(cfg); err != nil {
+		return nil, err
+	}
+	if err := loadAutoTags(cfg); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

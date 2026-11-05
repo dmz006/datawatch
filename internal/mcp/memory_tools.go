@@ -964,6 +964,7 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 			"Automata tag browser keys: autonomous.tags.default_view (auto|attention|tags), autonomous.tags.attention_statuses (comma list of Automaton statuses), "+
 			"autonomous.tags.default_match_mode (any|all), autonomous.tags.direct_counts_visible (true|false), autonomous.tags.registry_keeper (federation peer name; empty = this daemon), "+
 			"autonomous.tags.registry_sync_seconds (whole seconds >= 5). "+
+			"Automata auto-tagging keys: autonomous.auto_tags.enabled (true|false; the block is on unless set to false), autonomous.auto_tags.automation_template (default 'automation:{automation}'), autonomous.auto_tags.stage_template (default 'stage:{stage}'), autonomous.auto_tags.kind_template (default 'kind:{kind}') — each template may use the {automation}, {stage} and {kind} placeholders and must render a non-empty, newline-free tag name — and autonomous.auto_tags.kind_labels (maps feature|bug|other to the values {kind} renders; defaults feature:feature, bug:bug, other:maintenance). "+
 			"Automata held-question keys: autonomous.questions.held_mode (off|shadow|on; default shadow), "+
 			"autonomous.questions.held_states (a JSON array of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; "+
 			"unset = all five, [] = none). A refused value returns the daemon's message."),
