@@ -104,6 +104,8 @@ async function sweepTabs(page, width, { full }) {
     `${width}px: active tab "${r.label}" outside the strip's visible bounds (tab ${r.aLeft.toFixed(1)}..${r.aRight.toFixed(1)}, strip ${r.sLeft.toFixed(1)}..${r.sRight.toFixed(1)})`);
 }
 
+const clearToasts = (page) => page.evaluate(() => { document.querySelectorAll('.toast-container').forEach((c) => { c.innerHTML = ''; }); }).catch(() => {});
+
 async function openDetail(page) {
   await page.evaluate(() => window.navigate('autonomous'));
   await page.waitForTimeout(300);
@@ -171,6 +173,7 @@ await runPerfStory(async (page) => {
     check(subtabs.length > 0, 'no Automation sub-tabs found');
     for (const id of subtabs) {
       const sel = `.automation-subtabs .output-tab[data-subtab="${id}"]`;
+      await clearToasts(p);
       await p.tap(sel);
       await p.waitForTimeout(300);
       const cls = await p.$eval(sel, (e) => e.classList.contains('active')).catch(() => false);
@@ -184,6 +187,7 @@ await runPerfStory(async (page) => {
       els.filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.getAttribute('data-view')));
     check(views.length > 0, 'no visible bottom-nav items found');
     for (const view of views) {
+      await clearToasts(p);
       await p.tap(`.nav-btn[data-view="${view}"]`);
       await p.waitForTimeout(400);
       await assertPageFits(p, `bottom-nav "${view}"`);

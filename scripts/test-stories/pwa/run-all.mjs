@@ -41,6 +41,8 @@ const GROUPS = {
   'priority-source': ['TS-841'],
   // automaton-detail-tabs: automaton-detail-tabs-mobile.mjs (phone-width detail tab strip, TS-848)
   'automaton-detail-tabs': ['automaton-detail-tabs-mobile'],
+  // automaton-detail: alias of automaton-detail-tabs
+  'automaton-detail': ['automaton-detail-tabs-mobile'],
 };
 
 // Scenarios outside the TS-*.mjs naming that the default run also discovers.
