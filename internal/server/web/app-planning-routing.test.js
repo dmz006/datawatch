@@ -60,7 +60,8 @@ test('JSON editor holds the whole block so a PUT round-trips it', () => {
   const sb = loadApp();
   const html = sb.planningRoutingCardHtml(view());
   const raw = html.match(/<textarea id="prJson"[^>]*>([\s\S]*?)<\/textarea>/)[1]
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&'); // decoded last so an escaped ampersand is never unescaped twice
   const block = JSON.parse(raw);
   assert.deepEqual(Object.keys(block).sort(), ['classes', 'enabled', 'ladders', 'rules', 'shadow']);
   assert.equal(block.rules.length, 2);
