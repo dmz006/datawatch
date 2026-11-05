@@ -207,9 +207,11 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "rules-review"
-	if cacheOn {
-		v.JudgedCommitSHA = headSHA
+	if headSHA == "" {
+		inv, _ := m.prdRulesReviewInvocation(prd)
+		headSHA = judgeVerdictCommitSHA(prd, inv)
 	}
+	v.JudgedCommitSHA = headSHA
 
 	// Record the verdict durably BEFORE anything else changes — the same
 	// guardrail_verdict Decision + save + judge-output cleanup

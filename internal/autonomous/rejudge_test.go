@@ -13,9 +13,9 @@ import (
 // and returns one fixed (verdict, error) pair, so a test can assert both
 // the judgment's effect and whether the judge was asked at all.
 type rejudgeJudge struct {
-	calls      int
-	v          GuardrailVerdict
-	err        error
+	calls       int
+	v           GuardrailVerdict
+	err         error
 	lastBackend string
 	lastPinned  bool
 }
@@ -685,5 +685,21 @@ func TestRejudgeHeldReviewDoesNotReplayAcrossHead(t *testing.T) {
 	last := got.Verdicts[len(got.Verdicts)-1]
 	if last.JudgeSessionID != "judge-fresh" {
 		t.Errorf("latest verdict session = %q, want judge-fresh", last.JudgeSessionID)
+	}
+}
+
+func TestRejudgeHeldReviewUnchangedHeadRefusedCacheDisabled(t *testing.T) {
+	m, prd := newRejudgeHeldPRD(t, "rules_review_retries_spent")
+	m.mu.Lock()
+	m.judgeVerdictCacheEnabledFn = func() bool { return false }
+	m.mu.Unlock()
+	j := newRejudgePassJudge(t)
+	m.SetGuardrail(j.fn)
+	_, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err == nil || !strings.Contains(err.Error(), "new commits") {
+		t.Fatalf("err = %v, want unchanged-head refusal with the cache disabled", err)
+	}
+	if j.calls != 0 {
+		t.Errorf("judge calls = %d, want 0", j.calls)
 	}
 }
