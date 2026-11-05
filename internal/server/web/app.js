@@ -9038,6 +9038,9 @@ const DOCS_LINKS_BY_KEY = {
   settings_checks_after_done: DOCS_DEFINITIONS + '#after-done-checklist',
   settings_checks_registry_readme: DOCS_DEFINITIONS + '#registry-check',
   settings_ship_ci_watch: DOCS_DEFINITIONS + '#ci-watch',
+  // Rules and context settings (planning record and digest).
+  settings_rules_context_title: DOCS_DEFINITIONS + '#rules-and-context',
+  rules_context_howto: 'howto/automata-rules-and-context.md',
   settings_parallel_task_group: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
@@ -17000,6 +17003,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.checks.plan_rules', label: 'Plan rules check (off, shadow or on; default on)', labelKey: 'settings_checks_plan_rules', docsKey: 'settings_checks_plan_rules', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.checks.after_done', label: 'After-done checklist (off, shadow or on; default on)', labelKey: 'settings_checks_after_done', docsKey: 'settings_checks_after_done', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.checks.registry_readme', label: 'Registry check (off, shadow or on; default on)', labelKey: 'settings_checks_registry_readme', docsKey: 'settings_checks_registry_readme', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
+    // Rules and context — which rules and context files the planner reads. The card loads and saves
+    // through GET and PUT /api/autonomous/rules-context.
+    { label: 'Rules and context', labelKey: 'settings_rules_context_title', docsKey: 'settings_rules_context_title', type: 'group' },
+    { type: 'rules_context_card' },
     { label: 'Ship steps', labelKey: 'settings_ship_group', docsKey: 'settings_ship_group', type: 'group' },
     { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
@@ -17960,6 +17967,8 @@ function loadGeneralConfig() {
               <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
               ${_ghint && _ghint !== f.hintKey ? `<div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(_ghint)}</div>` : ''}
             </div>`;
+          } else if (f.type === 'rules_context_card') {
+            html += '<div id="rulesContextCard"></div>';
           } else if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
@@ -18282,6 +18291,7 @@ function loadGeneralConfig() {
           </div>`;
         }
         el.innerHTML = html;
+        if (document.getElementById('rulesContextCard')) loadRulesContextCard();
       }
     })
     .catch(e => {
@@ -27263,6 +27273,181 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
 };
 
+// ── Rules and context settings card ─────────────────────────────────────────
+// Settings > Automata: GET and PUT /api/autonomous/rules-context. The card
+// edits the global rules file name, the context file names (one per line), the
+// digest mode and the digest size cap, plus a per-project override list. The
+// PUT replaces the whole config, so the body always carries every field. A
+// failed save (a 400 names the field) shows inline and keeps the form.
+const RULES_CONTEXT_MIN_BYTES = 512;
+const RULES_CONTEXT_MAX_BYTES = 65536;
+const RULES_CONTEXT_DEFAULT_BYTES = 4096;
+const _rulesContextState = { cfg: null, error: '' };
+window._rulesContextState = _rulesContextState;
+
+function _rulesContextModeLabel(mode) {
+  if (mode === 'off') return t('settings_rules_context_mode_off');
+  if (mode === 'all') return t('settings_rules_context_mode_all');
+  if (mode === 'no_tools') return t('settings_rules_context_mode_no_tools');
+  return t('settings_rules_context_mode_inherit');
+}
+
+function _rulesContextScopeHtml(prefix, s, isProject) {
+  const modes = (isProject ? ['', 'off', 'no_tools', 'all'] : ['off', 'no_tools', 'all']);
+  const cur = String(s.digest_mode || (isProject ? '' : 'no_tools'));
+  const opts = modes.map(m => `<option value="${escHtml(m)}" ${cur === m ? 'selected' : ''}>${escHtml(_rulesContextModeLabel(m))}</option>`).join('');
+  const files = Array.isArray(s.context_files) ? s.context_files.join('\n') : '';
+  const bytes = s.digest_max_bytes ? String(s.digest_max_bytes) : '';
+  const ph = isProject ? '' : String(RULES_CONTEXT_DEFAULT_BYTES);
+  return `<div class="settings-row" style="flex-direction:column;align-items:stretch;gap:2px;">
+      <div class="settings-label">${escHtml(t('settings_rules_context_rules_file'))}</div>
+      <input type="text" id="${prefix}_rules" class="form-input" value="${escHtml(s.rules_file || '')}" />
+    </div>
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:2px;">
+      <div class="settings-label">${escHtml(t('settings_rules_context_context_files'))}</div>
+      <textarea id="${prefix}_files" class="form-input" rows="3">${escHtml(files)}</textarea>
+    </div>
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${escHtml(t('settings_rules_context_digest_mode'))}</div>
+      <select id="${prefix}_mode" class="form-select">${opts}</select>
+    </div>
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${escHtml(t('settings_rules_context_digest_max_bytes', [RULES_CONTEXT_MIN_BYTES, RULES_CONTEXT_MAX_BYTES]))}</div>
+      <input type="number" id="${prefix}_bytes" class="form-input" min="${RULES_CONTEXT_MIN_BYTES}" max="${RULES_CONTEXT_MAX_BYTES}" step="1" placeholder="${escHtml(ph)}" value="${escHtml(bytes)}" />
+    </div>`;
+}
+
+function rulesContextCardHtml(data) {
+  const cfg = (data && data.config) || {};
+  const projects = Array.isArray(cfg.projects) ? cfg.projects : [];
+  const rows = projects.map((p, i) => `<div class="rules-context-project" data-index="${i}" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin:6px 0;">
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:2px;">
+        <div class="settings-label">${escHtml(t('settings_rules_context_project_dir'))}</div>
+        <input type="text" id="rulesContextProj${i}_dir" class="form-input" value="${escHtml(p.project_dir || '')}" />
+      </div>
+      ${_rulesContextScopeHtml('rulesContextProj' + i, p, true)}
+      <button type="button" class="btn-secondary rules-context-remove" onclick="rulesContextRemoveProject(${i})">${escHtml(t('settings_rules_context_project_remove'))}</button>
+    </div>`).join('');
+  const none = projects.length ? '' : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('settings_rules_context_no_projects'))}</div>`;
+  const err = _rulesContextState.error
+    ? `<div id="rulesContextError" class="rules-context-error" role="alert" style="color:var(--error);font-size:12px;margin:6px 0;">${escHtml(t('settings_rules_context_save_failed', [_rulesContextState.error]))}</div>`
+    : '<div id="rulesContextError"></div>';
+  return `<div id="rulesContextForm" class="rules-context-card">
+    <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${escHtml(t('settings_rules_context_hint'))}</div>
+    ${_rulesContextScopeHtml('rulesContext', cfg, false)}
+    <div style="font-weight:700;font-size:12px;margin:10px 0 2px;">${escHtml(t('settings_rules_context_projects'))}</div>
+    ${rows}${none}
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button type="button" class="btn-secondary rules-context-add" onclick="rulesContextAddProject()">${escHtml(t('settings_rules_context_project_add'))}</button>
+      <button type="button" class="btn-primary rules-context-save" onclick="rulesContextSave()">${escHtml(t('settings_rules_context_save'))}</button>
+    </div>
+    ${err}
+  </div>`;
+}
+window.rulesContextCardHtml = rulesContextCardHtml;
+
+function _rulesContextRead(prefix) {
+  const val = id => { const el = document.getElementById(prefix + id); return el ? String(el.value || '') : ''; };
+  const files = val('_files').split('\n').map(s => s.trim()).filter(Boolean);
+  const raw = val('_bytes').trim();
+  const out = { rules_file: val('_rules').trim(), context_files: files, digest_mode: val('_mode'), digest_max_bytes: raw === '' ? 0 : Number(raw) };
+  return out;
+}
+
+// rulesContextCollect builds the PUT body from the form fields.
+function rulesContextCollect() {
+  const body = _rulesContextRead('rulesContext');
+  const n = ((_rulesContextState.cfg || {}).projects || []).length;
+  const projects = [];
+  for (let i = 0; i < n; i++) {
+    const p = _rulesContextRead('rulesContextProj' + i);
+    const dirEl = document.getElementById('rulesContextProj' + i + '_dir');
+    p.project_dir = dirEl ? String(dirEl.value || '').trim() : '';
+    projects.push(p);
+  }
+  body.projects = projects;
+  return body;
+}
+window.rulesContextCollect = rulesContextCollect;
+
+function _rulesContextDraw() {
+  const host = document.getElementById('rulesContextCard');
+  if (host) host.innerHTML = rulesContextCardHtml({ config: _rulesContextState.cfg || {} });
+}
+
+function rulesContextAddProject() {
+  const cfg = _rulesContextState.cfg || {};
+  const cur = rulesContextCollect();
+  cur.projects.push({ project_dir: '', rules_file: '', context_files: [], digest_mode: '', digest_max_bytes: 0 });
+  _rulesContextState.cfg = Object.assign({}, cfg, cur);
+  _rulesContextDraw();
+}
+window.rulesContextAddProject = rulesContextAddProject;
+
+function rulesContextRemoveProject(i) {
+  const cur = rulesContextCollect();
+  cur.projects.splice(i, 1);
+  _rulesContextState.cfg = Object.assign({}, _rulesContextState.cfg || {}, cur);
+  _rulesContextDraw();
+}
+window.rulesContextRemoveProject = rulesContextRemoveProject;
+
+function rulesContextSave() {
+  const body = rulesContextCollect();
+  _rulesContextState.error = '';
+  return apiFetch('/api/autonomous/rules-context', { method: 'PUT', body: JSON.stringify(body) })
+    .then(res => {
+      _rulesContextState.cfg = (res && res.config) ? res.config : body;
+      _rulesContextState.error = '';
+      _rulesContextDraw();
+      showToast(t('settings_rules_context_saved'), 'success', 1500);
+    }, e => {
+      _rulesContextState.cfg = Object.assign({}, _rulesContextState.cfg || {}, body);
+      _rulesContextState.error = String((e && e.message) || e || '').replace(/^bad request:\s*/i, '').trim();
+      _rulesContextDraw();
+    });
+}
+window.rulesContextSave = rulesContextSave;
+
+function loadRulesContextCard() {
+  const host = document.getElementById('rulesContextCard');
+  if (!host) return Promise.resolve();
+  return apiFetch('/api/autonomous/rules-context').then(res => {
+    _rulesContextState.cfg = (res && res.config) || {};
+    _rulesContextState.error = '';
+    _rulesContextDraw();
+  }, e => {
+    host.innerHTML = `<div class="rules-context-error" style="color:var(--error);font-size:12px;">${escHtml(t('settings_rules_context_load_failed', [String((e && e.message) || e || '')]))}</div>`;
+  });
+}
+window.loadRulesContextCard = loadRulesContextCard;
+
+// rulesContextPlanningHtml draws the planning record stored on an Automaton:
+// each file with a short hash and its size, a warning line for every missing
+// file, and whether a digest went into the plan prompt. Names, hashes and
+// sizes only; no file content is ever shown. Returns '' when no record exists.
+function rulesContextPlanningHtml(rec) {
+  if (!rec || typeof rec !== 'object') return '';
+  const files = Array.isArray(rec.files) ? rec.files : [];
+  const lines = files.filter(f => f && f.present).map(f => {
+    const kind = f.kind === 'rules' ? t('rules_context_kind_rules') : t('rules_context_kind_context');
+    const hash = String(f.sha256 || '').slice(0, 12);
+    return `<li class="rules-context-file" data-name="${escHtml(f.name)}">${escHtml(t('rules_context_detail_file', [f.name, kind, hash, Number(f.bytes) || 0]))}</li>`;
+  }).join('');
+  const missingNames = Array.isArray(rec.missing) && rec.missing.length
+    ? rec.missing
+    : files.filter(f => f && !f.present).map(f => f.name);
+  const warns = missingNames.map(n => `<li class="rules-context-missing" role="alert" style="color:var(--warning,#d97706);">${escHtml(t('rules_context_detail_missing', [n]))}</li>`).join('');
+  const notes = (Array.isArray(rec.notes) ? rec.notes : []).map(n => `<li class="rules-context-note" style="color:var(--text2);">${escHtml(n)}</li>`).join('');
+  const digest = rec.digest_injected ? t('rules_context_detail_digest_yes') : t('rules_context_detail_digest_no');
+  return `<section id="rulesContextPlanning" class="automation-detail-section rules-context-planning">
+    <h3 class="automation-detail-section-title">${escHtml(t('rules_context_detail_title'))}</h3>
+    <ul class="rules-context-files" style="margin:0;padding-left:18px;font-size:12px;">${lines}${warns}${notes}</ul>
+    <div class="rules-context-digest" style="font-size:12px;margin-top:4px;">${escHtml(digest)}</div>
+  </section>`;
+}
+window.rulesContextPlanningHtml = rulesContextPlanningHtml;
+
 // ── Automata checks and ship status cards ────────────────────────────────────
 // checksCardHtml(status) draws GET /api/autonomous/checks: { policy:
 // {pre_start_verifier, block_when_missing, plan_rules, after_done,
@@ -29341,6 +29526,7 @@ function _renderDetailOverview(prd) {
     </div>` : ''}
     ${renderDetailVerdicts(prd)}
     ${renderDetailCIWatch(prd)}
+    ${rulesContextPlanningHtml(prd.rules_context)}
     <div style="margin-top:12px;">${_failureEscalationEditorHTML(prd.id, '', prd.failure_escalation)}</div>
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
       <pre style="font-size:11px;background:var(--bg2);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow:auto;">${escHtml(prd.spec)}</pre>
@@ -32268,7 +32454,7 @@ function buildAutomationDetailHTML(automation, ctx) {
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
     <div id="automationMergedMembers"></div>
-    ${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
+    ${rulesContextPlanningHtml(a.rules_context)}${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
 }
 window.buildAutomationDetailHTML = buildAutomationDetailHTML;
 
