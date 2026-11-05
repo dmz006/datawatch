@@ -75,8 +75,10 @@ func TestAdoptedWorkerFirstTurnInsideLimitRunsToCompletion(t *testing.T) {
 	if len(killed) != 0 {
 		t.Fatalf("started worker was ended: %v", killed)
 	}
-	if probes != probesToFinish {
-		t.Fatalf("probes = %d, want %d", probes, probesToFinish)
+	// The probe loop keeps running for a moment after the finish signal, so a
+	// loaded runner can count more than probesToFinish before the wait returns.
+	if probes < probesToFinish {
+		t.Fatalf("probes = %d, want at least %d", probes, probesToFinish)
 	}
 	if silent := clock.reads[len(clock.reads)-1].Sub(clock.reads[0]); silent <= adoptedTestLimit {
 		t.Fatalf("waited %s on the fake clock, want more than the %s limit", silent, adoptedTestLimit)
