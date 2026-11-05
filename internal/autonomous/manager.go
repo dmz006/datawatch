@@ -1120,6 +1120,14 @@ type Manager struct {
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter
+	// placementTagsSink persists the placement tags the executor writes into
+	// a session's system tags (placement_tags.go); wired by the daemon.
+	// nil = placement tags are not applied.
+	placementTagsSink SystemTagsSink
+	// placementTagsSettings returns the tags.placement config block on every
+	// use, so an operator edit takes effect on the next placement. nil =
+	// placement tags are not applied.
+	placementTagsSettings func() config.PlacementConfig
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	tagEventFn func(TagEvent)
