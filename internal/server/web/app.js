@@ -12930,11 +12930,93 @@ window.llmTest = function(name) {
   }).catch(e => showError('LLM test failed: ' + name, String(e.message||e)));
 };
 
+// ── Compute node detail: headroom block ──────────────────────────────────────
+// buildComputeNodeHeadroomBlock renders the headroom section of the
+// compute-node detail modal from the last stored headroom measurement
+// (the GET /api/compute/nodes/{name}/headroom body: last measurement time,
+// its age, free MB, per-request MB, and the supported cap). measurement is
+// null when the node has never been measured (GET 404) or the fetch failed —
+// in that case the block says "no measurement" and the Measure now button is
+// the only way in.
+//
+// Pure (takes its data as arguments, returns an HTML string) so the
+// PWA tests can render it without any DOM or network.
+function formatComputeHeadroomAge(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  if (h > 0) return h + 'h ' + String(m).padStart(2, '0') + 'm';
+  if (m > 0) return m + 'm ' + String(r).padStart(2, '0') + 's';
+  return r + 's';
+}
+window.formatComputeHeadroomAge = formatComputeHeadroomAge;
+
+function buildComputeNodeHeadroomBlock(name, measurement) {
+  const btn = `<button class="btn-secondary" style="font-size:11px;padding:3px 10px;" onclick="computeHeadroomMeasure('${escJsAttr(name)}')">${escHtml(t('compute_headroom_btn') || 'Measure now')}</button>`;
+  let inner;
+  if (!measurement) {
+    inner = `<div style="font-size:12px;color:var(--text2);">${escHtml(t('compute_headroom_none') || 'no measurement')}</div>`;
+  } else {
+    const cap = Number(measurement.supported_cap);
+    const capText = (Number.isFinite(cap) && cap === 0)
+      ? escHtml(t('compute_headroom_unbounded') || 'unbounded')
+      : escHtml(String(measurement.supported_cap));
+    const fresh = measurement.fresh === true;
+    const rows = [
+      [t('compute_headroom_measured_at') || 'Measured at', escHtml(measurement.measured_at || '—')],
+      [t('compute_headroom_age') || 'Age', escHtml(formatComputeHeadroomAge(measurement.age_seconds))],
+      [t('compute_headroom_free_mb') || 'Free', escHtml(String(measurement.free_mb)) + ' MB'],
+      [t('compute_headroom_per_request_mb') || 'Per request', escHtml(String(measurement.per_request_mb)) + ' MB'],
+      [t('compute_headroom_supported_cap') || 'Supports cap', capText],
+    ];
+    inner = `<div style="margin-bottom:6px;">
+        <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:8px;background:${fresh ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)'};color:${fresh ? 'var(--success,#22c55e)' : 'var(--warning,#f59e0b)'};">${escHtml(t(fresh ? 'compute_headroom_fresh' : 'compute_headroom_stale') || (fresh ? 'fresh' : 'stale'))}</span>
+      </div>`
+      + rows.map(kv => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:2px 0;"><span style="color:var(--text2);">${escHtml(kv[0])}</span><span style="color:var(--text);">${kv[1]}</span></div>`).join('');
+  }
+  return `<div id="compute_headroom_block" style="margin-top:12px;border:1px solid var(--border);border-radius:6px;padding:10px 12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-weight:600;font-size:12px;">${escHtml(t('compute_headroom_title') || 'Headroom')}</span>
+      ${btn}
+    </div>
+    ${inner}
+  </div>`;
+}
+window.buildComputeNodeHeadroomBlock = buildComputeNodeHeadroomBlock;
+
+// computeHeadroomMeasure triggers a headroom measurement on the node
+// (POST) and then re-reads the GET route so the block in the open detail
+// modal shows the fresh measurement. A 409 (node busy) / 403 (no allowed
+// models) surfaces as an error toast with the server's reason.
+window.computeHeadroomMeasure = function(name) {
+  const url = '/api/compute/nodes/' + encodeURIComponent(name) + '/headroom';
+  showToast(t('compute_headroom_measuring') || 'Measuring headroom…', 'info', 6000);
+  apiFetch(url, { method: 'POST' })
+    .then(() => apiFetch(url))
+    .then(m => {
+      const el = document.getElementById('compute_headroom_block');
+      if (el) el.innerHTML = buildComputeNodeHeadroomBlock(name, m);
+      showToast(t('compute_headroom_measured') || 'Headroom measured', 'success', 2500);
+    })
+    .catch(e => {
+      showError(t('compute_headroom_measure_failed') || 'Headroom measurement failed', String((e && e.message) || e));
+      const el = document.getElementById('compute_headroom_block');
+      if (el) el.innerHTML = buildComputeNodeHeadroomBlock(name, null);
+    });
+};
+
 window.computeShowDetail = function(name) {
   if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
-  const fetchOnce = () => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')
-    .then(d => {
+  const fetchOnce = () => Promise.all([
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail'),
+    // 404 = this node has never been measured — render the headroom block
+    // with null ("no measurement"). Any other failure is swallowed the
+    // same way: the detail JSON below still renders, and a headroom fetch
+    // error must not take the whole detail view down.
+    apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/headroom').catch(() => null),
+  ])
+    .then(([d, hr]) => {
       const body = `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
+        ${buildComputeNodeHeadroomBlock(name, hr)}
         <div style="font-size:10px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_detail_polling')||'Live polling every 1s while modal is open. Close to stop.')}</div>`;
       showModal({ title: '📡 ' + name + ' — ' + (t('compute_detail_title')||'live detail'), body });
     })
