@@ -1299,6 +1299,12 @@ type Task struct {
 	// the tree lock (see EffectiveReadOnlyTasks).
 	ReadOnly bool `json:"read_only,omitempty"`
 
+	// RulesApplied lists the sections of the project's rules file the
+	// planner said this task must follow. Normalised on parse (see
+	// normalizeRulesApplied); empty only for a read-only task or a plan
+	// that omits the field.
+	RulesApplied []string `json:"rules_applied,omitempty"`
+
 	// WorktreePath / WorktreeBranch name the task's own git worktree and
 	// branch while worktree_per_task is on (see EnsureTaskWorktree). Empty
 	// when the task works in the PRD worktree.
