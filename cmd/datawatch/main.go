@@ -6498,6 +6498,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// the ship step honours off and shadow instead of the built-in default.
 			autonomouspkg.SetShipConfig(cfg.Autonomous.Ship)
 			autonomouspkg.SetChecksConfig(cfg.Autonomous.Checks)
+			// autonomous.rules_context — install the per-project rules/context
+			// file names + digest settings so the decomposer's pointer (and the
+			// verification-script and completion-rule pointers) resolve them,
+			// falling back to rules_file/context_file and the defaults.
+			autonomouspkg.SetRulesContextConfig(cfg.Autonomous.RulesContext)
 			// Session-end scratch releases by the owner are counted into the
 			// cleanup status (owner bucket) so the safety-net sweep's count
 			// stays separate (cleanup_status.go).
@@ -8818,7 +8823,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:          cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
 		RestartFn: func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
@@ -10948,7 +10953,7 @@ func runStatus(cfg *config.Config) error {
 	if len(sessions) == 0 {
 		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
 		if err == nil {
-		defer func() { _ = store.Close() }()
+			defer func() { _ = store.Close() }()
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
 					FullID:        s.FullID,
@@ -14388,7 +14393,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
-		UsageCfg:          cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

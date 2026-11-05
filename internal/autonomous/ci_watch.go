@@ -51,8 +51,8 @@
 //     rule content (the operator decision recorded at the top of
 //     rules_review.go). A failed run is not auto-classified by job name
 //     or by a fixed list of finding types: ciWatchSuffix points the
-//     configured judge at the configured rules/context file
-//     (m.rulesContextFilenames) and at the real failure logs, and the
+//     configured judge at the configured rules/context file(s) from
+//     the resolved rules/context policy and at the real failure logs, and the
 //     judge decides — including whether a project rule says an operator
 //     must decide ("category":"policy") rather than auto-fix.
 //

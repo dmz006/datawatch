@@ -26,22 +26,23 @@ package autonomous
 // Expand existing scripts/rules commands, then write per-task or
 // per-story verification scripts under .datawatch/verify/ and record
 // each path in both verification_script and files_generated. Falls
-// back to ecosystem-convention detection when neither the rules file
-// nor the context file exists (Decision 7). Empty when ProjectDir is
+// back to ecosystem-convention detection when the listed rules/context
+// files are missing (Decision 7). Empty when ProjectDir is
 // unset — see this file's own top comment for why.
 func (m *Manager) verificationScriptSuffix(prd *PRD) string {
 	if prd.ProjectDir == "" {
 		return ""
 	}
-	rulesFile, contextFile := m.rulesContextFilenames()
+	p := m.resolvedRulesContext(prd)
+	list := joinRulesContextNames(append([]string{p.RulesFile}, p.ContextFiles...))
 	return "\n\n--- Verification scripts ---\n" +
 		"Before finalizing your JSON plan, give each task (or story, when a" +
 		" story-level check fits that unit of work better) whose verification" +
 		" this project's rules require a real verification script:\n" +
 		"1. Reuse first. Run a real `ls scripts/` and `head`/`grep` the" +
 		" candidates — do not trust a hand-copied list of scripts, it drifts;" +
-		" check what's already there. Also check " + rulesFile + " and " +
-		contextFile + " for commands that already cover what the unit needs" +
+		" check what's already there. Also check " + list +
+		" for commands that already cover what the unit needs" +
 		" to verify, before writing anything new.\n" +
 		"2. Write an executable script at `.datawatch/verify/<name>.sh`" +
 		" (relative to your working directory) running whatever this repo's" +
@@ -59,7 +60,7 @@ func (m *Manager) verificationScriptSuffix(prd *PRD) string {
 		" run gofmt or a similar formatter over a whole package or" +
 		" directory, because unrelated files that were already" +
 		" unformatted would fail the task.\n" +
-		"5. If neither " + rulesFile + " nor " + contextFile + " exists, do" +
+		"5. If the listed rules/context files (" + list + ") are missing, do" +
 		" not skip verification: detect the ecosystem conventions actually" +
 		" present (Makefile lint/test targets, package.json scripts," +
 		" pyproject.toml, go.mod + standard go tooling, etc.) and script" +
