@@ -199,6 +199,47 @@ on the node, but that floor is capped at the GPU count. Running workers are not
 stopped. A node that hosts no local engine takes no slot count at all; it keeps
 its `max_concurrent_sessions` limit.
 
+### Verifier slots
+
+Verification (the model that judges a worker's output) can run on the same node
+as the workers it checks. The verifier uses its own pool on the node, so on a
+node that hosts a local engine a verifier no longer draws on the executor's
+slots above; the two pools coexist and are limited independently:
+
+- **How many.** `verifier_slots` on the node, unset by default. Unset means one
+  verifier slot on any node that hosts a local engine and none on a node that
+  does not. Set it to a positive number to allow more concurrent verifiers; set
+  it to `0` explicitly to stop verifier runs landing on that node at all (a
+  verifier for that node then holds the executor pool, as before). The verifier
+  pool never raises the worker pool — the two coexist and are limited
+  independently.
+- **Memory floor.** `verifier_min_free_mem_mb` on the node, default 1024 MB. A
+  verifier is placed on a node only if the node still has at least that much GPU
+  memory free, so a verifier does not squeeze a worker's model out of the GPU.
+  A node the observer can't report GPU figures for is not gated.
+- **Advice figure.** `verifier_context_mb` on the node, default 0, meaning
+  unknown. When set, the node's detail reports an advice figure — the node's
+  free GPU memory divided by the per-verifier context size — for how many
+  verifiers the node's current free memory would hold. It is only a figure; it
+  is never applied and never changes any limit.
+
+The three keys are per-node and set through any surface: the PWA node form, the
+CLI (`datawatch compute node add|update <name> --verifier-slots N
+--verifier-min-free-mem-mb N --verifier-context-mb N`), REST
+`POST /api/compute/nodes` / `PUT /api/compute/nodes/{name}`, the MCP tools
+`compute_node_add` / `compute_node_update`, and the comm channel's compute node
+add/update kv pairs.
+
+**Sizing the pool.** Start at the default and read the counters — wait time and
+run time per verifier run, in the capacity status and the Prometheus verifier
+counters (see the operations section *Verifier throughput*). When wait is a
+large part of total verifier time and the node's free GPU memory comfortably
+holds the extra slot (the advice figure, if you set `verifier_context_mb`, shows
+how many it would hold), raise `verifier_slots` and watch again. If infra
+failures or watchdogs dominate, more slots will not help — fix the failures
+first. The operations side of this, including the decision rule, is in the
+*Verifier node limit* section of the operations manual.
+
 **Loading the model.** A worker that lands on a node of a multi-node pool gets
 its model made resident on that node before it starts. The daemon checks the
 node's running models. If the model is absent, it asks Ollama to load it and
@@ -214,9 +255,11 @@ again on another node of the pool, with the failed node left out for that
 attempt. When no other node is left, the start fails with the load error.
 
 **Judges hold node leases.** The verifier and the guardrail judge take a lease
-on a node in the same way. A verifier keeps the node its task's worker holds
-when it can run on the same pools. Otherwise the worker's slot is released and
-the verifier acquires its own. A guardrail judge on an entry with one node
+on a node in the same way. A verifier prefers the node its task's worker holds
+and takes one of that node's verifier slots (see [Verifier slots](#verifier-slots)
+above), so it runs alongside the workers there. A node below its free-memory
+floor for verifiers is skipped for the verifier, the way a full node is skipped
+for a worker. A guardrail judge on an entry with one node
 takes no lease, as before.
 
 **What you see.** When the holders of a pool span two or more nodes, the
