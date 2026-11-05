@@ -3135,6 +3135,16 @@ type AutonomousConfig struct {
 	// counting and release backfill at startup. See ShippedConfig and
 	// ValidateShippedSetting.
 	Shipped ShippedConfig `yaml:"shipped" json:"shipped"`
+
+	// ModelPullConsent — the operator's model-pull consent
+	// (autonomous.model_pull_consent): the models the Automation setup
+	// needs, each with a pull allow flag, plus the publisher allow-list
+	// (one entry allows every model of that publisher). Nothing is pulled
+	// without a matching allow entry — the gate that reads this lives in
+	// internal/autonomous (autonomous.ModelPullConsentCheck) and guards
+	// the existing compute-node and marketplace pull paths. See
+	// ModelPullConsent and ValidateModelPullConsent.
+	ModelPullConsent ModelPullConsent `yaml:"model_pull_consent" json:"model_pull_consent"`
 }
 
 // ShippedSettingPrefix is the dotted key prefix shared by every
@@ -6416,6 +6426,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validateSupervisorWatch(cfg.Autonomous.Automation.SupervisorWatch); err != nil {
+		return err
+	}
+	if err := ValidateModelPullConsent(cfg.Autonomous.ModelPullConsent); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {

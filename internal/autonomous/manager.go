@@ -124,6 +124,13 @@ func (m *Manager) checkGateBaseline(dir string, cfg pipeline.QualityGateConfig) 
 type Config struct {
 	Enabled             bool `json:"enabled"`
 	PollIntervalSeconds int  `json:"poll_interval_seconds,omitempty"`
+	// ModelPullConsent is the operator's model-pull consent
+	// (autonomous.model_pull_consent): the models the Automation setup
+	// needs, each with a pull allow flag, plus the publisher allow-list.
+	// The gate (ModelPullConsentCheck) refuses any pull without a matching
+	// allow entry; see internal/config's ModelPullConsent for the shape.
+	// Unset (the zero value) allows nothing.
+	ModelPullConsent config.ModelPullConsent `json:"model_pull_consent"`
 	// MaxParallelTasks is deprecated and has no effect: no executor code
 	// reads it. Kept for one release so old configs still load; use
 	// MaxConcurrentTasks.
