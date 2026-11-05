@@ -473,3 +473,130 @@ func TestRejudgeRerouteEnablesRunWhenNoTierResolves(t *testing.T) {
 		t.Fatalf("judge calls = %d, want 1 (the reroute names the backend directly)", rec.calls)
 	}
 }
+
+// newRejudgeContentBlockJudge returns a fake judge whose fixed verdict is a
+// content-category block (a completed judgment, so it is cacheable) with
+// the given judge session id and a real output file for cleanup.
+func newRejudgeContentBlockJudge(t *testing.T, sessionID string) *rejudgeJudge {
+	t.Helper()
+	out := filepath.Join(t.TempDir(), "rejudge-content.out")
+	if err := os.WriteFile(out, []byte("rejudge content body"), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	return &rejudgeJudge{v: GuardrailVerdict{
+		Outcome:         "block",
+		Category:        "content",
+		Severity:        "medium",
+		Summary:         "AGENT.md rule violated",
+		Issues:          []string{"AGENT.md rule violated"},
+		JudgeSessionID:  sessionID,
+		JudgeOutputPath: out,
+	}}
+}
+
+// setRejudgeHeadCommit records sha as the PRD's latest attempt commit on its
+// first task, which is the anchor judgeVerdictCommitSHA reads for the
+// PRD-level rules-review unit. It mirrors a fix landing on the branch.
+func setRejudgeHeadCommit(t *testing.T, m *Manager, prdID, sha string) {
+	t.Helper()
+	fresh, ok := m.Store().GetPRD(prdID)
+	if !ok {
+		t.Fatal("GetPRD for head commit failed")
+	}
+	fresh.Story[0].Tasks[0].RecordAttemptCommit(sha)
+	if err := m.Store().SavePRD(fresh); err != nil {
+		t.Fatalf("SavePRD for head commit: %v", err)
+	}
+}
+
+// runRejudgeHeadChange judges a blocked PRD once on head "sha-head-1" (judge
+// session "judge-head-a"), then moves the head to "sha-head-2" and re-runs
+// the rejudge with a fresh judge session "judge-head-b". It returns the
+// manager, the PRD id, the counted judge and the PRD after the second run.
+func runRejudgeHeadChange(t *testing.T) (*Manager, string, *rejudgeJudge, *PRD) {
+	t.Helper()
+	m, prd, _ := newRejudgeBlockedPRD(t, TaskCompleted)
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-1")
+	j := newRejudgeContentBlockJudge(t, "judge-head-a")
+	m.SetGuardrail(j.fn)
+	if _, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", ""); err != nil {
+		t.Fatalf("first RejudgeCompletionGuardrail: %v", err)
+	}
+	if j.calls != 1 {
+		t.Fatalf("first run judge calls = %d, want 1", j.calls)
+	}
+
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-2")
+	j.v = newRejudgeContentBlockJudge(t, "judge-head-b").v
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err != nil {
+		t.Fatalf("second RejudgeCompletionGuardrail: %v", err)
+	}
+	return m, prd.ID, j, got
+}
+
+// TestRejudgeCompletionGuardrailReplaysWhenHeadUnchanged: with the head
+// still at the commit the stored verdict was judged on, a rejudge replays
+// that verdict and never invokes the judge, so the judge session id stays
+// the same.
+func TestRejudgeCompletionGuardrailReplaysWhenHeadUnchanged(t *testing.T) {
+	m, prd, _ := newRejudgeBlockedPRD(t, TaskCompleted)
+	setRejudgeHeadCommit(t, m, prd.ID, "sha-head-1")
+	j := newRejudgeContentBlockJudge(t, "judge-head-a")
+	m.SetGuardrail(j.fn)
+
+	if _, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", ""); err != nil {
+		t.Fatalf("first RejudgeCompletionGuardrail: %v", err)
+	}
+	if j.calls != 1 {
+		t.Fatalf("first run judge calls = %d, want 1", j.calls)
+	}
+
+	got, err := m.RejudgeCompletionGuardrail(context.Background(), prd.ID, "operator", "")
+	if err != nil {
+		t.Fatalf("second RejudgeCompletionGuardrail: %v", err)
+	}
+	if j.calls != 1 {
+		t.Fatalf("judge calls = %d after an unchanged-head rejudge, want 1 (stored verdict must replay)", j.calls)
+	}
+	last := got.Verdicts[len(got.Verdicts)-1]
+	if last.JudgeSessionID != "judge-head-a" {
+		t.Errorf("replayed verdict judge session = %q, want the stored %q", last.JudgeSessionID, "judge-head-a")
+	}
+	if last.JudgedCommitSHA != "sha-head-1" {
+		t.Errorf("replayed verdict judged commit = %q, want %q", last.JudgedCommitSHA, "sha-head-1")
+	}
+	if got.Status != PRDBlocked {
+		t.Errorf("status = %s, want still blocked on a replayed block", got.Status)
+	}
+}
+
+// TestRejudgeCompletionGuardrailRejudgesWhenHeadChanged: once the head moved,
+// the stored verdict no longer describes the code, so the judge runs once
+// more on the new head and its verdict becomes the PRD's latest verdict.
+func TestRejudgeCompletionGuardrailRejudgesWhenHeadChanged(t *testing.T) {
+	m, id, j, got := runRejudgeHeadChange(t)
+	if j.calls != 2 {
+		t.Fatalf("judge calls = %d, want 2 (one fresh judge on the new head)", j.calls)
+	}
+	if len(got.Verdicts) == 0 {
+		t.Fatal("no verdicts on the PRD after the second rejudge")
+	}
+	latest := got.Verdicts[len(got.Verdicts)-1]
+	if latest.JudgeSessionID != "judge-head-b" {
+		t.Errorf("latest verdict judge session = %q, want the fresh %q", latest.JudgeSessionID, "judge-head-b")
+	}
+	if latest.JudgedCommitSHA != "sha-head-2" {
+		t.Errorf("latest verdict judged commit = %q, want %q", latest.JudgedCommitSHA, "sha-head-2")
+	}
+	stored, ok := m.Store().GetPRD(id)
+	if !ok {
+		t.Fatal("GetPRD (stored) failed")
+	}
+	if bl := lastBlockVerdict(stored.Verdicts); bl == nil || bl.JudgeSessionID != "judge-head-b" {
+		t.Errorf("stored latest block verdict = %+v, want the fresh judge-head-b verdict", bl)
+	}
+	if got.Status != PRDBlocked {
+		t.Errorf("status = %s, want blocked on the fresh block", got.Status)
+	}
+}

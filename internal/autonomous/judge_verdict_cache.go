@@ -25,6 +25,7 @@ package autonomous
 // get its genuine chance, and a timeout must never be replayed as a verdict.
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -337,6 +338,28 @@ func (m *Manager) judgeVerdictCacheRecord(prd *PRD, inv GuardrailInvocation, v G
 	if serr := c.Store(commit, judgeVerdictPolicyKey(m, inv), judgeVerdictRulesHash(inv), v); serr != nil {
 		log.Printf("judge verdict cache: store for %s/%s: %v", inv.PRDID, inv.UnitID, serr)
 	}
+}
+
+// judgeVerdictCacheBypassKey is the context key marking a judge run whose
+// cache lookup must be skipped (the stored verdict was judged on a
+// different head than the PRD's current one). The store after the judge
+// still happens, so the fresh verdict replaces the stale entry's role.
+type judgeVerdictCacheBypassKey struct{}
+
+// withJudgeVerdictCacheLookupBypassed marks ctx so runGuardrailWithInfraRetry
+// runs the judge live instead of replaying a cached verdict.
+func withJudgeVerdictCacheLookupBypassed(ctx context.Context) context.Context {
+	return context.WithValue(ctx, judgeVerdictCacheBypassKey{}, true)
+}
+
+// judgeVerdictCacheLookupBypassed reports whether ctx asks for the cache
+// lookup to be skipped.
+func judgeVerdictCacheLookupBypassed(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	b, _ := ctx.Value(judgeVerdictCacheBypassKey{}).(bool)
+	return b
 }
 
 // judgeVerdictRulesHash is the "rules" part of the key: a hash over the
