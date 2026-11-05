@@ -29,6 +29,11 @@ type AutomationInput struct {
 	// DecisionAssistant is optional; an update that omits it keeps the stored
 	// setting (SetDecisionAssistant clears it).
 	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
+	// AutoTags is the optional per-Automation override of the daemon-level
+	// autonomous.auto_tags block; an update that omits it (nil) keeps the
+	// stored setting, and a non-nil override's unset fields inherit the
+	// daemon's.
+	AutoTags *AutoTagsOverride `json:"auto_tags,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -55,6 +60,7 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		VerificationModel:   in.VerificationModel,
 		VerificationEffort:  in.VerificationEffort,
 		DecisionAssistant:   in.DecisionAssistant,
+		AutoTags:            in.AutoTags,
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -159,6 +165,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		a.VerificationEffort = in.VerificationEffort
 		if in.DecisionAssistant != nil {
 			a.DecisionAssistant = in.DecisionAssistant
+		}
+		if in.AutoTags != nil {
+			a.AutoTags = in.AutoTags
 		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID

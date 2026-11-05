@@ -1486,13 +1486,18 @@ type GuardrailEntry struct {
 // Tag is a managed label that can be nested as a tree and assigned to
 // several Automata via PRD.TagIDs.
 type Tag struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	ParentID    string    `json:"parent_id,omitempty"` // "" = root tag
-	Color       string    `json:"color,omitempty"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ParentID    string `json:"parent_id,omitempty"` // "" = root tag
+	Color       string `json:"color,omitempty"`
+	Description string `json:"description,omitempty"`
+	// System marks a tag datawatch created for its own vocabulary (for
+	// example an auto tag). Such a tag may still take a color and a
+	// description, but its name and parent cannot be changed and it cannot
+	// be deleted; the Manager refuses with ErrTagSystem.
+	System    bool      `json:"system,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // GuardrailProfile (BL303 S2) is a named collection of guardrails that can

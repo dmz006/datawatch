@@ -15,6 +15,11 @@ var (
 	ErrTagHasChildren = errors.New("tag has child tags")
 	ErrTagInUse       = errors.New("tag is assigned to automata or sessions")
 	ErrTagCycle       = errors.New("tag parent change would create a cycle")
+	// ErrTagSystem — the tag is a system tag (Tag.System): datawatch created
+	// it for its own vocabulary (auto tags, for example) and the operator may
+	// still color or describe it, but never rename it, move it under another
+	// tag, or delete it.
+	ErrTagSystem = errors.New("tag is a system tag; its name and parent cannot be changed and it cannot be deleted")
 )
 
 // TagInUseError reports how many Automata and sessions still carry a tag.
@@ -135,7 +140,8 @@ func (m *Manager) CreateTag(name, parentID, color, description string) (*Tag, er
 	return t, nil
 }
 
-// RenameTag changes a tag's name.
+// RenameTag changes a tag's name. A system tag never has its name
+// changed.
 func (m *Manager) RenameTag(id, name string) (*Tag, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -144,6 +150,9 @@ func (m *Manager) RenameTag(id, name string) (*Tag, error) {
 	t, err := m.requireTag(id)
 	if err != nil {
 		return nil, err
+	}
+	if t.System {
+		return nil, fmt.Errorf("%w: %q", ErrTagSystem, t.Name)
 	}
 	t.Name = name
 	t.UpdatedAt = time.Now()
@@ -160,6 +169,9 @@ func (m *Manager) SetTagParent(id, parentID string) (*Tag, error) {
 	t, err := m.requireTag(id)
 	if err != nil {
 		return nil, err
+	}
+	if t.System {
+		return nil, fmt.Errorf("%w: %q", ErrTagSystem, t.Name)
 	}
 	if parentID != "" {
 		if parentID == id {
@@ -207,10 +219,14 @@ func (m *Manager) SetTagColor(id, color string) (*Tag, error) {
 }
 
 // DeleteTag removes a tag. Refused while it has child tags or is still
-// assigned to any automaton or session.
+// assigned to any automaton or session; a system tag is never removed.
 func (m *Manager) DeleteTag(id string) error {
-	if _, err := m.requireTag(id); err != nil {
+	t, err := m.requireTag(id)
+	if err != nil {
 		return err
+	}
+	if t.System {
+		return fmt.Errorf("%w: %q", ErrTagSystem, t.Name)
 	}
 	for _, t := range m.store.ListTags() {
 		if t.ParentID == id {

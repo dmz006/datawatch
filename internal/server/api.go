@@ -6227,7 +6227,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"plan_coverage_min_requirement_chars":  s.cfg.Autonomous.EffectivePlanCoverageFilters().MinRequirementChars,
 			// Tag browser settings (autonomous.tags) — the effective values, so an
 			// unset block shows its defaults. Validated by ValidateTagSetting.
-			"tags": tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			"tags":      tagSettingsForDisplay(s.cfg.Autonomous.Tags),
+			"auto_tags": autoTagsSettingsForDisplay(s.cfg.Autonomous.AutoTags),
 			// Per-backend usage back-off — render the EFFECTIVE values so an
 			// unset config shows its defaults (pause_backend, 60).
 			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
@@ -6575,6 +6576,13 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// shared validator before anything is applied, so a bad value rejects the
 	// whole PUT and the comm, MCP and CLI surfaces show the same message.
 	if verr := firstTagSettingError(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Auto tagging (autonomous.auto_tags.*): every key goes through the
+	// shared validator before anything is applied, so a bad value rejects the
+	// whole PUT and the comm, MCP and CLI surfaces show the same message.
+	if verr := firstAutoTagsSettingError(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8449,6 +8457,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs; Set stores the
 			// normalized value and leaves the block unchanged on a refusal.
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		case "autonomous.auto_tags.enabled", "autonomous.auto_tags.automation_template",
+			"autonomous.auto_tags.stage_template", "autonomous.auto_tags.kind_template",
+			"autonomous.auto_tags.kind_labels":
+			// Validated in handlePutConfig before this runs; Set stores the
+			// normalized value and leaves the block unchanged on a refusal.
+			if updated, ok := cfg.Autonomous.AutoTags.Set(strings.TrimPrefix(k, config.AutoTagsSettingPrefix), v); ok {
+				cfg.Autonomous.AutoTags = updated
+			}
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
 			// "block"). handlePutConfig rejects invalid modes loudly; this
