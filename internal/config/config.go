@@ -2598,7 +2598,14 @@ type AutonomousConfig struct {
 	// decomposition_model is the legacy YAML key for PlanningModel;
 	// accepted on read for back-compat, never written.
 	DecompositionModelLegacy string `yaml:"decomposition_model,omitempty" json:"-"`
-	VerificationModel        string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	// PlanningRouting (autonomous.planning_routing) routes the LLM
+	// planning call to a stronger planner per rule; see
+	// internal/config/planning_routing.go. Off by default (Enabled
+	// false); Shadow computes/records the routed decision but keeps the
+	// planner unchanged. Not applied by applyDefaults — an existing
+	// config without the block loads unchanged.
+	PlanningRouting   PlanningRoutingConfig `yaml:"planning_routing,omitempty" json:"planning_routing,omitempty"`
+	VerificationModel string                `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for the guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (see
