@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -3519,6 +3520,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		computeNodesPath := filepath.Join(expandHome(cfg.DataDir), "compute", "nodes.json")
 		var computeInitErr error
 		var computeReg *compute.Registry
+		// One headroom-measurement store shared by every surface: the REST
+		// measure/get routes, the verifier_slots write gate, and the
+		// autonomous admission verifier cap — created once here so all three
+		// read one source. A Put through any of them (CLI, MCP or PWA) lifts
+		// the node's effective verifier cap.
+		var verifierHeadroomStore *compute.HeadroomStore
 		// The inference dispatcher (created inside the
 		// `if computeInitErr == nil` block below) needs call-time
 		// ${secret:name} API-key resolution. The secrets store is not
@@ -3536,6 +3543,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		ollama.SetModelResolver(func(host, model string) (string, error) {
 			return chatPins.ResolveModel(host, model, "")
 		})
+		// Create the shared headroom store only once the registry itself is
+		// live, so the REST surface and the admission gate read the same
+		// source. (Created before init below would always see a nil
+		// registry and skip the store, leaving every face 503.)
+		if computeReg != nil {
+			verifierHeadroomStore = compute.NewHeadroomStore()
+		}
 		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
@@ -3550,6 +3564,26 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[compute] migrated auto-tags out of Tags on %d node(s)\n", mig)
 			}
 			httpServer.SetComputeRegistry(computeReg)
+			// Wire the shared headroom store into the REST surface: the
+			// measure/get routes, the verifier_slots write gate. The
+			// pull-allowed models are the configured node pins (smallest
+			// first), matching the daemon's default probe, which reports the
+			// node's pinned model as resident.
+			if verifierHeadroomStore != nil {
+				httpServer.SetVerifierHeadroom(verifierHeadroomStore)
+				pinned := []string{}
+				seen := map[string]bool{}
+				for _, c := range cfg.ComputeNodes {
+					if m := strings.TrimSpace(c.NodePinnedModel); m != "" {
+						if !seen[m] {
+							seen[m] = true
+							pinned = append(pinned, m)
+						}
+					}
+				}
+				sort.Strings(pinned)
+				httpServer.SetHeadroomAllowedModels(pinned)
+			}
 
 			// BL312 S1 — multi-server registry.
 			// JSON store at <data-dir>/servers.json; YAML cfg.Servers
@@ -7044,7 +7078,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
-			}, alertStore)
+			}, alertStore, verifierHeadroomStore)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed
