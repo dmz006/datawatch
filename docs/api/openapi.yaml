@@ -4317,6 +4317,46 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/{id}/stages/rename:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Rename a member stage in place
+      description: |
+        Renames every member stage named `from` to `to` (the Automation's manager
+        state: draft, active, paused or blocked), the operator's cosmetic grouping
+        label. When auto tagging is on for the Automation, the stage tag of the
+        recorded members is migrated to the new name in place; the operator tags
+        of other Automations are never touched. Body:
+        `{expected_version, from, to, actor?, reason?}`.
+      operationId: automationsRenameStage
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, from, to]
+              properties:
+                expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+                from: {type: string, description: "The stage name to rename; must exist on at least one member"}
+                to: {type: string, description: "The new stage name; at most 64 runes (1-64), no other member may already use it"}
+                actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+                reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The Automation, now carrying the renamed stage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Malformed body, an empty `from` or `to`, a `to` longer than 64 runes, or a `to` already used by another member"}
+        "404": {description: "Automation not found, or no member carries the stage `from`"}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is in a state this operation does not allow"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   /api/automations/{id}/pause:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
@@ -8777,6 +8817,14 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AutomationMember"
+        auto_tags:
+          type: object
+          description: "Per-Automation override of the daemon's autonomous.auto_tags block; unset fields inherit the daemon's value. An empty template inherits the daemon's template; kind_labels cannot be overridden per Automation."
+          properties:
+            enabled: {type: boolean, description: "Only an explicit value wins over the daemon's; an unset value reads true, and an explicit false stays false after a save-and-reload"}
+            automation_template: {type: string, description: "Template for the Automation's tag; placeholder {automation} only; empty inherits the daemon's template"}
+            stage_template: {type: string, description: "Template for a member's stage tag; placeholders {automation} and {stage}; empty inherits the daemon's template"}
+            kind_template: {type: string, description: "Template for the kind tag; placeholders {automation}, {stage} and {kind}; empty inherits the daemon's template"}
         version: {type: integer, description: "Bumped on every write; send back as expected_version on update"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
         budget_state: {$ref: "#/components/schemas/BudgetState"}
@@ -8813,6 +8861,7 @@ components:
         on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
         on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
         added_at: {type: string, format: date-time}
+        stage: {type: string, maxLength: 64, description: "Optional operator label grouping members of one Automation (e.g. build, review); empty is unstaged. Cosmetic: edges, advance rule and budget never read it. Rename it in place with POST /api/automations/{id}/stages/rename; the Automation's stage auto-tag follows the rename"}
         added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
         added_reason: {type: string}
         status: {type: string, enum: [pending, running, completed, blocked, failed, skipped, cancelled]}

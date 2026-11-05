@@ -365,6 +365,23 @@ func (s *Server) handleAutomationSkipMember(_ context.Context, req mcpsdk.CallTo
 	return s.automationControlCall(req, "skip_member", extra)
 }
 
+func (s *Server) toolAutomationRenameStage() mcpsdk.Tool {
+	opts := append(automationControlBase("Rename every member that occupies a stage of one name to a new stage name. Statuses draft, active, paused and blocked allow it; the stage's auto-tag record is migrated in place when auto tagging is on for the Automation. Returns the updated Automation."),
+		mcpsdk.WithString("from", mcpsdk.Required(), mcpsdk.Description("The current stage name to rename; must be present on at least one member and match ^[a-zA-Z0-9][a-zA-Z0-9_-]*$.")),
+		mcpsdk.WithString("to", mcpsdk.Required(), mcpsdk.Description("The new stage name; must differ from `from` and match ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ (a member may not already occupy it).")),
+	)
+	return mcpsdk.NewTool("automation_rename_stage", opts...)
+}
+
+func (s *Server) handleAutomationRenameStage(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	from := req.GetString("from", "")
+	to := req.GetString("to", "")
+	if from == "" || to == "" {
+		return mcpsdk.NewToolResultText("error: both from and to are required"), nil
+	}
+	return s.automationControlCall(req, "stages/rename", map[string]any{"from": from, "to": to})
+}
+
 func (s *Server) toolAutomationInsertMember() mcpsdk.Tool {
 	opts := append(automationControlBase("Insert a PRD as a new member of an Automation. On a draft it lands in the graph at once; on a running Automation it is held until the operator approves it (automation_approve_insert). reason is required."),
 		mcpsdk.WithString("prd_id", mcpsdk.Required(), mcpsdk.Description("The member PRD to insert.")),
@@ -752,7 +769,7 @@ func AutomationToolNames() []string {
 		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(),
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
-		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
+		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationRenameStage(), s.toolAutomationSetLLM(),
 		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetEffortCeiling(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
 		// autonomous_shipped_record records the shipped state of a PRD (or an Automation).
 		s.toolAutonomousShippedRecord(),

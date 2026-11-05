@@ -57,6 +57,8 @@ func TestAutomationCommControl(t *testing.T) {
 			map[string]any{"actor": "comm", "member_id": "m3"}},
 		{"edges", "automation edges ab12 m2 on_complete=m4 on_failed=m5", "/api/automations/ab12/reorder_edges",
 			map[string]any{"actor": "comm", "member_id": "m2", "on_complete": "m4", "on_blocked": "", "on_failed": "m5"}},
+		{"rename-stage", "automation rename-stage ab12 review verify", "/api/automations/ab12/stages/rename",
+			map[string]any{"actor": "comm", "from": "review", "to": "verify"}},
 		{"approve", "automation approve ab12 m6", "/api/automations/ab12/approve_insert",
 			map[string]any{"actor": "comm", "member_id": "m6"}},
 	}

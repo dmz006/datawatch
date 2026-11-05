@@ -40,6 +40,7 @@ const (
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
 	automationSkipUsage    = "usage: automation skip <id> <member-id> [on_complete|on_blocked|on_failed]"
+	automationRenameStageUsage = "usage: automation rename-stage <id> <from-stage> <to-stage>"
 	automationInsertUsage  = "usage: automation insert <id> <prd-id> [urgent] <reason...>. A reason is required."
 	automationRemoveUsage  = "usage: automation remove <id> <member-id>"
 	automationApproveUsage = "usage: automation approve <id> <member-id>"
@@ -64,8 +65,9 @@ const (
 // AutomationCommVerbs lists the verbs handled by the switch in
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
-	return []string{"activate", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
-		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
+	verbs := []string{"activate", "shipped", "list", "get", "status", "set-budget", "set-effort-ceiling", "pause", "resume", "cancel",
+		"skip", "insert", "remove", "edges", "approve", "rename-stage", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
+	return verbs
 }
 
 func (r *Router) handleAutomationCmd(cmd Command) {
@@ -193,6 +195,12 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			body[k] = v
 		}
 		r.automationControl("edges", args[1], "reorder_edges", "edges rewired", body)
+	case "rename-stage":
+		if len(args) != 4 {
+			r.send(automationRenameStageUsage)
+			return
+		}
+		r.automationControl("rename-stage", args[1], "stages/rename", "stage renamed", map[string]any{"from": args[2], "to": args[3]})
 	case "approve":
 		if len(args) != 3 {
 			r.send(automationApproveUsage)
