@@ -2770,3 +2770,38 @@ Open for the operator: the default alert times and the retry count for items 1, 
 **Status 2026-10-25:** every question of the supervisor duties proposal (Q1 to Q8) is answered or closed (items 25 to 32). The proposal's own `Confirmed:` line is still `no` until the operator flips it.
 
 This section is the requirement list; the first PRD writes the proposal and asks the operator the open points.
+
+## Planning routing and retry ladder
+
+**Status:** Built and documented, not released: the router, retry ladder, scorecard, REST, MCP, CLI, comm channel and Settings card are merged on the working branch; this task adds the operator docs. Off by default with no rules; no version bump. Operator how-to: `docs/howto/automata-planning-routing.md`.
+
+Planning routing picks the planner (backend and model) for each Automaton decompose by ordered rule (first match wins), under `autonomous.planning_routing`. A rule's retry ladder spends touch-up passes and replans, then escalates to the next planner in the rule. Shadow mode records the would-route decision without changing the planner, and a counts-only scorecard and gate report summarise the results. The example rules (security and design) are documentation only and not active.
+
+### Parity surface
+
+| Surface | Status | Where |
+|---|---|---|
+| REST | Present | `GET`/`PUT /api/autonomous/planning-routing`, `POST .../test`, `GET .../scorecard` |
+| MCP | Present | `planning_routing_get`, `planning_routing_set`, `planning_routing_test`, `planning_scorecard` |
+| CLI | Present | `datawatch autonomous planning-routing get \| set \| test \| scorecard` |
+| Comm channel | Present | `autonomous planning-routing show \| test \| scorecard` |
+| YAML/config | Present | `autonomous.planning_routing` in `docs/config-reference.yaml` |
+| PWA | Present | Settings, Automata section, planning routing card (`planning_routing_*` locale keys in en, de, es, fr, ja) |
+| Android | Not yet built | Needs the datawatch-app parity issue below, filed by the operator |
+| iPhone | Not yet built | Needs the same parity issue; no separate iPhone surface is excluded by design |
+
+No surface is excluded by design. Android and iPhone are open only because they live in the datawatch-app repository, which this repository cannot change.
+
+### Drafted datawatch-app parity issue (not yet filed — the operator files it)
+
+**Title:** Parity: Automata planning routing and retry ladder (planning_routing_* strings and card)
+
+**Body:**
+
+The datawatch daemon added planning routing and retry ladder, the parent feature: choose the planner per Automaton by rule, with a retry ladder, shadow mode and a counts-only scorecard. It is off by default. Please add the matching Android and iPhone views: the rules, ladders and risk classes, a test-routing form, and the scorecard with would-route counts, using the daemon's REST routes under `/api/autonomous/planning-routing`.
+
+New locale keys (all prefixed `planning_routing_`, from `internal/server/web/locales/en.json`): `planning_routing_title`, `planning_routing_desc`, `planning_routing_enabled`, `planning_routing_shadow`, `planning_routing_field_enabled`, `planning_routing_field_shadow`, `planning_routing_rules_title`, `planning_routing_rules_empty`, `planning_routing_match_any`, `planning_routing_ladder_default`, `planning_routing_none`, `planning_routing_yes`, `planning_routing_no`, `planning_routing_col_order`, `planning_routing_col_name`, `planning_routing_col_match`, `planning_routing_col_planners`, `planning_routing_col_ladder`, `planning_routing_ladders_title`, `planning_routing_classes_title`, `planning_routing_ladder_line`, `planning_routing_json_title`, `planning_routing_json_save`, `planning_routing_json_invalid`, `planning_routing_saved`, `planning_routing_save_failed`, `planning_routing_failed`, `planning_routing_invalid`, `planning_routing_test_title`, `planning_routing_test_kind`, `planning_routing_test_tags`, `planning_routing_test_project`, `planning_routing_test_spec_bytes`, `planning_routing_test_override`, `planning_routing_test_run`, `planning_routing_test_failed`, `planning_routing_result_rule`, `planning_routing_result_planners`, `planning_routing_result_ladder`, `planning_routing_result_classes`, `planning_routing_result_shadow`, `planning_routing_result_fallback`, `planning_routing_result_reason`, `planning_routing_scorecard_title`, `planning_routing_scorecard_empty`, `planning_routing_window`, `planning_routing_gate_line`, `planning_routing_col_planner`, `planning_routing_col_class`, `planning_routing_col_decomposes`, `planning_routing_col_first`, `planning_routing_col_touch_up`, `planning_routing_col_replan`, `planning_routing_col_escalations`, `planning_routing_col_errors`, `planning_routing_would_route_title`, `planning_routing_would_route_line`.
+
+Please provide translations for DE, ES, FR and JA (the daemon already ships all four in its web locales, which can be reused).
+
+**Not yet filed.** The operator files this issue; this task does not run `gh`.

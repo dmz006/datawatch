@@ -63,7 +63,7 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 - Stops to ask you instead of guessing
 - Warns you about failed work and about finished work that has not been merged
 
-More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md)
+More: [automation API](docs/api/autonomous.md) · [planning routing](docs/howto/automata-planning-routing.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md)
 
 ### Choose where AI runs
 
