@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.95.0 — Classification-based verdicts for verification and guardrails
+
+Verification and guardrail judges can now give a reproducible verdict by picking an option, instead of writing a sentence that has to be parsed.
+
+- **Two modes per LLM.** `verification_mode` on an LLM entry is `generate` (the default, nothing changes) or `classify`. In classify mode the judge picks one lettered option and datawatch reads the probability of each option; the verdict is a score vector you can reproduce, and the written explanation never changes it.
+- **Fails closed.** Missing scores, timeouts, transport errors and abstains become a block with the infrastructure category, a block is never downgraded, and there is no silent fallback to generate-and-parse. Low confidence below the calibrated threshold is a block with an explanatory category.
+- **Where it applies.** Task verdicts (ok and severity), per-task and per-story guardrail outcomes, and the final gate over the rules review and CI watch findings. A new scope-breadth check (off by default) can mark a failed task as bundling several units.
+- **Probe and calibration.** A per-model, per-node capability probe (supported, unsupported or unknown, never assumed) and per-model calibration with a fit and test split that goes stale when the model, prompt or node changes.
+- **Judge models only from publishers you allow.** The publisher allowlist is empty by default; adding a publisher needs an explicit confirmation and writes an audit entry. The daemon never adds or pulls a model.
+- **Settings and read-outs everywhere.** `classifier.*` on the config file, REST, MCP (`llm_classifier`), the CLI (`datawatch llm classifier`), the comm channel and the web settings, with a verification mode selector on the LLM form and the route and score vector shown on a verdict, in five locales, plus a how-to.
+- Known gaps: no Prometheus counters or Monitor card for the classifier yet, and the commits lack the section A audit tokens.
+
 ## v9.94.0 — Requeue queued planning runs and tasks when the backend changes
 
 Changing where a queued run will execute now moves it in the queue instead of waiting for it to finish.
