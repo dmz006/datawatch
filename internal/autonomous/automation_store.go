@@ -10,9 +10,13 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
+
+// maxMemberStageLen is the longest a member's Stage label may be, in runes.
+const maxMemberStageLen = 64
 
 // AutomationStore is the in-memory + JSONL-backed Automation store,
 // persisted next to prds.jsonl as `automations.jsonl`.
@@ -152,6 +156,37 @@ func (s *AutomationStore) nestingOwnerOf(childID string) string {
 	return ""
 }
 
+// normalizeMemberStages trims surrounding whitespace from every member's
+// Stage label, so the stored form is canonical and an all-blank Stage is
+// dropped by omitempty on the wire.
+func normalizeMemberStages(a *Automation) {
+	if a == nil {
+		return
+	}
+	for i := range a.Members {
+		a.Members[i].Stage = strings.TrimSpace(a.Members[i].Stage)
+	}
+}
+
+// validateMemberStages enforces the Stage rules: a trimmed label of at most
+// maxMemberStageLen runes containing no ':' and no newline; empty (unstaged)
+// is always valid.
+func validateMemberStages(a *Automation) error {
+	for _, m := range a.Members {
+		stage := strings.TrimSpace(m.Stage)
+		if strings.Contains(stage, ":") {
+			return fmt.Errorf("automation invalid: member %s stage %q must not contain ':'", m.ID, stage)
+		}
+		if strings.ContainsAny(stage, "\n\r") {
+			return fmt.Errorf("automation invalid: member %s stage %q must not contain a newline", m.ID, stage)
+		}
+		if n := len([]rune(stage)); n > maxMemberStageLen {
+			return fmt.Errorf("automation invalid: member %s stage must be at most %d characters, got %d", m.ID, maxMemberStageLen, n)
+		}
+	}
+	return nil
+}
+
 // cloneAutomation returns a deep copy of a via a JSON round trip so
 // callers cannot mutate store state through the copy; a nil Automation
 // stays nil.
@@ -280,8 +315,12 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	if a.EntryMemberID == "" && len(a.Members) > 0 {
 		a.EntryMemberID = a.Members[0].ID
 	}
+	normalizeMemberStages(a)
 	normalizeActiveCursors(a)
 	if err := validateAutomation(a); err != nil {
+		return nil, err
+	}
+	if err := validateMemberStages(a); err != nil {
 		return nil, err
 	}
 	if err := validateAutomationOwnership(a, s.lookupPRD, s.OwnerOf); err != nil {
@@ -346,8 +385,12 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 			}
 		}
 		clone.ID = id // the store's identity cannot be renamed through mutate
+		normalizeMemberStages(clone)
 		normalizeActiveCursors(clone)
 		if err := validateAutomation(clone); err != nil {
+			return err
+		}
+		if err := validateMemberStages(clone); err != nil {
 			return err
 		}
 		if err := validateAutomationOwnership(clone, s.lookupPRD, s.OwnerOf); err != nil {

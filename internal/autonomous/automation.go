@@ -157,6 +157,11 @@ type AutomationMember struct {
 	// EstimatedCostUSD is the operator-declared expected cost of the member's
 	// Automaton; only valid on kind prd and never negative.
 	EstimatedCostUSD float64 `json:"estimated_cost_usd,omitempty"`
+
+	// Stage is the optional operator label grouping members of one Automation
+	// (e.g. "build", "review"); empty means unstaged. It is cosmetic — the
+	// graph edges, advance rule and budget never read it.
+	Stage string `json:"stage,omitempty"`
 }
 
 // kind returns the member's kind, treating the empty kind as MemberKindPRD.
