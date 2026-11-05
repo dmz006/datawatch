@@ -83,6 +83,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. " +
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. " +
 			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected. " +
+			"override_queued_tasks (default on; unset = on) is the master switch for those overrides on a locked Automaton status: when on, a story- or task-level set-llm call applies to the tasks that are still queued and lists the ones left alone (running/finished); when off, the same call is refused on a locked status. " +
 			"snapshot_never_stage sets the path patterns the autonomous snapshot must never `git add` (e.g. secret files, out-of-scope vendor trees); blank patterns are rejected, and when unset the built-in default list applies. " +
 			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task. " +
 			"The verifier_policy_* arguments set autonomous.verifier_policy, which chooses the backend that runs each verification; they take effect on the next verification with no restart."),
@@ -96,6 +97,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
 		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-local-node\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
+		mcpsdk.WithBoolean("override_queued_tasks", mcpsdk.Description("Master switch for task/story-level LLM overrides on a locked Automaton status. On (the default; unset reads as on) a set-llm call applies to the still-queued tasks and lists the ones left alone; off refuses such calls on a locked status. Absent key = leave the stored value as-is.")),
 		mcpsdk.WithArray("snapshot_never_stage", mcpsdk.Description("Path patterns the autonomous snapshot must never `git add` (e.g. '.env', 'node_modules/'). Blank patterns are rejected; an explicit empty list clears the list (nothing is protected); when unset the built-in default list applies."), mcpsdk.WithStringItems()),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
@@ -270,6 +272,12 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["task_override_statuses"]; ok {
 			body["task_override_statuses"] = req.GetStringSlice("task_override_statuses", []string{})
+		}
+		// Presence-aware boolean: an explicit false is forwarded (off is
+		// meaningful), an absent key leaves the stored value as the REST side
+		// already resolves it (unset = on).
+		if _, ok := args["override_queued_tasks"]; ok {
+			body["override_queued_tasks"] = req.GetBool("override_queued_tasks", false)
 		}
 	}
 	// Presence-aware like task_override_statuses above: an explicit []
@@ -881,7 +889,7 @@ func (s *Server) handleAutonomousPRDGet(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutonomousPRDDecompose() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_decompose",
-		mcpsdk.WithDescription("BL328 — start async LLM planning for a PRD. Returns 202 with task_id and stream_url for SSE progress. Poll /decompose/status or stream /decompose/stream to watch progress."),
+		mcpsdk.WithDescription("BL328 — start async LLM planning for a PRD. Returns 202 with task_id and stream_url for SSE progress. When the planning call lands on a different pool than the one it was queued for (e.g. you just changed the planning_profile on a running PRD), the 202 body also carries a top-level planning field with the requeue outcome (requeued / deferred_to_next_run / unchanged, plus old_pools and new_pools). Poll /decompose/status or stream /decompose/stream to watch progress."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }
@@ -1382,7 +1390,7 @@ func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_llm",
-		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Pass only the fields to change — an omitted parameter leaves the PRD field unchanged, an empty value clears that field (falling back to the global default). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend."),
+		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Pass only the fields to change — an omitted parameter leaves the PRD field unchanged, an empty value clears that field (falling back to the global default). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend. When a planning field changes the pool the decomposition runs on, the reply also carries a top-level planning field with the requeue outcome (requeued / deferred_to_next_run / unchanged, plus the old and new pool) — on a running Automaton the worker change flows to the tasks that are still queued (override_queued_tasks, on by default), never to tasks already started or finished."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("Task-execution backend (claude-code / opencode / goose / ollama / etc.)")),
 		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
@@ -1424,7 +1432,7 @@ func prdSetLLMBody(req mcpsdk.CallToolRequest) (map[string]any, error) {
 
 func (s *Server) toolAutonomousPRDSetStoryLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_story_llm",
-		mcpsdk.WithDescription("BL381 — override the worker LLM for all tasks in one story. Empty string = clear (falls back to PRD then global). Resolution order: per-task → per-story → per-PRD → global."),
+		mcpsdk.WithDescription("BL381 — override the worker LLM for all tasks in one story. Empty string = clear (falls back to PRD then global). Resolution order: per-task → per-story → per-PRD → global. On a locked Automaton status (e.g. running) the call is accepted only when override_queued_tasks is on (the default); the reply then carries a top-level override field listing the changed tasks and the left_alone tasks with a reason each (running/finished are always left alone). When override_queued_tasks is off the same call is refused on a locked status."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),
@@ -1447,7 +1455,7 @@ func (s *Server) handleAutonomousPRDSetStoryLLM(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_task_llm",
-		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global)."),
+		mcpsdk.WithDescription("BL203 — override the worker LLM for a single task. Empty string = clear (falls back to PRD then global). The call is applied only when the task is still queued (a running/finished task is left alone); on a locked Automaton status it requires override_queued_tasks on (the default). The reply carries a top-level override field listing the changed tasks and the left_alone tasks with a reason each."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),

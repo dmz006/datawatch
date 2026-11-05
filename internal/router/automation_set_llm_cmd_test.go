@@ -188,3 +188,51 @@ func TestAutomationCommSetVerificationLLM(t *testing.T) {
 		}, "usage: automation set-verification-llm")
 	})
 }
+
+// TestPlanningRequeueReplyLine checks the compact comm-channel line produced
+// from a set-llm response's top-level `planning` outcome: empty when the key
+// is absent or malformed, a human-readable old→new line when the pool moved,
+// and the defer / unchanged variants. It also surfaces the reason when present.
+func TestPlanningRequeueReplyLine(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		resp     string
+		exact    string
+		contains []string
+	}{{
+		name:  "no planning key",
+		resp:  `{"id":"ab12","status":"active","version":3}`,
+		exact: "",
+	}, {
+		name:  "malformed",
+		resp:  `{not json`,
+		exact: "",
+	}, {
+		name:  "unchanged",
+		resp:  `{"id":"ab12","planning":{"outcome":"unchanged","reason":"no queued planning run"}}`,
+		exact: "planning pool unchanged: no queued planning run",
+	}, {
+		name:     "requeued shows old and new pool",
+		resp:     `{"id":"ab12","planning":{"outcome":"requeued","old_backend":"ollama","old_model":"","new_backend":"pi","new_model":"opus","reason":"pool has idle capacity"}}`,
+		contains: []string{"requeued", "ollama", "pi", "opus", "pool has idle capacity"},
+	}, {
+		name:  "deferred",
+		resp:  `{"id":"ab12","planning":{"outcome":"deferred_to_next_run","reason":"planning run already started"}}`,
+		exact: "planning deferred to next run: planning run already started",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := planningRequeueReplyLine(tc.resp)
+			if tc.exact != "" {
+				if got != tc.exact {
+					t.Fatalf("got %q, want %q", got, tc.exact)
+				}
+				return
+			}
+			for _, sub := range tc.contains {
+				if !strings.Contains(got, sub) {
+					t.Fatalf("got %q does not contain %q", got, sub)
+				}
+			}
+		})
+	}
+}

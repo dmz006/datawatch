@@ -275,6 +275,62 @@ func TestQueuedTaskOverride_RetargetTwiceKeepsOneLiveRequest(t *testing.T) {
 	}
 }
 
+// TestRetargetRewritesCurrentWaitPools pins the wait-reason pool naming after
+// a retarget: the manager's per-task "currently waiting on" record, which the
+// wait-reason annotator (nameRequestedPool) reads so the operator sees the
+// pool the holder moved TO, must drop the entry-time pool and carry the new
+// new one. The closure used to capture the entry-time pool once and keep
+// naming it even after the held request moved.
+func TestRetargetRewritesCurrentWaitPools(t *testing.T) {
+	m, _, _, _ := apiFixture(t)
+	led := capacity.New(capacity.Options{PollInterval: 10 * time.Millisecond})
+	led.SetLimit("node:solo", 1)
+	led.SetLimit("node:fastb", 1)
+	m.SetCapacity(led, func(backend, model string) ([]string, string) {
+		if backend == "ollama" {
+			return []string{"host", "llm:pool", "node:fastb"}, "fastb"
+		}
+		return []string{"host", "llm:pool", "node:solo"}, "solo"
+	})
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	cur.Status = PRDRunning
+	if err := m.Store().SavePRD(cur); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+	taskID := cur.Story[0].Tasks[0].ID
+	cur.Story[0].Tasks[0].Status = TaskWaitingCapacity
+	if err := m.Store().SavePRD(cur); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+	queueWaiter(t, led, taskID, prd.ID)
+
+	// Seed the current-wait record exactly as admit does (the entry-time pool).
+	m.setWaitReqPools(taskID, []string{"host", "llm:pool", "node:solo"})
+	if got := m.waitReqPoolsNow(taskID); !slices.Contains(got, "node:solo") {
+		t.Fatalf("seeded current wait pools = %v, want the entry-time pool node:solo", got)
+	}
+
+	_, res, err := m.SetTaskLLM(prd.ID, taskID, "ollama", "", "m2", "op")
+	if err != nil {
+		t.Fatalf("SetTaskLLM: %v", err)
+	}
+	if res == nil || len(res.Changed) != 1 || !res.Changed[0].CapacityMoved {
+		t.Fatalf("res = %+v, want the retarget to move the queued capacity", res)
+	}
+
+	// After the retarget the record must point at the NEW pool and no longer
+	// carry the entry-time one, so the wait reason names the pool the holder
+	// actually moved to.
+	got := m.waitReqPoolsNow(taskID)
+	if !slices.Contains(got, "node:fastb") {
+		t.Fatalf("current wait pools after retarget = %v, want the new pool node:fastb", got)
+	}
+	if slices.Contains(got, "node:solo") {
+		t.Fatalf("current wait pools after retarget = %v, the entry-time pool node:solo must be dropped", got)
+	}
+}
+
 func countTaskWaiters(led *capacity.Ledger, holder string) int {
 	n := 0
 	for _, w := range led.Snapshot().Waiting {

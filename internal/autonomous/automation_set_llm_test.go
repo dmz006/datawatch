@@ -52,7 +52,7 @@ func countDecisions(a *Automation, kind string) int {
 
 func TestSetAutomationLLM(t *testing.T) {
 	h, a := llmAuto(t)
-	got, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "alice", a.Version)
+	got, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "alice", a.Version)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,9 +70,41 @@ func TestSetAutomationLLM(t *testing.T) {
 	check(reloadAutomation(t, h, a.ID))
 }
 
+func TestSetAutomationLLMPairRequeue(t *testing.T) {
+	h, a := llmAuto(t)
+	// A planning-pair change retargets the member planning runs and returns the
+	// folded outcome (non-nil) so the surfaces can report it, naming the
+	// member Automata considered. No member here has a live run yet, so the
+	// folded outcome is unchanged.
+	_, res, err := h.m.SetAutomationLLM(a.ID, nil, nil, nil, strp("pi-prompt"), strp("qwen3.8:27b"), "alice", a.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res == nil {
+		t.Fatal("planning-pair change returned a nil planning result")
+	}
+	if res.Outcome != PlanningUnchanged {
+		t.Fatalf("outcome %q, want unchanged (no live member runs)", res.Outcome)
+	}
+	if !strings.Contains(res.Reason, "member Automaton(s) considered") {
+		t.Fatalf("reason %q does not mention the members considered", res.Reason)
+	}
+
+	// An execution-only change has nothing to retarget: the planning result
+	// stays nil exactly as before this change.
+	before := h.get(a).Version
+	_, res2, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), nil, nil, nil, nil, "alice", before)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2 != nil {
+		t.Fatalf("execution-only change returned planning result %+v", res2)
+	}
+}
+
 func TestSetAutomationVerificationLLM(t *testing.T) {
 	h, a := llmAuto(t)
-	if _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "", 0); err != nil {
+	if _, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "", 0); err != nil {
 		t.Fatal(err)
 	}
 	before := h.get(a)
@@ -102,7 +134,7 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 		for _, s := range []AutomationStatus{AutomationCompleted, AutomationCancelled} {
 			h, a := llmAuto(t)
 			a = setAutoStatus(t, h, a, s)
-			_, err := h.m.SetAutomationLLM(a.ID, strp("pi-prompt"), nil, nil, nil, nil, "", a.Version)
+			_, _, err := h.m.SetAutomationLLM(a.ID, strp("pi-prompt"), nil, nil, nil, nil, "", a.Version)
 			wantErr(t, err, "409: ", string(s))
 			_, err = h.m.SetAutomationVerificationLLM(a.ID, strp("pi-prompt"), nil, nil, "", a.Version)
 			wantErr(t, err, "409: ", string(s))
@@ -113,14 +145,14 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 	})
 	t.Run("unknown", func(t *testing.T) {
 		h, _ := llmAuto(t)
-		_, err := h.m.SetAutomationLLM("nope", strp("pi-prompt"), nil, nil, nil, nil, "", 0)
+		_, _, err := h.m.SetAutomationLLM("nope", strp("pi-prompt"), nil, nil, nil, nil, "", 0)
 		wantErr(t, err, "404: automation nope not found")
 		_, err = h.m.SetAutomationVerificationLLM("nope", strp("pi-prompt"), nil, nil, "", 0)
 		wantErr(t, err, "404: automation nope not found")
 	})
 	t.Run("stale version", func(t *testing.T) {
 		h, a := llmAuto(t)
-		_, err := h.m.SetAutomationLLM(a.ID, strp("pi-prompt"), nil, nil, nil, nil, "", a.Version+5)
+		_, _, err := h.m.SetAutomationLLM(a.ID, strp("pi-prompt"), nil, nil, nil, nil, "", a.Version+5)
 		wantErr(t, err, "409: version mismatch")
 		_, err = h.m.SetAutomationVerificationLLM(a.ID, strp("pi-prompt"), nil, nil, "", a.Version+5)
 		wantErr(t, err, "409: version mismatch")
@@ -130,7 +162,7 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 	})
 	t.Run("mismatched pair", func(t *testing.T) {
 		h, a := llmAuto(t)
-		_, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("anthropic/claude-haiku-5-5"), nil, nil, nil, "", 0)
+		_, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("anthropic/claude-haiku-5-5"), nil, nil, nil, "", 0)
 		if err == nil || strings.Contains(err.Error(), "prd") {
 			t.Fatalf("want a pair error that does not say prd, got %v", err)
 		}
@@ -139,10 +171,10 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 			t.Fatalf("want a pair error that does not say prd, got %v", err)
 		}
 		// A model change alone is checked against the stored backend.
-		if _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), nil, nil, nil, nil, "", 0); err != nil {
+		if _, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), nil, nil, nil, nil, "", 0); err != nil {
 			t.Fatal(err)
 		}
-		_, err = h.m.SetAutomationLLM(a.ID, nil, strp("anthropic/claude-haiku-5-5"), nil, nil, nil, "", 0)
+		_, _, err = h.m.SetAutomationLLM(a.ID, nil, strp("anthropic/claude-haiku-5-5"), nil, nil, nil, "", 0)
 		if err == nil {
 			t.Fatal("model alone was not checked against the stored backend")
 		}
@@ -152,7 +184,7 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 	})
 	t.Run("bad effort", func(t *testing.T) {
 		h, a := llmAuto(t)
-		_, err := h.m.SetAutomationLLM(a.ID, nil, nil, strp("extreme"), nil, nil, "", 0)
+		_, _, err := h.m.SetAutomationLLM(a.ID, nil, nil, strp("extreme"), nil, nil, "", 0)
 		wantErr(t, err, "effort", "extreme")
 		_, err = h.m.SetAutomationVerificationLLM(a.ID, nil, nil, strp("extreme"), "", 0)
 		wantErr(t, err, "effort", "extreme")
@@ -164,11 +196,11 @@ func TestSetAutomationLLMRejections(t *testing.T) {
 
 func TestSetAutomationLLMPresenceSemantics(t *testing.T) {
 	h, a := llmAuto(t)
-	if _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "", 0); err != nil {
+	if _, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp("claude-opus-5-5"), strp("high"), strp("pi-prompt"), strp("qwen3.8:27b"), "", 0); err != nil {
 		t.Fatal(err)
 	}
 	t.Run("nil leaves unchanged", func(t *testing.T) {
-		got, err := h.m.SetAutomationLLM(a.ID, nil, strp("claude-sonnet-5-5"), nil, nil, nil, "", 0)
+		got, _, err := h.m.SetAutomationLLM(a.ID, nil, strp("claude-sonnet-5-5"), nil, nil, nil, "", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -178,7 +210,7 @@ func TestSetAutomationLLMPresenceSemantics(t *testing.T) {
 		}
 	})
 	t.Run("empty clears", func(t *testing.T) {
-		got, err := h.m.SetAutomationLLM(a.ID, nil, strp(""), strp(""), nil, strp(""), "", 0)
+		got, _, err := h.m.SetAutomationLLM(a.ID, nil, strp(""), strp(""), nil, strp(""), "", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -188,7 +220,7 @@ func TestSetAutomationLLMPresenceSemantics(t *testing.T) {
 	})
 	t.Run("version zero skips the check", func(t *testing.T) {
 		cur := h.get(a)
-		got, err := h.m.SetAutomationLLM(a.ID, nil, nil, strp("low"), nil, nil, "", 0)
+		got, _, err := h.m.SetAutomationLLM(a.ID, nil, nil, strp("low"), nil, nil, "", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,7 +230,7 @@ func TestSetAutomationLLMPresenceSemantics(t *testing.T) {
 	})
 	t.Run("planning leaves run pair alone", func(t *testing.T) {
 		cur := h.get(a)
-		got, err := h.m.SetAutomationLLM(a.ID, nil, nil, nil, strp("ollama"), strp("claude-opus-5-5"), "", 0)
+		got, _, err := h.m.SetAutomationLLM(a.ID, nil, nil, nil, strp("ollama"), strp("claude-opus-5-5"), "", 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -221,7 +253,7 @@ func TestSetAutomationLLMPresenceSemantics(t *testing.T) {
 
 func TestSetAutomationLLMDecisionAndAudit(t *testing.T) {
 	h, a := llmAuto(t)
-	got, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp(""), nil, nil, strp("qwen3.8:27b"), "alice", 0)
+	got, _, err := h.m.SetAutomationLLM(a.ID, strp("claude-code"), strp(""), nil, nil, strp("qwen3.8:27b"), "alice", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14304,6 +14304,7 @@ function renderPRDRow(prd, opts) {
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${nStories} stories &middot; ${nTasks} tasks &middot; ${nDecisions} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
+        ${renderPRDWaitReason(prd)}
         ${renderPRDPlanReview(prd)}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
@@ -14427,13 +14428,18 @@ function renderStory(prd, story) {
   // blocked PRD for a failed/blocked task (BL421) and never a completed
   // task — renderTask computes that separately as specEditable.
   const removeStoryFn = `prdRemoveStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')})`;
-  const editIcons = editable
+  // Queued-task LLM control (task 6cb90009): on a running Automaton the story
+  // LLM stays editable only while it still has an unstarted (queued) task to
+  // apply to; the server reports the changed / left-alone split. Started or
+  // finished tasks keep the control closed (their override applies next run).
+  const llmOk = editable || (llmControlsEnabled(prd) && storyHasOverridableTask(story));
+  const editIcons = (editable || llmOk)
     ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">
-         <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>
-         <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
-         <button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>
-         <button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>
-         <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeStoryFn)}" title="Remove this story and its tasks">&#128465;</button>
+         ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"     title="Edit title + description">&#9998;</button>` : ''}
+         ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+         ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(profEditFn)}"  title="Override execution profile (current: ${escHtml(story.execution_profile || 'inherit')})">&#9881;</button>` : ''}
+         ${llmOk ? `<button class="prd-story-edit-icon" onclick="${escHtml(llmEditFn)}"   title="Override LLM for this story${story.backend || story.effort || story.model ? ' (set)' : ''}">&#129302;</button>` : ''}
+         ${editable ? `<button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeStoryFn)}" title="Remove this story and its tasks">&#128465;</button>` : ''}
        </span>`
     : '';
 
@@ -14842,14 +14848,21 @@ function renderTask(prd, story, task, editable) {
   // without opening the structural edits, which stay locked while blocked.
   const specEditable = (task.status !== 'completed') &&
     (editable || (prd.status === 'blocked' && (task.status === 'failed' || task.status === 'blocked')));
-  const specEditBtn = specEditable
-    ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>`
+  // Queued-task LLM control (task 6cb90009): on a running Automaton the task
+  // LLM stays editable for unstarted (queued) tasks; the server reports the
+  // changed / left-alone split. Started (in_progress/verifying/running_tests)
+  // and finished (completed/failed/blocked/review_needed) tasks are not
+  // overridable — the control stays closed for them.
+  const llmTaskOk = llmControlsEnabled(prd) && taskOverridable(task);
+  const showTaskEditor = specEditable || llmTaskOk;
+  const specEditBtn = showTaskEditor
+    ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="${specEditable ? 'Edit spec + LLM' : 'Override LLM (queued task)'}">&#9998;</button>`
     : '';
-  const editIcons = editable
+  const editIcons = (editable || llmTaskOk)
     ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
-         ${specEditBtn}
-         <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
-         <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>
+         ${showTaskEditor ? specEditBtn : ''}
+         ${editable ? `<button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>` : ''}
+         ${editable ? `<button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>` : ''}
        </span>`
     : (specEditable
       ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">${specEditBtn}</span>`
@@ -16227,7 +16240,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_llm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskID, backend, effort, model, actor: 'operator' }),
-      }));
+      }).then(r => { llmOutcomeInlineToast(r); return r; }));
     }
     const projectDir = (document.getElementById('prdEditProjectDir') || {}).value;
     if (projectDir !== undefined && projectDir.trim() !== (currentProjectDir || '')) {
@@ -16412,7 +16425,7 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
     }
     if (calls.length === 0) { _prdCloseModal(); return; }
     Promise.all(calls)
-      .then(() => { showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+      .then((rs) => { if (rs && rs[0]) llmOutcomeInlineToast(rs[0]); showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   refreshLLMModelField('prdStoryLLMModelWrap', 'prdStoryLLMModelInner', 'prdStoryLLMBackend', currentModel || '');
@@ -16420,6 +16433,83 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
   });
 }
 window.openPRDSetStoryLLMModal = openPRDSetStoryLLMModal;
+
+// ---- set-llm outcome feedback + queued-task LLM control gates (6cb90009) ----
+// Overridable task statuses: the server's "unstarted" set (task_override_statuses
+// default). A queued-mode LLM override still applies to these. started/finished
+// tasks are NOT in the set — their LLM is already fixed, so an override leaves
+// them alone and applies on their next run.
+const OVERRIDABLE_TASK_STATUSES = ['pending', 'queued', 'waiting_capacity', 'waiting_decision', 'awaiting_approval'];
+// PRD statuses whose tasks may still be queued, so worker LLM/effort controls
+// stay enabled even while the Automaton is running. The server still decides
+// per task and reports changed / left-alone, so enabling here is always safe.
+const LLM_RUNNING_PRD_STATUSES = ['running', 'in_progress', 'active', 'approved', 'planning', 'waiting_capacity'];
+
+// llmControlsEnabled: keep the story/task LLM affordances available for these
+// structural-edit states AND for a running Automaton (queued tasks can still be
+// retargeted). Completed / failed / blocked-with-no-queues close the controls.
+function llmControlsEnabled(prd) {
+  prd = prd || {};
+  const st = prd.status || '';
+  if (st === 'needs_review' || st === 'revisions_asked' || st === 'cancelled' || st === 'blocked') return true;
+  return LLM_RUNNING_PRD_STATUSES.includes(st);
+}
+// taskOverridable: true only when the task is still unstarted (queued family).
+// started (in_progress / verifying / running_tests) and finished (completed /
+// failed / blocked / review_needed) are false — the override reports them
+// left-alone rather than mutating them.
+function taskOverridable(task) {
+  return OVERRIDABLE_TASK_STATUSES.includes((task && task.status) || '');
+}
+function storyHasOverridableTask(story) {
+  const tasks = (story && story.tasks) || [];
+  return tasks.some(taskOverridable);
+}
+// llmOutcomeSummary renders the server's structured set-llm outcome: which
+// targets changed vs were left alone (started/finished — applies on their next
+// run) plus any planning-phase requeue (requeued / deferred_to_next_run /
+// unchanged) with the pools it moved. Empty string when neither is present, so
+// callers fall back to a plain success toast.
+function llmOutcomeSummary(payload) {
+  payload = payload || {};
+  const bits = [];
+  const ov = payload.override;
+  if (ov && typeof ov === 'object') {
+    const changed = (ov.changed || []).length;
+    const left = (ov.left_alone || []).length;
+    if (changed) bits.push(changed + ' target' + (changed === 1 ? '' : 's') + ' updated');
+    if (left) bits.push(left + ' left alone (started/finished — applies when it runs)');
+    if (!changed && !left) bits.push('no target changes');
+  }
+  const pl = payload.planning;
+  if (pl && pl.outcome) {
+    if (pl.outcome === 'requeued') bits.push('planner requeued' + (pl.new_pools && pl.new_pools.length ? ' to ' + pl.new_pools.join(', ') : '') + (pl.old_pools && pl.old_pools.length ? ' (was ' + pl.old_pools.join(', ') + ')' : ''));
+    else if (pl.outcome === 'deferred_to_next_run') bits.push('planner change deferred to next run' + (pl.reason ? ' — ' + pl.reason : ''));
+    else if (pl.outcome === 'unchanged') bits.push('planner unchanged');
+  }
+  return bits.join(' · ');
+}
+// llmOutcomeInlineToast fires the outcome line only when the server returned a
+// structured outcome; otherwise it stays silent so the caller's plain success
+// toast is the single message.
+function llmOutcomeInlineToast(payload) {
+  const s = llmOutcomeSummary(payload);
+  if (s) showToast(s, 'info', 5000);
+}
+window.llmControlsEnabled = llmControlsEnabled;
+window.taskOverridable = taskOverridable;
+window.storyHasOverridableTask = storyHasOverridableTask;
+window.llmOutcomeSummary = llmOutcomeSummary;
+window.llmOutcomeInlineToast = llmOutcomeInlineToast;
+
+// renderPRDWaitReason shows a PRD's planner-queue wait reason (prd.wait_reason)
+// set when a planning call is queued or a requeue is deferred — the
+// planning-phase wait the set-llm requeue surfaces.
+function renderPRDWaitReason(prd) {
+  if (!prd || !prd.wait_reason) return '';
+  return `<div style="margin-top:2px;font-size:11px;color:#f59e0b;" title="Why the planner is queued (set by a requeue or capacity wait)">⏳ ${escHtml(prd.wait_reason)}</div>`;
+}
+window.renderPRDWaitReason = renderPRDWaitReason;
 
 function openPRDSetLLMModal(prdID, current) {
   // v5.26.8 — same dynamic model dropdown pattern as the New PRD and
@@ -16477,7 +16567,7 @@ function openPRDSetLLMModal(prdID, current) {
         body: JSON.stringify(Object.assign({ actor: 'operator' }, verif)),
       }));
     }
-    Promise.all(calls).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+    Promise.all(calls).then((rs) => { if (rs && rs[0]) llmOutcomeInlineToast(rs[0]); showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate model dropdowns for the current backends now that the modal is mounted.

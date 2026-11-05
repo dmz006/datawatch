@@ -523,7 +523,7 @@ var (
 )
 
 func (s *Server) toolAutomationSetLLM() mcpsdk.Tool {
-	opts := append(automationLLMBase("Set the Automation-level execution and planning defaults used by members that name none of their own. Supply at least one of backend, model, effort, planning_backend, planning_model: an omitted field is left unchanged and an empty string clears it. Allowed while the Automation is draft, active, paused or blocked."),
+	opts := append(automationLLMBase("Set the Automation-level execution and planning defaults used by members that name none of their own. Supply at least one of backend, model, effort, planning_backend, planning_model: an omitted field is left unchanged and an empty string clears it. Allowed while the Automation is draft, active, paused or blocked. When planning_backend or planning_model moves a queued member's decomposition to a different pool, the reply also carries the planning-requeue outcome (requeued / deferred_to_next_run / unchanged, with the old and new pool) for the members currently waiting."),
 		mcpsdk.WithString("backend", mcpsdk.Description("Execution backend default; empty clears it.")),
 		mcpsdk.WithString("model", mcpsdk.Description("Execution model default; empty clears it.")),
 		mcpsdk.WithString("effort", mcpsdk.Description("Execution effort default; empty clears it.")),

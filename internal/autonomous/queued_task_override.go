@@ -259,5 +259,12 @@ func (m *Manager) requeueQueuedCapacity(prd *PRD, t *Task, backend, model string
 		Model: model, Role: capacity.RoleWorker, Consumer: consumerSessionSpawn,
 	}
 	req.Refresh = m.placementRefresh(req, backend, model, nil)
-	return led.Retarget(t.ID, req)
+	if led.Retarget(t.ID, req) {
+		// Rewrite the wait-reason's current-pool record so the holder's next
+		// wait reason names the NEW pool it moved to, not the one it entered
+		// the queue with.
+		m.setWaitReqPools(t.ID, req.Pools)
+		return true
+	}
+	return false
 }

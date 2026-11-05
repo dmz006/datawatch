@@ -2041,9 +2041,23 @@ func (a *API) PauseAutomation(id, actor string, expectedVersion int64) (any, err
 
 // SetAutomationLLM overrides the Automation's execution and planning defaults.
 // A nil pointer leaves a field unchanged; expectedVersion 0 skips the version check.
+//
+// A planning-pair change retargets member planning runs, and the folded outcome
+// rides back as a sibling "planning" key next to the Automation's own top-level
+// fields (the Automation is embedded so its fields are promoted) — never
+// re-wrapped under a new object, the same shape rule as the set_llm PRD replies.
 func (a *API) SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (any, error) {
-	got, err := a.M.SetAutomationLLM(id, backend, model, effort, planningBackend, planningModel, actor, expectedVersion)
-	return controlResult(got, err)
+	got, planning, err := a.M.SetAutomationLLM(id, backend, model, effort, planningBackend, planningModel, actor, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	if planning == nil {
+		return got, nil
+	}
+	return struct {
+		*Automation
+		Planning *PlanningRequeueResult `json:"planning"`
+	}{Automation: got, Planning: planning}, nil
 }
 
 // SetAutomationVerificationLLM overrides the Automation's verification defaults.

@@ -448,7 +448,41 @@ func (r *Router) automationControl(verb, id, op, did string, body map[string]any
 		r.send(resp)
 		return
 	}
-	r.send(fmt.Sprintf("automation %s: %s (status %s, version %d)", a.ID, did, a.Status, a.Version))
+	line := fmt.Sprintf("automation %s: %s (status %s, version %d)", a.ID, did, a.Status, a.Version)
+	if extra := planningRequeueReplyLine(resp); extra != "" {
+		line += "; " + extra
+	}
+	r.send(line)
+}
+
+// planningRequeueReplyLine renders the top-level `planning` outcome of a
+// set-llm response (if any) as a compact comm-channel line, so an operator
+// sees which pool a queued member's decomposition was retargeted to and
+// whether it ran immediately or deferred. Empty when the response carries no
+// planning change (true for every non-LLM op), keeping automationControl
+// otherwise unchanged.
+func planningRequeueReplyLine(resp string) string {
+	var wrapper struct {
+		Planning *autonomous.PlanningRequeueResult `json:"planning"`
+	}
+	if err := json.Unmarshal([]byte(resp), &wrapper); err != nil || wrapper.Planning == nil || wrapper.Planning.Outcome == "" {
+		return ""
+	}
+	pr := wrapper.Planning
+	reason := ""
+	if pr.Reason != "" {
+		reason = ": " + pr.Reason
+	}
+	switch pr.Outcome {
+	case autonomous.PlanningUnchanged:
+		return "planning pool unchanged" + reason
+	case autonomous.PlanningRequeued:
+		return fmt.Sprintf("planning requeued %s/%s → %s/%s%s", pr.OldBackend, pr.OldModel, pr.NewBackend, pr.NewModel, reason)
+	case autonomous.PlanningDeferred:
+		return "planning deferred to next run" + reason
+	default:
+		return "planning " + string(pr.Outcome) + reason
+	}
 }
 
 // automationShippedUsage is the usage line for "automation shipped".

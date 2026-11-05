@@ -281,3 +281,51 @@ Changed (tests, signature updates for 3-value `SetPRDLLM` / 3-value `SplitSetLLM
 Verification: `go vet ./...` clean; full `go test ./internal/... -count=1` green (11078 tests /
 93 packages); targeted `go test ./internal/autonomous/ -run 'TestPlanningRequeue|TestSplitSetLLMOut'
 -count=1` all PASS. No version bump, no `gh`, no daemon start.
+
+## 13. Changed files — surface wiring (task 6cb90009, this worktree)
+
+This task exposes the queued-requeue + per-task-override outcomes on every surface
+(REST, MCP, CLI, comm-channel, web) and stops disabling the worker LLM/effort
+controls for a running Automaton while tasks can still change. On top of the
+section-12 planning-requeue plumbing, the surface wiring touched:
+
+- `internal/autonomous/api.go` — `SplitSetLLMOut` returns the planning outcome; the
+  set-llm write view carries both `.override` (changed / left_alone — started/finished
+  targets the override applies to on their next run) and `.planning` (requeued /
+  deferred_to_next_run / unchanged + old/new pools); `API.SetPRDLLM` forwards it.
+- `internal/autonomous/manager.go` — `SetPRDLLM` runs the override + requeue and
+  returns both outcomes; a PRD that is `running` stays settable when
+  `override_queued_tasks` is on (per-task override path) — the running-state gate is
+  split so worker-pair changes on a running PRD are only refused when the override
+  can't reach any not-yet-started task.
+- `internal/autonomous/queued_task_override.go` — `LLMOverrideResult.Changed` /
+  `.LeftAlone` classification; a task is overridable only while it is genuinely
+  unstarted (the `pending`/`queued`/`waiting_*`/`awaiting_approval` family) — failed /
+  blocked / review_needed targets are reported as left-alone, never silently applied.
+- `internal/autonomous/capacity.go` — `decomposeAdmitted` runs the decompose with the
+  PRD's current planning pair (a queued entry may have been retargeted mid-wait);
+  the wait reason names the CURRENT pool after a retarget.
+- `internal/server/autonomous_view.go` — the write-view JSON writer emits
+  `{...prd, override, planning}` on every set-llm / set-decompose write.
+- `internal/mcp/automation_tools.go` + `internal/mcp/autonomous.go` — the config tool
+  describes/exposes `override_queued_tasks` + the planner fields; the set-llm / decompose
+  tool descriptions document the 2xx body's `override` + `planning` outcome shape (tools
+  are thin proxies over the REST endpoints, so the payload flows through unchanged).
+- `cmd/datawatch/` (unchanged) — the CLI already pretty-prints the full 2xx body, so
+  the `override` + `planning` fields surface automatically in `autonomous set-llm` and
+  `autonomous decompose` output without further code.
+- `internal/router/automation_cmd.go` — comm `automation set-llm` prepends a one-line
+  requeue/override summary above the JSON body; comm `config-set`/`config-get` are
+  key-permeable so `override_queued_tasks` + planner fields pass through.
+- `internal/server/web/app.js` — the PWA (a) stops disabling worker LLM/effort controls
+  for a running/structural-edit Automaton while it still has an overridable (not-
+  yet-started) task, disabling them per task only for started/finished tasks, and
+  (b) renders the PRD wait reason and a set-llm outcome summary (changed / left-alone /
+  requeued / deferred) inline + as a toast.
+
+New tests: `internal/server/web/app-set-llm-outcome.test.js` (web outcome helpers),
+`internal/autonomous/queued_task_override_test.go` (changed/left-alone classification,
+failed/blocked/review_needed refused), `internal/server/autonomous_view_test.go` (write
+view `.override` + `.planning` shape), plus signature updates in
+`internal/autonomous/{automation_set_llm_test,bl320_decomp_profile_test}.go` and
+`internal/router/automation_set_llm_cmd_test.go`.

@@ -1107,6 +1107,12 @@ type Manager struct {
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).
 	capacityWaitSpent map[string]time.Duration
+	// waitReqPools is the pool(s) a task is CURRENTLY waiting on, keyed by
+	// task id. Seeded with the pools the operator's backend resolved to at
+	// admit time and rewritten by a queued-mode retarget (requeueQueuedCapacity)
+	// so the wait-reason annotator names the up-to-date pool after the holder
+	// moved (capacity.go). Guarded by mu.
+	waitReqPools map[string][]string
 	cfg               Config
 	store             *Store
 	automations       *AutomationStore
@@ -5070,9 +5076,11 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 }
 
 // prdLLMOverrideAllowed reports whether the worker backend and model of an
-// Automaton in the given status may still be changed: the overrides only apply
-// before a run, so a running or completed Automaton is locked. SetPRDLLM
-// enforces it and lane fill reads it to know whether a backend can move.
+// Automaton in the given status may still be moved by *lane fill*: the lane
+// retargets an already-admitted run, so a running or completed Automaton is
+// locked there. SetPRDLLM uses a separate, more permissive gate (a PRD-level
+// change flows to queued/unstarted tasks via resolution, so a running Automaton
+// can still accept it when override_queued_tasks is on).
 func prdLLMOverrideAllowed(status PRDStatus) bool {
 	return status != PRDRunning && status != PRDCompleted
 }
@@ -5088,8 +5096,18 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	if !ok {
 		return nil, nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if !prdLLMOverrideAllowed(prd.Status) {
-		return nil, nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+	// Completed Automata are finished — there is nothing left to run, so a
+	// worker LLM/effort change reaches no task. A RUNNING Automaton still
+	// accepts the change while its queued tasks can be overridden (the new
+	// pair flows to unstarted tasks through resolveTaskBackendModel); with
+	// override_queued_tasks disabled (explicit false) a running Automaton has
+	// no queued task the change could reach and is refused. Same rule as the
+	// story/task setters (SetStoryLLM / SetTaskLLM).
+	if prd.Status == PRDCompleted {
+		return nil, nil, fmt.Errorf("prd %q is completed; worker LLM/effort overrides only apply while the Automaton can still run tasks", prdID)
+	}
+	if prd.Status == PRDRunning && !EffectiveOverrideQueuedTasks(m.cfg.OverrideQueuedTasks) {
+		return nil, nil, fmt.Errorf("prd %q is running and override_queued_tasks is disabled, so the worker LLM/effort change would reach no queued task (enable autonomous.override_queued_tasks, or set it once the Automaton is no longer running)", prdID)
 	}
 	// The decomposition model is not checked: its backend is the planning
 	// backend, which resolvePlannedModel resolves separately.
