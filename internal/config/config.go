@@ -2748,6 +2748,11 @@ type AutonomousConfig struct {
 	// on every verification result. nil (unset) => true. false keeps only the
 	// verifier mode.
 	VerificationRecordScores *bool `yaml:"verification_record_scores,omitempty" json:"verification_record_scores,omitempty"`
+	// ScopeBreadthEnabled turns on the scope-breadth classifier: on a
+	// content-category task-verification failure it asks whether the task bundles
+	// several separable units and sets FailureReason.scope_too_broad. Needs the
+	// classifier capability. Default false.
+	ScopeBreadthEnabled bool `yaml:"scope_breadth_enabled,omitempty" json:"scope_breadth_enabled,omitempty"`
 	// FallbackVerificationBackend is the backend used for that one
 	// verification. Empty => claude-code.
 	FallbackVerificationBackend string `yaml:"fallback_verification_backend,omitempty" json:"fallback_verification_backend,omitempty"`

@@ -6279,6 +6279,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"failure_escalation":                   failureEscalationConfigForDisplay(s.cfg.Autonomous.FailureEscalation),
 			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
 			"verification_record_scores":           autonomous.RecordScoresEnabled(s.cfg.Autonomous.VerificationRecordScores),
+			"scope_breadth_enabled":                s.cfg.Autonomous.ScopeBreadthEnabled,
 			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
 
@@ -8894,6 +8895,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.VerifierInfraEscalationThreshold = n
 			}
+		case "autonomous.scope_breadth_enabled":
+			cfg.Autonomous.ScopeBreadthEnabled = toBool(v)
 		case "autonomous.verification_record_scores":
 			b := toBool(v)
 			cfg.Autonomous.VerificationRecordScores = &b

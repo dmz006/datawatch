@@ -4413,6 +4413,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
 			VerificationRecordScores:         acfgIn.VerificationRecordScores,
+			ScopeBreadthEnabled:              acfgIn.ScopeBreadthEnabled,
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
@@ -6500,6 +6501,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				func(ctx context.Context, backend, model, prompt string) autonomouspkg.VerificationResult {
 					return runClassifyVerification(ctx, "", backend, model, prompt,
 						autonomouspkg.RecordScoresEnabled(cfg.Autonomous.VerificationRecordScores))
+				})
+			// Scope-breadth classifier: off unless autonomous.scope_breadth_enabled.
+			amgr.SetScopeBreadth(func() bool { return cfg.Autonomous.ScopeBreadthEnabled },
+				func(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
+					return runScopeBreadth(ctx, text)
 				})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
