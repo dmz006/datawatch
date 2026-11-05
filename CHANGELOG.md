@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.2 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 5 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.96.2 — Planning routing test no longer double-unescapes
 
 A test helper for the planning routing JSON editor decoded `&amp;` before the other entities, which CodeQL flagged as a double unescape. It now decodes it last. The version check also treats `*.test.js` files as test-only, like `*_test.js`, so a test-only change no longer needs a version bump.
