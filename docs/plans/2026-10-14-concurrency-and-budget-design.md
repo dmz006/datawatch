@@ -1906,3 +1906,7 @@ Consequence: no lane or planning change. The supervisor watches the burn guard a
 ### Decision record, 2026-11-03: second Claude lane opened and closed
 
 The operator opened a second Claude lane at 17:41 for six hours ("Yes open 2nd for next 6 hours"). At 21:21 the weekly reading was 36% against a pace line of 36.5, with a recent burn of 23.4 points per 24h against 14.3 allowed, and the burn guard had spent part of the window in its hold rung. The supervisor recommended closing the lane early, and the operator answered: "Claude can go back down to one lane for the night." The claude-code inflight cap was set back to 1 at 21:25, about 3 hours 45 minutes into the window.
+
+### Reading, 2026-11-05 12:32
+
+The operator's words: "Claude at 59%". Pace line 59.8, headroom 0.8 points, 2.81 days left. The previous reading was 46% at 17:19 on 2026-11-04, so 13 points in 19.2 hours, about 0.68 per hour (16.3 per 24 hours); the transcript burn script reported 0.62 per hour over the same window, so it under-counts by about 9 percent. At the recent burn the weekly projection is 104.7% and the allowance runs out Sunday 01:07, about 6.9 hours before the reset; at the week average it is 98.6%. Policy is run until used up, one Claude lane. The burn guard has been holding Claude for part of each hour since last night (`hold_claude`); no guard setting was changed. The lane count and the guard are the operator's decisions.
