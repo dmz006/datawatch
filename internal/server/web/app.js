@@ -9020,6 +9020,18 @@ const DOCS_LINKS_BY_KEY = {
   automata_guardrail_profiles: 'howto/guardrail-library.md#managing-guardrail-profiles',
   automata_retry_profiles: 'howto/retry-policy.md#managing-retry-profiles',
   gc_autonomous: 'howto/autonomous-planning.md',
+  // Requirements report + model pull consent (web setup view cards)
+  requirements_report: DOCS_DEFINITIONS + '#requirements-report',
+  requirements_report_card_title: DOCS_DEFINITIONS + '#requirements-report',
+  requirements_report_capabilities: DOCS_DEFINITIONS + '#requirements-report',
+  requirements_report_backends: DOCS_DEFINITIONS + '#requirements-report',
+  requirements_report_missing: DOCS_DEFINITIONS + '#requirements-report',
+  model_pull_consent: DOCS_DEFINITIONS + '#model-pull-consent',
+  model_consent: DOCS_DEFINITIONS + '#model-pull-consent',
+  model_consent_card_title: DOCS_DEFINITIONS + '#model-pull-consent',
+  model_consent_models: DOCS_DEFINITIONS + '#model-pull-consent',
+  model_consent_publishers: DOCS_DEFINITIONS + '#model-pull-consent',
+  node_backend_versions: DOCS_DEFINITIONS + '#requirements-report',
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
   settings_identity_backups_to_keep: DOCS_DEFINITIONS + '#identity-backups-and-restore',
@@ -9569,6 +9581,24 @@ function renderSettingsView() {
           </div>
         </div>`;
         }).join('')}
+
+        <!-- Requirements report + model pull consent cards (web setup view):
+             the requirements report card shows the minimum versions the
+             Automation backends and the compute nodes need, and the model
+             pull consent card holds the per-model pull-allowed toggles and
+             the publisher allowlist. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('requirements_report', t('requirements_report_section_title')||'Requirements report')}
+          <div id="settings-sec-requirements_report" style="${secContent('requirements_report')}">
+            <div id="requirementsReportPanel" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('model_pull_consent', t('model_consent_section_title')||'Model pull consent')}
+          <div id="settings-sec-model_pull_consent" style="${secContent('model_pull_consent')}">
+            <div id="modelConsentPanel" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
 
         <!-- F10 sprint 2: Project Profiles + Cluster Profiles cards
              v6.7.6 — moved from General → Agents tab. -->
@@ -10504,6 +10534,8 @@ function renderSettingsView() {
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
   if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
   if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
+  if (typeof loadRequirementsReportPanel === 'function') loadRequirementsReportPanel(); // requirements report card (setup view)
+  if (typeof loadModelConsentPanel === 'function') loadModelConsentPanel(); // model pull consent card (setup view)
   if (typeof loadLLMsPanel === 'function') loadLLMsPanel(); // v7.0.0 S2
   loadLinkStatus();
   loadConfigStatus();
@@ -10811,7 +10843,7 @@ function loadComputeNodesPanel() {
           const tlsKeys = ['tls_ca_file', 'tls_cert_fingerprint', 'tls_insecure_skip_verify'];
           const detailRows = Object.entries(n).filter(([k, v]) => !['name','tags','auto_tags'].includes(k) && !(tlsKeys.includes(k) && !v))
             .map(([k, v]) => `<tr><td style="padding:2px 8px;color:var(--text2);font-size:10px;white-space:nowrap;vertical-align:top;">${escHtml(k)}</td><td style="padding:2px 8px;font-size:11px;word-break:break-all;">${fmtVal(v)}</td></tr>`).join('');
-          return `<details class="compute-node-row" style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);${dimStyle}">
+          return `<details class="compute-node-row" ontoggle="if (this.open && window.loadNodeBackendVersions) loadNodeBackendVersions(${safeJ});" style="border:1px solid var(--border);border-radius:6px;margin-bottom:6px;background:var(--bg2);${dimStyle}">
             <summary style="cursor:pointer;padding:6px 10px;display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap;">
               <strong>${safe}</strong>${auto}
               ${kindBadge}
@@ -10824,7 +10856,11 @@ function loadComputeNodesPanel() {
                 <button style="background:transparent;border:none;color:var(--error);cursor:pointer;font-size:14px;padding:0 6px;" title="${escHtml(t('compute_delete_btn_title')||'Remove this ComputeNode')}" aria-label="Delete ${safe}" onclick="event.preventDefault();event.stopPropagation();computeDeleteNode(${safeJ})">&times;</button>
               </span>
             </summary>
-            <table style="width:100%;border-collapse:collapse;background:var(--bg);border-top:1px solid var(--border);">${detailRows}</table>
+            <table style="width:100%;border-collapse:collapse;background:var(--bg);border-top:1px solid var(--border);">${detailRows}
+              <!-- Backend versions (GET /api/compute/nodes/{name}/versions),
+                   fetched on first expand; includes below-minimum flags. -->
+              <tr><td style="padding:2px 8px;color:var(--text2);font-size:10px;white-space:nowrap;vertical-align:top;">${escHtml(t('node_backend_versions')||'Backend versions')}</td><td style="padding:2px 8px;font-size:11px;word-break:break-all;min-width:0;"><span id="nodeBackendVersions_${safe}">${escHtml(t('node_backend_versions_loading')||'Loading backend versions…')}</span></td></tr>
+            </table>
           </details>`;
         }).join('');
     // GATE alpha.36 (operator 2026-05-10): Add ComputeNode is now a
@@ -30112,6 +30148,264 @@ function _automationOnboardingReportLoader() {
     render: report => window.onboardingReportCardHtml(report),
   });
 }
+
+// ── Requirements report card (web setup view) ─────────────────────────────────
+// requirementsReportCardHtml(report) turns the decoded
+// GET /api/automation/requirements-report body into the web setup view card:
+// each capability with its nodes (flagged nodes — node version below the
+// minimum — marked), the Automation backend minimums with their below-minimum
+// flags, and the missing list. Every value is escaped.
+const REQUIREMENTS_REPORT_LOADER = 'automation_requirements_report';
+
+function _reqReportNodeHtml(n, min) {
+  n = (n && typeof n === 'object') ? n : {};
+  const flagged = !!n.flagged;
+  const badge = flagged
+    ? `<span class="requirements-report-flag" style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(239,68,68,0.12);color:var(--error);">${escHtml(t('requirements_report_node_flagged'))}</span>`
+    : `<span class="requirements-report-ok" style="font-size:10px;padding:1px 6px;border-radius:8px;border:1px solid var(--border);color:var(--text2);">${escHtml(t('requirements_report_node_ok'))}</span>`;
+  const found = n.found
+    ? `<code style="font-size:10px;">${escHtml(String(n.found))}</code>`
+    : `<span style="color:var(--text2);font-size:11px;">${escHtml(t('requirements_report_node_not_installed'))}</span>`;
+  const required = min ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('requirements_report_minimum', [String(min)]))}</span>` : '';
+  return `<div class="requirements-report-node" style="padding:2px 0 2px 14px;min-width:0;overflow-wrap:anywhere;">${badge} ${escHtml(String(n.name || '—'))} ${found} ${required}</div>`;
+}
+
+function _reqReportCapabilityHtml(cap) {
+  cap = (cap && typeof cap === 'object') ? cap : {};
+  const min = cap.minimum_ollama || '';
+  const override = cap.override ? ` <span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(t('requirements_report_override', [String(cap.override)]))}</span>` : '';
+  const state = cap.satisfied
+    ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('requirements_report_satisfied'))}</span>`
+    : `<span class="requirements-report-flag" style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(239,68,68,0.12);color:var(--error);">${escHtml(t('requirements_report_not_satisfied'))}</span>`;
+  const nodes = (Array.isArray(cap.nodes) ? cap.nodes : []).map(n => _reqReportNodeHtml(n, min)).join('');
+  return `<div class="requirements-report-capability" style="padding:3px 0;min-width:0;overflow-wrap:anywhere;">
+    <div style="font-weight:600;">${escHtml(String(cap.name || ''))} ${min ? `<span style="color:var(--text2);font-weight:400;font-size:11px;">${escHtml(t('requirements_report_minimum', [String(min)]))}</span>` : ''}${override} ${state}</div>
+    ${nodes}</div>`;
+}
+
+function _reqReportBackendHtml(b) {
+  b = (b && typeof b === 'object') ? b : {};
+  const rows = (Array.isArray(b.backends) ? b.backends : []).map(x => {
+    x = (x && typeof x === 'object') ? x : {};
+    const flag = x.flagged ? ` <span class="requirements-report-flag" style="font-size:10px;padding:1px 6px;border-radius:8px;background:rgba(239,68,68,0.12);color:var(--error);">${escHtml(t('requirements_report_flagged'))}</span>` : '';
+    return `<div style="padding:2px 0 2px 14px;min-width:0;overflow-wrap:anywhere;">${escHtml(String(x.name || ''))} ${escHtml(t('requirements_report_minimum', [String(x.minimum || '—')]))}${flag}</div>`;
+  }).join('');
+  return `<div class="requirements-report-backend" style="padding:3px 0;min-width:0;">
+    <div style="font-weight:600;">${escHtml(String(b.name || ''))}</div>${rows}</div>`;
+}
+
+window.requirementsReportCardHtml = function(report) {
+  const refresh = `<button type="button" class="btn-secondary requirements-report-refresh" style="font-size:11px;padding:3px 10px;margin-left:8px;" ` +
+    `onclick="window._listLoaders.${REQUIREMENTS_REPORT_LOADER}.load()">${escHtml(t('requirements_report_refresh'))}</button>`;
+  const head = `<div class="cap-title">${escHtml(t('requirements_report_card_title'))}${defsLink('requirements_report_card_title')}${refresh}</div>`;
+  const wrap = body => `<div class="prd-capacity-card requirements-report-card" style="min-width:0;">${head}${body}</div>`;
+  if (!report || typeof report !== 'object') return wrap(`<div style="color:var(--text2);">${escHtml(t('requirements_report_placeholder'))}</div>`);
+  const caps = Array.isArray(report.capabilities) ? report.capabilities : [];
+  const backends = Array.isArray(report.automation_backends) ? report.automation_backends : [];
+  const missing = Array.isArray(report.missing) ? report.missing : [];
+  const missingItem = m => {
+    const text = (m && typeof m === 'object') ? (m.title || m.id || m.message || JSON.stringify(m)) : String(m);
+    return `<div class="requirements-report-missing" style="padding:3px 0 3px 14px;min-width:0;overflow-wrap:anywhere;">${escHtml(text)}</div>`;
+  };
+  const section = (titleKey, body) => `<div class="requirements-report-part" style="margin-top:8px;"><div style="font-weight:700;font-size:12px;">${escHtml(t(titleKey))}${defsLink(titleKey)}</div>${body}</div>`;
+  const capsBody = caps.length ? caps.map(_reqReportCapabilityHtml).join('')
+    : `<div style="color:var(--text2);">${escHtml(t('requirements_report_no_capabilities'))}</div>`;
+  const backBody = backends.length ? backends.map(_reqReportBackendHtml).join('')
+    : `<div style="color:var(--text2);">${escHtml(t('requirements_report_no_backends'))}</div>`;
+  const missBody = missing.length ? missing.map(missingItem).join('')
+    : `<div style="color:var(--text2);">${escHtml(t('requirements_report_all_ok'))}</div>`;
+  return wrap(
+    section('requirements_report_capabilities', capsBody) +
+    section('requirements_report_backends', backBody) +
+    section('requirements_report_missing', missBody));
+};
+
+// _requirementsReportLoader reads the requirements report in the web setup
+// view. It does not poll: the refresh button reads it again. Its failed state
+// is the list loader's banner.
+function _requirementsReportLoader() {
+  return window._listLoaders[REQUIREMENTS_REPORT_LOADER] || listLoader({
+    key: REQUIREMENTS_REPORT_LOADER, el: 'requirementsReportPanel', url: '/api/automation/requirements-report', pollMs: 0,
+    failedText: msg => t('requirements_report_failed', [msg]),
+    active: () => !!document.getElementById('requirementsReportPanel'),
+    render: report => window.requirementsReportCardHtml(report),
+  });
+}
+window.loadRequirementsReportPanel = function() { _requirementsReportLoader().load(); };
+
+// ── Model pull consent (pull-allowed toggles + publisher allowlist) ──────────
+// loadModelConsentPanel reads GET /api/automation/model-consent into
+// window._modelConsentState and renders one pull-allowed toggle per listed
+// model, an add-model row, the publisher allowlist with its chips, and a save
+// button that PUTs the whole record. Every value is escaped.
+function _modelConsentNorm() {
+  const st = (window._modelConsentState && typeof window._modelConsentState === 'object')
+    ? window._modelConsentState : { models: [], publishers: [] };
+  st.models = (Array.isArray(st.models) ? st.models : [])
+    .filter(m => m && String(m.name || '').trim() !== '')
+    .map(m => ({ name: String(m.name).trim(), publisher: String(m.publisher || '').trim(), allowed: !!m.allowed }));
+  st.publishers = (Array.isArray(st.publishers) ? st.publishers : [])
+    .map(p => String(p).trim()).filter(p => p !== '');
+  window._modelConsentState = st;
+  return st;
+}
+function _modelConsentModelRowHtml(m, i) {
+  const pub = m.publisher ? `<span style="color:var(--text2);font-size:11px;">${escHtml(t('model_consent_publisher', [m.publisher]))}</span>` : '';
+  return `<div class="model-consent-model" style="display:flex;align-items:center;gap:8px;padding:3px 0;min-width:0;overflow-wrap:anywhere;">
+    <label style="display:flex;align-items:center;gap:6px;flex:1;min-width:0;cursor:pointer;">
+      <input type="checkbox" class="model-consent-allowed" ${m.allowed ? 'checked' : ''} onchange="modelConsentToggleModel(${i}, this.checked)" />
+      <span style="overflow-wrap:anywhere;">${escHtml(m.name)}</span>
+      ${pub}
+    </label>
+    <button type="button" class="btn-icon model-consent-remove-model" style="font-size:13px;background:transparent;border:none;cursor:pointer;color:var(--error);" title="${escHtml(t('model_consent_remove_model'))}" onclick="modelConsentRemoveModel(${i})">&times;</button>
+  </div>`;
+}
+function _modelConsentPublisherChipHtml(p, i) {
+  return `<span class="model-consent-publisher" style="display:inline-flex;align-items:center;gap:5px;padding:2px 8px;margin:2px 4px 2px 0;border:1px solid var(--border);border-radius:10px;font-size:11px;min-width:0;overflow-wrap:anywhere;">${escHtml(p)} <button type="button" style="background:transparent;border:none;cursor:pointer;color:var(--error);font-size:11px;padding:0;" title="${escHtml(t('model_consent_remove_publisher'))}" onclick="modelConsentRemovePublisher(${i})">&times;</button></span>`;
+}
+window.modelConsentEditorHtml = function(consent) {
+  const st = _modelConsentNorm();
+  const models = st.models.length
+    ? st.models.map((m, i) => _modelConsentModelRowHtml(m, i)).join('')
+    : `<div style="color:var(--text2);font-size:12px;">${escHtml(t('model_consent_no_models'))}</div>`;
+  const publishers = st.publishers.length
+    ? st.publishers.map((p, i) => _modelConsentPublisherChipHtml(p, i)).join('')
+    : `<div style="color:var(--text2);font-size:12px;">${escHtml(t('model_consent_no_publishers'))}</div>`;
+  const status = (window._modelConsentStatus && typeof window._modelConsentStatus === 'object') ? window._modelConsentStatus : null;
+  const statusHtml = status ? `<div class="model-consent-status" style="font-size:11px;color:${status.error ? 'var(--error)' : 'var(--text2)'};overflow-wrap:anywhere;">${escHtml(String(status.msg || ''))}</div>` : '';
+  const part = (key, body) => `<div class="model-consent-part" style="margin-top:8px;"><div style="font-weight:700;font-size:12px;">${escHtml(t(key))}${defsLink(key)}</div>${body}</div>`;
+  const modelAddRow = `<div class="model-consent-add-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+      <input type="text" id="mcNewModelName" class="model-consent-new-name" placeholder="${escHtml(t('model_consent_model_name'))}" style="flex:1;min-width:140px;" />
+      <input type="text" id="mcNewModelPublisher" class="model-consent-new-publisher" placeholder="${escHtml(t('model_consent_publisher_optional'))}" style="flex:1;min-width:120px;" />
+      <button type="button" class="btn-secondary model-consent-add-model-btn" style="font-size:11px;padding:3px 10px;" onclick="modelConsentAddModel()">${escHtml(t('model_consent_add_model'))}</button>
+    </div>`;
+  const pubAddRow = `<div class="model-consent-add-publisher-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center;">
+      <input type="text" id="mcNewPublisher" class="model-consent-new-publisher-allow" placeholder="${escHtml(t('model_consent_publisher_name'))}" style="flex:1;min-width:140px;" />
+      <button type="button" class="btn-secondary model-consent-add-publisher-btn" style="font-size:11px;padding:3px 10px;" onclick="modelConsentAddPublisher()">${escHtml(t('model_consent_add_publisher'))}</button>
+    </div>`;
+  return `<div class="model-consent-editor" style="min-width:0;">
+    <div class="cap-title" style="margin-bottom:4px;">${escHtml(t('model_consent_card_title'))}${defsLink('model_consent_card_title')}
+      <button type="button" class="btn-secondary model-consent-refresh" style="font-size:11px;padding:3px 10px;margin-left:8px;" onclick="loadModelConsentPanel()">${escHtml(t('model_consent_refresh'))}</button></div>
+    <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('model_consent_intro'))}</div>
+    ${part('model_consent_models', models + modelAddRow)}
+    ${part('model_consent_publishers', publishers + pubAddRow)}
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+      <button type="button" class="btn-primary model-consent-save" style="font-size:12px;padding:5px 14px;" onclick="saveModelConsent()">${escHtml(t('model_consent_save'))}</button>
+      ${statusHtml}
+    </div>
+  </div>`;
+};
+function _modelConsentRender() {
+  const el = document.getElementById('modelConsentPanel');
+  if (el) el.innerHTML = window.modelConsentEditorHtml(null);
+}
+window.modelConsentToggleModel = function(i, allowed) {
+  const st = _modelConsentNorm();
+  if (st.models[i]) { st.models[i].allowed = !!allowed; window._modelConsentStatus = null; _modelConsentRender(); }
+};
+window.modelConsentRemoveModel = function(i) {
+  const st = _modelConsentNorm();
+  st.models.splice(i, 1);
+  window._modelConsentStatus = null;
+  _modelConsentRender();
+};
+window.modelConsentAddModel = function() {
+  const nameEl = document.getElementById('mcNewModelName');
+  const pubEl = document.getElementById('mcNewModelPublisher');
+  const name = String((nameEl && nameEl.value) || '').trim();
+  const publisher = String((pubEl && pubEl.value) || '').trim();
+  if (!name) return;
+  const st = _modelConsentNorm();
+  st.models.push({ name, publisher, allowed: true });
+  window._modelConsentStatus = null;
+  _modelConsentRender();
+  const el = document.getElementById('mcNewModelName');
+  if (el && 'value' in el) el.value = '';
+  const el2 = document.getElementById('mcNewModelPublisher');
+  if (el2 && 'value' in el2) el2.value = '';
+};
+window.modelConsentAddPublisher = function() {
+  const el = document.getElementById('mcNewPublisher');
+  const name = String((el && el.value) || '').trim();
+  if (!name) return;
+  const st = _modelConsentNorm();
+  if (st.publishers.indexOf(name) === -1) st.publishers.push(name);
+  window._modelConsentStatus = null;
+  _modelConsentRender();
+  const el2 = document.getElementById('mcNewPublisher');
+  if (el2 && 'value' in el2) el2.value = '';
+};
+window.modelConsentRemovePublisher = function(i) {
+  const st = _modelConsentNorm();
+  st.publishers.splice(i, 1);
+  window._modelConsentStatus = null;
+  _modelConsentRender();
+};
+window.saveModelConsent = function() {
+  const st = _modelConsentNorm();
+  const body = { models: st.models.slice(), publishers: st.publishers.slice() };
+  window._modelConsentSaving = true;
+  apiFetch('/api/automation/model-consent', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(() => {
+      window._modelConsentState = { models: body.models, publishers: body.publishers };
+      window._modelConsentStatus = { msg: t('model_consent_saved'), error: false };
+      _modelConsentRender();
+    })
+    .catch(err => {
+      window._modelConsentStatus = { msg: t('model_consent_save_failed', [String((err && err.message) || err)]), error: true };
+      _modelConsentRender();
+    })
+    .finally(() => { window._modelConsentSaving = false; });
+};
+window.loadModelConsentPanel = function() {
+  return apiFetch('/api/automation/model-consent')
+    .then(c => {
+      c = (c && typeof c === 'object') ? c : {};
+      window._modelConsentState = {
+        models: (Array.isArray(c.models) ? c.models : []).map(m => ({
+          name: String((m && m.name) || ''), publisher: String((m && m.publisher) || ''), allowed: !!(m && m.allowed),
+        })),
+        publishers: (Array.isArray(c.publishers) ? c.publishers : []).map(p => String(p)),
+      };
+      window._modelConsentStatus = null;
+      const el = document.getElementById('modelConsentPanel');
+      if (el) el.innerHTML = window.modelConsentEditorHtml(c);
+    })
+    .catch(err => {
+      const el = document.getElementById('modelConsentPanel');
+      if (el) el.innerHTML = `<em style="color:var(--error);">${escHtml(t('model_consent_failed', [String((err && err.message) || err)]))}</em>`;
+    });
+};
+
+// ── Compute node backend versions (node detail) ──────────────────────────────
+// nodeBackendVersionsBody(d) renders the decoded
+// GET /api/compute/nodes/{name}/versions body: each backend with its version
+// (or not-installed) and its below-minimum flag from the requirements
+// report. loadNodeBackendVersions(name) fetches it into the node detail row
+// the first time the node is expanded. Every value is escaped.
+window.nodeBackendVersionsBody = function(d) {
+  d = (d && typeof d === 'object') ? d : {};
+  const backends = Array.isArray(d.backends) ? d.backends : [];
+  if (!backends.length) return `<span style="color:var(--text2);font-style:italic;">${escHtml(t('node_backend_none'))}</span>`;
+  return backends.map(b => {
+    b = (b && typeof b === 'object') ? b : {};
+    const ver = b.version
+      ? `<code style="font-size:10px;">${escHtml(String(b.version))}</code>`
+      : `<span style="color:var(--text2);font-size:11px;">${escHtml(t('node_backend_not_installed'))}</span>`;
+    const flag = b.flagged
+      ? ` <span class="node-backend-flag" style="font-size:9px;padding:1px 5px;border-radius:8px;background:rgba(239,68,68,0.12);color:var(--error);">${escHtml(t('node_backend_below_minimum'))}</span> <span style="color:var(--text2);font-size:11px;">${escHtml(t('requirements_report_minimum', [String(b.minimum || '—')]))}</span>`
+      : '';
+    return `<div style="padding:1px 0;min-width:0;overflow-wrap:anywhere;">${escHtml(String(b.name || '—'))} ${ver}${flag}</div>`;
+  }).join('');
+};
+window.loadNodeBackendVersions = function(name) {
+  const el = document.getElementById('nodeBackendVersions_' + name);
+  if (!el) return Promise.resolve();
+  el.innerHTML = `<span style="color:var(--text2);">${escHtml(t('node_backend_versions_loading'))}</span>`;
+  return apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/versions')
+    .then(d => { el.innerHTML = window.nodeBackendVersionsBody(d); })
+    .catch(err => { el.innerHTML = `<span style="color:var(--error);">${escHtml(t('node_backend_versions_failed', [String((err && err.message) || err)]))}</span>`; });
+};
 
 // _automationMergePipelineLoader polls the merge pipeline of the project the
 // card shows beside the infrastructure retry card. Its url follows the chosen
