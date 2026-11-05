@@ -230,6 +230,20 @@ type Waiter struct {
 	ReadReason string `json:"read_reason,omitempty"`
 }
 
+// VerifierCap is the verifier-only cap recorded on one node pool plus the
+// reporting figures that produced it. Effective is the cap enforced
+// (0 or absent = no verifier-only cap); Configured is the operator's
+// verifier_slots; Refusal is the gate's refusal reason when Effective fell
+// below Configured (e.g. "no fresh measurement"), empty otherwise.
+type VerifierCap struct {
+	Configured int    `json:"configured"`
+	Effective  int    `json:"effective"`
+	Refusal    string `json:"refusal,omitempty"`
+	// Held is the number of verify: leases currently on the node, parallel to
+	// the pool's Held but counting only verifier leases (see PoolStatus).
+	Held int `json:"held"`
+}
+
 // PoolStatus is one pool in a snapshot.
 type PoolStatus struct {
 	Name     string `json:"name"`
@@ -255,6 +269,11 @@ type PoolStatus struct {
 	RequestsInWindow  int       `json:"requests_in_window,omitempty"`
 	TokensInWindow    int64     `json:"tokens_in_window,omitempty"`
 	RateResetsAt      time.Time `json:"rate_resets_at,omitzero"`
+	// VerifierCap appears only on node:<name> pools that carry a verifier-only
+	// cap (SetVerifierNodeCap): configured vs effective cap, the verifier
+	// leases held on the node, and the refusal reason when the effective cap
+	// fell below the configured one.
+	VerifierCap *VerifierCap `json:"verifier_cap,omitempty"`
 }
 
 // Status is a point-in-time view of the ledger.
@@ -368,6 +387,8 @@ type Ledger struct {
 	adoptSince time.Time // when BeginAdoption was called
 
 	wedgeReported atomic.Bool // set while a lock wedge has been reported; see SnapshotWatched
+
+	verifierCaps map[string]VerifierCap // node name → verifier-only cap; see SetVerifierNodeCap
 }
 
 // New creates a ledger.
@@ -393,6 +414,7 @@ func New(opt Options) *Ledger {
 		rateUse:   map[string][]rateEntry{},
 		opt:       opt,
 		changed:   make(chan struct{}),
+		verifierCaps: map[string]VerifierCap{},
 	}
 }
 
@@ -461,6 +483,82 @@ func (l *Ledger) Limit(pool string) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.limits[pool]
+}
+
+// SetVerifierNodeCap sets the verifier-only cap on node: how many verify:
+// leases the node may hold at once, independent of the node pool's own limit
+// and of non-verifier leases (see isVerifierHolder). Cap.Effective <= 0
+// clears the cap. A verify: request whose node already holds that many
+// verify: leases is blocked until one of them releases, with a wait reason
+// naming the cap and the holders; requests without a verify: holder are
+// unaffected. Set when the daemon knows the node's configured verifier_slots
+// and the headroom gate's verdict for them, and again whenever either
+// changes.
+func (l *Ledger) SetVerifierNodeCap(node string, cap VerifierCap) {
+	if node == "" {
+		return
+	}
+	l.mu.Lock()
+	if cap.Effective <= 0 {
+		delete(l.verifierCaps, node)
+	} else {
+		cap.Held = 0
+		l.verifierCaps[node] = cap
+	}
+	l.signalChangedLocked()
+	l.dispatchLocked()
+	l.mu.Unlock()
+}
+
+// VerifierNodeCap reports the verifier-only cap recorded on node, or ok false
+// when the node carries none.
+func (l *Ledger) VerifierNodeCap(node string) (VerifierCap, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c, ok := l.verifierCaps[node]
+	if ok {
+		c.Held = l.verifierHeldOnLocked(node)
+	}
+	return c, ok
+}
+
+// isVerifierHolder reports whether a lease holder is a verifier (the
+// autonomous verifier or guardrail judge admits under VerifyHolder,
+// "verify:<task id>"). Only these leases count against a node's verifier-only
+// cap; the executor pin (one worker session per node) is a different rule and
+// counts every lease as before.
+func isVerifierHolder(holder string) bool {
+	return strings.HasPrefix(holder, "verify:")
+}
+
+// verifierHeldOnLocked counts the verify: leases running on node: leases that
+// name the node whether or not they sit inside its pool (an adopted lease held
+// outside a full pool, Lease.NodeOverflow, still runs there). Non-verifier
+// leases never count.
+func (l *Ledger) verifierHeldOnLocked(node string) int {
+	n := 0
+	for h, ls := range l.leases {
+		if isVerifierHolder(h) && ls.Node == node {
+			n++
+		}
+	}
+	return n
+}
+
+// verifierHoldersLocked is the sorted holder list behind
+// verifierHeldOnLocked, for wait reasons.
+func (l *Ledger) verifierHoldersLocked(node string) string {
+	var hs []string
+	for h, ls := range l.leases {
+		if isVerifierHolder(h) && ls.Node == node {
+			hs = append(hs, h)
+		}
+	}
+	sort.Strings(hs)
+	if len(hs) == 0 {
+		return "no verifier"
+	}
+	return strings.Join(hs, ",")
 }
 
 func (l *Ledger) heldLocked(pool string) int {
@@ -614,6 +712,12 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
+		}
+		if node, ok := strings.CutPrefix(p, "node:"); ok && isVerifierHolder(req.Holder) {
+			if lim := l.verifierCaps[node]; lim.Effective > 0 && l.verifierHeldOnLocked(node) >= lim.Effective {
+				return fmt.Sprintf("waiting for node %s verifier cap: %d/%d verifiers in use, held by %s",
+					node, l.verifierHeldOnLocked(node), lim.Effective, l.verifierHoldersLocked(node))
+			}
 		}
 		if why := l.rateBlockLocked(p, now); why != "" {
 			return why
@@ -1217,6 +1321,10 @@ func (l *Ledger) Snapshot() Status {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
 		if node, ok := strings.CutPrefix(p, "node:"); ok {
 			ps.Overflow = len(l.overflowLocked(node))
+			if c, ok := l.verifierCaps[node]; ok {
+				c.Held = l.verifierHeldOnLocked(node)
+				ps.VerifierCap = &c
+			}
 		}
 		if l.opt.External != nil {
 			ps.External = l.opt.External(p)
