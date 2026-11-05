@@ -60,7 +60,9 @@ Automata share the hardware fairly.
   pools a task would use (its planner lease excludes the `host` pool, since
   the planning session itself already counts against it); a saturated pool
   parks the PRD in `planning` with a visible wait reason instead of failing
-  the attempt.
+  the attempt. Changing the Automaton's decomposition profile or model while
+  the run is queued re-points that queue entry at the new pool without
+  starting a fresh attempt — see "Retargeting while queued" below.
 - **Waiting on the outside releases the slot.** A worker parked on an
   external condition (long CI run, deploy, upstream review) returns its
   capacity slot for the wait and gets it back through the normal queue when
@@ -330,6 +332,28 @@ or rejecting the PRD drops the planner from the queue immediately —
 reported as "decompose cancelled", and not consuming the decompose retry
 budget. The planner ranks after workers and verifiers, so planning never
 starves running work.
+
+### Retargeting while queued
+
+Changing the Automaton's decomposition pair (profile or model) with
+`set_llm` while its planning run is still in the queue retargets that run's
+single queue entry in place to the pool the new pair resolves to (outcome
+`requeued`): the old queue slot is cancelled, the run is re-queued on the new
+pool, and the wait reason names the pool the run is now waiting on. The wait
+budget is not reset — the run keeps the time bound it was admitted with — and
+no new attempt starts, so the decompose retry budget is untouched. A run that
+already started (holds a live lease) is left alone and the new pair applies
+from the next planning run (`deferred_to_next_run`). Re-targeting an entry
+that already sits on the target pool is a no-op, so changing the pair twice
+leaves exactly one queue entry and no leaked capacity.
+
+Workers get the same move: when a task that is `waiting_capacity` is
+re-pointed with `set_task_llm` / `set_story_llm` (or an Automaton-level
+`set_llm`) while `autonomous.override_queued_tasks` is on, its queued
+request is retargeted to the new pool and reported with
+`capacity_moved: true` (see `docs/operations.md`, the LLM override
+section, and [`autonomous-planning.md`](autonomous-planning.md) for the
+queued-versus-started behaviour and the changed / left-alone report).
 
 ## Park on an external condition
 
