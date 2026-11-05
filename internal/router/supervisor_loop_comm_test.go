@@ -196,3 +196,38 @@ func TestSupervisorLoopComm_ParityTableEntry(t *testing.T) {
 		}
 	}
 }
+
+// The bare verbs answer without the autonomous prefix.
+func TestSupervisorLoopCommBareVerbs(t *testing.T) {
+	for _, text := range []string{"supervisor jobs", "supervisor-loop jobs", "supervisor_loop jobs"} {
+		_, port := laneFillCommDaemon(t, http.StatusOK, supervisorLoopCommJobsBody)
+		r := setupPeerRouter(t, port)
+		out := strings.Join(r.HandleTestMessage(text), " ")
+		if !strings.Contains(out, "Supervisor loop on") {
+			t.Errorf("%q must answer the jobs read; got %q", text, out)
+		}
+	}
+	log, port := laneFillCommDaemon(t, http.StatusOK, supervisorLoopCommRunsBody)
+	r := setupPeerRouter(t, port)
+	_ = strings.Join(r.HandleTestMessage("supervisor runs job=draft_spec outcome=ok"), " ")
+	if log.path != "/api/supervisor-loop/runs" || !strings.Contains(log.query, "job=draft_spec") || !strings.Contains(log.query, "outcome=ok") {
+		t.Errorf("bare runs filter: path=%s query=%q", log.path, log.query)
+	}
+	_, port = laneFillCommDaemon(t, http.StatusNotFound, `{"error":"unknown job nosuchjob"}`)
+	r = setupPeerRouter(t, port)
+	got := strings.Join(r.HandleTestMessage("supervisor run job=nosuchjob"), " ")
+	if !strings.Contains(got, "nosuchjob") {
+		t.Errorf("bare run of an unknown job must surface the error, got %q", got)
+	}
+}
+
+// configure supervisor_loop.<key>=<value> goes through the generic configure path.
+func TestSupervisorLoopConfigureVerb(t *testing.T) {
+	r := setupPeerRouter(t, 0)
+	var gotKey, gotVal string
+	r.SetConfigureFunc(func(key, value string) error { gotKey, gotVal = key, value; return nil })
+	r.HandleTestMessage("configure supervisor_loop.enabled=false")
+	if gotKey != "supervisor_loop.enabled" || gotVal != "false" {
+		t.Errorf("configure passed %q=%q", gotKey, gotVal)
+	}
+}

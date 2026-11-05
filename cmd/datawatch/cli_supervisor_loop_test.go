@@ -6,9 +6,12 @@
 package main
 
 import (
+	"github.com/dmz006/datawatch/internal/config"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -41,9 +44,9 @@ func supervisorLoopDaemon(t *testing.T, status int, body string) (reqMethod, req
 		func() string { mu.Lock(); defer mu.Unlock(); return raw }
 }
 
-func supervisorLoopAutonomousCmd() *cobra.Command {
-	c := &cobra.Command{Use: "autonomous"}
-	c.AddCommand(newAutonomousSupervisorLoopCmd())
+func supervisorLoopRootCmd() *cobra.Command {
+	c := &cobra.Command{Use: "datawatch"}
+	c.AddCommand(newSupervisorLoopCmd())
 	c.SilenceUsage = true
 	c.SilenceErrors = true
 	return c
@@ -51,7 +54,7 @@ func supervisorLoopAutonomousCmd() *cobra.Command {
 
 func runSupervisorLoopCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	c := supervisorLoopAutonomousCmd()
+	c := supervisorLoopRootCmd()
 	c.SetArgs(append([]string{"supervisor-loop"}, args...))
 	out := &strings.Builder{}
 	c.SetOut(out)
@@ -68,16 +71,18 @@ const supervisorLoopRunsBody = `{"runs":[
   {"job":"draft_spec","outcome":"ok","result":"drafted spec v2","started":"2026-11-01T10:00:00Z","duration_ms":1200},
   {"job":"draft_spec","outcome":"escalated","validator_failures":["spec too short"],"retries":3,"escalations":1,"started":"2026-11-01T09:00:00Z"}]}`
 
-func TestSupervisorLoopCLIRegisteredUnderAutonomous(t *testing.T) {
-	found := false
+func TestSupervisorLoopCLIRegisteredTopLevel(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), "newSupervisorLoopCmd()") {
+		t.Fatal("main.go does not register the top-level supervisor-loop command")
+	}
 	for _, sub := range newAutonomousCmd().Commands() {
 		if sub.Name() == "supervisor-loop" {
-			found = true
-			break
+			t.Fatal("supervisor-loop must be top-level, not nested under autonomous")
 		}
-	}
-	if !found {
-		t.Fatal("supervisor-loop is not registered under the autonomous command")
 	}
 }
 
@@ -201,5 +206,30 @@ func TestSupervisorLoopCLIServerErrorExitCode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "autonomous disabled") {
 		t.Errorf("error %q does not carry the status and the server message", err)
+	}
+}
+
+// `datawatch config set supervisor_loop.<key> <value>` has no key list of its
+// own, so every key reaches the daemon as typed.
+func TestSupervisorLoopCLIConfigSetKeys(t *testing.T) {
+	cases := []struct {
+		key, value string
+		want       any
+	}{
+		{"supervisor_loop.enabled", "true", true},
+		{"supervisor_loop.validator_retries", "4", float64(4)},
+		{"supervisor_loop.run_retention", "200", float64(200)},
+	}
+	for _, c := range cases {
+		d := startInfraRetryConfigDaemon(t)
+		if _, err := captureEscalationStdout(t, func() error {
+			return runConfigSet(&config.Config{}, c.key, c.value)
+		}); err != nil {
+			t.Errorf("%s: %v", c.key, err)
+			continue
+		}
+		if got := d.config[c.key]; !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s: daemon stored %#v, want %#v", c.key, got, c.want)
+		}
 	}
 }

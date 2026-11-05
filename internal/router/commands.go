@@ -1371,6 +1371,13 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdAutonomous, Text: rest}
 
+	// The supervisor loop verbs also answer without the autonomous prefix:
+	// "supervisor jobs", "supervisor runs [job=X] [outcome=Y]" and
+	// "supervisor run job=NAME" dispatch to the same handler.
+	case strings.HasPrefix(lower, "supervisor ") || strings.HasPrefix(lower, "supervisor-loop ") ||
+		strings.HasPrefix(lower, "supervisor_loop "):
+		return Command{Type: CmdAutonomous, Text: strings.TrimSpace(text)}
+
 	// Account usage calculator:
 	//   usage
 	//   usage advice [variant=V] [policy=P] [lanes=N]

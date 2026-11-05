@@ -24,7 +24,7 @@ const (
 	// supervisorLoopUsage is the usage for the supervisor loop comm verbs.
 	// jobs and runs take no positional arguments; the run verb takes its
 	// options as key=value pairs.
-	supervisorLoopUsage = "usage: autonomous supervisor jobs | autonomous supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | autonomous supervisor run job=NAME [input=TEXT] [candidates=A,B]"
+	supervisorLoopUsage = "usage: supervisor jobs | supervisor runs [job=NAME] [outcome=RESULT] [limit=N] | supervisor run job=NAME [input=TEXT] [candidates=A,B]"
 )
 
 // SupervisorLoopCommVerbs lists the supervisor loop comm verbs for the

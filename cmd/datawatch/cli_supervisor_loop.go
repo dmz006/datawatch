@@ -1,9 +1,9 @@
-// datawatch autonomous supervisor-loop — the supervisor loop surface over the
+// datawatch supervisor-loop — the supervisor loop surface over the
 // CLI:
 //
-//	datawatch autonomous supervisor-loop jobs [--json]
-//	datawatch autonomous supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--json]
-//	datawatch autonomous supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
+//	datawatch supervisor-loop jobs [--json]
+//	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--json]
+//	datawatch supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
 //
 // Thin REST proxies: the jobs and runs reads render the daemon's bodies,
 // and run triggers one job run now (404 for an unknown job name).
@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newAutonomousSupervisorLoopCmd() *cobra.Command {
+func newSupervisorLoopCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "supervisor-loop",
 		Short: "Supervisor loop: jobs, runs and one manual run",
@@ -37,13 +37,13 @@ func newAutonomousSupervisorLoopCmd() *cobra.Command {
 The reads print the daemon's text rendering; --json prints the raw REST
 body untouched.`,
 	}
-	c.AddCommand(newAutonomousSupervisorLoopJobsCmd())
-	c.AddCommand(newAutonomousSupervisorLoopRunsCmd())
-	c.AddCommand(newAutonomousSupervisorLoopRunCmd())
+	c.AddCommand(newSupervisorLoopJobsCmd())
+	c.AddCommand(newSupervisorLoopRunsCmd())
+	c.AddCommand(newSupervisorLoopRunCmd())
 	return c
 }
 
-func newAutonomousSupervisorLoopJobsCmd() *cobra.Command {
+func newSupervisorLoopJobsCmd() *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
 		Use:   "jobs",
@@ -76,7 +76,7 @@ func newAutonomousSupervisorLoopJobsCmd() *cobra.Command {
 	return c
 }
 
-func newAutonomousSupervisorLoopRunsCmd() *cobra.Command {
+func newSupervisorLoopRunsCmd() *cobra.Command {
 	var asJSON bool
 	var job, outcome string
 	var limit int
@@ -125,7 +125,7 @@ func newAutonomousSupervisorLoopRunsCmd() *cobra.Command {
 	return c
 }
 
-func newAutonomousSupervisorLoopRunCmd() *cobra.Command {
+func newSupervisorLoopRunCmd() *cobra.Command {
 	var asJSON bool
 	var input string
 	var candidates []string
@@ -183,4 +183,3 @@ list, for the model jobs that choose among candidates (repeatable).
 	c.Flags().StringArrayVar(&candidates, "candidates", nil, "a candidate, for the model jobs that choose among candidates (repeatable)")
 	return c
 }
-
