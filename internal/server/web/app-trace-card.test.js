@@ -423,3 +423,19 @@ test('the Monitor stats view draws the tracing card only when trace_enabled is r
   }
   for (const k of STATS_KEYS) assert.ok(src.includes("'" + k + "'") || src.includes('`' + k), 'uses ' + k);
 });
+
+// The Errors-only filter must agree with the daemon's trace.IsError, which
+// treats an outcome that starts with "error" or "fail" as a failure.
+test('traceEventIsError mirrors the daemon: prefix match on error/fail, exact denied', () => {
+  const sb = loadApp({});
+  const isErr = (outcome, kind = 'tool_result') => call(sb, 'window.traceEventIsError(_v)', { kind, outcome });
+  assert.equal(isErr('error: no such file'), true);
+  assert.equal(isErr('failed: exit 1'), true);
+  assert.equal(isErr('Error'), true);
+  assert.equal(isErr('denied'), true);
+  assert.equal(isErr('boom', 'error'), true);
+  assert.equal(isErr('ok'), false);
+  assert.equal(isErr('denied by policy'), false);
+  assert.equal(isErr('timeout'), false);
+  assert.equal(isErr(''), false);
+});

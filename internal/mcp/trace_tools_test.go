@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 func traceToolServer(t *testing.T, status int, body string) (*Server, *string) {
@@ -118,6 +119,57 @@ func TestTraceTools_ProxyRoutesAndQuery(t *testing.T) {
 	}
 	if res, _ = s.handleTraceCoverage(ctx, callReq(map[string]any{"backend": "ollama"})); res.IsError || *got != "GET /api/trace/coverage?backend=ollama" {
 		t.Errorf("coverage proxied %q", *got)
+	}
+}
+
+func TestTraceStatsTool_SchemaCapabilityAndProxy(t *testing.T) {
+	tool := (&Server{}).toolTraceStats()
+	if tool.Name != "trace_stats" {
+		t.Fatalf("name = %q", tool.Name)
+	}
+	if tool.Annotations.ReadOnlyHint == nil || !*tool.Annotations.ReadOnlyHint {
+		t.Error("trace_stats must be read-only")
+	}
+	if len(tool.InputSchema.Properties) != 0 || len(tool.InputSchema.Required) != 0 {
+		t.Errorf("trace_stats takes no parameters, got %v", tool.InputSchema.Properties)
+	}
+	if strings.Contains(tool.Description, "PRD") {
+		t.Error("trace_stats description must say Automaton, not PRD")
+	}
+	if got := federation.MCPToolCap["trace_stats"]; got != federation.CapAnalyticsRead {
+		t.Errorf("capability = %q, want %q", got, federation.CapAnalyticsRead)
+	}
+
+	srv := New("testhost", nil, &config.MCPConfig{Enabled: true}, t.TempDir(), Options{Version: "test"})
+	listed, err := srv.ListTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, tl := range listed {
+		found = found || tl.Name == "trace_stats"
+	}
+	if !found {
+		t.Error("trace_stats is not registered")
+	}
+
+	s, got := traceToolServer(t, http.StatusOK, `{"sessions":2,"events":9,"error_events":1}`)
+	res, err := s.handleTraceStats(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if *got != "GET /api/trace/stats?" {
+		t.Errorf("proxied %q, want GET /api/trace/stats", *got)
+	}
+	if automationText(t, res) != `{"sessions":2,"events":9,"error_events":1}` {
+		t.Errorf("body not relayed: %q", automationText(t, res))
+	}
+}
+
+func TestTraceStatsTool_ReportsAFailedRead(t *testing.T) {
+	s, _ := traceToolServer(t, http.StatusInternalServerError, "boom")
+	if res, err := s.handleTraceStats(context.Background(), callReq(nil)); err != nil || res == nil || !res.IsError {
+		t.Fatalf("err=%v res=%+v, want a tool error", err, res)
 	}
 }
 

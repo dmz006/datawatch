@@ -28218,12 +28218,14 @@ window._traceCards = window._traceCards || {};
 function _traceList(v) { return Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []; }
 function _traceNum(v) { const n = Number(v); return isFinite(n) ? n : 0; }
 
-// traceEventIsError mirrors the daemon's notion of an error event.
+// traceEventIsError mirrors the daemon's trace.IsError: an error-kind event,
+// an outcome that starts with "error" or "fail" (so "error: no such file" and
+// "failed: exit 1" count), or the outcome "denied".
 function traceEventIsError(ev) {
   if (!ev) return false;
   if (ev.kind === 'error') return true;
-  const o = String(ev.outcome || '').toLowerCase();
-  return o === 'error' || o === 'failed' || o === 'denied' || o === 'timeout';
+  const o = String(ev.outcome || '').trim().toLowerCase();
+  return o.startsWith('error') || o.startsWith('fail') || o === 'denied';
 }
 window.traceEventIsError = traceEventIsError;
 

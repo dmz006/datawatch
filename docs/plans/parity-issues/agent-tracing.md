@@ -54,7 +54,7 @@ Add the strings to **all five bundles** (`en`, `de`, `es`, `fr`, `ja`): the `tra
 | Surface | Included | Reason or where |
 |---|---|---|
 | REST | Yes | the five `GET /api/trace/*` routes above; `tracing` in `GET`/`PUT /api/config` |
-| MCP | Yes | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`; stats are on `get_stats` |
+| MCP | Yes | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`, `trace_stats`; the same numbers are on `get_stats` |
 | CLI | Yes | `datawatch trace session|automaton|rollup|coverage` |
 | comm channel | Yes | `trace session|automaton|rollup|coverage`; `configure tracing.<key>=<value>` |
 | YAML/config | Yes | the `tracing` block in `docs/config-reference.yaml` |

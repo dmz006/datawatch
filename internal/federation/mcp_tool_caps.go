@@ -245,6 +245,7 @@ var MCPToolCap = map[string]string{
 	"trace_automaton":              CapAnalyticsRead,
 	"trace_rollup":                 CapAnalyticsRead,
 	"trace_coverage":               CapAnalyticsRead,
+	"trace_stats":                  CapAnalyticsRead,
 	"cost_summary":                 CapAnalyticsRead,
 	"cost_usage":                   CapAnalyticsRead,
 	"council_config_get":           CapCouncilRead,

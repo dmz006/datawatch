@@ -40,7 +40,7 @@ Shipped in: the release that carries this change (the merge helper records the n
 | Surface | Included | Reason or where |
 |---|---|---|
 | REST | Yes | `GET /api/trace/session/{id}`, `/api/trace/automaton/{id}`, `/api/trace/rollup`, `/api/trace/coverage`, `/api/trace/stats`; `tracing` in `GET`/`PUT /api/config` |
-| MCP | Yes | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`. `/api/trace/stats` has no tool: it is an observability read, also on `get_stats` |
+| MCP | Yes | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`, `trace_stats` (the observability read of `/api/trace/stats`, also on `get_stats`) |
 | CLI | Yes | `datawatch trace session|automaton|rollup|coverage` |
 | comm channel | Yes | `trace session|automaton|rollup|coverage`; `configure tracing.<key>=<value>` |
 | YAML/config | Yes | the `tracing` block in `docs/config-reference.yaml` |
