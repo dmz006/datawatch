@@ -86,3 +86,13 @@ Implemented as `classifier.Gate` (acquire a slot of pool `node:<node>`, return a
 and `classifier.WithGate`. A nil gate, a refusal, or an unreachable pool is a typed
 `*GateError`, which is an `infra` block; a classify call is never run outside the limit.
 Wiring `Gate` to the capacity ledger is not part of this change.
+
+## Model sourcing
+
+The judge-model publisher allowlist, the pinned entries (model, publisher, revision,
+sha256) and the operator confirmation with an audit entry are provided by the model-pull
+consent work (the requirements Automaton), not by this Automaton.
+
+The classifier here takes the allowlist as an interface: a function that answers whether a
+model is allowed. It ships with no allowlist content: no model, publisher or pin is named
+or defaulted in this change.
