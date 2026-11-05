@@ -264,7 +264,7 @@ All rows are gated on `autonomous.questions.enabled` (off by default; `503` nami
 | `GET /api/trace/automaton/{id}` | `trace_automaton` | Complete | Events of every session that ran for an Automaton, ordered by time, plus the Automaton roll-up. Same filters. CLI `datawatch trace automaton <id>`, comm `trace automaton <id>`. |
 | `GET /api/trace/rollup` | `trace_rollup` | Complete | Roll-ups along `dimension=session\|task\|story\|automaton\|agent\|backend` (default session); `key` keeps one group. CLI `datawatch trace rollup`, comm `trace rollup`. |
 | `GET /api/trace/coverage` | `trace_coverage` | Complete | How much of each session's backend activity the trace captures (`full`, `partial`, `events-only`, `unknown`) and the counts per backend; `backend` narrows. CLI `datawatch trace coverage`, comm `trace coverage`. The `tracing.*` settings (mode, arg_cap_bytes, retention_days, backends) are read and changed through `GET`/`PUT /api/config`, `get_config` and `config_set`. |
-| `GET /api/trace/stats` | — | Not in MCP | Store totals (sessions, events, error events) and write counters since start (appended, failed writes, pruned). Also the Monitor Tracing card, the `trace_*` fields of `GET /api/stats` and the `datawatch_trace_*` Prometheus series. Observability read, not an agent tool; the same numbers are on `get_stats`. Needs the analytics read capability. |
+| `GET /api/trace/stats` | `trace_stats` | Complete | Store totals (sessions, events, error events) and write counters since start (appended, failed writes, pruned). Also the Monitor Tracing card, the `trace_*` fields of `GET /api/stats` and `get_stats`, and the `datawatch_trace_*` Prometheus series. Takes no parameters; needs the analytics read capability. |
 
 ### Cooldown
 

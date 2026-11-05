@@ -70,7 +70,9 @@ func TestAppendReadIndex(t *testing.T) {
 func TestAppendIdempotent(t *testing.T) {
 	st, dir := newTestStore(t, Settings{})
 	evs := []Event{sev("s", KindToolCall, "bash", storeNow), sev("s", KindToolCall, "read", storeNow)}
-	st.Append(evs...)
+	if _, err := st.Append(evs...); err != nil {
+		t.Fatal(err)
+	}
 	n, _ := st.Append(evs...)
 	if n != 0 {
 		t.Fatalf("duplicate append wrote %d", n)
@@ -97,7 +99,9 @@ func TestAppendRedacts(t *testing.T) {
 	st, dir := newTestStore(t, Settings{Mode: ModeFull})
 	ev := sev("s", KindToolCall, "bash", storeNow)
 	ev.ArgSummary = "cat /work/proj/a.go " + homeDir + "/bob/.ssh/x"
-	st.Append(ev)
+	if _, err := st.Append(ev); err != nil {
+		t.Fatal(err)
+	}
 	b, _ := os.ReadFile(filepath.Join(dir, "trace", "s.jsonl"))
 	if strings.Contains(string(b), "/work/proj") || strings.Contains(string(b), "bob") {
 		t.Fatalf("not redacted: %s", b)
@@ -115,7 +119,9 @@ func TestReadFilters(t *testing.T) {
 	c := sev("s", KindToolResult, "bash", storeNow.Add(2*time.Second))
 	c.Outcome = "failed: exit 1"
 	d := sev("s", KindError, "", storeNow.Add(3*time.Second))
-	st.Append(a, b, c, d)
+	if _, err := st.Append(a, b, c, d); err != nil {
+		t.Fatal(err)
+	}
 	cases := []struct {
 		f    Filter
 		want int
@@ -142,13 +148,17 @@ func TestPruneRetention(t *testing.T) {
 	st, dir := newTestStore(t, Settings{RetentionDays: 7})
 	old := storeNow.Add(-8 * 24 * time.Hour)
 	edge := storeNow.Add(-7 * 24 * time.Hour) // exactly at cutoff: kept
-	st.Append(
+	if _, err := st.Append(
 		sev("mixed", KindToolCall, "bash", old),
 		sev("mixed", KindToolCall, "read", edge),
 		sev("mixed", KindError, "x", storeNow),
 		sev("stale", KindToolCall, "bash", old),
-	)
-	st.SetCoverage("mixed", CoverageFull)
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetCoverage("mixed", CoverageFull); err != nil {
+		t.Fatal(err)
+	}
 	n, err := st.Prune()
 	if err != nil || n != 2 {
 		t.Fatalf("prune: %d %v", n, err)
@@ -175,7 +185,9 @@ func TestPruneRetention(t *testing.T) {
 
 func TestPruneDefaultRetention(t *testing.T) {
 	st, _ := newTestStore(t, Settings{})
-	st.Append(sev("a", KindToolCall, "x", storeNow.Add(-15*24*time.Hour)), sev("a", KindToolCall, "y", storeNow.Add(-13*24*time.Hour)))
+	if _, err := st.Append(sev("a", KindToolCall, "x", storeNow.Add(-15*24*time.Hour)), sev("a", KindToolCall, "y", storeNow.Add(-13*24*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
 	if n, _ := st.Prune(); n != 1 {
 		t.Fatalf("default retention pruned %d", n)
 	}
@@ -183,7 +195,9 @@ func TestPruneDefaultRetention(t *testing.T) {
 
 func TestSessionIDPathSafe(t *testing.T) {
 	st, dir := newTestStore(t, Settings{})
-	st.Append(sev("../evil/x", KindToolCall, "bash", storeNow))
+	if _, err := st.Append(sev("../evil/x", KindToolCall, "bash", storeNow)); err != nil {
+		t.Fatal(err)
+	}
 	entries, _ := os.ReadDir(filepath.Join(dir, "trace"))
 	for _, e := range entries {
 		if e.IsDir() {
@@ -200,8 +214,12 @@ func TestSessionIDPathSafe(t *testing.T) {
 
 func TestStoreStatsCounters(t *testing.T) {
 	st, _ := newTestStore(t, Settings{Mode: ModeFull})
-	st.Append(sev("a", KindToolCall, "bash", storeNow), sev("a", KindToolCall, "bash", storeNow.Add(time.Second)))
-	st.Append(sev("a", KindToolCall, "bash", storeNow)) // duplicate: not counted
+	if _, err := st.Append(sev("a", KindToolCall, "bash", storeNow), sev("a", KindToolCall, "bash", storeNow.Add(time.Second))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Append(sev("a", KindToolCall, "bash", storeNow)); err != nil { // duplicate: not counted
+		t.Fatal(err)
+	}
 	if _, err := st.Append(Event{Name: "no session"}); err == nil {
 		t.Fatal("event without a session id must be rejected")
 	}

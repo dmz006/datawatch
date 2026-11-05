@@ -67,6 +67,17 @@ Give it a goal. It splits the goal into steps, runs them, checks each result, an
 
 More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/automaton-parallel-tasks.md) · [questions](docs/howto/operator-questions-answering.md) · [priority by kind + defect intake](docs/howto/autonomous-priority-by-kind.md)
 
+### See what agents did
+
+Agent tracing records each tool call, model request, state change and permission decision as a timeline you can read per session or per Automaton.
+
+- Reads one session or a whole Automaton in order, with filters for tool, backend and errors
+- Rolls up time, errors and tokens by session, task, story, agent or backend
+- Shows how much of each backend's activity the trace captures
+- Off, summary (default) or full mode under `tracing.*` in the config
+
+More: [how-to](docs/howto/agent-tracing.md) · [configuration](docs/operations.md) · [MCP tools](docs/cursor-mcp.md)
+
 ### Choose where AI runs
 
 - Add any computer, GPU machine or cluster as a place to run models

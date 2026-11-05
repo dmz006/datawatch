@@ -121,3 +121,37 @@ func TestTraceParity_TracingSettingsReachableThroughConfigAPI(t *testing.T) {
 		}
 	}
 }
+
+// GET /api/trace/stats is the observability read of the trace store. It is
+// not one of the four trace views (no CLI subcommand or comm verb: the CLI
+// and comm surfaces get the same numbers from the stats command), but the
+// Monitoring Rule gives it a REST route, an OpenAPI entry and an MCP tool
+// with the analytics read capability like the other subsystem stats reads.
+func TestTraceParity_StatsSurfaces(t *testing.T) {
+	serverSrc := readRepoFile(t, "internal/server/server.go")
+	openapi := readRepoFile(t, "internal/server/web/openapi.yaml")
+	if !strings.Contains(serverSrc, `apiMux.HandleFunc("/api/trace/stats"`) {
+		t.Error("REST route /api/trace/stats is not registered")
+	}
+	if !strings.Contains(openapi, "  /api/trace/stats:") {
+		t.Error("openapi.yaml has no entry for /api/trace/stats")
+	}
+	mcpSrv := mcp.New("testhost", nil, &config.MCPConfig{Enabled: true}, t.TempDir(), mcp.Options{Version: "test"})
+	listed, err := mcpSrv.ListTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, tl := range listed {
+		found = found || tl.Name == "trace_stats"
+	}
+	if !found {
+		t.Error("MCP tool trace_stats is not registered")
+	}
+	if c, ok := federation.RequiredCapForMCPTool("trace_stats"); !ok || c != federation.CapAnalyticsRead {
+		t.Errorf("trace_stats federation capability = %q (found %v), want %q", c, ok, federation.CapAnalyticsRead)
+	}
+	if !strings.Contains(readRepoFile(t, "docs/api-mcp-mapping.md"), "| `GET /api/trace/stats` | `trace_stats` |") {
+		t.Error("docs/api-mcp-mapping.md does not map GET /api/trace/stats to trace_stats")
+	}
+}

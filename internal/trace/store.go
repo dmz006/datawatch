@@ -313,23 +313,32 @@ func (e *IndexEntry) add(ev Event) {
 	}
 }
 
+// writeEvents encodes evs as one JSON line each and flushes them to f,
+// returning the first marshal or write error.
+func writeEvents(f *os.File, evs []Event) error {
+	w := bufio.NewWriter(f)
+	for _, ev := range evs {
+		b, err := json.Marshal(ev)
+		if err != nil {
+			return err
+		}
+		if _, err := w.Write(b); err != nil {
+			return err
+		}
+		if err := w.WriteByte('\n'); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
 func (st *Store) appendFile(session string, evs []Event) error {
 	f, err := os.OpenFile(st.sessionPath(session), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriter(f)
-	for _, ev := range evs {
-		b, err := json.Marshal(ev)
-		if err != nil {
-			_ = f.Close()
-			return err
-		}
-		w.Write(b)
-		w.WriteByte('\n')
-	}
-	if err := w.Flush(); err != nil {
-		_ = f.Close()
+	if err := writeEvents(f, evs); err != nil {
+		_ = f.Close() // the write error is the one worth reporting
 		return err
 	}
 	return f.Close()
@@ -359,7 +368,7 @@ func (st *Store) readFile(session string) ([]Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only handle: a close error is not actionable
 	var out []Event
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 64*1024), 8*1024*1024)
@@ -473,18 +482,8 @@ func (st *Store) rewrite(path string, evs []Event) error {
 	if err != nil {
 		return err
 	}
-	w := bufio.NewWriter(f)
-	for _, ev := range evs {
-		b, err := json.Marshal(ev)
-		if err != nil {
-			_ = f.Close()
-			return err
-		}
-		w.Write(b)
-		w.WriteByte('\n')
-	}
-	if err := w.Flush(); err != nil {
-		_ = f.Close()
+	if err := writeEvents(f, evs); err != nil {
+		_ = f.Close() // the write error is the one worth reporting
 		return err
 	}
 	if err := f.Close(); err != nil {

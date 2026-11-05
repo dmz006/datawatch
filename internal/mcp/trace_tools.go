@@ -5,6 +5,7 @@
 //	trace_automaton GET /api/trace/automaton/{id}
 //	trace_rollup    GET /api/trace/rollup
 //	trace_coverage  GET /api/trace/coverage
+//	trace_stats     GET /api/trace/stats
 //
 // The tracing.* settings are read and changed through the config tools
 // (get_config, config_set), like every other setting.
@@ -151,4 +152,17 @@ func (s *Server) handleTraceCoverage(_ context.Context, req mcpsdk.CallToolReque
 		q.Set("backend", strings.TrimSpace(v))
 	}
 	return s.traceProxy("trace_coverage", "/api/trace/coverage", q)
+}
+
+// ── trace_stats ─────────────────────────────────────────────────────────────
+
+func (s *Server) toolTraceStats() mcpsdk.Tool {
+	return mcpsdk.NewTool("trace_stats",
+		mcpsdk.WithDescription("Read the trace store's totals (sessions, events, error events, time of the last event) and its write counters since the daemon started (appended, failed writes, pruned). Takes no parameters. Read-only; same data as GET /api/trace/stats and the trace_* fields of get_stats."),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+
+func (s *Server) handleTraceStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.traceProxy("trace_stats", "/api/trace/stats", nil)
 }

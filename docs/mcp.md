@@ -1018,7 +1018,7 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
 
 
 
-### `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`
+### `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`, `trace_stats`
 
 Read-only views of the agent trace the daemon records (tool calls, results, model requests, state changes, capability and permission decisions, loop warnings, errors). Each proxies the matching `GET /api/trace/*` route; event text is redacted when it is stored.
 
@@ -1028,6 +1028,7 @@ Read-only views of the agent trace the daemon records (tool calls, results, mode
 | `trace_automaton` | `automaton` (required); same optional filters | Events of every session that ran for the Automaton, plus its roll-up |
 | `trace_rollup` | optional `dimension` (session, task, story, automaton, agent, backend), `key`, `loop_threshold` | Roll-ups: tool counts, slowest tools, error rate, loop warnings, capability denials, model requests and tokens |
 | `trace_coverage` | optional `backend` | Per-session coverage (full, partial, events-only, unknown) and counts per backend |
+| `trace_stats` | none | Store totals (sessions, events, error events, last event time) and write counters since the daemon started (appended, failed writes, pruned); same data as `GET /api/trace/stats` |
 
 The `tracing.*` settings are changed with `config_set` and read with `get_config`.
 

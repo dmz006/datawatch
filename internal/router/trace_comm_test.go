@@ -66,3 +66,28 @@ func TestTraceComm_ParseDoesNotSwallowOthers(t *testing.T) {
 		t.Error("tracer is not the trace verb")
 	}
 }
+
+// The tracing.* settings must be discoverable on both operator surfaces
+// (`configure help` and `configure list`), and a tracing key must reach the
+// configure function unchanged.
+func TestConfigureHelpAndListMentionTracingKeys(t *testing.T) {
+	r := &Router{hostname: "h"}
+	var gotKey, gotValue string
+	r.SetConfigureFunc(func(k, v string) error { gotKey, gotValue = k, v; return nil })
+
+	for _, text := range []string{"help", "list"} {
+		out := strings.Join(r.HandleTestMessage("configure "+text), "\n")
+		for _, key := range []string{"tracing.mode", "tracing.arg_cap_bytes", "tracing.retention_days", "tracing.backends."} {
+			if !strings.Contains(out, key) {
+				t.Errorf("configure %s lacks %s", text, key)
+			}
+		}
+	}
+	out := strings.Join(r.HandleTestMessage("configure tracing.mode=full"), "\n")
+	if gotKey != "tracing.mode" || gotValue != "full" {
+		t.Fatalf("configureFn got key=%q value=%q", gotKey, gotValue)
+	}
+	if !strings.Contains(out, "Set tracing.mode = full") {
+		t.Errorf("confirmation missing:\n%s", out)
+	}
+}
