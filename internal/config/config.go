@@ -2744,6 +2744,10 @@ type AutonomousConfig struct {
 	// verifier failures on one task after which its next verification runs on
 	// FallbackVerificationBackend. 0 or unset => 2.
 	VerifierInfraEscalationThreshold int `yaml:"verifier_infra_escalation_threshold,omitempty" json:"verifier_infra_escalation_threshold,omitempty"`
+	// VerificationRecordScores keeps the classify-mode score vector and route
+	// on every verification result. nil (unset) => true. false keeps only the
+	// verifier mode.
+	VerificationRecordScores *bool `yaml:"verification_record_scores,omitempty" json:"verification_record_scores,omitempty"`
 	// FallbackVerificationBackend is the backend used for that one
 	// verification. Empty => claude-code.
 	FallbackVerificationBackend string `yaml:"fallback_verification_backend,omitempty" json:"fallback_verification_backend,omitempty"`
