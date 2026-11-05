@@ -6306,6 +6306,30 @@ function renderResultMarkdownInto(el, md) {
   }).catch(() => { el.innerHTML = plain(); });
 }
 
+// classifyVerdictHTML renders the route and score vector of a classify-mode
+// verdict (task verification or guardrail verdict). Returns '' for a verdict
+// that carries neither (generate mode, deterministic checks).
+function classifyVerdictHTML(v) {
+  if (!v || (!v.route && !v.scores)) return '';
+  const sc = v.scores || {};
+  const rt = v.route || {};
+  const fmt = n => (typeof n === 'number' ? n.toFixed(3) : '—');
+  const vec = m => Object.keys(m || {}).sort().map(k => `${escHtml(k)}=${fmt(m[k])}`).join(' ');
+  const row = (label, val) => `<div style="font-size:11px;color:var(--text2);">${escHtml(label)}: ${val}</div>`;
+  const low = v.category === 'low-confidence'
+    ? `<div style="font-size:11px;font-weight:700;color:var(--warning,#f59e0b);">${escHtml(t('classif_low_confidence')||'Low confidence - review by hand')}</div>` : '';
+  return `<div class="classif-verdict" style="display:flex;flex-direction:column;gap:1px;border-top:1px solid var(--border);padding-top:3px;margin-top:2px;">
+    <div style="font-size:11px;font-weight:600;">${escHtml(t('classif_verdict_title')||'Classification verdict')}</div>
+    ${v.verifier_mode || v.mode ? row(t('classif_mode')||'Mode', escHtml(v.verifier_mode || v.mode)) : ''}
+    ${v.route ? row(t('classif_route')||'Route', `<code>${escHtml([rt.node, rt.model].filter(Boolean).join(' / ') || '—')}</code>${rt.path ? ' (' + escHtml(t('classif_route_path')||'Read path') + ': ' + escHtml(rt.path) + ')' : ''}`) : ''}
+    ${v.scores ? row(t('classif_pass_probability')||'Pass probability', `${fmt(sc.pass_probability)} · ${escHtml(t('classif_threshold')||'Threshold')} ${fmt(sc.threshold)}`) : ''}
+    ${sc.ok ? row(t('classif_scores')||'Score vector', vec(sc.ok)) : ''}
+    ${sc.severity ? row(t('classif_severity_scores')||'Severity', vec(sc.severity)) : ''}
+    ${v.category ? row(t('classif_category')||'Category', escHtml(v.category)) : ''}
+    ${low}
+  </div>`;
+}
+
 function renderSessionStatusBoard(sessionId) {
   // GATE alpha.36 (operator 2026-05-10): Status pane is now a sub-pane
   // inside the combined Status+Stats panel. Render into the Status
@@ -6490,6 +6514,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
         ${v.summary ? `<div style="font-size:12px;">${escHtml(v.summary)}</div>` : ''}
         ${shown.length ? `<ul style="margin:0;padding-left:18px;font-size:12px;">${shown.map(i => `<li>${escHtml(i)}</li>`).join('')}${issues.length > shown.length ? `<li style="color:var(--text2);list-style:none;">+${issues.length - shown.length} ${escHtml(t('status_more')||'more')}</li>` : ''}</ul>` : ''}
         ${(verifier || v.verifier_source) ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('status_verifier_label')||'Verifier')}: ${escHtml(verifier || '—')}${v.verifier_source ? ' (' + escHtml(v.verifier_source) + ')' : ''}</div>` : ''}
+        ${classifyVerdictHTML(v)}
       </div>`;
   } else if (auto) {
     testsBody = muted(t('status_not_verified_yet')||'not verified yet');
@@ -12272,6 +12297,13 @@ window._renderLLMEditPanel = function(existing) {
         ${llmEffectiveCapLine(existing)}
       </div>
       <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_verification_mode')||'Verification mode')}</label>
+        <select id="llmEditVerificationMode" class="form-select">
+          ${['','generate','classify'].map(v=>`<option value="${escHtml(v)}" ${(existing.verification_mode||'')===v?'selected':''}>${escHtml(v === 'classify' ? (t('llm_verification_mode_classify')||'classify') : v === 'generate' ? (t('llm_verification_mode_generate')||'generate') : (t('llm_verification_mode_default')||'(default: generate)'))}</option>`).join('')}
+        </select>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_verification_mode_hint')||"generate asks the judge to write a verdict. classify reads the judge's option probabilities and blocks when they are missing, late or unsure.")}</div>
+      </div>
+      <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
         ${renderBadgeInput('llmEditTags', (existing.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
       </div>
@@ -12550,6 +12582,7 @@ window._llmSaveDraft = function() {
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
   const maxInflight = parseInt((document.getElementById('llmEditMaxInflight')||{}).value||'0', 10) || 0;
   const planTier = (document.getElementById('llmEditPlanTier')||{}).value||'';
+  const verificationMode = (document.getElementById('llmEditVerificationMode')||{}).value||'';
   const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
   const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
@@ -12569,7 +12602,7 @@ window._llmSaveDraft = function() {
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
     auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
-    timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, tags,
+    timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
     auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
@@ -17752,6 +17785,23 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'usage.burn_guard.cache_read_points_per_million', label: 'Burn guard cache read price', labelKey: 'settings_usage_burn_guard_cache_read_points_per_million', type: 'number', placeholder: '0.0069', min: 0.0001, step: 0.0001, default: '0.0069' },
     { key: 'usage.burn_guard.refit_on_reading', label: 'Burn guard refits on each reading', labelKey: 'settings_usage_burn_guard_refit_on_reading', type: 'toggle', default: true },
     { key: 'usage.burn_guard.retry_limit_claude', label: 'Burn guard Claude retry limit', labelKey: 'settings_usage_burn_guard_retry_limit_claude', type: 'number', placeholder: '2', min: 0, max: 20, step: 1, default: '2' },
+  ]},
+  { id: 'classifier', section: 'Classifier', docs: 'howto/classification-verdicts.md', fields: [
+    { key: 'classifier.timeout_seconds', label: "Classifier call timeout", labelKey: 'settings_classifier_timeout_seconds', type: 'number', placeholder: '30', min: 0, step: 1, default: '30' },
+    { key: 'classifier.top_logprobs', label: "Classifier top_logprobs on the generic path", labelKey: 'settings_classifier_top_logprobs', type: 'number', placeholder: '10', min: 0, step: 1, default: '10' },
+    { key: 'classifier.abstain_margin', label: "Classifier abstain margin", labelKey: 'settings_classifier_abstain_margin', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
+    { key: 'classifier.min_probability', label: "Classifier minimum probability", labelKey: 'settings_classifier_min_probability', type: 'number', placeholder: '0.50', min: 0, max: 1, step: 0.01, default: '0.50' },
+    { key: 'classifier.min_option_mass', label: "Classifier minimum option mass", labelKey: 'settings_classifier_min_option_mass', type: 'number', placeholder: '0.50', min: 0, max: 1, step: 0.01, default: '0.50' },
+    { key: 'classifier.rotate_options', label: "Classifier rotates option order across calls and averages the scores", labelKey: 'settings_classifier_rotate_options', type: 'toggle', default: false },
+    { key: 'classifier.thinking_off_models', label: "Classifier thinking-off models", labelKey: 'settings_classifier_thinking_off_models', type: 'text', placeholder: 'qwen3', csv: true, default: 'qwen3' },
+    { key: 'classifier.probe_ttl_seconds', label: "Classifier capability probe cache time", labelKey: 'settings_classifier_probe_ttl_seconds', type: 'number', placeholder: '600', min: 0, step: 1, default: '600' },
+    { key: 'classifier.probe_timeout_seconds', label: "Classifier capability probe timeout", labelKey: 'settings_classifier_probe_timeout_seconds', type: 'number', placeholder: '5', min: 0, step: 1, default: '5' },
+    { key: 'classifier.calibration.test_fraction', label: "Classifier calibration held-out share", labelKey: 'settings_classifier_calibration_test_fraction', type: 'number', placeholder: '0.30', min: 0, max: 0.99, step: 0.01, default: '0.30' },
+    { key: 'classifier.calibration.split_seed', label: "Classifier calibration split seed", labelKey: 'settings_classifier_calibration_split_seed', type: 'text', placeholder: 'classifier-calibration', default: 'classifier-calibration' },
+    { key: 'classifier.calibration.min_fit_samples', label: "Classifier calibration least fit samples", labelKey: 'settings_classifier_calibration_min_fit_samples', type: 'number', placeholder: '20', min: 0, step: 1, default: '20' },
+    { key: 'classifier.calibration.false_pass_weight', label: "Classifier calibration false-pass weight", labelKey: 'settings_classifier_calibration_false_pass_weight', type: 'number', placeholder: '5', min: 0, step: 0.5, default: '5' },
+    { key: 'classifier.calibration.rotation_bias_threshold', label: "Classifier calibration rotation bias threshold", labelKey: 'settings_classifier_calibration_rotation_bias_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
+    { key: 'classifier.calibration.rotation_flip_threshold', label: "Classifier calibration rotation flip threshold", labelKey: 'settings_classifier_calibration_rotation_flip_threshold', type: 'number', placeholder: '0.10', min: 0, max: 1, step: 0.01, default: '0.10' },
   ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },

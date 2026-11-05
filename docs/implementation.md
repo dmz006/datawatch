@@ -397,6 +397,147 @@ nil-safe). `off` is a full no-op, `warn` never blocks, `block` sets
 `TaskBlocked` with `undeclared_edit: <files>` and halts the walk.
 Worktree-mode PRDs are skipped. Read-only git only.
 
+### LLM entry `verification_mode`
+
+An LLM registry entry carries `verification_mode` (`classify` | `generate`, JSON/YAML key
+`verification_mode`). Default: absent/empty, which resolves to `generate`, so existing setups are
+unchanged. The value is validated on `Registry.Add`, `Registry.Update` and registry load; an unknown
+value is rejected (a stored file with an unknown value fails to load with the entry name).
+
+- Resolution: `autonomous.ResolveVerificationLLM` reports `Mode` (always `generate`);
+  `ResolveVerificationLLMWithMode` reads the chosen entry's mode through a lookup and returns an
+  error for an unknown value instead of coercing it. The mode belongs to the entry; it does not take
+  part in the task/story/Automaton/global override chain, and the `Verification*` fields are unchanged.
+- Live path: the daemon's verifier resolves through the registry lookup; an invalid mode produces a
+  `setup` verdict (block, not a finding about the task).
+- Surfaces: REST `POST|PUT /api/llms` (`verification_mode`), MCP `llm_add`/`llm_update`
+  (`verification_mode`), CLI `datawatch llm add|update --verification-mode`, comm `llm add|update
+  verification_mode=<v>`, PWA Settings > Compute > LLM edit (Verification mode select). Android and
+  iPhone follow through the same REST field (capability parity; no client change in this core).
+
+### Classifier capability probe (`classifier.*`)
+
+`internal/classifier` reads a guardrail verdict as a classification (native `/v1/systemone` or
+generic logprobs). The keys below are read from the `classifier:` block of the config file
+(`classifier.ProbeConfigFrom`) and are settable through `PUT /api/config`, `datawatch config set`,
+comm `configure` and the web Settings → Classifier section.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `classifier.probe_ttl_seconds` | `600` | Whole seconds. How long a supported or unsupported probe result is cached per (node, model, path). Unknown is never cached. |
+| `classifier.probe_timeout_seconds` | `5` | Whole seconds. Per-probe HTTP timeout. A timeout is state `unknown`. |
+
+### Classifier client and calibration (`classifier.*`)
+
+`classifier.Client.Classify` builds a closed-option prompt (options lettered A, B, C... in a fixed
+set), calls the native endpoint or the generic logprobs path (`logprobs: true`, `top_logprobs: N`,
+`max_tokens: 1`, `chat_template_kwargs.enable_thinking: false` for matching models), and returns
+`{Chosen, Probabilities, Route, Mode}`. Token variants (`A`, ` A`, `▁a`, `(A`, `A.`) are summed per
+option on the generic path. Missing scores, timeouts, transport errors and abstains return a typed
+`*InfraError` (category `infra`); there is no fallback to generate-and-parse. Keys are read from the
+`classifier:` block of the config file on every call (`classifier.ClientConfigFrom` /
+`classifier.CalibrationConfigFrom`), so a change applies without a restart. Each is settable through
+`PUT /api/config` (and shown, with effective defaults, by `GET /api/config`), `datawatch config set
+classifier.<key>=<value>`, comm `configure classifier.<key>=<value>` and the web Settings → Classifier
+section (five locales). A zero reads as the default; an invalid value rejects the whole PUT.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `classifier.timeout_seconds` | `30` | Whole seconds. Per-call timeout. A timeout is an `infra` error. |
+| `classifier.top_logprobs` | `10` | `top_logprobs` on the generic path. |
+| `classifier.abstain_margin` | `0.10` | The winner must lead the runner-up by this much, else abstain. |
+| `classifier.min_probability` | `0.50` | The winner must reach this probability, else abstain. |
+| `classifier.min_option_mass` | `0.50` | Generic path: option tokens must hold this share of first-token mass, else scores are missing. |
+| `classifier.rotate_options` | `false` | Rotate option order and average scores on the generic path. Never applies to the native path. |
+| `classifier.thinking_off_models` | `["qwen3"]` | Model-name substrings whose template gets thinking disabled. |
+| `classifier.calibration.test_fraction` | `0.30` | Held-out share, split deterministically by a hash of seed and sample id. |
+| `classifier.calibration.split_seed` | `classifier-calibration` | Salt for the split. |
+| `classifier.calibration.min_fit_samples` | `20` | Least fit-set size a threshold may be fitted on. |
+| `classifier.calibration.false_pass_weight` | `5` | Cost of one false pass in false-block units when fitting. |
+| `classifier.calibration.rotation_bias_threshold` | `0.10` | Position-mass deviation from uniform at which `MeasurePositionBias` recommends rotation. |
+| `classifier.calibration.rotation_flip_threshold` | `0.10` | Share of items whose winner flips across rotations at which rotation is recommended. |
+
+A threshold is fitted on the fit set only and scored on the test set only. The stored record carries a
+fingerprint of model, quantization, node, prompt hash and chat-template hash; `CheckFresh` /
+`FileStore.Require` return a `*StaleError` (category `infra`) when no record exists or the fingerprint
+changed, forcing re-calibration. Below-threshold probabilities are a block and are never turned back
+into a pass.
+
+Classify calls share the `node:<name>` inference-load pool. See
+[classifier-api-shape.md](plans/reports/classifier-api-shape.md).
+
+### Classify-mode task verdicts (`autonomous.verification_record_scores`)
+
+When the resolved verification LLM entry has `verification_mode: classify`, the verifier closure in
+`cmd/datawatch/main.go` skips the generate-and-parse path and calls `autonomous.ClassifyVerify`
+(`internal/autonomous/classify_verify.go`). It makes two classifier reads over the same verifier prompt
+body: `ok` (A = the diff implements the spec, B = it does not) and `severity` (five labels: info, low,
+medium, high, critical). Generate mode is unchanged and does not call it.
+
+Verdict rules, all fail closed:
+
+- Missing scores (no probability for the pass option), an empty or unknown `Chosen` (abstain), a nil result, timeout, transport error, abstain, capability, gate or stale calibration is a block with
+  category `infra`. A missing runtime is a block with category `setup`. There is no fallback to generate mode.
+- The `ok` winner B is a content block (empty category) whatever the severity read says.
+- The `ok` winner A must reach the calibrated threshold of the model's calibration record; below it the
+  block has category `low-confidence`.
+- A pass needs a usable severity read (otherwise `infra`); a pass whose severity read is `high` or
+  `critical` is a block with category `inconsistent-verdict`.
+- A block is never downgraded (`NeverDowngrade`).
+- The summary and issues come from an optional separate generative call (`ClassifyRuntime.Explain`). It
+  never affects `ok`, severity or category; a failed or garbled answer keeps the verdict and uses a fixed summary.
+
+`VerificationResult` records `verifier_mode: classify` on every classify-mode verification. Generate mode is
+byte-for-byte unchanged, so it adds no field: an absent `verifier_mode` means generate (the byte-for-byte
+rule is read as overriding record-on-every-verification for generate results). In classify mode it also records `scores` (ok and severity probability vectors, pass probability, threshold, calibration
+fingerprint) and `route` (node, model, path) so the verdict is reproducible. The full record is returned
+by default; `autonomous.verification_record_scores: false` keeps only `verifier_mode`. The daemon supplies
+the classifier client, calibration store and explanation call through `classifyRuntimeProvider`
+(`cmd/datawatch/classify_verifier.go`); until it is installed a classify-mode verification blocks with `setup`.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.verification_record_scores` | `true` | Keep the score vector and route on the verification result. Set through the `PUT /api/config` key `autonomous.verification_record_scores` and shown in the autonomous section of `GET /api/config`, like its sibling `autonomous.*` keys. |
+
+### Classifier operator surfaces and the publisher allowlist (`classifier.publisher_allowlist`)
+
+The classification settings are reachable on every surface (see [parity-status.md](parity-status.md)):
+
+- `GET /api/llm/classifier` returns each LLM's resolved verification mode, the cached capability probe
+  results (`classifier.Prober.Snapshot`: node, model, path, state, expiry; unknown is never cached so it
+  never appears), the calibration records under `<data_dir>/classifier` (`classifier.FileStore.List`:
+  fingerprint, threshold, test metrics, age), `calibration_error` when the store cannot be read, and the
+  publisher allowlist. `wired` is false until the daemon installs the status source
+  (`Server.SetClassifierStatus`, `cmd/datawatch/classifier_status.go`).
+- `GET /api/llm/classifier/verdicts?automaton=<id>[&task=<id>][&low_confidence=true]` returns
+  `autonomous.ClassifyRecords`: one record per verification and guardrail verdict with `mode`, `scores`,
+  `route`, `outcome`, `category` and `low_confidence` (a block with category `low-confidence`). A
+  low-confidence block is decided with `resolve_task_review`; the chat verb `llm classifier review`
+  checks that the block exists before it sends the decision.
+- The MCP surface is one tool, `llm_classifier`, because no existing LLM or Automaton tool fits these reads.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `classifier.publisher_allowlist` | empty | Model publishers a classify-mode judge model may come from. Empty trusts nothing. Read with `GET /api/llm/classifier/publishers`. Added only by `POST /api/llm/classifier/publishers` (and the MCP, CLI and chat forms of it), which refuse without `confirm=true`, save the config file, and write a `classifier_publisher_add` audit entry (publisher, actor). It is deliberately not settable through `PUT /api/config`, so the confirmation cannot be bypassed. Names are trimmed and lower-cased; a duplicate is a no-op. |
+
+### Scope-breadth classifier (`autonomous.scope_breadth_enabled`)
+
+On a content-category task-verification failure, before the retry decision, the executor asks the classifier
+the closed question "A) one coherent change, B) bundles multiple separable units"
+(`internal/autonomous/scope_breadth.go`). It is a separate call site, not a guardrail, and does not depend on
+the verdict wiring. The answer is written to the additive `FailureReason.scope_too_broad` field; no existing
+category changes. The read has its own calibration set: its fingerprint hashes the scope question
+(`ScopeBreadthFingerprint`), so a verifier calibration is never reused. `scope_too_broad` is true only when B
+wins and A is below the calibrated threshold.
+
+It never blocks. Missing runtime, stale calibration, missing scores, abstain, timeout or transport error leave
+`scope_too_broad` false, set `FailureReason.scope_breadth_note`, and append a `scope_breadth_infra` decision to
+the PRD. The consumer (auto-split) is not part of this feature.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.scope_breadth_enabled` | `false` | Run the scope-breadth read. Also needs the classifier capability. Set through `PUT /api/config`; shown in the autonomous section of `GET /api/config`. |
+
 ### Peer usage cache
 
 The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.
@@ -2766,3 +2907,15 @@ Tests:
   version line, 700 ms fade, single teardown.
 - `internal/server/web/app-splash-settings.test.js` — the settings fields and
   their floors/ceilings on the five locale bundles.
+
+### Classify mode on guardrail outcomes
+
+When the guardrail judge's LLM entry has `verification_mode: classify`, `classifyGate`
+(`internal/autonomous/guardrail_classify.go`) is the final gate over the generative findings of the
+per-task, per-story, `rules-review` and `ci-watch` guardrails. The outcome becomes pass, warn or block
+from the classifier; the generative prose stays as the optional explanation. A prior block is never
+downgraded (and makes no classifier call), a prior warn is never raised to pass, and a classifier
+error, missing scores or abstain is a block with category `infra` (set by the harness only). There is
+no fallback to generate-and-parse. Scan guardrails, project-rules-scan and the scripted-pass
+short-circuit stay deterministic and never reach the gate. The verdict records `mode`, `scores` and
+`route` (scores and route follow `autonomous.verification_record_scores`).

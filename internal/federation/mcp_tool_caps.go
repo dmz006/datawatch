@@ -377,6 +377,7 @@ var MCPToolCap = map[string]string{
 	"list_sessions":                  CapSessionsList,
 	"llm_add":                        CapLLMsWrite,
 	"llm_add_model":                  CapLLMsWrite,
+	"llm_classifier":                 CapLLMsWrite, // add_publisher widens which models may judge
 	"llm_delete":                     CapLLMsWrite,
 	"llm_disable":                    CapLLMsWrite,
 	"llm_enable":                     CapLLMsWrite,

@@ -1,0 +1,5 @@
+{
+  "_fixture": "SYNTHETIC. Hand-authored, not recorded from a live endpoint. Shared prompt for the native and generic-logprobs fixtures.",
+  "prompt": "Spec: add a --json flag to the report subcommand.\nDiff: adds the flag, wires it to the encoder, adds a test.\nDoes the diff implement the spec?\nA) the diff implements the spec\nB) the diff does not implement the spec\nAnswer:",
+  "options": ["A", "B"]
+}

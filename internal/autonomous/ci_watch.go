@@ -734,6 +734,7 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		v = NoGuardrailModelVerdict("ci-watch", resErr)
 	} else {
 		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+		v = m.classifyGate(ctx, inv, v)
 	}
 	if ferr != nil {
 		return false, nil, fmt.Errorf("ci watch for prd %s: %w", prd.ID, ferr)

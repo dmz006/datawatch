@@ -1584,6 +1584,11 @@ type GuardrailVerdict struct {
 	// verdict, one per backend tried, in the order tried. Set on a judge-
 	// timeout hold; empty for a judgment that finished on a backend.
 	JudgeAttempts []JudgeAttemptRecord `json:"judge_attempts,omitempty"`
+	// Mode, Scores and Route record how a classify-mode outcome was reached
+	// (see classifyGate). Empty in generate mode and for deterministic checks.
+	Mode   string         `json:"mode,omitempty"`
+	Scores *VerdictScores `json:"scores,omitempty"`
+	Route  *VerdictRoute  `json:"route,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
@@ -1623,6 +1628,15 @@ type VerificationResult struct {
 	// no raw text is available (deterministic path, or the verification
 	// text was not captured).
 	RawJudge string `json:"raw_judge,omitempty"`
+	// VerifierMode records the resolved verification mode of this verification:
+	// "classify" or "generate".
+	VerifierMode string `json:"verifier_mode,omitempty"`
+	// Scores and Route are the classify-mode score vector and the node/model/path
+	// the reads ran on; with VerifierMode they make a verdict reproducible. They
+	// are kept by default and omitted when autonomous.verification_record_scores
+	// is false. Never set in generate mode.
+	Scores *VerdictScores `json:"scores,omitempty"`
+	Route  *VerdictRoute  `json:"route,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved

@@ -6699,6 +6699,24 @@ if [[ "$TR_POST" == "405" ]]; then
 else
   ko "tracing: POST /api/trace/rollup answered HTTP $TR_POST, expected 405"
 fi
+H "Classifier (llm.classifier read routes, verification_mode)"
+# Read-only. 200 when the classifier is wired; 404 or 503 when it is not.
+for CL_PATH in "/api/llm/classifier" "/api/llm/classifier/publishers" "/api/llm/classifier/verdicts?automaton=smoke-none"; do
+  CL_CODE=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE$CL_PATH" 2>/dev/null || echo "000")
+  if [[ "$CL_CODE" == "200" || "$CL_CODE" == "404" || "$CL_CODE" == "503" ]]; then
+    ok "classifier: GET $CL_PATH answered HTTP $CL_CODE"
+  else
+    ko "classifier: GET $CL_PATH answered HTTP $CL_CODE, expected 200, 404 or 503"
+  fi
+done
+CL_BODY=$(curl "${curl_args[@]}" "$BASE/api/llm/classifier" 2>/dev/null || echo "")
+if [[ -z "$CL_BODY" ]] || ! echo "$CL_BODY" | python3 -c 'import json,sys;json.load(sys.stdin)' >/dev/null 2>&1; then
+  skip "classifier: status route returned no JSON (classifier not wired)"
+elif echo "$CL_BODY" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "verification_modes" in d' >/dev/null 2>&1; then
+  ok "classifier: status lists verification_modes (verification_mode setting)"
+else
+  ko "classifier: status carries no verification_modes list"
+fi
 
 # ---------------------------------------------------------------------------
 H "Summary"

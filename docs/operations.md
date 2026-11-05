@@ -6226,6 +6226,22 @@ The allow-list is the only list of hosts that may receive a webhook. Each entry 
 **Checklist record (outbound webhook sink and peer forwarding):**
 `docs/config-reference.yaml` — every `autonomous.notify.webhook.*` and `autonomous.notify.forwarding.*` key is documented, with the defaults and "pending operator confirmation" marked; localization — the Notifications settings and the subscription form strings are in all five locale bundles (en, de, es, fr, ja); version — Unreleased (final number set at merge); Mobile-Parity — the app-side subscription UI stays tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md), and the new sink types reach mobile clients through the same REST contract (`POST` and `PUT /api/autonomous/subscriptions` with `sink.type` `webhook` or `peer`, and `sink.secret_ref`). Test coverage is in [testing-tracker.md](testing-tracker.md).
 
+## Classification verdicts
+
+Verification and guardrail judging has two modes, set per LLM with `verification_mode`: `generate` (default, the judge writes a verdict that is parsed) and `classify` (the judge's option probabilities decide). Walkthrough for operators: [howto/classification-verdicts.md](howto/classification-verdicts.md).
+
+**CLI.** `datawatch llm classifier status` shows the verification mode of every LLM, the capability probes and the calibration status. `publishers` lists the allowlist, `add-publisher <name> --confirm` adds one (refused without `--confirm`; audited), `verdicts <automaton> [--task <id>] [--low-confidence]` lists an Automaton's verdict records and `review <automaton> <task> retry|cancel` decides a low-confidence block. The same reads exist as MCP `llm_classifier`, REST `/api/llm/classifier*` and chat `llm classifier ...`.
+
+**Tunables.** Every other `classifier.*` key is read on each call and set with `PUT /api/config`, `datawatch config set classifier.<key>=<value>`, chat `configure classifier.<key>=<value>` or Settings → Classifier in the web app (five locales). A zero reads as the default. Defaults: `timeout_seconds` 30, `top_logprobs` 10, `abstain_margin` 0.10, `min_probability` 0.50, `min_option_mass` 0.50, `rotate_options` false, `thinking_off_models` `["qwen3"]`, `probe_ttl_seconds` 600, `probe_timeout_seconds` 5, and under `calibration`: `test_fraction` 0.30, `split_seed` `classifier-calibration`, `min_fit_samples` 20, `false_pass_weight` 5, `rotation_bias_threshold` 0.10, `rotation_flip_threshold` 0.10. Flow: [flow/classification-verdict-flow.md](flow/classification-verdict-flow.md).
+
+**Keys.** `classifier.publisher_allowlist` (default empty; add with the confirmation step, audited, not settable through `PUT /api/config`), `autonomous.verification_record_scores` (default true; keeps the score vector and route on results) and `autonomous.scope_breadth_enabled` (default false). All are in [config-reference.yaml](config-reference.yaml).
+
+**Before classify mode works** the judge model's publisher is on the allowlist, the node passes its capability probe for the read path, and a fresh calibration exists for the model, quantization and node. `datawatch llm classifier status` shows all three.
+
+**Failure behaviour.** Fail closed: missing scores, a timeout, a transport error, an abstain or a stale calibration becomes a block with an infra category (retried as infrastructure, not counted against the task). A block is never downgraded and there is no silent fallback to generate mode. A block the classifier reached through low confidence is flagged and waits for a manual decision (`llm classifier review`).
+
+**Web app.** The LLM settings view has a Verification mode selector; the verdict shows the route (node, model, read path) and the score vector. Every string is in all five locales.
+
 ## Session and PRD storage layout
 
 The session store and the Automaton (PRD) store write only what changed. Before this change every update rewrote the whole `sessions.json` and `prds.jsonl`; 200 channel events over 4,000 sessions wrote 8.0 GiB. The same burst now writes about 106 KB. Design and measurements: [plans/2026-10-23-session-store-write-amplification.md](plans/2026-10-23-session-store-write-amplification.md).

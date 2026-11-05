@@ -278,8 +278,14 @@ type Config struct {
 	// VerifierInfraEscalationThreshold and FallbackVerificationBackend mirror
 	// the autonomous.* keys of the same names in config; the daemon reads them
 	// from config.Config. They exist so the live config round-trip keeps them.
-	VerifierInfraEscalationThreshold int    `json:"verifier_infra_escalation_threshold,omitempty"`
-	FallbackVerificationBackend      string `json:"fallback_verification_backend,omitempty"`
+	VerifierInfraEscalationThreshold int `json:"verifier_infra_escalation_threshold,omitempty"`
+	// VerificationRecordScores mirrors autonomous.verification_record_scores:
+	// keep the classify-mode score vector and route on the verification result.
+	// Unset means true (see RecordScoresEnabled).
+	VerificationRecordScores *bool `json:"verification_record_scores,omitempty"`
+	// ScopeBreadthEnabled mirrors autonomous.scope_breadth_enabled (default off).
+	ScopeBreadthEnabled         bool   `json:"scope_breadth_enabled,omitempty"`
+	FallbackVerificationBackend string `json:"fallback_verification_backend,omitempty"`
 	// VerifierNoProgressTimeoutSeconds mirrors
 	// autonomous.verifier_no_progress_timeout_seconds in config; like
 	// SessionIdleTimeoutSeconds it is read from config.Config by the daemon
@@ -1237,7 +1243,11 @@ type Manager struct {
 	templates                  *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose                  DecomposeFn
 	guardrail                  GuardrailFn
-	planReview                 PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
+	// guardrailClassify gates generative guardrail outcomes in classify mode.
+	guardrailClassify *guardrailClassify
+	// scopeBreadth is the scope-breadth classifier call site (nil = off).
+	scopeBreadth *scopeBreadth
+	planReview   PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter

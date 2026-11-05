@@ -350,7 +350,7 @@ func assertLoudVerdict(t *testing.T, v GuardrailVerdict) {
 		t.Fatalf("verdict = %+v, want a loud infra block", v)
 	}
 	if !strings.Contains(v.Summary, "no judge model") {
-		t.Fatalf("loud verdict summary = %q, want it to name the missing judge model", v)
+		t.Fatalf("loud verdict summary = %q, want it to name the missing judge model", v.Summary)
 	}
 }
 

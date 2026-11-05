@@ -1114,6 +1114,81 @@ profiles:
 # LLM-driven Product Requirements Document → Stories → Tasks
 # planning with independent verification. Disabled by default.
 # See docs/api/autonomous.md for the full contract.
+# LLM registry entries (the `llms:` list; manage with `datawatch llm ...`).
+# Each entry may carry a per-LLM verification_mode key:
+#   llms:
+#     - name: <llm-name>
+#       verification_mode: generate    # default "generate" (empty string too)
+# verification_mode: how this LLM judges a verification.
+#   "" or "generate" (default) asks the judge to write a verdict and parses it.
+#   "classify" reads the judge's option probabilities instead and fails closed
+#   (missing scores, timeouts, transport errors and abstains become a block
+#   with an infra category; a block is never downgraded). Set it with
+#   `datawatch llm update <name> --verification-mode classify`, MCP
+#   llm_update, PUT on the LLM entry, or the Verification mode selector in
+#   the web app LLM settings. (The `llms:` block above is a documentation
+#   example, kept commented so this file is not a live registry entry.)
+
+classifier:
+  # Publishers a classify-mode judge model may come from. Default empty: no
+  # publisher is trusted until the operator adds one. Add with explicit
+  # confirmation (REST/MCP/CLI/chat "add publisher ... confirm"); each
+  # addition is audited. Not settable through PUT /api/config.
+  publisher_allowlist: []
+
+  # ── Client tunables (read on every classify call; no restart needed) ──
+  # Every key below is settable through PUT /api/config, `datawatch config set
+  # classifier.<key>=<value>`, comm `configure classifier.<key>=<value>` and
+  # the web Settings → Classifier section (all five locales). A zero reads as
+  # the documented default (rotate_options: false is stored as false).
+  # Bound on one classify call, in whole seconds. Default 30. A timeout is a
+  # block with an infra category.
+  timeout_seconds: 30
+  # top_logprobs asked for on the generic (logprobs) path. Default 10.
+  top_logprobs: 10
+  # The chosen option must lead the runner-up by at least this probability,
+  # otherwise the call abstains. 0 to 1. Default 0.10.
+  abstain_margin: 0.10
+  # The chosen option must reach this probability, otherwise the call
+  # abstains. 0 to 1. Default 0.50.
+  min_probability: 0.50
+  # Generic path: the option tokens must hold at least this share of the
+  # first-token probability, otherwise the scores are treated as missing.
+  # 0 to 1. Default 0.50.
+  min_option_mass: 0.50
+  # Rotate the option order across calls and average the scores (generic path
+  # only; the native path never rotates). Default false.
+  rotate_options: false
+  # Case-insensitive model-name substrings whose chat templates get thinking
+  # disabled on the generic path. Default ["qwen3"].
+  thinking_off_models: ["qwen3"]
+  # How long a capability probe result (supported or unsupported) is cached,
+  # in whole seconds. Unknown is never cached. Default 600.
+  probe_ttl_seconds: 600
+  # Per-probe HTTP timeout in whole seconds. A timeout is state unknown.
+  # Default 5.
+  probe_timeout_seconds: 5
+
+  # ── Calibration tunables ──
+  calibration:
+    # Share of samples held out for scoring, 0 up to (not including) 1.
+    # Default 0.30.
+    test_fraction: 0.30
+    # Salt for the deterministic fit/test split. Default
+    # "classifier-calibration".
+    split_seed: classifier-calibration
+    # Least number of fit samples a threshold may be fitted on. Default 20.
+    min_fit_samples: 20
+    # False blocks one false pass costs when the threshold is chosen (a false
+    # pass is worse). Default 5.
+    false_pass_weight: 5
+    # Position-mass deviation from uniform at or above which rotation is
+    # recommended. 0 to 1. Default 0.10.
+    rotation_bias_threshold: 0.10
+    # Share of items whose winning option changes across rotations at or above
+    # which rotation is recommended. 0 to 1. Default 0.10.
+    rotation_flip_threshold: 0.10
+
 autonomous:
   # Opt-in switch. When false every /api/autonomous/* returns 503.
   enabled: false
@@ -2636,6 +2711,16 @@ autonomous:
   # need more than this; the old hard-coded limit was 10m and timed out slow
   # local models.
   verification_timeout_seconds: 1800
+  # Keep the classify-mode score vector and the route (node, model, read path)
+  # on every verification result so a verdict can be reproduced. Default true
+  # when unset. false keeps only the verifier mode. Shown on the verdict in the
+  # web app and by `datawatch llm classifier verdicts`.
+  verification_record_scores: true
+  # Scope-breadth classifier. When true, a task whose verification fails on its
+  # content is asked whether it bundles several separable units, and the failure
+  # is marked scope_too_broad so the split signal can act on it. Needs a
+  # classify-mode judge (see the llm verification_mode setting). Default false.
+  scope_breadth_enabled: false
   # Judge routing (PRD guardrail, plan-review and other autonomous judges).
   # judge_policy is the ordered list of backends the judges try, one attempt
   # each; the attempts total the list length. A judge moves to the next backend

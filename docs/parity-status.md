@@ -141,6 +141,18 @@ Legend:
 - **GH#172 D65/D67** — three-finger swipe-up gesture + other under-specified Android session-detail extras. Deferred pending clarification of exact behavior, not a parity gap PWA is positioned to close blind.
 - **BL396 approved-but-unshipped**: #17 (alert badge watched-only count), #18 (per-automaton memory stats on Automaton detail), #19 (server info card), #20 (add-memory dialog tags field), 2 cosmetic items (skeleton shimmer timing, splash status granularity).
 
+## Parity surface — classification judge
+
+| Channel | Surface | Status |
+|---------|---------|--------|
+| REST | `GET /api/llm/classifier`, `GET`/`POST /api/llm/classifier/publishers`, `GET /api/llm/classifier/verdicts`; `verification_mode` on `/api/llms`; the verdict record (`verifier_mode`, `scores`, `route`) on the Automaton | ✅ |
+| MCP | `llm_classifier` (status, publishers, add_publisher, verdicts); `verification_mode` on `llm_add` / `llm_update`; review through `autonomous_prd_resolve_task_review` | ✅ |
+| CLI | `datawatch llm classifier status`, `publishers`, `add-publisher --confirm`, `verdicts`; `datawatch llm update --verification-mode`; review through `datawatch autonomous resolve-review` | ✅ |
+| Comm channel | `llm classifier status`, `publishers`, `add-publisher`, `verdicts`, `review` (a low-confidence block); `llm update <name> verification_mode=` | ✅ |
+| Web UI | `verification_mode` on the LLM form; no classifier status card yet | ⏳ follow-up |
+| YAML | `classifier.publisher_allowlist` | ✅ |
+| Android / iOS | not started; they follow the Web UI card | ⏳ |
+
 ## Parity surface — burn guard
 
 | Channel | Surface | Status |

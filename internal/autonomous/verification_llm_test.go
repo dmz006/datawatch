@@ -39,6 +39,9 @@ func verifTask(prd *PRD, id string) *Task {
 
 func assertVerifLLM(t *testing.T, got, want VerificationLLM) {
 	t.Helper()
+	if want.Mode == "" {
+		want.Mode = "generate" // an absent verification_mode resolves to generate
+	}
 	if got != want {
 		t.Fatalf("resolved = %+v; want %+v", got, want)
 	}
@@ -86,9 +89,9 @@ func TestResolveVerificationLLM_TaskBeatsStoryBeatsPRD(t *testing.T) {
 		task, story, prdLv bool
 		want               VerificationLLM
 	}{
-		{"all set", true, true, true, VerificationLLM{"tb", "tm", "high", VerifierSourceTask}},
-		{"story+prd", false, true, true, VerificationLLM{"sb", "sm", "medium", VerifierSourceStory}},
-		{"prd only", false, false, true, VerificationLLM{"pb", "pm", "max", VerifierSourcePRD}},
+		{"all set", true, true, true, VerificationLLM{Backend: "tb", Model: "tm", Effort: "high", Source: VerifierSourceTask, Mode: "generate"}},
+		{"story+prd", false, true, true, VerificationLLM{Backend: "sb", Model: "sm", Effort: "medium", Source: VerifierSourceStory, Mode: "generate"}},
+		{"prd only", false, false, true, VerificationLLM{Backend: "pb", Model: "pm", Effort: "max", Source: VerifierSourcePRD, Mode: "generate"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

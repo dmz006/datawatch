@@ -545,6 +545,23 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"project_policy_parallel_worktree_per_task",
 		"project_policy_escalation_on",
 		"project_policy_escalation_off",
+		// Classification verdicts (LLM judge verification mode): the LLM
+		// settings selector rows and the verdict card fields shown on a
+		// classify-mode verdict (route + score vector).
+		"llm_verification_mode_default",
+		"llm_verification_mode_generate",
+		"llm_verification_mode_classify",
+		"llm_verification_mode_hint",
+		"classif_verdict_title",
+		"classif_mode",
+		"classif_route",
+		"classif_route_path",
+		"classif_scores",
+		"classif_pass_probability",
+		"classif_threshold",
+		"classif_severity_scores",
+		"classif_category",
+		"classif_low_confidence",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

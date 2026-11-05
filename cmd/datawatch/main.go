@@ -3815,6 +3815,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				httpServer.SetInference(llmReg, disp)
 				inferenceDispatcher = disp
+				// Classify runtime: the classifier.* config keys feed the client
+				// built for each verification; the status view shares its prober.
+				classifyWiring.reg = llmReg
+				classifyWiring.nodes = computeReg.Get
+				classifyWiring.dataDir = expandHome(cfg.DataDir)
+				classifyRuntimeProvider = newClassifyRuntimeProvider(cfg, &classifyWiring)
+				httpServer.SetClassifierStatus(newClassifierStatusSource(expandHome(cfg.DataDir), classifyWiring.prober))
 				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
@@ -4520,6 +4527,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DescendantStallSeconds:           acfgIn.DescendantStallSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
+			VerificationRecordScores:         acfgIn.VerificationRecordScores,
+			ScopeBreadthEnabled:              acfgIn.ScopeBreadthEnabled,
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
@@ -6129,7 +6138,20 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if autonomousMgrRef != nil {
 				vauto = autonomousMgrRef.AutomationForPRD(prd)
 			}
-			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, vauto, liveCfg)
+			// The resolved LLM also carries the configured verification_mode of
+			// the serving registry entry. An invalid stored mode fails closed
+			// with a setup verdict; it is never coerced.
+			resolvedVLLM, modeErr := autonomouspkg.ResolveVerificationLLMWithMode(prd, task, vauto, liveCfg, verificationModeLookup(autonomousInferenceReg))
+			if modeErr != nil {
+				return autonomouspkg.VerificationResult{
+					OK:         false,
+					Severity:   "high",
+					Summary:    "verifier: judge never ran — " + modeErr.Error(),
+					Issues:     []string{"configuration failure, not a finding about the task"},
+					VerifiedAt: time.Now(),
+					Category:   "setup",
+				}, nil
+			}
 			// Infra escalation: after enough consecutive infra verifier
 			// failures on this task, this one verification runs on the
 			// fallback backend; the count resets when it finishes.
@@ -6241,7 +6263,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				vGrantedAt = time.Now()
 			}
 			// Every result returned from here on records which LLM judged it.
-			defer func() { vsel.stamp(&vres) }()
+			defer func() {
+				vsel.stamp(&vres)
+			}()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
 					// A pick the policy made from the load is re-run while the
@@ -6293,6 +6317,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			if release != nil {
 				defer release()
+			}
+			// Classify mode: the verdict (ok and severity) is read from the
+			// classifier's option scores; there is no generate-and-parse
+			// fallback. Generate mode skips this block entirely and runs the
+			// unchanged path below.
+			if resolvedVLLM.Mode == autonomouspkg.VerifierModeClassify {
+				return runClassifyVerification(ctx, vnode, vbackend, verifyModel, prompt,
+					autonomouspkg.RecordScoresEnabled(liveCfg.VerificationRecordScores)), nil
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
 			// tool-using backend and taskDir exists to run it in:
@@ -6650,6 +6682,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetGeneratedArtefacts(func() config.EffectiveGeneratedArtefactsSettings {
 				return cfg.Autonomous.EffectiveGeneratedArtefacts()
 			})
+			// Classify-mode gate over guardrail findings: active only for a
+			// judge entry whose verification_mode is classify.
+			amgr.SetGuardrailClassify(verificationModeLookup(autonomousInferenceReg),
+				func(ctx context.Context, backend, model, prompt string) autonomouspkg.VerificationResult {
+					return runClassifyVerification(ctx, "", backend, model, prompt,
+						autonomouspkg.RecordScoresEnabled(cfg.Autonomous.VerificationRecordScores))
+				})
+			// Scope-breadth classifier: off unless autonomous.scope_breadth_enabled.
+			amgr.SetScopeBreadth(func() bool { return cfg.Autonomous.ScopeBreadthEnabled },
+				func(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
+					return runScopeBreadth(ctx, text)
+				})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
@@ -7229,6 +7273,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Pin-time model check: refuse (or warn on) a worker or verifier
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
+			classifyWiring.ledger.Store(capLedger)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed

@@ -897,6 +897,21 @@ The MCP surface of the account usage calculator: six tools that proxy this daemo
 | MCP `usage_extra_credit_set` / `usage_remaining_work_set` (points >= 0; extra credit shared, remaining work daemon-local) | **Yes** (`TestUsageCalcExtraCreditSet`, `TestUsageCalcRemainingWorkSet`) | **No** | Live: set extra credit (`points: 0` is valid), confirm the advice ceiling moves; set the typed remaining work, confirm the finish-early estimate compares against it | Proxies `PUT /api/usage/extra-credit` and `PUT /api/usage/remaining-work`; writes `usage:write`; negative or missing points rejected before the request is sent |
 | Capability mapping for all six tools on the federation route-cap registry | **Yes** (`TestUsageCalcToolsRegisteredAndCapped`; `internal/federation/` cap-mapping suite) | **No** | Live: confirm a peer with only `usage:read` can call the two read tools and gets refused on the four write tools | `usage_advice` + `usage_readings` → `usage:read`; the four write tools → `usage:write`; entries in `internal/federation/mcp_tool_caps.go` |
 
+## Classification judge surfaces — unreleased
+
+The classification judge's REST, MCP, CLI and comm-channel surfaces: status (`GET /api/llm/classifier`), the publisher allowlist (`GET`/`POST /api/llm/classifier/publishers`, add needs `confirm=true`), verdict records (`GET /api/llm/classifier/verdicts`) and review of a low-confidence block by chat. All tests use fakes and stand-in daemons; none starts a daemon or calls a model.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Probe snapshot and calibration list | `TestProberSnapshot`, `TestFileStoreList`, `TestFileStoreListCorruptRecordFails` | `go test ./internal/classifier/ -count=1` | Sorted, unexpired probe results; sorted calibration records; a corrupt record is an error, not skipped | Go unit | Yes | Pass | No | |
+| Publisher allowlist rules | `TestPublisherAllowlist` | same | Normalised, empty list trusts nothing, duplicate and blank adds are no-ops, input never mutated | Go unit | Yes | Pass | No | |
+| Verdict record read model | `TestClassifyRecordsAll`, `TestClassifyRecordsFilters` | `go test ./internal/autonomous/ -count=1 -run ClassifyRecords` | Mode, scores, route and the low-confidence flag per verdict; task and low-confidence filters | Go unit | Yes | Pass | No | |
+| REST: status, allowlist add, verdicts | `TestClassifierStatus*`, `TestClassifierPublishers*`, `TestClassifierVerdicts` | `go test ./internal/server/ -count=1 -run Classifier` | Unconfirmed add changes nothing; confirmed add persists to the config file and writes one audit entry; failed save rolls back; capability gates; 404/400/503 | Go unit | Yes | Pass | No | |
+| MCP: `llm_classifier` | `TestLLMClassifierToolDeclared`, `TestLLMClassifierActions`, `TestLLMClassifierErrors` | `go test ./internal/mcp/ -count=1 -run LLMClassifier` | Each action maps to its REST route; add_publisher forwards `confirm` as given | Go unit | Yes | Pass | No | Capability: `llms:write` |
+| CLI: `llm classifier` | `TestLLMClassifierCLI`, `TestLLMClassifierVerdictsQuery`, `TestLLMCmdRegistersClassifier` | `go test ./cmd/datawatch/ -count=1 -run 'Classifier'` | `add-publisher` without `--confirm` sends nothing | Go unit | Yes | Pass | No | |
+| Comm channel: `llm classifier ...` | `TestLLMClassifierComm*` | `go test ./internal/router/ -count=1 -run LLMClassifierComm` | Reads, confirmed add, review checks for a low-confidence block before it posts the decision | Go unit | Yes | Pass | No | |
+| Live daemon round trip | n/a | start a test daemon with a classify-mode LLM and a blocked task | Add a publisher by chat and see the audit entry; review a low-confidence block by chat | Live | No | n/a | No | Needs a calibrated classify-mode run |
+
 ## Burn guard surfaces — unreleased
 
 The burn guard's REST, MCP, CLI and comm-channel surfaces: status (`GET /api/usage/burn-guard`), run now (`POST /api/usage/burn-guard/run`) and the settings (`GET`/`PUT /api/usage/burn-guard/config`, through the config set path).

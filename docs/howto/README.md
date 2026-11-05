@@ -109,6 +109,7 @@ you already have a daemon you can talk to.
 | [Channel Routing](channel-routing.md) | Route inbound channel messages (Telegram, Signal, …) to federation peers via pattern rules; owner_peer attribution on sessions + PRDs |
 | [File Service](file-service.md) | Upload, list, and delete files across federation peers; peers/ and discussions/ subdirs; config:read/write caps |
 | [Discussion Scopes](discussion-scopes.md) | Per-discussion memory namespaces with WAL, federated sync, conflict detection, and 60 ops/min throttle |
+| [Classification Verdicts](classification-verdicts.md) | Judge verification by option probabilities: enable classify mode, allowlist a publisher, probe and calibrate, read the route and score vector, failure behaviour |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has
 > first-time install. [`docs/api/`](../api/) has REST/MCP/CLI

@@ -591,6 +591,19 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 ---
 
+## Classification verdicts and the publisher allowlist
+
+> Flow: [flow/classification-verdict-flow.md](flow/classification-verdict-flow.md) · How-to: [howto/classification-verdicts.md](howto/classification-verdicts.md)
+
+- **Classification verdict** — the result of a judge (task verification or guardrail) read in **classify** mode: the judge is asked to pick one lettered option and datawatch reads the probability of each option instead of parsing prose. A verdict record keeps the mode, the score vector, the route (node, model, read path) and the outcome. The prose explanation is written separately and never changes the verdict. The mode is set per LLM with `verification_mode` (`generate` default, or `classify`).
+- **Fail closed** — missing scores, a timeout, a transport error, an abstain or a stale calibration becomes a **block** with an infra category. It is retried as infrastructure, never counted against the task, never downgraded later, and never falls back to generate mode.
+- **Low confidence** — a block reached because the winner did not lead by `classifier.abstain_margin` or reach `classifier.min_probability`. It is flagged and waits for a manual decision (`datawatch llm classifier review`).
+- **Capability probe** — a check that a node really returns usable option probabilities for a model, on the `native` (`/v1/systemone`) or `logprobs` path. Results are cached for `classifier.probe_ttl_seconds`; an unknown result is never cached.
+- **Calibration** — a pass threshold fitted on one model, quantization and node, and scored on a held-out set. Change any of the three and the calibration is stale until redone.
+- **Publisher allowlist** — `classifier.publisher_allowlist`, the model publishers a classify-mode judge may come from. Empty by default, so nothing is trusted until the operator adds a publisher. Adding needs an explicit confirmation on REST, MCP, CLI and chat, is written to the audit log, and cannot be done through `PUT /api/config`. Every other `classifier.*` tunable is settable there; each is listed in [config-reference.yaml](config-reference.yaml).
+
+---
+
 ## Automata
 
 ### Automata list

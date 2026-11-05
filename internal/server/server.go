@@ -576,6 +576,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/security/wipe-plaintext", api.handleSecurityWipePlaintext)
 	apiMux.HandleFunc("/api/update", api.handleUpdate)
 	apiMux.HandleFunc("/api/update/check", api.handleUpdateCheck)
+	apiMux.HandleFunc("/api/llm/classifier", api.handleClassifierStatus)
+	apiMux.HandleFunc("/api/llm/classifier/publishers", api.handleClassifierPublishers)
+	apiMux.HandleFunc("/api/llm/classifier/verdicts", api.handleClassifierVerdicts)
 	apiMux.HandleFunc("/api/llm/claude/models", api.handleClaudeModels)
 	apiMux.HandleFunc("/api/llm/claude/efforts", api.handleClaudeEfforts)
 	apiMux.HandleFunc("/api/llm/claude/permission_modes", api.handleClaudePermissionModes)
@@ -971,6 +974,14 @@ func (s *HTTPServer) ComputeRegistry() *compute.Registry {
 func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispatcher) {
 	if s.api != nil {
 		s.api.SetInference(reg, disp)
+	}
+}
+
+// SetClassifierStatus wires the classifier status source (probe and calibration
+// status) into the REST surface.
+func (s *HTTPServer) SetClassifierStatus(src ClassifierStatusSource) {
+	if s.api != nil {
+		s.api.SetClassifierStatus(src)
 	}
 }
 

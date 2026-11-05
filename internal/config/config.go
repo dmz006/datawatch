@@ -667,6 +667,9 @@ type Config struct {
 	// through every config channel per the parity rule.
 	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
 
+	// Classifier holds the settings for the logprob classification judge.
+	Classifier ClassifierConfig `yaml:"classifier,omitempty" json:"classifier,omitempty"`
+
 	// Identity holds the operator identity settings (identity.*). The
 	// top-level key is `identity`; the "Identity" banner in template.go is
 	// only a comment heading about machine identification.
@@ -3058,6 +3061,15 @@ type AutonomousConfig struct {
 	// verifier failures on one task after which its next verification runs on
 	// FallbackVerificationBackend. 0 or unset => 2.
 	VerifierInfraEscalationThreshold int `yaml:"verifier_infra_escalation_threshold,omitempty" json:"verifier_infra_escalation_threshold,omitempty"`
+	// VerificationRecordScores keeps the classify-mode score vector and route
+	// on every verification result. nil (unset) => true. false keeps only the
+	// verifier mode.
+	VerificationRecordScores *bool `yaml:"verification_record_scores,omitempty" json:"verification_record_scores,omitempty"`
+	// ScopeBreadthEnabled turns on the scope-breadth classifier: on a
+	// content-category task-verification failure it asks whether the task bundles
+	// several separable units and sets FailureReason.scope_too_broad. Needs the
+	// classifier capability. Default false.
+	ScopeBreadthEnabled bool `yaml:"scope_breadth_enabled,omitempty" json:"scope_breadth_enabled,omitempty"`
 	// FallbackVerificationBackend is the backend used for that one
 	// verification. Empty => claude-code.
 	FallbackVerificationBackend string `yaml:"fallback_verification_backend,omitempty" json:"fallback_verification_backend,omitempty"`
@@ -7348,4 +7360,51 @@ func ValidateMergeConflictPolicy(v string) error {
 // unset (zero) value is valid and reads as its default.
 func ValidateTracing(t trace.Settings) error {
 	return t.Validate()
+}
+
+// ClassifierConfig holds the classifier settings that live in the config file.
+type ClassifierConfig struct {
+	// PublisherAllowlist is the list of model publishers a classify-mode judge
+	// model may come from (classifier.publisher_allowlist). Default empty: no
+	// publisher is trusted until the operator adds it. Entries are added only
+	// with explicit operator confirmation (REST, MCP, CLI and chat) and each
+	// addition is written to the audit log.
+	PublisherAllowlist []string `yaml:"publisher_allowlist,omitempty" json:"publisher_allowlist,omitempty"`
+
+	// TimeoutSeconds bounds one classify call (classifier.timeout_seconds).
+	// Default 30. A timeout is a block with an infra category.
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	// TopLogprobs is top_logprobs on the generic path (classifier.top_logprobs). Default 10.
+	TopLogprobs int `yaml:"top_logprobs,omitempty" json:"top_logprobs,omitempty"`
+	// AbstainMargin is the least lead over the runner-up (classifier.abstain_margin). Default 0.10.
+	AbstainMargin float64 `yaml:"abstain_margin,omitempty" json:"abstain_margin,omitempty"`
+	// MinProbability is the least probability of the chosen option (classifier.min_probability). Default 0.50.
+	MinProbability float64 `yaml:"min_probability,omitempty" json:"min_probability,omitempty"`
+	// MinOptionMass is the least share of first-token probability held by the
+	// option tokens (classifier.min_option_mass). Default 0.50.
+	MinOptionMass float64 `yaml:"min_option_mass,omitempty" json:"min_option_mass,omitempty"`
+	// RotateOptions rotates option order across calls (classifier.rotate_options). Default false.
+	RotateOptions bool `yaml:"rotate_options,omitempty" json:"rotate_options,omitempty"`
+	// ThinkingOffModels lists model-name substrings whose templates get
+	// thinking disabled (classifier.thinking_off_models). Default ["qwen3"].
+	ThinkingOffModels []string `yaml:"thinking_off_models,omitempty" json:"thinking_off_models,omitempty"`
+	// ProbeTTLSeconds is how long a capability probe result is cached
+	// (classifier.probe_ttl_seconds). Default 600. 0 reads the default.
+	ProbeTTLSeconds int `yaml:"probe_ttl_seconds,omitempty" json:"probe_ttl_seconds,omitempty"`
+	// ProbeTimeoutSeconds bounds one capability probe (classifier.probe_timeout_seconds).
+	// Default 5. 0 reads the default.
+	ProbeTimeoutSeconds int `yaml:"probe_timeout_seconds,omitempty" json:"probe_timeout_seconds,omitempty"`
+	// Calibration holds the calibration tunables (classifier.calibration.*).
+	Calibration ClassifierCalibrationConfig `yaml:"calibration,omitempty" json:"calibration,omitempty"`
+}
+
+// ClassifierCalibrationConfig holds the classifier.calibration.* keys. A zero
+// value means the documented default applies.
+type ClassifierCalibrationConfig struct {
+	TestFraction          float64 `yaml:"test_fraction,omitempty" json:"test_fraction,omitempty"`
+	SplitSeed             string  `yaml:"split_seed,omitempty" json:"split_seed,omitempty"`
+	MinFitSamples         int     `yaml:"min_fit_samples,omitempty" json:"min_fit_samples,omitempty"`
+	FalsePassWeight       float64 `yaml:"false_pass_weight,omitempty" json:"false_pass_weight,omitempty"`
+	RotationBiasThreshold float64 `yaml:"rotation_bias_threshold,omitempty" json:"rotation_bias_threshold,omitempty"`
+	RotationFlipThreshold float64 `yaml:"rotation_flip_threshold,omitempty" json:"rotation_flip_threshold,omitempty"`
 }
