@@ -37,6 +37,8 @@ import (
 //     exempt.
 //   - a story with FilesPlanned non-empty and zero tasks must carry its
 //     own non-blank VerificationScript.
+//   - tasks appended by the task templates (ids "<story>-tpl-<template>")
+//     are exempt: they are not part of the planner's output.
 //
 // Every offender is collected (not just the first) so a retry attempt
 // sees the full list in one error.
@@ -50,6 +52,12 @@ func validateVerificationScriptCoverage(projectDir string, stories []Story) erro
 			offenders = append(offenders, fmt.Sprintf("story %q", s.Title))
 		}
 		for _, t := range s.Tasks {
+			// A task the daemon appended from a task template is not the
+			// planner's work: the planner was never asked to script it, so
+			// the plan is not rejected for it.
+			if isTemplateTaskID(t.ID) {
+				continue
+			}
 			if len(t.FilesPlanned) > 0 && strings.TrimSpace(t.VerificationScript) == "" {
 				offenders = append(offenders, fmt.Sprintf("story %q / task %q", s.Title, t.Title))
 			}
@@ -62,4 +70,10 @@ func validateVerificationScriptCoverage(projectDir string, stories []Story) erro
 		"decompose left file-changing units with no verification_script: %s. A story-level script does not excuse its tasks, and a task with no planned files is exempt — every file-changing unit needs its own deterministic check. Retry decompose; if it recurs, check the planning backend/model actually has file access and is following the schema's verification_script field. Give every file-changing task a verification_script path under .datawatch/verify/ that checks only that task's own files",
 		strings.Join(offenders, "; "),
 	)
+}
+
+// isTemplateTaskID reports whether a task id is one ApplyTaskTemplates built
+// (see templateTaskID).
+func isTemplateTaskID(id string) bool {
+	return strings.Contains(id, "-tpl-")
 }

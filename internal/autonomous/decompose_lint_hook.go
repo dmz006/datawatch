@@ -132,7 +132,7 @@ func (m *Manager) decomposeLintHook(prd *PRD, title, raw string, stories []Story
 		return title, raw, stories
 	}
 	applyTemplates := func(s []Story) []Story {
-		s, _ = ApplyTaskTemplates(s, prd.Spec, prd.ProjectDir, m.decomposeLintTemplateCfg())
+		s, _ = ApplyTaskTemplates(s, templateFeatureName(prd), prd.ProjectDir, m.decomposeLintTemplateCfg())
 		return s
 	}
 	findings := func(s []Story) []LintFinding {
@@ -232,4 +232,20 @@ func (m *Manager) LintPRD(prdID string) (*DecomposeLintReport, error) {
 		Findings:  findings,
 		Summary:   SummaryOf(findings),
 	}, nil
+}
+
+// templateFeatureName is what the task templates call the work: the
+// Automaton's title, or the first line of its spec (bounded) when it has no
+// title. The whole spec is never used, so words in a long spec cannot leak
+// into the template task text and trip the plan checks.
+func templateFeatureName(prd *PRD) string {
+	name := strings.TrimSpace(prd.Title)
+	if name == "" {
+		name = strings.TrimSpace(strings.SplitN(strings.TrimSpace(prd.Spec), "\n", 2)[0])
+	}
+	const maxName = 120
+	if r := []rune(name); len(r) > maxName {
+		name = string(r[:maxName])
+	}
+	return name
 }
