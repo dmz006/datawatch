@@ -420,7 +420,7 @@ func ladderPrompt(kind string, spec string, findings []string) string {
 func findingsBlock(findings []string) string {
 	var b strings.Builder
 	for i, f := range findings {
-		b.WriteString(fmt.Sprintf("%d. %s\n", i+1, f))
+		fmt.Fprintf(&b, "%d. %s\n", i+1, f)
 	}
 	return b.String()
 }
