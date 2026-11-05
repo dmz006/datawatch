@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.96.4 (2026-11-05).** New Automata now plan with the task template pack on: the plan gets ids before the templates build their tasks and dependencies. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.96.5 (2026-11-05).** New Automata plan with the task template pack on: depends_on entries naming an id inside the plan being stored now resolve. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.5 — Plans resolve dependencies on their own ids
+
+New Automata plan when the task template pack is on: the third and last cause is fixed.
+
+- **The bug.** With ids assigned to the plan, the template tasks named the planner's tasks by id, but the store resolved those names only against plans that were already stored. A new plan's own ids were not known yet, so the plan was rejected as having an unresolvable dependency and the Automaton went back to draft.
+- **The fix.** A `depends_on` entry that names an id inside the plan being stored now resolves to that id. Existing behavior for titles, positions and stored ids is unchanged. The regression test resolves against empty store maps, as the real path does.
+- Known gap: a plan that still fails these checks returns to draft without raising an alert.
+
 ## v9.96.4 — Plans get ids before the task templates apply
 
 New Automata now actually plan when the task template pack is on.
