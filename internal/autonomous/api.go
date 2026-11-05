@@ -916,6 +916,7 @@ func (a *API) RequestRevision(id, actor, note string) (any, error) {
 func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	out, err := a.M.EditTaskSpec(prdID, taskID, newSpec, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -923,6 +924,7 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 func (a *API) EditTask(prdID, taskID, newSpec string, readOnly *bool, actor string) (any, error) {
 	out, err := a.M.EditTask(prdID, taskID, newSpec, readOnly, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1008,6 +1010,7 @@ func (a *API) CancelTask(prdID, taskID, actor, reason string) (any, error) {
 func (a *API) EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error) {
 	out, err := a.M.EditStory(prdID, storyID, newTitle, newDescription, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1019,6 +1022,7 @@ func (a *API) EditStory(prdID, storyID, newTitle, newDescription, actor string) 
 func (a *API) AddStory(prdID, title, description, actor string) (any, error) {
 	out, err := a.M.AddStory(prdID, title, description, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1026,6 +1030,7 @@ func (a *API) AddStory(prdID, title, description, actor string) (any, error) {
 func (a *API) RemoveStory(prdID, storyID, actor string) (any, error) {
 	out, err := a.M.RemoveStory(prdID, storyID, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1033,6 +1038,7 @@ func (a *API) RemoveStory(prdID, storyID, actor string) (any, error) {
 func (a *API) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error) {
 	out, err := a.M.AddTask(prdID, storyID, title, spec, actor, dependsOn)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1040,6 +1046,7 @@ func (a *API) AddTask(prdID, storyID, title, spec, actor string, dependsOn []str
 func (a *API) AddTaskReadOnly(prdID, storyID, title, spec, actor string, dependsOn []string, readOnly bool) (any, error) {
 	out, err := a.M.AddTaskReadOnly(prdID, storyID, title, spec, actor, dependsOn, readOnly)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err
@@ -1047,6 +1054,7 @@ func (a *API) AddTaskReadOnly(prdID, storyID, title, spec, actor string, depends
 func (a *API) RemoveTask(prdID, storyID, taskID, actor string) (any, error) {
 	out, err := a.M.RemoveTask(prdID, storyID, taskID, actor)
 	if err == nil {
+		a.M.NotePlanningEdit(prdID)
 		a.M.EmitPRDUpdate(prdID)
 	}
 	return out, err

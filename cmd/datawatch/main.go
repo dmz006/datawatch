@@ -4393,6 +4393,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			InfraRetry:                       acfgIn.InfraRetry.Clone(),
 			RequestWatch:                     acfgIn.RequestWatch.Clone(),
 			PlanningBackend:                  acfgIn.PlanningBackend,
+			PlanningRouting:                  acfgIn.PlanningRouting,
 			VerificationBackend:              acfgIn.VerificationBackend,
 			ExecutionBackend:                 acfgIn.ExecutionBackend,
 			PlanningModel:                    acfgIn.PlanningModel,

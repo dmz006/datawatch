@@ -338,6 +338,10 @@ type PRD struct {
 	// configured mode is off (default) or no review has been recorded; the
 	// latest verdict wins — re-run (ReviewPlan) or re-decompose replaces it.
 	PlanReview *PlanReviewVerdict `json:"plan_review,omitempty"`
+	// PlanningRecord is how the planner for this PRD was routed and what the
+	// planning ladder did; nil when planning routing was off (see
+	// planning_record.go).
+	PlanningRecord *PlanningRecord `json:"planning_record,omitempty"`
 
 	// PRD-completion rules review (B124 extension, 2026-10-12) —
 	// judgment verdicts at the whole-PRD level, same shape Story/Task
@@ -1753,4 +1757,25 @@ type CIWatchRun struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion,omitempty"`
 	URL        string `json:"url,omitempty"`
+}
+
+// PlanningRecordMaxAttempts caps PlanningRecord.Attempts.
+const PlanningRecordMaxAttempts = 10
+
+// PlanningRecord is the stored account of how a PRD's decompose planner was
+// routed and what the planning ladder did. It is nil on a PRD planned with
+// routing off. See planning_record.go.
+type PlanningRecord struct {
+	RuleName       string          `json:"rule_name,omitempty"`
+	Classes        []string        `json:"classes,omitempty"`
+	PlannerBackend string          `json:"planner_backend,omitempty"`
+	PlannerModel   string          `json:"planner_model,omitempty"`
+	Shadow         bool            `json:"shadow,omitempty"`   // decision recorded only; the planner was not changed
+	Fallback       bool            `json:"fallback,omitempty"` // no rule matched; the normal planner was used
+	Attempts       []AttemptRecord `json:"attempts,omitempty"` // capped at PlanningRecordMaxAttempts (the latest are kept)
+	FindingCount   int             `json:"finding_count,omitempty"`
+	// SupervisorEdits counts operator/supervisor story or task edits, adds
+	// and removes made on the PRD after the record was stored.
+	SupervisorEdits int       `json:"supervisor_edits,omitempty"`
+	RecordedAt      time.Time `json:"recorded_at"`
 }
