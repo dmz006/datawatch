@@ -245,8 +245,8 @@ the capacity machinery:
    the override selects among candidates, it does not grant anything the
    entry's permission matrix would refuse.
 
-4. **Behavior when unset.** No `PlacementOverride`, and an LLM entry whose
-   placement set is local-only or empty, placement is **local only,
+4. **Behavior when unset.** When `PlacementOverride` is unset and the LLM
+   entry's placement set is local-only or empty, placement is **local only,
    unchanged**: the dispatcher resolves local nodes exactly as today,
    peer advertisements are simply absent from the candidate set, and no
    peer token is ever constructed or dialed. A peer that has never
