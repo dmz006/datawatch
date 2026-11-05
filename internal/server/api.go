@@ -7125,6 +7125,19 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	// Auto tagging (autonomous.auto_tags.*) follows the live block without
+	// a restart: the engine-tag sync reads it at sync time (auto_tags.go),
+	// and a whole-PUT re-sync of every existing Automation applies a
+	// flip-off (strip engine tags, reclaim un-referenced records) or a
+	// template change at once.
+	for k := range patch {
+		if strings.HasPrefix(k, config.AutoTagsSettingPrefix) {
+			if a, ok := s.autonomousMgr.(autoTagsSyncAPI); ok {
+				a.SyncAutoTagsAll()
+			}
+			break
+		}
+	}
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {

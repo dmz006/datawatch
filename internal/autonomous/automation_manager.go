@@ -70,6 +70,9 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		return nil, err
 	}
 	if err := m.syncAutomationMembership(a.ID, nil, a.Members, false); err != nil {
+		// A refused tag sync (e.g. a name an operator tag owns) must not
+		// leave an Automation behind: roll the creation back.
+		m.automations.Delete(a.ID)
 		return nil, err
 	}
 	return a, nil
@@ -280,6 +283,24 @@ func (m *Manager) RenameAutomationStage(automationID, from, to string, expectedV
 		"automation_id": automationID, "from": from, "to": to,
 		"members": renamed, "version": updated.Version,
 	})
+	// Engine tags (auto_tags.go): the renamed stage's tag record is
+	// migrated in place first (same tag ID and assignments, new name and
+	// marker), then the Automation syncs so orphaned stage tags are
+	// reclaimed.
+	resolved := ResolveAutoTags(m.autoTagsDaemonCfg(), updated.AutoTags)
+	if resolved.Enabled {
+		if toName, err := RenderAutoTag(resolved, "stage", map[string]string{
+			"stage":      to,
+			"automation": updated.Name,
+		}); err == nil {
+			if err := m.migrateAutoStageTag(updated.ID, from, to, toName); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := m.syncAutoTags(updated); err != nil {
+		return nil, err
+	}
 	return updated, nil
 }
 
@@ -326,9 +347,6 @@ func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newM
 			return fmt.Errorf("prd %q: %w", mem.PRDID, err)
 		}
 	}
-	if len(old) == 0 {
-		return nil
-	}
 	if !terminal {
 		newSet := make(map[string]struct{}, len(newMembers))
 		for _, mem := range newMembers {
@@ -352,6 +370,26 @@ func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newM
 		if err := m.store.SavePRD(prd); err != nil {
 			return fmt.Errorf("prd %q: %w", prdID, err)
 		}
+	}
+	// Engine tags (auto_tags.go): a membership write just landed, so the
+	// Automation's system tags sync now. Members that left are stripped of
+	// the Automation's tags (shared kind tags and operator tags stay); when
+	// the Automation itself is gone, its footprints are cleared and its
+	// un-referenced tag records reclaimed.
+	if a, ok := m.automations.Get(automationID); ok {
+		for prdID := range old {
+			prd, ok := m.store.GetPRD(prdID)
+			if !ok {
+				continue
+			}
+			if err := m.stripAutomationAutoTags(automationID, prd); err != nil {
+				return err
+			}
+		}
+		return m.syncAutoTags(a)
+	}
+	if len(old) > 0 {
+		return m.clearAutoTagsFor(&Automation{ID: automationID, Members: oldMembers})
 	}
 	return nil
 }
