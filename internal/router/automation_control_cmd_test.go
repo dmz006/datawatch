@@ -51,6 +51,8 @@ func TestAutomationCommControl(t *testing.T) {
 			map[string]any{"actor": "comm", "member_id": "m2", "edge": "on_failed"}},
 		{"insert", "automation insert ab12 prd-9 fix the flaky step", "/api/automations/ab12/insert_member",
 			map[string]any{"actor": "comm", "member": map[string]any{"prd_id": "prd-9"}, "urgent": false, "reason": "fix the flaky step"}},
+		{"insert with stage", "automation insert ab12 prd-9 stage=review fix the flaky step", "/api/automations/ab12/insert_member",
+			map[string]any{"actor": "comm", "member": map[string]any{"prd_id": "prd-9", "stage": "review"}, "urgent": false, "reason": "fix the flaky step"}},
 		{"insert urgent", "automation insert ab12 prd-9 urgent security fix", "/api/automations/ab12/insert_member",
 			map[string]any{"actor": "comm", "member": map[string]any{"prd_id": "prd-9"}, "urgent": true, "reason": "security fix"}},
 		{"remove", "automation remove ab12 m3", "/api/automations/ab12/remove_member",
@@ -107,6 +109,7 @@ func TestAutomationCommControl(t *testing.T) {
 			"automation pause", "automation resume",
 			"automation skip ab12", "automation skip ab12 m2 sideways",
 			"automation insert ab12", "automation insert ab12 prd-9", "automation insert ab12 prd-9 urgent",
+			"automation insert ab12 prd-9 stage=review", "automation insert ab12 prd-9 stage", "automation insert ab12 prd-9 stage= fix",
 			"automation remove ab12", "automation approve ab12",
 			"automation edges ab12 m2", "automation edges ab12 m2 on_complete", "automation edges ab12 m2 bogus=m4",
 		} {

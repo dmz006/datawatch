@@ -4532,6 +4532,7 @@ paths:
           properties:
             prd_id: {type: string, description: "The member Automaton to insert"}
             name: {type: string, description: "Optional display name"}
+            stage: {type: string, description: "Optional stage label recorded on the inserted member"}
         urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
         after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
       responses:

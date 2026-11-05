@@ -175,7 +175,7 @@ and a stale one is still refused with HTTP 409 either way. `--actor` and
 | Pause | `automation pause <id>` | `automation_pause` | `pause` | Active. Running members finish; nothing new starts |
 | Resume | `automation resume <id>` | `automation_resume` | `resume` | Paused or blocked |
 | Skip | `automation skip <id> <member> --edge on_complete` | `automation_skip_member` | `skip_member` | The member is stuck or not started; follows the edge you choose |
-| Insert | `automation insert <id> <automaton> --reason "..." [--urgent] [--after <member>]` | `automation_insert_member` | `insert_member` | Not finished; a reason is required; one urgent insert at a time |
+| Insert | `automation insert <id> <automaton> --reason "..." [--urgent] [--after <member>] [--stage <stage>]` | `automation_insert_member` | `insert_member` | Not finished; a reason is required; `--stage` records an optional stage label on the member (comm: `stage=<stage>` token) |
 | Remove | `automation remove <id> <member>` | `automation_remove_member` | `remove_member` | The member has not started |
 | Reorder edges | `automation edges <id> <member> --on-complete <m> --on-blocked <m> --on-failed <m>` | `automation_reorder_edges` | `reorder_edges` | The member has not started, or is the running member (its own outgoing edges) |
 | Cancel | `automation cancel <id> --cancel-in-flight true\|false` | `automation_cancel` | `cancel` | Draft, active, paused or blocked |

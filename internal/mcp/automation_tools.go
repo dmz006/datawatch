@@ -387,6 +387,7 @@ func (s *Server) toolAutomationInsertMember() mcpsdk.Tool {
 		mcpsdk.WithString("prd_id", mcpsdk.Required(), mcpsdk.Description("The member PRD to insert.")),
 		mcpsdk.WithString("name", mcpsdk.Description("Optional display name for the inserted member.")),
 		mcpsdk.WithBoolean("urgent", mcpsdk.Description("Take the next slot instead of the end of the chain. Only one urgent insert may be pending at a time.")),
+		mcpsdk.WithString("stage", mcpsdk.Description("Optional stage label to record on the inserted member.")),
 		mcpsdk.WithString("after", mcpsdk.Description("Insert directly after this member ID. Leave empty for the end of the chain; an urgent insert must leave it empty.")),
 	)
 	return mcpsdk.NewTool("automation_insert_member", opts...)
@@ -400,6 +401,7 @@ func (s *Server) handleAutomationInsertMember(_ context.Context, req mcpsdk.Call
 	if v := req.GetString("name", ""); v != "" {
 		member["name"] = v
 	}
+	optionalString(req, member, "stage")
 	extra := map[string]any{"member": member}
 	if req.GetBool("urgent", false) {
 		extra["urgent"] = true
