@@ -170,6 +170,10 @@ Selected core tools:
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
 | `orchestrator_graph_run` / `orchestrator_verdicts` | PRD-DAG orchestrator |
 | `automation_list` / `automation_get` / `automation_create` / `automation_update` / `automation_delete` / `automation_set_llm` / `automation_set_verification_llm` | Automation records — a chain of Automatons with per-outcome edges, entry member, optional budget policy and execution/verification defaults (data records only — no automatic advance yet). `automation_set_llm` and `automation_set_verification_llm` set the Automation's default execution, planning and verification LLMs |
+| `planning_routing_get` | Read the planning routing config (enabled, shadow, rules, ladders, classes) and its validation result |
+| `planning_routing_set` | Update the planning routing config; omitted fields keep their value and a bad config is rejected |
+| `planning_routing_test` | Route one input (`kind`, `tags`, `spec_bytes`, `files`, `project`) and return the decision; no LLM call, nothing changes |
+| `planning_scorecard` | Counts-only planning scorecard and gate report over a `window` such as `7d` |
 | `pipeline_start` / `pipeline_status` | Session chaining |
 | `exit_hook_list` / `exit_hook_add` / `exit_hook_delete` / `exit_hook_enable` / `exit_hook_disable` | Session exit hooks (BL356) |
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |

@@ -4665,3 +4665,285 @@ func derefString(p *string) string {
 func unknownKindMsg(kind string) string {
 	return "unknown Automaton kind " + strconv.Quote(strings.TrimSpace(kind)) + ": use feature, bug, other or maintenance"
 }
+
+// ---- planning routing --------------------------------------------------
+//
+//	GET  /api/autonomous/planning-routing            config + validation result
+//	PUT  /api/autonomous/planning-routing            validate and replace the block
+//	POST /api/autonomous/planning-routing/test       route one input, no LLM call
+//	GET  /api/autonomous/planning-routing/scorecard  counts-only scorecard + gate report
+
+// planningRoutingSetter is the optional AutonomousAPI extension that replaces
+// the planning_routing block outright (autonomous.API implements it).
+type planningRoutingSetter interface {
+	SetPlanningRouting(config.PlanningRoutingConfig) error
+}
+
+// planningRoutingDefaultWindow is the scorecard window when none is given.
+const planningRoutingDefaultWindow = 7 * 24 * time.Hour
+
+// planningRoutingView is the GET/PUT body: the block plus its validation.
+type planningRoutingView struct {
+	Enabled    bool                             `json:"enabled"`
+	Shadow     bool                             `json:"shadow"`
+	Rules      []config.PlanningRule            `json:"rules"`
+	Ladders    map[string]config.PlanningLadder `json:"ladders"`
+	Classes    map[string]config.RiskClass      `json:"classes"`
+	Validation planningRoutingValidation        `json:"validation"`
+}
+
+type planningRoutingValidation struct {
+	Valid bool   `json:"valid"`
+	Error string `json:"error,omitempty"`
+}
+
+// planningRoutingWithDefaults fills the built-in default ladder and risk
+// classes under the operator's entries, so a rule that names the "default"
+// ladder or a built-in class validates and shows what is in force.
+func planningRoutingWithDefaults(cfg config.PlanningRoutingConfig) config.PlanningRoutingConfig {
+	def := config.PlanningRoutingDefaults()
+	ladders := map[string]config.PlanningLadder{}
+	for k, v := range def.Ladders {
+		ladders[k] = v
+	}
+	for k, v := range cfg.Ladders {
+		ladders[k] = v
+	}
+	classes := map[string]config.RiskClass{}
+	for k, v := range def.Classes {
+		classes[k] = v
+	}
+	for k, v := range cfg.Classes {
+		classes[k] = v
+	}
+	cfg.Ladders, cfg.Classes = ladders, classes
+	if cfg.Rules == nil {
+		cfg.Rules = []config.PlanningRule{}
+	}
+	return cfg
+}
+
+func planningRoutingViewOf(cfg config.PlanningRoutingConfig) planningRoutingView {
+	cfg = planningRoutingWithDefaults(cfg)
+	v := planningRoutingView{Enabled: cfg.Enabled, Shadow: cfg.Shadow, Rules: cfg.Rules, Ladders: cfg.Ladders, Classes: cfg.Classes}
+	if err := config.ValidatePlanningRouting(cfg); err != nil {
+		v.Validation = planningRoutingValidation{Error: err.Error()}
+	} else {
+		v.Validation = planningRoutingValidation{Valid: true}
+	}
+	return v
+}
+
+// planningRoutingCurrent reads the block from the live manager config.
+func (s *Server) planningRoutingCurrent() (config.PlanningRoutingConfig, error) {
+	raw, err := json.Marshal(s.autonomousMgr.Config())
+	if err != nil {
+		return config.PlanningRoutingConfig{}, err
+	}
+	var holder struct {
+		PlanningRouting config.PlanningRoutingConfig `json:"planning_routing"`
+	}
+	if err := json.Unmarshal(raw, &holder); err != nil {
+		return config.PlanningRoutingConfig{}, err
+	}
+	return holder.PlanningRouting, nil
+}
+
+// handleAutonomousPlanningRouting serves GET and PUT on the block.
+func (s *Server) handleAutonomousPlanningRouting(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		cur, err := s.planningRoutingCurrent()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, planningRoutingViewOf(cur))
+	case http.MethodPut:
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var in config.PlanningRoutingConfig
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&in); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		in = planningRoutingWithDefaults(in)
+		if err := config.ValidatePlanningRouting(in); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if setter, ok := s.autonomousMgr.(planningRoutingSetter); ok {
+			if err := setter.SetPlanningRouting(in); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		} else {
+			b, _ := json.Marshal(map[string]any{"planning_routing": in})
+			if err := s.autonomousMgr.SetConfig(json.RawMessage(b)); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		// Persist through the config apply path: enabled and shadow use the
+		// same dot-path keys PUT /api/config accepts; the structured members
+		// are assigned beside them.
+		if s.cfg != nil {
+			applyConfigPatch(s.cfg, map[string]interface{}{
+				"autonomous.planning_routing.enabled": in.Enabled,
+				"autonomous.planning_routing.shadow":  in.Shadow,
+			})
+			s.cfg.Autonomous.PlanningRouting.Rules = in.Rules
+			s.cfg.Autonomous.PlanningRouting.Ladders = in.Ladders
+			s.cfg.Autonomous.PlanningRouting.Classes = in.Classes
+			if s.cfgPath != "" {
+				if err := s.saveConfig(); err != nil {
+					log.Printf("[planning-routing] WARNING: applied live but YAML save failed, will not survive a restart: %v", err)
+				}
+			}
+		}
+		s.audit(r.Context(), "update", "autonomous_planning_routing", "", nil)
+		writeJSONOK(w, planningRoutingViewOf(in))
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// planningRouteDecisionView is the JSON shape of an autonomous.RouteDecision.
+type planningRouteDecisionView struct {
+	Enabled   bool                `json:"enabled"`
+	Rule      string              `json:"rule"`
+	Classes   []string            `json:"classes"`
+	Planners  []config.PlannerRef `json:"planners"`
+	Ladder    string              `json:"ladder"`
+	Shadow    bool                `json:"shadow"`
+	Fallback  bool                `json:"fallback"`
+	Reason    string              `json:"reason"`
+	DecidedAt time.Time           `json:"decided_at"`
+}
+
+// handleAutonomousPlanningRoutingTest routes one input under the live config.
+// It never calls an LLM and changes nothing.
+func (s *Server) handleAutonomousPlanningRoutingTest(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	var body struct {
+		Kind      string   `json:"kind"`
+		Tags      []string `json:"tags"`
+		SpecBytes int      `json:"spec_bytes"`
+		Files     []string `json:"files"`
+		Project   string   `json:"project"`
+		Override  string   `json:"override"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.SpecBytes < 0 {
+		http.Error(w, "spec_bytes must be 0 or more", http.StatusBadRequest)
+		return
+	}
+	cur, err := s.planningRoutingCurrent()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := planningRoutingWithDefaults(cur)
+	d := autonomous.RoutePlanner(autonomous.RouteInput{
+		Kind: body.Kind, Tags: body.Tags, SpecBytes: body.SpecBytes,
+		Project: body.Project, Files: body.Files, Override: body.Override,
+	}, cfg, time.Now)
+	v := planningRouteDecisionView{
+		Enabled: cfg.Enabled, Rule: d.RuleName, Classes: d.Classes, Planners: d.Planners,
+		Ladder: d.LadderName, Shadow: d.Shadow, Fallback: d.Fallback, Reason: d.Reason, DecidedAt: d.DecidedAt,
+	}
+	if v.Classes == nil {
+		v.Classes = []string{}
+	}
+	if v.Planners == nil {
+		v.Planners = []config.PlannerRef{}
+	}
+	writeJSONOK(w, v)
+}
+
+// parsePlanningWindow reads the scorecard window: a Go duration ("36h") or a
+// whole number of days ("7d"). Empty is the default; negative is an error.
+func parsePlanningWindow(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return planningRoutingDefaultWindow, nil
+	}
+	var d time.Duration
+	if days, ok := strings.CutSuffix(raw, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil {
+			return 0, fmt.Errorf("window %q: use a duration such as 36h or a day count such as 7d", raw)
+		}
+		d = time.Duration(n) * 24 * time.Hour
+	} else {
+		var err error
+		d, err = time.ParseDuration(raw)
+		if err != nil {
+			return 0, fmt.Errorf("window %q: use a duration such as 36h or a day count such as 7d", raw)
+		}
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("window %q: must not be negative", raw)
+	}
+	return d, nil
+}
+
+// handleAutonomousPlanningScorecard returns the counts-only scorecard and the
+// gate report over the window.
+func (s *Server) handleAutonomousPlanningScorecard(w http.ResponseWriter, r *http.Request) {
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	window, err := parsePlanningWindow(r.URL.Query().Get("window"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var prds []*autonomous.PRD
+	for _, raw := range s.autonomousMgr.ListPRDs() {
+		p, err := toPRD(raw)
+		if err != nil || p == nil {
+			continue
+		}
+		prds = append(prds, p)
+	}
+	sc := autonomous.Scorecard(prds, window, time.Now)
+	summary, text := autonomous.PlanningGateReport(sc)
+	writeJSONOK(w, map[string]any{
+		"window":    window.String(),
+		"scorecard": sc,
+		"gate":      summary,
+		"report":    text,
+	})
+}

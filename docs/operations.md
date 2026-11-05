@@ -6392,3 +6392,18 @@ When the splash is shown for a new version, the version line now carries the **p
 ### Android / iPhone
 
 The mobile apps (datawatch-app) do not yet mirror these dwell settings. The parity issue asking them to adopt the two dwell timetables is filed at `docs/plans/parity-issues/splash-dwell-settings.md`.
+
+## Planning routing and retry ladder
+
+Planning routing chooses the planner for each Automaton decompose by rule. It is off by default and ships with no rules; the example rules in `docs/config-reference.yaml` are comments, not active. Every change is validated first and a bad config is rejected with nothing applied. Rules are walked in order and the first match wins; an Automaton's own planning fields always win over routing.
+
+| Method | How |
+|---|---|
+| YAML | `autonomous.planning_routing` in `datawatch.yaml` (`enabled`, `shadow`, `rules`, `ladders`, `classes`) |
+| CLI | `datawatch autonomous planning-routing get \| set \| test \| scorecard` |
+| Web UI | Settings, Automata section, **Automata planning routing** card |
+| REST API | `GET`/`PUT /api/autonomous/planning-routing`, `POST .../test`, `GET .../scorecard?window=7d` |
+| Comm channel | `autonomous planning-routing show \| test \| scorecard` |
+| MCP | `planning_routing_get`, `planning_routing_set`, `planning_routing_test`, `planning_scorecard` |
+
+**Roll out in shadow mode first.** Set `enabled: true` and `shadow: true`; the routed decision is recorded for every decompose and the planner does not change. Read the would-route counts in the scorecard, compare them with what you expect, then set `shadow: false`. The scorecard and its gate report carry counts, planner names and rule and class names only, never plan or finding text. The full guide is [howto/automata-planning-routing.md](howto/automata-planning-routing.md).

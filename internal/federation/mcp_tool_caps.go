@@ -143,6 +143,10 @@ var MCPToolCap = map[string]string{
 	"autonomous_defect_batch_split":                CapAutonomousWrite, // splits a story out of a batch into a new Automaton
 	"autonomous_defect_tinyfix_check":              CapAutonomousRead,  // classify a change for the tiny-fix lane; creates nothing
 	"autonomous_scan_config_get":                   CapAutonomousRead,
+	"planning_routing_get":                         CapAutonomousRead,
+	"planning_routing_set":                         CapConfigWrite,
+	"planning_scorecard":                           CapAutonomousRead,
+	"planning_routing_test":                        CapAutonomousRead,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,
 	"autonomous_status":                            CapAutonomousRead,
 	// BL427 lifecycle-event subscriptions.

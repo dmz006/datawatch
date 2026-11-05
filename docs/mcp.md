@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
@@ -1535,6 +1535,78 @@ Search before create: find the Automata, registry rows and unmerged branches tha
 **Example:**
 ```
 autonomous_overlap_search(title="Add search before create", spec="Warn when a new Automaton overlaps an existing one", limit=5)
+```
+
+### `planning_routing_get`
+
+Read the planning routing config and its validation result. Routing is off by default; when on it picks the planner for an Automaton decompose per rule. Read-only. It proxies `GET /api/autonomous/planning-routing`.
+
+**Parameters:** none.
+
+**Reply:** `enabled`, `shadow`, `rules`, `ladders` and `classes` (the built-in default ladder and risk classes are filled in under any entries you set) and `validation` (`valid`, and `error` when it is not valid).
+
+**Example:**
+```
+planning_routing_get()
+```
+
+### `planning_routing_set`
+
+Update the planning routing config. Every field is optional: a field you leave out keeps its current value (the tool reads the current config and sends the merged block). The result is validated first and a bad config is rejected with nothing applied. It proxies `PUT /api/autonomous/planning-routing`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `enabled` | boolean | No | Turn planning routing on or off. |
+| `shadow` | boolean | No | Record the routed decision only; keep the planner unchanged. |
+| `rules` | string (JSON array) | No | Replaces the current rules: `[{"name","match":{"kind","tags","project","risk_class","spec_size_min","spec_size_max","override"},"planners":[{"backend","model"}],"ladder"}]`. |
+| `ladders` | string (JSON object) | No | Ladders by name, replacing the current ones: `{"default":{"touch_up_max","replan_max","escalate_after_attempts"}}`. |
+| `classes` | string (JSON object) | No | Risk classes by name, replacing the current ones: `{"security":{"tags":[],"path_globs":[]}}`. |
+
+**Reply:** the same view as `planning_routing_get`, for the config now in force. An invalid `rules`, `ladders` or `classes` string, or a non-boolean `enabled` or `shadow`, is an error.
+
+**Example:**
+```
+planning_routing_set(enabled=true, shadow=true)
+```
+
+### `planning_routing_test`
+
+Route one input under the current planning routing config and return the decision. No LLM is called and nothing changes. It proxies `POST /api/autonomous/planning-routing/test`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `kind` | string | No | Routing input kind, such as `feature` or `bug`. |
+| `tags` | string | No | Comma-separated tags. |
+| `spec_bytes` | number | No | Spec size in bytes (0 or more). |
+| `files` | string | No | Comma-separated repo-relative paths the tasks touch. |
+| `project` | string | No | Project identifier. |
+
+**Reply:** `enabled`, `rule` (the matching rule's name), `classes`, `planners` (each `{backend, model}`), `ladder`, `shadow`, `fallback`, `reason` and `decided_at`.
+
+**Example:**
+```
+planning_routing_test(kind="feature", tags="security", spec_bytes=12000, files="internal/auth/login.go")
+```
+
+### `planning_scorecard`
+
+Counts-only planning scorecard and gate report per planner and rule class over a window: decomposes, passes by attempt, escalations, errors and shadow would-route counts. It carries no spec or task text. Read-only. It proxies `GET /api/autonomous/planning-routing/scorecard`.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `window` | string | No | A duration such as `36h` or a day count such as `7d`. Default `7d`; `0` means all records. A negative or malformed window is an error. |
+
+**Reply:** `window`, `scorecard`, `gate` (the gate summary) and `report` (the gate report as text).
+
+**Example:**
+```
+planning_scorecard(window="7d")
 ```
 
 ---

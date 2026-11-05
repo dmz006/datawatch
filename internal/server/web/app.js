@@ -10800,6 +10800,13 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_planning_routing', t('planning_routing_title'))}
+          <div id="settings-sec-automata_planning_routing" style="${secContent('automata_planning_routing')}">
+            <div id="automataPlanningRoutingPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+
         <!-- BL221 parity — Type Registry card (Settings → Automata) -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_type_registry', t('automata_type_registry_title')||'Type Registry', 'architecture.md')}
@@ -10922,6 +10929,7 @@ function renderSettingsView() {
   loadAutomataTypeRegistryPanel(); // BL221 parity
   loadWorkloadRolesPanel();
   loadAutomataTagRegistryPanel();
+  if (document.getElementById('automataPlanningRoutingPanel')) loadAutomataPlanningRoutingPanel();
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
@@ -17805,6 +17813,8 @@ const GENERAL_CONFIG_FIELDS = [
   ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
+    { key: 'autonomous.planning_routing.enabled', label: 'Route Automata planning by rules', labelKey: 'planning_routing_field_enabled', type: 'toggle' },
+    { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
@@ -46233,6 +46243,171 @@ window.tagRegistryNoteDismiss = function(id) {
     .then(() => _tagsLoad(true))
     .then(() => { _tagBrowseRepaintVisible(); loadAutomataTagRegistryPanel(); })
     .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+};
+
+// ── Planning routing card (Settings → Automata) ─────────────────────────────
+// Shows the planning routing block: the enable and shadow toggles, the ordered
+// rules (read-only table plus a JSON editor that PUTs the whole block), the
+// ladders and risk classes, a dry-run form that routes one input without an
+// LLM call, and the counts-only scorecard and gate report. Every string goes
+// through t() with a planning_routing_ key.
+let _planningRoutingView = null;
+
+function _prList(v) { return Array.isArray(v) ? v.map(String).join(', ') : ''; }
+
+window.planningRoutingRulesHtml = function(rules) {
+  const list = Array.isArray(rules) ? rules : [];
+  if (!list.length) return `<div class="planning-routing-rules-empty" style="color:var(--text2);padding:4px 0;">${escHtml(t('planning_routing_rules_empty'))}</div>`;
+  const th = k => `<th style="text-align:left;padding:2px 6px;">${escHtml(t(k))}</th>`;
+  const rows = list.map((r, i) => {
+    const m = (r && r.match) || {};
+    const planners = (Array.isArray(r && r.planners) ? r.planners : []).map(p => String(p.backend || '') + ':' + String(p.model || '')).join(' → ');
+    const match = [['kind', m.kind], ['tags', m.tags], ['project', m.project], ['risk_class', m.risk_class]]
+      .filter(e => Array.isArray(e[1]) && e[1].length).map(e => e[0] + '=' + _prList(e[1])).join('; ');
+    return `<tr class="planning-routing-rule" data-rule="${escHtml(String((r && r.name) || ''))}">` +
+      `<td style="padding:2px 6px;">${i + 1}</td><td style="padding:2px 6px;overflow-wrap:anywhere;">${escHtml(String((r && r.name) || ''))}</td>` +
+      `<td style="padding:2px 6px;overflow-wrap:anywhere;">${escHtml(match || t('planning_routing_match_any'))}</td>` +
+      `<td style="padding:2px 6px;overflow-wrap:anywhere;">${escHtml(planners)}</td>` +
+      `<td style="padding:2px 6px;">${escHtml(String((r && r.ladder) || t('planning_routing_ladder_default')))}</td></tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;"><table class="planning-routing-rules" style="width:100%;font-size:12px;border-collapse:collapse;">` +
+    `<thead><tr>${th('planning_routing_col_order')}${th('planning_routing_col_name')}${th('planning_routing_col_match')}${th('planning_routing_col_planners')}${th('planning_routing_col_ladder')}</tr></thead><tbody>${rows}</tbody></table></div>`;
+};
+
+window.planningRoutingLaddersHtml = function(ladders, classes) {
+  const line = (cls, k, body) => `<div class="${cls}" style="font-size:12px;padding:2px 0;overflow-wrap:anywhere;"><b>${escHtml(k)}</b> ${escHtml(body)}</div>`;
+  const lk = Object.keys(ladders || {}).sort();
+  const ck = Object.keys(classes || {}).sort();
+  const none = `<div style="color:var(--text2);font-size:12px;">${escHtml(t('planning_routing_none'))}</div>`;
+  const lad = lk.length ? lk.map(k => {
+    const l = ladders[k] || {};
+    return line('planning-routing-ladder', k, t('planning_routing_ladder_line', [Number(l.touch_up_max) || 0, Number(l.replan_max) || 0]));
+  }).join('') : none;
+  const cls = ck.length ? ck.map(k => line('planning-routing-class', k, JSON.stringify(classes[k] || {}))).join('') : none;
+  return `<div class="planning-routing-ladders"><div style="font-weight:600;margin-top:8px;">${escHtml(t('planning_routing_ladders_title'))}</div>${lad}` +
+    `<div style="font-weight:600;margin-top:8px;">${escHtml(t('planning_routing_classes_title'))}</div>${cls}</div>`;
+};
+
+window.planningRoutingDecisionHtml = function(d) {
+  const v = d || {};
+  const planners = (Array.isArray(v.planners) ? v.planners : []).map(p => String(p.backend || '') + ':' + String(p.model || '')).join(' → ');
+  const row = (k, val) => `<div style="font-size:12px;overflow-wrap:anywhere;"><b>${escHtml(t(k))}</b> ${escHtml(String(val))}</div>`;
+  return `<div class="planning-routing-decision">` +
+    row('planning_routing_result_rule', v.rule || t('planning_routing_none')) +
+    row('planning_routing_result_planners', planners || t('planning_routing_none')) +
+    row('planning_routing_result_ladder', v.ladder || t('planning_routing_ladder_default')) +
+    row('planning_routing_result_classes', _prList(v.classes) || t('planning_routing_none')) +
+    row('planning_routing_result_shadow', v.shadow ? t('planning_routing_yes') : t('planning_routing_no')) +
+    row('planning_routing_result_fallback', v.fallback ? t('planning_routing_yes') : t('planning_routing_no')) +
+    (v.reason ? row('planning_routing_result_reason', v.reason) : '') + `</div>`;
+};
+
+window.planningRoutingTestFormHtml = function() {
+  const inp = 'font-size:12px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);min-width:0;';
+  return `<div class="planning-routing-test" style="margin-top:8px;"><div style="font-weight:600;">${escHtml(t('planning_routing_test_title'))}</div>` +
+    `<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0;">` +
+    `<input id="prtKind" type="text" placeholder="${escHtml(t('planning_routing_test_kind'))}" style="${inp}flex:1;min-width:90px;">` +
+    `<input id="prtTags" type="text" placeholder="${escHtml(t('planning_routing_test_tags'))}" style="${inp}flex:1;min-width:90px;">` +
+    `<input id="prtProject" type="text" placeholder="${escHtml(t('planning_routing_test_project'))}" style="${inp}flex:1;min-width:90px;">` +
+    `<input id="prtSpecBytes" type="number" min="0" placeholder="${escHtml(t('planning_routing_test_spec_bytes'))}" style="${inp}width:110px;">` +
+    `<input id="prtOverride" type="text" placeholder="${escHtml(t('planning_routing_test_override'))}" style="${inp}flex:1;min-width:90px;">` +
+    `<button class="btn-secondary planning-routing-test-run" style="font-size:12px;" onclick="planningRoutingRunTest()">${escHtml(t('planning_routing_test_run'))}</button></div>` +
+    `<div id="prtResult" aria-live="polite"></div></div>`;
+};
+
+// planningRoutingScorecardHtml renders counts only: per planner and risk class
+// counts, the would-route counts and the gate totals. It never prints any
+// free text from a decompose.
+window.planningRoutingScorecardHtml = function(data) {
+  const d = (data && typeof data === 'object') ? data : {};
+  const g = d.gate || {};
+  const rows = Array.isArray((d.scorecard || {}).rows) ? d.scorecard.rows : (Array.isArray(g.rows) ? g.rows : []);
+  const would = Array.isArray(g.would_route) ? g.would_route : (Array.isArray((d.scorecard || {}).would_route) ? d.scorecard.would_route : []);
+  const n = v => Number(v) || 0;
+  const head = `<div style="font-weight:600;margin-top:8px;">${escHtml(t('planning_routing_scorecard_title'))}` +
+    (d.window ? ` <span style="font-weight:400;color:var(--text2);">${escHtml(t('planning_routing_window', [String(d.window)]))}</span>` : '') + `</div>`;
+  const totals = `<div class="planning-routing-gate" style="font-size:12px;">${escHtml(t('planning_routing_gate_line', [n(g.decomposes), n(g.passed_first_attempt), n(g.passed_after_touch_up), n(g.passed_after_replan), n(g.escalations), n(g.errors), n(g.would_route_total)]))}</div>`;
+  const th = k => `<th style="text-align:left;padding:2px 6px;">${escHtml(t(k))}</th>`;
+  const body = rows.length ? `<div style="overflow-x:auto;"><table class="planning-routing-scorecard" style="width:100%;font-size:12px;border-collapse:collapse;"><thead><tr>` +
+    th('planning_routing_col_planner') + th('planning_routing_col_class') + th('planning_routing_col_decomposes') + th('planning_routing_col_first') +
+    th('planning_routing_col_touch_up') + th('planning_routing_col_replan') + th('planning_routing_col_escalations') + th('planning_routing_col_errors') +
+    `</tr></thead><tbody>` + rows.map(r => `<tr class="planning-routing-score-row"><td style="padding:2px 6px;overflow-wrap:anywhere;">${escHtml(String(r.backend || '') + ':' + String(r.model || ''))}</td>` +
+      `<td style="padding:2px 6px;">${escHtml(String(r.class || ''))}</td>` +
+      [r.decomposes, r.passed_first_attempt, r.passed_after_touch_up, r.passed_after_replan, r.escalations, r.errors].map(x => `<td style="padding:2px 6px;">${n(x)}</td>`).join('') + `</tr>`).join('') +
+    `</tbody></table></div>` : `<div class="planning-routing-score-empty" style="color:var(--text2);font-size:12px;">${escHtml(t('planning_routing_scorecard_empty'))}</div>`;
+  const wr = would.length ? `<div class="planning-routing-would" style="margin-top:4px;"><div style="font-size:12px;font-weight:600;">${escHtml(t('planning_routing_would_route_title'))}</div>` +
+    would.map(w => `<div class="planning-routing-would-row" style="font-size:12px;overflow-wrap:anywhere;">${escHtml(t('planning_routing_would_route_line', [String(w.backend || '') + ':' + String(w.model || ''), String(w.rule || ''), n(w.would_route)]))}</div>`).join('') + `</div>` : '';
+  return `<div class="planning-routing-scorecard-block">${head}${totals}${body}${wr}</div>`;
+};
+
+window.planningRoutingCardHtml = function(view, scorecard) {
+  const v = (view && typeof view === 'object') ? view : {};
+  const val = v.validation || {};
+  const toggle = (id, key, on) => `<label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} onchange="planningRoutingToggle()"> ${escHtml(t(key))}</label>`;
+  const block = { enabled: !!v.enabled, shadow: !!v.shadow, rules: v.rules || [], ladders: v.ladders || {}, classes: v.classes || {} };
+  const status = val.valid === false
+    ? `<div class="planning-routing-invalid" role="alert" style="color:var(--error);font-size:12px;">${escHtml(t('planning_routing_invalid', [String(val.error || '')]))}</div>` : '';
+  return `<div class="planning-routing-card" style="min-width:0;">` +
+    `<div style="font-size:12px;color:var(--text2);margin-bottom:6px;">${escHtml(t('planning_routing_desc'))}</div>` +
+    toggle('prEnabled', 'planning_routing_enabled', v.enabled) + toggle('prShadow', 'planning_routing_shadow', v.shadow) + status +
+    `<div style="font-weight:600;margin-top:8px;">${escHtml(t('planning_routing_rules_title'))}</div>` +
+    window.planningRoutingRulesHtml(v.rules) + window.planningRoutingLaddersHtml(v.ladders, v.classes) +
+    `<div style="font-weight:600;margin-top:8px;">${escHtml(t('planning_routing_json_title'))}</div>` +
+    `<textarea id="prJson" spellcheck="false" aria-label="${escHtml(t('planning_routing_json_title'))}" style="width:100%;min-height:140px;font-family:monospace;font-size:12px;box-sizing:border-box;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:6px;">${escHtml(JSON.stringify(block, null, 2))}</textarea>` +
+    `<div style="margin-top:4px;"><button class="btn-secondary planning-routing-save" style="font-size:12px;" onclick="planningRoutingSaveJson()">${escHtml(t('planning_routing_json_save'))}</button></div>` +
+    window.planningRoutingTestFormHtml() +
+    (scorecard !== undefined ? window.planningRoutingScorecardHtml(scorecard) : '') + `</div>`;
+};
+
+function loadAutomataPlanningRoutingPanel() {
+  const panel = document.getElementById('automataPlanningRoutingPanel');
+  if (!panel) return Promise.resolve();
+  return Promise.all([
+    apiFetch('/api/autonomous/planning-routing'),
+    apiFetch('/api/autonomous/planning-routing/scorecard').catch(() => ({})),
+  ]).then(([view, score]) => {
+    _planningRoutingView = view;
+    const el = document.getElementById('automataPlanningRoutingPanel');
+    if (el) el.innerHTML = window.planningRoutingCardHtml(view, score);
+  }).catch(e => {
+    const el = document.getElementById('automataPlanningRoutingPanel');
+    if (el) el.innerHTML = `<div class="planning-routing-failed" style="color:var(--error);">${escHtml(t('planning_routing_failed', [String((e && e.message) || e)]))}</div>`;
+  });
+}
+
+function _planningRoutingPut(block) {
+  return apiFetch('/api/autonomous/planning-routing', { method: 'PUT', body: JSON.stringify(block) })
+    .then(() => { showToast(t('planning_routing_saved'), 'success', 2000); return loadAutomataPlanningRoutingPanel(); })
+    .catch(e => { showToast(t('planning_routing_save_failed', [String((e && e.message) || e)]), 'error', 4000); });
+}
+
+window.planningRoutingToggle = function() {
+  const cur = _planningRoutingView || {};
+  const en = document.getElementById('prEnabled');
+  const sh = document.getElementById('prShadow');
+  return _planningRoutingPut({ enabled: !!(en && en.checked), shadow: !!(sh && sh.checked), rules: cur.rules || [], ladders: cur.ladders || {}, classes: cur.classes || {} });
+};
+
+window.planningRoutingSaveJson = function() {
+  const ta = document.getElementById('prJson');
+  let block;
+  try { block = JSON.parse(ta ? ta.value : ''); } catch (e) {
+    showToast(t('planning_routing_json_invalid', [String(e.message)]), 'error', 4000);
+    return Promise.resolve();
+  }
+  return _planningRoutingPut(block);
+};
+
+window.planningRoutingRunTest = function() {
+  const val = id => { const e = document.getElementById(id); return e ? String(e.value || '').trim() : ''; };
+  const body = {
+    kind: val('prtKind'), project: val('prtProject'), override: val('prtOverride'),
+    tags: val('prtTags') ? val('prtTags').split(',').map(x => x.trim()).filter(Boolean) : [],
+    spec_bytes: Math.max(0, parseInt(val('prtSpecBytes'), 10) || 0),
+  };
+  return apiFetch('/api/autonomous/planning-routing/test', { method: 'POST', body: JSON.stringify(body) })
+    .then(d => { const el = document.getElementById('prtResult'); if (el) el.innerHTML = window.planningRoutingDecisionHtml(d); })
+    .catch(e => { const el = document.getElementById('prtResult'); if (el) el.innerHTML = `<div style="color:var(--error);font-size:12px;">${escHtml(t('planning_routing_test_failed', [String((e && e.message) || e)]))}</div>`; });
 };
 
 // ── Tag registry settings panel ──────────────────────────────────────────────

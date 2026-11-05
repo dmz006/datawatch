@@ -183,6 +183,28 @@ var pendingTranslationKeys = map[string]bool{
 	"held_question_failed":          true,
 	"held_question_settings_mode":   true,
 	"held_question_settings_states": true,
+	// Planning routing card: English until the app translation lands.
+	"planning_routing_title":             true,
+	"planning_routing_desc":              true,
+	"planning_routing_enabled":           true,
+	"planning_routing_shadow":            true,
+	"planning_routing_field_enabled":     true,
+	"planning_routing_field_shadow":      true,
+	"planning_routing_rules_empty":       true,
+	"planning_routing_match_any":         true,
+	"planning_routing_json_title":        true,
+	"planning_routing_json_save":         true,
+	"planning_routing_saved":             true,
+	"planning_routing_save_failed":       true,
+	"planning_routing_failed":            true,
+	"planning_routing_invalid":           true,
+	"planning_routing_test_title":        true,
+	"planning_routing_test_run":          true,
+	"planning_routing_test_failed":       true,
+	"planning_routing_scorecard_title":   true,
+	"planning_routing_scorecard_empty":   true,
+	"planning_routing_gate_line":         true,
+	"planning_routing_would_route_title": true,
 }
 
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {

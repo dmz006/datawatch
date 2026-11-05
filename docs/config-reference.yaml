@@ -2669,6 +2669,64 @@ autonomous:
   # Per-PRD override: set decomposition_profile via POST /api/autonomous/prds/{id}/set_llm,
   # the PWA Settings modal, or CLI --decomposition-profile. Per-PRD value takes priority.
   planning_backend: ""
+  # Planning routing and retry ladder: choose the planner per Automaton by rule.
+  # Off by default, no rules. An Automaton's own planning fields win over routing;
+  # when routing is off or no rule matches, the global planner above is used.
+  # Rules are walked in order and the first match wins. Settable from YAML, the
+  # CLI (datawatch autonomous planning-routing), the PWA Settings card,
+  # PUT /api/autonomous/planning-routing, the comm channel and MCP
+  # (planning_routing_set). A bad block is rejected and nothing is applied.
+  planning_routing:
+    # Turn routing on. false = the normally resolved planner is used.
+    enabled: false
+    # Record the routed decision (see would-route counts in the scorecard)
+    # without changing the planner. Use before turning rules on.
+    shadow: false
+    # Ordered rules, first match wins. Empty list = no routing. Each rule:
+    #   name:     unique name (also usable as an override)
+    #   match:    kind, tags, project, risk_class (lists; empty = any, any entry
+    #             matches), spec_size_min / spec_size_max (bytes, 0 = unbounded),
+    #             override (free-form tag)
+    #   planners: ordered [{backend, model}]; first is the planner, the rest are
+    #             its escalation targets (at least one)
+    #   ladder:   a name under ladders; empty = default
+    # The two example rules below are examples only and are NOT active; copy one,
+    # use backends and models from your own LLM registry, and try it in shadow
+    # mode first.
+    rules: []
+    #  - name: security-strong
+    #    match:
+    #      risk_class: [security]
+    #      tags: [security]
+    #    planners:
+    #      - {backend: claude-code, model: claude-opus-5-5}
+    #      - {backend: pi-prompt, model: "qwen3.8:27b"}
+    #  - name: design-strong
+    #    match:
+    #      tags: [design, ui]
+    #    planners:
+    #      - {backend: claude-code, model: claude-opus-5-5}
+    #      - {backend: pi-prompt, model: "qwen3.8:27b"}
+    # Retry ladders by name. The built-in "default" exists even if omitted.
+    # A count of 0 reads as its default; counts cannot be negative.
+    ladders:
+      default:
+        # Most touch-up passes (the planner fixes only the flagged tasks).
+        touch_up_max: 1
+        # Most replans (the findings are fed back and the planner plans again).
+        replan_max: 1
+        # Failed attempts at one planner before the next planner in the rule.
+        escalate_after_attempts: 2
+    # Risk classes by name: tags on the Automaton or path globs on the files its
+    # tasks touch ("dir/**" matches everything under dir). An entry with a
+    # built-in name replaces the built-in. Built-ins are security (tag security;
+    # globs security/**, internal/server/auth*) and design (tags design, ui).
+    classes:
+      security:
+        tags: [security]
+        path_globs: ["security/**", "internal/server/auth*"]
+      design:
+        tags: [design, ui]
   # Fallback backend for autonomous task sessions. Task backend resolution
   # checks (1) task.backend, (2) prd.backend, (3) this field, (4) the global
   # session.llm_backend. Set to "opencode" to ensure all autonomous tasks run

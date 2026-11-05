@@ -132,8 +132,11 @@ type Config struct {
 	MaxParallelTasks int `json:"max_parallel_tasks,omitempty"`
 	// BL304: renamed from DecompositionBackend; JSON key updated to planning_backend.
 	// Old key "decomposition_backend" still accepted via SetConfig migration.
-	PlanningBackend     string `json:"planning_backend,omitempty"`
-	VerificationBackend string `json:"verification_backend,omitempty"`
+	PlanningBackend string `json:"planning_backend,omitempty"`
+	// PlanningRouting is the autonomous.planning_routing block: routes the
+	// decompose call to a rule-chosen planner and ladder. Off by default.
+	PlanningRouting     config.PlanningRoutingConfig `json:"planning_routing,omitempty"`
+	VerificationBackend string                       `json:"verification_backend,omitempty"`
 	// ExecutionBackend is the fallback backend used when a task and its
 	// parent PRD both have an empty Backend field. Empty string means
 	// fall through to the global session.llm_backend default.
@@ -2731,10 +2734,14 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 // can't re-interpret this stored report), transitions the PRD to
 // needs_review with the decompose Decision + scope warnings, runs the
 // BL268 persist-check, and removes the scratch decompose artifact.
-func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, title string, s []Story) (*PRD, error) {
+func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, title string, s []Story, rec *PlanningRecord) (*PRD, error) {
 	m.store.WithLock(func() {
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
 		prd.DecomposeSessionFailures = 0
+		if rec != nil {
+			// Stored with the PRD save below, so the record lands atomically with the plan.
+			prd.PlanningRecord = rec
+		}
 	})
 
 	// Drop tasks whose whole purpose is an artefact the change record
@@ -2893,6 +2900,39 @@ func (m *Manager) SetSkillsDir(dir string) {
 	m.skillsDir = dir
 }
 
+// routedPlanForDecompose resolves the planner for a decompose. Decompose()
+// and decomposeStreamingCore() are twins and both call it, so they cannot
+// drift. Precedence (explicit settings never change): the PRD's own
+// decomposition_profile / decomposition_model; then the Automaton's planning
+// backend and model (effectivePlanning); then routing (RoutePlanner over
+// cfg.PlanningRouting); then the global planning backend and model.
+// Routing runs the ladder only when it is enabled, not shadow and not a
+// fallback; shadow and fallback decisions are recorded and the planner is
+// left as effectivePlanning returns it.
+func routedPlanForDecompose(prd *PRD, auto *Automation, cfg Config) routedPlan {
+	backend, model := effectivePlanning(auto, cfg)
+	rp := routedPlan{Backend: backend, Model: model}
+	if prd.DecompositionProfile != "" || prd.DecompositionModel != "" {
+		return rp
+	}
+	if auto != nil && (auto.PlanningBackend != "" || auto.PlanningModel != "") {
+		return rp
+	}
+	if !cfg.PlanningRouting.Enabled {
+		return rp
+	}
+	d := RoutePlanner(routeInputForPRD(prd), cfg.PlanningRouting, time.Now)
+	rp.Decision = &d
+	if d.Shadow || d.Fallback || len(d.Planners) == 0 {
+		return rp
+	}
+	rp.UseLadder = true
+	rp.Planners = d.Planners
+	rp.Ladder = cfg.PlanningRouting.Ladders[d.LadderName]
+	rp.Backend, rp.Model = d.Planners[0].Backend, d.Planners[0].Model
+	return rp
+}
+
 // Decompose calls the LLM via the configured DecomposeFn and persists
 // the resulting story tree. Returns the updated PRD.
 //
@@ -2901,7 +2941,7 @@ func (m *Manager) SetSkillsDir(dir string) {
 // Approve before Run is allowed; see Manager.Approve and Manager.Run.
 // Planning records a Decision row on the PRD with the LLM call
 // metadata (backend, prompt size, response size).
-func (m *Manager) Decompose(prdID string) (*PRD, error) {
+func (m *Manager) Decompose(prdID string) (result *PRD, retErr error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2928,7 +2968,10 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// The Automation's planning fields sit between the PRD's own
 	// decomposition fields and the global planning config. Twin in
 	// decomposeStreamingCore(); keep both in sync.
-	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), m.cfg)
+	rp := routedPlanForDecompose(prd, m.AutomationForPRD(prd), m.cfg)
+	planBackend, planGlobalModel := rp.Backend, rp.Model
+	planRec := rp.plainRecord(time.Now())
+	defer m.recordPlanningOnFailure(prd, &planRec, &retErr)
 	backend := prd.DecompositionProfile
 	if backend == "" {
 		backend = planBackend
@@ -2995,6 +3038,13 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		"the PRD's decomposition_model", "autonomous.planning_model", "the PRD's model", "autonomous.verification_model"); serr != nil {
 		m.failDecomposeAttempt(prd, "decompose-config", serr)
 		return nil, serr
+	}
+	if rp.UseLadder {
+		updated, _, lerr := m.decomposeViaLadder(prd, prdID, rp, prompt, effort)
+		if lerr != nil {
+			return nil, lerr
+		}
+		return updated, nil
 	}
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
@@ -3068,7 +3118,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		case decomposeAttemptTerminal:
 			return nil, oerr
 		default: // decomposeAttemptStored — plan validated and stored.
-			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s)
+			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s, planRec)
 			if ferr != nil {
 				return nil, ferr
 			}
@@ -3097,7 +3147,7 @@ func (m *Manager) DecomposeStreaming(prdID string, cb func(index, total int, sto
 
 // decomposeStreamingCore is the typed implementation used internally and
 // by tests. It runs the LLM planning phase and calls cb for each story.
-func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, error) {
+func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (result *PRD, retErr error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3121,7 +3171,10 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// The Automation's planning fields sit between the PRD's own
 	// decomposition fields and the global planning config. Twin in
 	// Decompose(); keep both in sync.
-	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), m.cfg)
+	rp := routedPlanForDecompose(prd, m.AutomationForPRD(prd), m.cfg)
+	planBackend, planGlobalModel := rp.Backend, rp.Model
+	planRec := rp.plainRecord(time.Now())
+	defer m.recordPlanningOnFailure(prd, &planRec, &retErr)
 	backend := prd.DecompositionProfile
 	if backend == "" {
 		backend = planBackend
@@ -3188,6 +3241,18 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		m.failDecomposeAttempt(prd, "decompose-config", serr)
 		return nil, serr
 	}
+	if rp.UseLadder {
+		updated, stories, lerr := m.decomposeViaLadder(prd, prdID, rp, prompt, effort)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if cb != nil {
+			for i := range stories {
+				cb(i, len(stories), stories[i])
+			}
+		}
+		return updated, nil
+	}
 	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
 	// for the full explanation; retryDecomposeFailure is the shared
 	// helper both copies of this drifted-duplicate pair call, so the
@@ -3244,7 +3309,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		case decomposeAttemptTerminal:
 			return nil, oerr
 		default: // decomposeAttemptStored — plan validated and stored.
-			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s)
+			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s, planRec)
 			if ferr != nil {
 				return nil, ferr
 			}

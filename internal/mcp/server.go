@@ -665,6 +665,11 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// BL221 (v6.2.0) Phase 3 — scan framework tools.
+	// Planning routing: config, scorecard and a no-LLM routing test.
+	mcpSrv.AddTool(s.toolPlanningRoutingGet(), tracked(s.handlePlanningRoutingGet))
+	mcpSrv.AddTool(s.toolPlanningRoutingSet(), tracked(s.handlePlanningRoutingSet))
+	mcpSrv.AddTool(s.toolPlanningScorecard(), tracked(s.handlePlanningScorecard))
+	mcpSrv.AddTool(s.toolPlanningRoutingTest(), tracked(s.handlePlanningRoutingTest))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigGet(), tracked(s.handleAutonomousScanConfigGet))
 	mcpSrv.AddTool(s.toolAutonomousScanConfigSet(), tracked(s.handleAutonomousScanConfigSet))
 	mcpSrv.AddTool(s.toolAutonomousPRDScan(), tracked(s.handleAutonomousPRDScan))
