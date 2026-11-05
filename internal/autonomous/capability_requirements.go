@@ -410,9 +410,9 @@ func BuildRequirementsReport(in RequirementsReportInput) RequirementsReport {
 	for _, capability := range KnownCapabilities() {
 		required, _ := EffectiveMinimumOllama(in.Overrides, capability)
 		overridden := false
-		if required, set := in.Overrides[capability]; set {
+		if min, set := in.Overrides[capability]; set {
 			overridden = true
-			required = strings.TrimSpace(required)
+			required = strings.TrimSpace(min)
 		}
 		rc := ReportCapability{
 			Capability:    capability,

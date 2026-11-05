@@ -23,13 +23,9 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 )
 
-// fakeOllama stands in for a compute node's Ollama server. It records hit
+// newFakeOllama stands in for a compute node's Ollama server. It records hit
 // counts (a refused pull must produce zero hits) and accepts only the pull
 // POST its node is said to serve.
-type fakeOllama struct {
-	hits int
-}
-
 func newFakeOllama(t *testing.T, hits *int) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

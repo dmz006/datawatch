@@ -148,7 +148,9 @@ func (s *Server) handleRequirementsReport(w http.ResponseWriter, r *http.Request
 	}
 	if r.URL.Query().Get("format") == "text" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		fmt.Fprint(w, rep.Text())
+		if _, err := fmt.Fprint(w, rep.Text()); err != nil {
+			return
+		}
 		return
 	}
 	writeJSONOK(w, rep)

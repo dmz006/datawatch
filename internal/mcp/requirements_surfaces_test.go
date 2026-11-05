@@ -229,7 +229,7 @@ func TestModelPullConsentSetMCP(t *testing.T) {
 	// Object entries (name / allowed / note) pass through for the
 	// refusal-with-note composition.
 	s, rec = activateServer(t, http.StatusOK, `{"status":"ok"}`)
-	res, err = s.handleModelPullConsentSet(context.Background(), callReq(map[string]any{
+	_, err = s.handleModelPullConsentSet(context.Background(), callReq(map[string]any{
 		"models": `[{"name":"qwen3:8b","allowed":true},{"name":"llama3.1:70b","allowed":false,"note":"too big for the pool"}]`,
 	}))
 	if err != nil {
@@ -315,14 +315,14 @@ func TestNodeBackendVersionsMCP(t *testing.T) {
 	}
 
 	// A node with no recorded version still renders the identity lines.
-	noVer := `{"name":"nope","kind":"local","address":"10.0.0.9:22","backend":"","capabilities":[]}`
+	noVer := `{"name":"nope","kind":"local","address":"192.0.2.9:22","backend":"","capabilities":[]}`
 	s, _ = activateServer(t, http.StatusOK, noVer)
 	res, err = s.handleComputeNodeBackendVersions(context.Background(), callReq(map[string]any{"name": "nope"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	text = automationText(t, res)
-	for _, want := range []string{"Node nope (kind local, 10.0.0.9:22)", "no version recorded", "no capability minimums apply"} {
+	for _, want := range []string{"Node nope (kind local, 192.0.2.9:22)", "no version recorded", "no capability minimums apply"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("no-version text lacks %q:\n%s", want, text)
 		}

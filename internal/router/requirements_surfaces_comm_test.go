@@ -232,7 +232,7 @@ func TestRequirementsSurfaceComm_ConsentSetSendsCompletePolicy(t *testing.T) {
 	}
 
 	// A server refusal comes back as a failure, not success.
-	rec, port = reqSurfDaemon(t, http.StatusBadRequest, "model name listed twice: qwen3:8b")
+	_, port = reqSurfDaemon(t, http.StatusBadRequest, "model name listed twice: qwen3:8b")
 	r = setupPeerRouter(t, port)
 	got = strings.Join(r.HandleTestMessage("autonomous model-pull-consent-set model=qwen3:8b"), " ")
 	if !strings.Contains(got, "failed") || !strings.Contains(got, "twice") {
