@@ -26,6 +26,26 @@ type requirementsReporter interface {
 	RequirementsReport(backends autonomous.AutomationBackends) autonomous.RequirementsReport
 }
 
+// RequirementsSurfacesRESTOperation is one requirements surface REST route,
+// read by the parity test.
+type RequirementsSurfacesRESTOperation struct {
+	Name   string
+	Method string
+	Path   string
+}
+
+// RequirementsSurfacesRESTOperations is the single list of requirements
+// surface REST operations (the capabilities report, the model-pull consent
+// policy read and set, and the compute node backend versions).
+func RequirementsSurfacesRESTOperations() []RequirementsSurfacesRESTOperation {
+	return []RequirementsSurfacesRESTOperation{
+		{"requirements_report", http.MethodGet, "/api/automation/requirements-report"},
+		{"model_consent_get", http.MethodGet, "/api/automation/model-consent"},
+		{"model_consent_set", http.MethodPut, "/api/automation/model-consent"},
+		{"node_backend_versions", http.MethodGet, "/api/compute/nodes/{name}/versions"},
+	}
+}
+
 // automationBackendsSummary returns the current automation backend summary
 // (per-role backend lists plus Claude / local-pool flags).
 type automationBackendsSummary func() autonomous.AutomationBackends

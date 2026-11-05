@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 const (
@@ -50,110 +51,15 @@ func (r *Router) replyRequirementsReport(args []string) {
 		r.reply(label, out)
 		return
 	}
-	var rep requirementsReportCommView
+	// Decode the report the way the REST route and the CLI do, and let the
+	// shared renderer draw it, so this verb cannot drift out of shape from
+	// the surfaces it mirrors.
+	var rep autonomous.RequirementsReport
 	if err := json.Unmarshal([]byte(out), &rep); err != nil {
 		r.reply(label+" failed", "decode report: "+err.Error())
 		return
 	}
-	r.reply(label, strings.TrimRight(requirementsReportCommText(rep), "\n"))
-}
-
-// requirementsReportCommView is the report as the comm verb renders it. It
-// is the mirror image of autonomous.RequirementsReport.
-type requirementsReportCommView struct {
-	Minimums     map[string]string `json:"minimums"`
-	Capabilities []string          `json:"capabilities"`
-	Nodes        []struct {
-		Node     string   `json:"node"`
-		States   []string `json:"states"`
-		Override string   `json:"override"`
-	} `json:"nodes"`
-	Execution           []string `json:"execution"`
-	Planning            string   `json:"planning"`
-	Verification        []string `json:"verification"`
-	ClaudeConfigured    bool     `json:"claude_configured"`
-	LocalPoolConfigured bool     `json:"local_pool_configured"`
-	Missing             []string `json:"missing"`
-}
-
-func requirementsReportCommText(rep requirementsReportCommView) string {
-	var sb strings.Builder
-	sb.WriteString("Ollama minimums\n")
-	caps := append([]string{}, rep.Capabilities...)
-	for cap := range rep.Minimums {
-		if !listContains(caps, cap) {
-			caps = append(caps, cap)
-		}
-	}
-	sort.Strings(caps)
-	if len(caps) == 0 {
-		sb.WriteString("  (none)\n")
-	}
-	for _, cap := range caps {
-		fmt.Fprintf(&sb, "  %s: %s\n", cap, rep.Minimums[cap])
-	}
-	sb.WriteString("\nNodes\n")
-	if len(rep.Nodes) == 0 {
-		sb.WriteString("  (no nodes reported versions)\n")
-	}
-	for _, n := range rep.Nodes {
-		fmt.Fprintf(&sb, "  %s: %s%s\n", n.Node, strings.Join(n.States, "; "), overrideTail(n.Override))
-	}
-	sb.WriteString("\nBackends\n")
-	fmt.Fprintf(&sb, "  execution: %s\n", joinOrNone(rep.Execution))
-	fmt.Fprintf(&sb, "  planning: %s\n", joinOrNone([]string{rep.Planning}))
-	fmt.Fprintf(&sb, "  verification: %s\n", joinOrNone(rep.Verification))
-	fmt.Fprintf(&sb, "  claude: %s\n", boolYesNo(rep.ClaudeConfigured))
-	fmt.Fprintf(&sb, "  local model pool: %s\n", boolYesNo(rep.LocalPoolConfigured))
-	sb.WriteString("\nMissing\n")
-	if len(rep.Missing) == 0 {
-		sb.WriteString("  (none)\n")
-	}
-	for _, m := range rep.Missing {
-		sb.WriteString("  " + m + "\n")
-	}
-	return sb.String()
-}
-
-func joinOrNone(items []string) string {
-	items = filterEmpty(items...)
-	if len(items) == 0 {
-		return "(none)"
-	}
-	return strings.Join(items, ", ")
-}
-
-func filterEmpty(items ...string) []string {
-	out := items[:0]
-	for _, it := range items {
-		if strings.TrimSpace(it) != "" {
-			out = append(out, it)
-		}
-	}
-	return out
-}
-
-func boolYesNo(b bool) string {
-	if b {
-		return "yes"
-	}
-	return "no"
-}
-
-func listContains(list []string, v string) bool {
-	for _, item := range list {
-		if item == v {
-			return true
-		}
-	}
-	return false
-}
-
-func overrideTail(ov string) string {
-	if strings.TrimSpace(ov) == "" {
-		return ""
-	}
-	return " (operator)"
+	r.reply(label, strings.TrimRight(rep.Text(), "\n"))
 }
 
 // replyModelPullConsentGet reads the consent policy over the REST loopback

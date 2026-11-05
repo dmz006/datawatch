@@ -24,6 +24,17 @@ import (
 // the REST route, the CLI and the comm verb use. The consent set tool sends
 // the complete policy (same shape and rejection rules as the REST PUT).
 
+// RequirementsSurfacesToolNames lists the requirements surface MCP tools,
+// for the parity test.
+func RequirementsSurfacesToolNames() []string {
+	return []string{
+		"automation_requirements_report",
+		"automation_model_pull_consent_get",
+		"automation_model_pull_consent_set",
+		"compute_node_backend_versions",
+	}
+}
+
 // ── automation_requirements_report ──────────────────────────────────────
 
 func (s *Server) toolAutomationRequirementsReport() mcpsdk.Tool {
