@@ -132,13 +132,8 @@ func (r Request) candidates() []NodeChoice {
 	return out
 }
 
-// withNode returns the request bound to one chosen node: node:<name> joins
-// Pools, Node is set and the choice fields are cleared.
-func (r Request) withNode(name string) Request {
-	return r.withNodePool(name, "node:"+name)
-}
-
-// withNodePool is withNode with the node pool already chosen: a verifier
+// withNodePool returns the request bound to one chosen node: the node pool
+// joins Pools, Node is set and the choice fields are cleared. A verifier
 // request on a node that has a verifier pool binds node-verify:<name> in
 // place of node:<name>; when it did, any node:<name> entry the request still
 // carried is dropped so the lease holds exactly one pool for the node.
