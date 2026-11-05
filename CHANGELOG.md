@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.99.0 — Requirements and model-pull consent
+
+Automation now reports what it needs against what is configured, and no model is pulled without the operator's consent.
+
+- **Requirements report.** `GET /api/automation/requirements-report` (MCP `automation_requirements_report`, CLI `datawatch automation requirements-report`, the chat verb and a Setup card in the web app) lists each capability with its minimum Ollama version, which compute nodes meet it, fail it or cannot be checked, the backends configured for each workload, and what is missing. The built-in minimum for classification verdicts is Ollama 0.35.0; `autonomous.requirements.min_ollama.<capability>` overrides it per capability, and a Settings field edits the overrides. A node that cannot be probed fails closed.
+- **Node backend versions.** Each compute node records its backend name and version with the time it was probed (`GET /api/compute/nodes/{name}/versions`, MCP `compute_node_backend_versions`, CLI `datawatch compute node versions`, a row in the node detail), and the onboarding report counts a node below a minimum.
+- **Model pull consent.** `autonomous.model_pull_consent` lists the models that may be pulled (each with an allow flag and a note) and the publishers allowed wholesale. It is default-deny: with nothing listed, no pull happens. The gate guards the compute node model pull and the marketplace task pull, and every allow, refusal and change is written to the audit log (`model_pull_allowed`, `model_pull_denied`, `model_pull_consent_changed`). Read and set it with `GET`/`PUT /api/automation/model-consent`, MCP `automation_model_pull_consent_get` and `_set`, `datawatch automation model-consent get|set`, the chat verbs, config keys and a Setup card.
+- **Settings and web app.** The Setup view has a Requirements report card and a Model pull consent card, and the Settings view has the minimum Ollama overrides. Five locales carry the new strings.
+- **Documentation.** Three how-tos: automation requirements, model pull consent and the major release requirements.
+
 ## v9.98.1 — Phone-friendly Automaton detail tab strip
 
 ### Fixed
