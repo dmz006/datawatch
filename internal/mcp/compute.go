@@ -340,6 +340,36 @@ func (s *Server) handleMarketplacePullTaskMCP(_ context.Context, req mcpsdk.Call
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolComputeNodeHeadroomMeasure() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_headroom_measure",
+		mcpsdk.WithDescription("Measure one compute node's headroom while it is idle and store it: free memory plus a per-request footprint estimate from one small request at its Ollama endpoint against the smallest pull-allowed model. Refuses with 409 while any worker holds a lease on the node, and 403 when the pull-allowed model list is empty or the node's resident model is not allowed. The stored measurement is what a node's verifier_slots cap above 1 is checked against on write."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Compute node name (see compute_node_list)")),
+	)
+}
+
+func (s *Server) handleComputeNodeHeadroomMeasureMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/compute/nodes/"+mustString(req, "name")+"/headroom", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolComputeNodeHeadroomGet() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_node_headroom_get",
+		mcpsdk.WithDescription("Return the last stored headroom measurement for one compute node with its age in seconds, whether it is still fresh under the headroom-freshness bound, and the verifier cap it supports (1 while stale, 0 when unbounded, otherwise the cap it covers). 404 when the node has never been measured."),
+		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Compute node name (see compute_node_list)")),
+	)
+}
+
+func (s *Server) handleComputeNodeHeadroomGetMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyGet("/api/compute/nodes/"+mustString(req, "name")+"/headroom", nil)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 // computeBodyFromReq translates the loosely-typed MCP string params
 // into a compute.Node JSON body. Numeric fields fall back to 0 on
 // parse failure; the REST validator rejects negatives.

@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
-	"net/http/httptest"
 	"sort"
 	"strings"
 	"time"
@@ -92,54 +90,14 @@ func (s *HTTPServer) InferenceRegistry() *inference.Registry {
 // reads, from the node detail the observer serves: each GPU's memory, the VRAM
 // of every model the node has loaded (the "ollama_model:" envelopes), and the
 // busiest GPU's utilisation. ok is false when the detail could not be read; a
-// node whose detail has no GPUs returns ok with an empty GPU list.
+// node whose detail has no GPUs returns ok with an empty GPU list. Delegates
+// to the api's nodeObservation (compute_headroom.go) so the capacity sync and
+// the headroom probe share one reader.
 func (s *HTTPServer) NodeObservation(name string) (obs compute.NodeObservation, ok bool) {
-	if s.api == nil || s.api.computeReg == nil {
+	if s.api == nil {
 		return obs, false
 	}
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/compute/nodes/"+name+"/detail", nil)
-	s.api.serveComputeNodeDetail(rec, req, name)
-	if rec.Code != http.StatusOK {
-		return obs, false
-	}
-	var d struct {
-		GPU []struct {
-			UtilPct       float64 `json:"util_pct"`
-			MemUsedBytes  uint64  `json:"mem_used_bytes"`
-			MemTotalBytes uint64  `json:"mem_total_bytes"`
-		} `json:"gpu"`
-		Mem struct {
-			UsedBytes  uint64 `json:"used_bytes"`
-			TotalBytes uint64 `json:"total_bytes"`
-		} `json:"mem"`
-		Envelopes []struct {
-			ID          string `json:"id"`
-			GPUMemBytes uint64 `json:"gpu_mem_bytes"`
-			RSSBytes    uint64 `json:"rss_bytes"`
-		} `json:"envelopes"`
-	}
-	if json.Unmarshal(rec.Body.Bytes(), &d) != nil {
-		return obs, false
-	}
-	for _, g := range d.GPU {
-		obs.GPUs = append(obs.GPUs, compute.GPUMemory{TotalBytes: g.MemTotalBytes, UsedBytes: g.MemUsedBytes})
-		obs.MaxUtilPct = max(obs.MaxUtilPct, g.UtilPct)
-	}
-	obs.SystemTotalBytes = d.Mem.TotalBytes
-	obs.SystemUsedBytes = d.Mem.UsedBytes
-	for _, e := range d.Envelopes {
-		if !strings.HasPrefix(e.ID, "ollama_model:") {
-			continue
-		}
-		if e.GPUMemBytes > 0 {
-			obs.LoadedModelBytes = append(obs.LoadedModelBytes, e.GPUMemBytes)
-		}
-		if e.RSSBytes > 0 {
-			obs.CPUModelBytes = append(obs.CPUModelBytes, e.RSSBytes)
-		}
-	}
-	return obs, true
+	return s.api.nodeObservation(name)
 }
 
 // resolvePoolsForBackend mirrors capacity_wiring.go's keys() closure (which

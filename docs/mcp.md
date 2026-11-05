@@ -258,6 +258,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
 | Observer | `observer_stats`, `observer_envelopes`, `observer_envelopes_all_peers` (BL180 cross-host), `observer_envelope`, `observer_peers_list/get/register/delete`, `observer_peer_stats`, `observer_agent_list/stats`, `observer_config_get/set`, `ollama_stats` |
+| Compute node headroom | `compute_node_headroom_measure`, `compute_node_headroom_get` |
 | Agents | `agent_list/get/spawn/terminate/logs/audit` |
 | Plugins | `plugins_list/reload`, `plugin_get/test/enable/disable` |
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
@@ -1998,6 +1999,53 @@ set with the general `config_set` tool, not a usage tool:
 ```
 config_set(key="usage.calculator.variant", value="pace-gauge")
 config_set(key="usage.calculator.policy", value="run-flat-out")
+```
+
+## Compute Node Headroom
+
+### `compute_node_headroom_measure`
+
+Measure one compute node's headroom while it is idle and store the result:
+free memory (video memory when the node reports GPUs, otherwise system
+memory) plus a per-request footprint estimate from one small request at the
+node's Ollama endpoint against the smallest pull-allowed model. The stored
+measurement is what a node's `verifier_slots` cap above 1 is checked against
+on write. Refused with **409** while a worker holds a lease on the node, and
+**403** when the pull-allowed model list is empty or the node's resident
+model is not allowed; **404** for an unknown node; **502** when the node
+probe fails. Needs the compute write capability in federation; a read-only
+client never gets it.
+
+| Parameter | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | **Yes** | Compute node name (see `compute_node_list`) |
+
+Example:
+
+```
+Tool:    compute_node_headroom_measure
+Inputs:  name "gpu-box-1"
+Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":3,"fresh":true,"min_free_mb":1500,"max_age_hours":72,"supported_cap":4}
+```
+
+### `compute_node_headroom_get`
+
+Return the last stored measurement for a node with its age in seconds, whether
+it is still fresh under the headroom-freshness bound (`fresh`), and the
+verifier cap it supports (`supported_cap`: 1 while stale, 0 when the estimate
+is unbounded, otherwise the cap it covers). **404** when the node has never
+been measured. Read-only; the compute read capability.
+
+| Parameter | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | **Yes** | Compute node name (see `compute_node_list`) |
+
+Example:
+
+```
+Tool:    compute_node_headroom_get
+Inputs:  name "gpu-box-1"
+Result:  {"node":"gpu-box-1","free_mb":35072,"per_request_mb":9130,"resident_model":"llama3.1:8b","measured_at":"...","age_seconds":86400,"fresh":false,"min_free_mb":1500,"max_age_hours":72,"supported_cap":1}
 ```
 
 ## Example Workflows in Cursor

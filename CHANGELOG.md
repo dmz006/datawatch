@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Compute node headroom measure and get (REST + MCP).** A node's verifier capacity is judged from an idle headroom measurement: `free_mb` (video memory when the node reports GPUs, otherwise system memory) plus a per-request footprint estimate from one small request at the node's Ollama endpoint against the smallest pull-allowed model. New `POST /api/compute/nodes/{name}/headroom` takes and stores the measurement — 409 while a worker holds a lease on the node, 403 when the pull-allowed model list is empty or the node's resident model is not allowed, 502 when the probe fails — and new `GET /api/compute/nodes/{name}/headroom` returns the last one with `age_seconds`, `fresh` (inside the headroom-freshness bound, default 72h) and `supported_cap` (1 while stale, 0 when the estimate is unbounded, otherwise the cap it covers; 404 when never measured). MCP tools `compute_node_headroom_measure` (needs `compute:write`, so a read-only client never gets it) and `compute_node_headroom_get` (read-only) proxy the routes; the pre-existing gate that checked the stored value on `verifier_slots` cap writes is unchanged.
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.

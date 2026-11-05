@@ -873,6 +873,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolMarketplaceCatalog(), tracked(s.handleMarketplaceCatalogMCP))
 	mcpSrv.AddTool(s.toolComputeNodePullModel(), tracked(s.handleComputeNodePullModelMCP))
 	mcpSrv.AddTool(s.toolComputeNodeRemoveModel(), tracked(s.handleComputeNodeRemoveModelMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomMeasure(), tracked(s.handleComputeNodeHeadroomMeasureMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomGet(), tracked(s.handleComputeNodeHeadroomGetMCP))
 	mcpSrv.AddTool(s.toolMarketplacePullTask(), tracked(s.handleMarketplacePullTaskMCP))
 	// v7.0.0 S2 — LLM-inference registry.
 	mcpSrv.AddTool(s.toolLLMList(), tracked(s.handleLLMListMCP))

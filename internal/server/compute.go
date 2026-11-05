@@ -326,6 +326,18 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		model := rest[idx+len("/models/"):]
 		s.handleComputeNodeModelDelete(w, r, name, model)
 
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeHeadroomMeasure(w, r, strings.TrimSuffix(rest, "/headroom"))
+
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
+		s.handleComputeNodeHeadroomGet(w, r, strings.TrimSuffix(rest, "/headroom"))
+
 	case rest != "" && r.Method == http.MethodGet:
 		if !s.fedCap(w, r, federation.CapComputeRead) {
 			return
