@@ -350,6 +350,38 @@ generic logprobs). The keys below are Go `classifier.Config` fields; no config-f
 | `classifier.probe_ttl` | `10m` | How long a supported or unsupported probe result is cached per (node, model, path). Unknown is never cached. |
 | `classifier.probe_timeout` | `5s` | Per-probe HTTP timeout. A timeout is state `unknown`. |
 
+### Classifier client and calibration (`classifier.*`)
+
+`classifier.Client.Classify` builds a closed-option prompt (options lettered A, B, C... in a fixed
+set), calls the native endpoint or the generic logprobs path (`logprobs: true`, `top_logprobs: N`,
+`max_tokens: 1`, `chat_template_kwargs.enable_thinking: false` for matching models), and returns
+`{Chosen, Probabilities, Route, Mode}`. Token variants (`A`, ` A`, `▁a`, `(A`, `A.`) are summed per
+option on the generic path. Missing scores, timeouts, transport errors and abstains return a typed
+`*InfraError` (category `infra`); there is no fallback to generate-and-parse. Keys are Go
+`classifier.ClientConfig` / `classifier.CalibrationConfig` fields; no config-file surface is wired yet.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `classifier.timeout` | `30s` | Per-call timeout. A timeout is an `infra` error. |
+| `classifier.top_logprobs` | `10` | `top_logprobs` on the generic path. |
+| `classifier.abstain_margin` | `0.10` | The winner must lead the runner-up by this much, else abstain. |
+| `classifier.min_probability` | `0.50` | The winner must reach this probability, else abstain. |
+| `classifier.min_option_mass` | `0.50` | Generic path: option tokens must hold this share of first-token mass, else scores are missing. |
+| `classifier.rotate_options` | `false` | Rotate option order and average scores on the generic path. Never applies to the native path. |
+| `classifier.thinking_off_models` | `["qwen3"]` | Model-name substrings whose template gets thinking disabled. |
+| `classifier.calibration.test_fraction` | `0.30` | Held-out share, split deterministically by a hash of seed and sample id. |
+| `classifier.calibration.split_seed` | `classifier-calibration` | Salt for the split. |
+| `classifier.calibration.min_fit_samples` | `20` | Least fit-set size a threshold may be fitted on. |
+| `classifier.calibration.false_pass_weight` | `5` | Cost of one false pass in false-block units when fitting. |
+| `classifier.calibration.rotation_bias_threshold` | `0.10` | Position-mass deviation from uniform at which `MeasurePositionBias` recommends rotation. |
+| `classifier.calibration.rotation_flip_threshold` | `0.10` | Share of items whose winner flips across rotations at which rotation is recommended. |
+
+A threshold is fitted on the fit set only and scored on the test set only. The stored record carries a
+fingerprint of model, quantization, node, prompt hash and chat-template hash; `CheckFresh` /
+`FileStore.Require` return a `*StaleError` (category `infra`) when no record exists or the fingerprint
+changed, forcing re-calibration. Below-threshold probabilities are a block and are never turned back
+into a pass.
+
 Classify calls share the `node:<name>` inference-load pool. See
 [classifier-api-shape.md](plans/reports/classifier-api-shape.md).
 
