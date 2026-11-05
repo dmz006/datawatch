@@ -2,6 +2,8 @@ package inference
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -271,4 +273,47 @@ func TestLLMBudgetRoundTrip(t *testing.T) {
 			t.Fatalf("failed update must leave stored budget alone, got %+v", got.Budget)
 		}
 	})
+}
+
+func TestLLMVerificationModeAbsentIsGenerate(t *testing.T) {
+	l := &LLM{Name: "judge", Kind: KindOllama}
+	if err := l.Validate(); err != nil {
+		t.Fatalf("absent verification_mode must validate: %v", err)
+	}
+	if got := l.EffectiveVerificationMode(); got != VerificationModeGenerate {
+		t.Fatalf("absent mode = %q, want generate", got)
+	}
+	c := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: VerificationModeClassify}
+	if err := c.Validate(); err != nil || c.EffectiveVerificationMode() != VerificationModeClassify {
+		t.Fatalf("classify must validate and resolve: %v", err)
+	}
+}
+
+func TestLLMVerificationModeInvalidRejected(t *testing.T) {
+	bad := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: "Classify "}
+	if err := bad.Validate(); err == nil {
+		t.Fatal("invalid verification_mode must be rejected by Validate")
+	}
+	r := NewRegistry()
+	if err := r.Add(bad); err == nil {
+		t.Fatal("Add must reject invalid verification_mode")
+	}
+	good := &LLM{Name: "judge", Kind: KindOllama}
+	if err := r.Add(good); err != nil {
+		t.Fatal(err)
+	}
+	upd := &LLM{Name: "judge", Kind: KindOllama, VerificationMode: "bogus"}
+	if err := r.Update(upd); err == nil {
+		t.Fatal("Update must reject invalid verification_mode")
+	}
+}
+
+func TestRegistryLoadRejectsInvalidVerificationMode(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "llms.json")
+	if err := os.WriteFile(path, []byte(`[{"name":"judge","kind":"ollama","verification_mode":"bogus"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewRegistryFromFile(path); err == nil {
+		t.Fatal("load must reject invalid verification_mode")
+	}
 }

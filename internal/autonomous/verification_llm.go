@@ -1,5 +1,7 @@
 package autonomous
 
+import "github.com/dmz006/datawatch/internal/inference"
+
 // VerificationLLM is the resolved verifier LLM for one task: which
 // backend/model/effort the verifier should run with and which level the
 // backend came from.
@@ -10,7 +12,16 @@ type VerificationLLM struct {
 	// Source is the level the BACKEND was resolved from: one of the
 	// VerifierSource* constants. "global" when no level sets a backend.
 	Source string `json:"source"`
+	// Mode is the resolved verification mode of the LLM entry serving
+	// Backend/Model: "classify" or "generate". An absent value resolves to
+	// "generate". The mode is a property of the entry; it does not take part
+	// in the override chain.
+	Mode string `json:"mode"`
 }
+
+// VerificationModeLookup returns the configured verification mode of the LLM
+// entry serving backend/model, or "" when unset or unknown.
+type VerificationModeLookup func(backend, model string) inference.VerificationMode
 
 // VerifierSource values, recorded on VerificationLLM.Source and
 // VerificationResult.VerifierSource.
@@ -62,6 +73,21 @@ const (
 // found in any story has no story level.
 func ResolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) VerificationLLM {
 	return resolveVerificationLLM(prd, task, auto, cfg)
+}
+
+// ResolveVerificationLLMWithMode is ResolveVerificationLLM plus the resolved
+// verification mode of the chosen entry, read through lookup. A nil lookup or
+// an empty result resolves to generate. A value that is not a known mode is
+// kept as-is so the caller can reject it (fail closed) rather than being
+// silently coerced.
+func ResolveVerificationLLMWithMode(prd *PRD, task *Task, auto *Automation, cfg Config, lookup VerificationModeLookup) VerificationLLM {
+	out := resolveVerificationLLM(prd, task, auto, cfg)
+	if lookup != nil {
+		if m := lookup(out.Backend, out.Model); m != "" {
+			out.Mode = string(m)
+		}
+	}
+	return out
 }
 
 func resolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) VerificationLLM {
@@ -143,5 +169,6 @@ func resolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) 
 	default:
 		out.Effort = cfg.VerificationEffort
 	}
+	out.Mode = string(inference.VerificationModeGenerate)
 	return out
 }
