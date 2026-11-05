@@ -1,15 +1,17 @@
-# c1410001 Final Gate Report
+# c1410001 Final Gate — counts report
 
 **Date:** 2026-11-05
 
-**Scope:** The c1410001 work added the requirements-report surfaces: a REST route, an MCP tool, a CLI command, a comm-channel verb, the PWA setup card, settings fields, locale keys, and the tracker rows. This close-out task fixed the failing web test in `internal/server/web/app-requirements-report.test.js` (the two assertions asserted 'Automation backends' and 'No Automation backend minimums in the report yet.' where the UI renders `requirements_report_backends` = 'Requirement backends' and `requirements_report_no_backends` = 'No requirement backend minimums in the report yet.'; the locale files were correct and were not changed).
+**How it was run:** every check ran from the repository root with the TMUX
+environment variables unset. No daemon was started, no model was pulled, `gh`
+was not used, and no version variable was changed.
 
-**Checks run (all from the repository root, 2026-11-05):**
+| # | Check | Result | Counts |
+|---|-------|--------|--------|
+| 1 | `go vet` — the seven changed packages | **PASS** | complaints: 0 |
+| 2 | `go test` — the seven changed packages | **PASS** | packages: 7 pass, 0 fail |
+| 3 | node tests — the new web test files (4 files) | **PASS** | tests: 42 pass, 0 fail, 0 skipped, 0 cancelled |
+| 4 | internal-ref leak audit (operator-facing surfaces) | **PASS** | leaks: 0 |
+| 5 | embedded docs sync check | **PASS** | drift: 0 |
 
-1. `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-requirements-report.test.js` — **11 pass, 0 fail**.
-2. Full node suite: `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/*.test.js` (173 test files) — **2068 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo; exit 0**.
-3. Full Go suite: `env -u TMUX -u TMUX_TMPDIR go test ./... -count=1` — **exit 0; 88 packages `ok`, 12 packages `[no test files]`, 0 `FAIL`**.
-4. Lint: `make lint` — **exit 0; `golangci-lint run ./...` reports 0 issues** (local secret-pattern scan: address 0, home 0, email 0, local 0).
-5. `.datawatch/verify/review-fix-tests.sh` — all four node test files (`app-requirements-report.test.js`, `app-model-consent.test.js`, `app-node-versions.test.js`, `app-requirements-min-ollama.test.js`) pass and all four tracker rows exist in `docs/testing-tracker.md`; exit 0.
-
-**Result:** All gates pass. No version bump, no changelog entry.
+**Gate:** 5/5 checks **PASS**.
