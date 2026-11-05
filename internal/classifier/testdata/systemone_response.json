@@ -1,0 +1,13 @@
+{
+  "_fixture": "SYNTHETIC. Hand-authored to match the shape pinned in docs/plans/reports/classifier-api-shape.md. Not recorded from a live endpoint; the official docs still need operator confirmation.",
+  "prompt_ref": "prompt.json",
+  "model": "example-decision-model",
+  "questions": {
+    "implements": {
+      "choice": "A",
+      "probabilities": {"A": 0.9312, "B": 0.0688},
+      "score": 0.9312
+    }
+  },
+  "usage": {"input_tokens": 87, "output_tokens": 0}
+}
