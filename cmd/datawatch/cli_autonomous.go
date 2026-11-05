@@ -60,6 +60,8 @@ Subcommands:
                                    the removed/would-remove/skipped/failed counts, the owner-vs-net split,
                                    the two disk readings and the disk alert (read only, nothing is removed)
   uncommitted-work [--automaton ID] [--json]
+  planning-routing get|set|test|scorecard
+                                  Planning routing config, no-LLM routing test and counts-only scorecard
                                    Uncommitted-work status: the policy and scope in effect and the tasks and
                                    Automata held because work was left uncommitted (read only, nothing is
                                    committed or discarded)
@@ -259,6 +261,7 @@ Subcommands:
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
 		newAutonomousUncommittedWorkCmd(),
+		newAutonomousPlanningRoutingCmd(),
 		newAutonomousRequestWatchCmd(),
 		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
