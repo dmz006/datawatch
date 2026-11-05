@@ -9178,11 +9178,21 @@ const DOCS_MERGE_PIPELINE_LINKS = [
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
+// The supervisor loop group and card link to the Supervisor loop glossary
+// section; each setting links to its own entry under it, anchored
+// supervisor-loop-<key with dots and underscores as hyphens>.
+function supervisorLoopDocsLink(key) {
+  if (key === 'supervisor_loop') return DOCS_DEFINITIONS + '#supervisor-loop';
+  const rest = key.slice('supervisor_loop.'.length).replace(/[._]+/g, '-');
+  return DOCS_DEFINITIONS + '#supervisor-loop-' + rest;
+}
+
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
 // dialogs, per-channel-type config, dashboard cards without their own
 // section).
 function docsLinkForKey(key) {
+  if (key === 'supervisor_loop' || key.startsWith('supervisor_loop.')) return supervisorLoopDocsLink(key);
   if (Object.prototype.hasOwnProperty.call(DOCS_LINKS_BY_KEY, key)) return DOCS_LINKS_BY_KEY[key];
   if (key.startsWith('stats_')) return DOCS_LINKS_BY_KEY['stats'];
   if (key.startsWith('lc_backend_')) return docsLinkForLlmBackend(key.slice('lc_backend_'.length));
@@ -17005,6 +17015,32 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.automation.supervisor_watch.tmux_restart_baseline', label: 'Supervisor watch tmux restart baseline (empty = no baseline)', labelKey: 'settings_supervisor_watch_tmux_restart_baseline', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.main_checkout', label: 'Supervisor watch main checkout (repository path, empty = dirty main checkout not checked)', labelKey: 'settings_supervisor_watch_main_checkout', type: 'text', placeholder: '' },
     { key: 'autonomous.automation.supervisor_watch.working_model', label: 'Supervisor watch working model (model every compute node should keep resident, empty = not checked)', labelKey: 'settings_supervisor_watch_working_model', type: 'text', placeholder: '' },
+    // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
+    // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
+    { label: 'Supervisor loop', labelKey: 'supervisor_loop_group_title', hintKey: 'supervisor_loop_group_hint', docsKey: 'supervisor_loop', type: 'group' },
+    { key: 'autonomous.supervisor_loop.enabled', label: 'Supervisor loop (on or off)', labelKey: 'supervisor_loop_enabled', docsKey: 'supervisor_loop.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.close_finished_records.enabled', label: 'Close finished records step (on or off)', labelKey: 'supervisor_loop_close_finished_records_enabled', docsKey: 'supervisor_loop.close_finished_records.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.deploy_after_ship.enabled', label: 'Deploy after ship step (on or off)', labelKey: 'supervisor_loop_deploy_after_ship_enabled', docsKey: 'supervisor_loop.deploy_after_ship.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.retry_failed_infra.enabled', label: 'Retry failed infrastructure step (on or off)', labelKey: 'supervisor_loop_retry_failed_infra_enabled', docsKey: 'supervisor_loop.retry_failed_infra.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.cleanup_sweep.enabled', label: 'Cleanup sweep step (on or off)', labelKey: 'supervisor_loop_cleanup_sweep_enabled', docsKey: 'supervisor_loop.cleanup_sweep.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.apply_answers.enabled', label: 'Apply answers step (on or off)', labelKey: 'supervisor_loop_apply_answers_enabled', docsKey: 'supervisor_loop.apply_answers.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.lane_count.enabled', label: 'Lane count step (on or off)', labelKey: 'supervisor_loop_lane_count_enabled', docsKey: 'supervisor_loop.lane_count.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.start_next_chain_step.enabled', label: 'Start next chain step step (on or off)', labelKey: 'supervisor_loop_start_next_chain_step_enabled', docsKey: 'supervisor_loop.start_next_chain_step.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.run_merge_until_conflict.enabled', label: 'Run merge until conflict step (on or off)', labelKey: 'supervisor_loop_run_merge_until_conflict_enabled', docsKey: 'supervisor_loop.run_merge_until_conflict.enabled', type: 'toggle' },
+    { key: 'autonomous.supervisor_loop.draft_spec.style', label: 'Draft spec style (oneshot or session)', labelKey: 'supervisor_loop_draft_spec_style', docsKey: 'supervisor_loop.draft_spec.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.draft_spec.backend', label: 'Draft spec backend (empty = default)', labelKey: 'supervisor_loop_draft_spec_backend', docsKey: 'supervisor_loop.draft_spec.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.draft_spec.model', label: 'Draft spec model (empty = default)', labelKey: 'supervisor_loop_draft_spec_model', docsKey: 'supervisor_loop.draft_spec.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.style', label: 'Classify CI failure style (oneshot or session)', labelKey: 'supervisor_loop_classify_ci_failure_style', docsKey: 'supervisor_loop.classify_ci_failure.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.backend', label: 'Classify CI failure backend (empty = default)', labelKey: 'supervisor_loop_classify_ci_failure_backend', docsKey: 'supervisor_loop.classify_ci_failure.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.classify_ci_failure.model', label: 'Classify CI failure model (empty = default)', labelKey: 'supervisor_loop_classify_ci_failure_model', docsKey: 'supervisor_loop.classify_ci_failure.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.pick_backend.style', label: 'Pick backend style (oneshot or session)', labelKey: 'supervisor_loop_pick_backend_style', docsKey: 'supervisor_loop.pick_backend.style', type: 'select', options: ['oneshot', 'session'], default: 'oneshot' },
+    { key: 'autonomous.supervisor_loop.pick_backend.backend', label: 'Pick backend backend (empty = default)', labelKey: 'supervisor_loop_pick_backend_backend', docsKey: 'supervisor_loop.pick_backend.backend', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.pick_backend.model', label: 'Pick backend model (empty = default)', labelKey: 'supervisor_loop_pick_backend_model', docsKey: 'supervisor_loop.pick_backend.model', type: 'text', placeholder: '' },
+    { key: 'autonomous.supervisor_loop.validator_retries', label: 'Validator retries (retries after a failed check, default 2)', labelKey: 'supervisor_loop_validator_retries', docsKey: 'supervisor_loop.validator_retries', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.supervisor_loop.escalate_after_failures', label: 'Escalate after failures (failed runs before a stronger model takes over, default 2)', labelKey: 'supervisor_loop_escalate_after_failures', docsKey: 'supervisor_loop.escalate_after_failures', type: 'number', placeholder: '2', min: 0, step: 1, default: '2' },
+    { key: 'autonomous.supervisor_loop.run_retention', label: 'Run history kept (number of recent runs, default 500)', labelKey: 'supervisor_loop_run_retention', docsKey: 'supervisor_loop.run_retention', type: 'number', placeholder: '500', min: 1, step: 1, default: '500' },
+    { key: 'autonomous.supervisor_loop.lane_count.min', label: 'Lane count minimum (lowest lane count the loop may set)', labelKey: 'supervisor_loop_lane_count_min', docsKey: 'supervisor_loop.lane_count.min', type: 'number', placeholder: '0', min: 0, step: 1 },
+    { key: 'autonomous.supervisor_loop.lane_count.max', label: 'Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)', labelKey: 'supervisor_loop_lane_count_max', docsKey: 'supervisor_loop.lane_count.max', type: 'number', placeholder: '0', min: 0, step: 1 },
     // Parallel task worktrees (autonomous.parallel.*) — each parallel task of an Automaton can run in its
     // own worktree and branch; the branches are merged back in dependency order, and the merge conflict
     // policy says what happens when one does not merge cleanly.
@@ -17902,7 +17938,14 @@ function loadGeneralConfig() {
         let html = '';
         for (const f of sec.fields) {
           const parts = (f.key || '').split('.');
-          const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          let val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          // The supervisor_loop block is served flat (keys such as lane_count.max
+          // contain a dot), so read those from the block itself.
+          if (val === '' && (f.key || '').indexOf('autonomous.supervisor_loop.') === 0) {
+            const blk = cfg && cfg.autonomous && cfg.autonomous.supervisor_loop;
+            const rest = f.key.slice('autonomous.supervisor_loop.'.length);
+            if (blk && blk[rest] !== undefined) val = blk[rest];
+          }
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
           // calls baked into f.label ran before the bundle was fetched and
@@ -29841,6 +29884,7 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationTriageCard" class="prd-capacity-slot triage-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSecurityFailureCard" class="prd-capacity-slot security-failure-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSupervisorWatchCard" class="prd-capacity-slot supervisor-watch-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
+      <div id="automationSupervisorLoopCard" class="prd-capacity-slot supervisor-loop-slot" role="status" style="margin:6px 8px 0;display:none;"></div>
       <div id="automationQuestionsCard" class="prd-capacity-card questions-card" style="margin:6px 8px 0;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;">
           <div class="cap-title">${escHtml(t('automation_questions_title'))}</div>
@@ -29867,10 +29911,12 @@ const _AUTOMATION_SUBTABS = [
       _automationQuestionsLoadQuality();
       listLoaderAll([_automationLoader(), _automationTriageLoader(), _automationSecurityFailureLoader(), _automationQuestionsLoader(), _automationHeldQuestionsLoader()]);
       supervisorWatchStartPolling();
+      supervisorLoopStartPolling();
     },
     stop() {
       _automationStopLoaders(['automation', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_held_questions']);
       supervisorWatchStopPolling();
+      supervisorLoopStopPolling();
     },
   },
 ];
@@ -30315,6 +30361,97 @@ function supervisorWatchStartPolling() {
 
 function supervisorWatchStopPolling() {
   if (window._supervisorWatchInterval) { clearInterval(window._supervisorWatchInterval); window._supervisorWatchInterval = null; }
+}
+
+// Supervisor loop card: the jobs (GET /api/supervisor-loop/jobs) and the most
+// recent runs (GET /api/supervisor-loop/runs). Read-only. The poll interval
+// lives on window._supervisorLoopInterval and is cleared before it is reset
+// and when the sub-tab is left, so re-renders never stack a timer.
+const SUPERVISOR_LOOP_CARD_ELEMENT_ID = 'automationSupervisorLoopCard';
+const SUPERVISOR_LOOP_POLL_MS = 30000;
+const SUPERVISOR_LOOP_RUN_LIMIT = 10;
+const SUPERVISOR_LOOP_HOWTO = 'howto/supervisor-loop.md';
+
+function _supervisorLoopOutcomeText(o) {
+  const v = _supervisorWatchText(o);
+  if (!v) return t('supervisor_loop_outcome_none');
+  const txt = t('supervisor_loop_outcome_' + v);
+  return txt.indexOf('supervisor_loop_outcome_') === 0 ? v : txt;
+}
+
+function _supervisorLoopJobName(name) {
+  const txt = t('supervisor_loop_job_' + name);
+  return txt.indexOf('supervisor_loop_job_') === 0 ? name : txt;
+}
+
+// supervisorLoopCardHtml renders the card from the two read bodies
+// ({ enabled, jobs } and { runs }), or null when the jobs body is not one.
+// Pure, so the PWA test can pin its text.
+function supervisorLoopCardHtml(jobsBody, runsBody) {
+  if (!jobsBody || typeof jobsBody !== 'object' || Array.isArray(jobsBody)) return null;
+  const jobs = (Array.isArray(jobsBody.jobs) ? jobsBody.jobs : []).filter(j => j && typeof j === 'object');
+  const runs = (runsBody && Array.isArray(runsBody.runs) ? runsBody.runs : []).filter(r => r && typeof r === 'object');
+  const esc = {};
+  runs.forEach(r => { esc[r.job] = (esc[r.job] || 0) + (Number(r.escalations) || 0); });
+  const cell = v => `<td style="padding:2px 8px 2px 0;min-width:0;overflow-wrap:anywhere;">${escHtml(_supervisorWatchText(v))}</td>`;
+  const th = k => `<th style="text-align:left;padding:2px 8px 2px 0;font-weight:600;">${escHtml(t(k))}</th>`;
+  let body = '';
+  if (jobsBody.enabled === false) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_card_disabled'))}</div>`;
+  }
+  body += `<div style="font-weight:600;font-size:12px;margin-top:6px;">${escHtml(t('supervisor_loop_jobs_heading'))}</div>`;
+  if (!jobs.length) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_no_jobs'))}</div>`;
+  } else {
+    body += `<div style="overflow-x:auto;"><table class="supervisor-loop-jobs" style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>` +
+      ['supervisor_loop_col_name', 'supervisor_loop_col_style', 'supervisor_loop_col_backend', 'supervisor_loop_col_model', 'supervisor_loop_col_outcome', 'supervisor_loop_col_escalations'].map(th).join('') +
+      `</tr></thead><tbody>` +
+      jobs.map(j => `<tr class="supervisor-loop-job" data-job="${escHtml(_supervisorWatchText(j.name))}">` +
+        cell(_supervisorLoopJobName(j.name)) + cell(j.style) + cell(j.backend) + cell(j.model) +
+        cell(_supervisorLoopOutcomeText(j.last_outcome)) + cell(String(esc[j.name] || 0)) + `</tr>`).join('') +
+      `</tbody></table></div>`;
+  }
+  body += `<div style="font-weight:600;font-size:12px;margin-top:8px;">${escHtml(t('supervisor_loop_runs_heading'))}</div>`;
+  if (!runs.length) {
+    body += `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(t('supervisor_loop_no_runs'))}</div>`;
+  } else {
+    body += `<div style="overflow-x:auto;"><table class="supervisor-loop-runs" style="font-size:12px;border-collapse:collapse;width:100%;"><thead><tr>` +
+      ['supervisor_loop_col_name', 'supervisor_loop_col_started', 'supervisor_loop_col_outcome', 'supervisor_loop_col_model', 'supervisor_loop_col_escalations'].map(th).join('') +
+      `</tr></thead><tbody>` +
+      runs.slice(0, SUPERVISOR_LOOP_RUN_LIMIT).map(r => `<tr class="supervisor-loop-run">` +
+        cell(_supervisorLoopJobName(r.job)) + cell(r.started) + cell(_supervisorLoopOutcomeText(r.outcome)) +
+        cell(r.model) + cell(String(Number(r.escalations) || 0)) + `</tr>`).join('') +
+      `</tbody></table></div>`;
+  }
+  return `<div class="prd-capacity-card supervisor-loop-card"><div class="cap-title">${escHtml(t('supervisor_loop_card_title'))}` +
+    `${docsLink(SUPERVISOR_LOOP_HOWTO, t('supervisor_loop_card_howto'))}${defsLink('supervisor_loop')}</div>${body}</div>`;
+}
+
+function supervisorLoopRenderCard(jobsBody, runsBody) {
+  const el = document.getElementById(SUPERVISOR_LOOP_CARD_ELEMENT_ID);
+  if (!el) return;
+  const html = supervisorLoopCardHtml(jobsBody, runsBody);
+  if (!html) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = html;
+  el.style.display = '';
+}
+
+function supervisorLoopRefreshCard() {
+  return Promise.all([
+    apiFetch('/api/supervisor-loop/jobs'),
+    apiFetch('/api/supervisor-loop/runs?limit=' + SUPERVISOR_LOOP_RUN_LIMIT).catch(() => null),
+  ]).then(([jobsBody, runsBody]) => supervisorLoopRenderCard(jobsBody, runsBody))
+    .catch(() => supervisorLoopRenderCard(null, null));
+}
+
+function supervisorLoopStartPolling() {
+  if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
+  supervisorLoopRefreshCard();
+  window._supervisorLoopInterval = setInterval(supervisorLoopRefreshCard, SUPERVISOR_LOOP_POLL_MS);
+}
+
+function supervisorLoopStopPolling() {
+  if (window._supervisorLoopInterval) { clearInterval(window._supervisorLoopInterval); window._supervisorLoopInterval = null; }
 }
 
 // Open-questions queue card: its own listLoader on
