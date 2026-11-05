@@ -37,3 +37,40 @@ func TestTemplateFeatureNameUsesTitleNotSpec(t *testing.T) {
 		t.Fatalf("name must be bounded to 120 runes, got %d", len([]rune(got)))
 	}
 }
+
+// A parsed plan has no ids until the store assigns them. The hook gives it
+// ids first, so the template tasks get unique ids per story and no empty
+// depends_on entry, and the whole plan resolves like any other.
+func TestTemplateTasksOnAnIdlessPlanResolveCleanly(t *testing.T) {
+	stories := []Story{
+		{Title: "story one", Tasks: []Task{{Title: "task a", FilesPlanned: []string{"a.go"}}, {Title: "task b", DependsOn: []string{"task a"}}}},
+		{Title: "story two", Tasks: []Task{{Title: "task c", FilesPlanned: []string{"c.go"}}}},
+	}
+	ensurePlanIDs(stories)
+	out, applied := ApplyTaskTemplates(stories, "the feature", "/w/proj", nil)
+	if len(applied) == 0 {
+		t.Fatalf("the built-in templates must apply, got none")
+	}
+	storyByID := map[string]*Story{}
+	taskByID := map[string]*Task{}
+	seen := map[string]bool{}
+	for i := range out {
+		storyByID[out[i].ID] = &out[i]
+		for j := range out[i].Tasks {
+			tk := &out[i].Tasks[j]
+			if tk.ID == "" || seen[tk.ID] {
+				t.Fatalf("task %q has an empty or duplicate id %q", tk.Title, tk.ID)
+			}
+			seen[tk.ID] = true
+			taskByID[tk.ID] = tk
+			for _, d := range tk.DependsOn {
+				if strings.TrimSpace(d) == "" {
+					t.Fatalf("task %q has an empty depends_on entry", tk.Title)
+				}
+			}
+		}
+	}
+	if err := resolveDependsOn(out, storyByID, taskByID); err != nil {
+		t.Fatalf("the templated plan must resolve: %v", err)
+	}
+}
