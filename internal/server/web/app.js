@@ -4389,9 +4389,11 @@ function renderSessionDetail(sessionId) {
         <div class="status-subtabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 4px;">
           <button class="status-subtab active" id="statusSubtabStatus" onclick="switchStatusSubtab('status')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid var(--accent2,#60a5fa);color:var(--text);cursor:pointer;font-weight:600;">${t('session_detail_tab_status')||'Status'}</button>
           <button class="status-subtab" id="statusSubtabStats" onclick="switchStatusSubtab('stats')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('session_detail_tab_stats')||'Stats'}</button>
+          <button class="status-subtab" id="statusSubtabTrace" onclick="switchStatusSubtab('trace')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('trace_card_title')||'Trace'}</button>
         </div>
         <div id="statusSubpaneStatus" style="padding:12px;"></div>
         <div id="statusSubpaneStats" style="padding:12px;display:none;"></div>
+        <div id="statusSubpaneTrace" style="padding:12px;display:none;"><div id="sessionTraceCard" class="prd-capacity-slot session-trace-slot"></div></div>
       </div>
       <!-- Legacy outputAreaStats kept hidden so existing code paths that
            write to it don't error; the combined panel above is the real
@@ -4417,9 +4419,11 @@ function renderSessionDetail(sessionId) {
             <div class="status-subtabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 4px;">
               <button class="status-subtab active" id="statusSubtabStatus" onclick="switchStatusSubtab('status')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid var(--accent2,#60a5fa);color:var(--text);cursor:pointer;font-weight:600;">${t('session_detail_tab_status')||'Status'}</button>
               <button class="status-subtab" id="statusSubtabStats" onclick="switchStatusSubtab('stats')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('session_detail_tab_stats')||'Stats'}</button>
+              <button class="status-subtab" id="statusSubtabTrace" onclick="switchStatusSubtab('trace')" style="padding:6px 14px;font-size:12px;background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text2);cursor:pointer;">${t('trace_card_title')||'Trace'}</button>
             </div>
             <div id="statusSubpaneStatus" style="padding:12px;"></div>
             <div id="statusSubpaneStats" style="padding:12px;display:none;"></div>
+            <div id="statusSubpaneTrace" style="padding:12px;display:none;"><div id="sessionTraceCard" class="prd-capacity-slot session-trace-slot"></div></div>
           </div>
           <div class="output-area output-area-stats" id="outputAreaStats" style="display:none;"></div>`);
 
@@ -4476,7 +4480,6 @@ function renderSessionDetail(sessionId) {
       </div>
       <div id="sessionDetailTagRow" class="session-tag-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:4px 10px;"></div>
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
-      <div id="sessionTraceCard" class="prd-capacity-slot session-trace-slot" style="margin:6px 8px 0;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
       <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
@@ -4655,7 +4658,6 @@ function renderSessionDetail(sessionId) {
     loadSavedCmdsQuick(sessionId);
   }
   loadSessionSchedules(sessionId);
-  window.mountTraceCard('sessionTraceCard', 'session', sessionId);
   loadSessionStats(sessionId);
   refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
@@ -6180,25 +6182,27 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetai
 // panel's Status / Stats sub-tabs. Idempotent — safe to call from
 // switchOutputTab when entering the panel.
 window.switchStatusSubtab = function(name) {
-  const tabStatus = document.getElementById('statusSubtabStatus');
-  const tabStats = document.getElementById('statusSubtabStats');
-  const paneStatus = document.getElementById('statusSubpaneStatus');
-  const paneStats = document.getElementById('statusSubpaneStats');
-  if (!tabStatus || !tabStats || !paneStatus || !paneStats) return;
-  const setActive = (btn, on) => {
+  const tabs = {
+    status: [document.getElementById('statusSubtabStatus'), document.getElementById('statusSubpaneStatus')],
+    stats: [document.getElementById('statusSubtabStats'), document.getElementById('statusSubpaneStats')],
+    trace: [document.getElementById('statusSubtabTrace'), document.getElementById('statusSubpaneTrace')],
+  };
+  if (!tabs.status[0] || !tabs.stats[0] || !tabs.status[1] || !tabs.stats[1]) return;
+  const pick = tabs[name] && tabs[name][0] && tabs[name][1] ? name : 'status';
+  for (const [key, [btn, pane]] of Object.entries(tabs)) {
+    if (!btn || !pane) continue;
+    const on = key === pick;
     btn.style.borderBottomColor = on ? 'var(--accent2,#60a5fa)' : 'transparent';
     btn.style.color = on ? 'var(--text)' : 'var(--text2)';
     btn.style.fontWeight = on ? '600' : '400';
     btn.classList.toggle('active', on);
-  };
-  if (name === 'stats') {
-    setActive(tabStatus, false); setActive(tabStats, true);
-    paneStatus.style.display = 'none'; paneStats.style.display = '';
-    if (typeof renderSessionStats === 'function' && state.activeSession) renderSessionStats(state.activeSession);
-  } else {
-    setActive(tabStatus, true); setActive(tabStats, false);
-    paneStatus.style.display = ''; paneStats.style.display = 'none';
+    pane.style.display = on ? '' : 'none';
   }
+  if (pick === 'stats' && typeof renderSessionStats === 'function' && state.activeSession) renderSessionStats(state.activeSession);
+  // The Trace card polls only while its sub-tab is open: mounting starts the
+  // loader, and leaving drops the registration so the loader stops itself.
+  if (pick === 'trace' && state.activeSession) window.mountTraceCard('sessionTraceCard', 'session', state.activeSession);
+  else if (window._traceCards) delete window._traceCards.sessionTraceCard;
 };
 
 // ---------------- Status-tab Result card (GH#204 phase 3) ----------------
@@ -25643,6 +25647,7 @@ function switchAutomataDetailTab(tab) {
       else if (tab === 'subscriptions') html = _renderDetailSubscriptionsTab(prd);
       else if (tab === 'scan') html = _renderDetailScanTab(prd);
       else if (tab === 'rules') html = _renderDetailRulesTab(prd);
+      else if (tab === 'trace') html = _renderDetailTraceTab();
       else html = _renderDetailOverview(prd);
       bodyEl.innerHTML = html;
       if (tab === 'overview') {
@@ -25651,6 +25656,8 @@ function switchAutomataDetailTab(tab) {
       }
       if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
       if (tab === 'subscriptions') _loadPRDSubscriptionsTab(prd);
+      if (tab === 'trace') window.mountTraceCard('automatonTraceCard', 'automaton', prd.id);
+      else if (window._traceCards) delete window._traceCards.automatonTraceCard;
     }
     return;
   }
@@ -26009,6 +26016,7 @@ function _renderDetailContent(prd) {
   else if (tab === 'subscriptions') tabBody = _renderDetailSubscriptionsTab(prd);
   else if (tab === 'scan') tabBody = _renderDetailScanTab(prd);
   else if (tab === 'rules') tabBody = _renderDetailRulesTab(prd);
+  else if (tab === 'trace') tabBody = _renderDetailTraceTab();
   else tabBody = _renderDetailOverview(prd);
 
   const body = document.getElementById('automataDetailBody');
@@ -26031,7 +26039,6 @@ function _renderDetailContent(prd) {
     ${triageSlot}
     ${mergeSlot}
     ${window.parallelMetricsCardHtml(prd)}
-    <div id="automatonTraceCard" class="prd-capacity-slot automaton-trace-slot" style="margin-top:10px;"></div>
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
@@ -26040,7 +26047,7 @@ function _renderDetailContent(prd) {
   // Automaton + dry-run recheck, under the plan coverage block. Silent on
   // daemons without the endpoint (the slot stays hidden).
   if (typeof window._loadPRDDecomposeLint === 'function') window._loadPRDDecomposeLint(prd.id || '');
-  window.mountTraceCard('automatonTraceCard', 'automaton', prd.id);
+  if (tab === 'trace') window.mountTraceCard('automatonTraceCard', 'automaton', prd.id);
   _tagsLoad().then(() => _renderDetailTagRow(prd));
   if (mergeSlot) window.loadMergeStatus().then(byId => {
     const el = document.getElementById('prdMergeBadge');
@@ -31245,6 +31252,7 @@ function _renderDetailTabStrip(prd, currentTab) {
     ['subscriptions', t('lifecycle_sub_tab') || 'Subscriptions', true],
     ['scan',      t('prd_tab_scan')      || 'Scan',      hasScan],
     ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
+    ['trace',     t('trace_card_title')  || 'Trace',     true],
   ];
   return `<div class="output-tabs prd-detail-tabs">
     ${tabs.filter(t => t[2]).map(([k, label]) => `
@@ -32050,6 +32058,12 @@ window._filterPRDMemoryRecall = _filterPRDMemoryRecall;
 // rules guardrail is enabled / has results. Operator: "shouldn't there
 // also be a tab for rules check (if enabled) with similar cards
 // showing the rules check tests?".
+// _renderDetailTraceTab is the Trace tab body: the holder the Trace card mounts
+// into (mountTraceCard fills it and polls only while this tab is open).
+function _renderDetailTraceTab() {
+  return '<div id="automatonTraceCard" class="prd-capacity-slot automaton-trace-slot"></div>';
+}
+
 function _renderDetailRulesTab(prd) {
   const id = prd.id || '';
   const idJ = JSON.stringify(id);

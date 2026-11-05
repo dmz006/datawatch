@@ -439,3 +439,48 @@ test('traceEventIsError mirrors the daemon: prefix match on error/fail, exact de
   assert.equal(isErr('timeout'), false);
   assert.equal(isErr(''), false);
 });
+
+// ── placement: a Trace sub-tab under Status, not a card above the session ────
+
+test('the session Trace card lives only in the Status panel Trace sub-tab', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const holders = src.match(/id="sessionTraceCard"/g) || [];
+  assert.equal(holders.length, 2, 'one holder per Status panel markup, none in the session header');
+  for (const m of src.matchAll(/id="sessionTraceCard"/g)) {
+    const before = src.slice(Math.max(0, m.index - 140), m.index);
+    assert.ok(before.includes('id="statusSubpaneTrace"'), 'the holder sits inside the Trace sub-pane: ' + before);
+  }
+  assert.equal((src.match(/id="statusSubtabTrace"/g) || []).length, 2, 'a Trace sub-tab button in both Status panels');
+  assert.ok(!src.includes("window.mountTraceCard('sessionTraceCard', 'session', sessionId)"), 'opening the session no longer mounts the card');
+});
+
+test('opening the Trace sub-tab mounts the card and leaving it drops the registration', async () => {
+  const mk = () => { const e = makeStubElement(); return e; };
+  const els = {
+    statusSubtabStatus: mk(), statusSubtabStats: mk(), statusSubtabTrace: mk(),
+    statusSubpaneStatus: mk(), statusSubpaneStats: mk(), statusSubpaneTrace: mk(), sessionTraceCard: mk(),
+  };
+  const sb = loadApp({ '/api/trace/session/s1': sessionBody(), '/api/trace/coverage': coverageBody() }, els);
+  call(sb, 'state.activeSession = "s1"');
+  call(sb, 'window.switchStatusSubtab("trace")');
+  await flushAsync();
+  assert.equal(els.statusSubpaneTrace.style.display, '', 'the Trace pane is shown');
+  assert.equal(els.statusSubpaneStatus.style.display, 'none');
+  assert.equal(els.statusSubpaneStats.style.display, 'none');
+  assert.ok(els.sessionTraceCard.innerHTML.includes('trace-card'), els.sessionTraceCard.innerHTML);
+  assert.ok(call(sb, '!!window._traceCards.sessionTraceCard'), 'the card is registered while the sub-tab is open');
+  call(sb, 'window.switchStatusSubtab("status")');
+  assert.equal(els.statusSubpaneTrace.style.display, 'none');
+  assert.equal(els.statusSubpaneStatus.style.display, '');
+  assert.ok(call(sb, '!window._traceCards.sessionTraceCard'), 'leaving the sub-tab drops the registration so the loader stops');
+  call(sb, 'window._listLoaders.trace_card_sessionTraceCard.stop()');
+});
+
+test('the Automaton detail has a Trace tab and no always-on Trace card', () => {
+  const sb = loadApp({}, {});
+  const strip = call(sb, '_renderDetailTabStrip({}, "trace")');
+  assert.ok(strip.includes("switchAutomataDetailTab('trace')"), strip);
+  assert.ok(call(sb, '_renderDetailTraceTab()').includes('id="automatonTraceCard"'));
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  assert.equal((src.match(/id="automatonTraceCard"/g) || []).length, 1, 'the holder exists only in the Trace tab body');
+});

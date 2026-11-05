@@ -146,7 +146,7 @@ failed outcomes only) and `limit` (the last N events).
 
 | Channel | How |
 |---------|-----|
-| **PWA** | A Trace card in the session view and in the Automaton view: timeline, filters (tool, backend, kind, errors only), roll-up, loop warnings and a coverage badge per backend. It refreshes itself while a session runs. Settings → Tracing holds the four settings. The card is localised (English, German, Spanish, French, Japanese). |
+| **PWA** | A Trace sub-tab under the session's Status tab (beside Status and Stats) and a Trace tab in the Automaton view: timeline, filters (tool, backend, kind, errors only), roll-up, loop warnings and a coverage badge per backend. It refreshes itself while a session runs. Settings → Tracing holds the four settings. The card is localised (English, German, Spanish, French, Japanese). |
 | **CLI** | `datawatch trace session <id>`, `trace automaton <id>`, `trace rollup`, `trace coverage`. Filters: `--tool`, `--backend`, `--kind`, `--errors`, `--limit`, `--loop-threshold`. Settings with `datawatch config`. |
 | **REST** | `GET /api/trace/session/{id}`, `GET /api/trace/automaton/{id}`, `GET /api/trace/rollup`, `GET /api/trace/coverage`. Query keys: `tool`, `backend`, `kind`, `errors`, `limit`, `loop_threshold`, and for the roll-up `dimension` and `key`. |
 | **MCP** | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`, `trace_stats`. They call the REST routes, so results match. |
