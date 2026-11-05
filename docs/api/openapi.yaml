@@ -6426,6 +6426,69 @@ paths:
                   what_if_lanes: {type: integer, description: Present only when the call set the lanes parameter; never saved}
         "400": {description: Unknown variant or policy, or a malformed lanes / cost value}
         "503": {description: The calculator is not wired on this daemon}
+  /api/llm/classifier:
+    get:
+      summary: Classification judge status — verification mode per LLM, capability probes, calibration records and the publisher allowlist
+      operationId: classifierStatus
+      tags: [Singletons]
+      responses:
+        "200":
+          description: The status; wired is false until the daemon installs the status source
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  verification_modes: {type: array, items: {type: object, properties: {llm: {type: string}, verification_mode: {type: string, enum: [classify, generate]}}}}
+                  probes: {type: array, description: "Cached capability probe results: node, model, path (native or logprobs), state (supported, unsupported) and expires_at; unknown results are never cached", items: {type: object}}
+                  calibrations: {type: array, description: "Calibration records: model, quantization, node, fingerprint_hash, threshold, test metrics and created_at", items: {type: object}}
+                  calibration_error: {type: string, description: Present only when the calibration store could not be read}
+                  publisher_allowlist: {type: array, items: {type: string}}
+                  wired: {type: boolean}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+  /api/llm/classifier/publishers:
+    get:
+      summary: The publisher allowlist for classify-mode judge models
+      operationId: classifierPublishersList
+      tags: [Singletons]
+      responses:
+        "200": {description: "The allowlist (publisher_allowlist); empty by default, so no publisher is trusted until the operator adds one"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+    post:
+      summary: Add a publisher to the allowlist; refused without confirm=true and audited
+      operationId: classifierPublishersAdd
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [publisher, confirm]
+              properties:
+                publisher: {type: string, description: "Publisher name; trimmed and lower-cased"}
+                confirm: {type: boolean, description: "Must be true: adding a publisher widens which models may judge"}
+                actor: {type: string, description: "Who confirmed; recorded in the audit entry, default operator"}
+      responses:
+        "200": {description: "added is false when the publisher was already listed; the new allowlist is returned. Each real addition writes a classifier_publisher_add audit entry"}
+        "400": {description: Publisher missing, or confirm not true; nothing is changed}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: No config file is available to save the change}
+  /api/llm/classifier/verdicts:
+    get:
+      summary: An Automaton's verdict records — mode, score vector, route, outcome and category
+      operationId: classifierVerdicts
+      tags: [Singletons]
+      parameters:
+        - {name: automaton, in: query, required: true, schema: {type: string}}
+        - {name: task, in: query, required: false, schema: {type: string}, description: Narrow to one task}
+        - {name: low_confidence, in: query, required: false, schema: {type: boolean}, description: Keep only blocks reached for low confidence}
+      responses:
+        "200": {description: "verdicts: scope, story_id, task_id, guardrail, outcome, category, mode, scores, route, summary, at and low_confidence. Decide a low-confidence block with POST /api/autonomous/prds/{id}/resolve_task_review"}
+        "400": {description: automaton missing}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "404": {description: Automaton not found}
+        "503": {description: Autonomous is disabled}
   /api/usage/burn-guard:
     get:
       summary: Burn guard status — state, the current rung, the projection against the pace line and the last decision

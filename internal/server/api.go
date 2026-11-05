@@ -491,6 +491,12 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// classifierStatus reads the classifier capability probes and calibration
+	// records; nil until the daemon wires it. classifierMu serialises
+	// allowlist additions.
+	classifierStatus ClassifierStatusSource
+	classifierMu     sync.Mutex
+
 	// requestWatch reads the in-flight model request observations; nil until
 	// SetRequestWatch wires it, and the request-watch route answers 503 then.
 	requestWatch    requestwatch.Reader

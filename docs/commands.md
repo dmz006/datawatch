@@ -873,7 +873,12 @@ Interactive wizard to configure a backend or subsystem. Available services:
 
 | Service | Description |
 |---|---|
-| `llm claude-code` | Configure claude CLI binary and permission settings |
+| `llm classifier status` | Verification mode of every LLM, capability probe status, calibration status and the publisher allowlist. Same data as `GET /api/llm/classifier`. |
+| `llm classifier publishers` | List the publisher allowlist for classify-mode judge models. |
+| `llm classifier add-publisher <name> confirm=true` | Add a publisher to the allowlist. Refused without `confirm=true`; every addition is audited. |
+| `llm classifier verdicts <automaton> [task=<id>] [low]` | An Automaton's verdict records: mode, score vector, route and outcome. `low` keeps only low-confidence blocks. |
+| `llm classifier review <automaton> <task> retry\|cancel [note=<text>]` | Decide a low-confidence block. It first checks that the task has one, then sends the decision the way `autonomous review-task` does. |
+| `llm claude-code` || `llm claude-code` | Configure claude CLI binary and permission settings |
 | `llm aider` | Configure aider (binary path, enable/disable) |
 | `llm goose` | Configure goose (binary path, enable/disable) |
 | `llm gemini` | Configure Gemini CLI (binary path, enable/disable) |

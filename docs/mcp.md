@@ -1858,6 +1858,17 @@ Variant and policy are independent: the variant picks the answer shape, the
 policy picks the spend target. Where both are stored and passed, the tool
 argument overrides the stored setting for this one call only.
 
+### Classification judge tool
+
+`llm_classifier` is one tool with an `action`, because no existing LLM or Automaton tool reads probe or calibration status, lists the publisher allowlist or shows a verdict record. It proxies `/api/llm/classifier`. The `verification_mode` setting itself rides `llm_add` and `llm_update`; a low-confidence block is decided with `autonomous_prd_resolve_task_review`. The tool needs `llms:write` (add_publisher widens which models may judge).
+
+| `action` | Other arguments | Result |
+|---|---|---|
+| `status` | none | The verification mode of every LLM, the capability probe status per node, model and path, the calibration status per fingerprint and the publisher allowlist |
+| `publishers` | none | The publisher allowlist (empty by default: no publisher is trusted until added) |
+| `add_publisher` | `publisher`, `confirm` | Adds a publisher. Refused unless `confirm=true`; every addition is written to the audit log |
+| `verdicts` | `automaton_id`, `task_id`, `low_confidence` | The Automaton's verdict records: mode, score vector, route, outcome, category. `low_confidence=true` keeps only the low-confidence blocks |
+
 ### Burn guard tools
 
 The burn guard compares the projected weekly burn with the pace line and steps down a ladder of admission changes (`lower_inflight`, `route_pi_prompt`, `hold_claude`) when the projection runs over the line plus the margin. It never ends a running session. The tools proxy `/api/usage/burn-guard`; status and config get need `usage:read`, run and config set need `usage:write`.

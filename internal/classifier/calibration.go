@@ -243,10 +243,17 @@ func (s FileStore) Save(rec *Record) error {
 
 // Load returns the stored record for fp's slot, or nil when none exists.
 func (s FileStore) Load(fp Fingerprint) (*Record, error) {
-	b, err := os.ReadFile(s.path(fp)) // #nosec G304 -- path is built from a digest under Dir
+	rec, err := s.loadFile(s.path(fp))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
+	return rec, err
+}
+
+// loadFile reads one record file. A missing file returns an error wrapping
+// os.ErrNotExist.
+func (s FileStore) loadFile(path string) (*Record, error) {
+	b, err := os.ReadFile(path) // #nosec G304 -- path is built from a digest or listed under Dir
 	if err != nil {
 		return nil, err
 	}
