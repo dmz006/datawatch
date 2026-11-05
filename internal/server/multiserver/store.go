@@ -80,9 +80,20 @@ type Entry struct {
 	// decision recorded in
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
 	// 10) — a peer's control capability does not imply fingerprint trust.
-	FingerprintSync bool      `json:"fingerprint_sync,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	FingerprintSync bool `json:"fingerprint_sync,omitempty"`
+	// ObserverPull opts this peer into the observer pull protocol: the
+	// daemon pulls this peer's observer envelopes on a schedule instead
+	// of the peer pushing them. Default false; globally gated by
+	// observer.pull.enabled (config).
+	ObserverPull bool `json:"observer_pull"`
+	// ObserverPullIntervalS is this peer's pull interval in seconds;
+	// 0 means use the global observer.pull.default_interval_s.
+	ObserverPullIntervalS int `json:"observer_pull_interval_s"`
+	// ObserverPullTimeoutS is this peer's per-pull request timeout in
+	// seconds; 0 means use the global observer.pull.default_timeout_s.
+	ObserverPullTimeoutS int       `json:"observer_pull_timeout_s"`
+	CreatedAt            time.Time `json:"created_at"`
+	UpdatedAt            time.Time `json:"updated_at"`
 	// SEC-014 — populated only by Redacted(), never persisted or set from
 	// an inbound request body. TokenPrefix is the first 4 hex chars, enough
 	// for an operator to recognize which token is in use without being
