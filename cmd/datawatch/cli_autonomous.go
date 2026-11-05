@@ -48,6 +48,13 @@ Subcommands:
   supervisor-watch [--json]       Supervisor watch read: the mode, the last poll, one line per finding
                                   (kind, state, last seen, the operator line) and the comparison
                                   against the supervisor script's output
+  supervisor-loop jobs [--json]     Supervisor loop read: the loop's enabled state and every job's kind,
+                                  the model job's style/backend/model, enabled, last outcome and last run
+  supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--json]
+                                  Supervisor loop run records, newest first (outcome is ok,
+                                  validator_failed, escalated or error)
+  supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
+                                  Run one supervisor loop job now (an unknown job name fails)
   merge [--json]                  Merge state: the mode, the alert threshold and the finished Automata whose
                                   work branch is not on main yet (read only)
   merged-members [automation-id] [--json]
@@ -254,6 +261,7 @@ Subcommands:
 		newAutonomousRepoCIWatchCmd(),
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
+		newAutonomousSupervisorLoopCmd(),
 		newAutonomousDecisionsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),

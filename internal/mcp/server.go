@@ -697,6 +697,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
 	mcpSrv.AddTool(s.toolSupervisorWatchStats(), tracked(s.handleSupervisorWatchStats))
+	mcpSrv.AddTool(s.toolSupervisorLoopJobs(), tracked(s.handleSupervisorLoopJobs))
+	mcpSrv.AddTool(s.toolSupervisorLoopRuns(), tracked(s.handleSupervisorLoopRuns))
+	mcpSrv.AddTool(s.toolSupervisorLoopRunJob(), tracked(s.handleSupervisorLoopRunJob))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetSkills(), tracked(s.handleAutonomousPRDSetSkills))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetQualityGates(), tracked(s.handleAutonomousPRDSetQualityGates)) // BL367
 	mcpSrv.AddTool(s.toolAutonomousPRDSetContinueOnStoryFailure(), tracked(s.handleAutonomousPRDSetContinueOnStoryFailure))

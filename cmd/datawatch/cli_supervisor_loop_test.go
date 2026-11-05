@@ -1,0 +1,205 @@
+// cli_supervisor_loop_test.go — fakes the daemon and checks that the CLI
+// reads the supervisor loop's jobs and runs routes (including the runs
+// filters), renders the shared supervisorloop lines, passes --json through
+// untouched, posts a run to the job's route, and fails on the daemon's
+// unknown-job 404 and a 503.
+package main
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/spf13/cobra"
+)
+
+// supervisorLoopDaemon starts a fake daemon answering with the given status
+// and body, records the request, and points serverURL at it.
+func supervisorLoopDaemon(t *testing.T, status int, body string) (reqMethod, reqPath func() string, reqQuery func() string, reqBody func() string) {
+	t.Helper()
+	var mu sync.Mutex
+	method, path, query, raw := "", "", "", ""
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		method, path, query, raw = r.Method, r.URL.Path, r.URL.RawQuery, string(b)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	prev := serverURL
+	serverURL = srv.URL
+	t.Cleanup(func() { serverURL = prev })
+	return func() string { mu.Lock(); defer mu.Unlock(); return method },
+		func() string { mu.Lock(); defer mu.Unlock(); return path },
+		func() string { mu.Lock(); defer mu.Unlock(); return query },
+		func() string { mu.Lock(); defer mu.Unlock(); return raw }
+}
+
+func supervisorLoopAutonomousCmd() *cobra.Command {
+	c := &cobra.Command{Use: "autonomous"}
+	c.AddCommand(newAutonomousSupervisorLoopCmd())
+	c.SilenceUsage = true
+	c.SilenceErrors = true
+	return c
+}
+
+func runSupervisorLoopCmd(t *testing.T, args ...string) (string, error) {
+	t.Helper()
+	c := supervisorLoopAutonomousCmd()
+	c.SetArgs(append([]string{"supervisor-loop"}, args...))
+	out := &strings.Builder{}
+	c.SetOut(out)
+	err := c.Execute()
+	return out.String(), err
+}
+
+const supervisorLoopJobsBody = `{"enabled":true,"jobs":[
+  {"name":"draft_spec","kind":"mechanical","enabled":true,"last_outcome":"ok","last_run":"2026-11-01T10:00:00Z"},
+  {"name":"choose_backend","kind":"model","style":"fast","backend":"claude","model":"sonnet","enabled":false,"last_outcome":"escalated"},
+  {"name":"verify","kind":"mechanical","enabled":true,"last_outcome":"validator_failed"}]}`
+
+const supervisorLoopRunsBody = `{"runs":[
+  {"job":"draft_spec","outcome":"ok","result":"drafted spec v2","started":"2026-11-01T10:00:00Z","duration_ms":1200},
+  {"job":"draft_spec","outcome":"escalated","validator_failures":["spec too short"],"retries":3,"escalations":1,"started":"2026-11-01T09:00:00Z"}]}`
+
+func TestSupervisorLoopCLIRegisteredUnderAutonomous(t *testing.T) {
+	found := false
+	for _, sub := range newAutonomousCmd().Commands() {
+		if sub.Name() == "supervisor-loop" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("supervisor-loop is not registered under the autonomous command")
+	}
+}
+
+func TestSupervisorLoopCLIJobsText(t *testing.T) {
+	getMethod, getPath, getQuery, _ := supervisorLoopDaemon(t, http.StatusOK, supervisorLoopJobsBody)
+	s, err := runSupervisorLoopCmd(t, "jobs")
+	if err != nil {
+		t.Fatalf("execute: %v (output: %q)", err, s)
+	}
+	if m := getMethod(); m != http.MethodGet {
+		t.Errorf("method = %q, want GET", m)
+	}
+	if p := getPath(); p != "/api/supervisor-loop/jobs" {
+		t.Errorf("path = %q, want the supervisor loop jobs route", p)
+	}
+	if q := getQuery(); q != "" {
+		t.Errorf("query = %q, want none", q)
+	}
+	for _, want := range []string{
+		"Supervisor loop on; 3 jobs.",
+		"draft_spec: mechanical, enabled, last ok at 2026-11-01T10:00:00Z",
+		"choose_backend: model, disabled, fast, claude, sonnet, last escalated",
+		"verify: mechanical, enabled, last validator_failed",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(strings.ToLower(s), "prd") {
+		t.Errorf("operator output must not say PRD:\n%s", s)
+	}
+}
+
+func TestSupervisorLoopCLIJobsJSONUntouched(t *testing.T) {
+	supervisorLoopDaemon(t, http.StatusOK, supervisorLoopJobsBody)
+	s, err := runSupervisorLoopCmd(t, "jobs", "--json")
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	// --json prints the body untouched; the sample body has no trailing
+	// newline, so compare trimmed.
+	if strings.TrimSpace(s) != strings.TrimSpace(supervisorLoopJobsBody) {
+		t.Errorf("--json did not pass the body through untouched:\n%s", s)
+	}
+}
+
+func TestSupervisorLoopCLIRunsFilter(t *testing.T) {
+	getMethod, getPath, getQuery, _ := supervisorLoopDaemon(t, http.StatusOK, supervisorLoopRunsBody)
+	s, err := runSupervisorLoopCmd(t, "runs", "--job", "draft_spec", "--outcome", "escalated", "--limit", "25")
+	if err != nil {
+		t.Fatalf("execute: %v (output: %q)", err, s)
+	}
+	if m := getMethod(); m != http.MethodGet {
+		t.Errorf("method = %q, want GET", m)
+	}
+	if p := getPath(); p != "/api/supervisor-loop/runs" {
+		t.Errorf("path = %q, want the supervisor loop runs route", p)
+	}
+	if q := getQuery(); q != "job=draft_spec&limit=25&outcome=escalated" {
+		t.Errorf("query = %q, want the filters for the daemon", q)
+	}
+	for _, want := range []string{
+		"1. draft_spec ok: drafted spec v2 (1200 ms) at 2026-11-01T10:00:00Z",
+		"2. draft_spec escalated [validator: spec too short] [3 retries] [1 escalations] at 2026-11-01T09:00:00Z",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+}
+
+func TestSupervisorLoopCLIRunsEmpty(t *testing.T) {
+	supervisorLoopDaemon(t, http.StatusOK, `{"runs":[]}`)
+	s, err := runSupervisorLoopCmd(t, "runs")
+	if err != nil {
+		t.Fatalf("execute: %v (output: %q)", err, s)
+	}
+	if !strings.Contains(s, "No run records.") {
+		t.Errorf("empty state lacks the no-records line:\n%s", s)
+	}
+}
+
+func TestSupervisorLoopCLIRunPostsTheJob(t *testing.T) {
+	_, postPath, _, postBody := supervisorLoopDaemon(t, http.StatusOK, `{"job":"draft_spec","ok":true,"result":"drafted spec v2"}`)
+	s, err := runSupervisorLoopCmd(t, "run", "draft_spec", "--input", "draft the spec", "--candidates", "backend-a", "--candidates", "backend-b")
+	if err != nil {
+		t.Fatalf("execute: %v (output: %q)", err, s)
+	}
+	if p := postPath(); p != "/api/supervisor-loop/jobs/draft_spec/run" {
+		t.Errorf("path = %q, want the job's run route", p)
+	}
+	if b := postBody(); !strings.Contains(b, `"input":"draft the spec"`) || !strings.Contains(b, `"backend-a"`) || !strings.Contains(b, `"backend-b"`) {
+		t.Errorf("request body lost the input or candidates: %s", b)
+	}
+	for _, want := range []string{"job draft_spec: ok", "drafted spec v2"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("output lacks %q:\n%s", want, s)
+		}
+	}
+}
+
+func TestSupervisorLoopCLIUnknownJobFails(t *testing.T) {
+	_, postPath, _, _ := supervisorLoopDaemon(t, http.StatusNotFound, `{"error":"unknown job nosuchjob"}`)
+	s, err := runSupervisorLoopCmd(t, "run", "nosuchjob")
+	if err == nil {
+		t.Fatalf("an unknown job must fail the command; output: %q", s)
+	}
+	if p := postPath(); p != "/api/supervisor-loop/jobs/nosuchjob/run" {
+		t.Errorf("path = %q, want the unknown job's run route", p)
+	}
+	if !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "nosuchjob") {
+		t.Errorf("error %q does not carry the status and the daemon's message", err)
+	}
+}
+
+func TestSupervisorLoopCLIServerErrorExitCode(t *testing.T) {
+	supervisorLoopDaemon(t, http.StatusServiceUnavailable, "autonomous disabled")
+	_, err := runSupervisorLoopCmd(t, "jobs")
+	if err == nil {
+		t.Fatal("a server error must fail the command (non-zero exit)")
+	}
+	if !strings.Contains(err.Error(), "503") || !strings.Contains(err.Error(), "autonomous disabled") {
+		t.Errorf("error %q does not carry the status and the server message", err)
+	}
+}
