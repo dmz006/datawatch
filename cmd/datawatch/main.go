@@ -5974,7 +5974,20 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if autonomousMgrRef != nil {
 				vauto = autonomousMgrRef.AutomationForPRD(prd)
 			}
-			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, vauto, liveCfg)
+			// The resolved LLM also carries the configured verification_mode of
+			// the serving registry entry. An invalid stored mode fails closed
+			// with a setup verdict; it is never coerced.
+			resolvedVLLM, modeErr := autonomouspkg.ResolveVerificationLLMWithMode(prd, task, vauto, liveCfg, verificationModeLookup(autonomousInferenceReg))
+			if modeErr != nil {
+				return autonomouspkg.VerificationResult{
+					OK:         false,
+					Severity:   "high",
+					Summary:    "verifier: judge never ran — " + modeErr.Error(),
+					Issues:     []string{"configuration failure, not a finding about the task"},
+					VerifiedAt: time.Now(),
+					Category:   "setup",
+				}, nil
+			}
 			// Infra escalation: after enough consecutive infra verifier
 			// failures on this task, this one verification runs on the
 			// fallback backend; the count resets when it finishes.

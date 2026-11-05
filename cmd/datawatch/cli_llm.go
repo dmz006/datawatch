@@ -101,6 +101,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		skipPerms, channelEnabled, autoAccept            bool
 		permMode, defaultEffort, fallbackChainCSV        string
 		planTier                                         string
+		verificationMode                                 string
 		billingGroup                                     string
 		maxInflight                                      int
 		roles                                            []string
@@ -128,6 +129,13 @@ func newLLMAddCmd(update bool) *cobra.Command {
 			}
 			if planTier != "" {
 				body["plan_tier"] = planTier
+			}
+			// verification_mode — validate locally; absent flag = keep stored.
+			if verificationMode != "" {
+				if !inference.ValidVerificationMode(inference.VerificationMode(verificationMode)) {
+					return fmt.Errorf("invalid --verification-mode %q (expected classify or generate; empty = generate)", verificationMode)
+				}
+				body["verification_mode"] = verificationMode
 			}
 			// billing_group — operator label grouping LLM entries that share
 			// one cloud/billing account. Only sent when the operator passed
@@ -259,6 +267,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&defaultEffort, "default-effort", "", "default effort: quick | normal | thorough (claude-code only)")
 	cmd.Flags().StringVar(&fallbackChainCSV, "fallback-chain", "", "comma-separated profile fallback chain (claude-code only)")
 	cmd.Flags().StringVar(&planTier, "plan-tier", "", "subscription plan tier: pro | max_5x | max_20x | api (empty = unset; the daemon's autonomous.plan_tier_max_inflight table then caps this LLM's inflight unless --max-inflight > 0 wins)")
+	cmd.Flags().StringVar(&verificationMode, "verification-mode", "", "how this LLM judges when used as a verifier: classify | generate (default generate when unset)")
 	cmd.Flags().StringVar(&billingGroup, "billing-group", "", "label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group; empty = clears on update)")
 	addLLMBudgetFlags(cmd)
 	cmd.Flags().StringArrayVar(&roles, "role", nil, "workload role this LLM serves (repeatable). On update, omitting --role keeps the stored roles; a single empty --role=\"\" clears them")

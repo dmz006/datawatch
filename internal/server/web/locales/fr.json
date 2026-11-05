@@ -2009,6 +2009,7 @@
   "prd_task_kind_tip": "Tâche cible de la vérification smoke",
   "prd_task_smoke_verifier_tip": "LLM de vérification smoke pour cette tâche",
   "llm_field_plan_tier": "Niveau d'abonnement (vide = non défini)",
+  "llm_field_verification_mode": "Mode de vérification",
   "llm_plan_tier_hint": "La table autonomous.plan_tier_max_inflight du démon limite l'inflight par niveau ; un max_inflight explicite > 0 prime ; sinon aucun plafond par niveau (illimité).",
   "llm_plan_tier_unset": "(non défini — sans plafond de niveau)",
   "llm_effective_cap": "Plafond d'inflight effectif",

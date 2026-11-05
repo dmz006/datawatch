@@ -2009,6 +2009,7 @@
   "prd_task_kind_tip": "Smoke-verification target task",
   "prd_task_smoke_verifier_tip": "Smoke verification LLM override for this task",
   "llm_field_plan_tier": "Plan tier (empty = unset)",
+  "llm_field_verification_mode": "Verification mode",
   "llm_plan_tier_hint": "The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).",
   "llm_plan_tier_unset": "(unset — no tier cap)",
   "llm_effective_cap": "Effective inflight cap",

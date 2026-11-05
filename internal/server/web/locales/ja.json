@@ -2009,6 +2009,7 @@
   "prd_task_kind_tip": "スモーク検証の対象タスク",
   "prd_task_smoke_verifier_tip": "このタスク用のスモーク検証LLM",
   "llm_field_plan_tier": "プラン階層（空欄 = 未設定）",
+  "llm_field_verification_mode": "検証モード",
   "llm_plan_tier_hint": "デーモンの autonomous.plan_tier_max_inflight テーブルが階層ごとに inflight を上限設定します。明示的な max_inflight > 0 が優先され、設定がない場合は階層制限なし（無制限）。",
   "llm_plan_tier_unset": "（未設定 — 階層制限なし）",
   "llm_effective_cap": "実際の inflight 上限",

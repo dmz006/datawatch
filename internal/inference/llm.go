@@ -112,6 +112,29 @@ func ValidPlanTier(t PlanTier) bool {
 	return false
 }
 
+// VerificationMode selects how an LLM entry produces a verification
+// verdict when it is used as a judge.
+type VerificationMode string
+
+const (
+	// VerificationModeGenerate generates free text and parses the verdict.
+	// It is the default, so existing setups are unchanged.
+	VerificationModeGenerate VerificationMode = "generate"
+	// VerificationModeClassify scores a closed label set instead of
+	// generating text.
+	VerificationModeClassify VerificationMode = "classify"
+)
+
+// ValidVerificationMode reports whether m is a known mode or empty (unset,
+// which resolves to generate).
+func ValidVerificationMode(m VerificationMode) bool {
+	switch m {
+	case "", VerificationModeGenerate, VerificationModeClassify:
+		return true
+	}
+	return false
+}
+
 // EnabledModel pairs one ComputeNode with one model name.
 // Node is empty for SaaS kinds (claude, gemini).
 type EnabledModel struct {
@@ -225,6 +248,20 @@ type LLM struct {
 	PermissionMode       string   `yaml:"permission_mode,omitempty" json:"permission_mode,omitempty"`
 	DefaultEffort        string   `yaml:"default_effort,omitempty" json:"default_effort,omitempty"`
 	FallbackChain        []string `yaml:"fallback_chain,omitempty" json:"fallback_chain,omitempty"`
+
+	// VerificationMode (classify|generate) selects how this entry judges
+	// when used as a verifier. Empty means generate. Validated on Add,
+	// Update and registry load.
+	VerificationMode VerificationMode `yaml:"verification_mode,omitempty" json:"verification_mode,omitempty"`
+}
+
+// EffectiveVerificationMode returns the entry's verification mode, with an
+// absent value resolved to VerificationModeGenerate.
+func (l *LLM) EffectiveVerificationMode() VerificationMode {
+	if l == nil || l.VerificationMode == "" {
+		return VerificationModeGenerate
+	}
+	return l.VerificationMode
 }
 
 // Enabled is the operator-facing accessor — handy for templates and
@@ -357,6 +394,10 @@ func (l *LLM) Validate() error {
 	if !ValidPlanTier(l.PlanTier) {
 		return fmt.Errorf("llm: unknown plan_tier %q (allowed: %s, %s, %s, %s, or empty for unset)",
 			string(l.PlanTier), PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI)
+	}
+	if !ValidVerificationMode(l.VerificationMode) {
+		return fmt.Errorf("llm: unknown verification_mode %q (allowed: %s, %s, or empty for %s)",
+			string(l.VerificationMode), VerificationModeClassify, VerificationModeGenerate, VerificationModeGenerate)
 	}
 	if l.Budget != nil {
 		if err := l.Budget.Validate(); err != nil {
