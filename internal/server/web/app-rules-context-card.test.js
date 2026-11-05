@@ -113,6 +113,13 @@ test('the settings area has a Rules and context group with the card and docs lin
   assert.ok(src.includes("rules_context_howto: 'howto/automata-rules-and-context.md'"));
 });
 
+test('the docs links point at a how-to file and a definitions heading that exist', () => {
+  const docs = path.join(__dirname, '..', '..', '..', 'docs');
+  assert.ok(fs.existsSync(path.join(docs, 'howto', 'automata-rules-and-context.md')));
+  const defs = fs.readFileSync(path.join(docs, 'datawatch-definitions.md'), 'utf8');
+  assert.ok(/^### Rules and context$/m.test(defs));
+});
+
 // ── saving ───────────────────────────────────────────────────────────────────
 
 test('save sends PUT with the whole config and trims the file list', async () => {
