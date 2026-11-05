@@ -1,3 +1,9 @@
+/* Automatic tags: grouped filter rows and the system-tag lock. */
+.tag-filter-group-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text2); padding: 6px 0 2px; }
+.tag-system-badge, .tag-system-mark { font-size: 10px; color: var(--text2); white-space: nowrap; }
+.tag-filter-control { margin: 6px 0; }
+.automation-form-member-stage { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+
 /* ── Custom properties ── */
 /* v6.13.11 (BL278) — light/dark theme toggle. Dark is the default
    palette and lives on `:root`; the light overrides live on
@@ -7343,3 +7349,4 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > .obs-fluid { flex: 1 1 100%; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
+
