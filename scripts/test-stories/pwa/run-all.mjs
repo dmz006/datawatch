@@ -17,6 +17,7 @@
 //   node run-all.mjs --group usage            — run the usage calculator group (TS-819, TS-832, TS-840)
 //   node run-all.mjs --group automation       — run the automation sub-tabs group (TS-833)
 //   node run-all.mjs --group priority-source — run the priority-by-kind + defect-intake settings group (TS-841)
+//   node run-all.mjs --group automaton-detail-tabs — run the phone-width Automaton detail tab story (TS-848)
 
 import { spawnSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
@@ -38,10 +39,12 @@ const GROUPS = {
   automation: ['TS-833'],
   // usage: TS-841.mjs (the autonomous priority-by-kind + defect-intake settings rows)
   'priority-source': ['TS-841'],
+  // automaton-detail-tabs: automaton-detail-tabs-mobile.mjs (phone-width detail tab strip, TS-848)
+  'automaton-detail-tabs': ['automaton-detail-tabs-mobile'],
 };
 
 // Scenarios outside the TS-*.mjs naming that the default run also discovers.
-const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs'];
+const EXTRA_SCENARIOS = ['shared-nav-mobile-fit.mjs', 'automaton-detail-tabs-mobile.mjs'];
 
 let groupName = null;
 const groupIndex = argv.indexOf('--group');
