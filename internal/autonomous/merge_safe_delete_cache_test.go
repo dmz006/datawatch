@@ -329,6 +329,14 @@ func TestSafeDeleteCacheFailedRefreshKeepsLastGoodReport(t *testing.T) {
 	sdWaitFor(t, failStarted, "the failing refresh to start")
 	close(failUnblock)
 	sdWaitFor(t, failReleased, "the failing refresh to return its error")
+	// failReleased closes before compute returns, so the refresh is still
+	// registered as running for a moment; the next read only retries once
+	// that registration is gone.
+	sdWaitUntil(t, "the failed refresh to finish", func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.refreshing[sdTestRepo]
+	})
 
 	// The failed refresh must have kept the last good report and its
 	// computed time, and the entry must still be stale.
