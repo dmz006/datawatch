@@ -35,12 +35,12 @@ func (s *Server) writeAutonomousResult(w http.ResponseWriter, r *http.Request, p
 }
 
 // writeAutonomousResultOverride is the LLM-override-write variant of
-// writeAutonomousResult: when override is non-nil (a call accepted in
-// queued mode, override_queued_tasks enabled at a locked Automaton status),
-// the reply carries it in override — in the full view as {"prd": …,
-// "override": …}, in the compact view inside the write view — while a nil
-// override keeps the exact bare-PRD / write-view replies every other write
-// uses.
+// writeAutonomousResult: when override is non-nil (a call accepted in queued
+// mode, override_queued_tasks enabled at a locked Automaton status), the
+// reply carries it in override — in the full view as a top-level sibling of
+// the PRD's own fields, in the compact view as the override key of the write
+// view — while a nil override keeps the exact bare-PRD / write-view replies
+// every other write uses.
 func (s *Server) writeAutonomousResultOverride(w http.ResponseWriter, r *http.Request, prd any, override any, taskID, storyID, message string) {
 	if override == nil {
 		s.writeAutonomousResult(w, r, prd, taskID, storyID, message)
@@ -48,10 +48,17 @@ func (s *Server) writeAutonomousResultOverride(w http.ResponseWriter, r *http.Re
 	}
 	switch view := r.URL.Query().Get("view"); view {
 	case "", "full":
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "full view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// The PRD's own top-level fields come through the embedded struct; the
+		// queued-mode override rides along as a top-level sibling, not a wrapper.
 		writeJSONOK(w, struct {
-			PRD      any `json:"prd"`
+			*autonomous.PRD
 			Override any `json:"override"`
-		}{PRD: prd, Override: override})
+		}{PRD: p, Override: override})
 	case "compact":
 		p, err := toPRD(prd)
 		if err != nil {
@@ -66,26 +73,31 @@ func (s *Server) writeAutonomousResultOverride(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// writeAutonomousPlanningResult writes the PRD-level set_llm reply for a
-// call that carried a planning field (decomposition_profile /
-// decomposition_model): the structured planning-requeue outcome rides along
-// in the prd key in the full view ("prd" + "planning") and as the planning
-// key of the write view in compact mode. planning is nil — the handler
-// never routes here then — so every other write keeps its exact legacy reply.
+// writeAutonomousPlanningResult writes the PRD-level set_llm reply for a call
+// that carried a planning field (decomposition_profile / decomposition_model):
+// the structured planning-requeue outcome rides along as a top-level sibling
+// of the PRD's own fields in the full view and as the planning key of the
+// write view in compact mode. planning is always non-nil here (the handler
+// routes only when a requeue result exists), so every other write keeps its
+// exact legacy bare-PRD / write-view reply.
 func (s *Server) writeAutonomousPlanningResult(w http.ResponseWriter, r *http.Request, prd any, planning any, taskID, storyID, message string) {
-	if isNilPRD(prd) {
-		writeJSONOK(w, struct {
-			PRD      any `json:"prd"`
-			Planning any `json:"planning,omitempty"`
-		}{PRD: prd, Planning: planning})
-		return
-	}
 	switch view := r.URL.Query().Get("view"); view {
 	case "", "full":
+		if isNilPRD(prd) {
+			writeJSONOK(w, struct {
+				Planning any `json:"planning"`
+			}{Planning: planning})
+			return
+		}
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "full view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
 		writeJSONOK(w, struct {
-			PRD      any `json:"prd"`
-			Planning any `json:"planning,omitempty"`
-		}{PRD: prd, Planning: planning})
+			*autonomous.PRD
+			Planning any `json:"planning"`
+		}{PRD: p, Planning: planning})
 	case "compact":
 		p, err := toPRD(prd)
 		if err != nil {

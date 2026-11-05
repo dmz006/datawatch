@@ -460,6 +460,99 @@ func decodeAnyMap(t *testing.T, b []byte) map[string]any {
 	return m
 }
 
+// TestWriteAutonomousResultOverrideFullShape pins the full-view reply of a
+// queued-mode (override non-nil) story/task LLM write: the PRD's own top-level
+// fields must be present, the override must ride along as a top-level sibling,
+// and there must be NO "prd" wrapper key.
+func TestWriteAutonomousResultOverrideFullShape(t *testing.T) {
+	prd := &autonomous.PRD{
+		ID:     "abcd1234",
+		Status: autonomous.PRDDraft,
+		Rev:    7,
+	}
+	ovr := map[string]any{"changed": []string{"t1"}, "left_alone": []map[string]string{{"id": "t2", "reason": "running"}}}
+
+	for _, query := range []string{"", "?view=full"} {
+		t.Run("query="+query, func(t *testing.T) {
+			s := &Server{}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/abcd1234/tasks/t1"+query, nil)
+			s.writeAutonomousResultOverride(rec, req, prd, ovr, "t1", "", "")
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			if _, ok := body["prd"]; ok {
+				t.Errorf("full reply must not wrap in a prd key; body %s", rec.Body.String())
+			}
+			for _, k := range []string{"id", "status", "rev"} {
+				if _, ok := body[k]; !ok {
+					t.Errorf("reply missing PRD top-level key %q; body %s", k, rec.Body.String())
+				}
+			}
+			overrideRaw, ok := body["override"]
+			if !ok {
+				t.Fatalf("reply missing top-level override key; body %s", rec.Body.String())
+			}
+			var ovrJSON map[string]json.RawMessage
+			if err := json.Unmarshal(overrideRaw, &ovrJSON); err != nil {
+				t.Fatalf("decode override: %v", err)
+			}
+			if _, ok := ovrJSON["changed"]; !ok {
+				t.Errorf("override missing changed key; body %s", rec.Body.String())
+			}
+		})
+	}
+}
+
+// TestWriteAutonomousPlanningResultFullShape pins the full-view reply of a
+// PRD-level set_llm that carried a planning field: the planning outcome rides
+// along as a top-level sibling of the PRD's own fields, with NO "prd" wrapper.
+func TestWriteAutonomousPlanningResultFullShape(t *testing.T) {
+	prd := &autonomous.PRD{ID: "abcd1234", Status: autonomous.PRDDraft, Rev: 3}
+	planning := map[string]any{"outcome": autonomous.PlanningRequeued, "old_pool": "pool-a", "new_pool": "pool-b", "reason": "profile changed"}
+
+	for _, query := range []string{"", "?view=full"} {
+		t.Run("query="+query, func(t *testing.T) {
+			s := &Server{}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/abcd1234/set_llm"+query, nil)
+			s.writeAutonomousPlanningResult(rec, req, prd, planning, "", "", "")
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			if _, ok := body["prd"]; ok {
+				t.Errorf("full reply must not wrap in a prd key; body %s", rec.Body.String())
+			}
+			for _, k := range []string{"id", "status", "rev"} {
+				if _, ok := body[k]; !ok {
+					t.Errorf("reply missing PRD top-level key %q; body %s", k, rec.Body.String())
+				}
+			}
+			planned, ok := body["planning"]
+			if !ok {
+				t.Fatalf("reply missing top-level planning key; body %s", rec.Body.String())
+			}
+			var pJSON map[string]any
+			if err := json.Unmarshal(planned, &pJSON); err != nil {
+				t.Fatalf("decode planning: %v", err)
+			}
+			if pJSON["outcome"] != string(autonomous.PlanningRequeued) {
+				t.Errorf("planning.outcome = %v, want requeued; body %s", pJSON["outcome"], rec.Body.String())
+		}
+		})
+	}
+}
+
 // TestPRDRESTDefaultUnchanged is a regression guard: with no view or detail
 // query, the PRD GET route and the reset_task POST route must return the PRD
 // exactly as the manager holds it. It also checks that the spec text reaches

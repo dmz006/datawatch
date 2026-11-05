@@ -85,7 +85,14 @@ func (m *Manager) setAutomationLLM(id, kind, actor string, expectedVersion int64
 // Automation is draft, active, paused or blocked. The execution pair is checked
 // against the pair the Automation will hold; the planning pair is stored as
 // given. The verification fields are not touched (SetAutomationVerificationLLM).
-func (m *Manager) SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (*Automation, error) {
+//
+// When the planning pair is part of the call, every member Automaton whose
+// planning run is still sitting in the capacity queue is retargeted onto the
+// pool the NEW pair resolves to (requeuePlanningForMembers); the folded
+// outcome returns as the second value so the surfaces that drive this setter
+// (REST / MCP / CLI / comm) can report it. The result is nil when the call did
+// not touch the planning pair.
+func (m *Manager) SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (*Automation, *PlanningRequeueResult, error) {
 	fields := []llmField{
 		{"backend", backend},
 		{"model", model},
@@ -93,7 +100,13 @@ func (m *Manager) SetAutomationLLM(id string, backend, model, effort, planningBa
 		{"planning_backend", planningBackend},
 		{"planning_model", planningModel},
 	}
-	return m.setAutomationLLM(id, controlSetLLM, actor, expectedVersion, fields, func(a *Automation) error {
+	// The planning pair the Automation held before this call: the "old" side of
+	// the requeue report (the member runs were queued on this pair's pool).
+	var oldPlanBackend, oldPlanModel string
+	if cur, ok := m.automations.Get(id); ok {
+		oldPlanBackend, oldPlanModel = cur.PlanningBackend, cur.PlanningModel
+	}
+	updated, err := m.setAutomationLLM(id, controlSetLLM, actor, expectedVersion, fields, func(a *Automation) error {
 		if effort != nil && !validVerificationEffort(*effort) {
 			return fmt.Errorf("invalid effort %q for Automation %s", *effort, a.ID)
 		}
@@ -117,6 +130,67 @@ func (m *Manager) SetAutomationLLM(id string, backend, model, effort, planningBa
 		}
 		return nil
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	// A planning-pair change moves any queued member planning run onto the pool
+	// the NEW pair resolves to; the folded outcome rides back for the surfaces
+	// to report. A call that only touched the execution pair has nothing to
+	// retarget and returns a nil planning result exactly as before.
+	var res *PlanningRequeueResult
+	if planningBackend != nil || planningModel != nil {
+		res = m.requeuePlanningForMembers(updated, oldPlanBackend, oldPlanModel, actor)
+	}
+	return updated, res, nil
+}
+
+// requeuePlanningForMembers retargets every member Automaton whose planning run
+// is still queued onto the pool the Automation's NEW planning pair resolves to,
+// and folds the per-member outcomes into one result. Requeued outranks deferred,
+// which outranks unchanged: the returned result carries the strongest outcome so
+// the surfaces can say at a glance whether anything actually moved. Member PRDs
+// that are not on the store are skipped. The reported pool union is the set of
+// pools any member was retargeted from / onto.
+func (m *Manager) requeuePlanningForMembers(a *Automation, oldBackend, oldModel, actor string) *PlanningRequeueResult {
+	rank := map[PlanningOutcome]int{PlanningUnchanged: 0, PlanningDeferred: 1, PlanningRequeued: 2}
+	best := &PlanningRequeueResult{Outcome: PlanningUnchanged, OldBackend: oldBackend, OldModel: oldModel}
+	seen := map[string]bool{}
+	unionOld, unionNew := map[string]bool{}, map[string]bool{}
+	affected := 0
+	for _, mem := range a.Members {
+		prdID := mem.PRDID
+		if prdID == "" || seen[prdID] {
+			continue
+		}
+		seen[prdID] = true
+		affected++
+		// requeuePlanningRun handles a missing PRD itself (it is a member the
+		// store no longer carries), so no separate lookup is needed here.
+		res := m.requeuePlanningRun(prdID, actor, oldBackend, oldModel)
+		for _, p := range res.OldPools {
+			unionOld[p] = true
+		}
+		for _, p := range res.NewPools {
+			unionNew[p] = true
+		}
+		if rank[res.Outcome] > rank[best.Outcome] {
+			best = res
+		}
+	}
+	best.OldPools = sortedCopyPools(append([]string(nil), keys(unionOld)...))
+	best.NewPools = sortedCopyPools(append([]string(nil), keys(unionNew)...))
+	best.Reason = fmt.Sprintf("%d member Automaton(s) considered", affected) + ": " + best.Reason
+	return best
+}
+
+// keys returns the keys of a string-set in an unspecified order (the caller
+// re-sorts via sortedCopyPools).
+func keys(s map[string]bool) []string {
+	out := make([]string, 0, len(s))
+	for k := range s {
+		out = append(out, k)
+	}
+	return out
 }
 
 // SetAutomationVerificationLLM overrides the Automation-level verifier backend,
