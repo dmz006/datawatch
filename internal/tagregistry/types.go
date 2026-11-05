@@ -45,12 +45,16 @@ const (
 
 // Tag is one tag of the shared registry as this daemon holds it.
 type Tag struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	ParentID    string    `json:"parent_id,omitempty"`
-	Color       string    `json:"color,omitempty"`
-	Description string    `json:"description,omitempty"`
-	OriginNode  string    `json:"origin_node,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ParentID    string `json:"parent_id,omitempty"`
+	Color       string `json:"color,omitempty"`
+	Description string `json:"description,omitempty"`
+	OriginNode  string `json:"origin_node,omitempty"`
+	// System marks a tag the registry created itself, such as a placement tag.
+	// A system tag is not renamed, re-parented or deleted by an operator, and
+	// creating a tag with its name returns the tag instead of changing it.
+	System      bool      `json:"system,omitempty"`
 	PendingSync bool      `json:"pending_sync,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -116,6 +120,11 @@ type Write struct {
 	// unreachable. A same-name tag under the same parent then merges into the
 	// keeper's tag.
 	Pending bool `json:"pending,omitempty"`
+	// System marks a create as one the registry owns, such as a placement tag.
+	// A keeper asked to create it with a name it already holds returns that tag
+	// instead of a second one, so the same placement on two daemons lands on
+	// one tag.
+	System bool `json:"system,omitempty"`
 }
 
 // WriteResult is what the keeper returns for a write. Tag is the keeper's
@@ -160,6 +169,10 @@ var (
 	ErrNotKeeper = errors.New("this daemon does not keep the tag registry")
 	// ErrNoteNotFound matches a dismissal of a note that does not exist.
 	ErrNoteNotFound = errors.New("merge note not found")
+	// ErrTagSystem is returned, or wrapped, when an edit is refused because the
+	// tag is a system tag: a tag the registry created itself for a placement.
+	// Its name, parent and lifetime belong to the registry, not to an operator.
+	ErrTagSystem = errors.New("tag is a system tag")
 )
 
 // The tag errors are the autonomous package's own values. A refusal by the

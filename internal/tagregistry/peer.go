@@ -49,7 +49,48 @@ func (r *Registry) Create(ctx context.Context, in CreateInput) (WriteResult, err
 	return r.createPending(w)
 }
 
-// Rename changes a tag's name.
+// EnsureSystemTag returns the system tag with the given name, creating it
+// under the root when no tag with that name is held. It runs
+// create-or-return by name: a placement repeated on this daemon or another
+// returns the tag it found and leaves it as it is, so no duplicate is made
+// and the origin of the existing tag never changes. Unlike Create, a peer
+// may call it while the keeper is unreachable; the tag is then made locally,
+// marked pending sync, and merged into the keeper's tag of the same name when
+// the keeper returns.
+func (r *Registry) EnsureSystemTag(ctx context.Context, name string) (WriteResult, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return WriteResult{}, fmt.Errorf("%w: name is required", ErrTagInvalid)
+	}
+	w := Write{
+		Kind:       WriteCreate,
+		TagID:      r.newID(),
+		Name:       name,
+		OriginNode: r.node,
+		System:     true,
+	}
+	if r.Role() != RolePeer {
+		return r.localWrite(w)
+	}
+	r.opMu.Lock()
+	defer r.opMu.Unlock()
+	if r.isReachable() {
+		res, err := r.forward(ctx, w)
+		if err == nil {
+			if err := r.adopt(w, res); err != nil {
+				return WriteResult{}, err
+			}
+			_ = r.syncNoLock(ctx)
+			return res, nil
+		}
+		if !errors.Is(err, ErrKeeperUnreachable) {
+			return WriteResult{}, err
+		}
+	}
+	return r.createPending(w)
+}
+
+// Rename changes a tag's name. A system tag is refused with ErrTagSystem.
 func (r *Registry) Rename(ctx context.Context, id, name string) (WriteResult, error) {
 	return r.edit(ctx, "rename", Write{Kind: WriteRename, TagID: id, Name: name})
 }
@@ -132,8 +173,14 @@ func (r *Registry) checkEditLocal(w Write) error {
 	if w.Kind == WriteRename && strings.TrimSpace(w.Name) == "" {
 		return fmt.Errorf("%w: name is required", ErrTagInvalid)
 	}
-	_, err := r.requireLocked(w.TagID)
-	return err
+	i, err := r.requireLocked(w.TagID)
+	if err != nil {
+		return err
+	}
+	if w.Kind == WriteRename && r.st.Tags[i].System {
+		return refuseSystemEdit("rename", r.st.Tags[i].Name)
+	}
+	return nil
 }
 
 // checkDeleteLocal runs the delete checks against this daemon's copy.
@@ -155,13 +202,20 @@ func (r *Registry) createPending(w Write) (WriteResult, error) {
 		if err != nil {
 			return err
 		}
-		r.st.Tags[r.indexLocked(w.TagID)].PendingSync = true
+		// create-or-return can hand back a tag the call did not store, so the
+		// write's id is absent when the call found an existing one; that tag
+		// is already res.Tag, and nothing is pending for it.
+		i := r.indexLocked(w.TagID)
+		if i < 0 {
+			return nil
+		}
+		r.st.Tags[i].PendingSync = true
+		res.Tag = r.st.Tags[i]
 		return nil
 	})
 	if err != nil {
 		return WriteResult{}, err
 	}
-	res.Tag = r.st.Tags[r.indexLocked(w.TagID)]
 	return res, nil
 }
 
@@ -291,6 +345,7 @@ func (r *Registry) pendingWrite(id string) (Write, bool) {
 		Description: t.Description,
 		OriginNode:  t.OriginNode,
 		Pending:     true,
+		System:      t.System,
 	}, true
 }
 
