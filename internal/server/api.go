@@ -616,6 +616,11 @@ type Server struct {
 	// Nil when not wired; group endpoints return builtin-only lists.
 	fedGroupStore *federation.GroupStore
 
+	// Observer pull protocol — the PullCollector wired to the federation
+	// peer store by NewObserverPullCollector. Nil until wired; while nil
+	// syncObserverPullTargets is a no-op.
+	observerPull *observerPull
+
 	// Fingerprint exchange (docs/plans/2026-10-14-concurrency-and
 	// budget-design.md §3c) — the exporter behind
 	// GET /api/federation/fingerprints, wired from main.go when the

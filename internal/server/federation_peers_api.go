@@ -154,6 +154,9 @@ func (s *Server) fedPeerAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e, _ := s.serverStore.Get(body.Name)
+	// Observer pull protocol — the store changed; reconcile the collector's
+	// target set (no-op until the collector is wired).
+	s.syncObserverPullTargets()
 	// GH#201 Phase 4 — this is a materially more sensitive action than
 	// the *access* a peer makes (already covered by Phase 1's access
 	// log): it changes WHO's allowed in, not just records a request.
@@ -202,6 +205,9 @@ func (s *Server) fedPeerUpdate(w http.ResponseWriter, r *http.Request, name stri
 		"url":          merged.URL,
 		"capabilities": merged.Capabilities,
 	})
+	// Observer pull protocol — the store changed; reconcile the collector's
+	// target set (no-op until the collector is wired).
+	s.syncObserverPullTargets()
 	writeJSONOK(w, e.Redacted())
 }
 
@@ -218,6 +224,9 @@ func (s *Server) fedPeerDelete(w http.ResponseWriter, r *http.Request, name stri
 		return
 	}
 	s.audit(r.Context(), "delete", "federation_peer", name, nil) // GH#201 Phase 4
+	// Observer pull protocol — the store changed; reconcile the collector's
+	// target set (no-op until the collector is wired).
+	s.syncObserverPullTargets()
 	w.WriteHeader(http.StatusNoContent)
 }
 
