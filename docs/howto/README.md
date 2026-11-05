@@ -86,6 +86,7 @@ you already have a daemon you can talk to.
 | [Evals](evals.md) | Rubric-based grading suites: capability + regression modes, 4 grader types |
 | [Council Mode](council-mode.md) | Multi-persona structured debate; 12 default personas; quick + debate modes |
 | [Compute Nodes](compute-nodes.md) | ComputeNode registry — kinds (ollama/openai-compat), capacity, scheduling priority, observer peer, model pull, CLI + PWA + REST + MCP + comm |
+| [Verifier headroom measurement](verifier-headroom-measurement.md) | The idle-node measurement that lets a node run more than one verifier at a time: what it records, the safety conditions (409 node busy, 403 no allowed models), the gate and its refusal messages, raising the cap, restart behaviour, and all five access methods |
 | [Ollama Marketplace](ollama-marketplace.md) | Browse, pull, and delete Ollama models on a Compute Node from the PWA, CLI, REST, or MCP — no manual `ollama pull` needed |
 | [Secrets Manager](secrets-manager.md) | Native + KeePass + 1Password backends; `${secret:name}` references; per-secret scopes |
 | [LLM Registry](llm-registry.md) | Named LLM definitions, per-node model pairs, enabled/disable toggle, block-on-delete + reassign, all surfaces |
