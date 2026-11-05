@@ -3350,5 +3350,19 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "llm_verification_mode_default": "(default: generate)",
+  "llm_verification_mode_generate": "generate",
+  "llm_verification_mode_classify": "classify",
+  "llm_verification_mode_hint": "generate asks the judge to write a verdict. classify reads the judge's option probabilities and blocks when they are missing, late or unsure. The classification judge model must come from an allowlisted publisher.",
+  "classif_verdict_title": "Classification verdict",
+  "classif_mode": "Mode",
+  "classif_route": "Route",
+  "classif_route_path": "Read path",
+  "classif_scores": "Score vector",
+  "classif_pass_probability": "Pass probability",
+  "classif_threshold": "Threshold",
+  "classif_severity_scores": "Severity",
+  "classif_category": "Category",
+  "classif_low_confidence": "Low confidence - review by hand"
 }

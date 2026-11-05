@@ -3350,5 +3350,19 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "llm_verification_mode_default": "(Standard: generate)",
+  "llm_verification_mode_generate": "generate",
+  "llm_verification_mode_classify": "classify",
+  "llm_verification_mode_hint": "generate lässt den Prüfer ein Urteil schreiben. classify liest die Optionswahrscheinlichkeiten des Prüfers und blockiert, wenn sie fehlen, zu spät kommen oder unsicher sind. Das Klassifikationsmodell muss von einem freigegebenen Herausgeber stammen.",
+  "classif_verdict_title": "Klassifikationsurteil",
+  "classif_mode": "Modus",
+  "classif_route": "Route",
+  "classif_route_path": "Lesepfad",
+  "classif_scores": "Wertevektor",
+  "classif_pass_probability": "Bestehenswahrscheinlichkeit",
+  "classif_threshold": "Schwellwert",
+  "classif_severity_scores": "Schweregrad",
+  "classif_category": "Kategorie",
+  "classif_low_confidence": "Geringe Sicherheit - manuell prüfen"
 }

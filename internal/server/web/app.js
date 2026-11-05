@@ -6069,6 +6069,30 @@ function renderResultMarkdownInto(el, md) {
   }).catch(() => { el.innerHTML = plain(); });
 }
 
+// classifyVerdictHTML renders the route and score vector of a classify-mode
+// verdict (task verification or guardrail verdict). Returns '' for a verdict
+// that carries neither (generate mode, deterministic checks).
+function classifyVerdictHTML(v) {
+  if (!v || (!v.route && !v.scores)) return '';
+  const sc = v.scores || {};
+  const rt = v.route || {};
+  const fmt = n => (typeof n === 'number' ? n.toFixed(3) : '—');
+  const vec = m => Object.keys(m || {}).sort().map(k => `${escHtml(k)}=${fmt(m[k])}`).join(' ');
+  const row = (label, val) => `<div style="font-size:11px;color:var(--text2);">${escHtml(label)}: ${val}</div>`;
+  const low = v.category === 'low-confidence'
+    ? `<div style="font-size:11px;font-weight:700;color:var(--warning,#f59e0b);">${escHtml(t('classif_low_confidence')||'Low confidence - review by hand')}</div>` : '';
+  return `<div class="classif-verdict" style="display:flex;flex-direction:column;gap:1px;border-top:1px solid var(--border);padding-top:3px;margin-top:2px;">
+    <div style="font-size:11px;font-weight:600;">${escHtml(t('classif_verdict_title')||'Classification verdict')}</div>
+    ${v.verifier_mode || v.mode ? row(t('classif_mode')||'Mode', escHtml(v.verifier_mode || v.mode)) : ''}
+    ${v.route ? row(t('classif_route')||'Route', `<code>${escHtml([rt.node, rt.model].filter(Boolean).join(' / ') || '—')}</code>${rt.path ? ' (' + escHtml(t('classif_route_path')||'Read path') + ': ' + escHtml(rt.path) + ')' : ''}`) : ''}
+    ${v.scores ? row(t('classif_pass_probability')||'Pass probability', `${fmt(sc.pass_probability)} · ${escHtml(t('classif_threshold')||'Threshold')} ${fmt(sc.threshold)}`) : ''}
+    ${sc.ok ? row(t('classif_scores')||'Score vector', vec(sc.ok)) : ''}
+    ${sc.severity ? row(t('classif_severity_scores')||'Severity', vec(sc.severity)) : ''}
+    ${v.category ? row(t('classif_category')||'Category', escHtml(v.category)) : ''}
+    ${low}
+  </div>`;
+}
+
 function renderSessionStatusBoard(sessionId) {
   // GATE alpha.36 (operator 2026-05-10): Status pane is now a sub-pane
   // inside the combined Status+Stats panel. Render into the Status
@@ -6253,6 +6277,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
         ${v.summary ? `<div style="font-size:12px;">${escHtml(v.summary)}</div>` : ''}
         ${shown.length ? `<ul style="margin:0;padding-left:18px;font-size:12px;">${shown.map(i => `<li>${escHtml(i)}</li>`).join('')}${issues.length > shown.length ? `<li style="color:var(--text2);list-style:none;">+${issues.length - shown.length} ${escHtml(t('status_more')||'more')}</li>` : ''}</ul>` : ''}
         ${(verifier || v.verifier_source) ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('status_verifier_label')||'Verifier')}: ${escHtml(verifier || '—')}${v.verifier_source ? ' (' + escHtml(v.verifier_source) + ')' : ''}</div>` : ''}
+        ${classifyVerdictHTML(v)}
       </div>`;
   } else if (auto) {
     testsBody = muted(t('status_not_verified_yet')||'not verified yet');
@@ -11624,8 +11649,9 @@ window._renderLLMEditPanel = function(existing) {
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_verification_mode')||'Verification mode')}</label>
         <select id="llmEditVerificationMode" class="form-select">
-          ${['','generate','classify'].map(v=>`<option value="${escHtml(v)}" ${(existing.verification_mode||'')===v?'selected':''}>${escHtml(v||'(default: generate)')}</option>`).join('')}
+          ${['','generate','classify'].map(v=>`<option value="${escHtml(v)}" ${(existing.verification_mode||'')===v?'selected':''}>${escHtml(v === 'classify' ? (t('llm_verification_mode_classify')||'classify') : v === 'generate' ? (t('llm_verification_mode_generate')||'generate') : (t('llm_verification_mode_default')||'(default: generate)'))}</option>`).join('')}
         </select>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_verification_mode_hint')||"generate asks the judge to write a verdict. classify reads the judge's option probabilities and blocks when they are missing, late or unsure.")}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
