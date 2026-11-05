@@ -91,7 +91,7 @@ func (m *Manager) SetRulesContextDigest(prd *PRD, injected bool, digestBytes int
 		rec = m.recordRulesContext(prd)
 	}
 	rec.MarkDigest(injected, digestBytes)
-	m.store.SavePRD(prd)
+	_ = m.store.SavePRD(prd)
 	return rec
 }
 
@@ -223,7 +223,7 @@ func hashFileWithSize(path string, size int64) (sum [sha256.Size]byte, err error
 	if err != nil {
 		return [sha256.Size]byte{}, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.CopyN(h, f, size); err != nil {
 		return [sha256.Size]byte{}, err

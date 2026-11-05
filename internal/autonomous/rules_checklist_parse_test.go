@@ -85,7 +85,7 @@ func TestRulesChecklistParseSectionNamesLine(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		fmt.Fprintf(&sb, "## Section number %d\nx\n", i)
 	}
-	os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte(sb.String()), 0o600)
+	_ = os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte(sb.String()), 0o600)
 	if l := rulesSectionNamesLine(dir, defaultRulesContext()); len(l) > 600 || l == "" {
 		t.Errorf("cap failed: %d", len(l))
 	}
