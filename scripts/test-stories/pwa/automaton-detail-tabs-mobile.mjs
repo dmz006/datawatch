@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Automaton detail tabs at phone width — the seven-tab strip scrolls inside itself, never the page
+ * Automaton detail tabs at phone width — the eight-tab strip scrolls inside itself, never the page
  * tags: surface:pwa feature:automaton-detail-tabs conflict:pwa-pwa
  *
  * A 390x844 touch context (hasTouch + isMobile) opens the detail view of an
- * Automaton that has scan and rules enabled, so all seven tabs show
+ * Automaton that has scan and rules enabled, so all eight tabs show
  * (Overview, Stories, Decisions, Memory, Subscriptions, Scan, Rules). The
  * detail record is route-fulfilled, so the story needs no daemon data.
  *
@@ -28,7 +28,7 @@ const TAB_KEYS = ['overview', 'stories', 'decisions', 'memory', 'subscriptions',
 const prd = {
   id: PRD_ID,
   title: 'Phone width detail tabs',
-  spec: 'Seeded Automaton with scan and rules enabled so all seven detail tabs render.',
+  spec: 'Seeded Automaton with scan and rules enabled so all eight detail tabs render.',
   status: 'needs_review',
   scan_enabled: true,
   rules_enabled: true,
@@ -134,7 +134,7 @@ await runPerfStory(async (page) => {
     await openDetail(p);
     await p.waitForTimeout(500);
     const labels = await p.$$eval('#automataDetailBody .prd-detail-tabs .output-tab', (els) => els.map((e) => e.textContent.trim()));
-    check(labels.length === 7, `expected all seven tabs with scan and rules enabled, got ${labels.length}: ${labels.join(', ')}`);
+    check(labels.length === 8, `expected all eight tabs with scan and rules enabled, got ${labels.length}: ${labels.join(', ')}`);
 
     // The strip overflows itself, scrolls with overflow-x auto, and the page does not widen.
     const strip = await p.evaluate(() => {

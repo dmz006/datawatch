@@ -1,14 +1,14 @@
 // The Automaton detail view's tab strip (.prd-detail-tabs).
 //
-// _renderDetailTabStrip emits seven tabs when the Scan and Rules tabs are
-// enabled and five otherwise; style.css lets the strip scroll horizontally
+// _renderDetailTabStrip emits eight tabs when the Scan and Rules tabs are
+// enabled and six otherwise (Trace is always shown); style.css lets the strip scroll horizontally
 // (overflow-x:auto, nowrap, 40px touch-target min-height); the tab swap in
 // switchAutomataDetailTab re-renders the strip and then calls
 // _automataDetailTabsReveal, which scrolls the strip (never the page) to the
 // active tab. Regression: replacing the strip via outerHTML resets its
 // scrollLeft to 0, so without the reveal call a tab past the right edge
 // (Scan, Rules) would be selected but invisible, and without nowrap/overflow
-// and the min-width:0 wrappers a seven-tab strip widens the whole page.
+// and the min-width:0 wrappers an eight-tab strip widens the whole page.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -42,18 +42,18 @@ function ruleBody(sel) {
   return out;
 }
 
-test('strip emits all seven tabs in order when scan and rules are enabled', () => {
+test('strip emits all eight tabs in order when scan and rules are enabled', () => {
   const sb = load();
   const html = sb._renderDetailTabStrip({ scan_enabled: true, rules_enabled: true }, 'overview');
   assert.deepEqual(tabKeys(html),
-    ['overview', 'stories', 'decisions', 'memory', 'subscriptions', 'scan', 'rules']);
+    ['overview', 'stories', 'decisions', 'memory', 'subscriptions', 'scan', 'rules', 'trace']);
   assert.match(html, /class="output-tabs prd-detail-tabs"/);
 });
 
 test('strip omits Scan and Rules when neither is enabled nor has results', () => {
   const sb = load();
   const html = sb._renderDetailTabStrip({}, 'overview');
-  assert.deepEqual(tabKeys(html), ['overview', 'stories', 'decisions', 'memory', 'subscriptions']);
+  assert.deepEqual(tabKeys(html), ['overview', 'stories', 'decisions', 'memory', 'subscriptions', 'trace']);
 });
 
 test('strip shows Scan or Rules independently, including from past results', () => {
@@ -133,7 +133,7 @@ test('switchAutomataDetailTab re-renders the strip with the chosen tab active, c
 
   sb.switchAutomataDetailTab('stories');
   assert.equal(vm.runInContext('_automataDetailTab', sb), 'stories');
-  assert.deepEqual(tabKeys(written.strip).length, 7);
+  assert.deepEqual(tabKeys(written.strip).length, 8);
   assert.match(written.strip, /class="output-tab active"[^>]*switchAutomataDetailTab\('stories'\)/);
   assert.doesNotMatch(written.strip, /class="output-tab active"[^>]*switchAutomataDetailTab\('overview'\)/);
   const storiesBody = written.body;

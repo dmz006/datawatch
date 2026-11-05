@@ -7,6 +7,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.98.1 — Phone-friendly Automaton detail tab strip
 
+### Fixed
+
+- **The Automaton detail tab strip fits a phone.** The eight tabs in the detail view now scroll sideways inside their own strip instead of widening the page, keep their natural width, and have a 40 px touch height on narrow or touch screens. Switching tabs scrolls the strip so the active tab is in view, and the detail wrappers can no longer push the page wider than the screen.
+- **Tests.** Unit tests cover the strip rules, the reveal and the tab switch, and a phone-width browser story (TS-850, widths 320, 390 and 430) checks that the strip scrolls inside itself, the tapped tab becomes active and the page never scrolls sideways.
 
 ## v9.98.0 — Automatic grouping tags for Automation stages
 
