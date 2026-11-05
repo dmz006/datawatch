@@ -72,7 +72,7 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 	if err := m.syncAutomationMembership(a.ID, nil, a.Members, false); err != nil {
 		// A refused tag sync (e.g. a name an operator tag owns) must not
 		// leave an Automation behind: roll the creation back.
-		m.automations.Delete(a.ID)
+		_ = m.automations.Delete(a.ID)
 		return nil, err
 	}
 	return a, nil

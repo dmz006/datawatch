@@ -67,13 +67,8 @@ func TestCommListTagFilter(t *testing.T) {
 
 	check := func(get []string, filter string, want ...string) {
 		t.Helper()
-		var got, exp []string
-		for _, id := range get {
-			got = append(got, id)
-		}
-		for _, id := range want {
-			exp = append(exp, id)
-		}
+		got := append([]string(nil), get...)
+		exp := append([]string(nil), want...)
 		sort.Strings(got)
 		sort.Strings(exp)
 		if strings.Join(got, ",") != strings.Join(exp, ",") {

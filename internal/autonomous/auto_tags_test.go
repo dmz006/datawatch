@@ -652,7 +652,8 @@ func TestSyncAutoTags_DaemonOffRecomputesAndReclaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAutomation: %v", err)
 	}
-	if autoTagsEngineCount(m) != 3 {
+	if n := autoTagsEngineCount(m); n != 3 {
+		t.Fatalf("engine tag count after create = %d, want 3", n)
 	}
 
 	// A live daemon flip off re-syncs every Automation.

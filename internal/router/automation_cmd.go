@@ -176,10 +176,10 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		rest := args[3:]
 		urgent, stage, reasons := false, "", []string{}
 		for _, tok := range rest {
-			switch {
-			case tok == "urgent":
+			switch tok {
+			case "urgent":
 				urgent = true
-			case tok == "stage":
+			case "stage":
 				r.send(automationInsertUsage)
 				return
 			default:
