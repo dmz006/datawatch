@@ -6440,6 +6440,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// null) so an unset consent visibly allows nothing — the
 			// fail-closed default, not a missing setting.
 			"model_pull_consent": modelPullConsentForDisplay(s.cfg.Autonomous.ModelPullConsent),
+			// Requirements min-Ollama overrides: the stored per-capability
+			// minimums (empty = the in-code table applies) plus the known
+			// capability list, so the web settings, CLI and comm render the
+			// same fields in the same order.
+			"requirements": requirementsConfigGetSurface(s.cfg.Autonomous.Requirements),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -7141,6 +7146,26 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// autonomous.requirements (min-Ollama overrides) — a bad capability, or
+	// a value that is not a version string, rejects the whole PUT like the
+	// keys above, by the one shared rule set; the per-capability
+	// autonomous.requirements.min_ollama.<capability> keys are validated by
+	// the same helper.
+	if raw, ok := patch["autonomous.requirements"]; ok {
+		if _, verr := validateRequirementsConfigBlock(raw); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	for k := range patch {
+		if !strings.HasPrefix(k, "autonomous.requirements.min_ollama.") {
+			continue
+		}
+		if _, verr := validateRequirementsMinOllamaKey(strings.TrimPrefix(k, "autonomous.requirements.min_ollama."), patch[k]); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// The question lifecycle events follow the switch at runtime: a flip
 	// attaches (or drops) the store's event sink, so no restart is needed.
@@ -7428,6 +7453,20 @@ func autonomousFieldJSONByTag(cfg config.AutonomousConfig, tag string) (json.Raw
 func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string {
 	var skipped []string
 	for k, v := range patch {
+		// autonomous.requirements.min_ollama.<capability> — the dynamic
+		// per-capability min-Ollama overrides (one key per capability),
+		// handled before the switch so future capabilities need no switch
+		// case. Validated in handlePutConfig by the shared rule set; a
+		// direct applyConfigPatch caller's bad value is left unchanged.
+		if capability, ok := strings.CutPrefix(k, "autonomous.requirements.min_ollama."); ok && capability != "" {
+			if version, verr := validateRequirementsMinOllamaKey(capability, v); verr == nil {
+				if cfg.Autonomous.Requirements.MinOllama == nil {
+					cfg.Autonomous.Requirements.MinOllama = map[string]string{}
+				}
+				cfg.Autonomous.Requirements.MinOllama[capability] = version
+			}
+			continue
+		}
 		switch k {
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)
@@ -8568,6 +8607,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig; stored lower-cased and trimmed.
 			if validateUsageBackoffMode(v) == nil {
 				cfg.Autonomous.UsageBackoff = strings.ToLower(strings.TrimSpace(toString(v)))
+			}
+		case "autonomous.requirements":
+			// Whole min-Ollama override block (capability → minimum version
+			// map). Validated in handlePutConfig by the one shared rule set;
+			// re-normalized defensively here so a direct applyConfigPatch
+			// caller's bad value is left unchanged.
+			if req, verr := validateRequirementsConfigBlock(v); verr == nil {
+				cfg.Autonomous.Requirements = req
 			}
 		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
 			// Validated in handlePutConfig; stored normalized.

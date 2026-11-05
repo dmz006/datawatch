@@ -340,3 +340,118 @@ func (s *Server) handleNodeBackendVersions(w http.ResponseWriter, r *http.Reques
 		Capabilities:    caps,
 	})
 }
+
+// ── autonomous.requirements config surface (min-Ollama overrides) ───────────
+//
+// The requirements config block rides the standard config surface:
+//   GET /api/config reads autonomous.requirements as
+//   {"min_ollama":{capability:version}} plus the known capability list, and
+//   PUT /api/config accepts the whole "autonomous.requirements" object or a
+//   per-capability "autonomous.requirements.min_ollama.<capability>" key.
+//   These helpers own the render/validate shape; api.go wires the routes.
+
+// requirementsConfigGetSurface renders the autonomous.requirements config
+// block: the stored min-Ollama overrides (empty = the in-code floor
+// applies) plus the known capability list so every surface renders the same
+// fields in the same order.
+func requirementsConfigGetSurface(req config.AutonomousRequirementsConfig) map[string]any {
+	min := map[string]string{}
+	for cap, version := range req.MinOllama {
+		version = strings.TrimSpace(version)
+		if version == "" {
+			continue
+		}
+		min[cap] = version
+	}
+	capabilities := autonomous.KnownCapabilities()
+	out := make([]string, 0, len(capabilities))
+	out = append(out, capabilities...)
+	return map[string]any{
+		"min_ollama":  min,
+		"capabilities": out,
+	}
+}
+
+// minOllamaMapFromAny reads a JSON "min_ollama" value (an object mapping
+// capability → version, or an empty object) into a Go map. It rejects
+// non-object values, non-string values and anything the shared validator
+// rejects (unknown caps, bad versions) so the two config keys share one
+// rule set.
+func minOllamaMapFromAny(v any) (map[string]string, error) {
+	switch x := v.(type) {
+	case nil:
+		return nil, nil
+	case map[string]any:
+		out := make(map[string]string, len(x))
+		for cap, ver := range x {
+			s, ok := ver.(string)
+			if !ok {
+				return nil, fmt.Errorf("autonomous.requirements.min_ollama: value for %q must be a version string", cap)
+			}
+			out[cap] = s
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("autonomous.requirements.min_ollama: must be an object of capability → version strings")
+	}
+}
+
+// validateRequirementsConfigBlock validates the whole
+// autonomous.requirements PUT value and returns the config block it
+// represents. v must be a JSON object whose only key is "min_ollama" (a
+// capability→version object); "capabilities" is accepted but ignored, and a
+// bare capability→version object is accepted as a convenience for comm
+// string values — everything invalid still refuses the whole PUT.
+func validateRequirementsConfigBlock(v any) (config.AutonomousRequirementsConfig, error) {
+	switch x := v.(type) {
+	case map[string]any:
+		consolidated := map[string]string{}
+		for key, val := range x {
+			if key == "capabilities" {
+				continue // read-only rendering field; accepted, ignored
+			}
+			if key == "min_ollama" {
+				m, err := minOllamaMapFromAny(val)
+				if err != nil {
+					return config.AutonomousRequirementsConfig{}, err
+				}
+				for cap, version := range m {
+					consolidated[cap] = version
+				}
+				continue
+			}
+			// convenience shape (comm sends strings): a bare capability→version
+			s, ok := val.(string)
+			if !ok {
+				return config.AutonomousRequirementsConfig{},
+					fmt.Errorf("autonomous.requirements: value for %q must be a version string", key)
+			}
+			consolidated[key] = s
+		}
+		normalized, err := autonomous.NormalizeMinOllamaOverrides(consolidated)
+		if err != nil {
+			return config.AutonomousRequirementsConfig{}, err
+		}
+		return config.AutonomousRequirementsConfig{MinOllama: normalized}, nil
+	default:
+		return config.AutonomousRequirementsConfig{},
+			fmt.Errorf("autonomous.requirements: must be an object with a \"min_ollama\" capability → version map")
+	}
+}
+
+// validateRequirementsMinOllamaKey validates one
+// autonomous.requirements.min_ollama.<capability> PUT value: a version
+// string (dotted semantic version) or the empty string, which clears the
+// override for that capability. It returns the stored value.
+func validateRequirementsMinOllamaKey(capability string, v any) (string, error) {
+	s, ok := v.(string)
+	if !ok {
+		return "", fmt.Errorf("autonomous.requirements.min_ollama.%s: must be a version string (the empty string clears the override)", capability)
+	}
+	version := strings.TrimSpace(s)
+	// One shared rule set for every surface: validate a single-entry map.
+	if _, err := autonomous.NormalizeMinOllamaOverrides(map[string]string{capability: version}); err != nil {
+		return "", err
+	}
+	return version, nil
+}

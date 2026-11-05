@@ -9593,6 +9593,17 @@ function renderSettingsView() {
             <div id="requirementsReportPanel" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
           </div>
         </div>
+        <!-- Requirements min-Ollama overrides (web settings): one field per
+             known capability with the minimum Ollama version; an empty field
+             clears that capability's built-in floor. Reads the
+             autonomous.requirements block from GET /api/config and saves it
+             back whole. -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('req_min_ollama', t('requirements_min_ollama_section_title')||'Minimum Ollama overrides')}
+          <div id="settings-sec-req_min_ollama" style="${secContent('req_min_ollama')}">
+            <div id="requirementsMinOllamaPanel" style="padding:4px 0;min-width:0;overflow-wrap:anywhere;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('model_pull_consent', t('model_consent_section_title')||'Model pull consent')}
           <div id="settings-sec-model_pull_consent" style="${secContent('model_pull_consent')}">
@@ -10535,6 +10546,7 @@ function renderSettingsView() {
   if (typeof loadCouncilPanel === 'function') loadCouncilPanel(); // BL260 v6.11.0
   if (typeof loadComputeNodesPanel === 'function') loadComputeNodesPanel(); // v7.0.0 S1
   if (typeof loadRequirementsReportPanel === 'function') loadRequirementsReportPanel(); // requirements report card (setup view)
+  if (typeof loadRequirementsMinOllamaPanel === 'function') loadRequirementsMinOllamaPanel(); // min-Ollama override fields (setup view)
   if (typeof loadModelConsentPanel === 'function') loadModelConsentPanel(); // model pull consent card (setup view)
   if (typeof loadLLMsPanel === 'function') loadLLMsPanel(); // v7.0.0 S2
   loadLinkStatus();
@@ -30374,6 +30386,106 @@ window.loadModelConsentPanel = function() {
     .catch(err => {
       const el = document.getElementById('modelConsentPanel');
       if (el) el.innerHTML = `<em style="color:var(--error);">${escHtml(t('model_consent_failed', [String((err && err.message) || err)]))}</em>`;
+    });
+};
+
+// ── Requirements minimum-Ollama overrides (web settings) ─────────────────────
+// requirementsMinOllamaEditorHtml renders one minimum-version field per known
+// capability (empty = the built-in floor applies) plus save / cancel. Every
+// value is escaped. loadRequirementsMinOllamaPanel reads the
+// autonomous.requirements block from GET /api/config into
+// window._reqMinOllamaState; saveRequirementsMinOllama PUTs the whole block
+// back as {"autonomous.requirements": {"min_ollama": {...}}} so the server
+// side's one shared rule set validates it.
+function _reqMinOllamaGetState() {
+  const st = (window._reqMinOllamaState && typeof window._reqMinOllamaState === 'object')
+    ? window._reqMinOllamaState
+    : { capabilities: [], min_ollama: {} };
+  st.capabilities = (Array.isArray(st.capabilities) ? st.capabilities : [])
+    .map(c => String(c).trim()).filter(c => c !== '');
+  st.min_ollama = (st.min_ollama && typeof st.min_ollama === 'object') ? st.min_ollama : {};
+  window._reqMinOllamaState = st;
+  return st;
+}
+function _reqMinOllamaRowHtml(capability) {
+  const st = _reqMinOllamaGetState();
+  const current = st.min_ollama[capability];
+  const value = (current === undefined || current === null) ? '' : String(current);
+  return `<div style="display:flex;align-items:center;gap:10px;padding:3px 0;min-width:0;overflow-wrap:anywhere;">
+    <label style="flex:1;min-width:0;cursor:pointer;overflow-wrap:anywhere;">
+      ${escHtml(t('requirements_min_ollama_field'))} ${escHtml(capability)}
+    </label>
+    <input type="text" id="reqMinOllamaVal_${escHtml(capability)}" class="req-min-ollama-value" data-capability="${escHtml(capability)}" value="${escHtml(value)}"
+      placeholder="${escHtml(t('requirements_min_ollama_clear'))}"
+      style="width:130px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;" />
+  </div>`;
+}
+window.requirementsMinOllamaEditorHtml = function() {
+  const st = _reqMinOllamaGetState();
+  const status = (window._reqMinOllamaStatus && typeof window._reqMinOllamaStatus === 'object')
+    ? window._reqMinOllamaStatus : null;
+  const statusHtml = status
+    ? `<div class="req-min-ollama-status" style="font-size:11px;color:${status.error ? 'var(--error)' : 'var(--text2)'};overflow-wrap:anywhere;">${escHtml(String(status.msg || ''))}</div>`
+    : '';
+  const rows = st.capabilities.length
+    ? st.capabilities.map(c => _reqMinOllamaRowHtml(c)).join('')
+    : `<div style="color:var(--text2);font-size:12px;">${escHtml(t('requirements_min_ollama_no_capabilities'))}</div>`;
+  return `<div class="req-min-ollama-editor" style="min-width:0;">
+    <div class="cap-title" style="margin-bottom:4px;">${escHtml(t('requirements_min_ollama_section_title'))}${defsLink('requirements_min_ollama_section_title')}
+      <button type="button" class="btn-secondary req-min-ollama-refresh" style="font-size:11px;padding:3px 10px;margin-left:8px;" onclick="loadRequirementsMinOllamaPanel()">${escHtml(t('requirements_report_refresh'))}</button></div>
+    <div style="font-size:11px;color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('requirements_min_ollama_intro'))}</div>
+    <div style="margin-top:8px;">${rows}</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap;">
+      <button type="button" class="btn-primary req-min-ollama-save" style="font-size:12px;padding:5px 14px;" onclick="saveRequirementsMinOllama()">${escHtml(t('save_btn'))}</button>
+      <button type="button" class="btn-secondary req-min-ollama-cancel" style="font-size:12px;padding:5px 14px;" onclick="loadRequirementsMinOllamaPanel()">${escHtml(t('cancel_btn'))}</button>
+      ${statusHtml}
+    </div>
+  </div>`;
+};
+function _reqMinOllamaRender() {
+  const el = document.getElementById('requirementsMinOllamaPanel');
+  if (el) el.innerHTML = window.requirementsMinOllamaEditorHtml();
+}
+window.saveRequirementsMinOllama = function() {
+  const st = _reqMinOllamaGetState();
+  const minOllama = {};
+  for (const c of st.capabilities) {
+    const el = document.getElementById('reqMinOllamaVal_' + c);
+    minOllama[c] = el ? String(el.value).trim() : '';
+  }
+  window._reqMinOllamaSaving = true;
+  apiFetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 'autonomous.requirements': { min_ollama: minOllama } }),
+  })
+    .then(() => {
+      st.min_ollama = minOllama;
+      window._reqMinOllamaStatus = { msg: t('requirements_min_ollama_saved'), error: false };
+      _reqMinOllamaRender();
+    })
+    .catch(err => {
+      window._reqMinOllamaStatus = { msg: t('requirements_min_ollama_save_failed', [String((err && err.message) || err)]), error: true };
+      _reqMinOllamaRender();
+    })
+    .finally(() => { window._reqMinOllamaSaving = false; });
+};
+window.loadRequirementsMinOllamaPanel = function() {
+  return apiFetch('/api/config')
+    .then(cfg => {
+      cfg = (cfg && typeof cfg === 'object') ? cfg : {};
+      const aut = (cfg.autonomous && typeof cfg.autonomous === 'object') ? cfg.autonomous : {};
+      const req = (aut.requirements && typeof aut.requirements === 'object') ? aut.requirements : {};
+      window._reqMinOllamaState = {
+        capabilities: (Array.isArray(req.capabilities) ? req.capabilities : []).map(c => String(c)),
+        min_ollama: (req.min_ollama && typeof req.min_ollama === 'object') ? req.min_ollama : {},
+      };
+      window._reqMinOllamaStatus = null;
+      _reqMinOllamaRender();
+    })
+    .catch(err => {
+      const el = document.getElementById('requirementsMinOllamaPanel');
+      if (el) el.innerHTML = `<em style="color:var(--error);">${escHtml(t('requirements_min_ollama_load_failed', [String((err && err.message) || err)]))}</em>`;
     });
 };
 
