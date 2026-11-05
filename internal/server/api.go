@@ -6008,6 +6008,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"calculator": usageCalculatorForDisplay(s.cfg.Usage.Calculator),
 			"burn_guard": s.cfg.Usage.BurnGuard,
 		},
+		"classifier": classifierForDisplay(s.cfg.Classifier),
 		"git": map[string]interface{}{
 			"push_on_complete": s.cfg.Git.EffectivePushOnComplete(),
 			"push_remote":      s.cfg.Git.EffectivePushRemote(),
@@ -6706,6 +6707,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// out-of-range number, bad clock, unknown or fixed-offset zone) rejects
 	// the whole PUT.
 	if verr := validateUsageCalculatorPatch(patch); verr != nil {
+		http.Error(w, verr.Error(), http.StatusBadRequest)
+		return
+	}
+	// Classifier keys (classifier.*): any invalid value rejects the whole PUT.
+	if verr := validateClassifierPatch(patch); verr != nil {
 		http.Error(w, verr.Error(), http.StatusBadRequest)
 		return
 	}
@@ -8511,6 +8517,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
 			// Validated in handlePutConfig; stored normalized.
 			applyUsageCalculatorPatchKey(&cfg.Usage.Calculator, k, v)
+		case "classifier.timeout_seconds", "classifier.top_logprobs", "classifier.abstain_margin", "classifier.min_probability", "classifier.min_option_mass", "classifier.rotate_options", "classifier.thinking_off_models", "classifier.probe_ttl_seconds", "classifier.probe_timeout_seconds", "classifier.calibration.test_fraction", "classifier.calibration.split_seed", "classifier.calibration.min_fit_samples", "classifier.calibration.false_pass_weight", "classifier.calibration.rotation_bias_threshold", "classifier.calibration.rotation_flip_threshold":
+			// Validated in handlePutConfig; stored normalized.
+			applyClassifierPatchKey(&cfg.Classifier, k, v)
 		case "usage.burn_guard.enabled", "usage.burn_guard.interval_minutes", "usage.burn_guard.margin_points", "usage.burn_guard.ladder", "usage.burn_guard.step_back", "usage.burn_guard.cache_write_points_per_million", "usage.burn_guard.cache_read_points_per_million", "usage.burn_guard.refit_on_reading", "usage.burn_guard.retry_limit_claude", "usage.burn_guard.ask_on_change":
 			// Validated in handlePutConfig; stored normalized.
 			applyBurnGuardPatchKey(&cfg.Usage.BurnGuard, k, v)

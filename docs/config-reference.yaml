@@ -1047,6 +1047,59 @@ classifier:
   # addition is audited. Not settable through PUT /api/config.
   publisher_allowlist: []
 
+  # ── Client tunables (read on every classify call; no restart needed) ──
+  # Every key below is settable through PUT /api/config, `datawatch config set
+  # classifier.<key>=<value>`, comm `configure classifier.<key>=<value>` and
+  # the web Settings → Classifier section (all five locales). A zero reads as
+  # the documented default (rotate_options: false is stored as false).
+  # Bound on one classify call, in whole seconds. Default 30. A timeout is a
+  # block with an infra category.
+  timeout_seconds: 30
+  # top_logprobs asked for on the generic (logprobs) path. Default 10.
+  top_logprobs: 10
+  # The chosen option must lead the runner-up by at least this probability,
+  # otherwise the call abstains. 0 to 1. Default 0.10.
+  abstain_margin: 0.10
+  # The chosen option must reach this probability, otherwise the call
+  # abstains. 0 to 1. Default 0.50.
+  min_probability: 0.50
+  # Generic path: the option tokens must hold at least this share of the
+  # first-token probability, otherwise the scores are treated as missing.
+  # 0 to 1. Default 0.50.
+  min_option_mass: 0.50
+  # Rotate the option order across calls and average the scores (generic path
+  # only; the native path never rotates). Default false.
+  rotate_options: false
+  # Case-insensitive model-name substrings whose chat templates get thinking
+  # disabled on the generic path. Default ["qwen3"].
+  thinking_off_models: ["qwen3"]
+  # How long a capability probe result (supported or unsupported) is cached,
+  # in whole seconds. Unknown is never cached. Default 600.
+  probe_ttl_seconds: 600
+  # Per-probe HTTP timeout in whole seconds. A timeout is state unknown.
+  # Default 5.
+  probe_timeout_seconds: 5
+
+  # ── Calibration tunables ──
+  calibration:
+    # Share of samples held out for scoring, 0 up to (not including) 1.
+    # Default 0.30.
+    test_fraction: 0.30
+    # Salt for the deterministic fit/test split. Default
+    # "classifier-calibration".
+    split_seed: classifier-calibration
+    # Least number of fit samples a threshold may be fitted on. Default 20.
+    min_fit_samples: 20
+    # False blocks one false pass costs when the threshold is chosen (a false
+    # pass is worse). Default 5.
+    false_pass_weight: 5
+    # Position-mass deviation from uniform at or above which rotation is
+    # recommended. 0 to 1. Default 0.10.
+    rotation_bias_threshold: 0.10
+    # Share of items whose winning option changes across rotations at or above
+    # which rotation is recommended. 0 to 1. Default 0.10.
+    rotation_flip_threshold: 0.10
+
 autonomous:
   # Opt-in switch. When false every /api/autonomous/* returns 503.
   enabled: false

@@ -6838,6 +6838,12 @@ type ClassifierConfig struct {
 	// ThinkingOffModels lists model-name substrings whose templates get
 	// thinking disabled (classifier.thinking_off_models). Default ["qwen3"].
 	ThinkingOffModels []string `yaml:"thinking_off_models,omitempty" json:"thinking_off_models,omitempty"`
+	// ProbeTTLSeconds is how long a capability probe result is cached
+	// (classifier.probe_ttl_seconds). Default 600. 0 reads the default.
+	ProbeTTLSeconds int `yaml:"probe_ttl_seconds,omitempty" json:"probe_ttl_seconds,omitempty"`
+	// ProbeTimeoutSeconds bounds one capability probe (classifier.probe_timeout_seconds).
+	// Default 5. 0 reads the default.
+	ProbeTimeoutSeconds int `yaml:"probe_timeout_seconds,omitempty" json:"probe_timeout_seconds,omitempty"`
 	// Calibration holds the calibration tunables (classifier.calibration.*).
 	Calibration ClassifierCalibrationConfig `yaml:"calibration,omitempty" json:"calibration,omitempty"`
 }

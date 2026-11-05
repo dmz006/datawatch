@@ -108,6 +108,31 @@ Classify mode fails closed.
 - Two reads that disagree (pass, but severity high or critical) block with an
   `inconsistent-verdict` category.
 
+## Tuning
+
+Every tunable is a `classifier.*` key in the config file, read on each call (no
+restart). Set one with `datawatch config set classifier.<key>=<value>`, chat
+`configure classifier.<key>=<value>`, `PUT /api/config`, or Settings, Classifier
+in the web app. A zero reads as the default.
+
+| Key | Default | Effect |
+|---|---|---|
+| `timeout_seconds` | 30 | Bound on one classify call; a timeout is an infra block |
+| `top_logprobs` | 10 | Probabilities asked for on the generic path |
+| `abstain_margin` | 0.10 | Winner must lead the runner-up by this much |
+| `min_probability` | 0.50 | Winner must reach this probability |
+| `min_option_mass` | 0.50 | Options must hold this share of first-token probability |
+| `rotate_options` | false | Rotate option order and average (generic path) |
+| `thinking_off_models` | `["qwen3"]` | Model-name parts that get thinking switched off |
+| `probe_ttl_seconds` | 600 | How long a probe result is cached |
+| `probe_timeout_seconds` | 5 | Bound on one probe |
+| `calibration.test_fraction` | 0.30 | Held-out share |
+| `calibration.split_seed` | `classifier-calibration` | Salt for the split |
+| `calibration.min_fit_samples` | 20 | Least samples to fit a threshold |
+| `calibration.false_pass_weight` | 5 | False blocks one false pass costs |
+| `calibration.rotation_bias_threshold` | 0.10 | Bias at which rotation is recommended |
+| `calibration.rotation_flip_threshold` | 0.10 | Flip share at which rotation is recommended |
+
 ## Optional: scope-breadth check
 
 `autonomous.scope_breadth_enabled: true` makes a task that failed on content get

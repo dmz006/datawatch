@@ -3364,5 +3364,20 @@
   "classif_threshold": "Umbral",
   "classif_severity_scores": "Gravedad",
   "classif_category": "Categoría",
-  "classif_low_confidence": "Confianza baja: revisar a mano"
+  "classif_low_confidence": "Confianza baja: revisar a mano",
+  "settings_classifier_timeout_seconds": "Tiempo límite de la llamada del clasificador (segundos, 0 = predeterminado 30; un tiempo agotado bloquea con categoría de infraestructura)",
+  "settings_classifier_top_logprobs": "top_logprobs del clasificador en la ruta genérica (0 = predeterminado 10)",
+  "settings_classifier_abstain_margin": "Margen de abstención del clasificador (ventaja mínima sobre el segundo, 0 a 1, 0 = predeterminado 0,10)",
+  "settings_classifier_min_probability": "Probabilidad mínima del clasificador (probabilidad mínima de la opción elegida, 0 a 1, 0 = predeterminado 0,50)",
+  "settings_classifier_min_option_mass": "Masa mínima de opciones del clasificador (parte de la probabilidad del primer token que deben reunir las opciones, 0 a 1, 0 = predeterminado 0,50)",
+  "settings_classifier_rotate_options": "El clasificador rota el orden de las opciones entre llamadas y promedia las puntuaciones (solo ruta genérica, desactivado por defecto)",
+  "settings_classifier_thinking_off_models": "Modelos del clasificador sin razonamiento (fragmentos de nombre de modelo separados por comas, predeterminado qwen3)",
+  "settings_classifier_probe_ttl_seconds": "Tiempo de caché de la sonda de capacidad del clasificador (segundos, 0 = predeterminado 600)",
+  "settings_classifier_probe_timeout_seconds": "Tiempo límite de la sonda de capacidad del clasificador (segundos, 0 = predeterminado 5)",
+  "settings_classifier_calibration_test_fraction": "Parte reservada de la calibración del clasificador (0 hasta 1 sin incluirlo, 0 = predeterminado 0,30)",
+  "settings_classifier_calibration_split_seed": "Semilla de división de la calibración del clasificador (vacío = predeterminado classifier-calibration)",
+  "settings_classifier_calibration_min_fit_samples": "Mínimo de muestras de ajuste de la calibración (0 = predeterminado 20)",
+  "settings_classifier_calibration_false_pass_weight": "Peso del falso aprobado en la calibración (bloqueos falsos que cuesta un falso aprobado, 0 = predeterminado 5)",
+  "settings_classifier_calibration_rotation_bias_threshold": "Umbral de sesgo de rotación de la calibración (0 a 1, 0 = predeterminado 0,10)",
+  "settings_classifier_calibration_rotation_flip_threshold": "Umbral de cambio de rotación de la calibración (0 a 1, 0 = predeterminado 0,10)"
 }
