@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.98.0 — Automatic grouping tags for Automation stages
+
+Every Automaton now carries automatic grouping tags for its Automation, its stage and its kind, and Automation members can be given a stage.
+
+- **Automatic tags.** The daemon keeps three system tags on each member Automaton and on its sessions: an automation tag, a stage tag and a kind tag, under system parents. The `autonomous.auto_tags` block holds the switch (`enabled`, on by default), the three templates (`automation_template`, `stage_template`, `kind_template`, using only `{automation}`, `{stage}` and `{kind}`) and the kind labels; an Automation can override the block for itself. The sync runs on every member change and never touches operator tags.
+- **Stages.** An Automation member takes an optional `stage` when it is inserted (at most 64 characters), and `POST /api/automations/{id}/stages/rename` (MCP, CLI `automation rename-stage` and the chat verb) renames a stage in place so the stage tag follows it.
+- **System tags are protected.** A system tag cannot be renamed, moved or deleted; recoloring stays allowed.
+- **Filters.** Progress and the progress trend accept several `tag` values with `tag_match=any|all` and report the scope they were counted over; the session list takes the same filter and matches a session's own and inherited tags, on REST, MCP, CLI and chat.
+- **Settings and web app.** The Settings view has an Automatic tags group, the Automation form has a stage field, a rename-stage action and the per-Automation override, and the tag filter groups its tags by automation, stage and kind. Five locales carry the new strings.
+- **Documentation.** A how-to covers the automatic tags, with the tag and tag registry how-tos linking to it.
+
 ## v9.97.4 — Rejudge reviews the current branch head instead of replaying a stale verdict
 
 Rejudge now reviews the current branch head instead of replaying a stale verdict, and a rules-review hold accepts a rejudge once new commits have landed.
