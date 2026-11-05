@@ -3350,5 +3350,19 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "llm_verification_mode_default": "(predeterminado: generate)",
+  "llm_verification_mode_generate": "generate",
+  "llm_verification_mode_classify": "classify",
+  "llm_verification_mode_hint": "generate pide al juez que escriba un veredicto. classify lee las probabilidades de las opciones del juez y bloquea cuando faltan, llegan tarde o son dudosas. El modelo clasificador debe proceder de un editor permitido.",
+  "classif_verdict_title": "Veredicto de clasificación",
+  "classif_mode": "Modo",
+  "classif_route": "Ruta",
+  "classif_route_path": "Vía de lectura",
+  "classif_scores": "Vector de puntuaciones",
+  "classif_pass_probability": "Probabilidad de aprobar",
+  "classif_threshold": "Umbral",
+  "classif_severity_scores": "Gravedad",
+  "classif_category": "Categoría",
+  "classif_low_confidence": "Confianza baja: revisar a mano"
 }

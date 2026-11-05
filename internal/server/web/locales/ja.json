@@ -3350,5 +3350,19 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "llm_verification_mode_default": "（既定: generate）",
+  "llm_verification_mode_generate": "generate",
+  "llm_verification_mode_classify": "classify",
+  "llm_verification_mode_hint": "generate は判定者に判定文を書かせます。classify は判定者の選択肢確率を読み取り、確率が無い・遅い・不確実な場合はブロックします。分類モデルは許可リストにある公開元のものである必要があります。",
+  "classif_verdict_title": "分類判定",
+  "classif_mode": "モード",
+  "classif_route": "ルート",
+  "classif_route_path": "読み取り経路",
+  "classif_scores": "スコアベクトル",
+  "classif_pass_probability": "合格確率",
+  "classif_threshold": "しきい値",
+  "classif_severity_scores": "重大度",
+  "classif_category": "カテゴリ",
+  "classif_low_confidence": "信頼度が低い: 手動で確認"
 }
