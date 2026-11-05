@@ -3012,6 +3012,33 @@ autonomous:
   # Descriptive "state of the project" doc. Explicitly optional — not
   # every project has one; leave empty if you don't.
   context_file: "" # default "CONTEXT.md" applied at read time, only if that file exists
+  # Rules and context policy: which files carry a project's working rules and
+  # background, and how a rules digest is handed to a backend that cannot read
+  # files. File names are relative to the project directory (no leading "/",
+  # no ".."). Resolution per project, first value wins field by field: the
+  # entry in projects, then these global values, then the older rules_file and
+  # context_file keys above, then the defaults. Read when an Automaton is
+  # decomposed; a change needs no restart.
+  #   rules_file: one file name. Default "AGENT.md" when unset.
+  #   context_files: up to 8 file names. Default ["CONTEXT.md"] when unset.
+  #   digest_mode: off | no_tools | all. Default no_tools (digest only for a
+  #     backend without file tools); all = every backend; off = never.
+  #   digest_max_bytes: 0 (unset, use 4096) or 512 to 65536.
+  #   projects: list of overrides, each with project_dir (required) and any of
+  #     the four keys above; a key left out inherits. Default empty.
+  rules_context:
+    rules_file: ""
+    context_files: []
+    digest_mode: no_tools
+    digest_max_bytes: 4096
+    projects: []
+    # projects:
+    #   - project_dir: /srv/my-repo
+    #     rules_file: RULES.md
+    #     context_files: [CONTEXT.md, DATAWATCH-CONTEXT.md]
+    #     digest_mode: all
+    #     digest_max_bytes: 8192
+
   # Named upstream repos a project-rule's file_upstream_issue action can
   # reference (e.g. a parity gap this repo's own PRD can't close alone).
   upstream_repos: [] # [{name: "app", owner_repo: "org/repo"}, ...]

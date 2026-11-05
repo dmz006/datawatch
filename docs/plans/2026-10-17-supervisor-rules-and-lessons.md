@@ -158,6 +158,16 @@ If the plan fails, either request a revision with specific feedback or fix a sma
 mechanical gap directly through the edit, add and remove task commands. If a decompose
 ends with no plan, read the newest pi log for `stopReason=length` and report it.
 
+### Validate against the planning record and the rules checklist
+
+A decompose is also validated against what the planner was told to read. Open the PRD's planning record (`datawatch autonomous rules-context --prd <id>` or `rules_context_status` with `prd`) before approving: it shows which rules and context files the planner was pointed at, their hashes and sizes, any missing file and whether a digest was injected. A plan made while the rules file was missing, or while a headless backend got no digest, was planned without the project's rules and is revised, not approved. Then read the per-task rules checklist: every file-changing task carries a `rules_applied` list, and a *rules checklist gap* finding means a task touches an area its list does not name.
+
+- The planning record lists the project's rules file as present, with the hash you expect.
+- Every context file the project relies on is listed, and none is reported missing.
+- A backend without file tools shows a digest injected, with a size below the limit.
+- Every task that changes files has a non-empty `rules_applied` list.
+- Each *rules checklist gap* finding is resolved by a revision, or the reason it is not needed is written down.
+
 ## 5. Triage when a task fails or blocks
 
 Pull the task's own failure reason and, while it exists, the session output. Never
