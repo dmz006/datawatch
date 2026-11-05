@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.92.0 — Decompose follows project rules and context
+
+Planning now follows your rules and context files, and every plan records that it did.
+
+- **Rules and context are read for every plan.** The planner reads the rules file and the context files of the project, builds a digest cached by file hash, and puts a pointer and the digest into the planner, worker and verifier prompts. Backends without file tools get the digest; the digest mode (`off`, `no_tools` default, `all`) and its size cap are settings.
+- **A planning record.** Each Automaton keeps which rules and context files were read, their hashes and sizes, whether a digest was added to the prompt, and a clear warning when a named file was not found.
+- **A rules checklist in the plan.** The plan output carries a checklist of the rules it applies, and the plan rules check flags gaps (a rule with no task, or a task that breaks a rule) before approval.
+- **Settings on every surface.** `autonomous.rules_context` (rules file, context files, digest mode, digest size cap, and per-project overrides) on the config file, REST, MCP (`rules_context_status`, `rules_context_set`), the CLI (`autonomous rules-context`), the comm channel (`autonomous rules`) and a Rules and context card in the web settings, with the planning record on the Automaton detail. Five locales and an operator how-to.
+- Known gap: the live run of the web card against a sandbox daemon was not part of this release.
+
 ## v9.91.1 — Trace store reads files only for indexed sessions
 
 A session id that arrives in a request can no longer shape the trace file path.

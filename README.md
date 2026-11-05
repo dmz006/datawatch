@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.91.1 (2026-11-04).** A session id from a request can no longer shape the trace file path (CodeQL path injection alert closed). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.92.0 (2026-11-04).** Planning now reads the project's rules and context files, adds a digest to the prompts and records what it read on each Automaton. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
