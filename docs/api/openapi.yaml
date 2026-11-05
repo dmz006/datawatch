@@ -1546,7 +1546,7 @@ paths:
       summary: Compare models on a supervisor loop model job's eval cases
       description: |
         Runs the job's eval cases (`internal/supervisorloop/testdata/eval/<job>/*.json`
-        unless `cases_dir` names another relative directory) against each listed model and
+        unless `cases_dir` names another folder directly under it) against each listed model and
         returns per model: cases, passed, validator failures, retries, median and maximum
         duration and escalations. When no listed model is reachable the answer is a 502
         naming each model; no result is invented. Needs the autonomous run capability when
@@ -1586,7 +1586,7 @@ paths:
                         median_duration_ms: {type: integer}
                         max_duration_ms: {type: integer}
                         escalations: {type: integer}
-        "400": {description: Unknown job, no models or a bad cases_dir}
+        "400": {description: Unknown job, no models or a cases_dir that is not a folder under the default cases folder}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous run capability}

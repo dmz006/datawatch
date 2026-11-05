@@ -98,6 +98,27 @@ func evalPrompt(job string, c EvalCase) string {
 	return PickBackendPrompt(c.Input, c.Candidates)
 }
 
+// ResolveCasesDir turns the optional cases folder of an eval request into the
+// folder to read. Empty means DefaultEvalCasesDir. Otherwise the text must name
+// a subfolder that already exists directly under DefaultEvalCasesDir: the path
+// is built from the directory listing, never from the request text, so a
+// request cannot point the read anywhere else.
+func ResolveCasesDir(requested string) (string, error) {
+	if requested == "" {
+		return DefaultEvalCasesDir, nil
+	}
+	entries, err := os.ReadDir(DefaultEvalCasesDir)
+	if err != nil {
+		return "", fmt.Errorf("cannot list the eval cases folder: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() && e.Name() == requested {
+			return filepath.Join(DefaultEvalCasesDir, e.Name()), nil
+		}
+	}
+	return "", fmt.Errorf("unknown cases set %q: it must name a folder under %s", requested, DefaultEvalCasesDir)
+}
+
 // evalJobFolder maps a job name that arrives in a request to the folder name of
 // that model job. The name comes from the fixed list in the switch, never from
 // the request text, so a request cannot steer the folder out of casesDir.

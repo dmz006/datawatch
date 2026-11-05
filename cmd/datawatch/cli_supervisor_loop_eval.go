@@ -1,6 +1,6 @@
 // datawatch supervisor-loop eval — compare models on a model job's eval cases:
 //
-//	datawatch supervisor-loop eval --job <name> --model <id> [--model <id>...] [--cases <dir>] [--format json]
+//	datawatch supervisor-loop eval --job <name> --model <id> [--model <id>...] [--cases <name>] [--format json]
 
 package main
 
@@ -62,7 +62,7 @@ func newSupervisorLoopEvalCmd() *cobra.Command {
 	}
 	c.Flags().StringVar(&job, "job", "", `the model job to evaluate: "draft_spec", "classify_ci_failure" or "pick_backend"`)
 	c.Flags().StringArrayVar(&models, "model", nil, "a model id to compare (repeatable)")
-	c.Flags().StringVar(&casesDir, "cases", "", "relative directory holding <job>/*.json cases (default: the bundled cases)")
+	c.Flags().StringVar(&casesDir, "cases", "", "name of a folder under the bundled cases folder, holding <job>/*.json cases (default: the bundled cases)")
 	c.Flags().StringVar(&format, "format", "", `output format: "json" for the raw response, "text" (default)`)
 	return c
 }

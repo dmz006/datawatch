@@ -42,3 +42,28 @@ func TestLoadEvalCasesKnownJobsStillLoad(t *testing.T) {
 		}
 	}
 }
+
+// A request's cases set must name an existing subfolder of the default
+// folder; nothing else resolves.
+func TestResolveCasesDir(t *testing.T) {
+	prev, _ := os.Getwd()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, DefaultEvalCasesDir, "mine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chdir(prev) }()
+	if got, err := ResolveCasesDir(""); err != nil || got != DefaultEvalCasesDir {
+		t.Fatalf("empty = %q, %v; want the default", got, err)
+	}
+	if got, err := ResolveCasesDir("mine"); err != nil || got != filepath.Join(DefaultEvalCasesDir, "mine") {
+		t.Fatalf("mine = %q, %v", got, err)
+	}
+	for _, bad := range []string{"../x", "..", "mine/../..", "/etc", "other", "mine/sub"} {
+		if got, err := ResolveCasesDir(bad); err == nil {
+			t.Fatalf("ResolveCasesDir(%q) = %q; want an error", bad, got)
+		}
+	}
+}
