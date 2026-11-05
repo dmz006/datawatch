@@ -5019,3 +5019,11 @@ Result, 2026-11-02: 66 Go tests passed across the six packages, 7 node tests pas
 | Federation capability gate | `TestMCPToolCap_DashboardConsoleGetIsDashread`, `TestMCPToolCap_DashboardConsoleGetAllowedForMonitor` | `env -u TMUX -u TMUX_TMPDIR go test ./internal/federation/ -count=1 -run 'DashboardConsole'` | `dashboard_console_get` maps to the `dashboard:read` capability and is allowed for a monitor-privileged peer | Go unit | **Yes** (`internal/federation/mcp_tool_caps_dashboard_console_test.go`) | Pass, 2026-11-02 | No | |
 | PWA console cards | `internal/server/web/app-dashboard-console.test.js` | `env -u TMUX -u TMUX_TMPDIR node --test internal/server/web/app-dashboard-console.test.js` | The five console cards render with their labels/anchors, drop out when `dashboard.console.enabled` is false, and the seven locale keys are present in all five bundles | Node | **Yes** | Pass, 2026-11-02 | No | A live browser run of the Dashboard view is owed |
 | Docs and the how-to | `docs/howto/dashboard-operator-console.md`, `scripts/check-howto-coverage.sh` | `bash scripts/check-howto-coverage.sh` | The how-to carries `exec_steps` front-matter (`dashboard_console_get` read, `config_set` write) so it is MCP-callable end to end | Script | **Yes** | Pass, 2026-11-02 | No | |
+
+## Supervisor loop documentation
+
+Tested set: No. Validated set: No.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Supervisor loop how-to, definitions, config reference, MCP list, changelog, indexes and the parity draft | `.datawatch/verify/supervisor-loop-docs.sh` | `bash .datawatch/verify/supervisor-loop-docs.sh` | The how-to exists with the access-methods and Where to see tables, the definitions anchor and keys, the config block, the index entries, the changelog entry and the parity draft are present, and no internal references leak | Script | No | | No | |
