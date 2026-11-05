@@ -17,6 +17,7 @@ func TestTagSettingsDefaults(t *testing.T) {
 		DirectCountsVisible: false,
 		RegistryKeeper:      "",
 		RegistrySyncSeconds: 30,
+		Placement:           DefaultPlacementConfig(),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("DefaultConfig tags = %+v, want %+v", got, want)

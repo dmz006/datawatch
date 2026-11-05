@@ -80,9 +80,56 @@ const (
 	placeholderLane    = "{lane}"
 	placeholderRole    = "{role}"
 	placeholderProject = "{project}"
-	// placeholderValue is the single placeholder every custom axis must use.
-	placeholderValue = "{value}"
 )
+
+// CustomPlaceholder is the single placeholder every custom axis template must
+// contain. It is exported so the config block's validation checks the same
+// placeholder the derivation substitutes.
+const CustomPlaceholder = "{value}"
+
+// AxisPlaceholders maps each built-in axis name to the placeholder its
+// template must contain. The keys are the built-in axis names themselves.
+var AxisPlaceholders = map[string]string{
+	"compute": placeholderNode,
+	"peer":    placeholderPeer,
+	"backend": placeholderBackend,
+	"lane":    placeholderLane,
+	"role":    placeholderRole,
+	"project": placeholderProject,
+}
+
+// IsBuiltinAxis reports whether name is one of the six built-in axes.
+func IsBuiltinAxis(name string) bool {
+	_, ok := AxisPlaceholders[name]
+	return ok
+}
+
+// DefaultTemplate returns the conventional "<axis>:<placeholder>" template of
+// a built-in axis; ok is false for a name that is not a built-in axis.
+func DefaultTemplate(axis string) (string, bool) {
+	ph, ok := AxisPlaceholders[axis]
+	if !ok {
+		return "", false
+	}
+	return axis + ":" + ph, true
+}
+
+// SessionFields lists the session fields a custom axis may read. The list is
+// defined once here — a neutral package that neither internal/session nor
+// internal/config imports into a cycle — so the config block's validation and
+// any other consumer share one allowed list.
+var SessionFields = []string{"Name", "Backend", "Model", "Node", "PRDID", "Role", "Project"}
+
+// IsSessionField reports whether field is on the allowed list of session
+// fields a custom axis may read.
+func IsSessionField(field string) bool {
+	for _, f := range SessionFields {
+		if f == field {
+			return true
+		}
+	}
+	return false
+}
 
 // axisSpec describes one built-in axis for derivation and validation.
 type axisSpec struct {
@@ -150,7 +197,7 @@ func Derive(f PlacementFacts, s Settings) []string {
 		if value == "" {
 			continue
 		}
-		add(strings.ReplaceAll(c.Template, placeholderValue, value))
+		add(strings.ReplaceAll(c.Template, CustomPlaceholder, value))
 	}
 
 	out := make([]string, 0, len(tags))
@@ -172,12 +219,12 @@ func ValidateSettings(s Settings) error {
 		}
 	}
 	for i, c := range s.Custom {
-		if !strings.Contains(c.Template, placeholderValue) {
+		if !strings.Contains(c.Template, CustomPlaceholder) {
 			name := c.Name
 			if name == "" {
 				name = fmt.Sprintf("custom[%d]", i)
 			}
-			return fmt.Errorf("placementtags: custom axis %q template %q must contain %s", name, c.Template, placeholderValue)
+			return fmt.Errorf("placementtags: custom axis %q template %q must contain %s", name, c.Template, CustomPlaceholder)
 		}
 	}
 	return nil

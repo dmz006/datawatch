@@ -1937,6 +1937,51 @@ autonomous:
     # keeper peer named in registry_keeper. Minimum 5; default 30.
     registry_sync_seconds: 30
 
+    # Placement tags: automatic tags that record where a piece of work ran, one
+    # tag per enabled axis. `enabled` is the master switch (default true):
+    # false turns the whole block off. Each named axis has `enabled` and a
+    # `template` that must contain that axis's placeholder, which is replaced
+    # with the fact value. A piece of work missing an axis's fact value
+    # yields no tag for that axis. Defaults: compute, peer, backend, lane and
+    # role on and project off, each with its conventional template
+    # ("<axis>:<placeholder>"). Set an axis off by writing `enabled: false`
+    # for it.
+    placement:
+      enabled: true
+      # Replaced with the compute node name.
+      compute:
+        enabled: true
+        template: "compute:{node}"
+      # Replaced with the peer name.
+      peer:
+        enabled: true
+        template: "peer:{peer}"
+      # Replaced with the backend name.
+      backend:
+        enabled: true
+        template: "backend:{backend}"
+      # Replaced with the lane.
+      lane:
+        enabled: true
+        template: "lane:{lane}"
+      # Replaced with the role.
+      role:
+        enabled: true
+        template: "role:{role}"
+      # Replaced with the project alias. Off by default.
+      project:
+        enabled: false
+        template: "project:{project}"
+      # User-defined axes (empty by default). Each entry has:
+      #   name: lowercase letters, digits and hyphens; unique; not a built-in
+      #     axis name (compute, peer, backend, lane, role, project).
+      #   field: one of the session fields Name, Backend, Model, Node, PRDID,
+      #     Role, Project.
+      #   template: must contain the placeholder {value}, replaced with the
+      #     field's value.
+      #   enabled: on or off for this axis.
+      custom: []
+
   # The LLM registry entry's `billing_group` field (set in PWA Settings →
   # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
   # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm
