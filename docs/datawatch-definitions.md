@@ -1745,6 +1745,56 @@ The uncommitted-work check stops a task from being marked complete while its wor
 
 **Supervisor watch** — the daemon's own version of the supervisor script (`scripts/supervisor-watch.py`). On every coordinator poll, with no model call, it runs fourteen checks — twelve that the script also runs, plus `worktree_not_registered` and `verify_script_not_executable`, which only the watch has (the comparison shows them as *only the watch*) — and keeps one finding per kind and subject. The script has checks the watch does not cover yet (an unreachable model host, node balancing, capacity lease holds, placement, commits ahead of origin). The kinds are `tmux_restart`, `daemon_inactive`, `model_not_resident`, `task_failed`, `task_review_needed`, `automaton_not_merged`, `idle_lane_eligible_work`, `worktree_no_gomod`, `worktree_not_registered`, `worktree_silent`, `verify_script_not_executable`, `main_checkout_dirty`, `ci_red` and `ci_stuck`. It is report-only in every mode: it never merges, starts, holds, cancels or retries an Automaton and never restarts a service. Its node probe, which reads the models a node has resident, verifies the node's certificate (see [Compute node TLS verification](#compute-node-tls-verification)); a node whose certificate fails stays unknown and raises no finding. The mode (`autonomous.automation.supervisor_watch.mode`) is `off`, `shadow` or `on`, and an unset mode reads `shadow`: in shadow the findings are recorded and a finding open for the alert time is marked *would alert*, but no alert is raised; in `on` one warning alert is raised per episode through the existing alert channels. The first sighting of a finding about one Automaton is also noted on that Automaton's triage record. With the script's record file configured, every pass compares the two sets of findings and keeps the result; a day counts toward the *days of full agreement* only when every comparison that day agreed, and one full day of agreement is the bar for retiring the script. A check that cannot tell reports nothing, and a missing or stale script record is never a disagreement. Read on REST (`GET /api/autonomous/supervisor-watch`), MCP (`supervisor_watch_list`), the CLI (`datawatch autonomous supervisor-watch`), the comm verb `autonomous supervisor-watch` and the Supervisor watch card in the Automation view. See [`howto/automation-supervisor-watch.md`](howto/automation-supervisor-watch.md).
 
+<a id="supervisor-loop"></a>
+**Supervisor loop** — the daemon's standing loop that keeps every Automaton moving without an operator typing the next command. Each pass runs a set of mechanical steps (no model call) and a few model jobs, and keeps a run record for each. A model job runs as a one-shot call or a session, on the backend and model you set; when none is set it uses the decision assistant's configured model, and when there is none the job escalates to you instead of quietly falling back to a hosted model. A failed check is retried, and after enough failures the job escalates. The Supervisor loop card in the Automation view lists the jobs (name, style, backend, model, last outcome, escalation count) and the most recent runs. See [`howto/supervisor-loop.md`](howto/supervisor-loop.md). The settings are under Settings → Automata → Supervisor loop; each one has its entry below.
+
+<a id="supervisor-loop-enabled"></a>
+- **`supervisor_loop.enabled`** — Master switch for the whole loop. On by default.
+<a id="supervisor-loop-close-finished-records-enabled"></a>
+- **`supervisor_loop.close_finished_records.enabled`** — Turns the close finished records step on or off. The step closes the records of Automata that have finished. On by default.
+<a id="supervisor-loop-deploy-after-ship-enabled"></a>
+- **`supervisor_loop.deploy_after_ship.enabled`** — Turns the deploy after ship step on or off. The step deploys the daemon after a release ships. On by default.
+<a id="supervisor-loop-retry-failed-infra-enabled"></a>
+- **`supervisor_loop.retry_failed_infra.enabled`** — Turns the retry failed infra step on or off. The step retries tasks that failed for infrastructure reasons. On by default.
+<a id="supervisor-loop-cleanup-sweep-enabled"></a>
+- **`supervisor_loop.cleanup_sweep.enabled`** — Turns the cleanup sweep step on or off. The step sweeps leftover worktrees and scratch files. On by default.
+<a id="supervisor-loop-apply-answers-enabled"></a>
+- **`supervisor_loop.apply_answers.enabled`** — Turns the apply answers step on or off. The step applies the operator's answers to held questions. On by default.
+<a id="supervisor-loop-lane-count-enabled"></a>
+- **`supervisor_loop.lane_count.enabled`** — Turns the lane count step on or off. The step sets the lane counts, only inside the bounds you configure. It moves nothing while the maximum is 0. On by default.
+<a id="supervisor-loop-start-next-chain-step-enabled"></a>
+- **`supervisor_loop.start_next_chain_step.enabled`** — Turns the start next chain step step on or off. The step starts the next Automaton in a chain when the one before it is done. On by default.
+<a id="supervisor-loop-run-merge-until-conflict-enabled"></a>
+- **`supervisor_loop.run_merge_until_conflict.enabled`** — Turns the run merge until conflict step on or off. The step runs merges until one conflicts. On by default.
+<a id="supervisor-loop-draft-spec-style"></a>
+- **`supervisor_loop.draft_spec.style`** — How the draft spec job runs: `oneshot` (a single call) or `session` (a full session). The job drafts a specification. Default `oneshot`.
+<a id="supervisor-loop-draft-spec-backend"></a>
+- **`supervisor_loop.draft_spec.backend`** — The backend the draft spec job runs on. Empty uses the decision assistant's configured backend.
+<a id="supervisor-loop-draft-spec-model"></a>
+- **`supervisor_loop.draft_spec.model`** — The model the draft spec job runs on. Empty uses the decision assistant's configured model.
+<a id="supervisor-loop-classify-ci-failure-style"></a>
+- **`supervisor_loop.classify_ci_failure.style`** — How the classify ci failure job runs: `oneshot` (a single call) or `session` (a full session). The job classifies a failed CI run. Default `oneshot`.
+<a id="supervisor-loop-classify-ci-failure-backend"></a>
+- **`supervisor_loop.classify_ci_failure.backend`** — The backend the classify ci failure job runs on. Empty uses the decision assistant's configured backend.
+<a id="supervisor-loop-classify-ci-failure-model"></a>
+- **`supervisor_loop.classify_ci_failure.model`** — The model the classify ci failure job runs on. Empty uses the decision assistant's configured model.
+<a id="supervisor-loop-pick-backend-style"></a>
+- **`supervisor_loop.pick_backend.style`** — How the pick backend job runs: `oneshot` (a single call) or `session` (a full session). The job picks the backend for a task. Default `oneshot`.
+<a id="supervisor-loop-pick-backend-backend"></a>
+- **`supervisor_loop.pick_backend.backend`** — The backend the pick backend job runs on. Empty uses the decision assistant's configured backend.
+<a id="supervisor-loop-pick-backend-model"></a>
+- **`supervisor_loop.pick_backend.model`** — The model the pick backend job runs on. Empty uses the decision assistant's configured model.
+<a id="supervisor-loop-validator-retries"></a>
+- **`supervisor_loop.validator_retries`** — How many times a model job is retried after its output fails the check. Default 2.
+<a id="supervisor-loop-escalate-after-failures"></a>
+- **`supervisor_loop.escalate_after_failures`** — How many failed runs in a row before you are asked. Default 2.
+<a id="supervisor-loop-run-retention"></a>
+- **`supervisor_loop.run_retention`** — How many recent run records are kept. Default 500.
+<a id="supervisor-loop-lane-count-min"></a>
+- **`supervisor_loop.lane_count.min`** — The lowest lane count the loop may set.
+<a id="supervisor-loop-lane-count-max"></a>
+- **`supervisor_loop.lane_count.max`** — The highest lane count the loop may set. 0 means no bounds, so the lane count step moves nothing.
+
 **Tag subtree count** — the number of distinct Automata under a tag, counting Automata that carry the tag or any tag below it. An Automaton that carries two of the tags in the subtree is counted once. It is the main count the tag browser shows. Sessions have their own subtree count, which also includes the tags a session inherits. The direct count (Automata carrying exactly that tag) is available as a tooltip when `autonomous.tags.direct_counts_visible` is on. See [howto/automata-tags.md](howto/automata-tags.md).
 
 **Attention group** — the set of Automata that need the operator now: every Automaton whose status is in `autonomous.tags.attention_statuses` (blocked, needs review and paused by default), plus any Automaton with a task held for review. It is the pinned "Needs attention" section above the tag browser, and the view that opens by default when something is in it. See [howto/automata-tags.md](howto/automata-tags.md).

@@ -125,3 +125,19 @@ test('every supervisor_loop_ key exists in all five locale files', () => {
     }
   }
 });
+
+test('every help link resolves: the how-to file and each definitions anchor exist', () => {
+  const s = loadApp();
+  const docs = path.join(__dirname, '..', '..', '..', 'docs');
+  const defs = fs.readFileSync(path.join(docs, 'datawatch-definitions.md'), 'utf8');
+  const howto = vm.runInContext('SUPERVISOR_LOOP_HOWTO', s);
+  assert.ok(fs.existsSync(path.join(docs, howto)), 'how-to file exists: ' + howto);
+  const keys = ['supervisor_loop'].concat(EXPECTED_KEYS.map(k => 'supervisor_loop.' + k));
+  for (const k of keys) {
+    s._k = k;
+    const link = vm.runInContext('docsLinkForKey(_k)', s);
+    const anchor = link.split('#')[1];
+    assert.ok(anchor, 'link has an anchor: ' + link);
+    assert.ok(defs.includes('<a id="' + anchor + '"></a>'), 'definitions anchor exists: ' + anchor);
+  }
+});
