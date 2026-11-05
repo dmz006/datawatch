@@ -12,14 +12,14 @@ Confirmed: yes. The operator answered every proposal in the queue between 2026-1
 
 | Item | File | Recommended | What it unlocks |
 |---|---|---|---|
-| BL473 Automation coordinator | `historical-plans/2026-10-29-bl473-automation-coordinator-proposal.md` | B: finish the BL609 steps plus one pre-flight and post-flight checks PRD | the supervisor's manual checks move into the daemon |
+| BL473 Automation coordinator | `2026-10-29-bl473-automation-coordinator-proposal.md` | B: finish the BL609 steps plus one pre-flight and post-flight checks PRD | the supervisor's manual checks move into the daemon |
 | BL483 Automation policy | `2026-10-29-bl483-automation-policy-proposal.md` | C: project scope for the options the coordinator reads, plus five missing keys | per-project automation settings |
-| BL556 parallel tasks in one PRD | `historical-plans/2026-10-29-bl556-parallel-tasks-proposal.md` | A: a read-only task class that skips the tree write lock | up to about 1.7x faster PRDs |
-| BL412 self-config gate | `historical-plans/2026-10-29-bl412-self-config-gate-proposal.md` | C: fold the boolean flag into the capability system | one mechanism, one audit point |
-| BL414 cost rollup | `historical-plans/2026-10-29-bl414-cost-rollup-proposal.md` | A: one cost report over existing data, no new storage | per Automaton, Automation, backend and week reports |
-| BL422 follow-up (tier-mismatch event) | `historical-plans/2026-10-29-bl422-tier-mismatch-event-proposal.md` | C: resume a narrowed BL422 eval with a usage ceiling, then define the event | unblocks the BL422 eval records |
-| Upstream monitoring | `historical-plans/2026-10-29-upstream-monitoring-proposal.md` | C: Dependabot plus a small scheduled job for pinned tools, human merge first | security patches consumed when published |
-| BL620 protect the rules files | `historical-plans/2026-10-29-bl620-protect-rules-files-proposal.md` | B first: judge reads rules from the base commit plus a protected-paths gate | workers cannot weaken the rules |
+| BL556 parallel tasks in one PRD | `2026-10-29-bl556-parallel-tasks-proposal.md` | A: a read-only task class that skips the tree write lock | up to about 1.7x faster PRDs |
+| BL412 self-config gate | `2026-10-29-bl412-self-config-gate-proposal.md` | C: fold the boolean flag into the capability system | one mechanism, one audit point |
+| BL414 cost rollup | `2026-10-29-bl414-cost-rollup-proposal.md` | A: one cost report over existing data, no new storage | per Automaton, Automation, backend and week reports |
+| BL422 follow-up (tier-mismatch event) | `2026-10-29-bl422-tier-mismatch-event-proposal.md` | C: resume a narrowed BL422 eval with a usage ceiling, then define the event | unblocks the BL422 eval records |
+| Upstream monitoring | `2026-10-29-upstream-monitoring-proposal.md` | C: Dependabot plus a small scheduled job for pinned tools, human merge first | security patches consumed when published |
+| BL620 protect the rules files | `2026-10-29-bl620-protect-rules-files-proposal.md` | B first: judge reads rules from the base commit plus a protected-paths gate | workers cannot weaken the rules |
 
 ## The questions, in one list
 

@@ -70,8 +70,9 @@ More: [automation API](docs/api/autonomous.md) · [parallel steps](docs/howto/au
 - Add any computer, GPU machine or cluster as a place to run models
 - Name a model and list backups for when a machine is busy
 - Browse models that fit your hardware
+- Measure a node's verifier headroom before giving it verifier slots: `datawatch compute headroom measure <node>` / `show <node>`, REST `POST` and `GET /api/compute/nodes/{name}/headroom`, MCP `compute_node_headroom_measure` / `compute_node_headroom_get`
 
-More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md)
+More: [compute nodes](docs/howto/compute-nodes.md) · [model list](docs/howto/llm-registry.md) · [verifier headroom](docs/howto/verifier-headroom-measurement.md)
 
 ### Memory
 

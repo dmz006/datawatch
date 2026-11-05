@@ -34,6 +34,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automata-tag-registry.md](howto/automata-tag-registry.md) | One tag registry across federated daemons: the keeper, peers, stale copies, pending sync and merge notes |
 | [howto/automata-checks-and-ship.md](howto/automata-checks-and-ship.md) | Automata checks and ship steps: the four checks, push, tag and CI watch, the off / shadow / on modes, starting in shadow, reading the status from every surface |
 | [howto/automation-queue-advance.md](howto/automation-queue-advance.md) | Automation (chained Automatons): activate, automatic advance, idle alert |
+| [howto/verifier-headroom-measurement.md](howto/verifier-headroom-measurement.md) | Verifier headroom measurement: measure a compute node, read the stored result, set verifier slots within the free-memory floor, and the two config keys |
 | [howto/usage-calculator.md](howto/usage-calculator.md) | Usage calculator: within or over budget for the week, what each lane count costs, the three policies, typed readings, federation, the three PWA variants |
 | [howto/burn-guard.md](howto/burn-guard.md) | Burn guard: the ladder of admission changes when the weekly burn runs over the pace line, its settings, reading an alert, stepping back, the effort ceiling, the Claude retry limit |
 | [howto/cost-report.md](howto/cost-report.md) | Cost report: spend per Automaton, Automation, backend and week from the existing data, its settings, and reading it from the web app, CLI, MCP, REST and chat |

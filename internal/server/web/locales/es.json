@@ -1802,6 +1802,8 @@
   "settings_git_push_on_complete": "Empujar el trabajo finalizado al remoto",
   "settings_git_push_remote": "Nombre del remoto de push",
   "settings_capacity_strict_node_limit": "Strict per-node limit (verifier and resumed workers never over-admit a node)",
+  "settings_verifier_min_free_mem_mb": "Verifier minimum free memory on a node (MB)",
+  "settings_verifier_headroom_max_age_hours": "Verifier headroom measurement max age (hours)",
   "settings_capacity_count_pool_by_node": "Count each LLM pool by node",
   "settings_capacity_adopt_before_admit": "After a restart, admit resumed workers before new work",
   "settings_capacity_fallthrough": "Pool fall-through (admit on another idle allowed pool when the requested one is full)",

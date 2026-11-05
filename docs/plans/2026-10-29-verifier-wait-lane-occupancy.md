@@ -129,8 +129,8 @@ live smoke against a real daemon, `env -u TMUX -u TMUX_TMPDIR go test ./...` and
 `node --test internal/server/web/*.test.js`, the general documentation checklist, the
 Mobile-Parity Rule, the Localization Rule, and the plan status line).
 All work is committed on `automaton/f1f2004f`; the live check passed
-(`docs/plans/historical-plans/2026-10-29-verifier-wait-lane-live-check.md`, Result: PASS, live: PASS) and the
-final gate report is `docs/plans/historical-plans/2026-10-29-verifier-wait-lane-occupancy-final-gate-report.md`.
+(`docs/plans/2026-10-29-verifier-wait-lane-live-check.md`, Result: PASS, live: PASS) and the
+final gate report is `docs/plans/2026-10-29-verifier-wait-lane-occupancy-final-gate-report.md`.
 No version bump on this branch (unreleased; the shipped-in version is recorded at the tag).
 
 1. **Story 1: the occupant wait flag and the planner.** Status: **Done** (2026-10-29).
