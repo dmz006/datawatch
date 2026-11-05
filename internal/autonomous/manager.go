@@ -1105,6 +1105,8 @@ type Manager struct {
 	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose  DecomposeFn
 	guardrail  GuardrailFn
+	// guardrailClassify gates generative guardrail outcomes in classify mode.
+	guardrailClassify *guardrailClassify
 	planReview PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.

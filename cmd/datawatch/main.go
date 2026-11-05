@@ -6494,6 +6494,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// written to the daemon log once; the status endpoint keeps them.
 			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Classify-mode gate over guardrail findings: active only for a
+			// judge entry whose verification_mode is classify.
+			amgr.SetGuardrailClassify(verificationModeLookup(autonomousInferenceReg),
+				func(ctx context.Context, backend, model, prompt string) autonomouspkg.VerificationResult {
+					return runClassifyVerification(ctx, "", backend, model, prompt,
+						autonomouspkg.RecordScoresEnabled(cfg.Autonomous.VerificationRecordScores))
+				})
 			amgr.SetProjectRoots(cfg.AllowedProjectRoots)
 			// The plan-review judge goes through the same routed, leased and
 			// time-limited judge path as the guardrail judge.
