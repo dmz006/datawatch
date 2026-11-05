@@ -989,6 +989,18 @@ type ComputeNodeYAML struct {
 	// SessionSlots is the operator's worker count for this node (0 = derive
 	// from observer GPU data). Must not be negative.
 	SessionSlots int `yaml:"session_slots,omitempty" json:"session_slots,omitempty"`
+	// VerifierSlots is the operator's verifier worker count for this node.
+	// Nil (unset) = default; explicit 0 = verifier disabled on this node.
+	// Must not be negative.
+	VerifierSlots *int `yaml:"verifier_slots,omitempty" json:"verifier_slots,omitempty"`
+	// VerifierMinFreeMemMB is the free GPU memory in MB a new verifier
+	// needs on this node. Nil (unset) = default; explicit 0 turns the
+	// headroom check off. Must not be negative.
+	VerifierMinFreeMemMB *int `yaml:"verifier_min_free_mem_mb,omitempty" json:"verifier_min_free_mem_mb,omitempty"`
+	// VerifierContextMB is the extra context memory in MB one parallel
+	// verifier request needs on this node. 0 = unknown, so no suggestion
+	// is shown. Must not be negative.
+	VerifierContextMB int `yaml:"verifier_context_mb,omitempty" json:"verifier_context_mb,omitempty"`
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -6798,6 +6810,15 @@ func validateLoaded(cfg *Config) error {
 	for _, n := range cfg.ComputeNodes {
 		if n.SessionSlots < 0 {
 			return fmt.Errorf("compute_nodes[%s].session_slots: %d must be >= 0", n.Name, n.SessionSlots)
+		}
+		if n.VerifierSlots != nil && *n.VerifierSlots < 0 {
+			return fmt.Errorf("compute_nodes[%s].verifier_slots: %d must be >= 0", n.Name, *n.VerifierSlots)
+		}
+		if n.VerifierMinFreeMemMB != nil && *n.VerifierMinFreeMemMB < 0 {
+			return fmt.Errorf("compute_nodes[%s].verifier_min_free_mem_mb: %d must be >= 0", n.Name, *n.VerifierMinFreeMemMB)
+		}
+		if n.VerifierContextMB < 0 {
+			return fmt.Errorf("compute_nodes[%s].verifier_context_mb: %d must be >= 0", n.Name, n.VerifierContextMB)
 		}
 	}
 	switch cfg.Autonomous.ProjectWriteSerialization {

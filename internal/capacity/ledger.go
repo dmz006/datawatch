@@ -135,8 +135,26 @@ func (r Request) candidates() []NodeChoice {
 // withNode returns the request bound to one chosen node: node:<name> joins
 // Pools, Node is set and the choice fields are cleared.
 func (r Request) withNode(name string) Request {
+	return r.withNodePool(name, "node:"+name)
+}
+
+// withNodePool is withNode with the node pool already chosen: a verifier
+// request on a node that has a verifier pool binds node-verify:<name> in
+// place of node:<name>; when it did, any node:<name> entry the request still
+// carried is dropped so the lease holds exactly one pool for the node.
+func (r Request) withNodePool(name, pool string) Request {
 	r.Pools = append([]string(nil), r.Pools...)
-	if pool := "node:" + name; !sharesPool(r.Pools, []string{pool}) {
+	if pool != "node:"+name {
+		pools := r.Pools[:0]
+		for _, p := range r.Pools {
+			if p == "node:"+name {
+				continue
+			}
+			pools = append(pools, p)
+		}
+		r.Pools = pools
+	}
+	if !sharesPool(r.Pools, []string{pool}) {
 		r.Pools = append(r.Pools, pool)
 	}
 	r.Node = name
@@ -307,7 +325,8 @@ func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) 
 // Options tune dispatch behaviour.
 //
 // LOCK RULE: every function in Options (External, Backpressure,
-// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState)
+// AutonomousBackpressure, HeldBackpressure, NodeHealthy, NodeGate, NodeState,
+// VerifierHeadroom)
 // is invoked while the ledger lock is held. Each must therefore be a fast
 // in-memory read: it must never call back
 // into the ledger (Snapshot, Held, LeaseOf, Limit, Acquire and the like, which
@@ -365,6 +384,14 @@ type Options struct {
 	// means the snapshot reports no node state; non-node pools are never
 	// queried either way.
 	NodeState func(name string) NodeState
+	// VerifierHeadroom reports whether a node has room for new verifier work
+	// (for example whether its sessions can hold the verifier's context).
+	// Consulted under the lock for Request.Role == RoleVerifier only: a
+	// candidate node it blocks is skipped the way NodeHealthy skips an
+	// unhealthy node, and the waiting reason carries the returned reason in
+	// plain English. Nil means no node is ever headroom-blocked. Called under
+	// the lock: an in-memory read only.
+	VerifierHeadroom func(node string) (blocked bool, reason string)
 	// StrictNodeLimit, CountPoolByNode and AdoptBeforeAdmit gate the three
 	// node over-admission rules. Each is read at call time, under the ledger
 	// lock, so it must be a fast in-memory read (see the LOCK RULE). Nil means
@@ -666,6 +693,9 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
+			if name, ok := strings.CutPrefix(p, "node-verify:"); ok {
+				return fmt.Sprintf("waiting for node %s: %d/%d verifier slots in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
+			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
 		}
 		if why := l.rateBlockLocked(p, now); why != "" {
@@ -729,6 +759,46 @@ func (l *Ledger) rankedLocked(req Request) []NodeChoice {
 // per-candidate "node: reason" parts, named up front as gate refusals.
 const AllCandidatesGatePrefix = "all candidate nodes drained or denied: "
 
+// ledgerNodePoolLocked is the pool a request takes on node: for verifier
+// requests the node's verifier pool when it has a limit above 0, otherwise
+// the executor pool node:<node> exactly as before. A node with no verifier
+// pool (limit 0 or unset) leaves verifiers on the node pool.
+func (l *Ledger) ledgerNodePoolLocked(role Role, node string) string {
+	if role == RoleVerifier && l.limits[VerifierPool(node)] > 0 {
+		return VerifierPool(node)
+	}
+	return "node:" + node
+}
+
+// swapVerifierNodePoolLocked rewrites req's node:<node> pool entry to
+// node-verify:<node> when the request is a verifier and the node has a
+// verifier pool. It is the single-node analogue of ledgerNodePoolLocked:
+// it never adds a pool the caller did not ask for, and it leaves non-
+// verifiers and nodes without a verifier pool alone.
+func (l *Ledger) swapVerifierNodePoolLocked(req *Request, node string) {
+	if req.Role != RoleVerifier || node == "" {
+		return
+	}
+	np := "node:" + node
+	vp := VerifierPool(node)
+	if l.limits[vp] <= 0 || !sharesPool(req.Pools, []string{np}) {
+		return
+	}
+	pools := make([]string, 0, len(req.Pools))
+	swapped := false
+	for _, p := range req.Pools {
+		if p == np {
+			if !swapped {
+				pools = append(pools, vp)
+				swapped = true
+			}
+			continue
+		}
+		pools = append(pools, p)
+	}
+	req.Pools = pools
+}
+
 // resolveLocked decides where req would run now. For an ordinary request it is
 // blockReasonLocked on req itself. For a request with NodeChoices it returns
 // the request bound to the first healthy candidate node, least loaded first,
@@ -762,6 +832,7 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 				return req, fmt.Sprintf("waiting for node %s: %s", req.Node, why)
 			}
 		}
+		l.swapVerifierNodePoolLocked(&req, req.Node)
 		return req, l.blockReasonLocked(req)
 	}
 	ranked := l.rankedLocked(req)
@@ -783,7 +854,13 @@ func (l *Ledger) resolveLocked(req Request) (Request, string) {
 			parts = append(parts, name+": "+why)
 			continue
 		}
-		bound := req.withNode(name)
+		if req.Role == RoleVerifier && l.opt.VerifierHeadroom != nil {
+			if blocked, why := l.opt.VerifierHeadroom(name); blocked {
+				parts = append(parts, fmt.Sprintf("%s: verifier headroom: %s", name, why))
+				continue
+			}
+		}
+		bound := req.withNodePool(name, l.ledgerNodePoolLocked(req.Role, name))
 		why := l.blockReasonLocked(bound)
 		if why == "" {
 			return bound, ""
@@ -1385,6 +1462,22 @@ func (l *Ledger) Snapshot() Status {
 		st.Waiting = append(st.Waiting, Waiter{Holder: w.req.Holder, PRDID: w.req.PRDID, Pools: w.req.Pools, Priority: w.req.Priority, Since: w.since, Reason: w.reason, Nodes: w.req.candidateNames()})
 		for _, p := range w.req.allPools() {
 			names[p] = true
+		}
+		// A verifier waiter may be admitted on each candidate's verifier pool,
+		// so report it like any other pool when the node configured one.
+		if w.req.Role == RoleVerifier {
+			vs := append([]string{}, w.req.candidateNames()...)
+			if w.req.Node != "" {
+				vs = append(vs, w.req.Node)
+			}
+			for _, n := range vs {
+				if n == "" {
+					continue
+				}
+				if l.limits[VerifierPool(n)] > 0 {
+					names[VerifierPool(n)] = true
+				}
+			}
 		}
 	}
 	for p := range names {

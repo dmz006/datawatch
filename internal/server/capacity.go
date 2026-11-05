@@ -247,6 +247,19 @@ type capacityPoolJSON struct {
 	// see the nodeUsage contract in node_usage.go) for node:<name> pools.
 	// Nil — and therefore omitted from JSON — on host: and llm: pools.
 	Usage *nodeUsage `json:"usage,omitempty"`
+	// VerifierLimit and VerifierHeld are the node's verifier pool
+	// (node-verify:<name>) limit and held count, alongside the executor
+	// pool's own limit and held. Nil — omitted from JSON — when that pool
+	// has no limit yet. Node pools only.
+	VerifierLimit *int `json:"verifier_limit,omitempty"`
+	VerifierHeld  *int `json:"verifier_held,omitempty"`
+	// FreeGPUMB, HeadroomOK and HeadroomReason are the node's last-seen
+	// verifier headroom figures from the daemon's admission cache (node
+	// pools only; omitted when the reader is not wired or the node has not
+	// been synced).
+	FreeGPUMB      *uint64 `json:"free_gpu_mb,omitempty"`
+	HeadroomOK     *bool   `json:"headroom_ok,omitempty"`
+	HeadroomReason *string `json:"headroom_reason,omitempty"`
 }
 
 // capacityResponse is the /api/capacity body.
@@ -553,6 +566,14 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: leases, Waiting: waitingJSON, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id")), Verifier: autonomous.DefaultVerifierStats.Snapshot()}
 	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
+	// node-verify pools are gathered once so each node pool can report its
+	// verifier limit and held alongside its own limit and held.
+	verifierPool := map[string]capacity.PoolStatus{}
+	for _, p := range st.Pools {
+		if strings.HasPrefix(p.Name, "node-verify:") {
+			verifierPool[p.Name] = p
+		}
+	}
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
 		if strings.HasPrefix(p.Name, "node:") {
@@ -568,6 +589,23 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 					// network probes, so this handler stays fast.
 					u := s.nodeUsageCache().get(s, *n)
 					pj.Usage = &u
+				}
+				// The node's verifier pool limit and held count, next to this
+				// executor pool's own limit and held.
+				if vp, ok := verifierPool["node-verify:"+strings.TrimPrefix(p.Name, "node:")]; ok {
+					verLimit, verHeld := vp.Limit, vp.Held
+					pj.VerifierLimit = &verLimit
+					pj.VerifierHeld = &verHeld
+				}
+				// The node's last-seen verifier headroom, from the daemon's
+				// admission cache (no observer I/O here).
+				if s.verifierNodeStatus != nil {
+					if stt, ok := s.verifierNodeStatus(strings.TrimPrefix(p.Name, "node:")); ok {
+						freeMB, okVal, reason := stt.FreeMB, stt.HeadroomOK, stt.HeadroomReason
+						pj.FreeGPUMB = &freeMB
+						pj.HeadroomOK = &okVal
+						pj.HeadroomReason = &reason
+					}
 				}
 			}
 			// holder_names: the same holders as readable objects, alongside the

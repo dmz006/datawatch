@@ -2502,7 +2502,7 @@ paths:
   /api/compute/nodes/{name}:
     get:
       summary: Fetch one compute node
-      description: The node record. session_slots is the operator's slot override for a node that hosts a local engine; 0 means the count is derived from observer GPU data. Ignored on a node that hosts no local engine.
+      description: The node record. session_slots is the operator's slot override for a node that hosts a local engine; 0 means the count is derived from observer GPU data. The verifier settings are nullable: an absent verifier_slots (or verifier_min_free_mem_mb) means "unset" — the node then hosts one verifier slot if it runs a local engine, else none, and the 1024 MB headroom default applies; an explicit 0 verifier_slots means no verifier slots.
       operationId: computeNodeGet
       tags: [Compute]
       parameters:
@@ -2525,9 +2525,23 @@ paths:
                     type: integer
                     minimum: 0
                     description: Operator-set worker count (0 = derive from observer GPU data, one slot per GPU limited by free GPU memory). Capped by max_concurrent_sessions when that is set.
+                  verifier_slots:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                    description: Worker slots for verifiers on the node; absent when unset (1 if the node hosts a local engine, else 0), 0 when the operator set none.
+                  verifier_min_free_mem_mb:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                    description: Free GPU memory in MB required before a new verifier slot starts here; absent when unset (1024 MB), 0 when the operator turned the check off.
+                  verifier_context_mb:
+                    type: integer
+                    minimum: 0
+                    description: Extra context memory in MB one verifier slot holds; used to size the advice figure from the node's free GPU memory. 0 = none.
     put:
       summary: Replace one compute node
-      description: Replaces the whole node. Omitting session_slots clears the override, and omitting max_concurrent_sessions clears the ceiling.
+      description: Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).
       operationId: computeNodePut
       tags: [Compute]
       parameters:
@@ -2541,6 +2555,9 @@ paths:
               properties:
                 max_concurrent_sessions: {type: integer, minimum: 0}
                 session_slots: {type: integer, minimum: 0, description: Operator-set worker count; 0 derives the count from observer GPU data.}
+                verifier_slots: {type: integer, minimum: 0, nullable: true, description: Worker slots for verifiers on the node; absent = unset (1 if the node hosts a local engine, else 0), 0 = no verifier slots.}
+                verifier_min_free_mem_mb: {type: integer, minimum: 0, nullable: true, description: Free GPU MB required before a new verifier slot starts; absent = 1024 MB, 0 = check off.}
+                verifier_context_mb: {type: integer, minimum: 0, description: Extra context MB one verifier slot holds, used to size the advice figure (0 = none).}
       responses:
         "200":
           description: The updated node record
@@ -2548,7 +2565,7 @@ paths:
   /api/compute/nodes/{name}/detail:
     get:
       summary: Compute node detail from the observer
-      description: Pulls the node's monitoring snapshot (or the cached observer snapshot) and adds the slot figures. The observer fields are passed through unchanged.
+      description: Pulls the node's monitoring snapshot (or the cached observer snapshot) and adds the slot figures — the executor pair (session_slots, derived_slots) and, beside it, the verifier pair (the verifier settings and the daemon's last-seen verifier admission state). The observer fields are passed through unchanged. The reader-backed figures (verifier_slots_effective, suggested_verifier_slots, headroom_ok, headroom_reason, free_gpu_mb) are absent until the daemon's capacity wiring has synced the node.
       operationId: computeNodeDetail
       tags: [Compute]
       parameters:
@@ -2569,6 +2586,47 @@ paths:
                     type: integer
                     minimum: 0
                     description: The slot count in effect, the node's pool limit. Equals session_slots when that is set. Absent when the node has no pool limit yet.
+                  executor_slots:
+                    type: integer
+                    minimum: 0
+                    description: The same figure as derived_slots — the executor pair shown beside the verifier pair. Absent when the node has no pool limit yet.
+                  verifier_slots:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                    description: The operator's verifier_slots; null when unset (1 if the node hosts a local engine, else 0 is effective).
+                  verifier_slots_effective:
+                    type: integer
+                    minimum: 0
+                    description: The verifier cap the daemon last applied for this node.
+                  suggested_verifier_slots:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                    description: The advice figure for this node's free GPU data; null when there is no usable figure. Advice only — it is never applied automatically.
+                  verifier_min_free_mem_mb:
+                    type: integer
+                    minimum: 0
+                    nullable: true
+                    description: The operator's setting; null when unset (1024 MB is effective).
+                  verifier_min_free_mem_mb_effective:
+                    type: integer
+                    minimum: 0
+                    description: The effective setting — 1024 MB when the operator left it unset.
+                  verifier_context_mb:
+                    type: integer
+                    minimum: 0
+                    description: The operator's verifier_context_mb (extra context MB one verifier slot holds).
+                  headroom_ok:
+                    type: boolean
+                    description: Whether a new verifier slot would start under this node's free-GPU requirement.
+                  headroom_reason:
+                    type: string
+                    description: Short reason for the headroom verdict (free vs required MB; "headroom check off" when the operator turned it off). Empty when there is no requirement and no data.
+                  free_gpu_mb:
+                    type: integer
+                    minimum: 0
+                    description: The node's free GPU memory in MB from the last sync.
         "503":
           description: The node has no monitoring endpoint and no cached observer snapshot
 
@@ -2607,6 +2665,24 @@ paths:
                             - {$ref: "#/components/schemas/NodeUsage"}
                           nullable: true
                           description: The node_usage object. Present on a node:<name> pool when the daemon reports per-node usage; the daemon prints a short line here per loaded model and GPU. Absent on host and llm pools and on older daemons.
+                        verifier_limit:
+                          type: integer
+                          minimum: 0
+                          description: The node's verifier pool (node-verify:<name>) limit, for node pools, alongside this pool's own limit and held. Absent until the node's verifier pool has a limit.
+                        verifier_held:
+                          type: integer
+                          minimum: 0
+                          description: The node's verifier pool (node-verify:<name>) held count, for node pools.
+                        free_gpu_mb:
+                          type: integer
+                          minimum: 0
+                          description: The node's last-seen free GPU memory in MB (daemon verifier admission cache); for node pools, absent until the node has been synced.
+                        headroom_ok:
+                          type: boolean
+                          description: The last headroom verdict for new verifier work on this node; for node pools.
+                        headroom_reason:
+                          type: string
+                          description: Short reason for that verdict (free vs required MB).
                   leases:
                     type: array
                     description: Held leases. node_unknown is true on a lease adopted after a daemon restart whose compute node could not be determined; it holds no node:<name> pool but still counts against its host and llm:<name> pools. Absent otherwise.

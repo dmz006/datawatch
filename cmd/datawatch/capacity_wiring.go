@@ -837,6 +837,160 @@ func gpuNodeBackpressure(limitPct func() int, mu *sync.Mutex, util map[string]fl
 	}
 }
 
+// verifierNodeRecord is one compute node's verifier admission state as
+// captured from one observer read: the caps the ledger applies (its
+// executor pool limit and its verifier pool limit), whether the node had
+// observer data, the free GPU memory, the headroom verdict for new verifier
+// work, and the advice slot figure. suggested is nil when the node has no
+// usable figure — advice only, never applied automatically.
+type verifierNodeRecord struct {
+	executorCap    int
+	verifierCap    int
+	hasData        bool
+	freeMB         uint64
+	headroomOK     bool
+	headroomReason string
+	suggested      *int
+}
+
+// verifierNodeCache is the mutex-guarded store of the records: the syncPools
+// tick is the only writer, the ledger's VerifierHeadroom gate and
+// VerifierNodeStatus are the readers. All access goes through the mutex so
+// the ledger can call the gate under its own lock.
+type verifierNodeCache struct {
+	mu      sync.Mutex
+	entries map[string]verifierNodeRecord
+}
+
+// verifierHeadroomCache is the daemon's verifier admission cache. Set once
+// at daemon startup by wireCapacity; nil until then, so callers must check.
+var verifierHeadroomCache *verifierNodeCache
+
+func newVerifierNodeCache() *verifierNodeCache {
+	return &verifierNodeCache{entries: map[string]verifierNodeRecord{}}
+}
+
+func (c *verifierNodeCache) record(name string, rec verifierNodeRecord) {
+	c.mu.Lock()
+	c.entries[name] = rec
+	c.mu.Unlock()
+}
+
+func (c *verifierNodeCache) lookup(name string) (verifierNodeRecord, bool) {
+	if c == nil {
+		return verifierNodeRecord{}, false
+	}
+	c.mu.Lock()
+	rec, ok := c.entries[name]
+	c.mu.Unlock()
+	return rec, ok
+}
+
+// blocked implements capacity.Options.VerifierHeadroom: a node is blocked
+// for new verifier work while its cached headroom verdict says its free GPU
+// memory is below the minimum a verifier slot wants. It reads ONLY the
+// cache under its own mutex — never an observer read — because the ledger
+// invokes it under its lock (rule on capacity.Options). A node with no
+// record, or one whose observer read failed or returned nothing, fails open
+// (not blocked) with the reason "no observer data".
+func (c *verifierNodeCache) blocked(name string) (bool, string) {
+	rec, ok := c.lookup(name)
+	if !ok || !rec.hasData {
+		return false, "no observer data"
+	}
+	return !rec.headroomOK, rec.headroomReason
+}
+
+// VerifierNodeState is one compute node's verifier admission state, as the
+// capacity wiring last saw it, for the REST and comm surfaces. SuggestedCap
+// is the advice figure for how many verifier slots the node's free memory
+// would hold: advice only, never applied automatically, nil when the node
+// has no usable figure.
+type VerifierNodeState struct {
+	ExecutorCap    int
+	VerifierCap    int
+	FreeMB         uint64
+	HasData        bool
+	HeadroomOK     bool
+	HeadroomReason string
+	SuggestedCap   *int
+}
+
+// VerifierNodeStateOf reports one compute node's last cached verifier
+// admission state from cache. ok is false when the node has never been
+// synced.
+func (c *verifierNodeCache) VerifierNodeStateOf(name string) (VerifierNodeState, bool) {
+	rec, ok := c.lookup(name)
+	if !ok {
+		return VerifierNodeState{}, false
+	}
+	return VerifierNodeState{
+		ExecutorCap:    rec.executorCap,
+		VerifierCap:    rec.verifierCap,
+		FreeMB:         rec.freeMB,
+		HasData:        rec.hasData,
+		HeadroomOK:     rec.headroomOK,
+		HeadroomReason: rec.headroomReason,
+		SuggestedCap:   rec.suggested,
+	}, true
+}
+
+// VerifierNodeStatus reports the last cached verifier admission state for
+// one compute node. ok is false before wireCapacity has run or when the
+// node has never been synced. It reads only the in-memory cache; it
+// performs no observer I/O.
+func VerifierNodeStatus(name string) (VerifierNodeState, bool) {
+	return verifierHeadroomCache.VerifierNodeStateOf(name)
+}
+
+// verifierNodeInfo is one compute node's verifier sync input as syncPools
+// gathers it: the node, whether it hosts a local engine, the executor cap
+// just applied to its node: pool, so the record and the ledger agree.
+type verifierNodeInfo struct {
+	node     *compute.Node
+	hosting  bool
+	executor int
+}
+
+// verifierObserverRead returns one node's observer sample, or ok=false
+// when the read failed or the node returned nothing.
+type verifierObserverRead func(name string) (compute.NodeObservation, bool)
+
+// syncVerifierPools is the verifier half of syncPools: for each compute
+// node it sets the ledger's verifier pool limit (capacity.VerifierPool)
+// from compute.EffectiveVerifierSlots — an explicit 0, or a node that hosts
+// no local engine, gives 0, which means the node takes no verifier pool —
+// and records the node's verifier admission state from one observer sample
+// in the headroom cache: the free GPU memory, the headroom verdict against
+// compute.EffectiveVerifierMinFreeMB, and the advice slot figure from
+// compute.SuggestVerifierSlots. A node whose observer read failed or
+// returned nothing is recorded as no data, so the headroom gate fails open
+// on it. Extracted from syncPools so it is unit-testable without a live
+// daemon; the 10s syncPools ticker re-runs it on registry change.
+func syncVerifierPools(led *capacity.Ledger, cache *verifierNodeCache, read verifierObserverRead, nodes []verifierNodeInfo) {
+	for _, in := range nodes {
+		cap := compute.EffectiveVerifierSlots(in.node.VerifierSlots, in.hosting)
+		led.SetLimit(capacity.VerifierPool(in.node.Name), cap)
+		rec := verifierNodeRecord{
+			verifierCap:    cap,
+			executorCap:    in.executor,
+			headroomOK:     true, // no data fails open
+			headroomReason: "no observer data",
+		}
+		if obs, ok := read(in.node.Name); ok {
+			rec.hasData = true
+			if free, ok := compute.FreeGPUMB(obs); ok {
+				rec.freeMB = free
+			}
+			rec.headroomOK, rec.headroomReason = compute.HeadroomCheck(obs, compute.EffectiveVerifierMinFreeMB(in.node.VerifierMinFreeMemMB))
+			if s, ok := compute.SuggestVerifierSlots(obs, in.node.VerifierContextMB); ok {
+				rec.suggested = &s
+			}
+		}
+		cache.record(in.node.Name, rec)
+	}
+}
+
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
@@ -871,6 +1025,11 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// The daemon's view starts strict: before the first sync reads the compute
 	// registry no node is healthy, so nothing is placed on a node not yet loaded.
 	nodeHealth := newStrictNodeHealthView()
+	// The verifier headroom cache: the syncPools tick records each node's
+	// verifier admission state in it, the ledger's gate and the status read
+	// take it out — all under the cache's own mutex, no I/O.
+	verifierHeadroom := newVerifierNodeCache()
+	verifierHeadroomCache = verifierHeadroom
 	opts := capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
@@ -882,6 +1041,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			budgetBackpressure(autonomousBudget),
 		),
 		HeldBackpressure: sharedNodeBackpressure(),
+		VerifierHeadroom: verifierHeadroom.blocked,
 	}
 	applyNodeLimitOptions(&opts, cfg)
 	led := capacity.New(opts)
@@ -950,6 +1110,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return capacity.FormatText(st)
 	}
 	httpServer.SetCapacity(led)
+
+	// The verifier pairs for the REST surface — node detail and the node
+	// pools of GET /api/capacity read the same last-seen admission state
+	// (the cache VerifierNodeStatus() reads), so the two endpoints show the
+	// same figures. Reading this cache is instant; the reader performs no
+	// observer I/O.
+	httpServer.SetVerifierNodeStatus(func(name string) (server.VerifierNodeStatus, bool) {
+		st, ok := VerifierNodeStatus(name)
+		if !ok {
+			return server.VerifierNodeStatus{}, false
+		}
+		return server.VerifierNodeStatus{
+			ExecutorCap:    st.ExecutorCap,
+			VerifierCap:    st.VerifierCap,
+			FreeMB:         st.FreeMB,
+			HasData:        st.HasData,
+			HeadroomOK:     st.HeadroomOK,
+			HeadroomReason: st.HeadroomReason,
+			SuggestedCap:   st.SuggestedCap,
+		}, true
+	})
 
 	// v8.36.0 — interactive (non-autonomous) session starts also admit on
 	// the same node:/llm: pools an autonomous task would use for the same
@@ -1128,6 +1309,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				return cfg.Autonomous.CapacityGPUUtilPct > 0 || (hosting[n.Name] && n.SessionSlots == 0)
 			}
 			observed := make([]compute.NodeObservation, len(nodes))
+			observedOK := make([]bool, len(nodes))
 			var wg sync.WaitGroup
 			for i, n := range nodes {
 				if !needsObserver(n) {
@@ -1136,10 +1318,14 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				wg.Add(1)
 				go func(i int, name string) {
 					defer wg.Done()
-					observed[i], _ = httpServer.NodeObservation(name)
+					if o, ok := httpServer.NodeObservation(name); ok {
+						observed[i] = o
+						observedOK[i] = true
+					}
 				}(i, n.Name)
 			}
 			wg.Wait()
+			var verifierNodes []verifierNodeInfo
 			for i, n := range nodes {
 				obs := observed[i]
 				limit := n.MaxConcurrentSessions
@@ -1170,12 +1356,35 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 					limit = compute.NodeSlots(n.SessionSlots, n.MaxConcurrentSessions, engines, held["node:"+n.Name], obs)
 				}
 				led.SetLimit("node:"+n.Name, limit)
+				verifierNodes = append(verifierNodes, verifierNodeInfo{
+					node:     n,
+					hosting:  hosting[n.Name],
+					executor: limit,
+				})
 				if cfg.Autonomous.CapacityGPUUtilPct > 0 && len(obs.GPUs) > 0 {
 					gpuMu.Lock()
 					gpuUtil[n.Name] = obs.MaxUtilPct
 					gpuMu.Unlock()
 				}
 			}
+			// The verifier half of the sync, from the observer samples just
+			// read: the node-verify: pool limits and the headroom cache. The
+			// read closure is a pure cache lookup — the samples are already
+			// fetched — so nothing here issues a new observer call.
+			obsByName := map[string]*compute.NodeObservation{}
+			for i, n := range nodes {
+				if observedOK[i] {
+					o := observed[i]
+					obsByName[n.Name] = &o
+				}
+			}
+			syncVerifierPools(led, verifierHeadroom, func(name string) (compute.NodeObservation, bool) {
+				o, ok := obsByName[name]
+				if !ok {
+					return compute.NodeObservation{}, false
+				}
+				return *o, true
+			}, verifierNodes)
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
 			syncLLMLimits(cfg, reg, led)

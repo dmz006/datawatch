@@ -313,6 +313,7 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	var (
 		kind, address, monitoringEndpoint, gpuVendor, gpuModel   string
 		maxModels, gpuMemGB, ramGB, gpus, priority, sessionSlots int
+		verifierSlots, verifierMinFreeMB, verifierContextMB      int
 		costPerHour                                              float64
 		tagsCSV, allowedCSV, deniedCSV                           string
 		pinnedModel                                              string
@@ -371,9 +372,29 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 				"node_pinned_model":        pinnedModel,
 				"allow_model_swap":         allowModelSwap,
 				"session_slots":            sessionSlots,
+				"verifier_context_mb":      verifierContextMB,
 				"tls_ca_file":              tlsCAFile,
 				"tls_cert_fingerprint":     tlsCertFingerprint,
 				"tls_insecure_skip_verify": tlsInsecureSkipVerify,
+			}
+			// The nullable verifier slots are -1 by default, meaning "unset":
+			// omitted from the body so POST leaves them at the node's derived
+			// defaults and UPDATE clears any earlier override. A value below
+			// -1 is a typo and is refused here, not at the server.
+			if verifierSlots < -1 {
+				return fmt.Errorf("--verifier-slots must be -1 (unset) or >= 0")
+			}
+			if verifierSlots >= 0 {
+				body["verifier_slots"] = verifierSlots
+			}
+			if verifierMinFreeMB < -1 {
+				return fmt.Errorf("--verifier-min-free-mem-mb must be -1 (unset) or >= 0")
+			}
+			if verifierMinFreeMB >= 0 {
+				body["verifier_min_free_mem_mb"] = verifierMinFreeMB
+			}
+			if verifierContextMB < 0 {
+				return fmt.Errorf("--verifier-context-mb must be >= 0")
 			}
 			if tagsCSV != "" {
 				body["tags"] = splitCSV(tagsCSV)
@@ -405,6 +426,9 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().IntVar(&priority, "priority", 50, "scheduling priority 0-100 (higher = preferred)")
 	cmd.Flags().Float64Var(&costPerHour, "cost-per-hour", 0, "USD/hour cost for scheduler accounting")
 	cmd.Flags().IntVar(&sessionSlots, "session-slots", 0, "worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory; capped by max_concurrent_sessions). Update replaces the whole node, so omitting this clears the override")
+	cmd.Flags().IntVar(&verifierSlots, "verifier-slots", -1, "worker slots for verifiers on this node (-1 = unset: 1 if the node hosts a local engine, else 0; explicit 0 = no verifier slots). Update replaces the whole node, so -1 clears the override")
+	cmd.Flags().IntVar(&verifierMinFreeMB, "verifier-min-free-mem-mb", -1, "free GPU memory in MB required before a verifier slot starts here (-1 = unset: 1024 MB; 0 turns the check off). Update replaces the whole node, so -1 resets the default")
+	cmd.Flags().IntVar(&verifierContextMB, "verifier-context-mb", 0, "extra context memory in MB one verifier slot holds, used to size the advice figure from the node's free GPU memory (0 = none). Update replaces the whole node, so omitting this clears it to 0")
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&allowedCSV, "allowed-consumers", "", "comma-separated consumer names (council|ask|agent_spawn|session_spawn|*)")
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")

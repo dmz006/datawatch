@@ -2388,7 +2388,10 @@ autonomous:
   # observer data (limited by free GPU memory), or with no GPU data its free
   # system memory against the model size. This key is the count for such a
   # node with neither. A node that hosts no local engine keeps its
-  # max_concurrent_sessions limit instead.
+  # max_concurrent_sessions limit instead. These are the executor's slots;
+  # a node's verifier runs take their own pool (compute_nodes[].verifier_slots,
+  # see the block under "Compute node slot override" below) and do not draw on
+  # this count.
   max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
@@ -2438,7 +2441,10 @@ autonomous:
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node session_slots (0 = derive from observer GPU
-  # data; hosting nodes only), capped by max_concurrent_sessions; per-LLM: max_inflight
+  # data; hosting nodes only), capped by max_concurrent_sessions; a node's
+  # verifier runs take the node's own verifier pool (verifier_slots, unset = 1
+  # on a node that hosts a local engine, 0 = no verifier runs there) instead of
+  # drawing on these executor slots; per-LLM: max_inflight
   # (0 = unlimited) or, when an explicit max_inflight is absent, the LLM entry's
   # plan_tier mapped through plan_tier_max_inflight below; per-Automaton queue
   # order: priority (set_priority).
@@ -3547,6 +3553,27 @@ orchestrator:
 # `datawatch compute node update <name> --session-slots N`, or REST
 # PUT /api/compute/nodes/{name}.
 #
+# Verifier slots live beside it, as three more per-node keys:
+# verifier_slots              the node's verifier worker count. Leave it out and
+#                             the node takes one verifier slot when it hosts a
+#                             local engine and none when it does not; set it to 0
+#                             explicitly to take no verifier runs at all.
+# verifier_min_free_mem_mb    the free GPU memory in MB a new verifier slot wants
+#                             before it starts. Leave it out for the default of
+#                             1024; 0 turns the check off.
+# verifier_context_mb         the context memory in MB one verifier slot holds,
+#                             used only for the advice figure the node reports
+#                             (free GPU memory divided by this, whole slots).
+#                             0 (the default) means unknown, so no figure.
+# Verifiers then lease the node's own verifier pool instead of the executor's,
+# so verification can run alongside workers on the same node. The advice figure
+# is advice only: nothing applies it and it never raises the executor cap. A
+# negative value on any of the three is rejected when the config loads. Set them
+# in the PWA node form, `datawatch compute node add|update <name>
+# --verifier-slots N --verifier-min-free-mem-mb N --verifier-context-mb N`, the
+# comm channel's compute node add/update kv pairs, REST
+# PUT /api/compute/nodes/{name}, or the MCP compute node tools.
+#
 # A node served over https is verified against the system roots by default. For a
 # node whose certificate the system roots do not cover, use one of the TLS keys
 # below. tls_ca_file and tls_cert_fingerprint may be used together (the chain must
@@ -3557,6 +3584,9 @@ orchestrator:
 #     kind: ollama
 #     address: http://gpu-1:11434
 #     session_slots: 2
+#     verifier_slots: 2               # leave out for the default; 0 = no verifier runs here
+#     verifier_min_free_mem_mb: 2048  # leave out for the default of 1024; 0 = headroom check off
+#     verifier_context_mb: 4096       # context MB per verifier slot for the advice figure; 0 = none
 #     # tls_ca_file: /etc/datawatch/ca.pem      # private CA: trust this PEM bundle as well as the system roots
 #     # tls_cert_fingerprint: "AB:CD:..."       # single self-signed cert: pin its SHA-256 leaf fingerprint (64 hex chars, colons optional)
 #     # tls_insecure_skip_verify: false         # last resort only: turns verification off (shown in the node record, PWA and audit log)

@@ -11451,6 +11451,163 @@ window.formEditToggleYaml = function() {
   }
 };
 
+// ── Verifier slots, free GPU memory, headroom check (PRD 35070001) ──────────
+// The server side of "verifier slots per compute node" — the node fields
+// verifier_slots / verifier_min_free_mem_mb / verifier_context_mb, the
+// node-verify pool of the capacity ledger, the free-memory headroom gate
+// and the hardware-derived slot suggestion — is done. These are the PWA
+// side: pure formatters. They take already-decoded API bodies and return
+// strings or HTML fragments — no fetches, no timers, no DOM reads — so
+// they are exercised directly from
+// internal/server/web/app-verifier-slots.test.js. Every dynamic value is
+// escaped. All strings go through t() with locale keys present in the
+// five bundles under internal/server/web/locales/.
+
+// _computeVerifierBody is the node-detail body, or {} — the helpers never
+// crash on a missing or non-object body.
+function _computeVerifierBody(d) {
+  return (d && typeof d === 'object') ? d : {};
+}
+
+// computeVerifierSlotDefaults returns the default labels for the three node
+// form fields, from the detail body's decoded (effective) settings: what
+// an empty slots field resolves to on the daemon and what the min-free
+// memory default is. A body without them (older daemon) uses the
+// documented defaults (1 slot, 1024 MB) and "no suggestion" for context.
+window.computeVerifierSlotDefaults = function(d) {
+  const b = _computeVerifierBody(d);
+  const memMb = (b.verifier_min_free_mem_mb_effective != null)
+    ? Number(b.verifier_min_free_mem_mb_effective) : 1024;
+  return {
+    slots: t('compute_verifier_slots_default', [1]),
+    memMb: String(memMb),
+    ctx: t('compute_verifier_ctx_default', [0]),
+  };
+};
+
+// computeFormatFreeMem renders a free-GPU-memory reading in MB with
+// thousands separators; an absent or non-numeric reading renders nothing.
+function computeFormatFreeMem(mb) {
+  const n = Number(mb);
+  return Number.isFinite(n) ? n.toLocaleString() + ' MB' : '';
+}
+window.computeFormatFreeMem = computeFormatFreeMem;
+
+// computeHeadroomLine renders the headroom check of the node-detail body:
+// pass or fail, plus the daemon's reason whenever it carries one. A body
+// without a check (no reader observation, gate off) renders nothing.
+function computeHeadroomLine(d) {
+  const b = _computeVerifierBody(d);
+  if (b.headroom_ok == null) return '';
+  const reason = String(b.headroom_reason || '').trim();
+  if (b.headroom_ok === true) {
+    return reason ? t('compute_headroom_ok_reason', [reason]) : t('compute_headroom_ok');
+  }
+  return reason ? t('compute_headroom_no_reason', [reason]) : t('compute_headroom_no');
+}
+window.computeHeadroomLine = computeHeadroomLine;
+
+// computeSuggestionLine renders the hardware-derived verifier-slot
+// suggestion: how many verifier slots this box could usefully hold. A
+// suggestion of 0 (the box fits none) and an absent field (no usable
+// data) both say so, in different words.
+function computeSuggestionLine(d) {
+  const b = _computeVerifierBody(d);
+  if (b.suggested_verifier_slots == null) return t('compute_suggestion_no_data');
+  const n = Number(b.suggested_verifier_slots);
+  if (!Number.isFinite(n) || n < 0) return t('compute_suggestion_no_data');
+  return n === 0 ? t('compute_suggestion_zero') : t('compute_suggestion', [n]);
+}
+window.computeSuggestionLine = computeSuggestionLine;
+
+// computeNodeSlotsRows renders the slot + memory block of the node-detail
+// modal: executor and verifier slots (operator setting and the effective
+// count the daemon decoded), the free GPU memory the observation carried,
+// the headroom check with its reason, and the suggestion. A body with
+// none of the reader-backed fields (monitoring off, older daemon) returns
+// ''. Every value is escaped.
+function computeNodeDetailSlotsHtml(d) {
+  const b = _computeVerifierBody(d);
+  const anyReaderData = b.verifier_slots_effective != null
+    || b.suggested_verifier_slots != null
+    || b.headroom_ok != null
+    || b.free_gpu_mb != null
+    || b.executor_slots != null
+    || b.derived_slots != null;
+  if (!anyReaderData) return '';
+  const row = (label, value) => `<div style="display:flex;flex-wrap:wrap;gap:2px 10px;padding:3px 0;border-top:1px solid var(--border);min-width:0;">
+    <span style="min-width:110px;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(label)}</span>
+    <span style="overflow-wrap:anywhere;">${escHtml(value)}</span></div>`;
+  const rowHtml = (label, value) => (value === '' ? '' : row(label, value));
+  const exOp = (b.session_slots != null) ? String(b.session_slots) : '0';
+  const exec = [];
+  exec.push(exOp + (exOp === '0' ? ' ' + t('compute_slots_zero_mean') : ''));
+  const exEff = (b.executor_slots != null) ? Number(b.executor_slots) : (b.derived_slots != null ? Number(b.derived_slots) : null);
+  if (exEff != null) exec.push(t('compute_slots_effective', [exEff]));
+  const vfOp = (b.verifier_slots != null) ? String(b.verifier_slots)
+    : window.computeVerifierSlotDefaults(b).slots;
+  const vf = [t('compute_verifier_op', [vfOp])];
+  if (b.verifier_slots_effective != null) vf.push(t('compute_slots_effective', [Number(b.verifier_slots_effective)]));
+  const defaults = window.computeVerifierSlotDefaults(b);
+  const vfFull = vf.join(' · ') + ' · ' + t('compute_verifier_min_free', [defaults.memMb]);
+  const lines = [row(t('compute_slots_executor'), exec.join(' · '))];
+  if (b.verifier_slots_effective != null || b.verifier_slots != null) lines.push(row(t('compute_slots_verifier'), vfFull));
+  const free = computeFormatFreeMem(b.free_gpu_mb);
+  if (free) lines.push(row(t('compute_free_gpu'), free));
+  const headroom = computeHeadroomLine(b);
+  if (headroom) lines.push(row(t('compute_headroom'), headroom));
+  if (b.suggested_verifier_slots != null)
+    lines.push(row(t('compute_suggestion_label'), computeSuggestionLine(b)));
+  return `<div style="margin:10px 0;padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:8px;min-width:0;">
+    <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:4px;">${escHtml(t('compute_slots_section'))}</div>
+    ${lines.join('')}</div>`;
+}
+window.computeNodeDetailSlotsHtml = computeNodeDetailSlotsHtml;
+
+// capacityVerifierPoolRow renders the node-verify pool line the capacity
+// card prints directly under its node line: the pool name, how many
+// verifier slots the ledger holds and the limit set on this node. A pool
+// without a verifier side (no verifier slots on that node, or a pool of
+// another kind) returns ''. Limit and held render even when one of them
+// is absent (0) when the pool is a node pool with a verifier side.
+function capacityVerifierPoolRow(p) {
+  if (!p || typeof p !== 'object') return '';
+  if (p.verifier_limit == null) {
+    if (!/\bnode:/i.test(String(p.name || ''))) return '';
+    return '';
+  }
+  const name = String(p.name || '').replace(/^node:/i, '');
+  const held = Math.max(0, Number(p.verifier_held) || 0);
+  const limit = Math.max(0, Number(p.verifier_limit) || 0);
+  const style = 'font-size:11px;color:var(--text2);min-width:0;overflow-wrap:anywhere;';
+  return `<div class="node-verify-row" style="${style};margin-left:10px;"><span style="color:var(--text3);">└</span> node-verify:<code style="font-size:10px;">${escHtml(name)}</code><span style="margin-left:8px;font-weight:600;">${t('capacity_pool_held_of', [held, limit])}</span></div>`;
+}
+window.capacityVerifierPoolRow = capacityVerifierPoolRow;
+
+// _laneFillNodeSlotsHtml renders the per-node slot counts inside the lane
+// fill card, from the same capacity body the sibling capacity card shows
+// (both poll /api/capacity on this tab): one row per node pool naming the
+// executor and verifier held/limit counts the ledger reports. A body with
+// no node pools, or no body at all (capacity still loading), returns ''.
+function _laneFillNodeSlotsHtml(cap, maxNodes) {
+  cap = (cap && typeof cap === 'object') ? cap : {};
+  const pools = Array.isArray(cap.pools) ? cap.pools : [];
+  const max = Math.max(1, Number(maxNodes) || 8);
+  const rows = [];
+  for (const p of pools) {
+    if (!p || typeof p !== 'object' || String(p.name || '').indexOf('node:') !== 0) continue;
+    const name = String(p.name).slice('node:'.length);
+    const parts = [];
+    if (p.limit != null) parts.push(t('lane_fill_node_slots_executor', [name, Math.max(0, Number(p.held) || 0), Math.max(0, Number(p.limit) || 0)]));
+    if (p.verifier_limit != null) parts.push(t('lane_fill_node_slots_verifier', [name, Math.max(0, Number(p.verifier_held) || 0), Math.max(0, Number(p.verifier_limit) || 0)]));
+    if (parts.length) rows.push(`<div class="lane-fill-node-slots-row" style="font-size:11px;color:var(--text2);min-width:0;overflow-wrap:anywhere;">${escHtml(parts.join(' · '))}</div>`);
+    if (rows.length >= max) break;
+  }
+  if (!rows.length) return '';
+  return `<div class="lane-fill-node-slots" style="margin-top:6px;min-width:0;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('lane_fill_node_slots_title'))}</div>${rows.join('')}</div>`;
+}
+window._laneFillNodeSlotsHtml = _laneFillNodeSlotsHtml;
+
 // Compute Node form builder — reads from `n` (current record snapshot).
 function buildComputeNodeForm(n) {
   const cap = n.declared_capacity || {};
@@ -11495,6 +11652,14 @@ function buildComputeNodeForm(n) {
     <input id="fe_compute_max_sessions" type="number" min="0" class="form-input" value="${n.max_concurrent_sessions||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_session_slots')||'Session slots (0 = derive from GPU data)')}</label>
     <input id="fe_compute_session_slots" type="number" min="0" class="form-input" value="${n.session_slots||''}" />
+    <!-- PRD 35070001 — verifier slots: empty = daemon default, an integer
+         as typed, so the three fields round-trip through the collector. -->
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_slots')||'Verifier slots (empty = default, 0 = none)')}</label>
+    <input id="fe_verifier_slots" type="number" min="0" class="form-input" value="${n.verifier_slots == null ? '' : n.verifier_slots}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_min_free_mem_mb')||'Verifier min free memory, MB (empty = default, 0 = off)')}</label>
+    <input id="fe_verifier_min_free_mem_mb" type="number" min="0" class="form-input" value="${n.verifier_min_free_mem_mb == null ? '' : n.verifier_min_free_mem_mb}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_verifier_context_mb')||'Verifier context, MB (0 = no suggestion)')}</label>
+    <input id="fe_verifier_context_mb" type="number" min="0" class="form-input" value="${n.verifier_context_mb == null ? '' : n.verifier_context_mb}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_priority')||'Scheduling priority (0–100)')}</label>
     <input id="fe_compute_priority" type="number" min="0" max="100" class="form-input" value="${n.scheduling_priority||50}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('compute_field_tags')||'Tags')}</label>
@@ -11533,6 +11698,26 @@ function collectComputeNodeForm(originalRecord) {
   out.declared_capacity.max_concurrent_models = parseInt((document.getElementById('fe_compute_max_models')||{}).value || '0', 10) || 0;
   out.max_concurrent_sessions = parseInt((document.getElementById('fe_compute_max_sessions')||{}).value || '0', 10) || 0;
   out.session_slots = parseInt((document.getElementById('fe_compute_session_slots')||{}).value || '0', 10) || 0;
+  // PRD 35070001 — verifier settings: an empty field saves null (the daemon
+  // side decodes it as unset → default) and a number saves as that whole
+  // number, so "empty = default, 0 = off/none" reads straight off the form.
+  const _collectVerifierField = id => {
+    const el = document.getElementById(id);
+    if (!el) return undefined;
+    const s = String(el.value || '').trim();
+    if (s === '') return null; // unset → server-side default
+    const v = parseInt(s, 10);
+    return (Number.isFinite(v) && v >= 0) ? v : null;
+  };
+  const _vfields = [
+    ['fe_verifier_slots', 'verifier_slots'],
+    ['fe_verifier_min_free_mem_mb', 'verifier_min_free_mem_mb'],
+    ['fe_verifier_context_mb', 'verifier_context_mb'],
+  ];
+  for (const [id, key] of _vfields) {
+    const v = _collectVerifierField(id);
+    if (v !== undefined) out[key] = v;
+  }
   out.scheduling_priority = parseInt((document.getElementById('fe_compute_priority')||{}).value || '50', 10) || 50;
   out.tags = getBadgeInputValue('fe_compute_tags').split(',').map(s => s.trim()).filter(Boolean);
   out.observer_peer = ((document.getElementById('fe_compute_observer_peer')||{}).value || '').trim();
@@ -13389,7 +13574,12 @@ window.computeShowDetail = function(name) {
   if (window._computeDetailTimer) { clearInterval(window._computeDetailTimer); window._computeDetailTimer = null; }
   const fetchOnce = () => apiFetch('/api/compute/nodes/' + encodeURIComponent(name) + '/detail')
     .then(d => {
-      const body = `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
+      // PRD 35070001 — the executor/verifier slots, the free GPU memory,
+      // the headroom check and the suggestion read above the raw JSON; a
+      // body without them (monitoring off) shows the JSON as before.
+      const slotsSection = (typeof window.computeNodeDetailSlotsHtml === 'function')
+        ? window.computeNodeDetailSlotsHtml(d) : '';
+      const body = slotsSection + `<pre style="font-size:10px;max-height:60vh;overflow:auto;background:var(--bg);padding:8px;border-radius:4px;color:var(--text);">${escHtml(JSON.stringify(d, null, 2))}</pre>
         <div style="font-size:10px;color:var(--text2);margin-top:8px;">${escHtml(t('compute_detail_polling')||'Live polling every 1s while modal is open. Close to stop.')}</div>`;
       showModal({ title: '📡 ' + name + ' — ' + (t('compute_detail_title')||'live detail'), body });
     })
@@ -26017,15 +26207,15 @@ function capacityPoolsHtml(cap, now) {
     const used = (p.held || 0) + (p.external || 0);
     const pct = Math.min(100, Math.round(100 * used / p.limit));
     const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}</div>`;
+    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}${capacityVerifierPoolRow(p)}</div>`;
   }).join('');
   const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}${capacityVerifierPoolRow(p)}`).join('');
   // v8.36.0 — a registered compute node with no configured session cap and no
   // current activity used to be entirely invisible. List it plainly so real
   // hardware isn't hidden just because nobody capped it.
   const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
-    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}`).join('');
+    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${window.capacityNodeUsageHtml(p, now)}${capacityHoldersLine(p, leases)}${capacityVerifierPoolRow(p)}`).join('');
   return limited + unlimited + idleNodes;
 }
 // One row per active back-off flag: backend (with a small rung label when the
@@ -27710,7 +27900,7 @@ function _laneFillAlertHtml(a) {
   return `<div class="lane-fill-alert" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;overflow-wrap:anywhere;">` +
     `<span style="color:var(--text2);">${escHtml(_laneFillClock(a.at))}</span> ${escHtml(a.lane_id)} · ${escHtml(a.work)}${escHtml(message)}</div>`;
 }
-window.laneFillCardHtml = function(status) {
+window.laneFillCardHtml = function(status, cap) {
   const head = `<div class="cap-title">${escHtml(t('lane_fill_card_title'))}</div>`;
   if (!status || typeof status !== 'object') {
     return `<div class="prd-capacity-card lane-fill-card">${head}<div style="color:var(--text2);">${escHtml(t('lane_fill_empty'))}</div></div>`;
@@ -27729,7 +27919,7 @@ window.laneFillCardHtml = function(status) {
   const decisionsHtml = decisions.length ? decisions.map(_laneFillDecisionHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_decisions'))}</div>`;
   const alerts = (Array.isArray(status.alerts) ? status.alerts : []).slice(0, LANE_FILL_ALERT_ROWS);
   const alertsHtml = alerts.length ? alerts.map(_laneFillAlertHtml).join('') : `<div style="color:var(--text2);">${escHtml(t('lane_fill_no_alerts'))}</div>`;
-  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}` +
+  return `<div class="prd-capacity-card lane-fill-card" style="min-width:0;">${head}${_laneFillModeHtml(status.mode)}${_laneFillKindModesHtml(status.mode, status.modes)}${_laneFillCountsHtml(status.lane_counts)}${window._laneFillNodeSlotsHtml ? window._laneFillNodeSlotsHtml(cap) : ''}` +
     _laneFillSection(t('lane_fill_lanes_heading'), lanesHtml) + queuedLine + evidence +
     _laneFillSection(t('lane_fill_decisions_heading'), decisionsHtml) +
     _laneFillSection(t('lane_fill_alerts_heading'), alertsHtml) + `</div>`;
@@ -32546,18 +32736,21 @@ function _automationCapacityLoader() {
     key: 'automation_capacity', el: 'automationCapacityCard', url: '/api/capacity', pollMs: 5000,
     failedText: msg => t('automation_capacity_failed', [msg]),
     active: () => !!document.getElementById('automationCapacityCard'),
-    render: cap => window.capacityCardHtml(cap, { showEmpty: true }),
+    render: cap => { window._lastAutomationCapacity = cap; return window.capacityCardHtml(cap, { showEmpty: true }); },
   });
 }
 
 // _automationLaneFillLoader polls the lane fill status beside the capacity
-// card. Its failed state is the list loader's banner, like the capacity card.
+// card. Its failed state is the list loader's banner. PRD 35070001 — the
+// card also carries the per-node executor / verifier slot counts; those
+// come from the sibling capacity card's own /api/capacity body (cached in
+// window._lastAutomationCapacity), so no extra fetch is needed.
 function _automationLaneFillLoader() {
   return window._listLoaders.automation_lane_fill || listLoader({
     key: 'automation_lane_fill', el: 'automationLaneFillCard', url: '/api/autonomous/lane-fill?limit=20', pollMs: 5000,
     failedText: msg => t('lane_fill_failed', [msg]),
     active: () => !!document.getElementById('automationLaneFillCard'),
-    render: status => window.laneFillCardHtml(status),
+    render: status => window.laneFillCardHtml(status, window._lastAutomationCapacity),
   });
 }
 

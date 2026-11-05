@@ -263,12 +263,26 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
+| Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
 | Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
+
+Compute node tools:
+
+- **`compute_node_add` / `compute_node_update`** — create or replace a compute node. Alongside the executor's `session_slots` (0 = derive from observer data) and `max_concurrent_sessions` they take the three verifier keys:
+
+  | Parameter | Meaning |
+  |---|---|
+  | `verifier_slots` | worker slots for verifiers on this node (unset = 1 when the node hosts a local engine, else 0; an explicit `0` = no verifier slots). Negative values are refused. `update` replaces the whole node, so omitting the key clears the override back to unset |
+  | `verifier_min_free_mem_mb` | free GPU memory in MB the node must still have before a new verifier slot starts (unset = 1024; `0` = check off). Negative values are refused |
+  | `verifier_context_mb` | context MB one verifier slot holds, used only for the advice figure (unset/`0` = unknown, no figure) |
+
+  Verifiers take a slot in the node's own verifier pool rather than the executor's, so verification can run while every executor slot is taken; the pool never raises the executor's cap.
+- **`compute_node_detail`** — node detail. The result carries the verifier settings beside the executor pair: `verifier_slots` (null when unset), `verifier_min_free_mem_mb` and its effective value (1024 MB when unset), `verifier_context_mb`, `verifier_slots_effective`, `suggested_verifier_slots` (null when there is no usable figure), plus `headroom_ok`, `headroom_reason` and `free_gpu_mb` from the daemon's last-seen verifier admission state (absent until the node has been synced). Read-only; makes no model call and changes no setting.
 
 Autonomous PRD reads and writes:
 

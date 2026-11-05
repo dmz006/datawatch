@@ -237,6 +237,9 @@ A fully-populated entry:
 | `permissions.allowed_consumers` | []string | all | Which consumers may route here (`council`, `ask`, `agent_spawn`, `session_spawn`, `*`) |
 | `permissions.denied_consumers` | []string | none | Explicitly blocked consumers (overrides allowed) |
 | `cost_per_hour` | float | 0 | USD/hour cost for scheduler accounting |
+| `verifier_slots` | int or unset | unset (1 on a node that hosts a local engine, otherwise 0) | Verifier worker slots for this node — how many verifiers may run here at once. Unset = 1 when the node hosts a local engine, 0 when it does not; an explicit `0` takes no verifier runs at all. Verifiers take these slots, not your `session_slots`, so verification can run alongside your workers. See [Verifier slots](#verifier-slots) |
+| `verifier_min_free_mem_mb` | int or unset | unset (1024) | Free GPU memory in MB the node should keep free before a new verifier starts here. Unset = 1024 MB; an explicit `0` turns the check off. See [Verifier slots](#verifier-slots) |
+| `verifier_context_mb` | int | 0 | The context memory in MB one verifier slot holds here, used only to produce the advice figure the node reports — how many verifier slots the node's free GPU memory would hold right now. 0 (unset) means "unknown", so no figure is shown. See [Verifier slots](#verifier-slots) |
 | `tls_ca_file` | string | — | Path, on the daemon's machine, to a PEM CA bundle trusted in addition to the system roots when the daemon connects to an `https://` node. See [Certificates for self-signed and private-CA nodes](#certificates-for-self-signed-and-private-ca-nodes) |
 | `tls_cert_fingerprint` | string | — | SHA-256 fingerprint of the node's certificate, 64 hex digits (colons and spaces accepted, case ignored; stored as 64 lowercase digits). Pins the node: the presented certificate must match. Same section |
 | `tls_insecure_skip_verify` | bool | false | Turns certificate checking off for this node. Audited, shown as a red badge in the PWA, and refused together with `tls_ca_file` or `tls_cert_fingerprint`. Same section |
@@ -716,6 +719,40 @@ datawatch compute node add inference-only-1 \
   --allowed-consumers "council,ask" \
   --denied-consumers "agent_spawn"
 ```
+
+---
+
+## Verifier slots
+
+Automata verification (the model that judges a worker's output) can run on the same node as the workers it checks. Verifiers take their own slots on the node — not the executor worker slots (`session_slots`) — so verification can run while every executor slot on the node is taken. Without verifier slots, a verifier shared the node's executor pool and could queue behind your workers.
+
+Three keys control this on the node:
+
+| Key | Meaning |
+|-----|---------|
+| `verifier_slots` | How many verifiers may run on this node at once. Leave it out and the node takes 1 slot when it hosts a local engine, 0 when it does not. Set it to a positive number to allow more concurrent verifiers. Set it to `0` explicitly to stop verifier runs from landing here at all. |
+| `verifier_min_free_mem_mb` | The free GPU memory, in MB, the node should still have before a new verifier starts. Leave it out for the default of 1024 MB. Set it to `0` to turn the check off. When the node's free GPU memory is below this minimum, a new verifier waits for another node (or for memory to free up) instead of crowding the resident model. A node whose GPU figures cannot be read is not gated. |
+| `verifier_context_mb` | The context memory, in MB, one verifier slot holds while running. The node uses it to report an advice figure in its detail — free GPU memory divided by this value, whole slots — so you can see how many verifiers the node's current free memory would hold. `0` (the default) means "unknown", so no figure is shown. The figure is advice only; nothing applies it automatically. |
+
+All three are per-node values. Set them on any surface that sets the node:
+
+```sh
+datawatch compute node add gpu-1 --kind ollama --address http://gpu-1:11434 \
+  --verifier-slots 2 --verifier-min-free-mem-mb 2048 --verifier-context-mb 4096
+datawatch compute node update gpu-1 --verifier-slots 3
+```
+
+| Surface | How |
+|---------|-----|
+| CLI | `--verifier-slots N --verifier-min-free-mem-mb N --verifier-context-mb N` on `datawatch compute node add` or `update` (`-1` leaves a field unset) |
+| REST | Send the keys in the node body to `POST /api/compute/nodes` or `PUT /api/compute/nodes/{name}`; `null` leaves a field unset. `GET .../detail` reports the settings plus the verifier slots in force (`verifier_slots_effective`), the effective minimum, the last headroom verdict (`headroom_ok`, `headroom_reason`) and, when set, the advice figure (`suggested_verifier_slots`) |
+| MCP | `verifier_slots`, `verifier_min_free_mem_mb`, `verifier_context_mb` parameters on `compute_node_add` and `compute_node_update`; `compute_node_detail` reports the same fields |
+| Comm channel | `compute node add gpu-1 kind=ollama address=http://gpu-1:11434 verifier_slots=2 verifier_min_free_mem_mb=2048 verifier_context_mb=4096` (and the same kv pairs on `update`; leave a key out to leave the field unset) |
+| PWA | The node form on Settings → Compute; the card shows the advice figure beside the limits when the observer reports GPU data |
+
+**Choosing a value.** Start with the default (one verifier slot on any node that hosts a local engine) and watch the verifier counters — queue wait and run time in the capacity report. Raise `verifier_slots` only when verifiers spend much of their time waiting and the node's free GPU memory is enough for the extra slot; the advice figure, once you set `verifier_context_mb`, tells you how many the node's current free memory would hold. If the node should never host verifiers — a shared node, or one whose GPU is reserved for other work — set `verifier_slots: 0`.
+
+**What the slots do not do.** The verifier pool never raises the executor cap: `session_slots` and `max_concurrent_sessions` bound the workers exactly as before, and the advice figure is never applied automatically. A negative value on any of the three keys is refused when the daemon loads the config or saves the node.
 
 ---
 
