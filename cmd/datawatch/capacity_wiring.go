@@ -909,7 +909,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// placement-tags: the session manager is the sink for a placed task's
 	// system tags, and the tags.placement block (autonomous.tags.placement)
 	// is the source. Both are wired here so an operator config edit takes
-	// effect on the next task.
+	// effect on the next task. The peer axis's source is deliberately
+	// unwired: the peer placement build (placeholder) will wire
+	// amgr.SetPlacementPeerSource when it names a federated peer per task.
+	// Until then every placement is local and gets no peer:<name> tag — the
+	// peer name may come only from an explicit placement record, never from
+	// DNS, an IP address or the hostname (placement_tags_peer.go).
 	amgr.SetPlacementTagSink(mgr)
 	amgr.SetPlacementTagSettings(func() config.PlacementConfig {
 		return cfg.Autonomous.Tags.Placement

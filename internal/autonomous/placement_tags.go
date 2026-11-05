@@ -145,7 +145,21 @@ func laneForBackend(backend string) string {
 // only logs — the session has already started and must not lose its task.
 // When the placement master switch is off this clears the session's system
 // tags instead of leaving stale ones.
+//
+// Node and peer names resolve per task. node: comes from the capacity
+// ledger (the node the task's lease landed on — a ledger value, not an
+// inference). peer: comes from the placement record only — the explicit
+// Placement.Peer field when the placing code named it, or the wired peer
+// source when the record leaves it unset — and is never inferred from DNS,
+// an IP address or the machine's hostname (PlacementPeer,
+// placement_tags_peer.go). Local work names no peer and gets no peer tag.
 func (m *Manager) TagTaskPlacement(taskID, sessionID string, p Placement) {
+	// peer axis: the explicit record wins; the wired source only fills an
+	// unset record. A nil source is the peer placement build's placeholder
+	// today: record-only, local work gets no peer tag.
+	if name := PlacementPeer(p, m.peerChooserFunc(), taskID); name != "" {
+		p.Peer = name
+	}
 	m.mu.Lock()
 	sink, settings := m.placementTagsSink, m.placementTagsSettings
 	m.mu.Unlock()
@@ -175,6 +189,28 @@ func (m *Manager) SetPlacementTagSettings(f func() config.PlacementConfig) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.placementTagsSettings = f
+}
+
+// SetPlacementPeerSource wires the source of the peer axis for the placement
+// tags (placement_tags_peer.go): the peer placement build names the federated
+// peer a task is placed on, "" for local work. A correct source returns only
+// an explicit registered peer name — never one resolved by DNS, an IP
+// address or the machine's hostname (explicit field over inference). An
+// explicit peer already on the Placement record always wins over the source.
+// Unset (nil) means the peer must come from the placement record, which is
+// the correct behavior for today's local-only placements. Guarded by mu.
+func (m *Manager) SetPlacementPeerSource(s PeerSource) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.placementPeerSource = s
+}
+
+// peerChooserFunc wraps the wired peer source as PlacementPeer's argument.
+// A nil source stays nil so PlacementPeer reports no peer for local work.
+func (m *Manager) peerChooserFunc() PeerSource {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.placementPeerSource
 }
 
 // heldNodeFunc wraps Manager.heldNode as the placement NodeChooser: the
