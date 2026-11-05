@@ -631,7 +631,7 @@ arguments is answered with the usage line and nothing is sent to the daemon.
 
 ---
 
-### `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]` / `progress trend [days]`
+### `progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]` / `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]`
 
 Show how far the Automata have got and when the rest should be done. Both
 verbs are read-only and print the same text as `datawatch autonomous progress`
@@ -642,18 +642,25 @@ and `datawatch autonomous progress-trend`, built from the same object as
 **Syntax:**
 ```
 progress
-progress tag=<id> since=2026-10-01
+progress tag=1a2b3c4d since=2026-10-01
 progress automation=<id>
+progress tag=4f5e6d7c tag=1a2b3c4d tag_match=all
 progress trend 14
+progress trend 14 tag=1a2b3c4d
 ```
 
+(`1a2b3c4d` and `4f5e6d7c` stand for tag **ids** — the ids the tag named `stage:build` and the tag named `automation:release` carry in `autonomous_tag_list`; the filter compares ids, not names.)
+
 - `automation=<id>` counts only the Automata of one Automation; `tag=<id>`
-  only the Automata carrying one tag. `since` is the first day counted and
-  `until` the last (inclusive); both are `YYYY-MM-DD`. A mistake in the
-  arguments is answered with the usage line and nothing is sent to the daemon.
+  counts only the Automata carrying the tag — repeat it to select several, and
+  `tag_match=all` (the default is `any`) switches from “carries at least one”
+  to “carries every one”. `since` is the first day counted and `until` the last
+  (inclusive); both are `YYYY-MM-DD`. A mistake in the arguments is answered
+  with the usage line and nothing is sent to the daemon.
 - `progress trend [days]` reads the saved daily snapshots for the last `days`
   days (1 to 365, default 30) and says whether the completion range is
-  converging, widening, flat or unknown.
+  converging, widening, flat or unknown; `tag=<id>` (repeatable) plus
+  `tag_match=<any|all>` name the tag scope the reply reports.
 
 **What the reply shows:**
 - a header with the calendar days, the active days after the inactive windows
@@ -1216,8 +1223,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
-| `progress [--json] [--automation <id>] [--tag <id>] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id>] [since=<date>]` |
-| `progress-trend [--days <n>] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `GET /api/autonomous/progress/trend`; chat: `progress trend [days]` |
+| `progress [--json] [--automation <id>] [--tag <id>]... [--tag-match any\|all] [--since <date>] [--until <date>]` | Automata progress: counts by kind, work left (known and estimated, shown separately), the completion range with its methods, lead time and inactive windows. `--tag` is repeatable and `--tag-match all` counts only Automata carrying every selected tag (any one by default). `--json` prints the `GET /api/autonomous/progress` body untouched; chat: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any\|all>] [since=<date>] [until=<date>]` |
+| `progress-trend [--days <n>] [--tag <id>]... [--tag-match any\|all] [--json]` | How the completion range moved over the saved daily snapshots (1 to 365 days, default 30); `--tag` is repeatable and scopes the tags the reply reports. `GET /api/autonomous/progress/trend`; chat: `progress trend [days] [tag=<id> ...] [tag_match=<any\|all>]` |
 | `lane-fill [--limit <n>] [--json]` | Lane fill: each GPU and Claude lane with what it is running or why it is idle, a `Lane counts:` line (effective, configured and source for each lane kind, for example `gpu 2 of 2 (config), claude 1 of 3 (LLM caps)`), a `Mode per lane kind:` line when a kind's mode differs from the base mode, the queued eligible counts and the newest decisions; a decision that refused an Automaton shows its reason code in brackets in front of the reason text, for example `[stale] Automaton last updated 101 hours ago, older than the 72 hour stale limit` (`--limit` 1 to 1000, default 50). `--json` prints the `GET /api/autonomous/lane-fill` body untouched; a bad `--limit` is refused before anything is sent |
 | `triage [--automation <id>] [--prd <id>] [--status failed\|blocked] [--json]` | Triage records: one row per failed or blocked Automaton — identity, the failed task, first-seen and alarm times, the retry budgets shown as given, the notes, and the alarm threshold in `alert_minutes`. `--status` is `failed` or `blocked` (case-sensitive, refused locally for anything else); an empty list prints its own line. `--json` prints the `GET /api/autonomous/triage` body untouched; chat: `autonomous triage [automation-id]` (one optional positional argument, the automation id) |
 | `decisions [automaton-id] [--prd <id>] [--state open\|answered\|withdrawn\|expired] [--limit <n>] [--json]` | Operator decisions, newest first: one line each with the id, the state, the question (cut to 120 characters) and, for an answered decision, the answer id, the actor and the quote verbatim; a task held on a decision is named on its line with its wait reason. The Automaton id is the argument or `--prd` (give it once). `--limit` is a positive number, default 100, a larger value is capped at 1000. `--json` prints the `GET /api/autonomous/decisions` body untouched; chat: `autonomous decisions [automaton-id]`. A read: nothing is written |
@@ -1236,8 +1243,8 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd-set-notify-events <prd-id> <kind,kind,...|inherit>` | Replace the Automaton's notify set — the list of lifecycle event kinds that produce notifications for it (Unreleased). Kinds are comma-separated; `inherit` (or an omitted/empty list) clears it back to the guardrail-profile tier, then the global `autonomous.notify.default_events`. Validates against the known kinds (`prd.updated` is not a valid kind). `POST /api/autonomous/prds/{id}/set_notify_events`; audit action `autonomous_notify_events_changed` |
 | `tag-list [--include-sub] [--counts]` (alias `tags`) | List Automata tags as a tree (`parent_id`) with the number of Automata carrying each; `--counts` adds subtree and direct counts for Automata and sessions plus the untagged totals (the subtree count is the figure a tag browser shows); `GET /api/autonomous/tags[?counts=true]` |
 | `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
-| `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
-| `tag-delete <id>` | Delete a tag; refused while it has child tags, and refused with a count while Automata still carry it |
+| `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused; a *system* tag (one the daemon keeps, such as an auto tag) cannot be renamed or moved — only recolored |
+| `tag-delete <id>` | Delete a tag; refused while it has child tags, refused while a system tag, and refused with a count while Automata still carry it |
 | `tag-registry` | Show this daemon's shared tag registry status: role (standalone, keeper or peer), keeper, stale, last sync, revision, pending sync count, notes and last sync error; the `registry` field of `GET /api/autonomous/tags` |
 | `tag-registry-dismiss <note-id>` | Dismiss one merge or removed-on-keeper note on this daemon; `POST /api/autonomous/tags/registry/notes/{id}/dismiss`. An unknown note is refused with 404 |
 | `prd-set-tags <prd-id> [--tags <id1,id2,...>] [--primary <tag-id>]` | Replace the tags on an Automaton (an empty `--tags` value clears them) and/or set its primary tag, used for sorting (an empty `--primary` clears it). Give `--primary` alone to keep the tags; `POST /api/autonomous/prds/{id}/set_tags` |
@@ -1258,8 +1265,9 @@ The registry itself, and the feature-access table for its endpoints, are in [api
 
 The guardrail-profile notify tier is the same story one level up: `datawatch guardrail profile create --name <name> [--guardrails <list>] --notify-events kind,kind,...` / `datawatch guardrail profile update <id> --notify-events kind,kind,...` (`inherit` or an omitted value clears the tier back to the global default; on `update`, omitting leaves it unchanged), and comm `guardrail profile notify-events <id> <kind,kind,...|inherit>` (or an omitted list). See the how-to [howto/guardrail-library.md](howto/guardrail-library.md), section *Notify events on a profile*.
 
-Comm channels for the progress figures: `progress [automation=<id>] [tag=<id>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
-and `progress trend [days]` (see their own section above), and
+Comm channels for the progress figures: `progress [automation=<id>] [tag=<id> ...] [tag_match=<any|all>] [since=<YYYY-MM-DD>] [until=<YYYY-MM-DD>]`
+and `progress trend [days] [tag=<id> ...] [tag_match=<any|all>]` (see their
+own section above), and
 `autonomous set-kind <prd-id> <feature|bug|other>` to set an Automaton kind.
 
 Comm channels for lane fill: `autonomous lane-fill [limit]` replies with the same lines as the CLI: one line per lane,
@@ -1289,8 +1297,10 @@ version is refused with HTTP 409.
 | `import-graph <graph-id>` | Turn an orchestrator graph into a draft Automation (`--dry-run` previews it, nothing stored). The comm verb is `automation import-graph <graph-id> [dry-run]` |
 | `list`, `get <id>` | List Automations; show one (members, edges, active cursors, budget) |
 | `create`, `activate <id>` | Create a draft from JSON; start a draft |
+| `update <id>` | Update an Automation (name, description, entry member, members, and the auto-tags override — `--auto-tags on\|off` plus `--auto-tags-automation-template` / `--auto-tags-stage-template` / `--auto-tags-kind-template`) |
 | `pause`, `resume`, `cancel <id>` | Operator control (`cancel` requires `--cancel-in-flight true\|false`) |
 | `skip`, `insert`, `remove`, `edges`, `approve` | Edit a running chain |
+| `rename-stage <id> <from-stage> <to-stage>` | Rename every member occupying `from-stage` to `to-stage` in place (draft, active, paused or blocked). When auto tagging is on, the stage's auto-tag record follows the rename and operator tags are never touched; a missing or empty stage name is refused before any request. Comm: `automation rename-stage <id> <from-stage> <to-stage>`; REST `POST /api/automations/{id}/stages/rename` |
 | `set-budget <id>` | Set, replace or clear the spending limit of the Automation, or of one member with `--member` |
 
 `set-budget` flags: `--ceiling-type dollar|allocation_pct`, `--ceiling-value <n>`

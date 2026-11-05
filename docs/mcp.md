@@ -317,14 +317,18 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | Parameter | Required | Description |
   |---|---|---|
   | `automation_id` | no | Count only the Automata of this Automation |
-  | `tag_id` | no | Count only the Automata carrying this tag |
+  | `tags` | no | Count only the Automata carrying these tags (array) |
+  | `tag_match` | no | With several `tags`: `any` (default) counts an Automaton carrying at least one; `all` requires every tag named |
   | `since` | no | First day counted, `YYYY-MM-DD` (default: the configured date, else the first record's creation date) |
   | `until` | no | Last day counted, `YYYY-MM-DD`, inclusive (default: now) |
 
   ```
-  autonomous_progress()
-  autonomous_progress(tag_id="t-ui", since="2026-10-10")
+  autonomous_progress()                                  # the whole fleet
+  autonomous_progress(tags=["1a2b3c4d"], since="2026-10-10")                    # the tag with name "stage:build"
+  autonomous_progress(tags=["4f5e6d7c", "1a2b3c4d"], tag_match="all")  # "automation:release" ∩ "stage:build"
   ```
+
+  A `tag_match` that is neither `any` nor `all` is refused with a message that names it. A tag id that is not in the registry simply matches no Automaton — an empty count means the id is stale, so re-read the ids from `autonomous_tag_list`.
 
   A missing backlog file is not an error: the reply carries `backlog_available: false`. A bad date, or `until` before `since`, is refused. Needs the autonomous read capability when called by a federated peer.
 - **`autonomous_progress_trend`** — read the progress trend from the saved daily snapshots. Read-only; returns the same body as `GET /api/autonomous/progress/trend`: `days`, `points` (one per snapshot, oldest first: `date`, `reason`, `completion_low_days`, `completion_high_days`, `known_tasks`, `estimated_tasks`, `throughput_3d`, `utilization`, `completed_prds`) and `direction` (`converging`, `widening`, `flat` or `unknown`).
@@ -332,10 +336,13 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | Parameter | Required | Description |
   |---|---|---|
   | `days` | no | How many days back to read, a whole number from 1 to 365 (default 30) |
+  | `tags` | no | The tag scope the trend reply reports (array) |
+  | `tag_match` | no | With several `tags`: `any` (default) was at least one; `all` every tag named |
 
   ```
   autonomous_progress_trend()
   autonomous_progress_trend(days=90)
+  autonomous_progress_trend(days=14, tags=["1a2b3c4d"])   # the tag with name "stage:build"
   ```
 
   Without saved snapshots `points` is empty and `direction` is `unknown`. A `days` value outside 1 to 365 is refused.
@@ -748,6 +755,8 @@ The lane fill settings are also set through `autonomous_config_set`, under the `
   | `expected_version` | update | The `version` you last read; the update is rejected (`409`) if the record moved since (optimistic concurrency). |
   | `reason` | update | Reason for this update; recorded alongside the change and the operator audit log. |
 
+  The per-Automation auto-tags override is **not** a parameter of these tools: it lives in the `auto_tags` object of the REST body (`POST /api/automations`, `PUT /api/automations/{id}`), in CLI `datawatch automation update <id> --auto-tags on|off` (plus the `--auto-tags-{automation,stage,kind}-template` flags), and in the *Auto tags* section of the Automation's settings in the web app. See the [Auto tags how-to](howto/automata-auto-tags.md).
+
   Example — create a two-member chain (member 2 follows only when member 1 completes):
   ```
   automation_create(
@@ -905,6 +914,8 @@ List all AI coding sessions on this host, including their state and task descrip
 | `alive` | string | No | BL361 — filter by `claude_alive` field: `true`, `false`, or `any` (default). Empty = any. |
 | `format` | string | No | BL361 — output format: `text` (default) or `json`. `json` returns a structured JSON array. |
 | `orphaned` | boolean | No | BL350 — when `true`, return only sessions whose `parent_id` points to a session that no longer exists (orphaned by parent death or eviction). |
+| `tags` | array of strings | No | Count only sessions that carry at least one of the tags — their own tags or the tags inherited from the Automaton that started them (the auto tags of the Automation, stage and kind) |
+| `tag_match` | string | No | With several `tags`: `any` (default) needs at least one, `all` needs every tag named |
 
 **Example response:**
 ```

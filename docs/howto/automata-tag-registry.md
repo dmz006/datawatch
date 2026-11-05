@@ -211,6 +211,8 @@ holds the registry.
 
 ## Next steps
 
+- [automata-auto-tags](automata-auto-tags.md) — the automation, stage and kind
+  tags the daemon keeps on every Automaton, and the filters they power.
 - [automata-tags](automata-tags.md) — the tag tree, browsing, the attention
   group and session tags.
 - [federated-observer](federated-observer.md) — adding and trusting the

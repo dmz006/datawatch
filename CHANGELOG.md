@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation for the automatic tags.** The auto tags — the automation, stage and kind tags the daemon keeps on every Automaton from the `autonomous.auto_tags` block — now have an operator how-to — [howto/automata-auto-tags.md](docs/howto/automata-auto-tags.md) — covering what the three tags are and where they sit in the tag tree, the three templates and the kind labels with their defaults and the one rejection rule (placeholders must be one of `{automation}`, `{stage}`, `{kind}`), turning auto tagging off daemon-wide or overriding it for one Automation, renaming a stage so the stage tag follows it while operator tags stay untouched, why a system tag cannot be renamed, moved or deleted (recoloring stays allowed), and filtering by those tags on progress (`tag`/`tags` plus `tag_match` any or all, and the same scope on the trend), on the session list (own and inherited tags) and in the Automata list, on the web app, CLI, MCP, REST and chat. The tag how-to and the tag registry how-to link to it, and it is indexed in the how-to index and the documentation index.
+
 ## v9.67.0 — Cost report
 
 ### Added
