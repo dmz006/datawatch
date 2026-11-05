@@ -2536,3 +2536,15 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+### Classify mode on guardrail outcomes
+
+When the guardrail judge's LLM entry has `verification_mode: classify`, `classifyGate`
+(`internal/autonomous/guardrail_classify.go`) is the final gate over the generative findings of the
+per-task, per-story, `rules-review` and `ci-watch` guardrails. The outcome becomes pass, warn or block
+from the classifier; the generative prose stays as the optional explanation. A prior block is never
+downgraded (and makes no classifier call), a prior warn is never raised to pass, and a classifier
+error, missing scores or abstain is a block with category `infra` (set by the harness only). There is
+no fallback to generate-and-parse. Scan guardrails, project-rules-scan and the scripted-pass
+short-circuit stay deterministic and never reach the gate. The verdict records `mode`, `scores` and
+`route` (scores and route follow `autonomous.verification_record_scores`).

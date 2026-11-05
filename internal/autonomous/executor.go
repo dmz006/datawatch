@@ -2704,6 +2704,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 				// block, or infra once the budget is exhausted, falls
 				// through unchanged to the TaskBlocked handling below.
 				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+				v = m.classifyGate(ctx, inv, v)
 			}
 		} else {
 			continue // silent no-op: scan not in lib + no GuardrailFn
@@ -2807,6 +2808,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			} else {
 				// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
 				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+				v = m.classifyGate(ctx, inv, v)
 			}
 		} else {
 			continue // silent no-op

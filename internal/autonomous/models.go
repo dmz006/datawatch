@@ -1429,6 +1429,11 @@ type GuardrailVerdict struct {
 	// verdict, one per backend tried, in the order tried. Set on a judge-
 	// timeout hold; empty for a judgment that finished on a backend.
 	JudgeAttempts []JudgeAttemptRecord `json:"judge_attempts,omitempty"`
+	// Mode, Scores and Route record how a classify-mode outcome was reached
+	// (see classifyGate). Empty in generate mode and for deterministic checks.
+	Mode   string         `json:"mode,omitempty"`
+	Scores *VerdictScores `json:"scores,omitempty"`
+	Route  *VerdictRoute  `json:"route,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
