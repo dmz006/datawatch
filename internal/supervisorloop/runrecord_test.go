@@ -32,8 +32,8 @@ func TestStoreMissingAndCorrupt(t *testing.T) {
 	if recs, err := fs.List(); err != nil || recs != nil {
 		t.Fatal(recs, err)
 	}
-	os.WriteFile(p, []byte("garbage\n"), 0o600)
-	fs.Append(RunRecord{Job: "ok"})
+	_ = os.WriteFile(p, []byte("garbage\n"), 0o600)
+	_ = fs.Append(RunRecord{Job: "ok"})
 	recs, _ := fs.List()
 	if len(recs) != 1 || recs[0].Job != "ok" {
 		t.Fatal(recs)

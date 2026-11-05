@@ -64,7 +64,7 @@ func RenderJobs(w io.Writer, b *JobsBody) {
 	if !b.Enabled {
 		state = "off"
 	}
-	fmt.Fprintf(w, "Supervisor loop %s; %d jobs.\n", state, len(b.Jobs))
+	_, _ = fmt.Fprintf(w, "Supervisor loop %s; %d jobs.\n", state, len(b.Jobs))
 	for _, j := range b.Jobs {
 		line := fmt.Sprintf("%s: %s, %s", j.Name, j.Kind, JobOnOff(j.Enabled))
 		if j.Style != "" {
@@ -82,7 +82,7 @@ func RenderJobs(w io.Writer, b *JobsBody) {
 		if j.LastRun != "" {
 			line += " at " + j.LastRun
 		}
-		fmt.Fprintln(w, line)
+		_, _ = fmt.Fprintln(w, line)
 	}
 }
 
@@ -91,7 +91,7 @@ func RenderJobs(w io.Writer, b *JobsBody) {
 // started instant.
 func RenderRuns(w io.Writer, b *RunsBody) {
 	if len(b.Runs) == 0 {
-		fmt.Fprintln(w, "No run records.")
+		_, _ = fmt.Fprintln(w, "No run records.")
 		return
 	}
 	for i, r := range b.Runs {
@@ -114,6 +114,22 @@ func RenderRuns(w io.Writer, b *RunsBody) {
 		if r.Started != "" {
 			line += " at " + r.Started
 		}
-		fmt.Fprintln(w, line)
+		_, _ = fmt.Fprintln(w, line)
 	}
+}
+
+// RenderStats writes the stats snapshot as plain text, one fact per line.
+func RenderStats(w io.Writer, st *Stats) {
+	state := "on"
+	if !st.Enabled {
+		state = "off"
+	}
+	_, _ = fmt.Fprintf(w, "Supervisor loop %s; %d of %d jobs enabled.\n", state, st.JobsEnabled, st.Jobs)
+	_, _ = fmt.Fprintf(w, "Runs stored: %d (ok %d, validator failed %d, escalated %d, error %d); retries used: %d.\n",
+		st.Runs, st.RunsOK, st.RunsValidatorFail, st.RunsEscalated, st.RunsError, st.Retries)
+	if st.LastRunAgeSeconds < 0 {
+		_, _ = fmt.Fprintln(w, "No run yet.")
+		return
+	}
+	_, _ = fmt.Fprintf(w, "Last run %d seconds ago.\n", st.LastRunAgeSeconds)
 }

@@ -57,6 +57,9 @@
 # ui_prompts counters object in GET /api/stats — writing only against this script's
 # own isolated daemon, never an external one.
 #
+# The Supervisor loop section covers the supervisor-loop jobs, runs and stats reads and the
+# unknown-outcome, unknown-job and empty-eval refusals (reads and refusals only; no job is run).
+#
 # Returns 0 on success, non-zero on first failure.
 
 set -uo pipefail
@@ -6456,6 +6459,54 @@ else
   else
     ko "burn guard: run now answered HTTP $BG_RUN, expected 200 or 503"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+H "Supervisor loop (autonomous.supervisor_loop)"
+# GET /api/supervisor-loop/jobs, /runs and /stats, plus the refusals: an unknown
+# outcome filter is a 400, an unknown job's run is a 404, and an eval with no
+# models is a 400. Reads and refusals only; no job is run.
+SL_JOBS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/jobs" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d["jobs"]))' 2>/dev/null || echo "")
+if [[ "$SL_JOBS" == "11" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/jobs lists 11 jobs"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/jobs listed '$SL_JOBS' jobs (expected 11)"
+fi
+SL_RUNS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/runs?limit=5" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d["runs"],list);print("ok")' 2>/dev/null || echo "")
+if [[ "$SL_RUNS" == "ok" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/runs returns a runs list"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/runs did not return a runs list"
+fi
+SL_BAD=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/supervisor-loop/runs?outcome=bogus" 2>/dev/null || echo "000")
+if [[ "$SL_BAD" == "400" ]]; then
+  ok "supervisor loop: an unknown outcome filter is refused with HTTP 400"
+else
+  ko "supervisor loop: outcome=bogus answered HTTP $SL_BAD, expected 400"
+fi
+SL_STATS=$(curl "${curl_args[@]}" "$BASE/api/supervisor-loop/stats" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d["jobs"]==11 and "runs" in d and "last_run_age_seconds" in d;print("ok")' 2>/dev/null || echo "")
+if [[ "$SL_STATS" == "ok" ]]; then
+  ok "supervisor loop: GET /api/supervisor-loop/stats returns the loop's numbers"
+else
+  ko "supervisor loop: GET /api/supervisor-loop/stats did not return the expected numbers"
+fi
+SL_STATS_CARD=$(curl "${curl_args[@]}" "$BASE/api/stats" 2>/dev/null | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("supervisor_loop_jobs",0))' 2>/dev/null || echo "")
+if [[ "$SL_STATS_CARD" == "11" || "$SL_STATS_CARD" == "0" ]]; then
+  ok "supervisor loop: GET /api/stats carries supervisor_loop_jobs ('$SL_STATS_CARD'; 0 only when the loop is not wired)"
+else
+  ko "supervisor loop: GET /api/stats reported supervisor_loop_jobs '$SL_STATS_CARD'"
+fi
+SL_404=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST "$BASE/api/supervisor-loop/jobs/no_such_job/run" 2>/dev/null || echo "000")
+if [[ "$SL_404" == "404" ]]; then
+  ok "supervisor loop: running an unknown job answers HTTP 404"
+else
+  ko "supervisor loop: unknown job run answered HTTP $SL_404, expected 404"
+fi
+SL_EVAL=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X POST -H "Content-Type: application/json" -d '{"job":"draft_spec","models":[]}' "$BASE/api/supervisor-loop/eval" 2>/dev/null || echo "000")
+if [[ "$SL_EVAL" == "400" ]]; then
+  ok "supervisor loop: an eval with no models is refused with HTTP 400"
+else
+  ko "supervisor loop: eval with no models answered HTTP $SL_EVAL, expected 400"
 fi
 
 # ---------------------------------------------------------------------------

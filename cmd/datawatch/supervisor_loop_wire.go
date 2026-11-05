@@ -8,7 +8,9 @@ import (
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
+	metricsPkg "github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/server"
+	statspkg "github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
 
@@ -57,4 +59,29 @@ func wireSupervisorLoop(coord *autonomouspkg.Coordinator, amgr *autonomouspkg.Ma
 	if srv != nil {
 		srv.SetSupervisorLoop(server.NewSupervisorLoopControl(steps, jobs, store))
 	}
+}
+
+// fillSupervisorLoopStats copies the loop's snapshot into the stats snapshot
+// (WS broadcast, Monitor card).
+func fillSupervisorLoopStats(s *statspkg.SystemStats, st supervisorloop.Stats) {
+	s.SupervisorLoopEnabled = st.Enabled
+	s.SupervisorLoopJobs = st.Jobs
+	s.SupervisorLoopJobsEnabled = st.JobsEnabled
+	s.SupervisorLoopRuns = st.Runs
+	s.SupervisorLoopRunsOK = st.RunsOK
+	s.SupervisorLoopRunsValidatorFail = st.RunsValidatorFail
+	s.SupervisorLoopRunsEscalated = st.RunsEscalated
+	s.SupervisorLoopRunsError = st.RunsError
+	s.SupervisorLoopRetries = st.Retries
+	s.SupervisorLoopLastRunAgeSeconds = st.LastRunAgeSeconds
+}
+
+// updateSupervisorLoopMetrics sets the Prometheus gauges from a stats snapshot.
+func updateSupervisorLoopMetrics(s statspkg.SystemStats) {
+	metricsPkg.SupervisorLoopRuns.WithLabelValues("ok").Set(float64(s.SupervisorLoopRunsOK))
+	metricsPkg.SupervisorLoopRuns.WithLabelValues("validator_failed").Set(float64(s.SupervisorLoopRunsValidatorFail))
+	metricsPkg.SupervisorLoopRuns.WithLabelValues("escalated").Set(float64(s.SupervisorLoopRunsEscalated))
+	metricsPkg.SupervisorLoopRuns.WithLabelValues("error").Set(float64(s.SupervisorLoopRunsError))
+	metricsPkg.SupervisorLoopJobsEnabled.Set(float64(s.SupervisorLoopJobsEnabled))
+	metricsPkg.SupervisorLoopLastRunAge.Set(float64(s.SupervisorLoopLastRunAgeSeconds))
 }

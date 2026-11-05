@@ -48,15 +48,25 @@ Each run shows: job, style, backend, model, outcome (`ok`, `validator_failed`, `
 escalations, duration in milliseconds and the start time. Render the failure reasons as plain
 escaped text. Show retries and escalations only when above zero.
 
+### 4. The Monitor card (Monitor view)
+
+| Item | Value |
+|---|---|
+| Where | Monitor view, a stat card beside the Supervisor watch and Burn guard cards |
+| Source | the `supervisor_loop_*` fields of the stats snapshot (WebSocket stats broadcast), or `GET /api/supervisor-loop/stats` → `{enabled, jobs, jobs_enabled, runs, runs_ok, runs_validator_failed, runs_escalated, runs_error, retries, last_run_age_seconds}` |
+| Render | State (on or off), jobs enabled as `n / total`, runs stored, the four outcome counts, retries used, last run age in seconds (a dash when -1). Escalated and error counts above zero use the warning colour. |
+| Hidden | Left out until the snapshot reports a job count |
+| Strings | the twelve `stats_supervisor_loop*` keys in all five locale bundles |
+
 ## New locale keys
 
 Use the `supervisor_loop_*` keys already in the web app's `en.json` (group title and hint, card
 title, how-to link, off state, the Jobs and Recent runs headings, the column names, and one label
-per setting). The DE, ES, FR and JA bundles carry an English placeholder, as the localization rule
-in docs/README.md describes.
+per setting). The DE, ES, FR and JA bundles carry translations; reuse them.
 
 ## Acceptance
 
 - The card shows the jobs and recent runs and refreshes while the Automation view is open.
+- The Monitor card shows the loop's numbers and drops out when the daemon reports none.
 - Every setting reads and writes through the config routes and survives an app restart.
 - Android and iPhone/iOS behave the same.

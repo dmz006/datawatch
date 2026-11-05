@@ -32,19 +32,19 @@ Consequences: each model job has its own `style` (`oneshot` or a long-running se
 2. Phase 2: mechanical steps (close_finished_records, deploy_after_ship, retry_failed_infra, cleanup_sweep, apply_answers).
 3. Phase 3: lane and chain steps (lane_count within the operator's bounds, start_next_chain_step, run_merge_until_conflict).
 4. Phase 4: model jobs (draft_spec, classify_ci_failure, pick_backend) with selectable style, backend and model, validators, retries and escalation.
-5. Phase 5: observability, covering REST, MCP, CLI and comm channel status and run history.
+5. Phase 5: observability, covering REST, MCP, CLI and comm channel status and run history, plus the stats snapshot, the Monitor card and the Prometheus gauges.
 6. Phase 6: PWA card, the operator how-to, and the filed parity issue for Android and iPhone/iOS.
 
 ## Status
 
 | Phase | Status |
 |---|---|
-| Phase 1 | Planned |
-| Phase 2 | Planned |
-| Phase 3 | Planned |
-| Phase 4 | Planned |
-| Phase 5 | Planned |
-| Phase 6 | Planned |
+| Phase 1 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
+| Phase 2 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
+| Phase 3 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
+| Phase 4 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
+| Phase 5 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
+| Phase 6 | Done (implemented on branch `automaton/dfea0001`; not yet released, the version is taken at merge time) |
 
 ## Decision notes
 

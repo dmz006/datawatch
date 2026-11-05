@@ -31,6 +31,7 @@ func TestSupervisorLoopMCPToolsAreListed(t *testing.T) {
 		"supervisor_loop_runs":    false,
 		"supervisor_loop_run_job": false,
 		"supervisor_loop_eval":    false,
+		"supervisor_loop_stats":   false,
 	}
 	for _, tl := range tools {
 		if _, ok := wantNames[tl.Name]; ok {
@@ -47,6 +48,7 @@ func TestSupervisorLoopMCPToolsAreListed(t *testing.T) {
 		"supervisor_loop_jobs":    federation.CapAutonomousRead,
 		"supervisor_loop_runs":    federation.CapAutonomousRead,
 		"supervisor_loop_run_job": federation.CapAutonomousRun,
+		"supervisor_loop_stats":   federation.CapAutonomousRead,
 	} {
 		if got := federation.MCPToolCap[name]; got != want {
 			t.Errorf("federation capability for %s = %q, want %q", name, got, want)
@@ -276,5 +278,28 @@ func TestSupervisorLoopRunJobMCPSurfacesDaemonError(t *testing.T) {
 	res, err = s.handleSupervisorLoopRunJob(context.Background(), callReq(map[string]any{"job": "draft_spec"}))
 	if err != nil || res == nil || !res.IsError {
 		t.Fatalf("a 503 must come back as a tool error: err=%v res=%+v", err, res)
+	}
+}
+
+func TestSupervisorLoopStatsMCP(t *testing.T) {
+	var path, method string
+	body := `{"enabled":true,"jobs":11,"jobs_enabled":11,"runs":2,"runs_ok":2,"last_run_age_seconds":5}`
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		path, method = r.URL.Path, r.Method
+		_, _ = w.Write([]byte(body))
+	})
+	res, err := s.handleSupervisorLoopStats(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	if method != http.MethodGet || path != "/api/supervisor-loop/stats" {
+		t.Errorf("proxied %s %s", method, path)
+	}
+	if text := automationText(t, res); text != body {
+		t.Errorf("result differs from the daemon body: %s", text)
+	}
+	res, _ = s.handleSupervisorLoopStats(context.Background(), callReq(map[string]any{"x": 1}))
+	if res == nil || !res.IsError {
+		t.Errorf("an argument must be refused: %+v", res)
 	}
 }

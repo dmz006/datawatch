@@ -437,3 +437,28 @@ func (s *Server) handleSupervisorLoopEval(w http.ResponseWriter, r *http.Request
 	}
 	writeJSONOK(w, rep)
 }
+
+// SupervisorLoopStats returns the loop's observability snapshot: the live
+// settings and the stored run records, as of now.
+func (s *Server) SupervisorLoopStats() supervisorloop.Stats {
+	return supervisorloop.ComputeStats(s.supervisorLoopSettings(), s.supervisorLoopRecords(), time.Now())
+}
+
+// SupervisorLoopStats is the supervisor loop's observability snapshot, for
+// the stats collector and the Prometheus gauges.
+func (s *HTTPServer) SupervisorLoopStats() supervisorloop.Stats {
+	return s.api.SupervisorLoopStats()
+}
+
+// handleSupervisorLoopStats implements GET /api/supervisor-loop/stats.
+func (s *Server) handleSupervisorLoopStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousRead) {
+		return
+	}
+	writeJSONOK(w, s.SupervisorLoopStats())
+}

@@ -2,6 +2,7 @@
 // CLI:
 //
 //	datawatch supervisor-loop jobs [--json]
+//	datawatch supervisor-loop stats [--json]
 //	datawatch supervisor-loop runs [--job NAME] [--outcome RESULT] [--limit N] [--format json]
 //	datawatch supervisor-loop run NAME [--input TEXT] [--candidates A,B] [--json]
 //
@@ -29,6 +30,8 @@ func newSupervisorLoopCmd() *cobra.Command {
 
   jobs    every job with its kind, the model job's style/backend/model,
           enabled state, last outcome and last run instant
+  stats   the loop's numbers: jobs enabled, runs by outcome, retries and the
+          age of the last run
   runs    recent run records, newest first (filters: --job, --outcome,
           --limit)
   run     run one job now (an unknown job name fails with the daemon's
@@ -38,6 +41,7 @@ The reads print the daemon's text rendering; --json prints the raw REST
 body untouched.`,
 	}
 	c.AddCommand(newSupervisorLoopJobsCmd())
+	c.AddCommand(newSupervisorLoopStatsCmd())
 	c.AddCommand(newSupervisorLoopRunsCmd())
 	c.AddCommand(newSupervisorLoopRunCmd())
 	c.AddCommand(newSupervisorLoopEvalCmd())
@@ -69,6 +73,39 @@ func newSupervisorLoopJobsCmd() *cobra.Command {
 			}
 			buf := &strings.Builder{}
 			supervisorloop.RenderJobs(buf, &parsed)
+			_, err = fmt.Fprint(cmd.OutOrStdout(), buf.String())
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
+	return c
+}
+
+func newSupervisorLoopStatsCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "stats",
+		Short: "Show the supervisor loop's numbers",
+		Long: "Show whether the loop is on, how many of its jobs are enabled, the " +
+			"stored runs by outcome, the retries used and how long ago the last run " +
+			"was. A read: nothing is run or written.\n\n--json prints the raw " +
+			"response untouched.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body, err := progressGet("/api/supervisor-loop/stats", nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			var parsed supervisorloop.Stats
+			if err := json.Unmarshal(body, &parsed); err != nil {
+				return err
+			}
+			buf := &strings.Builder{}
+			supervisorloop.RenderStats(buf, &parsed)
 			_, err = fmt.Fprint(cmd.OutOrStdout(), buf.String())
 			return err
 		},
@@ -182,7 +219,7 @@ list, for the model jobs that choose among candidates (repeatable).
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "job %s: %s\n", parsed.Job, state)
 			if parsed.Result != "" {
-				fmt.Fprint(cmd.OutOrStdout(), parsed.Result)
+				_, _ = fmt.Fprint(cmd.OutOrStdout(), parsed.Result)
 			}
 			return err
 		},

@@ -8420,6 +8420,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				s.SupervisorWatchAgreedDays = sw.AgreedDays
 			})
 		}
+		// Supervisor loop stats in the WS broadcast and the Prometheus collector.
+		statsCollector.SetSupervisorLoopStatsFunc(func(s *statspkg.SystemStats) {
+			fillSupervisorLoopStats(s, httpServer.SupervisorLoopStats())
+		})
 		// Burn guard stats in the WS broadcast and the Prometheus collector.
 		statsCollector.SetBurnGuardStatsFunc(func(s *statspkg.SystemStats) {
 			fillBurnGuardStats(s, httpServer.BurnGuardStats())
@@ -8466,6 +8470,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			metricsPkg.SupervisorWatchFindings.WithLabelValues("alerted").Set(float64(s.SupervisorWatchFindingsAlerted))
 			metricsPkg.SupervisorWatchAgreedDays.Set(float64(s.SupervisorWatchAgreedDays))
 			updateBurnGuardMetrics(s)
+			updateSupervisorLoopMetrics(s)
 			metricsPkg.SupervisorWatchLastPollAge.Set(float64(s.SupervisorWatchLastPollAgeSeconds))
 			// Reset session gauges and re-populate
 			metricsPkg.SessionsActive.Reset()

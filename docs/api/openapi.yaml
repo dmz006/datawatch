@@ -1472,6 +1472,34 @@ paths:
         "403": {description: Federated peer lacks the autonomous read capability}
         "405": {description: Method not allowed}
 
+  /api/supervisor-loop/stats:
+    get:
+      summary: Supervisor loop stats
+      description: |
+        The supervisor loop as numbers for monitoring: whether it is on
+        (`enabled`), its job count (`jobs`) and enabled jobs (`jobs_enabled`), the
+        stored runs (`runs`) split by outcome (`runs_ok`, `runs_validator_failed`,
+        `runs_escalated`, `runs_error`), the retries used (`retries`) and how many
+        seconds ago the last run started (`last_run_age_seconds`, -1 when none has
+        run). The same numbers ride in the stats snapshot (`supervisor_loop_*`),
+        the Monitor tab's Supervisor loop card and the Prometheus gauges
+        `datawatch_supervisor_loop_runs`, `datawatch_supervisor_loop_jobs_enabled`
+        and `datawatch_supervisor_loop_last_run_age_seconds`. Read-only; needs the
+        autonomous read capability when called by a federated peer.
+      operationId: supervisorLoopStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor loop stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorLoopStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+
   /api/supervisor-loop/jobs/{name}/run:
     post:
       summary: Run one supervisor loop job now
@@ -7126,6 +7154,21 @@ components:
             example: "unauthorized"
 
   schemas:
+    SupervisorLoopStats:
+      type: object
+      description: The supervisor loop as numbers, as GET /api/supervisor-loop/stats returns it.
+      required: [enabled, jobs, jobs_enabled, runs, runs_ok, runs_validator_failed, runs_escalated, runs_error, retries, last_run_age_seconds]
+      properties:
+        enabled: {type: boolean, description: Whether the loop is on}
+        jobs: {type: integer, description: How many jobs the loop has}
+        jobs_enabled: {type: integer, description: How many jobs are enabled (0 when the loop is off)}
+        runs: {type: integer, description: Stored run records}
+        runs_ok: {type: integer}
+        runs_validator_failed: {type: integer}
+        runs_escalated: {type: integer}
+        runs_error: {type: integer}
+        retries: {type: integer, description: Extra attempts used across the stored runs}
+        last_run_age_seconds: {type: integer, description: Seconds since the last run started; -1 when none has run}
     Identity:
       type: object
       description: The operator identity; every field is optional.
