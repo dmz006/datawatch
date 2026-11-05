@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -93,6 +94,21 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if _, verr := config.NormalizePlanCoverageCheck(mode); verr != nil {
 					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+			// Model-pull consent: same rejection rule as PUT /api/config —
+			// an entry the gate could not interpret (empty model name,
+			// duplicated model, empty publisher) is a 400 here, never a
+			// stored half-state the gate would read on the next pull.
+			if rawMPC, ok := top["model_pull_consent"]; ok {
+				var mpc config.ModelPullConsent
+				if json.Unmarshal(rawMPC, &mpc) != nil {
+					http.Error(w, `autonomous.model_pull_consent: must be an object with models and/or publishers`, http.StatusBadRequest)
+					return
+				}
+				if verr := config.ValidateModelPullConsent(mpc); verr != nil {
+					http.Error(w, "autonomous.model_pull_consent: "+verr.Error(), http.StatusBadRequest)
 					return
 				}
 			}
@@ -406,6 +422,22 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		s.audit(r.Context(), "update", "autonomous_config", "", nil) // GH#201 Phase 4
+		// Model-pull consent changed: record the consent itself (which models
+		// are allowed, which are refused, which publishers are allow-listed),
+		// not just the generic autonomous_config update.
+		if rawMPC, touched := top["model_pull_consent"]; touched {
+			sel := s.cfg.Autonomous.ModelPullConsent
+			names := make([]string, 0, len(sel.Models))
+			for i := range sel.Models {
+				if sel.Models[i].Allowed {
+					names = append(names, sel.Models[i].Name+"=pull_allowed")
+				} else {
+					names = append(names, sel.Models[i].Name+"=pull_refused")
+				}
+			}
+			s.auditAs(s.auditActor(r.Context()), audit.ActionModelPullConsentChanged, "model_pull_consent", "autonomous",
+				map[string]any{"models": names, "publishers": sel.Publishers, "payload": string(rawMPC)})
+		}
 		resp := map[string]any{"status": "ok", "warnings": autonomousConfigWarnings(s.autonomousMgr)}
 		if deprecated != nil {
 			resp["deprecated_fields"] = deprecated

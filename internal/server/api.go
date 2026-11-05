@@ -6423,6 +6423,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Effective, not raw: all eleven request watch values with the
 			// defaults filled in; remediation_options is the list in effect.
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
+			// Model-pull consent: the per-model allow flags plus the publisher
+			// allow-list. Rendered whole (nil lists become empty arrays, not
+			// null) so an unset consent visibly allows nothing — the
+			// fail-closed default, not a missing setting.
+			"model_pull_consent": modelPullConsentForDisplay(s.cfg.Autonomous.ModelPullConsent),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6792,6 +6797,27 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.automation.create_search_threshold"]; ok {
 		if verr := validateCreateSearchThresholdValue(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Model-pull consent (autonomous.model_pull_consent): the whole block is
+	// checked before anything is applied — an entry the gate could not
+	// interpret (empty model name, duplicated model, empty publisher) or a
+	// wrong shape rejects the whole PUT, same rule as the
+	// PUT /api/autonomous/config surface.
+	if v, ok := patch["autonomous.model_pull_consent"]; ok {
+		var mpc config.ModelPullConsent
+		if b, err := json.Marshal(v); err == nil {
+			if json.Unmarshal(b, &mpc) != nil {
+				http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+				return
+			}
+		} else {
+			http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateModelPullConsent(mpc); verr != nil {
+			http.Error(w, "autonomous.model_pull_consent: "+verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -7186,6 +7212,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// a masked value for each (credential-shaped keys are masked outright;
 	// skipped keys, per applyConfigPatch, never reach here at all).
 	s.auditConfigPatch(r.Context(), patch, skipped)
+	// Model-pull consent changed: record the consent itself (which models
+	// are allowed, which are refused, which publishers are allow-listed),
+	// not just the generic config-patch entry.
+	if _, touched := patch["autonomous.model_pull_consent"]; touched {
+		sel := s.cfg.Autonomous.ModelPullConsent
+		names := make([]string, 0, len(sel.Models))
+		for i := range sel.Models {
+			if sel.Models[i].Allowed {
+				names = append(names, sel.Models[i].Name+"=pull_allowed")
+			} else {
+				names = append(names, sel.Models[i].Name+"=pull_refused")
+			}
+		}
+		s.auditAs(s.auditActor(r.Context()), audit.ActionModelPullConsentChanged, "model_pull_consent", "autonomous",
+			map[string]any{"models": names, "publishers": sel.Publishers})
+	}
 	// BL369 — propagate autonomous.* config changes to the live manager so
 	// injection_guard and other knobs take effect without a daemon restart.
 	// Forward only the top-level JSON field(s) this PUT actually touched
@@ -8442,6 +8484,21 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.TaskOverrideStatuses = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
+			}
+		case "autonomous.model_pull_consent":
+			// Model-pull consent (allowed models + publisher allow-list).
+			// handlePutConfig rejects a malformed block before this runs;
+			// anything still unparseable here is reported as skipped rather
+			// than stored — the zero value (allow nothing) is fail-closed.
+			if b, err := json.Marshal(v); err == nil {
+				var mpc config.ModelPullConsent
+				if json.Unmarshal(b, &mpc) == nil {
+					cfg.Autonomous.ModelPullConsent = mpc
+				} else {
+					skipped = append(skipped, k)
+				}
+			} else {
+				skipped = append(skipped, k)
 			}
 		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
 			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",
