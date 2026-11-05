@@ -436,6 +436,27 @@ the classifier client, calibration store and explanation call through `classifyR
 |---|---|---|
 | `autonomous.verification_record_scores` | `true` | Keep the score vector and route on the verification result. Set through the `PUT /api/config` key `autonomous.verification_record_scores` and shown in the autonomous section of `GET /api/config`, like its sibling `autonomous.*` keys. |
 
+### Classifier operator surfaces and the publisher allowlist (`classifier.publisher_allowlist`)
+
+The classification settings are reachable on every surface (see [parity-status.md](parity-status.md)):
+
+- `GET /api/llm/classifier` returns each LLM's resolved verification mode, the cached capability probe
+  results (`classifier.Prober.Snapshot`: node, model, path, state, expiry; unknown is never cached so it
+  never appears), the calibration records under `<data_dir>/classifier` (`classifier.FileStore.List`:
+  fingerprint, threshold, test metrics, age), `calibration_error` when the store cannot be read, and the
+  publisher allowlist. `wired` is false until the daemon installs the status source
+  (`Server.SetClassifierStatus`, `cmd/datawatch/classifier_status.go`).
+- `GET /api/llm/classifier/verdicts?automaton=<id>[&task=<id>][&low_confidence=true]` returns
+  `autonomous.ClassifyRecords`: one record per verification and guardrail verdict with `mode`, `scores`,
+  `route`, `outcome`, `category` and `low_confidence` (a block with category `low-confidence`). A
+  low-confidence block is decided with `resolve_task_review`; the chat verb `llm classifier review`
+  checks that the block exists before it sends the decision.
+- The MCP surface is one tool, `llm_classifier`, because no existing LLM or Automaton tool fits these reads.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `classifier.publisher_allowlist` | empty | Model publishers a classify-mode judge model may come from. Empty trusts nothing. Read with `GET /api/llm/classifier/publishers`. Added only by `POST /api/llm/classifier/publishers` (and the MCP, CLI and chat forms of it), which refuse without `confirm=true`, save the config file, and write a `classifier_publisher_add` audit entry (publisher, actor). It is deliberately not settable through `PUT /api/config`, so the confirmation cannot be bypassed. Names are trimmed and lower-cased; a duplicate is a no-op. |
+
 ### Scope-breadth classifier (`autonomous.scope_breadth_enabled`)
 
 On a content-category task-verification failure, before the retry decision, the executor asks the classifier

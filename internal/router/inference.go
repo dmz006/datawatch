@@ -34,6 +34,11 @@ const llmUsage = `Usage:
   llm models remove <name> model=<m> [node=<n>]    remove an enabled model
   llm in-use <name> [filter=<text>]                list sessions/automata bound to this LLM
   llm refresh-models <name>                        trigger model-list refresh from ComputeNodes
+  llm classifier status                            verification modes, probe and calibration status, publisher allowlist
+  llm classifier publishers                        list the publisher allowlist
+  llm classifier add-publisher <name> confirm=true add a publisher (refused without confirm=true; audited)
+  llm classifier verdicts <automaton> [task=<id>] [low]   verdict records: mode, scores, route (low = low-confidence blocks only)
+  llm classifier review <automaton> <task> retry|cancel [note=<text>]   decide a low-confidence block
 
 Common kv pairs:
   model=<name>            compute_nodes=<csv>      api_key_ref=<literal-or-${secret:name}>
@@ -310,6 +315,9 @@ func (r *Router) handleLLMCmd(cmd Command) {
 			return
 		}
 		r.reply("llm refresh-models "+tail, prettyJSON(out))
+
+	case "classifier":
+		r.handleLLMClassifier(tail)
 
 	default:
 		r.reply("llm", llmUsage)

@@ -63,6 +63,7 @@ protocols. Adapters today: ollama, openwebui, opencode, claude.`,
 	cmd.AddCommand(newLLMRefreshModelsCmd())
 	cmd.AddCommand(newLLMReassignCmd())
 	cmd.AddCommand(newLLMForceDeleteCmd())
+	cmd.AddCommand(newLLMClassifierCmd())
 	return cmd
 }
 

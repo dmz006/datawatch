@@ -516,6 +516,9 @@ type Config struct {
 	// through every config channel per the parity rule.
 	Autonomous AutonomousConfig `yaml:"autonomous,omitempty" json:"autonomous,omitempty"`
 
+	// Classifier holds the settings for the logprob classification judge.
+	Classifier ClassifierConfig `yaml:"classifier,omitempty" json:"classifier,omitempty"`
+
 	// Identity holds the operator identity settings (identity.*). The
 	// top-level key is `identity`; the "Identity" banner in template.go is
 	// only a comment heading about machine identification.
@@ -6807,4 +6810,14 @@ func ValidateMergeConflictPolicy(v string) error {
 	}
 	return fmt.Errorf("autonomous.parallel.merge_conflict_policy: invalid value %q (valid values: %q, %q, %q)",
 		v, MergeConflictPolicyAdditiveThenModel, MergeConflictPolicyBlock, MergeConflictPolicyTriage)
+}
+
+// ClassifierConfig holds the classifier settings that live in the config file.
+type ClassifierConfig struct {
+	// PublisherAllowlist is the list of model publishers a classify-mode judge
+	// model may come from (classifier.publisher_allowlist). Default empty: no
+	// publisher is trusted until the operator adds it. Entries are added only
+	// with explicit operator confirmation (REST, MCP, CLI and chat) and each
+	// addition is written to the audit log.
+	PublisherAllowlist []string `yaml:"publisher_allowlist,omitempty" json:"publisher_allowlist,omitempty"`
 }

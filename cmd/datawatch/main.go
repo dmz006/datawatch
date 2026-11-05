@@ -3729,6 +3729,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+				httpServer.SetClassifierStatus(newClassifierStatusSource(expandHome(cfg.DataDir), nil))
 				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
