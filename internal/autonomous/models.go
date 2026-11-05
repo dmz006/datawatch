@@ -1516,13 +1516,17 @@ type GuardrailEntry struct {
 // Tag is a managed label that can be nested as a tree and assigned to
 // several Automata via PRD.TagIDs.
 type Tag struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	ParentID    string    `json:"parent_id,omitempty"` // "" = root tag
-	Color       string    `json:"color,omitempty"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	ParentID    string `json:"parent_id,omitempty"` // "" = root tag
+	Color       string `json:"color,omitempty"`
+	Description string `json:"description,omitempty"`
+	// System marks a tag the tag registry created itself, such as a
+	// placement tag. It survives a registry restart and is what keeps a
+	// placement tag's origin on the record when no registry cache is saved.
+	System    bool      `json:"system,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // GuardrailProfile (BL303 S2) is a named collection of guardrails that can
