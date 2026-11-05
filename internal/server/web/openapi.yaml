@@ -1665,6 +1665,68 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/rules-context:
+    get:
+      summary: Rules and context settings
+      description: |
+        The configured rules and context settings, the policy resolved for a project
+        directory, and, when `prd` is given, the planning record of that Automaton.
+        The record lists the rules and context files the planner was pointed at, with
+        presence, content hash and size, the missing-file notes and the digest outcome.
+        It never contains file content. Needs the autonomous read capability when
+        called by a federated peer. The settings are the `autonomous.rules_context.*`
+        keys on `/api/config`.
+      operationId: autonomousRulesContextGet
+      tags: [Autonomous]
+      parameters:
+        - {name: project_dir, in: query, required: false, description: Resolve the policy for this project directory (omit for the global policy), schema: {type: string}}
+        - {name: prd, in: query, required: false, description: Include the planning record of this Automaton, schema: {type: string}}
+      responses:
+        "200":
+          description: Settings, resolved policy and optional planning record
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RulesContextSettings"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "404": {description: The named Automaton does not exist}
+        "405": {description: Method not allowed}
+        "503": {description: Config is not available}
+    put:
+      summary: Replace rules and context settings
+      description: |
+        Replaces the whole rules and context configuration (global values and the
+        per-project overrides), then saves it to the config file and installs it in
+        the running policy, the same as the matching `/api/config` keys. Nothing is
+        changed when any value is invalid. File names must be relative to the project
+        directory (no leading slash, no `..`), at most 8 context files per scope,
+        `digest_mode` is `off`, `no_tools` or `all`, and `digest_max_bytes` is 0 (use
+        the default) or between 512 and 65536. Needs the autonomous write capability
+        when called by a federated peer. The response is the same as the GET.
+      operationId: autonomousRulesContextPut
+      tags: [Autonomous]
+      parameters:
+        - {name: project_dir, in: query, required: false, description: Resolve the returned policy for this project directory, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RulesContextConfig"}
+      responses:
+        "200":
+          description: Saved settings and the resolved policy
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RulesContextSettings"}
+        "400": {description: "Invalid body or value (the message names the key and the rule), for example an absolute path, an unknown digest mode, or a byte cap out of range"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "500": {description: The config file could not be saved}
+        "503": {description: Config is not available}
+
   /api/autonomous/merge:
     get:
       summary: Automaton merge status
@@ -7546,6 +7608,62 @@ components:
             example: "unauthorized"
 
   schemas:
+    RulesContextProject:
+      type: object
+      required: [project_dir]
+      properties:
+        project_dir: {type: string, description: Project directory the override applies to}
+        rules_file: {type: string, description: Rules file name relative to the project directory}
+        context_files: {type: array, items: {type: string}, description: Context file names relative to the project directory}
+        digest_mode: {type: string, enum: [off, no_tools, all]}
+        digest_max_bytes: {type: integer, description: "0 uses the default; otherwise 512 to 65536"}
+    RulesContextConfig:
+      type: object
+      properties:
+        rules_file: {type: string, description: Rules file name relative to the project directory}
+        context_files: {type: array, items: {type: string}, maxItems: 8, description: Context file names relative to the project directory}
+        digest_mode: {type: string, enum: [off, no_tools, all]}
+        digest_max_bytes: {type: integer, description: "0 uses the default; otherwise 512 to 65536"}
+        projects:
+          type: array
+          items: {$ref: "#/components/schemas/RulesContextProject"}
+    RulesContextPolicy:
+      type: object
+      properties:
+        project_dir: {type: string}
+        rules_file: {type: string}
+        context_files: {type: array, items: {type: string}}
+        digest_mode: {type: string}
+        digest_max_bytes: {type: integer}
+    RulesContextFileRef:
+      type: object
+      properties:
+        name: {type: string}
+        kind: {type: string, description: rules or context}
+        present: {type: boolean}
+        sha256: {type: string, description: Content hash; the content itself is never returned}
+        bytes: {type: integer}
+    RulesContextRecord:
+      type: object
+      properties:
+        prd_id: {type: string}
+        recorded: {type: boolean, description: False when no planning record has been captured yet}
+        captured_at: {type: string, format: date-time}
+        file_count: {type: integer}
+        present_count: {type: integer}
+        missing_count: {type: integer}
+        files: {type: array, items: {$ref: "#/components/schemas/RulesContextFileRef"}}
+        missing: {type: array, items: {type: string}}
+        notes: {type: array, items: {type: string}}
+        digest_mode: {type: string}
+        digest_injected: {type: boolean}
+        digest_bytes: {type: integer}
+    RulesContextSettings:
+      type: object
+      properties:
+        config: {$ref: "#/components/schemas/RulesContextConfig"}
+        policy: {$ref: "#/components/schemas/RulesContextPolicy"}
+        record: {$ref: "#/components/schemas/RulesContextRecord"}
     Identity:
       type: object
       description: The operator identity. Every field is optional.
