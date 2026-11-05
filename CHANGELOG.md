@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.93.0 — Verifier slots per compute node
+
+Verifiers now run in their own per-node pool, so a verification no longer waits behind the workers on the same node.
+
+- **Verifier slots: a per-node pool for verifiers, a free-memory floor and an advice figure.** Each compute node that hosts a local engine now runs its verifiers in its own pool, separate from the workers' slots, so a verification no longer queues behind the worker count on the node. Three per-node keys control it: `verifier_slots` (how many verifiers run on the node at once — unset = 1 on an engine-hosting node, 0 on one that does not, and `0` set explicitly means a verifier for that node holds the worker pool as before), `verifier_min_free_mem_mb` (how much GPU memory the node must still have before a new verifier starts — unset = 1024 MB, `0` = check off) and `verifier_context_mb` (how much context one verifier context holds — used only for the advice figure, `suggested_verifier_slots`, how many verifiers the node's current free memory could hold; the figure is never applied and never raises the worker pool). Unset settings keep their defaults; all three are settable per node from the PWA node form, `datawatch compute node add|update --verifier-slots --verifier-min-free-mem-mb --verifier-context-mb`, REST `POST /api/compute/nodes` / `PUT /api/compute/nodes/{name}`, the MCP `compute_node_add` / `compute_node_update` tools and the comm channel's compute-node kv pairs, and the node detail on every surface reports each key beside its effective value, the last admission verdict (`headroom_ok`, `headroom_reason`) and the advice figure when one can be computed; negative values are refused on every surface.
+- **Operator documentation on every surface.** The compute-nodes how-to gains a *Verifier slots* section (the three keys, their defaults, how to choose a value, and what each surface accepts), the capacity how-to gains a *Verifier slots* subsection and an updated *Judges hold node leases* note, the operations manual's *Verifier node limit* section is rewritten for the new pools and its "keep one slot until waits dominate" rule of thumb, `docs/config-reference.yaml` records all three keys with their defaults and unset semantics, `docs/mcp.md` documents the new `compute_node_add` / `compute_node_update` parameters and the new `compute_node_detail` fields, `docs/api-mcp-mapping.md` gains a row for the verifier keys, and `docs/implementation.md` records the storage, the pool wiring and the admission headroom check.
+
 ## v9.92.0 — Decompose follows project rules and context
 
 Planning now follows your rules and context files, and every plan records that it did.
