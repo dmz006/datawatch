@@ -689,6 +689,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousTriage(), tracked(s.handleAutonomousTriage))
 	mcpSrv.AddTool(s.toolChecksStatus(), tracked(s.handleChecksStatus))
 	mcpSrv.AddTool(s.toolShipStatus(), tracked(s.handleShipStatus))
+	mcpSrv.AddTool(s.toolRulesContextStatus(), tracked(s.handleRulesContextStatus))
+	mcpSrv.AddTool(s.toolRulesContextSet(), tracked(s.handleRulesContextSet))
 	mcpSrv.AddTool(s.toolAutonomousDecisions(), tracked(s.handleAutonomousDecisions))
 	mcpSrv.AddTool(s.toolHeldQuestions(), tracked(s.handleHeldQuestions))
 	mcpSrv.AddTool(s.toolAutonomousRepoCIWatch(), tracked(s.handleAutonomousRepoCIWatch))
