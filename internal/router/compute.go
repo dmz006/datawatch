@@ -11,6 +11,8 @@
 //	compute node detail <name>
 //	compute pin                   → show pin_check_seconds
 //	compute pin <seconds>         → set pin_check_seconds (0 = keeper off)
+//	compute headroom measure <n>  → POST headroom measurement
+//	compute headroom <node>       → GET stored headroom state
 
 package router
 
@@ -32,6 +34,8 @@ const computeUsage = `Usage:
   compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model and the tls_ keys to keep them)
   compute pin                                      show pin_check_seconds (0 = keeper off)
   compute pin <seconds>                            set pin_check_seconds
+  compute headroom measure <node>                  run a fresh headroom measurement
+  compute headroom <node>                          show the stored headroom state
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
@@ -55,6 +59,11 @@ Common kv pairs:
   max_concurrent_models=<N>   gpu_mem_gb=<N>     scheduling_priority=<0..100>
   tags=<csv>                  cost_per_hour=<usd>
   session_slots=<N>           (0 = derive from observer GPU data)
+  verifier_slots=<N>          (default 1, 0 = no verifiers)
+
+Verifier headroom (config keys via configure):
+  configure autonomous.verifier_min_free_mem_mb=<N>     minimum free MB for verifier
+  configure autonomous.verifier_headroom_max_age_hours=<N>  measurement staleness (hours)
 
 TLS keys (https nodes):
   tls_ca_file=<path>               extra PEM CA bundle to trust for this node
@@ -86,6 +95,10 @@ func (r *Router) handleComputeCmd(cmd Command) {
 			arg = strings.TrimSpace(parts[1])
 		}
 		r.handleComputePinCmd(arg)
+		return
+	}
+	if verb == "headroom" {
+		r.handleComputeHeadroomCmd(parts[1:])
 		return
 	}
 	if verb != "node" {
@@ -292,6 +305,42 @@ func (r *Router) handleComputePinCmd(arg string) {
 	r.reply("compute pin", fmt.Sprintf("pin_check_seconds = %d. Takes effect after the next daemon restart.", secs))
 }
 
+// handleComputeHeadroomCmd dispatches `compute headroom measure <node>` and
+// `compute headroom <node>` (show). It calls the daemon's headroom endpoints
+// over the same REST loopback the other comm verbs use.
+func (r *Router) handleComputeHeadroomCmd(rest []string) {
+	fields := make([]string, 0, len(rest))
+	for _, f := range strings.Fields(strings.Join(rest, " ")) {
+		fields = append(fields, f)
+	}
+	if len(fields) == 0 {
+		r.reply("compute headroom", "Usage:\n  compute headroom measure <node>   run a fresh measurement\n  compute headroom <node>           show the stored state")
+		return
+	}
+	if fields[0] == "measure" {
+		if len(fields) < 2 {
+			r.reply("compute headroom measure", "Usage: compute headroom measure <node>")
+			return
+		}
+		node := fields[1]
+		out, err := r.commJSON("POST", "/api/compute/nodes/"+node+"/headroom", "")
+		if err != nil {
+			r.reply("compute headroom measure "+node, err.Error())
+			return
+		}
+		r.reply("compute headroom measure "+node, prettyJSON(out))
+		return
+	}
+	// show (no explicit "show" keyword — `compute headroom <node>` is the same)
+	node := fields[0]
+	out, err := r.commGet("/api/compute/nodes/"+node+"/headroom", nil)
+	if err != nil {
+		r.reply("compute headroom "+node, err.Error())
+		return
+	}
+	r.reply("compute headroom "+node, prettyJSON(out))
+}
+
 // withTLSSummary pretty-prints a node reply and appends a one-line summary
 // of how the node's certificate is checked. Anything that is not a single
 // node object (an error body, a list) comes back unchanged.
@@ -355,7 +404,7 @@ func parseKVPairs(s string) map[string]any {
 			out[k] = v == "true" || v == "1" || v == "yes"
 		case "tls_ca_file", "tls_cert_fingerprint":
 			out[k] = strings.TrimSpace(v)
-		case "scheduling_priority", "session_slots":
+		case "scheduling_priority", "session_slots", "verifier_slots":
 			out[k] = atoiOrZero(v)
 		case "cost_per_hour":
 			out[k] = parseFloatOrZero(v)

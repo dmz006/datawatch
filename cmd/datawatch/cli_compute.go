@@ -34,6 +34,7 @@ ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	cmd.AddCommand(newComputeNodeCmd())
 	cmd.AddCommand(newComputeMigrateCmd())
 	cmd.AddCommand(newComputePinCmd())
+	cmd.AddCommand(newComputeHeadroomCmd())
 	return cmd
 }
 
@@ -287,7 +288,7 @@ func newMarketplaceCmd() *cobra.Command {
 func newComputeNodeAddCmd(update bool) *cobra.Command {
 	var (
 		kind, address, monitoringEndpoint, gpuVendor, gpuModel   string
-		maxModels, gpuMemGB, ramGB, gpus, priority, sessionSlots int
+		maxModels, gpuMemGB, ramGB, gpus, priority, sessionSlots, verifierSlots int
 		costPerHour                                              float64
 		tagsCSV, allowedCSV, deniedCSV                           string
 		pinnedModel                                              string
@@ -346,6 +347,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 				"node_pinned_model":        pinnedModel,
 				"allow_model_swap":         allowModelSwap,
 				"session_slots":            sessionSlots,
+				"verifier_slots":         verifierSlots,
 				"tls_ca_file":              tlsCAFile,
 				"tls_cert_fingerprint":     tlsCertFingerprint,
 				"tls_insecure_skip_verify": tlsInsecureSkipVerify,
@@ -380,6 +382,7 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().IntVar(&priority, "priority", 50, "scheduling priority 0-100 (higher = preferred)")
 	cmd.Flags().Float64Var(&costPerHour, "cost-per-hour", 0, "USD/hour cost for scheduler accounting")
 	cmd.Flags().IntVar(&sessionSlots, "session-slots", 0, "worker count for this node (0 = derive from observer GPU data: one slot per GPU, limited by free GPU memory; capped by max_concurrent_sessions). Update replaces the whole node, so omitting this clears the override")
+	cmd.Flags().IntVar(&verifierSlots, "verifier-slots", 1, "verifier slot cap for this node (default 1, 0 = no verifiers). Update replaces the whole node, so omitting this resets to the default")
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&allowedCSV, "allowed-consumers", "", "comma-separated consumer names (council|ask|agent_spawn|session_spawn|*)")
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")
@@ -389,6 +392,41 @@ Update replaces the whole node, so repeat every setting you want to keep.`,
 	cmd.Flags().StringVar(&tlsCertFingerprint, "tls-cert-fingerprint", "", "SHA-256 fingerprint of the node's leaf certificate, 64 hex chars, colons allowed (update replaces the whole node, so omitting this clears the pin)")
 	cmd.Flags().BoolVar(&tlsInsecureSkipVerify, "tls-insecure-skip-verify", false, "turn certificate checking off for this node; audited and shown in the PWA; cannot be combined with --tls-ca-file or --tls-cert-fingerprint (update replaces the whole node, so omitting this turns checking back on)")
 	return cmd
+}
+
+// newComputeHeadroomCmd exposes the per-node verifier headroom measurement
+// and the stored headroom state.
+func newComputeHeadroomCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "headroom",
+		Short: "Verifier headroom: measure or show stored state",
+		Long: "Verifier headroom commands.\n\n  datawatch compute headroom measure <node>   run a fresh measurement (POST)\n  datawatch compute headroom show <node>      show the stored state (GET)",
+	}
+	cmd.AddCommand(newComputeHeadroomMeasureCmd())
+	cmd.AddCommand(newComputeHeadroomShowCmd())
+	return cmd
+}
+
+func newComputeHeadroomMeasureCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "measure <node>",
+		Short: "Run a fresh headroom measurement on the node",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON(http.MethodPost, "/api/compute/nodes/"+args[0]+"/headroom", nil)
+		},
+	}
+}
+
+func newComputeHeadroomShowCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "show <node>",
+		Short: "Show the stored headroom state for the node",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/headroom")
+		},
+	}
 }
 
 func splitCSV(s string) []string {
