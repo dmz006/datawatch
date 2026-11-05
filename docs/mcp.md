@@ -250,6 +250,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
 | Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
+| Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -1634,6 +1635,98 @@ Counts-only planning scorecard and gate report per planner and rule class over a
 ```
 planning_scorecard(window="7d")
 ```
+
+---
+
+## Automation requirements and model pull consent
+
+Two operator surfaces around the local-model capability floors and the model-pull gate:
+the requirements report (what is configured, what is missing, backend minimums) and the
+model-pull consent policy (which models or publishers may be pulled). All four tools proxy
+their REST routes, so the same data is on every surface: REST, these tools, `datawatch
+automation requirements-report`, `datawatch automation model-consent get|set`,
+`datawatch compute node versions <name>`, and the comm verbs (see
+docs/comm-verbs.md and docs/automation/comm-verbs.md).
+
+- **`automation_requirements_report`** — read the automation requirements report: the
+capability minimums (the built-in Ollama floor per known capability, with the operator's
+`autonomous.requirements.min_ollama.*` overrides), each known node's reported backend
+version against it (`meets`, `fails`, or `unknown` — an unknown version fails closed), the
+configured execution/planning/verification backends, and whether at least one of the
+two optional providers (a Claude backend, the local model pool) is configured. It is a
+report, not a gate: nothing is blocked on it. Proxies `GET
+/api/automation/requirements-report`; needs the autonomous read capability when called
+by a federated peer.
+
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `format` | string | No | `text` (default, the shared plain-text render) or `json` (the report object). |
+
+  **Example:**
+  ```
+  automation_requirements_report()          # text
+  automation_requirements_report(format="json")
+  ```
+
+- **`automation_model_pull_consent_get`** — read the current model-pull consent
+  policy: the model list (each with `name`, `allowed` and, when noted, `note`), the
+  publisher allow-list, and the decision rule in words. Default-deny: a model may be
+  pulled when it is listed with `allowed: true`, or when it is unlisted and its
+  publisher is allow-listed; everything else is refused and the refusal names the key
+to set. Read-only. Proxies `GET /api/automation/model-consent`.
+
+  **Example:**
+  ```
+  automation_model_pull_consent_get()
+  ```
+
+- **`automation_model_pull_consent_set`** — set the model-pull consent policy.
+  The set is complete and replaces what is stored: `models` is the whole new model
+  list (each item a model-name string — stored as allowed — or a
+  `{name, allowed, note}` object), and `publishers` is the whole new publisher
+  allow-list. Invalid entries are refused (empty names, duplicate model names —
+  case-insensitive and tag-ignoring — and empty publisher entries). Audited as
+  `model_pull_consent_changed`. Proxies `PUT /api/automation/model-consent`; needs the
+  config-write capability when called by a federated peer.
+
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `models` | string | No | JSON array — model-name strings or `{name, allowed, note}` objects. Replaces the stored list. |
+  | `publishers` | string | No | JSON array of publisher names; each entry allows every model of that publisher. Replaces the stored list. |
+
+  **Example:**
+  ```
+  automation_model_pull_consent_set(
+    models='["gpt-oss:120b", {"name":"big-model-65b","allowed":false,"note":"too large for the pool"}]',
+    publishers='["mistralai"]')
+  ```
+
+- **`compute_node_backend_versions`** — read one compute node's identity and reported
+  backend version (with when it was recorded), and apply the per-capability Ollama
+  minimums to that version: each line says `ok` (`true` below the minimum, `false`
+  below it, or absent when the version is unparseable — unknown fails closed). For
+  Ollama nodes and nodes whose version was probed against Ollama. A node name that is
+  not in the registry is refused (the daemon's 404). Proxies `GET
+  /api/compute/nodes/{name}/versions`; needs the compute-node read capability when
+  called by a federated peer.
+
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `name` | string | Yes | Compute node name (as listed by `compute_nodes`). |
+
+  **Example:**
+  ```
+  compute_node_backend_versions(name="ollama-local")
+  ```
+
+The config keys behind these tools — `autonomous.requirements.min_ollama.*` and
+`autonomous.model_pull_consent` — are written through `autonomous_config_set` / the
+config surface, the dedicated surfaces above, `datawatch config set`, comm
+`configure`, and the PWA settings; all apply without a restart (the gate is read at
+pull time, the minimums at report and enable time). See
+docs/config-reference.yaml (the `autonomous` section), docs/howto/automation-requirements.md,
+docs/howto/model-pull-consent.md and docs/implementation.md ("Automation requirements and
+the model pull gate").
 
 ---
 

@@ -82,6 +82,24 @@ func (s *Server) ComputeRegistry() *compute.Registry { return s.computeReg }
 // create an import cycle). v7.0.0-alpha.19 #245.
 func (s *Server) clusterLookup() compute.ClusterLookup { return &clusterLookupAdapter{s: s} }
 
+// versionProbeFn returns the backend version probe used after a
+// successful save-time reachability probe. Overridable in tests (in
+// production it always uses the injectable-default probe; tests in
+// the compute package fake at the VersionProbe level).
+func (s *Server) versionProbeFn() *compute.VersionProbe { return compute.NewVersionProbe() }
+
+// captureBackendVersion records the node's backend version (Ollama
+// /api/version, docker ServerVersion) on the node record so it
+// appears in the node detail payload. Non-fatal by design: the
+// reachability probe already gated the save, a missing or
+// unparseable version is not a save error.
+func (s *Server) captureBackendVersion(ctx context.Context, n *compute.Node) {
+	vp := s.versionProbeFn()
+	if vr, verr := vp.ProbeVersion(ctx, n); verr == nil {
+		n.RecordBackendVersion(vr)
+	}
+}
+
 type clusterLookupAdapter struct{ s *Server }
 
 func (a *clusterLookupAdapter) GetClusterProfile(name string) (kubeconfigPath, contextName string, extraArgs []string, err error) {
@@ -147,6 +165,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
+			// Reachable — capture the backend version (non-fatal).
+			s.captureBackendVersion(pctx, &n)
 		}
 		code := http.StatusBadRequest
 		if err := s.computeReg.Add(&n); err != nil {
@@ -363,6 +383,8 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
+			// Reachable — capture the backend version (non-fatal).
+			s.captureBackendVersion(pctx, &n)
 		}
 		if err := s.computeReg.Update(&n); err != nil {
 			code := http.StatusBadRequest

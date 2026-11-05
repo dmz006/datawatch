@@ -3522,6 +3522,11 @@ type AutonomousConfig struct {
 	// "supervisor_loop.deploy_after_ship.enabled": false). Parsed by
 	// supervisorloop.ParseSettings; absent keys take their defaults.
 	SupervisorLoop SupervisorLoopConfig `yaml:"supervisor_loop,omitempty" json:"supervisor_loop,omitempty"`
+	// Requirements — minimum backend version requirements. The shipped
+	// table lives in code (internal/autonomous); this block holds only
+	// operator overrides: autonomous.requirements.min_ollama.<capability>.
+	// See AutonomousRequirementsConfig.
+	Requirements AutonomousRequirementsConfig `yaml:"requirements" json:"requirements"`
 
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
@@ -3575,6 +3580,15 @@ type AutonomousConfig struct {
 	// per-project overrides. See DefectQueueConfig and
 	// ValidateDefectQueueSetting.
 	DefectQueue DefectQueueConfig `yaml:"defect_queue" json:"defect_queue"`
+	// ModelPullConsent — the operator's model-pull consent
+	// (autonomous.model_pull_consent): the models the Automation setup
+	// needs, each with a pull allow flag, plus the publisher allow-list
+	// (one entry allows every model of that publisher). Nothing is pulled
+	// without a matching allow entry — the gate that reads this lives in
+	// internal/autonomous (autonomous.ModelPullConsentCheck) and guards
+	// the existing compute-node and marketplace pull paths. See
+	// ModelPullConsent and ValidateModelPullConsent.
+	ModelPullConsent ModelPullConsent `yaml:"model_pull_consent" json:"model_pull_consent"`
 }
 
 // ShippedSettingPrefix is the dotted key prefix shared by every
@@ -4227,6 +4241,37 @@ func DefaultAutonomousLaneFill() AutonomousLaneFillConfig {
 		GPUBackend:        DefaultLaneFillGPUBackend,
 		ClaudeBackend:     DefaultLaneFillClaudeBackend,
 	}
+}
+
+// AutonomousRequirementsConfig carries the operator overrides for the
+// minimum backend version table. The table itself (capability → minimum
+// Ollama version, e.g. the classification-verdict capability's
+// /v1/systemone floor) ships in code in internal/autonomous; this block
+// only lets an operator raise or lower a per-capability minimum under
+// autonomous.requirements.min_ollama.<capability>. An absent key means
+// "use the built-in table"; an empty value under a set key clears the
+// built-in minimum for that capability (disable the floor).
+type AutonomousRequirementsConfig struct {
+	// MinOllama maps capability name → minimum Ollama version override.
+	MinOllama map[string]string `yaml:"min_ollama,omitempty" json:"min_ollama,omitempty"`
+}
+
+// DefaultAutonomousRequirements returns the shipped requirements settings:
+// no overrides — every capability reads its minimum from the in-code table
+// in internal/autonomous.
+func DefaultAutonomousRequirements() AutonomousRequirementsConfig {
+	return AutonomousRequirementsConfig{MinOllama: map[string]string{}}
+}
+
+// MinOllamaOr returns the operator override for one capability. ok is
+// false when the capability has no override (read the in-code table
+// instead).
+func (c AutonomousRequirementsConfig) MinOllamaOr(capability string) (v string, ok bool) {
+	if c.MinOllama == nil {
+		return "", false
+	}
+	v, ok = c.MinOllama[capability]
+	return v, ok
 }
 
 // ValidateLaneFillMode accepts the legal autonomous.lane_fill.mode values,
@@ -6352,6 +6397,7 @@ func DefaultConfig() *Config {
 			LaneFill:      DefaultAutonomousLaneFill(),
 			DecomposeLint: DefaultDecomposeLint(),
 			TaskTemplates: DefaultTaskTemplates(),
+			Requirements:  DefaultAutonomousRequirements(),
 			Progress:      AutonomousProgressConfig{BacklogPath: DefaultProgressBacklogPath},
 			// Notify — global baseline for the notify event kinds
 			// (autonomous.notify.default_events). Written as literals,
@@ -6922,6 +6968,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := validateSupervisorWatch(cfg.Autonomous.Automation.SupervisorWatch); err != nil {
+		return err
+	}
+	if err := ValidateModelPullConsent(cfg.Autonomous.ModelPullConsent); err != nil {
 		return err
 	}
 	if err := cfg.Autonomous.LaneFill.validate(); err != nil {

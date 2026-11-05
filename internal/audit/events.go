@@ -252,4 +252,19 @@ const (
 	// and Details: the same redacted shape as ActionSecretScanRefused,
 	// with mode shadow. Never the secret.
 	ActionSecretScanShadow = "secret_scan_shadow"
+	// ActionModelPullAllowed — the model-pull consent gate allowed a model
+	// pull (compute-node model pull, or marketplace task pull). Details:
+	// model, publisher, via (the allow kind: "model" or "publisher"),
+	// origin (the pull path that asked), and the allow source's note when
+	// one was written down.
+	ActionModelPullAllowed = "model_pull_allowed"
+	// ActionModelPullDenied — the gate refused a model pull: the model was
+	// listed with allowed:false, or it and its publisher were unlisted. The
+	// pull never happens; Details carry model, publisher, origin, and the
+	// reason spoken plainly.
+	ActionModelPullDenied = "model_pull_denied"
+	// ActionModelPullConsentChanged — the operator wrote the
+	// autonomous.model_pull_consent block (its models or publisher list).
+	// Details: the now-current models and publishers lists, and origin.
+	ActionModelPullConsentChanged = "model_pull_consent_changed"
 )

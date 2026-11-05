@@ -64,6 +64,8 @@ Subcommands:
                       --member, --clear)
   import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
   onboarding-report   Show what is configured, what is missing and what to try next (--format text|json)
+  requirements-report Show the backend requirements report (Ollama minimums, node versions, backends; --format text|json)
+  model-consent       Model-pull consent policy: get | set (--model, --deny, --publisher, --clear)
 
 Every control takes --actor, --reason and --expected-version; when the flag
 is omitted the CLI reads the current version first, and a stale expected
@@ -94,6 +96,8 @@ version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetDecisionAssistantCmd())
 	cmd.AddCommand(newAutomationImportGraphCmd())
 	cmd.AddCommand(newAutomationOnboardingReportCmd())
+	cmd.AddCommand(newAutomationRequirementsReportCmd())
+	cmd.AddCommand(newAutomationModelConsentCmd())
 	return cmd
 }
 

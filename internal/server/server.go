@@ -574,6 +574,13 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch", api.handleSupervisorWatch)                     // supervisor watch state: mode, last poll, findings, comparison
 	apiMux.HandleFunc("/api/autonomous/supervisor-watch/stats", api.handleSupervisorWatchStats)          // supervisor watch numbers: mode, poll age, finding counts, agreed days
 	apiMux.HandleFunc("/api/capacity/admission", api.handleCapacityAdmission)                            // read-only admission query
+
+	// Requirements surfaces: the capability minimum-backend-versions /
+	// automation backend minimums report, the model-pull consent policy
+	// (get/set), and a compute node's backend version.
+	apiMux.HandleFunc("/api/automation/requirements-report", api.handleRequirementsReport)
+	apiMux.HandleFunc("/api/automation/model-consent", api.handleModelConsent)
+	apiMux.HandleFunc("/api/compute/nodes/{name}/versions", api.handleNodeBackendVersions) // the compute node's backend name and version, with the recorded time
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)

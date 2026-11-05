@@ -934,6 +934,51 @@ Each project has a merge pipeline: the ordered steps that take finished branches
 
 `datawatch automation onboarding-report` (also the PWA card, the `onboarding_report` tool, the chat verb `onboarding-report` and `GET /api/automation/onboarding-report`) lists what is configured, what is missing and what to try next. It runs six checks (`backends`, `models`, `projects`, `channels`, `memory`, `merge_pipeline`) and reads only configuration; it changes nothing. `onboarding_report.enabled` (default on) turns it off, `onboarding_report.disabled_checks` leaves chosen checks out, and `onboarding_report.include_next_steps` (default on) adds the suggestions. The operator guide is [howto/onboarding-report.md](howto/onboarding-report.md).
 
+### Automation requirements report
+
+`datawatch automation requirements-report` (same text by default, or `--format json`; the MCP tool `automation_requirements_report`, the chat verb `requirements-report [text|json]`, `GET /api/automation/requirements-report` — `?format=text` for plain text, and the PWA view) answers: *can this daemon run the Automata it is configured to run?* It is a report, not a gate: it changes nothing and blocks nothing.
+
+It shows, from one shared renderer so every surface prints the same text:
+
+- **What is required and what is configured** — at least one execution backend plus a planning and a verification backend; Claude and the local model pool are each optional, but at least one of the two providers must be configured.
+- **The capability minimums** — the built-in per-capability floor (currently `classification_verdict`: Ollama 0.35.0 or newer for the `/v1/systemone` decision endpoint) plus the operator overrides under `autonomous.requirements.min_ollama.<capability>`. Each known compute node is then checked against the effective minimum: it *meets* it, *fails* it, or its version is *unknown* — an unparseable version fails closed and the capability is unusable on that node until a recheck proves it back at or above the minimum.
+- **Per node** (`datawatch compute node versions <name>`, the MCP tool `compute_node_backend_versions`, `GET /api/compute/nodes/<name>/versions`, the chat verb `node-versions <name>`) — the node's kind, address, backend and reported version, and the minimums applied to that per-capability version. A node name that is not in the registry is refused (404).
+
+**Override behaviour.** A key under `autonomous.requirements.min_ollama` overrides the built-in floor for that capability; an *empty* value clears the floor (the capability becomes version-agnostic); an unknown capability, an empty key, or a value that is not a dotted semantic version (e.g. `0.35.0`) is refused — a 400 on the write surfaces and nothing is written. All write surfaces (`PUT /api/config` with `autonomous.requirements.min_ollama.<capability>`, `datawatch config set`, the MCP `autonomous_config_set` / `config_set` tools, the comm `configure` verb, and the PWA settings) validate with the same rule, and changes apply without a restart. The operator guide is [howto/automation-requirements.md](howto/automation-requirements.md); the implementation notes are in [implementation.md](implementation.md).
+
+### Model pull consent
+
+The model-pull consent gate decides which models may be downloaded — both the compute-node model pull and the marketplace task pull must pass it before anything is pulled. It is **default-deny**:
+
+- A model may be pulled when it is listed with `allowed: true`; or
+- it is unlisted and its publisher is on the publisher list (a listed entry's `publisher`, else the leading `publisher/model` segment of the name; a plain name carries no publisher).
+
+Everything else is refused, and the refusal names what to set (`autonomous.model_pull_consent.models` or `autonomous.model_pull_consent.publishers`). A listed entry with `allowed: false` is an explicit refusal and its `note` travels with the refusal, for example `refused: model "big-model-65b" is denied by operator — too large for the pool`. Matching is case-insensitive and ignores the `:tag` suffix: a listed `gpt-oss` matches a pull of `gpt-oss:20b`. The policy is read at pull time, so changes apply without a restart.
+
+**The set is complete.** Every write surface *replaces* the stored policy, it does not append: read what you have, compose the whole new list, write it back.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `config.yaml` → `autonomous.model_pull_consent:` with `models` (list of `{name, allowed, note}`) and `publishers` (list of names) |
+| **CLI** | `datawatch automation model-consent get` shows the policy; `datawatch automation model-consent set --model gpt-oss:120b --deny big-model-65b --publisher mistralai` stores the complete list (repeatable flags; `--deny` marks a listed refusal); `datawatch automation model-consent set --clear` empties the policy, after which every pull is denied |
+| **Web UI** | Settings → \"Model pull consent\" — a checkbox per model (name + optional note) and chips to add or remove publishers; Save stores the composed list |
+| **REST API** | `GET /api/automation/model-consent` (models with `allowed`/`note`, `publishers`, `decision_rule`); `PUT /api/automation/model-consent` with the complete policy — audited as `model_pull_consent_changed` |
+| **Comm channel** | `autonomous model-pull-consent-get`; `autonomous model-pull-consent-set model=gpt-oss:120b [deny=big-model-65b] [publisher=mistralai]` or `autonomous model-pull-consent-set clear` (a refusal carries a trailing `note=`) |
+| **MCP** | `automation_model_pull_consent_get`; `automation_model_pull_consent_set` with `models` (JSON array of model-name strings or `{name, allowed, note}` objects) and `publishers` (JSON array of names) |
+| **Config key** | `datawatch config set autonomous.model_pull_consent.models '[...]'/publishers 'json'` — a bad entry rejects the whole `PUT /api/config` (400), as on every other write surface |
+| **Allowed values** | Model names are non-empty strings; duplicate model names (case-insensitive, tag-ignoring) and empty publisher entries are refused on every write surface. A refusal of *one* key never writes anything. |
+
+**A refusal in practice.** Every surface returns the gate's own reason, which names the policy keys to set. With no policy stored, a pull of an unlisted model is refused with:
+
+```
+refusing to pull model "big-model-65b": no model-pull consent is configured and
+nothing is pulled without an explicit allow — list this model in
+autonomous.model_pull_consent.models with "allowed": true, or allow its publisher
+in autonomous.model_pull_consent.publishers
+```
+
+A listed refusal carries its note in the reason (`allowed: false` entries, e.g. the `--deny` CLI form which stores `denied by operator` as the note). The operator guide is [howto/model-pull-consent.md](howto/model-pull-consent.md).
+
 ## 5. Signal Account Management
 
 ### Find your group ID

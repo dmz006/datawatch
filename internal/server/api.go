@@ -513,6 +513,11 @@ type Server struct {
 	// allowlist additions.
 	classifierStatus ClassifierStatusSource
 	classifierMu     sync.Mutex
+	// Requirements engine (internal/autonomous or a test fake) + the
+	// automation backend summary provider it reports over. Nil =
+	// /api/automation/requirements-report reports 503.
+	requirementsReporter requirementsReporter
+	automationBackends   automationBackendsSummary
 
 	// requestWatch reads the in-flight model request observations; nil until
 	// SetRequestWatch wires it, and the request-watch route answers 503 then.
@@ -1034,6 +1039,12 @@ func (s *Server) applyStoreConfig() {
 func (s *Server) SetAutonomousAPI(a AutonomousAPI) {
 	s.autonomousMgr = a
 	s.wireSessionTags()
+	// Requirements surface: the concrete manager also implements the
+	// requirements-report engine — wire it plus a config-derived backend
+	// summary (nil API leaves the route reporting 503).
+	if a != nil {
+		s.wireRequirementsFromAuto(a)
+	}
 }
 
 // SummarizerSvc is the interface for the response summarizer.
@@ -6559,6 +6570,16 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"request_watch": requestWatchConfigSurface(s.cfg.Autonomous.RequestWatch),
 			// Effective, not raw: an unset key shows its default.
 			"model_routing": modelRoutingConfigSurface(s.cfg.Autonomous.ModelRouting),
+			// Model-pull consent: the per-model allow flags plus the publisher
+			// allow-list. Rendered whole (nil lists become empty arrays, not
+			// null) so an unset consent visibly allows nothing — the
+			// fail-closed default, not a missing setting.
+			"model_pull_consent": modelPullConsentForDisplay(s.cfg.Autonomous.ModelPullConsent),
+			// Requirements min-Ollama overrides: the stored per-capability
+			// minimums (empty = the in-code table applies) plus the known
+			// capability list, so the web settings, CLI and comm render the
+			// same fields in the same order.
+			"requirements": requirementsConfigGetSurface(s.cfg.Autonomous.Requirements),
 			"progress": map[string]interface{}{
 				"lanes":                   s.cfg.Autonomous.Progress.Lanes,
 				"inactive_gap_hours":      s.cfg.Autonomous.Progress.InactiveGapHours,
@@ -6982,6 +7003,27 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Model-pull consent (autonomous.model_pull_consent): the whole block is
+	// checked before anything is applied — an entry the gate could not
+	// interpret (empty model name, duplicated model, empty publisher) or a
+	// wrong shape rejects the whole PUT, same rule as the
+	// PUT /api/autonomous/config surface.
+	if v, ok := patch["autonomous.model_pull_consent"]; ok {
+		var mpc config.ModelPullConsent
+		if b, err := json.Marshal(v); err == nil {
+			if json.Unmarshal(b, &mpc) != nil {
+				http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+				return
+			}
+		} else {
+			http.Error(w, `autonomous.model_pull_consent: must be an object with "models" and/or "publishers"`, http.StatusBadRequest)
+			return
+		}
+		if verr := config.ValidateModelPullConsent(mpc); verr != nil {
+			http.Error(w, "autonomous.model_pull_consent: "+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// Cleanup keys (autonomous.automation.cleanup_mode,
 	// cleanup_retention_hours, cleanup_max_removals_per_pass,
 	// disk_alert_percent): only the value type is checked here. An unknown
@@ -7367,6 +7409,17 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// autonomous.requirements (min-Ollama overrides) — a bad capability, or
+	// a value that is not a version string, rejects the whole PUT like the
+	// keys above, by the one shared rule set; the per-capability
+	// autonomous.requirements.min_ollama.<capability> keys are validated by
+	// the same helper.
+	if raw, ok := patch["autonomous.requirements"]; ok {
+		if _, verr := validateRequirementsConfigBlock(raw); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	if err := validateChecksShipPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -7405,6 +7458,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if verr := config.ValidateGitSecretScanDetectors(names); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	for k := range patch {
+		if !strings.HasPrefix(k, "autonomous.requirements.min_ollama.") {
+			continue
+		}
+		if _, verr := validateRequirementsMinOllamaKey(strings.TrimPrefix(k, "autonomous.requirements.min_ollama."), patch[k]); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7536,6 +7598,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// a masked value for each (credential-shaped keys are masked outright;
 	// skipped keys, per applyConfigPatch, never reach here at all).
 	s.auditConfigPatch(r.Context(), patch, skipped)
+	// Model-pull consent changed: record the consent itself (which models
+	// are allowed, which are refused, which publishers are allow-listed),
+	// not just the generic config-patch entry.
+	if _, touched := patch["autonomous.model_pull_consent"]; touched {
+		sel := s.cfg.Autonomous.ModelPullConsent
+		names := make([]string, 0, len(sel.Models))
+		for i := range sel.Models {
+			if sel.Models[i].Allowed {
+				names = append(names, sel.Models[i].Name+"=pull_allowed")
+			} else {
+				names = append(names, sel.Models[i].Name+"=pull_refused")
+			}
+		}
+		s.auditAs(s.auditActor(r.Context()), audit.ActionModelPullConsentChanged, "model_pull_consent", "autonomous",
+			map[string]any{"models": names, "publishers": sel.Publishers})
+	}
 	// BL369 — propagate autonomous.* config changes to the live manager so
 	// injection_guard and other knobs take effect without a daemon restart.
 	// Forward only the top-level JSON field(s) this PUT actually touched
@@ -7731,6 +7809,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		if _, ok := supervisorLoopPatchKey(k); ok {
 			// Validated in handlePutConfig; stored under its plan key.
 			applySupervisorLoopPatch(cfg, map[string]interface{}{k: v})
+			continue
+		}
+		// autonomous.requirements.min_ollama.<capability> — the dynamic
+		// per-capability min-Ollama overrides (one key per capability),
+		// handled before the switch so future capabilities need no switch
+		// case. Validated in handlePutConfig by the shared rule set; a
+		// direct applyConfigPatch caller's bad value is left unchanged.
+		if capability, ok := strings.CutPrefix(k, "autonomous.requirements.min_ollama."); ok && capability != "" {
+			if version, verr := validateRequirementsMinOllamaKey(capability, v); verr == nil {
+				if cfg.Autonomous.Requirements.MinOllama == nil {
+					cfg.Autonomous.Requirements.MinOllama = map[string]string{}
+				}
+				cfg.Autonomous.Requirements.MinOllama[capability] = version
+			}
 			continue
 		}
 		switch k {
@@ -8881,6 +8973,21 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.SnapshotNeverStage = splitCSV(s)
 			}
+		case "autonomous.model_pull_consent":
+			// Model-pull consent (allowed models + publisher allow-list).
+			// handlePutConfig rejects a malformed block before this runs;
+			// anything still unparseable here is reported as skipped rather
+			// than stored — the zero value (allow nothing) is fail-closed.
+			if b, err := json.Marshal(v); err == nil {
+				var mpc config.ModelPullConsent
+				if json.Unmarshal(b, &mpc) == nil {
+					cfg.Autonomous.ModelPullConsent = mpc
+				} else {
+					skipped = append(skipped, k)
+				}
+			} else {
+				skipped = append(skipped, k)
+			}
 		case "autonomous.tags.default_view", "autonomous.tags.attention_statuses",
 			"autonomous.tags.default_match_mode", "autonomous.tags.direct_counts_visible",
 			"autonomous.tags.registry_keeper", "autonomous.tags.registry_sync_seconds":
@@ -8955,6 +9062,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig; stored lower-cased and trimmed.
 			if validateUsageBackoffMode(v) == nil {
 				cfg.Autonomous.UsageBackoff = strings.ToLower(strings.TrimSpace(toString(v)))
+			}
+		case "autonomous.requirements":
+			// Whole min-Ollama override block (capability → minimum version
+			// map). Validated in handlePutConfig by the one shared rule set;
+			// re-normalized defensively here so a direct applyConfigPatch
+			// caller's bad value is left unchanged.
+			if req, verr := validateRequirementsConfigBlock(v); verr == nil {
+				cfg.Autonomous.Requirements = req
 			}
 		case "usage.calculator.variant", "usage.calculator.policy", "usage.calculator.safety_points", "usage.calculator.cost_per_task_points", "usage.calculator.baseline_per_24h", "usage.calculator.max_lanes", "usage.calculator.reset_weekday", "usage.calculator.reset_time", "usage.calculator.reset_zone", "usage.calculator.keeper":
 			// Validated in handlePutConfig; stored normalized.

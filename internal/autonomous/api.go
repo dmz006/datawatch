@@ -534,6 +534,20 @@ func (a *API) SetConfig(v any) error {
 			}
 		}
 	}
+	// model_pull_consent is checked the same way PUT /api/config checks
+	// it (and the autonomous REST surface probes it before calling here):
+	// an entry the gate could not interpret — empty model name, duplicate
+	// model, empty publisher — is refused before any merge, so no write
+	// path (REST, MCP autonomous_config_set, comm config-set) can store a
+	// consent block the pull gate would later trip over.
+	var consentProbe struct {
+		ModelPullConsent *config.ModelPullConsent `json:"model_pull_consent"`
+	}
+	if err := json.Unmarshal(raw, &consentProbe); err == nil && consentProbe.ModelPullConsent != nil {
+		if verr := config.ValidateModelPullConsent(*consentProbe.ModelPullConsent); verr != nil {
+			return verr
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)

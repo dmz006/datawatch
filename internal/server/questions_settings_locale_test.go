@@ -1,9 +1,9 @@
-// Locale coverage for the operator-questions-for-Automata settings toggles:
-// every label key must exist in every embedded locale bundle with a
-// non-empty value, and must never use PRD or the Automation word (the
-// Automation word is reserved for automation_ keys and is a different
-// object than Automata). The settings entries themselves must be wired
-// into the General config card in app.js, and the question_raised
+// Locale coverage for the operator-questions-for-Automata settings toggles and
+// the requirements-report backend labels: every label key must exist in every
+// embedded locale bundle with a non-empty value, and must never use PRD or the
+// Automation word (the Automation word is reserved for automation_ keys and is
+// a different object than Automata). The settings entries themselves must be
+// wired into the General config card in app.js, and the question_raised
 // WebSocket frame must be acknowledged (an explicit no-op) rather than
 // falling through silently.
 
@@ -30,6 +30,13 @@ var questionNotifySettingsLocaleKeys = []string{
 	"settings_automata_questions_notify_messaging",
 	"settings_automata_questions_notify_alert",
 	"settings_automata_questions_return_path",
+}
+
+// Non-automation labels guarded the same way: they must not use the
+// Automation word either.
+var requirementReportLocaleKeys = []string{
+	"requirements_report_backends",
+	"requirements_report_no_backends",
 }
 
 // The config keys the General card toggles bind to.
@@ -82,6 +89,20 @@ func TestQuestionsSettings_LocaleKeyInAllBundles(t *testing.T) {
 	// handler, never an error or an accidental render.
 	if !strings.Contains(src, "'question_raised'") {
 		t.Errorf("app.js does not handle the 'question_raised' message type")
+	}
+}
+
+func TestRequirementReport_LocaleValuesGuarded(t *testing.T) {
+	for _, lang := range requiredLocales {
+		bundle := loadLocaleBundle(t, lang)
+		for _, key := range requirementReportLocaleKeys {
+			value, ok := bundle[key]
+			if !ok {
+				t.Errorf("locale %s: missing key %q", lang, key)
+				continue
+			}
+			checkQuestionSettingValue(t, lang, key, value)
+		}
 	}
 }
 

@@ -26,6 +26,22 @@ func (r Report) Text() string {
 	}
 	fmt.Fprintf(&b, "  Comm channels: %s\n", listOrNone(c.Channels))
 	fmt.Fprintf(&b, "  Memory: %s\n", map[bool]string{true: "on", false: "off"}[c.Memory])
+	if len(c.Requirements) == 0 {
+		b.WriteString("  Requirements: not provided by this surface\n")
+	} else {
+		b.WriteString("  Requirements:\n")
+		for _, rq := range c.Requirements {
+			state := "met"
+			if !rq.Satisfied {
+				state = "unmet"
+			}
+			line := rq.Capability
+			if rq.Required != "" {
+				line += ": requires " + rq.Required
+			}
+			fmt.Fprintf(&b, "    [%s] %s\n", state, line)
+		}
+	}
 	if len(c.MergePipeline) == 0 {
 		b.WriteString("  Merge pipeline: no projects\n")
 	} else {

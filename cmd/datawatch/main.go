@@ -4666,6 +4666,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DecomposeLint:     acfgIn.DecomposeLint,
 			TaskTemplates:     acfgIn.TaskTemplates,
 			DecomposeGuidance: acfgIn.DecomposeGuidance,
+			// Model-pull consent (autonomous.model_pull_consent): model list
+			// + publisher allow-list; the zero value allows no pull.
+			ModelPullConsent: acfgIn.ModelPullConsent,
+			// Capability minimum-version overrides (autonomous.requirements.
+			// min_ollama.<capability>); the built-in table ships in code.
+			Requirements: autonomouspkg.RequirementsConfigFromYAML(acfgIn.Requirements),
 			// Global tier of the notify event kinds
 			// (autonomous.notify.default_events). Preserve nil (unset —
 			// resolves to the built-in default set) vs a non-nil empty
