@@ -396,11 +396,11 @@ def main(argv=None):
 
     # node balancing invariants (one engine per node; every running pi worker holds a node lease; no idle node with waiters)
     for name, pool in pools.items():
-        if name.startswith("node:") and pool.get("limit") and pool.get("held", 0) > pool["limit"]:
+        if name.startswith(("node:", "node-verify:")) and pool.get("limit") and pool.get("held", 0) > pool["limit"]:
             findings.append("NODE %s holds %s sessions against a limit of %s (balancing broken)" % (name, pool["held"], pool["limit"]))
     for l in cap.get("leases") or []:
         lp = l.get("pools") or []
-        if "llm:pi-prompt" in lp and not any(x.startswith("node:") for x in lp):
+        if "llm:pi-prompt" in lp and not any(x.startswith(("node:", "node-verify:")) for x in lp):
             why = "node unknown after adoption" if l.get("node_unknown") else "no node lease"
             findings.append("LEASE %s holds a pi-prompt slot with %s" % (l.get("holder"), why))
     idle_nodes = [n for n, pool in pools.items() if n.startswith("node:") and pool.get("limit") and pool.get("held", 0) == 0 and n not in PLACEMENT_SKIP_NODES]
