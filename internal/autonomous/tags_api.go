@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // TagView is a tag plus the number of Automata carrying it.
@@ -221,4 +223,18 @@ func (a *API) AutomatonTagIDs(prdID string) ([]string, bool) {
 // SetSessionTagCounter wires the session-side tag counter used by DeleteTag.
 func (a *API) SetSessionTagCounter(c SessionTagCounter) {
 	a.M.SetSessionTagCounter(c)
+}
+
+// SetAutoTagsDaemon wires the supplier of the daemon-level
+// autonomous.auto_tags block that the engine-tag sync (auto_tags.go)
+// resolves against. Read at call time, so a live config change takes
+// effect on the next sync.
+func (a *API) SetAutoTagsDaemon(f func() config.AutoTagsConfig) {
+	a.M.SetAutoTagsDaemon(f)
+}
+
+// SyncAutoTagsAll re-syncs the engine tags of every Automation, used
+// when the daemon-level autonomous.auto_tags block is flipped.
+func (a *API) SyncAutoTagsAll() {
+	a.M.SyncAutoTagsAll()
 }

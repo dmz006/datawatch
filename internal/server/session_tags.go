@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/session"
@@ -43,9 +44,19 @@ type sessionTagCounterSetter interface {
 	SetSessionTagCounter(c autonomous.SessionTagCounter)
 }
 
+// autoTagsSyncAPI is the autonomous API's engine-tag methods: the supplier
+// of the daemon-level autonomous.auto_tags block and the whole-fleet
+// re-sync that a live flip of that block triggers (auto_tags.go).
+type autoTagsSyncAPI interface {
+	SetAutoTagsDaemon(f func() config.AutoTagsConfig)
+	SyncAutoTagsAll()
+}
+
 // wireSessionTags connects the session manager to the autonomous tag
 // registry. The session side validates and resolves tags through the bridge;
-// the autonomous side counts session-carried tags for its delete-in-use check.
+// the autonomous side counts session-carried tags for its delete-in-use
+// check, and gets the read-time supplier of the daemon-level auto_tags block
+// the engine-tag sync resolves against.
 func (s *Server) wireSessionTags() {
 	if s.manager == nil {
 		return
@@ -55,6 +66,14 @@ func (s *Server) wireSessionTags() {
 	s.manager.SetTagOwnerLookup(bridge)
 	if c, ok := s.autonomousMgr.(sessionTagCounterSetter); ok {
 		c.SetSessionTagCounter(s.manager)
+	}
+	if a, ok := s.autonomousMgr.(autoTagsSyncAPI); ok {
+		a.SetAutoTagsDaemon(func() config.AutoTagsConfig {
+			if s.cfg == nil {
+				return config.AutoTagsConfig{}
+			}
+			return s.cfg.Autonomous.AutoTags
+		})
 	}
 }
 
