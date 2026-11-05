@@ -730,7 +730,7 @@ failed-write count means the trace folder is not writable or the disk is full.
 |--------|-----|
 | **YAML config** | `tracing.*` in `~/.datawatch/config.yaml` |
 | **CLI** | `datawatch config set tracing.<key> <value>`; `datawatch trace session|automaton|rollup|coverage` |
-| **Web UI** | Settings > Tracing; the Trace card in the session and Automaton views; the Tracing card on the Monitor tab |
+| **Web UI** | Settings > Tracing; the Trace sub-tab under a session's Status tab and the Trace tab of an Automaton; the Tracing card on the Monitor tab |
 | **REST API** | `PUT /api/config` with `{"tracing.<key>": value}`; `GET /api/trace/session/{id}`, `/api/trace/automaton/{id}`, `/api/trace/rollup`, `/api/trace/coverage`, `/api/trace/stats` |
 | **MCP** | `trace_session`, `trace_automaton`, `trace_rollup`, `trace_coverage`, `trace_stats` |
 | **Comm channel** | `trace session <id>`, `trace automaton <id>`, `trace rollup`, `trace coverage`; `configure tracing.<key>=<value>` |

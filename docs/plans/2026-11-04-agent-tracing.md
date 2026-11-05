@@ -44,7 +44,7 @@ Shipped in: the release that carries this change (the merge helper records the n
 | CLI | Yes | `datawatch trace session|automaton|rollup|coverage` |
 | comm channel | Yes | `trace session|automaton|rollup|coverage`; `configure tracing.<key>=<value>` |
 | YAML/config | Yes | the `tracing` block in `docs/config-reference.yaml` |
-| PWA | Yes | Trace card in the session and Automaton views, Settings > Tracing, the Monitor Tracing card |
+| PWA | Yes | Trace sub-tab under the session Status tab and a Trace tab in the Automaton view, Settings > Tracing, the Monitor Tracing card |
 | Android | Yes | filed as a parity issue on the app repository (see `docs/plans/parity-issues/agent-tracing.md`) |
 | iPhone | Yes, tracked on the same issue | no separate iOS release exists to file against |
 
