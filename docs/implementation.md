@@ -374,6 +374,25 @@ Worktree-mode PRDs are skipped. Read-only git only.
 
 The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.
 
+### Rules and context settings (`autonomous.rules_context`)
+
+Defined in `internal/config/autonomous_rules_context.go`; validated by `Validate` and written by `internal/config/rules_context_update.go`. Resolution order for each setting: the project's entry in `projects`, then the global value, then the legacy `autonomous.rules_file` / `autonomous.context_file` keys, then the built-in default (`AGENT.md` / `CONTEXT.md`).
+
+| Key | Type and default | Notes |
+|---|---|---|
+| `autonomous.rules_context.rules_file` | string, unset = legacy key or `AGENT.md` | Relative to the project directory; absolute names and `..` are refused |
+| `autonomous.rules_context.context_files` | list of strings, unset = legacy key or `CONTEXT.md` | At most 8 names; same file-name rules; an empty entry is refused |
+| `autonomous.rules_context.digest_mode` | `off`, `no_tools` or `all`, unset = `no_tools` | Case-insensitive; `no_tools` adds the digest only for a backend without file tools |
+| `autonomous.rules_context.digest_max_bytes` | integer, unset or 0 = 4096 | An explicit value must be 512 to 65536 |
+| `autonomous.rules_context.projects` | list, default empty | One override per `project_dir`; each of the four settings above may be set and an empty one inherits |
+| `autonomous.rules_context.projects[].project_dir` | string, required | The project directory the override applies to |
+| `autonomous.rules_context.projects[].rules_file` | string, inherits when empty | As `rules_file` |
+| `autonomous.rules_context.projects[].context_files` | list, inherits when empty | As `context_files` |
+| `autonomous.rules_context.projects[].digest_mode` | string, inherits when empty | As `digest_mode` |
+| `autonomous.rules_context.projects[].digest_max_bytes` | integer, inherits when 0 | As `digest_max_bytes` |
+
+A change applies to the next Automaton that is decomposed, with no restart. Surfaces: `GET`/`PUT /api/autonomous/rules-context`, `datawatch autonomous rules-context`, the MCP tools `rules_context_status` and `rules_context_set`, the chat verbs `autonomous rules`, and Settings, General, *Rules and context*.
+
 ### Pre-spawn scope lint mode (`autonomous.scope_lint`)
 
 `autonomous.scope_lint` (`config.AutonomousConfig.ScopeLint`, JSON
