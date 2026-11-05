@@ -594,3 +594,351 @@ resolve to a peer node, plus the peer's model also reachable as a
 plain proxy route — should use peer placement for the *placement*
 decision and datawatch-proxy only for a fixed, non-placement fallback
 route, never as a substitute for admission.
+
+## Failure modes
+
+Proposal. Each mode below states how the condition is detected, what this
+daemon (the coordinator's datawatch) does about it, and what the operator
+sees. The peer's own daemon behaves as an ordinary local datawatch in all
+cases; only the coordinator-side behavior is specified here. All modes are
+handled with the same three mechanisms as the rest of this doc — the
+freshness TTL from the advertisement section, the `OwnerPeer` single-
+pointer from the task-lifecycle section, and the shared `Ledger` — and no
+new protocol is introduced for any of them.
+
+1. **Peer down.**
+   *Detection:* the peer's pushes stop — `PeerEntry.LastPushAt`
+   (`internal/observer/peer_registry.go`, bumped by `RecordPush`) stops
+   advancing past the TTL, and the advertisement sequence numbers of its
+   nodes stop increasing. The two signals are the same event from two
+   views of one channel.
+   *What this daemon does:* marks the peer and every peer-scoped node of
+   it **stale** and removes them from every candidate set immediately
+   (no dispatch to a stale node, per the advertisement section); in-flight
+   LLM calls to the peer fail with a refusal that names the peer token;
+   the dispatcher's existing failover loop continues with the next
+   surviving candidate in the placement set, or the request queues as a
+   `Waiter`; leases for work already submitted to the peer are returned to
+   the ledger at their own normal timeout/failure path, not by any
+   special reclamation; a task placed on the peer keeps its record with
+   `OwnerPeer` set and its last-known state, and if the peer returns and
+   its terminal write conflicts with a coordinator-side decision
+   (e.g. a cancel), the already-terminal coordinator state wins, per mode
+   5 below.
+   *What the operator sees:* the peer shows as stale/down in the status
+   surfaces (observer status and any placement view), the failed call or
+   dispatch names the `<peer>/<node>` token in its refusal, and any task
+   affected carries its last-known status — nothing silently disappears
+   and nothing is auto-retried against a dead peer.
+
+2. **Peer version below the minimum requirement.**
+   *Detection:* the peer's datawatch `Version` — already carried in
+   `PeerEntry` from registration and re-reported with each advertisement
+   (advertisement section, item 2) — compared against the minimum version
+   the placement protocol requires (a value proposed in Open questions,
+   not fixed here).
+   *What this daemon does:* treats the peer as **registered but
+   placement-ineligible**: observer stats continue to be accepted and
+   shown (that channel and its minimum are a separate decision, below),
+   but the peer's nodes are never fresh in the placement sense — they are
+   dropped at the "drop stale peer candidates" gate in the naming
+   section's pipeline, and validation of an LLM entry that names such a
+   peer token is refused at edit time ("fresh advertisement required")
+   rather than failing at first dispatch.
+   *What the operator sees:* the peer's status row carries an explicit
+   "below placement minimum" marker with the peer's actual version, and
+   an edit error that names both the peer and the minimum, so an operator
+   who sees a refused placement can tell "version too old" from "peer
+   down" or "capability not granted" at a glance.
+
+3. **Partial results (a task ends with work done but not fully
+   finished).**
+   *Detection:* the peer reports a terminal `TaskStatus`
+   (`internal/autonomous/models.go`) whose payload is partial by the same
+   axes a local task uses — a changed-file list that is small, empty, or
+   incomplete in the same field, a verdict that is missing or failed in
+   `Task.Verification` (task-lifecycle section, item 8). There is no
+   separate "remote partial" signal; partialness is the existing
+   terminal-status + verdict + changed-files combination.
+   *What this daemon does:* records the result exactly as it records a
+   local task's result — the lease is already returned at completion, the
+   record carries the partial changed-file list and the absent/failed
+   verdict under the task's local copy, and the operator's existing
+   review discipline (`Task.Verification` before accepting) applies
+   unchanged. A completed verdict from a peer is a trust boundary, not a
+   proof, for the same reason as locally.
+   *What the operator sees:* the identical shape to a local partial task —
+   a terminal status with a partial/empty changed-file list and a
+   missing or failed verdict, plus `OwnerPeer` showing the work happened
+   remotely. No new status vocabulary to learn.
+
+4. **Stale advertisement (peer alive, node facts outdated).**
+   *Detection:* no advertisement for a node carries a newer sequence
+   number than the last received and the TTL (freshness window from the
+   advertisement section, item 4) elapses, or an advertisement arrives
+   with a *regressed* sequence number — both mean the cached facts are no
+   longer trusted, even though the peer's other pushes may still be
+   flowing (a node edited/removed on the peer without the push reaching
+   the coordinator is indistinguishable from a node that changed and
+   stopped being offered).
+   *What this daemon does:* marks that one peer-scoped node stale — not
+   the whole peer — drops it from candidate sets the moment staleness
+   trips, and keeps it visible as stale in status. In-flight leases on
+   the node are not force-revoked (the work is remote and running; the
+   coordinator has no local handle on it); they end by their normal
+   completion/timeout path. A newer advertisement with a higher sequence
+   on the same node re-freshes it.
+   *What the operator sees:* the status surface names the specific node
+   as stale (distinct from the peer being down), with the last-received
+   sequence and its local-clock receipt time, and dispatch refusals for
+   that token say it is stale.
+
+5. **Cancel racing completion.**
+   *Detection:* an ordering race between two independent writes — the
+   coordinator's cancel reaching the peer after the peer has already
+   started its terminal state, or the peer's result write reaching the
+   coordinator after the coordinator already recorded the cancel. Neither
+   side can see the other's intent; the race is observable only as "two
+   terminal events for one task."
+   *What this daemon does:* keeps single-writer state on each side, per
+   the task-lifecycle section (item 7): whichever event the coordinator
+   records first makes its local task copy terminal; the later of the two
+   is rejected against that already-terminal state (a result write after
+   a recorded cancel is refused and logged, a cancel after a recorded
+   completion likewise). The lease is released exactly once — by the
+   event that is recorded first — so the race cannot double-release or
+   double-occupy the pool.
+   *What the operator sees:* one terminal status for the task, with a
+   record of which event was recorded first and that the other arrived
+   late and was rejected (the rejection is in the coordinator's own log,
+   and the status is unambiguous in any case: the task is not in two
+   states).
+
+6. **Duplicate submission on retry (submit timed out, response lost).**
+   *Detection:* the coordinator's submit (create + start, task-lifecycle
+   section item 2) times out or its response is lost, so the coordinator
+   cannot tell whether the peer created the task — and a blind retry
+   could create a second task for the same logical work.
+   *What this daemon does:* makes the submit idempotent by identity: the
+   coordinator generates one task id for the placement attempt and sends
+   it with the create; the peer stores that id as the task's identity and
+   a retried create carrying the same id returns the existing task rather
+   than creating a new one. The coordinator's lease accounting is
+   unaffected — one lease per attempt, returned on rollback — so even
+   without the peer-side dedup a double submit cannot occupy two ledger
+   slots, and with it, exactly one task exists for the attempt.
+   *What the operator sees:* one task in the coordinator's list and one
+   on the peer side, for one attempt; the operator never sees two tasks
+   that are "the same work."
+
+7. **Network partition mid-task.**
+   *Detection:* identical signal to the peer-down case (pushes stop,
+   status polls stop answering) occurring while a task is running — the
+   coordinator cannot distinguish "partitioned" from "peer crashed" and
+   deliberately does not need to: both mean "I cannot talk to the
+   owning machine."
+   *What this daemon does:* stops polling with a bounded backoff (no
+   request storm against an unreachable peer), keeps the task record
+   intact with `OwnerPeer` set and its last-known state, and takes no
+   ownership of the peer's working state — the work runs (or dies) on the
+   peer under the peer's own daemon, independent of the partition. When
+   connectivity returns, the peer's later terminal write and the
+   coordinator's record converge by the same already-terminal rule as
+   mode 5; if the peer and its task died, the coordinator's task stays
+   at last-known state (no invented completion is recorded by the
+   coordinator).
+   *What the operator sees:* the task sits at its last-known status with
+   the peer shown unreachable; there is no fabricated verdict either way,
+   and the operator can cancel (recorded optimistically per the cancel
+   semantics) or wait for the peer's real terminal state to arrive.
+
+8. **Clock skew between daemons.**
+   *Detection:* not detected as a fault per se — the design makes wall-
+   clock disagreement irrelevant. Timestamps on advertisements may arrive
+   ordered differently than they were produced, and the two machines'
+   clocks may differ arbitrarily; the detection that *would* expose
+   skew is an advertisement arriving with a regressed sequence number
+   (handled under mode 4) or a staleness decision landing early/late by
+   the skew amount (visible in status, below).
+   *What this daemon does:* never uses a peer-reported wall clock for any
+   admission, freshness, or ordering decision: staleness and TTL are
+   computed against the *receiving* coordinator's local clock at receipt
+   time, and ordering between advertisements of the same node is settled
+   by the monotonic per-node sequence number (advertisement section,
+   item 2), not by timestamps. A peer clock that is wrong can only make
+   its own stats look odd, not change who is admitted where.
+   *What the operator sees:* nothing directly attributable to clock skew;
+   the status surface shows receipt times in the coordinator's local
+   clock (which are the times that ever matter for placement), and
+   worst-case skew only bounds how early or late a stale node is
+   evicted.
+
+## Path to a fully federated resource peer
+
+Proposal. The route for a second machine (the peer) to share its
+resources with the coordinator is **configuration-only at every stage**:
+no rebuild on the peer, no new service, no cluster protocol — each stage
+is the existing peer registration from `internal/observer/peer_registry.go`
+(`PeerRegistry.Register`: operator-initiated, token minted and given to
+the peer once, persisted to `<data_dir>/observer/peers.json`, stats
+refreshed by the peer's `internal/observerpeer` push through
+`RecordPush`) plus one more explicit grant or configuration. Each stage is
+gated on the previous one and independently reversible: removing a grant
+stops that stage's traffic and leaves every earlier stage intact.
+
+1. **Stage 0 — register the peer (already exists).** Operator registers
+   the peer on the coordinator and the peer is configured with the
+   coordinator URL and its minted token. *Gate:* first successful push —
+   `RecordPush` has stamped a fresh `LastPushAt`. *Result:* the peer
+   appears in observer status with its `HostInfo` and `Version`; nothing
+   is placed on it yet — this stage carries metrics *about* the peer, not
+   an offer of capacity, which is exactly the boundary the current-state
+   section draws.
+2. **Stage 1 — advertise local nodes.** On the peer, the operator marks
+   which of its local `ComputeNode` entries are offerable (not
+   `Disabled`, outside `MaintenanceWindows`, `AllowsConsumer` for the
+   placement consumer) — pure local config on the peer. On the
+   coordinator, the operator grants `placement:advertise` to this peer
+   in the federation capability set. *Gate:* the peer's version meets the
+   placement minimum and at least one node's advertisement is fresh
+   (sequence advancing within the TTL). *Result:* the peer's nodes appear
+   in the shared `Ledger` as `node:<peer>/<node>` pools with their
+   advertised limits and occupancy — the peer is now *countable*.
+3. **Stage 2 — place admitted LLM calls.** The operator extends LLM
+   entries' placement sets (naming section) to include the peer's node
+   tokens and grants `placement:serve` to the peer. *Gate:* the
+   peer/node passes the weak checks of the resolution pipeline (kind,
+   pinned-model state, advertised model set can serve the requested
+   model) and the ledger has room in the pool. *Result:* LLM calls may
+   dispatch to the peer's node with a real lease against its advertised
+   slots — the peer's model is now usable *with admission*, not just as a
+   fixed `datawatch-proxy` route.
+4. **Stage 3 — place autonomous task sessions.** The operator grants the
+   coordinator the autonomous capability set on the peer
+   (`CapAutonomousRead`, `CapAutonomousList`, `CapAutonomousWrite`,
+   `CapAutonomousRun`), and the peer side is configured for autonomous
+   work the way a local instance runs it today: repo available for
+   `EnsureWorktree`, verification scripts runnable, workers configured.
+   *Gate:* submit + track proven in a guided run (one task successfully
+   submitted, tracked to a terminal state with a recorded verdict —
+   i.e. the whole task-lifecycle table exercised end to end at least
+   once). *Result:* the machine is a **fully federated resource peer** —
+   its compute is counted, its models serve admitted calls, and whole
+   task sessions execute on it while the coordinator keeps state. Every
+   stage before this one remains available and independent of it.
+
+## Parity surface
+
+Per the parity-surface rule (AGENT.md), this proposal enumerates all
+channels it touches from the full set. The design is a proposal (no
+implementation yet), so "Include" means the surface gets the feature
+when it is built; excluded surfaces state the reason.
+
+| Surface        | Include / Exclude | What the surface gets (or why excluded) |
+|---              |---                |---|
+| REST           | Include           | The placement surfaces: placement-set editing on LLM entries, `node:<peer>/<node>` pool/status reads, peer registration and capability grants (`fedCap`-guarded per the Federation-Parity rule), submit/track/cancel/result for placed tasks. Mobile clients and scripts parse exactly this contract. |
+| MCP            | Include           | The status and configuration counterparts of the REST surfaces (placement pools, peer freshness, per-token status), matching how existing autonomous and compute status is exposed via MCP; the capability-accessibility rule treats MCP as a first-class config/status channel. |
+| CLI            | Include           | `datawatch config set` round-trips for placement-set and capability fields (Configuration Accessibility Rule), plus peer register/list/status for operators on a shell — the only channel that can do the one-time token handoff without a browser. |
+| comm channel   | Include           | `configure <key>=<value>` for the same fields and a status query for peer placement, so an operator can check "is that peer's node still fresh?" from Signal/Telegram without opening the PWA. |
+| YAML/config    | Include           | Placement sets on LLM entries, `PlacementOverride` on task specs, and per-peer capability grants, each with a commented field in the config template per the Configuration Accessibility Rule. |
+| PWA            | Include           | LLM entry editor accepts local names and `<peer>/<node>` tokens with edit-time validation, placement status shows each pool (local and peer-scoped) with freshness, and placed tasks render like local ones with `OwnerPeer` visible. Any of these operator-visible changes trigger the Mobile-Parity Rule at implementation time. |
+| Android        | Include           | Capability parity via the shared REST/WS contracts above; idiomatic delivery (no web-specific affordances assumed). **A `datawatch-app` issue is required when the feature is built** (Mobile-Parity Rule): the new placement-set editor affordances, status chips, and any new strings get filed against the Compose Multiplatform client in the same release that ships them on the PWA. |
+| iPhone/iOS     | Include           | Same parity clause as Android: parity standard is PWA == Android == iPhone, capability parity required with native (SwiftUI) delivery. **A `datawatch-app` issue is required when the feature is built** (Mobile-Parity Rule) so the iOS client tracks the same API contract and affordances; excluded from *this doc* only because this doc implements nothing. |
+
+## Open questions
+
+Each is an operator-owned decision. The recommended answer is stated with
+its reason so the design can be built as-written if the operator agrees
+with every recommendation.
+
+1. What advertisement cadence and TTL should the coordinator use —
+   should advertisements ride the existing peer-push cadence and a peer
+   node go stale after three missed pushes, or should placement get its
+   own faster, dedicated ping?
+   **Recommendation:** ride the existing push cadence with a TTL of three
+   missed pushes (the advertisement section's proposal). The peer already
+   operates one push channel; a second faster one is a second thing to
+   operate and to secure, while a three-push TTL is short enough that a
+   dead peer leaves every candidate set within minutes, not hours.
+2. What naming syntax should a peer-scoped node use — a single dotted or
+   slash-joined `peer.node` token inside the existing placement-set list,
+   or separate `peer` and `node` fields on the LLM entry and task spec?
+   **Recommendation:** keep one placement token (the proposed
+   `<peer>/<node>`; dot is an acceptable spelling if the operator
+   prefers it) inside the existing operator-ordered list. A token keeps
+   entries byte-identical to today when local-only, stays unambiguous
+   against local node names (neither component may contain the
+   separator under `validNodeName`), and composes directly with the
+   ledger's `node:<…>` pool names; two fields would double every
+   validation, precedence, and serialization surface for zero new
+   expressiveness.
+3. Should peer slots count toward the existing lane caps (the
+   concurrency limits that already bound how many autonomous tasks run
+   locally), or should they sit outside them?
+   **Recommendation:** peer slots should count toward the *global*
+   autonomous-concurrency cap but not toward per-local-lane limits. The
+   local lanes bound local workers — a peer session occupies none of
+   them — but the coordinator's own state (records, polling, leases,
+   audits) is real cost per placed task, so a pure local exemption would
+   let an operator's fleet grow unbounded coordinator-side load. Counting
+   peer sessions in the global cap keeps that bounded while lane
+   semantics stay about local capacity.
+4. Where should the placed task's worktree live — on the peer, or created
+   on the control plane from a copy of the peer's tree?
+   **Recommendation:** on the peer, exactly as the task-lifecycle section
+   proposes (`EnsureWorktree` runs on the peer; the coordinator only
+   records `OwnerPeer`). A worktree is a view of a repo on a machine; a
+   "copy of the tree" on the coordinator means the same content living
+   on two machines with a sync question that has no honest answer over an
+   untrusted boundary — keeping the worktree on the peer removes the
+   question entirely and leaves each side the single writer for its own
+   bytes.
+5. What cancel semantics should cross the boundary — a single best-effort
+   cancel write (coordinator records the cancel as authoritative for its
+   operator whether or not the peer acks), or a two-phase cancel with
+   ack/timeout before the coordinator's record is allowed to go
+   terminal?
+   **Recommendation:** the single best-effort write with
+   cancelled-with-remote-unconfirmed when the peer is unreachable (the
+   task-lifecycle section's proposal). The peer is the only machine that
+   can actually stop the work, so a two-phase protocol buys a
+   confirmation while hiding that the work may keep running — worse than
+   an honest "cancelled here, unconfirmed there" record; single-writer
+   state on each side keeps the ledger consistent in all four orderings
+   without a protocol.
+6. Where should verification run — on the owning peer, against the
+   worktree it created, or on the coordinator against a fetched copy of
+   the peer's changes?
+   **Recommendation:** on the owning peer, in its own tree (the
+   task-lifecycle section's proposal). The verification scripts are
+   written against the tree and environment the task ran in; re-running
+   them elsewhere requires shipping the tree (defeating the worktree
+   decision above), and the coordinator has no local state to check a
+   peer's verdict against in the first place. The trust model stays
+   "the peer reports faithfully," which is the same trust model as
+   trusting a local task's scripts — applied to the machine where the
+   work actually happened.
+7. What minimum peer version must a peer meet to be placement-eligible —
+   the version at feature release plus one semver level, the exact same
+   minor version, or whatever the operator declares per peer?
+   **Recommendation:** the version at feature release plus one semver
+   level (strictly newer than or equal to the release tag the feature
+   ships in), read from `PeerEntry.Version` which is already captured at
+   registration and re-reported each advertisement. The placement wire
+   contract (advertisement fields, result write, capability strings)
+   evolves with releases, so "any version" would admit peers that speak
+   an older contract; per-peer operator override is already available in
+   the general capability grant and is not needed as a special
+   exception to the version floor.
+8. What should be the default trust grant for a newly registered peer —
+   no placement capabilities at all, or a conservative default set
+   (e.g. advertise-only) that the operator can then widen or revoke?
+   **Recommendation:** no placement grant by default. The Federation-
+   Parity rule treats peers as untrusted callers by default, and the
+   existing built-in capability groups already keep the narrow
+   `*-serve`/`advertise`-style capabilities out of the presets on
+   purpose — a new peer should be invisible to placement until an
+   operator explicitly decides that *this* peer may be placed on, and
+   deny-by-default makes the audit story one sentence instead of a diff
+   against implicit grants. The cost is one extra grant step at
+   registration, which is the point.
