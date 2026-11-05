@@ -165,7 +165,7 @@ func (s *Server) handleSupervisorLoopRunJob(_ context.Context, req mcpsdk.CallTo
 const supervisorLoopEvalUsage = `usage: supervisor_loop_eval job=NAME models=A,B [cases_dir=DIR]
   job        the model job to evaluate: draft_spec, classify_ci_failure or pick_backend
   models     comma-separated model ids to compare
-  cases_dir  optional relative directory holding <job>/*.json cases`
+  cases_dir  optional name of a folder under the default cases folder, holding <job>/*.json cases`
 
 func (s *Server) toolSupervisorLoopEval() mcpsdk.Tool {
 	return mcpsdk.NewTool("supervisor_loop_eval",
@@ -175,7 +175,7 @@ func (s *Server) toolSupervisorLoopEval() mcpsdk.Tool {
 		mcpsdk.WithString("models",
 			mcpsdk.Description(`Required — comma-separated model ids to compare (e.g. "qwen3.8:27b,sonnet").`)),
 		mcpsdk.WithString("cases_dir",
-			mcpsdk.Description(`Optional — relative directory holding <job>/*.json eval cases.`)),
+			mcpsdk.Description(`Optional — name of a folder under the default eval cases folder, holding <job>/*.json cases.`)),
 	)
 }
 

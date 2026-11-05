@@ -14,8 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -422,23 +420,10 @@ func (s *Server) handleSupervisorLoopEval(w http.ResponseWriter, r *http.Request
 		http.Error(w, "bad request: models must list at least one model id", http.StatusBadRequest)
 		return
 	}
-	if in.CasesDir != "" && (filepath.IsAbs(in.CasesDir) || strings.Contains(filepath.ToSlash(filepath.Clean(in.CasesDir)), "..")) {
-		http.Error(w, "bad request: cases_dir must be a relative path without ..", http.StatusBadRequest)
+	casesDir, cerr := supervisorloop.ResolveCasesDir(in.CasesDir)
+	if cerr != nil {
+		http.Error(w, "bad request: "+cerr.Error(), http.StatusBadRequest)
 		return
-	}
-	casesDir := in.CasesDir
-	if casesDir != "" {
-		root, werr := os.Getwd()
-		if werr != nil {
-			http.Error(w, "cannot resolve the working directory", http.StatusInternalServerError)
-			return
-		}
-		confined, ok := confineCasesDir(root, casesDir)
-		if !ok {
-			http.Error(w, "bad request: cases_dir must stay inside the working directory", http.StatusBadRequest)
-			return
-		}
-		casesDir = confined
 	}
 	ev, ok := s.supervisorLoop.(SupervisorLoopEvaluator)
 	if !ok {
@@ -476,16 +461,4 @@ func (s *Server) handleSupervisorLoopStats(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeJSONOK(w, s.SupervisorLoopStats())
-}
-
-// confineCasesDir resolves a request's relative cases folder under root and
-// reports false when the result would leave root. The relative part is cleaned
-// against a leading separator first, so ".." cannot climb above root.
-func confineCasesDir(root, rel string) (string, bool) {
-	root = filepath.Clean(root)
-	full := filepath.Join(root, filepath.Clean(string(filepath.Separator)+rel))
-	if full != root && !strings.HasPrefix(full, root+string(filepath.Separator)) {
-		return "", false
-	}
-	return full, true
 }
