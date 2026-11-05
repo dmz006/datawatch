@@ -33,3 +33,18 @@ func runClassifyVerification(ctx context.Context, node, backend, model, prompt s
 	rt.RecordScores = recordScores
 	return autonomouspkg.ClassifyVerify(ctx, rt, prompt, time.Now())
 }
+
+// runScopeBreadth runs the scope-breadth read through the same runtime provider
+// as classify-mode verification, with the scope question's own fingerprint. A
+// missing provider or runtime is an infra note, never a block.
+func runScopeBreadth(ctx context.Context, text string) autonomouspkg.ScopeBreadthResult {
+	if classifyRuntimeProvider == nil {
+		return autonomouspkg.ScopeBreadthResult{InfraNote: "scope-breadth: no classifier runtime"}
+	}
+	rt, err := classifyRuntimeProvider("", "", "")
+	if err != nil {
+		return autonomouspkg.ScopeBreadthResult{InfraNote: fmt.Sprintf("scope-breadth: classifier runtime unavailable: %v", err)}
+	}
+	rt.Fingerprint = autonomouspkg.ScopeBreadthFingerprint(rt.Fingerprint)
+	return autonomouspkg.ClassifyScopeBreadth(ctx, rt, text)
+}

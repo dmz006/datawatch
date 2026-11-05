@@ -90,4 +90,12 @@ type FailureReason struct {
 	// that root can find every dependent that was failed behind it. Empty on
 	// every other failure.
 	DependsOnTaskID string `json:"depends_on_task,omitempty"`
+	// ScopeTooBroad is set by the scope-breadth classifier on a content-category
+	// task-verification failure when the task bundles several separable units.
+	// Additive: no existing category changes. False when the key is off, the
+	// classifier is not wired, or the read failed (see ScopeBreadthNote).
+	ScopeTooBroad bool `json:"scope_too_broad,omitempty"`
+	// ScopeBreadthNote records why the scope-breadth read produced no answer
+	// (an infrastructure failure of the classifier). Empty otherwise.
+	ScopeBreadthNote string `json:"scope_breadth_note,omitempty"`
 }

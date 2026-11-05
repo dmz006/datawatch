@@ -251,7 +251,9 @@ type Config struct {
 	// VerificationRecordScores mirrors autonomous.verification_record_scores:
 	// keep the classify-mode score vector and route on the verification result.
 	// Unset means true (see RecordScoresEnabled).
-	VerificationRecordScores    *bool  `json:"verification_record_scores,omitempty"`
+	VerificationRecordScores *bool `json:"verification_record_scores,omitempty"`
+	// ScopeBreadthEnabled mirrors autonomous.scope_breadth_enabled (default off).
+	ScopeBreadthEnabled         bool   `json:"scope_breadth_enabled,omitempty"`
 	FallbackVerificationBackend string `json:"fallback_verification_backend,omitempty"`
 	// VerifierNoProgressTimeoutSeconds mirrors
 	// autonomous.verifier_no_progress_timeout_seconds in config; like
@@ -1101,13 +1103,15 @@ type Manager struct {
 	supervisorWatchAlerted      map[string]bool
 	supervisorWatchAlertMu      sync.Mutex
 
-	dataDir    string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates  *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose  DecomposeFn
-	guardrail  GuardrailFn
+	dataDir   string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose DecomposeFn
+	guardrail GuardrailFn
 	// guardrailClassify gates generative guardrail outcomes in classify mode.
 	guardrailClassify *guardrailClassify
-	planReview PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
+	// scopeBreadth is the scope-breadth classifier call site (nil = off).
+	scopeBreadth *scopeBreadth
+	planReview   PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter

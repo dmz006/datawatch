@@ -436,6 +436,24 @@ the classifier client, calibration store and explanation call through `classifyR
 |---|---|---|
 | `autonomous.verification_record_scores` | `true` | Keep the score vector and route on the verification result. Set through the `PUT /api/config` key `autonomous.verification_record_scores` and shown in the autonomous section of `GET /api/config`, like its sibling `autonomous.*` keys. |
 
+### Scope-breadth classifier (`autonomous.scope_breadth_enabled`)
+
+On a content-category task-verification failure, before the retry decision, the executor asks the classifier
+the closed question "A) one coherent change, B) bundles multiple separable units"
+(`internal/autonomous/scope_breadth.go`). It is a separate call site, not a guardrail, and does not depend on
+the verdict wiring. The answer is written to the additive `FailureReason.scope_too_broad` field; no existing
+category changes. The read has its own calibration set: its fingerprint hashes the scope question
+(`ScopeBreadthFingerprint`), so a verifier calibration is never reused. `scope_too_broad` is true only when B
+wins and A is below the calibrated threshold.
+
+It never blocks. Missing runtime, stale calibration, missing scores, abstain, timeout or transport error leave
+`scope_too_broad` false, set `FailureReason.scope_breadth_note`, and append a `scope_breadth_infra` decision to
+the PRD. The consumer (auto-split) is not part of this feature.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.scope_breadth_enabled` | `false` | Run the scope-breadth read. Also needs the classifier capability. Set through `PUT /api/config`; shown in the autonomous section of `GET /api/config`. |
+
 ### Peer usage cache
 
 The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.

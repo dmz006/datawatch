@@ -1247,6 +1247,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// actually just happened, not a stale/zero-value vr left over from
 	// a branch that never touched it.
 	lastFailureCategory := ""
+	scopeTooBroad, scopeNote := false, ""
 	defer m.releaseCapacity(t.ID)
 	// BL428 §3a — per-canonical-tree advisory write lock. Admit order:
 	// capacity (m.admit, per attempt) → refuse-dirty-tree gate → tree
@@ -2139,6 +2140,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return nil
 		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
+		// Scope-breadth read: content failures only, before the retry decision.
+		// Never blocks; an error leaves the flag false with an infra note.
+		if tb, note := m.scopeBreadthFor(ctx, prd, t, vr); tb || note != "" {
+			scopeTooBroad, scopeNote = tb, note
+		}
 		if !textCounted {
 			m.recordFailedAttempt(ctx, prd, t, run, attemptFailure{Outcome: attemptOutcomeFailed, Category: lastFailureCategory, Summary: vr.Summary, Verification: vr})
 		}
@@ -2189,6 +2195,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		t.FailureReason = &FailureReason{
 			Category: orContentCategory(lastFailureCategory), Detail: hint,
 			Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
+			ScopeTooBroad: scopeTooBroad, ScopeBreadthNote: scopeNote,
 		}
 	})
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
