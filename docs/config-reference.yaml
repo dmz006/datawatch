@@ -2963,6 +2963,84 @@ autonomous:
     # the release verification script. When true the daemon runs it once per
     # start, in the background; failures are logged and never block startup.
     backfill_on_start: false
+
+  # ── Automation requirements (requirements report + capability minimums ──
+  # The requirements report answers "can this daemon run the automations it is
+  # configured to run": the built-in capability minimums (capability → minimum
+  # Ollama version, today `classification_verdict` = 0.35.0) against every
+  # registered Compute Node that is an Ollama backend (meets / fails / unknown),
+  # the backends configured for each workload slot (execution, planning,
+  # verification — Claude and the local model pool optional, but at least one
+  # provider required), and every unmet line. Read surfaces: GET
+  # /api/automation/requirements-report (the ?format=text rendering is byte-
+  # identical to the others), the MCP tool automation_requirements_report,
+  # `datawatch automation requirements-report [--format text|json]`, the chat
+  # verbs `automation requirements-report [text|json]` and
+  # `auto req text|json`, and the PWA card. It is a report, not a gate: nothing
+  # is blocked on it. Behavior: docs/howto/automation-requirements.md.
+  #
+  # min_ollama: maps a capability name to a minimum Ollama version override
+  # (autonomous.requirements.min_ollama.<capability>). An absent key means
+  # "use the built-in table"; an empty value under a known capability clears
+  # its built-in floor. Every key must be a known capability (today
+  # `classification_verdict`), and every non-empty value must parse as a
+  # dotted semantic version. Anything else — an unknown capability, an empty
+  # key, or a value like "latest" — is a 400 on every write surface and
+  # nothing is written. Enforced: enabling a capability on a
+  # node below its effective minimum is refused naming the node, the found
+  # version and the required version; a node that later falls below it is
+  # flagged and the capability fails closed (unavailable) until a recheck
+  # finds it back at or above the minimum. Settable via PUT /api/config (key
+  # autonomous.requirements.min_ollama.<capability>), MCP config_set (key
+  # autonomous.requirements.min_ollama.classification_verdict) / the
+  # requirements surfaces, CLI `datawatch config set
+  # autonomous.requirements.min_ollama.classification_verdict=0.40.0`,
+  # comm `configure autonomous.requirements.min_ollama.classification_verdict=0.40.0`.
+  # Applies without a restart (read at report/enable time).
+  requirements:
+    min_ollama:
+      # classification_verdict: "0.40.0"  # raise the built-in 0.35.0 floor
+
+  # ── Model pull consent gate (model pull gate) ──
+  # Operator pre-approval gate for model pulls; both the compute-node model
+  # pull and the marketplace task pull must pass it before anything is pulled.
+  # Default-deny: a model may be pulled when it is listed with allowed: true,
+  # or when it is unlisted and its publisher is on publishers (a listed
+  # entry's publisher, else the leading "publisher/model" segment of the
+  # name; plain names carry no publisher). A listed entry with allowed: false
+  # is an explicit refusal and its note travels with the refusal; everything
+  # else is refused and the refusal names the key to set. Matching is
+  # case-insensitive and ignores the ":tag" suffix (a listed "gpt-oss"
+  # matches a pull of "gpt-oss:20b"). The set is complete: any write
+  # surface replaces the stored lists, it does not append (an example
+  # policy, commented here):
+  #   models:
+  #     - { name: gpt-oss:120b, allowed: true }        # with or without :tag
+  #     - { name: big-model-65b, allowed: false,
+  #         note: "too large for the pool" }         # refusal + its reason
+  #   publishers: [mistralai]   # each entry allows every model of that publisher
+  # Validation (every write surface): empty model names, duplicate model
+  # names (case-insensitive, tag-ignoring) and empty publisher entries are
+  # a 400 and nothing is written (the bad key rejects the whole PUT on
+  # /api/config). Set/changed via PUT /api/config (keys
+  # autonomous.model_pull_consent.models / autonomous.model_pull_consent
+  # .publishers), the REST routes GET/PUT /api/automation/model-consent
+  # (audited as model_pull_consent_changed), the MCP tools
+  # automation_model_pull_consent_get / automation_model_pull_consent_set,
+  # `datawatch automation model-consent get|set`, comm
+  # `autonomous model-pull-consent-get` and `model-pull-consent-set`, and
+  # the PWA settings section “Model pull consent”. Applies without a
+  # restart (the gate is read at pull time). Operator guide:
+  # howto/model-pull-consent.md; internals: docs/implementation.md
+  # ("Automation requirements and the model pull gate").
+  model_pull_consent:
+    # models:
+    #   - name: gpt-oss:120b
+    #     allowed: true
+    #   - name: big-model-65b
+    #     allowed: false
+    #     note: too big for the local pool
+    # publishers: [mistralai]
 # ── Dashboard (operator console + card visibility) ──
 # The dashboard.* block switches gate the PWA dashboard board and the
 # operator console one-glance summary (GET /api/dashboard/console, MCP
