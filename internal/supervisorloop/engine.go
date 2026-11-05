@@ -95,7 +95,8 @@ func (e *Engine) loop(ctx context.Context, job Job, input string, rec *RunRecord
 		if err != nil {
 			*attempts = append(*attempts, Attempt{Output: out, ValidatorError: err.Error()})
 			rec.ValidatorErrors = append(rec.ValidatorErrors, err.Error())
-			rec.Outcome = OutcomeValidatorFailed
+			rec.Outcome = OutcomeError
+			rec.Detail = err.Error()
 			return "", err
 		}
 		var verr error
@@ -105,6 +106,7 @@ func (e *Engine) loop(ctx context.Context, job Job, input string, rec *RunRecord
 		if verr == nil {
 			*attempts = append(*attempts, Attempt{Output: out})
 			rec.Outcome = OutcomeOK
+			rec.Detail = out
 			return out, nil
 		}
 		*attempts = append(*attempts, Attempt{Output: out, ValidatorError: verr.Error()})

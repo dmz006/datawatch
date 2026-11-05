@@ -8,6 +8,8 @@ const (
 	KeyValidatorRetries  = "supervisor_loop.validator_retries"
 	KeyEscalateAfter     = "supervisor_loop.escalate_after_failures"
 	KeyRunRetention      = "supervisor_loop.run_retention"
+	KeyLaneMin           = "supervisor_loop.lane_count.min"
+	KeyLaneMax           = "supervisor_loop.lane_count.max"
 	keyStepSuffixEnabled = ".enabled"
 	keyJobSuffixStyle    = ".style"
 	keyJobSuffixBackend  = ".backend"
@@ -39,6 +41,11 @@ type Settings struct {
 	ValidatorRetries int
 	EscalateAfter    int
 	RunRetention     int
+	// LaneMin and LaneMax are the operator's lane bounds for the lane_count
+	// step. LaneMax 0 means no bounds are configured, and the step moves
+	// nothing.
+	LaneMin int
+	LaneMax int
 }
 
 // DefaultSettings returns the documented defaults.
@@ -66,6 +73,12 @@ func (s Settings) Validate() error {
 	}
 	if s.RunRetention < 1 {
 		return fmt.Errorf("%s: must be >= 1, got %d", KeyRunRetention, s.RunRetention)
+	}
+	if s.LaneMin < 0 {
+		return fmt.Errorf("%s: must be >= 0, got %d", KeyLaneMin, s.LaneMin)
+	}
+	if s.LaneMax < 0 || (s.LaneMax > 0 && s.LaneMax < s.LaneMin) {
+		return fmt.Errorf("%s: must be 0 (unset) or >= %s (%d), got %d", KeyLaneMax, KeyLaneMin, s.LaneMin, s.LaneMax)
 	}
 	for _, n := range ModelJobNames {
 		j := s.Jobs[n]
@@ -127,7 +140,7 @@ func (s *Settings) apply(key string, v any) error {
 		}
 		s.Enabled = b
 		return nil
-	case KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention:
+	case KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyLaneMin, KeyLaneMax:
 		n, ok := toInt(v)
 		if !ok {
 			return bad("integer")
@@ -135,6 +148,10 @@ func (s *Settings) apply(key string, v any) error {
 		switch key {
 		case KeyValidatorRetries:
 			s.ValidatorRetries = n
+		case KeyLaneMin:
+			s.LaneMin = n
+		case KeyLaneMax:
+			s.LaneMax = n
 		case KeyEscalateAfter:
 			s.EscalateAfter = n
 		default:

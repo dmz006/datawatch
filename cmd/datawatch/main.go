@@ -7201,6 +7201,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			autoCoord.SetLaneFillWorktreeFS(autonomouspkg.NewShellSupervisorWatchWorktreeFS())
 			autoCoord.SetLaneCapSource(newLaneFillCapSource(httpServer.InferenceRegistry,
 				func() map[string]int { return cfg.Autonomous.PlanTierMaxInflight }))
+			// Supervisor loop: the eight mechanical steps run once per idle
+			// tick, and an escalation raises a question in the queue.
+			wireSupervisorLoop(autoCoord, amgr, cfg)
 			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
