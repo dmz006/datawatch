@@ -14,8 +14,9 @@
 //   - deploy_after_ship: the operator's deploy step lives in the merge
 //     pipeline's ShipRunner (package mergepipeline, which imports this
 //     package). With no hook the step records "not configured".
-//   - lane_count: the operator's lane bounds come from the lane control. With
-//     no control the step records "not configured" and moves nothing.
+//   - lane_count: the lane control moves the count; the bounds are the
+//     supervisor_loop.lane_count settings. With no control, or no bounds
+//     configured, the step records "not configured" and moves nothing.
 //   - run_merge_until_conflict: mergepipeline.Runner.Run is the existing merge
 //     pipeline; the hook wraps it.
 
@@ -29,6 +30,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/supervisorloop"
 )
@@ -50,12 +52,16 @@ const (
 
 const stepNotConfigured = "not configured"
 
-// SupervisorLaneControl is the operator's lane control: the bounds the
-// operator configured, the running lane count, the count the loop wants and a
-// way to move it. The step never sets a count outside Bounds.
+// ErrSupervisorStepNotConfigured is what a hook returns when the operator has
+// set up nothing for its step; the step records "not configured" and does
+// nothing, and the pass does not count it as a failure.
+var ErrSupervisorStepNotConfigured = errors.New(stepNotConfigured)
+
+// SupervisorLaneControl is the lane control the daemon supplies: the running
+// lane count, the count the loop wants and a way to move it. The bounds are
+// not part of it: they are the operator's supervisor_loop.lane_count.min and
+// .max settings, and the step never sets a count outside them.
 type SupervisorLaneControl interface {
-	// Bounds returns the lowest and highest lane count the operator allows.
-	Bounds() (lo, hi int)
 	// Current returns the running lane count.
 	Current() int
 	// Wanted returns the lane count the loop would like.
@@ -255,6 +261,9 @@ func (s *SupervisorLoopSteps) deployAfterShip(ctx context.Context) (string, erro
 		return "nothing newly shipped", nil
 	}
 	detail, err := s.hooks.Deploy(ctx)
+	if errors.Is(err, ErrSupervisorStepNotConfigured) {
+		return stepNotConfigured, nil
+	}
 	if err != nil {
 		return "", fmt.Errorf("deploy %s: %w", release, err)
 	}
@@ -385,12 +394,15 @@ func (s *SupervisorLoopSteps) laneCount(_ context.Context) (string, error) {
 	if lc == nil {
 		return stepNotConfigured, nil
 	}
-	return applyLaneCount(lc)
+	set := s.settings()
+	if set.LaneMax <= 0 {
+		return stepNotConfigured + ": no supervisor_loop.lane_count bounds set", nil
+	}
+	return applyLaneCount(lc, set.LaneMin, set.LaneMax)
 }
 
 // applyLaneCount is the clamp: it returns the account of what it did.
-func applyLaneCount(lc SupervisorLaneControl) (string, error) {
-	lo, hi := lc.Bounds()
+func applyLaneCount(lc SupervisorLaneControl, lo, hi int) (string, error) {
 	if lo < 0 || hi < lo {
 		return "", fmt.Errorf("lane bounds %d..%d are invalid", lo, hi)
 	}
@@ -451,6 +463,9 @@ func (s *SupervisorLoopSteps) runMergeUntilConflict(ctx context.Context) (string
 		return stepNotConfigured, nil
 	}
 	res, err := s.hooks.MergeUntilConflict(ctx)
+	if errors.Is(err, ErrSupervisorStepNotConfigured) {
+		return stepNotConfigured, nil
+	}
 	if err != nil && res.Conflict == "" {
 		return "", fmt.Errorf("merge pipeline: %w", err)
 	}
@@ -494,7 +509,7 @@ func (e supervisorLoopEscalator) Escalate(_ context.Context, esc supervisorloop.
 	sum := sha256.Sum256([]byte(esc.Job + "\x00" + text))
 	body := fmt.Sprintf("The supervisor loop could not finish %s and needs you. %s", esc.Job, text)
 	if len(body) > questionTextMaxBytes {
-		body = body[:questionTextMaxBytes]
+		body = truncateUTF8(body, questionTextMaxBytes)
 	}
 	q := Question{
 		AskedBy:   supervisorLoopQuestionAsker,
@@ -513,4 +528,17 @@ func (e supervisorLoopEscalator) Escalate(_ context.Context, esc supervisorloop.
 		return fmt.Errorf("raise escalation question: %w", err)
 	}
 	return nil
+}
+
+// truncateUTF8 cuts s to at most max bytes without splitting a multi-byte
+// character.
+func truncateUTF8(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }

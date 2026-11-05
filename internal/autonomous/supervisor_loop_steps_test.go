@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/supervisorloop"
@@ -146,9 +147,8 @@ type fakeLanes struct {
 	err               error
 }
 
-func (f *fakeLanes) Bounds() (int, int) { return f.lo, f.hi }
-func (f *fakeLanes) Current() int       { return f.cur }
-func (f *fakeLanes) Wanted() int        { return f.want }
+func (f *fakeLanes) Current() int { return f.cur }
+func (f *fakeLanes) Wanted() int  { return f.want }
 func (f *fakeLanes) SetCount(n int) error {
 	f.set = append(f.set, n)
 	if f.err == nil {
@@ -175,7 +175,9 @@ func TestSupervisorLoopStepLaneBoundClamp(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			lanes := tc.lanes
-			_, steps, store := newStepsRig(t, SupervisorLoopHooks{Lanes: &lanes})
+			set := supervisorloop.DefaultSettings()
+			set.LaneMin, set.LaneMax = lanes.lo, lanes.hi
+			_, steps, store := newStepsRig(t, SupervisorLoopHooks{Lanes: &lanes, Settings: func() supervisorloop.Settings { return set }})
 			rs := steps.RunPass(context.Background())
 			r := resultFor(t, rs, stepLaneCount)
 			if (r.Err != nil) != tc.wantErr {
@@ -200,6 +202,23 @@ func TestSupervisorLoopStepLaneBoundClamp(t *testing.T) {
 	_, steps, _ := newStepsRig(t, SupervisorLoopHooks{})
 	if r := resultFor(t, steps.RunPass(context.Background()), stepLaneCount); r.Detail != stepNotConfigured {
 		t.Errorf("no lane control: detail = %q", r.Detail)
+	}
+}
+
+func TestSupervisorLoopStepLaneNoBoundsConfigured(t *testing.T) {
+	lanes := &fakeLanes{cur: 2, want: 9}
+	_, steps, _ := newStepsRig(t, SupervisorLoopHooks{Lanes: lanes})
+	r := resultFor(t, steps.RunPass(context.Background()), stepLaneCount)
+	if !strings.HasPrefix(r.Detail, stepNotConfigured) || len(lanes.set) != 0 {
+		t.Errorf("detail %q, set %v: want not configured and no move", r.Detail, lanes.set)
+	}
+}
+
+func TestSupervisorLoopStepEscalationBodyKeepsUTF8(t *testing.T) {
+	long := strings.Repeat("é", questionTextMaxBytes)
+	got := truncateUTF8(long, questionTextMaxBytes-1)
+	if !utf8.ValidString(got) || len(got) > questionTextMaxBytes-1 {
+		t.Errorf("truncated body invalid or too long: %d bytes valid=%v", len(got), utf8.ValidString(got))
 	}
 }
 

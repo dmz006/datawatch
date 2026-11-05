@@ -3089,6 +3089,12 @@ type AutonomousConfig struct {
 	// AutonomousLaneFillConfig.
 	LaneFill AutonomousLaneFillConfig `yaml:"lane_fill" json:"lane_fill"`
 
+	// SupervisorLoop — the supervisor_loop settings as flat dotted keys
+	// (for example "supervisor_loop.lane_count.max": 4,
+	// "supervisor_loop.deploy_after_ship.enabled": false). Parsed by
+	// supervisorloop.ParseSettings; absent keys take their defaults.
+	SupervisorLoop map[string]any `yaml:"supervisor_loop,omitempty" json:"supervisor_loop,omitempty"`
+
 	// Parallel — knobs for parallel task execution
 	// (autonomous.parallel.*). See AutonomousParallelConfig.
 	Parallel AutonomousParallelConfig `yaml:"parallel" json:"parallel"`

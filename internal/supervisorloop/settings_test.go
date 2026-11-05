@@ -72,3 +72,29 @@ func TestParseFallsBackToDefault(t *testing.T) {
 		t.Fatal(reset)
 	}
 }
+
+func TestSettingsLaneBounds(t *testing.T) {
+	s := DefaultSettings()
+	if s.LaneMax != 0 || s.LaneMin != 0 {
+		t.Fatalf("default lane bounds = %d..%d, want unset", s.LaneMin, s.LaneMax)
+	}
+	if err := s.Set(KeyLaneMin, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(KeyLaneMax, 4); err != nil {
+		t.Fatal(err)
+	}
+	if s.LaneMin != 1 || s.LaneMax != 4 {
+		t.Errorf("bounds = %d..%d", s.LaneMin, s.LaneMax)
+	}
+	if err := s.Set(KeyLaneMax, 0); err != nil || s.LaneMax != 0 {
+		t.Errorf("unset max: err=%v max=%d", err, s.LaneMax)
+	}
+	s.Set(KeyLaneMax, 4)
+	if err := s.Set(KeyLaneMin, 5); err == nil {
+		t.Error("min above max accepted")
+	}
+	if err := s.Set(KeyLaneMax, 0.5); err == nil {
+		t.Error("non-integer max accepted")
+	}
+}
