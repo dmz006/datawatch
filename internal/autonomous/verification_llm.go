@@ -1,6 +1,10 @@
 package autonomous
 
-import "github.com/dmz006/datawatch/internal/inference"
+import (
+	"fmt"
+
+	"github.com/dmz006/datawatch/internal/inference"
+)
 
 // VerificationLLM is the resolved verifier LLM for one task: which
 // backend/model/effort the verifier should run with and which level the
@@ -78,16 +82,24 @@ func ResolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) 
 // ResolveVerificationLLMWithMode is ResolveVerificationLLM plus the resolved
 // verification mode of the chosen entry, read through lookup. A nil lookup or
 // an empty result resolves to generate. A value that is not a known mode is
-// kept as-is so the caller can reject it (fail closed) rather than being
-// silently coerced.
-func ResolveVerificationLLMWithMode(prd *PRD, task *Task, auto *Automation, cfg Config, lookup VerificationModeLookup) VerificationLLM {
+// rejected with an error (fail closed): the returned VerificationLLM still
+// carries the backend/model/source, but Mode is left empty so no caller can
+// mistake it for a usable mode.
+func ResolveVerificationLLMWithMode(prd *PRD, task *Task, auto *Automation, cfg Config, lookup VerificationModeLookup) (VerificationLLM, error) {
 	out := resolveVerificationLLM(prd, task, auto, cfg)
-	if lookup != nil {
-		if m := lookup(out.Backend, out.Model); m != "" {
-			out.Mode = string(m)
-		}
+	if lookup == nil {
+		return out, nil
 	}
-	return out
+	m := lookup(out.Backend, out.Model)
+	if m == "" {
+		return out, nil
+	}
+	if !inference.ValidVerificationMode(m) {
+		out.Mode = ""
+		return out, fmt.Errorf("verification llm %q/%q: unknown verification_mode %q (allowed: classify, generate)", out.Backend, out.Model, string(m))
+	}
+	out.Mode = string(m)
+	return out, nil
 }
 
 func resolveVerificationLLM(prd *PRD, task *Task, auto *Automation, cfg Config) VerificationLLM {

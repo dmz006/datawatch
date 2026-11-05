@@ -340,6 +340,24 @@ nil-safe). `off` is a full no-op, `warn` never blocks, `block` sets
 `TaskBlocked` with `undeclared_edit: <files>` and halts the walk.
 Worktree-mode PRDs are skipped. Read-only git only.
 
+### LLM entry `verification_mode`
+
+An LLM registry entry carries `verification_mode` (`classify` | `generate`, JSON/YAML key
+`verification_mode`). Default: absent/empty, which resolves to `generate`, so existing setups are
+unchanged. The value is validated on `Registry.Add`, `Registry.Update` and registry load; an unknown
+value is rejected (a stored file with an unknown value fails to load with the entry name).
+
+- Resolution: `autonomous.ResolveVerificationLLM` reports `Mode` (always `generate`);
+  `ResolveVerificationLLMWithMode` reads the chosen entry's mode through a lookup and returns an
+  error for an unknown value instead of coercing it. The mode belongs to the entry; it does not take
+  part in the task/story/Automaton/global override chain, and the `Verification*` fields are unchanged.
+- Live path: the daemon's verifier resolves through the registry lookup; an invalid mode produces a
+  `setup` verdict (block, not a finding about the task).
+- Surfaces: REST `POST|PUT /api/llms` (`verification_mode`), MCP `llm_add`/`llm_update`
+  (`verification_mode`), CLI `datawatch llm add|update --verification-mode`, comm `llm add|update
+  verification_mode=<v>`, PWA Settings > Compute > LLM edit (Verification mode select). Android and
+  iPhone follow through the same REST field (capability parity; no client change in this core).
+
 ### Classifier capability probe (`classifier.*`)
 
 `internal/classifier` reads a guardrail verdict as a classification (native `/v1/systemone` or

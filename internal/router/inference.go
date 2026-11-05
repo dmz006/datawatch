@@ -47,6 +47,8 @@ Common kv pairs:
   billing_group=<text>    operator label grouping LLMs that share one
                           cloud/billing account across federated peers
                           (label only; empty = no group)
+  verification_mode=classify|generate   (how this LLM judges when used as a
+                                      verifier; empty/absent = generate)
   plan_tier=pro|max_5x|max_20x|api   (LLM's subscription tier; the daemon's
                                       autonomous.plan_tier_max_inflight table then
                                       caps its inflight unless max_inflight>0 wins)

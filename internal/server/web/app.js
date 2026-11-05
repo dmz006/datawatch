@@ -11622,6 +11622,12 @@ window._renderLLMEditPanel = function(existing) {
         ${llmEffectiveCapLine(existing)}
       </div>
       <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_verification_mode')||'Verification mode')}</label>
+        <select id="llmEditVerificationMode" class="form-select">
+          ${['','generate','classify'].map(v=>`<option value="${escHtml(v)}" ${(existing.verification_mode||'')===v?'selected':''}>${escHtml(v||'(default: generate)')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
         ${renderBadgeInput('llmEditTags', (existing.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
       </div>
@@ -11900,6 +11906,7 @@ window._llmSaveDraft = function() {
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
   const maxInflight = parseInt((document.getElementById('llmEditMaxInflight')||{}).value||'0', 10) || 0;
   const planTier = (document.getElementById('llmEditPlanTier')||{}).value||'';
+  const verificationMode = (document.getElementById('llmEditVerificationMode')||{}).value||'';
   const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
   const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
@@ -11919,7 +11926,7 @@ window._llmSaveDraft = function() {
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
     auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
-    timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, tags,
+    timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, verification_mode: verificationMode, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
     auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,

@@ -33,6 +33,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("plan_tier", mcpsdk.Description("optional subscription plan tier: pro|max_5x|max_20x|api (empty = unset). autonomous.plan_tier_max_inflight then caps this LLM's inflight unless an explicit max_inflight > 0 overrides it")),
+		mcpsdk.WithString("verification_mode", mcpsdk.Description("optional verification mode when this LLM is used as a judge: classify|generate (empty = generate)")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout (0=adapter default)")),
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
@@ -67,6 +68,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
 		mcpsdk.WithString("plan_tier", mcpsdk.Description("subscription plan tier: pro|max_5x|max_20x|api (empty = unset)")),
+		mcpsdk.WithString("verification_mode", mcpsdk.Description("verification mode when this LLM is used as a judge: classify|generate (empty = generate)")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout")),
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
@@ -229,6 +231,9 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "plan_tier"); v != "" {
 		body["plan_tier"] = v
+	}
+	if v := optString(req, "verification_mode"); v != "" {
+		body["verification_mode"] = v
 	}
 	if v := optString(req, "billing_group"); v != "" {
 		body["billing_group"] = v
