@@ -98,9 +98,28 @@ func evalPrompt(job string, c EvalCase) string {
 	return PickBackendPrompt(c.Input, c.Candidates)
 }
 
+// evalJobFolder maps a job name that arrives in a request to the folder name of
+// that model job. The name comes from the fixed list in the switch, never from
+// the request text, so a request cannot steer the folder out of casesDir.
+func evalJobFolder(job string) (string, error) {
+	switch job {
+	case "draft_spec":
+		return "draft_spec", nil
+	case "classify_ci_failure":
+		return "classify_ci_failure", nil
+	case "pick_backend":
+		return "pick_backend", nil
+	}
+	return "", fmt.Errorf("unknown model job %q (use one of %s)", job, strings.Join(ModelJobNames, ", "))
+}
+
 // LoadEvalCases reads every *.json file of <casesDir>/<job>, sorted by file name.
 func LoadEvalCases(job, casesDir string) ([]EvalCase, error) {
-	dir := filepath.Join(casesDir, job)
+	name, err := evalJobFolder(job)
+	if err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(casesDir, name)
 	files, err := filepath.Glob(filepath.Join(dir, "*.json"))
 	if err != nil {
 		return nil, err
