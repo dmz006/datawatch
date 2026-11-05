@@ -126,7 +126,7 @@ func TestFixtureLogDecode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }() // read-only fixture handle
 	fakeNow := time.Date(2026, 1, 2, 3, 4, 8, 0, time.UTC)
 	var events []Event
 	sc := bufio.NewScanner(f)
