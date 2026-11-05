@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.96.2 — Planning routing test no longer double-unescapes
+
+A test helper for the planning routing JSON editor decoded `&amp;` before the other entities, which CodeQL flagged as a double unescape. It now decodes it last. The version check also treats `*.test.js` files as test-only, like `*_test.js`, so a test-only change no longer needs a version bump.
+
 ## v9.96.1 — Trace is a sub-tab under Status, not a card above the session
 
 The Trace card is now a Trace sub-tab, not a card above the session.
