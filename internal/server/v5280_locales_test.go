@@ -388,6 +388,33 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"uncommitted_work_card_title",
 		"settings_automation_uncommitted_work_policy",
 		"settings_automation_uncommitted_work_scope",
+		// Requirements report card + model pull consent card in the web
+		// setup view, and the node backend-versions detail row.
+		"requirements_report_card_title",
+		"requirements_report_section_title",
+		"requirements_report_capabilities",
+		"requirements_report_backends",
+		"requirements_report_missing",
+		"requirements_report_minimum",
+		"requirements_report_node_flagged",
+		"requirements_report_placeholder",
+		"requirements_report_failed",
+		"model_consent_card_title",
+		"model_consent_section_title",
+		"model_consent_intro",
+		"model_consent_models",
+		"model_consent_publishers",
+		"model_consent_publisher",
+		"model_consent_add_model",
+		"model_consent_add_publisher",
+		"model_consent_save",
+		"model_consent_saved",
+		"model_consent_save_failed",
+		"model_consent_failed",
+		"node_backend_versions",
+		"node_backend_versions_loading",
+		"node_backend_below_minimum",
+		"node_backend_versions_failed",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
