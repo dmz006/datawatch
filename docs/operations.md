@@ -4648,6 +4648,8 @@ stays until an explicit undrain. The state lives in the node registry
 with every surface, is [howto/compute-nodes.md → Draining a node for
 maintenance](howto/compute-nodes.md#draining-a-node-for-maintenance).
 
+**Headroom on demand.** `POST /api/compute/nodes/{name}/headroom` (MCP `compute_node_headroom_measure`, CLI `datawatch compute headroom measure <node>`, comm `compute headroom measure <node>`) measures a node's free memory now and stores it. `GET .../headroom` (MCP `compute_node_headroom_get`, CLI `datawatch compute headroom get <node>`, comm `compute headroom <node>`) reads the stored measurement with its age, freshness and the verifier cap it supports. The measurement runs only when asked, only on a node that holds no lease (a busy node is refused with 409), and only with a model the operator's model-pull consent allows (403 otherwise).
+
 ### Node placement and restart ordering
 
 Three rules keep a compute node from running more sessions than its limit and

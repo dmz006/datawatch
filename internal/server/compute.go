@@ -346,6 +346,20 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 		name := strings.TrimSuffix(rest, "/detail")
 		s.handleComputeNodeDetail(w, r, name)
 
+	// On-demand headroom measurement (POST, idle nodes only, never on a
+	// timer) and the stored headroom view (GET). See compute_headroom.go.
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodPost:
+		if !s.fedCap(w, r, federation.CapComputeWrite) {
+			return
+		}
+		s.handleComputeNodeHeadroomMeasure(w, r, strings.TrimSuffix(rest, "/headroom"))
+
+	case strings.HasSuffix(rest, "/headroom") && r.Method == http.MethodGet:
+		if !s.fedCap(w, r, federation.CapComputeRead) {
+			return
+		}
+		s.handleComputeNodeHeadroomGet(w, r, strings.TrimSuffix(rest, "/headroom"))
+
 	// v7.0.0-alpha.18 #242 — list models available on this Node for the
 	// requested LLM kind. Used by PWA's kind-aware model dropdown so
 	// operators don't have to know exact model names.
