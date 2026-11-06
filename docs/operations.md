@@ -279,6 +279,16 @@ If you routinely see PRDs parked for age, either raise `autonomous.resume_max_ag
 
 **Compute node of a surviving worker.** When the daemon restarts, a surviving pi-prompt worker is re-adopted on the compute node it was placed on. The node comes from the node recorded when the worker was placed. When none was recorded, it comes from the worker's own endpoint, matched against the compute node's address field - never from the worker's name and never from a DNS lookup. The node pools therefore show one worker per node before and after a restart. A worker whose node cannot be determined holds no node. It is shown as `node_unknown` on its lease in `GET /api/capacity` (also in `capacity_status` over MCP, and as `node unknown` in the status text) instead of being counted on a default node. If you see it, check the compute node's address field.
 
+### What the supervisor loop closes, and when
+
+The supervisor loop's `close_finished_records` step (on by default) closes the records of Automata that reached a terminal state, once per idle pass. What it closes, and when:
+
+- **Completed and rejected** Automata are archived on the next idle pass. There is no grace for them.
+- **Cancelled** Automata are archived only after the grace `autonomous.supervisor_loop.archive_cancelled_after_minutes` has passed since their most recent cancel. The default is 60; set `0` to archive at once. The grace exists so a cancelled branch can still be inspected, or re-cancelled to push the archive back, before the record disappears — re-cancelling moves the start of the grace to the latest cancel.
+- **A cancelled Automaton whose branch holds commits that are not on the base branch** (main when no base branch is set) is **never archived by the loop**, no matter how long the grace has passed. It stays until you archive it, its work is merged, or its branch is deleted. The check is read-only and conservative: when it cannot determine the branch's state (no base repository, a git error, or an unknown comparison) it keeps the record — only a branch that is gone, or a branch with nothing ahead of base, lets the record go.
+
+Your own archive is unaffected and works at any time, from any surface. The two paths are told apart on the record: a loop archive is recorded with the actor `supervisor-loop`, an operator archive with the actor `operator`. The step's run record says what a pass did: how many finished records it closed, how many cancelled Automata it held within the grace, and how many it kept for unmerged branch work. See [the supervisor loop how-to](howto/supervisor-loop.md) for every step and setting.
+
 ### Data compatibility
 
 datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.
