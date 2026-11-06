@@ -88,7 +88,7 @@ func (s *DecisionRecords) OnQuestionChange(c QuestionChange) {
 	if !ok {
 		return // an ordinary question, not one a record owns
 	}
-	a := Answer{}
+	var a Answer
 	switch {
 	case c.Answer != nil:
 		a = *c.Answer
