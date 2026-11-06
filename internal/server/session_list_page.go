@@ -57,6 +57,14 @@ type sessionSummaryRow struct {
 	// owning Automaton (BL461). Both are additive.
 	Tags          []string `json:"tags,omitempty"`
 	InheritedTags []string `json:"inherited_tags"`
+
+	// Sub-task nesting link (grouping + saved views): the Automaton (prd) the
+	// session belongs to, the story inside it, and the task it runs. All
+	// omitempty like the rest of the row — a session outside an Automaton
+	// omits prd_id and sits in the ungrouped block instead.
+	PRDID   string `json:"prd_id,omitempty"`
+	StoryID string `json:"story_id,omitempty"`
+	TaskID  string `json:"task_id,omitempty"`
 }
 
 // sessionListPage is the paged envelope.
@@ -250,6 +258,7 @@ func (s *Server) sessionSummaryRow(sess *session.Session, textChars int) session
 		LastActivity: sess.UpdatedAt, ParentID: sess.ParentID,
 		EstCostUSD: sess.EstCostUSD, TokensIn: sess.TokensIn, TokensOut: sess.TokensOut,
 		StatusLine: sessionStatusLine(sess, textChars),
+		PRDID: sess.PRDID, StoryID: sess.StoryID, TaskID: sess.TaskID,
 		Tags:       sess.Tags, InheritedTags: s.manager.InheritedTags(sess),
 	}
 	if sess.LastChannelEventAt.After(row.LastActivity) {
