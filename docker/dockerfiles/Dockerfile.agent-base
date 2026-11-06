@@ -37,7 +37,7 @@ ARG GH_COMMIT=fc4b137cdef0a6bd28fd461b7cf9c84a5812a8cd
 # 1.27.3 carries the fix for CVE-2026-111943 (stdlib); chosen over 1.26.10
 # so the gh build keeps the same Go minor it was validated with.
 ARG GH_GO_VERSION=1.27.3
-ARG GH_XNET_VERSION=0.60.0
+ARG GH_XNET_VERSION=0.62.0
 # Non-root user the image ships as; home under /home/${DW_USER}.
 ARG DW_USER=datawatch
 
