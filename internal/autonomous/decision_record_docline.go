@@ -269,7 +269,7 @@ func readDecisionDoc(path string) ([]byte, os.FileInfo, error) {
 	if err != nil {
 		return nil, nil, docProblem("The document could not be opened.")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
 		return nil, nil, docProblem("The document could not be read.")

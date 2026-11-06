@@ -432,7 +432,7 @@ func TestDecisionRecordFlow_ClarityRefuse(t *testing.T) {
 		}
 		before := flowQuestion(t, r, view.QuestionID)
 		_, _, err = r.svc.Update(view.ID, unclearRecord())
-		refusal(t, err)
+		_ = refusal(t, err)
 		after := flowRecord(t, r, view.ID)
 		if after.ContentSHA256 != view.ContentSHA256 {
 			t.Error("a refused edit changed the stored record")

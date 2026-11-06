@@ -52,7 +52,7 @@ func TestDecisionRecordPWA_CardFunctionsPresent(t *testing.T) {
 
 func TestDecisionRecordPWA_CardWiredIntoAutomataPanel(t *testing.T) {
 	src := decisionAppSource(t)
-	if strings.Index(src, "_decisionRecordSlotHtml()") == -1 {
+	if !strings.Contains(src, "_decisionRecordSlotHtml()") {
 		t.Fatal("the Automata panel does not prepend the decision records slot")
 	}
 	if strings.Count(src, "window.loadDecisionRecordCard") < 2 {
