@@ -372,3 +372,17 @@ Decision: A. The model stands as written above: a project owns an ordered list o
 Automata and nested Automations ordered by edges, a plan gates its arc, a standalone Automaton run by hand is only a
 rescue. The Projects tab Automaton (`d3680001`) already carries the model and the project record additions in its
 spec and reads this document first. The defects arc stays a chain unless the operator asks for parallel.
+
+### 11. Where the protected-paths card lives (asked 2026-11-06 16:55 and 17:10)
+
+Options offered: A leave it on the Housekeeping sub-tab, B move it to Settings, C elsewhere.
+
+Operator answer, quoted: "if it is an output/log/details then A in housekeeping; if it is configuration details
+then it should be in settings".
+
+Decision: a general placement rule for every card on these pages: what the operator reads or acts on (outputs, logs,
+details, held items) stays on its Automata page; configuration details live in Settings. The protected-paths card has
+both parts, so it is split: the list of held paths and their actions stay on the Housekeeping sub-tab, and its settings
+(the protected paths list, the action word and the rules review source) belong in Settings under Automata. The Settings
+move Automaton (`9f8f0001`) carries the settings part with the other moved configuration; until it ships the card keeps
+both parts on Housekeeping as shipped in 9.104.0.
