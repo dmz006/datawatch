@@ -1944,3 +1944,10 @@ in the tick report for the pace line and projection.
 
 The operator's words: "plan looks good, claude at 72%". The previous reading was 71% at 10:16, so 1 point in about
 1 hour, against 0.60 allowed per hour.
+
+### Reading, 2026-11-06 13:35
+
+The operator's words: "claude is at 73% do we need claude for sandbox test and can we use a lesser model?". The
+previous reading was 72% at 11:10, so 1 point in about 2.3 hours (0.43 per hour against 0.60 allowed). The question
+about the sandbox live-check tasks is answered in the tick report and recorded as the decision on question 11 below
+once the operator picks.
