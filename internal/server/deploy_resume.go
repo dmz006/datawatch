@@ -41,6 +41,12 @@ func (s sessionRestartSource) HeldLeaseCount(context.Context) (int, error) {
 	return len(s.ledger.Snapshot().Leases), nil
 }
 
+// restartSource is the one session and lease source used both to record the
+// pre-restart baseline and to check it after the restart.
+func (s *Server) restartSource() sessionRestartSource {
+	return sessionRestartSource{m: s.manager, ledger: s.capacityLedger}
+}
+
 // StartDeployResume finishes a deploy the restart interrupted and retries a
 // deferred one. It runs once at daemon start, in the background, and never
 // blocks serving. A second call starts another pass, which does nothing for a
@@ -61,7 +67,7 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 	resumer := &deploy.Resumer{
 		Config: cfg, Dir: dir, DataDir: data,
 		Cmd: deploy.ExecCommandRunner{}, Clock: deploy.SystemClock{}, Store: store,
-		Sessions: sessionRestartSource{m: s.manager, ledger: s.capacityLedger},
+		Sessions: s.restartSource(),
 		Ready:    s.waitListening,
 		Outcomes: deploy.OutcomeFile{Path: filepath.Join(data, "deploy", "outcomes.jsonl")},
 	}
@@ -76,8 +82,7 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 		} else if res.Acted {
 			log.Printf("[deploy] resume finished: %s", res.Phase)
 		}
-		runner := newDeployRunner(dir, cfg)
-		runner.Restart = sessionRestartSource{m: s.manager, ledger: s.capacityLedger}
+		runner := newDeployRunner(dir, cfg, s.restartSource())
 		if res, err := deploy.RetryDeferred(ctx, store, deploy.SystemClock{}, runner.Retry); err != nil {
 			log.Printf("[deploy] retry deferred: %v", err)
 		} else if res.Status != deploy.StatusSkipped {

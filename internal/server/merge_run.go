@@ -61,7 +61,7 @@ func mergeDataDir() string {
 // settings. Nothing here names a repository or path: the project directory is
 // the configured worktree base repo, and the version files, conflict policy
 // and pipeline sources are autonomous.merge_pipeline settings.
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, deployCfg config.DeployConfig, repo, project string) *mergepipeline.Runner {
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, deployCfg config.DeployConfig, restart deploy.RestartSource, repo, project string) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
 	if rs, err := mergepipeline.NewRecordStore(mergeDataDir()); err == nil {
 		records = rs
@@ -82,7 +82,9 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, deployCfg co
 		VersionFiles: cfg.EffectiveVersionFiles(project),
 		Ship: mergepipeline.ExecShipRunner{
 			DeployConfig: deployCfg,
-			NewDeploy:    newDeployRunner,
+			NewDeploy: func(dir string, c config.DeployConfig) *deploy.Runner {
+				return newDeployRunner(dir, c, restart)
+			},
 		},
 		Recorder: mr,
 		ConflictSettings: func() mergepipeline.ConflictSettings {
@@ -144,7 +146,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), s.deployConfig(), repo, project).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), s.deployConfig(), s.restartSource(), repo, project).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches,
 	})
 	out := map[string]any{"run": res.Run}
@@ -183,7 +185,10 @@ func (noRestartRecord) RunningSessionIDs(context.Context) ([]string, error) { re
 func (noRestartRecord) HeldLeaseCount(context.Context) (int, error)         { return 0, nil }
 
 // newDeployRunner builds the deploy sequence Runner for dir.
-func newDeployRunner(dir string, cfg config.DeployConfig) *deploy.Runner {
+func newDeployRunner(dir string, cfg config.DeployConfig, restart deploy.RestartSource) *deploy.Runner {
+	if restart == nil {
+		restart = noRestartRecord{}
+	}
 	data := mergeDataDir()
 	return &deploy.Runner{
 		Config: cfg, Dir: dir, DataDir: data,
@@ -191,6 +196,6 @@ func newDeployRunner(dir string, cfg config.DeployConfig) *deploy.Runner {
 		Drain:   noFinalGateDrain{},
 		Clock:   deploy.SystemClock{},
 		Store:   deploy.FileStore{Path: filepath.Join(data, "deploy", "state.json")},
-		Restart: noRestartRecord{},
+		Restart: restart,
 	}
 }
