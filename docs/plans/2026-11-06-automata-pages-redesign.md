@@ -237,3 +237,17 @@ a decision, held questions and their age); defects found and fixed per day.
 6. Housekeeping: what stays as an action card (uncommitted work with a commit button, permission errors with a fix)
    and what becomes events.
 7. Setup and policy: which items become Settings entries and which stay as a project page section.
+
+### 6. Housekeeping (asked 2026-11-06 09:02)
+
+Options offered: A an action list (new "Unlanded work" card with a recommendation and Keep, Archive branch and Delete
+worktree buttons per row, a Commit button with a diff and message for uncommitted work, one-line reasons and a Fix
+button for permission errors, the safe-to-delete report and cleanup history moved to Events); B read-only
+recommendations with printed commands; C a one-time review first.
+
+Operator answer, quoted: "a yes, action list! and i'm looking forward to your review of worktree hopefully some good
+work in there to use!!"
+
+Decision: A, with the review of the 77 unlanded branches done first (the C step), so the list starts sorted and any
+useful work is recovered before anything is deleted. The review result is recorded in
+`2026-11-06-unlanded-branch-review.md`.
