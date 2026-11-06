@@ -1977,3 +1977,8 @@ no new decomposes on Claude, helper agents only for merges and security fixes, a
 
 The operator's words: "claude at 76%". The previous reading was 76% at 16:26, so no change in about an hour while the
 guard held Claude (the burn since was 0.3 points, all supervisor session). The weekend plan stands.
+
+### Reading, 2026-11-06 18:13
+
+The operator's words: "claude is at 77%". The previous reading was 76% at 17:21, so 1 point in about 1 hour (the judge
+and merge-helper runs and this supervisor session; the guard held new Claude work). The weekend plan stands.
