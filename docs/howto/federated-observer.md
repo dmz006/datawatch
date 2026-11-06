@@ -281,7 +281,7 @@ the `observers:read` capability.
 |---|---|---|
 | **YAML** | `observer.pull.{enabled,default_interval_s,default_timeout_s}` in `~/.datawatch/datawatch.yaml` + `datawatch reload` | — (status is live state, not config) |
 | **CLI** | `datawatch config set observer.pull.*`; `federation peer add/update --observer-pull [--observer-pull-interval N] [--observer-pull-timeout N]` | `datawatch observer pull status` (`--json` for the raw payload) |
-| **Web UI** | Federation peer form: **Observer pull** checkbox + interval/timeout fields | Peer rows show a **source** badge (push / pull / shadow) and a stale chip with the reason |
+| **Web UI** | Settings → General → **Federation — Observer Pull Mode** (the daemon-wide `observer.pull.enabled` gate + the default interval/timeout); per peer: federation peer form **Observer pull** checkbox + interval/timeout fields | Observer view Monitor card: gate + targets + stale count from `/api/stats`; peer rows show a **source** badge (push / pull / shadow) and a stale chip with the reason |
 | **REST API** | `PUT /api/config` (`observer.pull.*` keys); `POST`/`PUT /api/federation/peers[/name]` (`observer_pull*` fields) | `GET /api/observer/pull`; the merged `GET /api/observer/peers` rows carry `source`, `shadow` and a `pull` object |
 | **Comm channel** | `rest PUT /api/config …` / `rest PUT /api/federation/peers/<name> …` passthrough | `observer pull status` |
 
