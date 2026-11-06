@@ -264,7 +264,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Profiles + projects | `profile_list/get/create/update/delete/smoke`, `project_list/summary/upsert`, `project_alias_delete` |
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
-| Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model` |
+| Compute nodes | `compute_node_add`, `compute_node_update`, `compute_node_detail`, `compute_node_list`, `compute_node_get`, `compute_node_health`, `compute_node_delete`, `compute_node_attach_observer`, `compute_node_detach_observer`, `compute_node_pull_model`, `compute_node_remove_model`, `compute_node_headroom_measure`, `compute_node_headroom_get` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
 | Cost + audit + config + alerts | `cost_summary/usage/rates/report`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Identity | `get_identity`, `set_identity`, `update_identity`, `configure_identity`, `identity_backups`, `restore_identity`, `reset_identity` |
@@ -284,6 +284,8 @@ Compute node tools:
 
   Verifiers take a slot in the node's own verifier pool rather than the executor's, so verification can run while every executor slot is taken; the pool never raises the executor's cap.
 - **`compute_node_detail`** — node detail. The result carries the verifier settings beside the executor pair: `verifier_slots` (null when unset), `verifier_min_free_mem_mb` and its effective value (1024 MB when unset), `verifier_context_mb`, `verifier_slots_effective`, `suggested_verifier_slots` (null when there is no usable figure), plus `headroom_ok`, `headroom_reason` and `free_gpu_mb` from the daemon's last-seen verifier admission state (absent until the node has been synced). Read-only; makes no model call and changes no setting.
+- **`compute_node_headroom_measure`** — measure one compute node's headroom now and store it. Free memory plus the per-request cost of one small request against the smallest pull-allowed model the node serves. Runs only on demand and only when the node holds no lease: a busy node returns an error naming it (409). A node whose resident or probe model is not on the model-pull consent list is refused (403) and nothing is sent to it. Returns the measurement with `age_seconds`, `fresh` and `supported_cap`. Proxies `POST /api/compute/nodes/{name}/headroom`; needs the compute write capability when called by a federated peer.
+- **`compute_node_headroom_get`** — read the stored headroom measurement of one compute node: `free_mb`, `per_request_mb`, `resident_model`, `measured_at`, `age_seconds`, `fresh`, `min_free_mb`, `max_age_hours` and `supported_cap` (the verifier cap it covers: 1 when stale, 0 when unbounded). Read-only; nothing is measured. An error (404) when the node has never been measured. Proxies `GET /api/compute/nodes/{name}/headroom`; needs the compute read capability when called by a federated peer.
 
 Autonomous PRD reads and writes:
 

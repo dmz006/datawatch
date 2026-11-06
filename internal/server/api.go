@@ -346,6 +346,11 @@ type Server struct {
 	// headroomStore is the daemon's one verifier headroom-measurement store
 	// (nil until wired); the verifier_slots write gate reads it.
 	headroomStore *compute.HeadroomStore
+	// headroomProbe overrides the on-demand measurement transport (nil = the
+	// Ollama probe over the observer). headroomClock fixes the measurement
+	// clock for tests (nil = serverNow).
+	headroomProbe compute.HeadroomProbe
+	headroomClock func() time.Time
 	// servedModels reads and caches what each compute node serves; modelHostCheck
 	// answers the served-models route's model check. Both are nil until wired.
 	servedModels   *compute.ServedModelsCache

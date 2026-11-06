@@ -932,6 +932,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolComputeNodeDrain(), tracked(s.handleComputeNodeDrainMCP))
 	mcpSrv.AddTool(s.toolComputeNodeUndrain(), tracked(s.handleComputeNodeUndrainMCP))
 	mcpSrv.AddTool(s.toolComputeNodeDetail(), tracked(s.handleComputeNodeDetailMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomMeasure(), tracked(s.handleComputeNodeHeadroomMeasureMCP))
+	mcpSrv.AddTool(s.toolComputeNodeHeadroomGet(), tracked(s.handleComputeNodeHeadroomGetMCP))
 	mcpSrv.AddTool(s.toolComputePinSettings(), tracked(s.handleComputePinSettingsMCP))
 	mcpSrv.AddTool(s.toolComputeServedModels(), tracked(s.handleComputeServedModels))
 	// alpha.23b — observer-peer attach/detach + free-list.
