@@ -31,7 +31,7 @@ and is not tried again in the same pass.
 
 | Step | What it does |
 |---|---|
-| `close_finished_records` | Closes the records of Automata that have finished. |
+| `close_finished_records` | Closes the records of Automata that have finished: completed and rejected ones are archived on the next idle pass; a cancelled one is archived once the `archive_cancelled_after_minutes` grace has passed since its most recent cancel (0 archives it at once); and a cancelled one whose branch still holds commits that are not on the base branch is kept until you archive it, its work is merged, or its branch is deleted. The loop's archives are recorded with the actor `supervisor-loop`; your own archive is unaffected and is recorded with the actor `operator`. |
 | `deploy_after_ship` | Runs your deploy step once for each newly shipped release. With no deploy step configured it records "not configured" and does nothing. |
 | `retry_failed_infra` | Retries tasks that were held after the infrastructure retries ran out. A task that is held again stays for you. |
 | `cleanup_sweep` | Runs the cleanup sweep for leftover worktrees and scratch files, and raises the disk alert when it is due. |
@@ -74,6 +74,7 @@ the [definitions](../datawatch-definitions.md#supervisor-loop).
 | `validator_retries` | `2` | Extra attempts after an answer fails its check. |
 | `escalate_after_failures` | `2` | Failed attempts in one run before you are asked. |
 | `run_retention` | `500` | How many recent run records are kept. |
+| `archive_cancelled_after_minutes` | `60` | The grace, in minutes, before a cancelled Automaton is archived, measured from its most recent cancel. `0` archives it at once. |
 | `lane_count.min` | `0` | The lowest lane count the loop may set. |
 | `lane_count.max` | `0` | The highest lane count the loop may set. `0` means no bounds, so the lane count step moves nothing. |
 

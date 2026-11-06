@@ -3727,6 +3727,12 @@ autonomous:
     "supervisor_loop.escalate_after_failures": 2
     # How many recent run records are kept (1 or more).
     "supervisor_loop.run_retention": 500
+    # Grace in minutes before a cancelled Automaton is archived, measured
+    # from its most recent cancel (0 or more). 0 archives it at once. A
+    # cancelled Automaton whose branch holds commits that are not on the
+    # base branch is not archived by the loop until you archive it, its
+    # work is merged, or its branch is deleted.
+    "supervisor_loop.archive_cancelled_after_minutes": 60
     # Lane count bounds for the lane_count step. max 0 means no bounds, so the
     # step moves nothing. When set, max must be at least min.
     "supervisor_loop.lane_count.min": 0
