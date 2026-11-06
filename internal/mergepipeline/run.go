@@ -81,6 +81,14 @@ type Runner struct {
 	Recorder autonomous.MergeRunRecorder
 
 	MainBranch string // default main
+	// PostShip is the operator's autonomous.merge_pipeline.post_ship block.
+	// When Enabled is set and the pipeline's push-release step succeeded, its
+	// enabled hooks run after the pipeline's own steps, in list order, and
+	// never change the run's result.
+	PostShip PostShipSettings
+	// Notifier receives the notify built-in's message; nil makes that hook
+	// fail rather than drop the notification.
+	Notifier Notifier
 	// VersionFiles carry `var Version = "X.Y.Z"`; they come from the
 	// operator's autonomous.merge_pipeline.version_files setting. None means
 	// the release-version step fails rather than guess at a path.
@@ -130,6 +138,9 @@ type runState struct {
 	req    RunRequest
 	source string
 	run    autonomous.MergePipelineRun
+	// pushReleaseOK is set when a step with Action ActionPushRelease
+	// reported ok; the post-ship hooks run only when it is set.
+	pushReleaseOK bool
 }
 
 func newRunID() string {
@@ -192,6 +203,9 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	for _, step := range res.Definition.Steps {
 		ok, err := st.runStep(ctx, step)
 		if ok {
+			if step.Action == ActionPushRelease {
+				st.pushReleaseOK = true
+			}
 			continue
 		}
 		failures++
@@ -199,6 +213,10 @@ func (r *Runner) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			return finish(autonomous.MergeRunFailed, fmt.Errorf("step %s failed: %w", step.Name, err))
 		}
 	}
+	// The run reached here, so it is ok or completed_with_failures: that is
+	// when the configured post-ship hooks run. They record themselves as
+	// steps but never change the result.
+	st.runPostShipHooks(ctx)
 	if failures > 0 {
 		return finish(autonomous.MergeRunCompletedWithFailures, nil)
 	}
@@ -227,27 +245,44 @@ func (s *runState) preflight(ctx context.Context) error {
 
 // runStep runs one step, records it and reports whether it did not fail.
 func (s *runState) runStep(ctx context.Context, step Step) (bool, error) {
+	timeout := step.Timeout
+	if timeout <= 0 {
+		timeout = DefaultStepTimeout
+	}
+	result, detail, err := s.recordStep(ctx, s.source, step, timeout, func(c context.Context) (string, string, error) {
+		return s.execute(c, step)
+	})
+	if result == autonomous.MergeStepFailed {
+		log.Printf("[merge-pipeline] step %s failed: %s", step.Name, firstLine(detail))
+		if err == nil {
+			err = errors.New(firstLine(detail))
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// recordStep appends the step's running record, runs do under the timeout
+// and finishes the record with the outcome. Pipeline steps and post-ship
+// hook steps share this path.
+func (s *runState) recordStep(ctx context.Context, source string, step Step, timeout time.Duration, do func(context.Context) (string, string, error)) (string, string, error) {
 	rec := autonomous.MergeStepRun{
 		Step: step.Name, Kind: string(step.Kind), Start: s.r.now(), Result: autonomous.MergeStepRunning,
-		Source: s.source, OnFailure: string(step.EffectiveOnFailure()),
+		Source: source, OnFailure: string(step.EffectiveOnFailure()),
 	}
 	s.run.Steps = append(s.run.Steps, rec)
 	idx := len(s.run.Steps) - 1
 	s.record()
 
-	result, detail, err := s.execute(ctx, step)
+	hctx, cancel := context.WithTimeout(ctx, timeout)
+	result, detail, err := do(hctx)
+	cancel()
+
 	end := s.r.now()
 	rec.End, rec.Result, rec.Detail = &end, result, redact(detail)
 	s.run.Steps[idx] = rec
 	s.record()
-	if result == autonomous.MergeStepFailed {
-		log.Printf("[merge-pipeline] step %s failed: %s", step.Name, firstLine(rec.Detail))
-		if err == nil {
-			err = errors.New(firstLine(rec.Detail))
-		}
-		return false, err
-	}
-	return true, nil
+	return result, rec.Detail, err
 }
 
 func firstLine(s string) string {
@@ -257,27 +292,100 @@ func firstLine(s string) string {
 	return s
 }
 
-// execute performs the step and returns its result and a short account.
+// postShipStepSource is recorded on every post-ship hook step.
+const postShipStepSource = "post_ship"
+
+// Built-in post-ship hook names, matching the setting vocabulary in
+// internal/config.
+const (
+	builtinRegistryRow  = "registry_row"
+	builtinParityIssue  = "parity_issue"
+	builtinTag          = "tag"
+	builtinNotify       = "notify"
+)
+
+// runPostShipHooks runs the configured post-ship hooks when the block is on
+// and the push-release step succeeded. Each enabled hook is one step run
+// through the existing runStep path (kind post_ship_hook, source post_ship,
+// on_failure continue): the hook's own on_failure is ignored, a hook failure
+// is recorded on its step with its detail redacted, the run result keeps the
+// value the pipeline's steps set it, and later hooks still run. Disabled
+// hooks produce no step at all.
+func (s *runState) runPostShipHooks(ctx context.Context) {
+	cfg := s.r.PostShip
+	if !cfg.Enabled || !s.pushReleaseOK || len(cfg.Hooks) == 0 {
+		return
+	}
+	version, verr := s.r.currentVersion()
+	for _, hk := range cfg.Hooks {
+		if !hk.Enabled {
+			continue
+		}
+		step := Step{Name: hk.Name, Kind: KindPostShipHook, Command: hk.Command, OnFailure: OnFailureContinue}
+		var do func(context.Context) (string, string, error)
+		if hk.Builtin != "" {
+			name := hk.Builtin
+			do = func(c context.Context) (string, string, error) {
+				detail, err := s.builtinPostShipHook(c, name, version, verr, cfg)
+				return hookOutcome(detail, err)
+			}
+		} else {
+			do = func(c context.Context) (string, string, error) { return hookOutcome(s.hook(c, step)) }
+		}
+		s.recordStep(ctx, postShipStepSource, step, DefaultStepTimeout, do)
+	}
+}
+
+// hookOutcome turns a hook's (detail, err) into a step outcome: an error
+// keeps the detail on the failed step.
+func hookOutcome(detail string, err error) (string, string, error) {
+	if err != nil {
+		if detail == "" {
+			detail = err.Error()
+		}
+		return autonomous.MergeStepFailed, detail, err
+	}
+	return autonomous.MergeStepOK, detail, nil
+}
+
+// builtinPostShipHook dispatches one built-in hook to the function in
+// posthook_builtins.go. A built-in fails when the release version it renders
+// cannot be read or its wiring (ship runner, notifier) is missing, rather
+// than guess.
+func (s *runState) builtinPostShipHook(ctx context.Context, builtin, version string, verr error, cfg PostShipSettings) (string, error) {
+	if verr != nil {
+		return "", builtinErr("the %s hook cannot run: %s", builtin, verr)
+	}
+	dir := s.r.Dir
+	project := s.r.Project
+	switch builtin {
+	case builtinRegistryRow:
+		return RunRegistryRow(ctx, dir, project, version, cfg)
+	case builtinParityIssue:
+		return RunParityIssue(ctx, s.r.Ship, dir, project, version, cfg)
+	case builtinTag:
+		return RunTag(ctx, s.r.Ship, dir, version)
+	case builtinNotify:
+		return RunNotify(ctx, s.r.Notifier, project, version, cfg)
+	}
+	return "", builtinErr("unknown built-in post-ship hook %q", builtin)
+}
+
+// execute performs the step and returns its result and a short account. The
+// caller bounds it with the step's timeout.
 func (s *runState) execute(ctx context.Context, step Step) (string, string, error) {
 	if step.RequiresMakeTarget != "" && !makefileHasTarget(s.r.Dir, step.RequiresMakeTarget) {
 		return autonomous.MergeStepSkipped, "the project's Makefile has no " + step.RequiresMakeTarget + " target", nil
 	}
-	timeout := step.Timeout
-	if timeout <= 0 {
-		timeout = DefaultStepTimeout
-	}
-	sctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
 	var detail string
 	var err error
 	switch {
 	case step.Action != "":
-		detail, err = s.action(sctx, step)
+		detail, err = s.action(ctx, step)
 	case leavesTheMachine(step.Kind):
-		detail, err = s.hook(sctx, step)
+		detail, err = s.hook(ctx, step)
 	default:
-		detail, err = s.command(sctx, step)
+		detail, err = s.command(ctx, step)
 	}
 	if err != nil {
 		if detail == "" {
