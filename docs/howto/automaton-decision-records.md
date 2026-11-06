@@ -137,7 +137,7 @@ datawatch autonomous decision-records create \
   --default hold --doc docs/plans/report-archive.md
 ```
 
-`--option` and `--tradeoff` repeat, once per option, in the form `id=text`.
+`--option` and `--tradeoff` repeat, once per option, in the form `id=label` and `id=text` respectively.
 `--file <path>` (or `--file -`) takes the whole record as JSON instead. The
 other verbs are `list`, `show <id>`, `update <id>` and `withdraw <id>
 [--reason ...]`.
