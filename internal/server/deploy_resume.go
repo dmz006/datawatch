@@ -8,14 +8,18 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/deploy"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
-// sessionRestartSource reports the running sessions for the post-restart
-// check. The daemon has no capacity-lease counter wired for the deploy yet, so
-// the lease count reads 0, matching the count the sequence records.
-type sessionRestartSource struct{ m *session.Manager }
+// sessionRestartSource reports the running sessions and the held capacity
+// leases for the post-restart check. The lease count comes from the daemon's
+// capacity ledger; a daemon without a ledger holds no leases, so it reads 0.
+type sessionRestartSource struct {
+	m      *session.Manager
+	ledger *capacity.Ledger
+}
 
 func (s sessionRestartSource) RunningSessionIDs(context.Context) ([]string, error) {
 	var ids []string
@@ -30,7 +34,12 @@ func (s sessionRestartSource) RunningSessionIDs(context.Context) ([]string, erro
 	return ids, nil
 }
 
-func (sessionRestartSource) HeldLeaseCount(context.Context) (int, error) { return 0, nil }
+func (s sessionRestartSource) HeldLeaseCount(context.Context) (int, error) {
+	if s.ledger == nil {
+		return 0, nil
+	}
+	return len(s.ledger.Snapshot().Leases), nil
+}
 
 // StartDeployResume finishes a deploy the restart interrupted and retries a
 // deferred one. It runs once at daemon start, in the background, and never
@@ -52,7 +61,7 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 	resumer := &deploy.Resumer{
 		Config: cfg, Dir: dir, DataDir: data,
 		Cmd: deploy.ExecCommandRunner{}, Clock: deploy.SystemClock{}, Store: store,
-		Sessions: sessionRestartSource{m: s.manager},
+		Sessions: sessionRestartSource{m: s.manager, ledger: s.capacityLedger},
 		Ready:    s.waitListening,
 		Outcomes: deploy.OutcomeFile{Path: filepath.Join(data, "deploy", "outcomes.jsonl")},
 	}
@@ -68,6 +77,7 @@ func (s *Server) StartDeployResume(ctx context.Context) {
 			log.Printf("[deploy] resume finished: %s", res.Phase)
 		}
 		runner := newDeployRunner(dir, cfg)
+		runner.Restart = sessionRestartSource{m: s.manager, ledger: s.capacityLedger}
 		if res, err := deploy.RetryDeferred(ctx, store, deploy.SystemClock{}, runner.Retry); err != nil {
 			log.Printf("[deploy] retry deferred: %v", err)
 		} else if res.Status != deploy.StatusSkipped {
