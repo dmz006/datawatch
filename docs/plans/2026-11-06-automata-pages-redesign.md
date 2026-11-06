@@ -118,3 +118,47 @@ Decision: remove the always-visible "repo CI" status line from under the sub-tab
 it shows nothing. Anything it would have said (a failing or pending run, a poll that has not happened) becomes an
 alert, an Events entry, or both, never a permanent status strip. This is a general rule for the page: a status that
 is "off", "none" or "never" is not shown at all.
+
+### 3. The Inbox/Triage cards (asked 2026-11-06 08:50)
+
+Options offered: A a plain-language headline, the actual reason in one or two lines, the type labelled Automaton or
+Automation, how long it has waited, buttons for the next step, open and held questions sorted first with their text
+and options and answered in place, a click opens a detail panel; B the same without in-place actions; C a dense table.
+
+Operator answer, quoted: "a recommendation is good".
+
+Decision: A, the recommended option.
+
+## Dashboard review notes (operator, 2026-11-06 08:51), with what was checked
+
+Quoted: "in dashboards what is the network card it doesn't make sense, live events card is waiting for hook events
+but automations apparently are not using them?? the timeline is empty but we know we are doing stuff, 30 day
+activity shows 3 days but not the full month and we've been busy for weeks now, multi-ekg is empty and says 383$
+but we are not using claude api what is ekg for, not sure what smoke run dashboard is for but apparently none of
+our smoke tests are registering???, the ci & release card just making sure it's right to be empty? (all 0)?, cost
+report is not accurate with all of the token and burn rate and other stuff we've worked on it needs to be
+reassessed and search looks good but not sure if anything is really using it or not".
+
+This extends `2026-11-02-dashboard-card-audit.md` (cards kept or hidden on paper) and the purpose proposal; the card
+decisions below are findings to settle, not yet decided.
+
+| Card | What was found (2026-11-06) |
+|---|---|
+| Network | The card is an orbital map of sessions and observer peers built from the session list and the observer boards. The operator cannot tell what it answers. Decide: drop it, or make it say what it shows. |
+| Live Events | Fed only by hook events (PostToolUse, Stop and so on) that Claude sessions send over the WebSocket. The Automata workers on the GPU lanes run pi, which is not known to send these, so the card stays at "Waiting for hook events". To verify with a running pi session. Decide: feed it from the daemon's own events (task started, verified, merged), which is what the Events tab will hold. |
+| Timeline (6h) | Drawn from the Automaton fetch plus timings kept from the same hook events. It is empty for the same reason. Decide: draw it from Automaton and task timestamps; it becomes the Gantt on the project page. |
+| 30-Day Activity | The analytics data only has sessions from 2026-11-04 on (the three days before it are zero and nothing older exists). Older session records are not there, so the card cannot show the month. To find out why those records are gone (retention or cleanup). History must come from Automaton records, the registry and git, not live sessions (see decision 1). |
+| Multi-EKG | A pulse line of board events, plus a burn side panel that reads the cost total. The 383 dollars is the cost report total: 25.5 million Claude output tokens at the API list price of 0.015 per thousand. It is an API-equivalent figure, not what the flat plan costs, and the page does not say so. |
+| Smoke Run | Reads `GET /api/smoke/progress`, which only the end-to-end test scripts write to. The operator's smoke tests are not registering, so either the scripts do not post progress or the card reads the wrong place. To verify; the 2026-11-02 audit already says hide it unless the feature has data. |
+| CI & release | Fed by the repo CI watch records, and the watch is off (the same fact as the "repo CI: off" status line). The zeros are therefore wrong, not "right to be empty": CI is running and failing or passing every day. Decide: turn the watch on, or read the CI state some other way, and when it is off say so on the card. |
+| Cost report | Counts Claude output tokens and 69 thousand input tokens, with no cache reads or cache writes (the burn script counts 64 million cache-read and 3.3 million cache-write tokens for the last few hours alone), so tokens and dollars are both wrong for real usage. The 359 pi sessions and 48 subprocess sessions show zero tokens. The reconciliation against the usage reading and burn rate is the "reassess" the operator asks for (registry row `090f0001`, cost report, still a draft). |
+| Search | Operator: looks good. Unknown whether anything calls it; check the search usage counts and the callers. |
+
+## Questions still to ask (one at a time)
+
+4. What the dashboard is, now that the cards are counted: one operator console of a few working cards (recommended),
+   or boards. Held until the Triage and Events answers are built.
+5. The usage page layout (small bounded dashboards for allowance, pace line and burn; text moved out).
+6. Housekeeping: what stays as an action card (uncommitted work with a commit button, permission errors with a fix)
+   and what becomes events.
+7. Setup and policy: which items become Settings entries and which stay as a project page section.
