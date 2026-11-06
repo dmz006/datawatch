@@ -71,6 +71,7 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 		want              string // block|warn: the expected severity
 		positive          Task
 		negative          Task
+		extraFindings     []string // other rules that fire unavoidably on the positive task (e.g. no_verification_script on a script-less task)
 		wantMatchedSubstr string
 	}{
 		{
@@ -139,6 +140,24 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 			wantMatchedSubstr: "internal/autonomous/models.go",
 		},
 		{
+			rule: "read_only_unverifiable",
+			want: config.DecomposeLintSeverityBlock,
+			positive: mkDecomposeLintTask(
+				"t6", "Gate the slice",
+				"Inspect the verdict of the slice.", nil, true, ""),
+			// exempt: the same read-only task writing a report under
+			// .datawatch/reports/ instead of running a verification script
+			negative: func() Task {
+				tk := mkDecomposeLintTask(
+					"n6", "Gate the slice",
+					"Inspect the verdict of the slice.", nil, true, "")
+				tk.ReportPath = ".datawatch/reports/slice-gate.md"
+				return tk
+			}(),
+			wantMatchedSubstr: "verification_script=<empty>",
+			extraFindings:     []string{"no_verification_script"},
+		},
+		{
 			rule: "no_verification_script",
 			want: config.DecomposeLintSeverityWarning,
 			positive: mkDecomposeLintTask(
@@ -173,9 +192,17 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 		}
 
 		pos := LintTasks([]Story{mkDecomposeLintStory("s-pos", c.positive)}, rules)
-		if ids := findingRuleIDs(pos); len(ids) != 1 || ids[0] != c.rule {
-			t.Errorf("rule %q positive: findings = %v, want exactly [%q]", c.rule, ids, c.rule)
+		ids := findingRuleIDs(pos)
+		want := append([]string{c.rule}, c.extraFindings...)
+		if len(ids) != len(want) {
+			t.Errorf("rule %q positive: findings = %v, want %v", c.rule, ids, want)
 			continue
+		}
+		for i, w := range want {
+			if ids[i] != w {
+				t.Errorf("rule %q positive: findings = %v, want %v", c.rule, ids, want)
+				break
+			}
 		}
 		f := pos[0]
 		if f.Severity != c.want {
@@ -207,6 +234,7 @@ func TestDecomposeLintEffectiveRulesDefault(t *testing.T) {
 		{"starts_daemon_outside_sandbox", "block"},
 		{"reads_operator_data_or_config_folders", "block"},
 		{"read_only_but_writes_files", "block"},
+		{"read_only_unverifiable", "block"},
 		{"no_verification_script", "warn"},
 		{"names_tracker_id", "warn"},
 	}
@@ -242,8 +270,8 @@ func TestDecomposeLintOperatorOverride(t *testing.T) {
 		},
 	}
 	got := EffectiveRules(cfg)
-	if len(got) != 8 {
-		t.Fatalf("got %d rules, want 7 built-in + 1 new", len(got))
+	if len(got) != 9 {
+		t.Fatalf("got %d rules, want 8 built-in + 1 new", len(got))
 	}
 	// replaced at its original position (index 1)
 	if got[1].ID != "runs_hosting_cli" || got[1].Message != "Operator-local guidance for hosting CLI use." {
@@ -300,8 +328,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		t.Fatalf("Validate with bare disabled rules: %v", err)
 	}
 	gotA := EffectiveRules(cfgA)
-	if ids := idsOf(gotA); len(ids) != 5 {
-		t.Fatalf("disabled-flag: got %v, want the 5 non-disabled built-ins", ids)
+	if ids := idsOf(gotA); len(ids) != 6 {
+		t.Fatalf("disabled-flag: got %v, want the 6 non-disabled built-ins", ids)
 	}
 	absent(t, gotA, "runs_hosting_cli", "names_tracker_id")
 
@@ -310,21 +338,21 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		DisabledRules: []string{"edits_version_variable", "no_verification_script"},
 	}
 	gotB := EffectiveRules(cfgB)
-	if ids := idsOf(gotB); len(ids) != 5 {
-		t.Fatalf("disabled-list: got %v, want the 5 non-listed built-ins", ids)
+	if ids := idsOf(gotB); len(ids) != 6 {
+		t.Fatalf("disabled-list: got %v, want the 6 non-listed built-ins", ids)
 	}
 	absent(t, gotB, "edits_version_variable", "no_verification_script")
 
 	// (c) disabling an operator-added rule removes it; the built-in
-	// pack (7 rules) is untouched.
+	// pack (8 rules) is untouched.
 	cfgC := config.DecomposeLintConfig{
 		Rules: []config.DecomposeLintRule{
 			{ID: "operator_rule", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}, Disabled: true},
 		},
 	}
 	gotC := EffectiveRules(cfgC)
-	if ids := idsOf(gotC); len(ids) != 7 {
-		t.Fatalf("operator rule disabled: got %v, want the 7 built-ins", ids)
+	if ids := idsOf(gotC); len(ids) != 8 {
+		t.Fatalf("operator rule disabled: got %v, want the 8 built-ins", ids)
 	}
 	absent(t, gotC, "operator_rule")
 
@@ -335,8 +363,8 @@ func TestDecomposeLintDisabledRules(t *testing.T) {
 		Rules:         []config.DecomposeLintRule{{ID: "runs_hosting_cli", Severity: "block", Message: "m", Match: config.DecomposeLintMatch{SpecRegex: "x"}}},
 	}
 	gotD := EffectiveRules(cfgD)
-	if len(gotD) != 6 {
-		t.Fatalf("list-wins: got %v, want 6 rules", idsOf(gotD))
+	if len(gotD) != 7 {
+		t.Fatalf("list-wins: got %v, want 7 rules", idsOf(gotD))
 	}
 	absent(t, gotD, "runs_hosting_cli")
 }

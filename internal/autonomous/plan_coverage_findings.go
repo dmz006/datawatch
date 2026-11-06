@@ -86,7 +86,15 @@
 //  8. report path on a writer — report_path is only valid on a read-only
 //     task (read_only flag set, or the spec's first line starts with
 //     planReadOnlyMarker); a task with a non-empty report_path that is
-//     not read-only is a finding.
+//     not read-only is a finding;
+//
+//  9. read-only verifiability — a read_only task carries no changed
+//     files to inspect: when it fails, that failure has to be provable
+//     by its own check (verification_script) or by the report it writes
+//     under .datawatch/reports/ (report_path — the only file a read-only
+//     task may write). A read_only task with neither a verification
+//     script nor a usable report path is a finding; no task kind is
+//     exempt (a smoke or final_gate task is read-only work too).
 package autonomous
 
 import (
@@ -129,6 +137,11 @@ const (
 	// that is not read-only (read_only flag or spec READ-ONLY marker);
 	// report_path is only valid on a read_only task.
 	FindingReportPathOnWriterTask = "report_path_on_writer_task"
+	// FindingReadOnlyUnverifiable — a read_only task that declares neither
+	// a verification script nor a usable report path under
+	// .datawatch/reports/; with neither, its failure produces nothing to
+	// inspect. No task kind is exempt.
+	FindingReadOnlyUnverifiable = "readonly_unverifiable"
 )
 
 // StructuralFinding is one typed, deterministic finding in a decomposed
@@ -313,9 +326,9 @@ func writeVerbOf(title string) (string, bool) {
 	return "", false
 }
 
-// CheckPlanStructure runs the seven structural rules above over the
-// in-memory plan stories and returns the typed finding list with the
-// zero options — every finding reported, none suppressed. It is
+// CheckPlanStructure runs the structural rules above over the in-memory
+// plan stories and returns the typed finding list with the zero options
+// — every finding reported, none suppressed. It is
 // deterministic: the same arguments always yield the same report.
 // prd may be nil, in which case the project tree is the current
 // directory. The only I/O is read-only os.Stat of candidate file
@@ -324,8 +337,8 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 	return CheckPlanStructureWithOptions(prd, stories, PlanStructureOptions{})
 }
 
-// CheckPlanStructureWithOptions runs the same seven structural rules
-// with the created-file allowance from opts applied to rule 3. The
+// CheckPlanStructureWithOptions runs the same structural rules with the
+// created-file allowance from opts applied to rule 3. The
 // zero options (via CheckPlanStructure) report every finding, exactly
 // as before; opts.SuppressCreatedFiles withholds the findings the plan
 // self-satisfies and counts them in report.Suppressed.
@@ -694,6 +707,32 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 				TaskID:  t.ID,
 				Detail: "task " + t.ID + " sets report_path " + strconv.Quote(t.ReportPath) +
 					" but is not read-only; report_path is only valid on a read_only task (its report belongs under .datawatch/reports/)",
+			})
+		}
+	}
+
+	// --- Rule 9: a read-only task must be verifiable. ---
+	// A read_only task carries no changed files to inspect: when it
+	// fails, the failure has to be provable by its own check
+	// (verification_script) or by the report it writes under
+	// .datawatch/reports/ (report_path — the only file a read-only task
+	// may write). A read_only task with neither a verification script
+	// nor a usable report path is unverifiable; no task kind is exempt.
+	for _, s := range stories {
+		for _, t := range s.Tasks {
+			if !t.ReadOnly {
+				continue
+			}
+			if strings.TrimSpace(t.VerificationScript) != "" || taskHasUsableReportPath(t) {
+				continue
+			}
+			add(StructuralFinding{
+				Kind:    FindingReadOnlyUnverifiable,
+				StoryID: s.ID,
+				TaskID:  t.ID,
+				Detail: "task " + t.ID + " (" + strconv.Quote(t.Title) +
+					") is read-only and declares neither a verification script nor a report path; " +
+					"either add a verification script, or write the report under .datawatch/reports/",
 			})
 		}
 	}

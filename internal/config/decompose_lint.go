@@ -120,7 +120,9 @@ type DecomposeLintRule struct {
 // (SpecRegex → task spec, TitleRegex → task title, FilesRegex → task
 // files list). A non-nil ReadOnly asserts the task's read_only flag
 // (exact match); VerificationScriptEmpty asserts the task declares no
-// verification script. AnyOf/AllOf are lists of nested conditions:
+// verification script and ReportPathEmpty asserts the task has no
+// usable report path (empty, or not a clean path under
+// .datawatch/reports/). AnyOf/AllOf are lists of nested conditions:
 // matching any (all) of them is sufficient (required), combined with
 // the rule-match conditions that are present at this level.
 type DecomposeLintMatch struct {
@@ -133,8 +135,16 @@ type DecomposeLintMatch struct {
 	ReadOnly *bool `yaml:"read_only,omitempty" json:"read_only,omitempty"`
 	// VerificationScriptEmpty asserts the task has no verification
 	// script. Absent (false) = do not check.
-	VerificationScriptEmpty bool   `yaml:"verification_script_empty,omitempty" json:"verification_script_empty,omitempty"`
-	FilesRegex              string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
+	VerificationScriptEmpty bool `yaml:"verification_script_empty,omitempty" json:"verification_script_empty,omitempty"`
+	// ReportPathEmpty asserts the task has no usable report path —
+	// report_path is empty, or it fails validation (a non-empty,
+	// repo-relative, clean path under .datawatch/reports/). A read-only
+	// task with neither a verification script nor a usable report path
+	// emits nothing to inspect when it fails. Use it with
+	// verification_script_empty to flag such tasks. Absent (false) = do
+	// not check.
+	ReportPathEmpty bool   `yaml:"report_path_empty,omitempty" json:"report_path_empty,omitempty"`
+	FilesRegex      string `yaml:"files_regex,omitempty" json:"files_regex,omitempty"`
 	// AnyOf: at least one of these nested conditions must match.
 	AnyOf []DecomposeLintMatch `yaml:"any_of,omitempty" json:"any_of,omitempty"`
 	// AllOf: every one of these nested conditions must match.
@@ -182,6 +192,11 @@ type TaskTemplateDef struct {
 	// Kind is the task kind tag (free text, e.g. "docs", "test").
 	Kind     string `yaml:"kind,omitempty" json:"kind,omitempty"`
 	ReadOnly bool   `yaml:"read_only" json:"read_only"`
+	// VerificationScript, when set, is copied verbatim onto the task the
+	// template produces. A read-only gate carries its own check this way
+	// (the build and test commands its spec asserts) so it is not an
+	// unverifiable read-only task while it changes nothing.
+	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
 	// DependsOn lists ids of other templates this one depends on.
 	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
 	// AppliesWhen is a free-text condition for when this template is

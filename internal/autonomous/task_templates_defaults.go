@@ -84,6 +84,10 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 			Spec:     "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). This task changes nothing: it writes no files, makes no edits, and never runs a hosting CLI. State the verdict with the evidence.",
 			Kind:     "final_gate",
 			ReadOnly: true,
+			// Its own check, without modifying the tree: the gate verifies
+			// the build and the package tests, so it must not be an
+			// unverifiable read-only task.
+			VerificationScript: "go build ./... && go test ./...",
 			AppliesWhen: "Always offered as the closing task: a cheap, read-only " +
 				"verdict before the story is considered done.",
 		},
