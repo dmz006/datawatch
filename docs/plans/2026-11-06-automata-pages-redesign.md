@@ -359,3 +359,16 @@ member is approved):
   override, `21610001` resumed-session lease, `08800001` zombie badge, `70900001` configuration parity audit.
 - Note: the redesign arc was created by reusing an empty draft Automation made by a schema probe; the defects arc is a
   chain too, so its fixes run one after another; if parallel is wanted they can be rewired with a fork and a join.
+
+### 9. The project, arc and Automaton model (asked 2026-11-06 10:30)
+
+Options offered: A confirm the model (one Automation per arc, the project controls arc order, the model goes into
+the Projects tab Automaton as its spec); B confirm but lay the defects arc out in parallel with a fork and a join;
+C change something.
+
+Operator answer, quoted: "plan looks good, claude at 72%".
+
+Decision: A. The model stands as written above: a project owns an ordered list of arcs (Automations), an arc holds
+Automata and nested Automations ordered by edges, a plan gates its arc, a standalone Automaton run by hand is only a
+rescue. The Projects tab Automaton (`d3680001`) already carries the model and the project record additions in its
+spec and reads this document first. The defects arc stays a chain unless the operator asks for parallel.
