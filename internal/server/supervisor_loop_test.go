@@ -152,7 +152,7 @@ func TestSupervisorLoopRunUnknownJob404(t *testing.T) {
 func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 	// A non-default value for every key.
 	want := map[string]any{"enabled": false, "validator_retries": 4, "escalate_after_failures": 3,
-		"run_retention": 100, "lane_count.min": 1, "lane_count.max": 6}
+		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6}
 	for _, n := range supervisorloop.StepNames {
 		want[n+".enabled"] = false
 	}
