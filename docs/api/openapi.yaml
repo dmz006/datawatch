@@ -9200,7 +9200,7 @@ components:
         describe the shape of a dangerous task spec.
       required: [id, severity, message]
       properties:
-        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files (block) and no_verification_script, names_tracker_id (warn)"}
+        id: {type: string, pattern: "^[a-z0-9_.-]+$", description: "Rule id findings reference; unique within the pack. Built-ins: edits_version_variable, runs_hosting_cli, starts_daemon_outside_sandbox, reads_operator_data_or_config_folders, read_only_but_writes_files, read_only_unverifiable (block) and no_verification_script, names_tracker_id (warn)"}
         severity: {type: string, enum: [block, warn], description: "`block` stops decomposition in enforce mode and is fed back to the decomposer; `warn` is reported only"}
         message: {type: string, description: "Finding text shown when the rule fires (non-empty)"}
         match:
@@ -9211,6 +9211,7 @@ components:
             title_regex: {type: string, description: "Regex a task's title must match (RE2)"}
             read_only: {type: boolean, description: "Assert the task is flagged read-only"}
             verification_script_empty: {type: boolean, description: "Assert the task has no verification script"}
+            report_path_empty: {type: boolean, description: "Assert the task has no usable report path (empty, or not a clean path under .datawatch/reports/)"}
             files_regex: {type: string, description: "Regex a task's declared files must match (RE2)"}
             any_of: {type: array, items: {type: object}, description: "Matches when at least one sub-condition matches"}
             all_of: {type: array, items: {type: object}, description: "Matches when every sub-condition matches"}

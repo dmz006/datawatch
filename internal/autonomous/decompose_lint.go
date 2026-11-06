@@ -81,15 +81,17 @@ func normSeverity(s string) string { return strings.ToLower(strings.TrimSpace(s)
 // compiledMatch is one match condition tree with its regular
 // expressions precompiled. A rule fires on a task when every present
 // condition holds: the spec/title/files regexes must match their
-// field, the read_only and verification-script-empty predicates must
-// assert, any_of must have at least one member match and all_of every
-// member. Empty conditions are absent and never restrict.
+// field, the read_only predicate, the verification-script-empty and
+// report-path-empty predicates must assert, any_of must have at least
+// one member match and all_of every member. Empty conditions are
+// absent and never restrict.
 type compiledMatch struct {
 	spec       *regexp.Regexp
 	title      *regexp.Regexp
 	files      *regexp.Regexp
 	readOnly   *bool
 	verifEmpty bool
+	reportEmpt bool
 	anyOf      []compiledMatch
 	allOf      []compiledMatch
 }
@@ -105,6 +107,9 @@ func (m *compiledMatch) matchTask(t Task) bool {
 		return false
 	}
 	if m.verifEmpty && strings.TrimSpace(t.VerificationScript) != "" {
+		return false
+	}
+	if m.reportEmpt && taskHasUsableReportPath(t) {
 		return false
 	}
 	if m.files != nil {
@@ -178,7 +183,7 @@ func compileRules(rules []Rule) []compiledRule {
 // predicates, nested any_of/all_of). An empty pattern means the
 // condition is absent, not the empty regular expression.
 func compileMatch(m config.DecomposeLintMatch, path string) (*compiledMatch, error) {
-	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty}
+	cm := &compiledMatch{readOnly: m.ReadOnly, verifEmpty: m.VerificationScriptEmpty, reportEmpt: m.ReportPathEmpty}
 	var err error
 	if strings.TrimSpace(m.SpecRegex) != "" {
 		if cm.spec, err = regexp.Compile(m.SpecRegex); err != nil {
@@ -391,6 +396,9 @@ func predicateExcerpt(m *compiledMatch, t Task) string {
 	}
 	if m.verifEmpty {
 		parts = append(parts, "verification_script=<empty>")
+	}
+	if m.reportEmpt {
+		parts = append(parts, "report_path=<none usable>")
 	}
 	if len(parts) == 0 {
 		return ""

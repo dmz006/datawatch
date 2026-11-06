@@ -79,15 +79,16 @@ func TestTaskTemplatesBuiltInPackPassesDefaultLintPack(t *testing.T) {
 			spec += " (" + m + ")"
 		}
 		story.Tasks = append(story.Tasks, Task{
-			ID:           templateTaskID(story.ID, def.ID),
-			StoryID:      story.ID,
-			PRDID:        story.PRDID,
-			Title:        rendered.Title,
-			Spec:         spec,
-			Status:       TaskQueued,
-			Kind:         def.Kind,
-			ReadOnly:     def.ReadOnly,
-			FilesPlanned: splitTemplateFiles(def.Files),
+			ID:                 templateTaskID(story.ID, def.ID),
+			StoryID:            story.ID,
+			PRDID:              story.PRDID,
+			Title:              rendered.Title,
+			Spec:               spec,
+			Status:             TaskQueued,
+			Kind:               def.Kind,
+			ReadOnly:           def.ReadOnly,
+			VerificationScript: def.VerificationScript,
+			FilesPlanned:       splitTemplateFiles(def.Files),
 		})
 	}
 	findings := LintTasks([]Story{story}, DefaultDecomposeLintRules())

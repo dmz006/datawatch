@@ -153,18 +153,19 @@ func taskForTemplate(story Story, def config.TaskTemplateDef, baseDepends []stri
 		}
 	}
 	return Task{
-		ID:           id,
-		StoryID:      story.ID,
-		PRDID:        story.PRDID,
-		Title:        title,
-		Spec:         spec,
-		Status:       TaskQueued,
-		DependsOn:    uniqueStrings(depends),
-		Kind:         def.Kind,
-		ReadOnly:     def.ReadOnly,
-		FilesPlanned: splitTemplateFiles(def.Files),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:                 id,
+		StoryID:            story.ID,
+		PRDID:              story.PRDID,
+		Title:              title,
+		Spec:               spec,
+		Status:             TaskQueued,
+		DependsOn:          uniqueStrings(depends),
+		Kind:               def.Kind,
+		ReadOnly:           def.ReadOnly,
+		VerificationScript: def.VerificationScript,
+		FilesPlanned:       splitTemplateFiles(def.Files),
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 }
 
