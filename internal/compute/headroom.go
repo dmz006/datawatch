@@ -20,6 +20,7 @@ package compute
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -111,6 +112,9 @@ func (s *HeadroomStore) Put(x HeadroomMeasurement) {
 
 // Get returns the latest measurement for node.
 func (s *HeadroomStore) Get(node string) (HeadroomMeasurement, bool) {
+	if s == nil {
+		return HeadroomMeasurement{}, false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	x, ok := s.m[node]
@@ -172,6 +176,23 @@ func SmallestAllowedModel(models []ModelInfo) (ModelInfo, bool) {
 		}
 	}
 	return best, true
+}
+
+// SortSmallestFirst returns the model names ordered smallest first by the
+// same rule as SmallestAllowedModel (size, then name). It is the order
+// Measure expects its allow-list in: the first name is the probe model. The
+// input slice is not modified.
+func SortSmallestFirst(names []string) []string {
+	models := make([]ModelInfo, 0, len(names))
+	for _, n := range names {
+		models = append(models, ModelInfo{Name: n})
+	}
+	sort.SliceStable(models, func(i, j int) bool { return modelLess(models[i], models[j]) })
+	out := make([]string, 0, len(models))
+	for _, m := range models {
+		out = append(out, m.Name)
+	}
+	return out
 }
 
 func modelLess(a, b ModelInfo) bool {

@@ -1534,6 +1534,8 @@
   "settings_title": "設定",
   "settings_update": "アップデート",
   "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "settings_verifier_min_free_mem_mb": "verifier 最低空きメモリ（MB；未設定 = 1024、0 = 確認しない）",
+  "settings_verifier_headroom_max_age_hours": "verifier 空きメモリ測定の最大経過時間（時間；0 または未設定 = 24）",
   "settings_version": "バージョン",
   "settings_web_search_enabled": "ウェブ検索インジェクションを有効化（opencode + gooseセッション）",
   "settings_web_search_engine": "検索エンジン（カンマ区切り、デフォルト: bing）",

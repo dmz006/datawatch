@@ -1757,6 +1757,8 @@
   "opencode_provider_key_not_set": "Not set",
   "opencode_provider_save": "Save key",
   "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "settings_verifier_min_free_mem_mb": "Verifier min free memory (MB; unset = 1024, 0 = check off)",
+  "settings_verifier_headroom_max_age_hours": "Verifier headroom max age (hours; 0 or unset = 24)",
   "settings_quality_gates_enabled": "Quality gates enabled (default for all Automata)",
   "settings_quality_gates_test_command": "Quality gate test command",
   "settings_quality_gates_timeout": "Quality gate timeout (seconds, 0=no limit)",

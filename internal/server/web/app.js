@@ -17881,6 +17881,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_routing.shadow', label: 'Record planning routing without applying it (shadow)', labelKey: 'planning_routing_field_shadow', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
+    // Verifier headroom gates: a verifier cap above 1 and a verifier_slots write above 1
+    // need a fresh measurement with this much free memory left. 0 or unset is the default.
+    { key: 'autonomous.verifier_min_free_mem_mb', label: 'Verifier min free memory (MB; unset = 1024, 0 = check off)', labelKey: 'settings_verifier_min_free_mem_mb', type: 'number', placeholder: '1024' },
+    { key: 'autonomous.verifier_headroom_max_age_hours', label: 'Verifier headroom max age (hours; 0 or unset = 24)', labelKey: 'settings_verifier_headroom_max_age_hours', type: 'number', placeholder: '24' },
     { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
