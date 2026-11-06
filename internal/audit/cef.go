@@ -228,6 +228,8 @@ func cefSignature(action string) (int, string, int) {
 		return 67, "SecretScanRefused", 6
 	case ActionSecretScanShadow:
 		return 68, "SecretScanShadow", 4
+	case ActionQuestionUpdated:
+		return 69, "QuestionUpdated", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

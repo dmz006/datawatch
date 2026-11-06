@@ -1665,6 +1665,10 @@ type Manager struct {
 	// defaults.
 	requestWatchCfg      func() config.RequestWatchConfig
 	requestWatchEpisodes map[string]string
+	// decisionRecords keeps decision records and their queue questions in
+	// step (decision_record_sync.go). Guarded by mu. Nil = no decision
+	// records wired; the coordinator tick then skips its reconcile.
+	decisionRecords *DecisionRecords
 
 	// attemptClock — the time source for failure escalation attempt records
 	// and review holds (attemptNow). Nil reads the wall clock; tests inject a

@@ -2556,6 +2556,94 @@ autonomous:
       - revision_requested
       - awaiting_decision
       - pending_insert
+
+  # Decision records: a structured record of one operator decision (a title, the
+  # situation in plain words, what is being decided, the options with a line of
+  # cost and risk each, a recommendation and a forced default). The daemon
+  # raises its queue question from the record, never from caller prose. Every
+  # key below is settable through the config file, PUT /api/config (dotted keys,
+  # for example "autonomous.decisions.clarity_mode"), the MCP config tools
+  # (config_set), `datawatch config set autonomous.decisions.<key> <value>`, a
+  # comm channel `configure autonomous.decisions.<key>=<value>`; a change takes
+  # effect at once, no restart needed. A bad value is refused (PUT /api/config
+  # answers 400 and changes nothing; the config file load names the key). No key
+  # is tied to a repository; each default is the operator's answer. The block is
+  # commented out: every key reads its default shown here until you uncomment
+  # it and set a value.
+  # decisions:
+    # autonomous.decisions.enabled — type bool, default true. Master switch for
+    # decision records.
+    # enabled: true
+    # autonomous.decisions.folder — type text (a folder), default empty. A
+    # folder of decision files the daemon watches; empty turns the folder watch
+    # off.
+    # folder: ""
+    # autonomous.decisions.folder_glob — type text, default "*.md". Which files
+    # in the folder are read.
+    # folder_glob: "*.md"
+    # autonomous.decisions.front_matter_delimiter — type text, default "---".
+    # The line that opens and closes the front matter of a decision file; it may
+    # not be empty.
+    # front_matter_delimiter: "---"
+    # autonomous.decisions.front_matter_separator — type text, default ":". Splits
+    # a front matter line into its key and its value; it may not be empty.
+    # front_matter_separator: ":"
+    # autonomous.decisions.front_matter_field_separator — type text, default "|".
+    # Separates the parts of an option or recommendation line; it may not be
+    # empty.
+    # front_matter_field_separator: "|"
+    # autonomous.decisions.front_matter_keys — type map of text to text, default
+    # empty (files use the canonical names). Maps a canonical key name to the
+    # name your files use for it, for example {title: Title}.
+    # front_matter_keys: {}
+    # autonomous.decisions.folder_withdraw_on_delete — type bool, default true.
+    # Deleting a decision file withdraws its record.
+    # folder_withdraw_on_delete: true
+    # autonomous.decisions.clarity_mode — type text, one of off, warn or refuse,
+    # default warn. How a record is checked for being readable before the
+    # operator sees it: warn raises it and lists the problems, refuse refuses it,
+    # off does no check.
+    # clarity_mode: warn
+    # autonomous.decisions.clarity_min_text_chars — type whole number >= 0,
+    # default 60. The fewest characters the situation and the deciding text may
+    # have; 0 turns the length check off.
+    # clarity_min_text_chars: 60
+    # autonomous.decisions.clarity_require_tradeoffs — type bool, default true.
+    # Every option needs a one-line cost and risk.
+    # clarity_require_tradeoffs: true
+    # autonomous.decisions.clarity_require_label — type bool, default true. A
+    # record needs a short human label.
+    # clarity_require_label: true
+    # autonomous.decisions.clarity_tracker_id_pattern — type regular expression
+    # (Go syntax), default empty (the built-in pattern for a short run of capital
+    # letters followed by digits). Spots an internal tracker identifier in a
+    # record.
+    # clarity_tracker_id_pattern: ""
+    # autonomous.decisions.doc_root — type text (a folder), default empty (the
+    # daemon's working directory). Document paths on a record resolve against it
+    # and must stay inside it.
+    # doc_root: ""
+    # autonomous.decisions.doc_status_mode — type text, one of off, report or on,
+    # default report. Whether an answer is written back to the status line of the
+    # linked document: report shows what would change, on changes it, off does
+    # nothing.
+    # doc_status_mode: report
+    # autonomous.decisions.doc_status_pattern — type regular expression (Go
+    # syntax), default '^Confirmed:.*$'. Finds the status line in the document.
+    # doc_status_pattern: '^Confirmed:.*$'
+    # autonomous.decisions.doc_status_template — type text, default
+    # 'Confirmed: {choice} - "{quote}" ({actor}, {date})'. The text the status
+    # line is replaced with. Placeholders: {choice}, {choice_label}, {quote},
+    # {actor}, {date}, {decision_id}.
+    # doc_status_template: 'Confirmed: {choice} - "{quote}" ({actor}, {date})'
+    # autonomous.decisions.follow_ups — type list of {name, kind, target},
+    # default empty (nothing runs unless you configure it). kind is
+    # start_template (target is a template id) or open_automaton (target is an
+    # Automaton id). A name may not be empty or repeat; kind and target may not be
+    # empty. Example:
+    #   follow_ups:
+    #     - {name: start the build, kind: start_template, target: my-template}
+    # follow_ups: []
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

@@ -557,6 +557,15 @@ type Server struct {
 	// backing /api/questions. Wired from main.go alongside the daemon's
 	// data; nil (default) makes the handlers return 503.
 	questionStore QuestionsAPI
+	// decisionFollowUps — records the follow-up an operator asks for when
+	// answering a decision record question; wired by main.go via
+	// SetDecisionFollowUps; nil (default) = a follow_up in an answer is
+	// refused with 503.
+	decisionFollowUps DecisionFollowUpAPI
+	// decisionRecords — the decision record service behind
+	// /api/autonomous/decision-records; wired by main.go via
+	// SetDecisionRecords; nil (default) makes the routes return 503.
+	decisionRecords DecisionRecordsAPI
 	// questionRaiseNotifier — the raise fan-out to the messaging group,
 	// wired by main.go via SetQuestionRaiseNotifier; nil (default) = no
 	// messaging fan-out (the WS + alert parts do not need it).
@@ -6524,6 +6533,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"queue_preview_lines":        s.cfg.Autonomous.Questions.EffectiveQueuePreviewLines(),
 			},
 			"parallel": parallelSurface(s.cfg.Autonomous.Parallel),
+			// Decision record keys: effective values (the shipped defaults when a
+			// key is absent).
+			"decisions": decisionRecordSurface(s.cfg.Autonomous.Decisions),
 			"automation": map[string]interface{}{
 				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
 				// Effective, not raw: an unset (nil) value reads the 30-minute
@@ -7356,6 +7368,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// whole PUT before anything is applied, by the same rules the config file
 	// load uses.
 	if err := validateQuestionQualityPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// The decision record keys: a bad value rejects the whole PUT before
+	// anything is applied, by the same rules the config file load uses.
+	if err := validateDecisionRecordPatch(patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9434,6 +9452,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.Questions.QueuePreviewLines = &n
 			}
+		case "autonomous.decisions.enabled", "autonomous.decisions.folder", "autonomous.decisions.folder_glob", "autonomous.decisions.front_matter_delimiter", "autonomous.decisions.front_matter_separator", "autonomous.decisions.front_matter_field_separator", "autonomous.decisions.front_matter_keys", "autonomous.decisions.folder_withdraw_on_delete", "autonomous.decisions.clarity_mode", "autonomous.decisions.clarity_min_text_chars", "autonomous.decisions.clarity_require_tradeoffs", "autonomous.decisions.clarity_require_label", "autonomous.decisions.clarity_tracker_id_pattern", "autonomous.decisions.doc_root", "autonomous.decisions.doc_status_mode", "autonomous.decisions.doc_status_pattern", "autonomous.decisions.doc_status_template", "autonomous.decisions.follow_ups":
+			// Validated in handlePutConfig (validateDecisionRecordPatch).
+			applyDecisionRecordKey(&cfg.Autonomous.Decisions, k, v)
 		case "identity.backups_to_keep":
 			// Validated in handlePutConfig to a whole number >= 1.
 			if n, ok := toInt(v); ok {
@@ -11140,6 +11161,264 @@ func validateQuestionQualityPatch(patch map[string]interface{}) error {
 		}
 	}
 	return nil
+}
+
+// decisionRecordBoolKeys, decisionRecordStringKeys and the keys named in
+// validateDecisionRecordPatch are the autonomous.decisions.* keys a PUT
+// /api/config body may carry. Every other autonomous.decisions.* key is not a
+// key at all; the generic patch path ignores it like any unknown key.
+var decisionRecordBoolKeys = []string{
+	"autonomous.decisions.enabled",
+	"autonomous.decisions.folder_withdraw_on_delete",
+	"autonomous.decisions.clarity_require_tradeoffs",
+	"autonomous.decisions.clarity_require_label",
+}
+
+var decisionRecordStringKeys = []string{
+	"autonomous.decisions.folder",
+	"autonomous.decisions.folder_glob",
+	"autonomous.decisions.doc_root",
+	"autonomous.decisions.doc_status_template",
+}
+
+// parseDecisionFollowUps reads autonomous.decisions.follow_ups from a PUT
+// /api/config body: a list of {name, kind, target} objects, or a JSON text of
+// such a list (the comm channel and the CLI send text). It checks the rules
+// the config file load checks.
+func parseDecisionFollowUps(v interface{}) ([]config.AutonomousDecisionFollowUp, error) {
+	const key = "autonomous.decisions.follow_ups"
+	var raw []byte
+	switch x := v.(type) {
+	case string:
+		raw = []byte(strings.TrimSpace(x))
+		if len(raw) == 0 {
+			return nil, nil
+		}
+	case []interface{}:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v", key, err)
+		}
+		raw = b
+	case nil:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("%s: expected a list of {name, kind, target} objects (or its JSON text); got %T", key, v)
+	}
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.DisallowUnknownFields()
+	var list []config.AutonomousDecisionFollowUp
+	if err := dec.Decode(&list); err != nil {
+		return nil, fmt.Errorf("%s: expected a list of {name, kind, target} objects: %v", key, err)
+	}
+	if err := config.ValidateDecisionFollowUps(list); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// parseDecisionFrontMatterKeys reads autonomous.decisions.front_matter_keys
+// from a PUT /api/config body: an object of text values, or its JSON text.
+func parseDecisionFrontMatterKeys(v interface{}) (map[string]string, error) {
+	const key = "autonomous.decisions.front_matter_keys"
+	switch x := v.(type) {
+	case nil:
+		return map[string]string{}, nil
+	case string:
+		if strings.TrimSpace(x) == "" {
+			return map[string]string{}, nil
+		}
+		out := map[string]string{}
+		if err := json.Unmarshal([]byte(x), &out); err != nil {
+			return nil, fmt.Errorf("%s: expected an object of canonical name to file name (or its JSON text): %v", key, err)
+		}
+		return out, nil
+	case map[string]interface{}:
+		out := make(map[string]string, len(x))
+		for k, val := range x {
+			s, ok := val.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s: the name for %q must be text; got %T", key, k, val)
+			}
+			out[k] = s
+		}
+		return out, nil
+	}
+	return nil, fmt.Errorf("%s: expected an object of canonical name to file name (or its JSON text); got %T", key, v)
+}
+
+// validateDecisionRecordPatch checks the autonomous.decisions keys in a PUT
+// /api/config body. A bad value rejects the whole PUT before anything is
+// applied, by the same rules the config file load uses; each refusal names the
+// key and the valid values.
+func validateDecisionRecordPatch(patch map[string]interface{}) error {
+	for _, k := range decisionRecordBoolKeys {
+		if v, ok := patch[k]; ok {
+			if _, isBool := v.(bool); !isBool {
+				return fmt.Errorf("%s: must be a boolean (true or false)", k)
+			}
+		}
+	}
+	for _, k := range decisionRecordStringKeys {
+		if v, ok := patch[k]; ok {
+			if _, isStr := v.(string); !isStr {
+				return fmt.Errorf("%s: %v is invalid; use text", k, v)
+			}
+		}
+	}
+	textRules := []struct {
+		key    string
+		hint   string
+		verify func(string) error
+	}{
+		{"autonomous.decisions.clarity_mode", `"off", "warn" or "refuse"`, config.ValidateDecisionClarityMode},
+		{"autonomous.decisions.doc_status_mode", `"off", "report" or "on"`, config.ValidateDecisionDocStatusMode},
+		{"autonomous.decisions.clarity_tracker_id_pattern", "a regular expression as text (empty for the built-in pattern)", config.ValidateDecisionClarityTrackerIDPattern},
+		{"autonomous.decisions.doc_status_pattern", "a regular expression as text (empty for the default)", config.ValidateDecisionDocStatusPattern},
+		{"autonomous.decisions.front_matter_delimiter", "non-empty text", config.ValidateDecisionFrontMatterDelimiter},
+		{"autonomous.decisions.front_matter_separator", "non-empty text", config.ValidateDecisionFrontMatterSeparator},
+		{"autonomous.decisions.front_matter_field_separator", "non-empty text", config.ValidateDecisionFrontMatterFieldSeparator},
+	}
+	for _, r := range textRules {
+		v, ok := patch[r.key]
+		if !ok {
+			continue
+		}
+		s, isStr := v.(string)
+		if !isStr {
+			return fmt.Errorf("%s: %v is invalid; use %s", r.key, v, r.hint)
+		}
+		if err := r.verify(s); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.clarity_min_text_chars"]; ok {
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("autonomous.decisions.clarity_min_text_chars: %v is invalid; use a whole number >= 0 (default %d)",
+				v, config.DefaultDecisionClarityMinTextChars)
+		}
+		if err := config.ValidateDecisionClarityMinTextChars(n); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.front_matter_keys"]; ok {
+		if _, err := parseDecisionFrontMatterKeys(v); err != nil {
+			return err
+		}
+	}
+	if v, ok := patch["autonomous.decisions.follow_ups"]; ok {
+		if _, err := parseDecisionFollowUps(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// applyDecisionRecordKey stores one validated autonomous.decisions key. Keys
+// whose default is not the zero value are stored as pointers, so an explicit
+// false, 0 or empty text is told apart from an absent key.
+func applyDecisionRecordKey(d *config.AutonomousDecisionsConfig, k string, v interface{}) {
+	str := func() (string, bool) { s, ok := v.(string); return s, ok }
+	switch k {
+	case "autonomous.decisions.enabled":
+		if b, ok := v.(bool); ok {
+			d.Enabled = &b
+		}
+	case "autonomous.decisions.folder_withdraw_on_delete":
+		if b, ok := v.(bool); ok {
+			d.FolderWithdrawOnDelete = &b
+		}
+	case "autonomous.decisions.clarity_require_tradeoffs":
+		if b, ok := v.(bool); ok {
+			d.ClarityRequireTradeoffs = &b
+		}
+	case "autonomous.decisions.clarity_require_label":
+		if b, ok := v.(bool); ok {
+			d.ClarityRequireLabel = &b
+		}
+	case "autonomous.decisions.folder":
+		if s, ok := str(); ok {
+			d.Folder = s
+		}
+	case "autonomous.decisions.doc_root":
+		if s, ok := str(); ok {
+			d.DocRoot = s
+		}
+	case "autonomous.decisions.folder_glob":
+		if s, ok := str(); ok {
+			d.FolderGlob = &s
+		}
+	case "autonomous.decisions.doc_status_template":
+		if s, ok := str(); ok {
+			d.DocStatusTemplate = &s
+		}
+	case "autonomous.decisions.front_matter_delimiter":
+		if s, ok := str(); ok {
+			d.FrontMatterDelimiter = &s
+		}
+	case "autonomous.decisions.front_matter_separator":
+		if s, ok := str(); ok {
+			d.FrontMatterSeparator = &s
+		}
+	case "autonomous.decisions.front_matter_field_separator":
+		if s, ok := str(); ok {
+			d.FrontMatterFieldSeparator = &s
+		}
+	case "autonomous.decisions.clarity_mode":
+		if s, ok := str(); ok {
+			d.ClarityMode = &s
+		}
+	case "autonomous.decisions.doc_status_mode":
+		if s, ok := str(); ok {
+			d.DocStatusMode = &s
+		}
+	case "autonomous.decisions.clarity_tracker_id_pattern":
+		if s, ok := str(); ok {
+			d.ClarityTrackerIDPattern = &s
+		}
+	case "autonomous.decisions.doc_status_pattern":
+		if s, ok := str(); ok {
+			d.DocStatusPattern = &s
+		}
+	case "autonomous.decisions.clarity_min_text_chars":
+		if n, ok := toInt(v); ok {
+			d.ClarityMinTextChars = &n
+		}
+	case "autonomous.decisions.front_matter_keys":
+		if m, err := parseDecisionFrontMatterKeys(v); err == nil {
+			d.FrontMatterKeys = m
+		}
+	case "autonomous.decisions.follow_ups":
+		if list, err := parseDecisionFollowUps(v); err == nil {
+			d.FollowUps = list
+		}
+	}
+}
+
+// decisionRecordSurface is the effective autonomous.decisions values GET
+// /api/config returns.
+func decisionRecordSurface(d config.AutonomousDecisionsConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled":                      d.EffectiveEnabled(),
+		"folder":                       d.EffectiveFolder(),
+		"folder_glob":                  d.EffectiveFolderGlob(),
+		"front_matter_delimiter":       d.EffectiveFrontMatterDelimiter(),
+		"front_matter_separator":       d.EffectiveFrontMatterSeparator(),
+		"front_matter_field_separator": d.EffectiveFrontMatterFieldSeparator(),
+		"front_matter_keys":            d.EffectiveFrontMatterKeys(),
+		"folder_withdraw_on_delete":    d.EffectiveFolderWithdrawOnDelete(),
+		"clarity_mode":                 d.EffectiveClarityMode(),
+		"clarity_min_text_chars":       d.EffectiveClarityMinTextChars(),
+		"clarity_require_tradeoffs":    d.EffectiveClarityRequireTradeoffs(),
+		"clarity_require_label":        d.EffectiveClarityRequireLabel(),
+		"clarity_tracker_id_pattern":   d.EffectiveClarityTrackerIDPattern(),
+		"doc_root":                     d.EffectiveDocRoot(),
+		"doc_status_mode":              d.EffectiveDocStatusMode(),
+		"doc_status_pattern":           d.EffectiveDocStatusPattern(),
+		"doc_status_template":          d.EffectiveDocStatusTemplate(),
+		"follow_ups":                   d.EffectiveFollowUps(),
+	}
 }
 
 // validateIdentityBackupsPatch checks identity.backups_to_keep: a whole

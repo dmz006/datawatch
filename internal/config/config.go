@@ -3472,6 +3472,10 @@ type AutonomousConfig struct {
 	// below.
 	Questions AutonomousQuestionsConfig `yaml:"questions" json:"questions"`
 
+	// Decisions — the decision record keys (autonomous.decisions.*). See
+	// AutonomousDecisionsConfig below.
+	Decisions AutonomousDecisionsConfig `yaml:"decisions" json:"decisions"`
+
 	// Automation — knobs for Automation (multi-Automaton orchestration)
 	// coordination. See AutonomousAutomationConfig.
 	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`
@@ -5616,6 +5620,390 @@ func (q AutonomousQuestionsConfig) EffectiveReturnPath() bool {
 	return q.ReturnPath == nil || *q.ReturnPath
 }
 
+// AutonomousDecisionsConfig is autonomous.decisions, the keys that tune the
+// decision record (a structured record of one operator decision: title,
+// situation, options with their tradeoffs, a recommendation and a forced
+// default). Every key ships with the operator's answer as its default and none
+// is tied to a particular repository.
+//
+// A field whose default is not the zero value is a pointer: nil means the key
+// is absent and the Effective* helper returns the default. No field carries
+// omitempty on either tag, same reasoning as AutonomousQuestionsConfig: an
+// explicit false or 0 must survive a YAML/JSON round trip and a PUT
+// /api/config write instead of being elided on marshal and leaving the
+// previous value untouched on unmarshal.
+type AutonomousDecisionsConfig struct {
+	// Enabled is the master switch for decision records (default true).
+	Enabled *bool `yaml:"enabled" json:"enabled"`
+
+	// Folder is a directory of decision files the daemon watches. Empty (the
+	// zero value, and the default) means the folder watch is off.
+	Folder string `yaml:"folder" json:"folder"`
+	// FolderGlob picks the files in Folder that are read (default "*.md").
+	FolderGlob *string `yaml:"folder_glob" json:"folder_glob"`
+	// FrontMatterDelimiter is the line that opens and closes the front matter
+	// block of a decision file (default "---"); it may not be empty.
+	FrontMatterDelimiter *string `yaml:"front_matter_delimiter" json:"front_matter_delimiter"`
+	// FrontMatterSeparator splits a front matter line into key and value
+	// (default ":"); it may not be empty.
+	FrontMatterSeparator *string `yaml:"front_matter_separator" json:"front_matter_separator"`
+	// FrontMatterFieldSeparator separates the parts of an option or
+	// recommendation line (default "|"); it may not be empty.
+	FrontMatterFieldSeparator *string `yaml:"front_matter_field_separator" json:"front_matter_field_separator"`
+	// FrontMatterKeys maps a canonical key name to the name a file uses for it.
+	// Empty (the default) means files use the canonical names.
+	FrontMatterKeys map[string]string `yaml:"front_matter_keys" json:"front_matter_keys"`
+	// FolderWithdrawOnDelete withdraws the record when its file is deleted
+	// (default true).
+	FolderWithdrawOnDelete *bool `yaml:"folder_withdraw_on_delete" json:"folder_withdraw_on_delete"`
+
+	// ClarityMode is off, warn or refuse (default warn): how a record is
+	// checked for being readable before the operator sees it.
+	ClarityMode *string `yaml:"clarity_mode" json:"clarity_mode"`
+	// ClarityMinTextChars is the fewest characters the situation and the
+	// deciding text may have; a whole number >= 0 (default 60).
+	ClarityMinTextChars *int `yaml:"clarity_min_text_chars" json:"clarity_min_text_chars"`
+	// ClarityRequireTradeoffs asks every option for a one-line tradeoff
+	// (default true).
+	ClarityRequireTradeoffs *bool `yaml:"clarity_require_tradeoffs" json:"clarity_require_tradeoffs"`
+	// ClarityRequireLabel asks for a short label on the record (default true).
+	ClarityRequireLabel *bool `yaml:"clarity_require_label" json:"clarity_require_label"`
+	// ClarityTrackerIDPattern is a regular expression that spots an internal
+	// tracker identifier in a record. Empty (or absent) means the built-in
+	// pattern, DefaultQuestionQualityTrackerIDPattern.
+	ClarityTrackerIDPattern *string `yaml:"clarity_tracker_id_pattern" json:"clarity_tracker_id_pattern"`
+
+	// DocRoot is the directory document paths on a record resolve against and
+	// must stay inside. Empty (the default) means the daemon's working
+	// directory.
+	DocRoot string `yaml:"doc_root" json:"doc_root"`
+	// DocStatusMode is off, report or on (default report): whether the answer
+	// is written back to the status line of the linked document.
+	DocStatusMode *string `yaml:"doc_status_mode" json:"doc_status_mode"`
+	// DocStatusPattern is a regular expression for the status line (default
+	// DefaultDecisionDocStatusPattern).
+	DocStatusPattern *string `yaml:"doc_status_pattern" json:"doc_status_pattern"`
+	// DocStatusTemplate is the text the status line is replaced with. The
+	// placeholders are {choice}, {choice_label}, {quote}, {actor}, {date} and
+	// {decision_id} (default DefaultDecisionDocStatusTemplate).
+	DocStatusTemplate *string `yaml:"doc_status_template" json:"doc_status_template"`
+
+	// FollowUps lists the actions an answered record may request. Empty (the
+	// default) means nothing runs unless the operator configures it.
+	FollowUps []AutonomousDecisionFollowUp `yaml:"follow_ups" json:"follow_ups"`
+}
+
+// AutonomousDecisionFollowUp is one entry of autonomous.decisions.follow_ups.
+type AutonomousDecisionFollowUp struct {
+	// Name identifies the follow-up; it is unique within the list.
+	Name string `yaml:"name" json:"name"`
+	// Kind is start_template (Target is a template id) or open_automaton
+	// (Target is an Automaton id).
+	Kind string `yaml:"kind" json:"kind"`
+	// Target is the template id or the Automaton id.
+	Target string `yaml:"target" json:"target"`
+}
+
+// Follow-up kinds (autonomous.decisions.follow_ups[].kind).
+const (
+	DecisionFollowUpStartTemplate = "start_template"
+	DecisionFollowUpOpenAutomaton = "open_automaton"
+)
+
+// Clarity modes (autonomous.decisions.clarity_mode) and document status modes
+// (autonomous.decisions.doc_status_mode).
+const (
+	DecisionClarityModeOff      = "off"
+	DecisionClarityModeWarn     = "warn"
+	DecisionClarityModeRefuse   = "refuse"
+	DecisionDocStatusModeOff    = "off"
+	DecisionDocStatusModeReport = "report"
+	DecisionDocStatusModeOn     = "on"
+)
+
+// Defaults for the autonomous.decisions keys. This block is the one place a
+// changed default is made: the Effective* helpers read it, never a second copy.
+const (
+	DefaultDecisionsEnabled                  = true
+	DefaultDecisionFolderGlob                = "*.md"
+	DefaultDecisionFrontMatterDelimiter      = "---"
+	DefaultDecisionFrontMatterSeparator      = ":"
+	DefaultDecisionFrontMatterFieldSeparator = "|"
+	DefaultDecisionFolderWithdrawOnDelete    = true
+	DefaultDecisionClarityMode               = DecisionClarityModeWarn
+	DefaultDecisionClarityMinTextChars       = 60
+	DefaultDecisionClarityRequireTradeoffs   = true
+	DefaultDecisionClarityRequireLabel       = true
+	DefaultDecisionClarityTrackerIDPattern   = DefaultQuestionQualityTrackerIDPattern
+	DefaultDecisionDocStatusMode             = DecisionDocStatusModeReport
+	DefaultDecisionDocStatusPattern          = `^Confirmed:.*$`
+	DefaultDecisionDocStatusTemplate         = `Confirmed: {choice} - "{quote}" ({actor}, {date})`
+)
+
+func decisionBool(p *bool, def bool) bool {
+	if p == nil {
+		return def
+	}
+	return *p
+}
+
+func decisionString(p *string, def string) string {
+	if p == nil || *p == "" {
+		return def
+	}
+	return *p
+}
+
+// EffectiveEnabled reports whether decision records are on. Absent is on.
+func (d AutonomousDecisionsConfig) EffectiveEnabled() bool {
+	return decisionBool(d.Enabled, DefaultDecisionsEnabled)
+}
+
+// EffectiveFolder returns the watched folder; empty means the watch is off.
+func (d AutonomousDecisionsConfig) EffectiveFolder() string { return d.Folder }
+
+// EffectiveFolderGlob returns the file pattern: "*.md" when absent.
+func (d AutonomousDecisionsConfig) EffectiveFolderGlob() string {
+	return decisionString(d.FolderGlob, DefaultDecisionFolderGlob)
+}
+
+// EffectiveFrontMatterDelimiter returns the front matter delimiter: "---" when
+// absent.
+func (d AutonomousDecisionsConfig) EffectiveFrontMatterDelimiter() string {
+	return decisionString(d.FrontMatterDelimiter, DefaultDecisionFrontMatterDelimiter)
+}
+
+// EffectiveFrontMatterSeparator returns the key and value separator: ":" when
+// absent.
+func (d AutonomousDecisionsConfig) EffectiveFrontMatterSeparator() string {
+	return decisionString(d.FrontMatterSeparator, DefaultDecisionFrontMatterSeparator)
+}
+
+// EffectiveFrontMatterFieldSeparator returns the separator between the parts of
+// an option or recommendation line: "|" when absent.
+func (d AutonomousDecisionsConfig) EffectiveFrontMatterFieldSeparator() string {
+	return decisionString(d.FrontMatterFieldSeparator, DefaultDecisionFrontMatterFieldSeparator)
+}
+
+// EffectiveFrontMatterKeys returns a copy of the canonical-to-file key map;
+// empty (never nil) means files use the canonical names.
+func (d AutonomousDecisionsConfig) EffectiveFrontMatterKeys() map[string]string {
+	out := make(map[string]string, len(d.FrontMatterKeys))
+	for k, v := range d.FrontMatterKeys {
+		out[k] = v
+	}
+	return out
+}
+
+// EffectiveFolderWithdrawOnDelete reports whether deleting a decision file
+// withdraws its record. Absent is on.
+func (d AutonomousDecisionsConfig) EffectiveFolderWithdrawOnDelete() bool {
+	return decisionBool(d.FolderWithdrawOnDelete, DefaultDecisionFolderWithdrawOnDelete)
+}
+
+// EffectiveClarityMode returns the clarity mode: warn when absent or empty.
+func (d AutonomousDecisionsConfig) EffectiveClarityMode() string {
+	return decisionString(d.ClarityMode, DefaultDecisionClarityMode)
+}
+
+// EffectiveClarityMinTextChars returns the minimum text length: 60 when absent.
+// An explicit 0 stays 0 (no length check).
+func (d AutonomousDecisionsConfig) EffectiveClarityMinTextChars() int {
+	if d.ClarityMinTextChars == nil {
+		return DefaultDecisionClarityMinTextChars
+	}
+	return *d.ClarityMinTextChars
+}
+
+// EffectiveClarityRequireTradeoffs reports whether every option needs a
+// tradeoff. Absent is on.
+func (d AutonomousDecisionsConfig) EffectiveClarityRequireTradeoffs() bool {
+	return decisionBool(d.ClarityRequireTradeoffs, DefaultDecisionClarityRequireTradeoffs)
+}
+
+// EffectiveClarityRequireLabel reports whether a record needs a label. Absent
+// is on.
+func (d AutonomousDecisionsConfig) EffectiveClarityRequireLabel() bool {
+	return decisionBool(d.ClarityRequireLabel, DefaultDecisionClarityRequireLabel)
+}
+
+// EffectiveClarityTrackerIDPattern returns the tracker identifier pattern: the
+// built-in pattern when the key is absent or empty.
+func (d AutonomousDecisionsConfig) EffectiveClarityTrackerIDPattern() string {
+	return decisionString(d.ClarityTrackerIDPattern, DefaultDecisionClarityTrackerIDPattern)
+}
+
+// EffectiveDocRoot returns the document root; empty means the daemon's working
+// directory.
+func (d AutonomousDecisionsConfig) EffectiveDocRoot() string { return d.DocRoot }
+
+// EffectiveDocStatusMode returns the document status mode: report when absent
+// or empty.
+func (d AutonomousDecisionsConfig) EffectiveDocStatusMode() string {
+	return decisionString(d.DocStatusMode, DefaultDecisionDocStatusMode)
+}
+
+// EffectiveDocStatusPattern returns the status line pattern: "^Confirmed:.*$"
+// when absent or empty.
+func (d AutonomousDecisionsConfig) EffectiveDocStatusPattern() string {
+	return decisionString(d.DocStatusPattern, DefaultDecisionDocStatusPattern)
+}
+
+// EffectiveDocStatusTemplate returns the status line template: the default
+// template when absent or empty.
+func (d AutonomousDecisionsConfig) EffectiveDocStatusTemplate() string {
+	return decisionString(d.DocStatusTemplate, DefaultDecisionDocStatusTemplate)
+}
+
+// EffectiveFollowUps returns a copy of the follow-up list; empty (never nil)
+// means nothing is configured.
+func (d AutonomousDecisionsConfig) EffectiveFollowUps() []AutonomousDecisionFollowUp {
+	out := make([]AutonomousDecisionFollowUp, len(d.FollowUps))
+	copy(out, d.FollowUps)
+	return out
+}
+
+// ValidateDecisionClarityMode refuses a clarity_mode other than off, warn or
+// refuse (empty reads as warn).
+func ValidateDecisionClarityMode(mode string) error {
+	switch mode {
+	case "", DecisionClarityModeOff, DecisionClarityModeWarn, DecisionClarityModeRefuse:
+		return nil
+	}
+	return fmt.Errorf("autonomous.decisions.clarity_mode: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		mode, DecisionClarityModeOff, DecisionClarityModeWarn, DecisionClarityModeRefuse, DefaultDecisionClarityMode)
+}
+
+// ValidateDecisionDocStatusMode refuses a doc_status_mode other than off,
+// report or on (empty reads as report).
+func ValidateDecisionDocStatusMode(mode string) error {
+	switch mode {
+	case "", DecisionDocStatusModeOff, DecisionDocStatusModeReport, DecisionDocStatusModeOn:
+		return nil
+	}
+	return fmt.Errorf("autonomous.decisions.doc_status_mode: invalid value %q (valid values: %q, %q, %q, or empty for %q)",
+		mode, DecisionDocStatusModeOff, DecisionDocStatusModeReport, DecisionDocStatusModeOn, DefaultDecisionDocStatusMode)
+}
+
+// ValidateDecisionClarityMinTextChars refuses a negative minimum.
+func ValidateDecisionClarityMinTextChars(n int) error {
+	if n < 0 {
+		return fmt.Errorf("autonomous.decisions.clarity_min_text_chars: %d is invalid (use a whole number >= 0; default %d)",
+			n, DefaultDecisionClarityMinTextChars)
+	}
+	return nil
+}
+
+// ValidateDecisionClarityTrackerIDPattern refuses a pattern that does not
+// compile. Empty is valid and reads as the built-in pattern.
+func ValidateDecisionClarityTrackerIDPattern(pattern string) error {
+	if _, err := regexp.Compile(pattern); err != nil {
+		return fmt.Errorf("autonomous.decisions.clarity_tracker_id_pattern: %q does not compile as a regular expression (%v); use a valid pattern, or empty for the built-in pattern",
+			pattern, err)
+	}
+	return nil
+}
+
+// ValidateDecisionDocStatusPattern refuses a pattern that does not compile.
+// Empty is valid and reads as the default.
+func ValidateDecisionDocStatusPattern(pattern string) error {
+	if _, err := regexp.Compile(pattern); err != nil {
+		return fmt.Errorf("autonomous.decisions.doc_status_pattern: %q does not compile as a regular expression (%v); use a valid pattern, or empty for the default %q",
+			pattern, err, DefaultDecisionDocStatusPattern)
+	}
+	return nil
+}
+
+// ValidateDecisionFrontMatterDelimiter refuses an empty delimiter.
+func ValidateDecisionFrontMatterDelimiter(s string) error {
+	return validateDecisionNonEmpty("front_matter_delimiter", s, DefaultDecisionFrontMatterDelimiter)
+}
+
+// ValidateDecisionFrontMatterSeparator refuses an empty separator.
+func ValidateDecisionFrontMatterSeparator(s string) error {
+	return validateDecisionNonEmpty("front_matter_separator", s, DefaultDecisionFrontMatterSeparator)
+}
+
+// ValidateDecisionFrontMatterFieldSeparator refuses an empty separator.
+func ValidateDecisionFrontMatterFieldSeparator(s string) error {
+	return validateDecisionNonEmpty("front_matter_field_separator", s, DefaultDecisionFrontMatterFieldSeparator)
+}
+
+func validateDecisionNonEmpty(key, s, def string) error {
+	if s == "" {
+		return fmt.Errorf("autonomous.decisions.%s: an empty value is invalid (use a non-empty text; default %q)", key, def)
+	}
+	return nil
+}
+
+// ValidateDecisionFollowUps refuses a follow-up list with an entry that has an
+// empty name, a kind other than start_template or open_automaton, an empty
+// target, or a name that an earlier entry already uses.
+func ValidateDecisionFollowUps(list []AutonomousDecisionFollowUp) error {
+	seen := make(map[string]bool, len(list))
+	for i, f := range list {
+		switch {
+		case f.Name == "":
+			return fmt.Errorf("autonomous.decisions.follow_ups[%d]: name is empty (give every follow-up a name)", i)
+		case f.Kind != DecisionFollowUpStartTemplate && f.Kind != DecisionFollowUpOpenAutomaton:
+			return fmt.Errorf("autonomous.decisions.follow_ups[%d] (%s): invalid kind %q (valid values: %q, %q)",
+				i, f.Name, f.Kind, DecisionFollowUpStartTemplate, DecisionFollowUpOpenAutomaton)
+		case f.Target == "":
+			return fmt.Errorf("autonomous.decisions.follow_ups[%d] (%s): target is empty (name a template id or an Automaton id)", i, f.Name)
+		case seen[f.Name]:
+			return fmt.Errorf("autonomous.decisions.follow_ups[%d]: duplicate name %q (each follow-up needs its own name)", i, f.Name)
+		}
+		seen[f.Name] = true
+	}
+	return nil
+}
+
+// validate refuses any autonomous.decisions value outside its valid range. It
+// is the one rule the config file load and every surface that rides it share.
+func (d AutonomousDecisionsConfig) validate() error {
+	if d.ClarityMode != nil {
+		if err := ValidateDecisionClarityMode(*d.ClarityMode); err != nil {
+			return err
+		}
+	}
+	if d.DocStatusMode != nil {
+		if err := ValidateDecisionDocStatusMode(*d.DocStatusMode); err != nil {
+			return err
+		}
+	}
+	if d.ClarityMinTextChars != nil {
+		if err := ValidateDecisionClarityMinTextChars(*d.ClarityMinTextChars); err != nil {
+			return err
+		}
+	}
+	if d.ClarityTrackerIDPattern != nil {
+		if err := ValidateDecisionClarityTrackerIDPattern(*d.ClarityTrackerIDPattern); err != nil {
+			return err
+		}
+	}
+	if d.DocStatusPattern != nil {
+		if err := ValidateDecisionDocStatusPattern(*d.DocStatusPattern); err != nil {
+			return err
+		}
+	}
+	if d.FrontMatterDelimiter != nil {
+		if err := ValidateDecisionFrontMatterDelimiter(*d.FrontMatterDelimiter); err != nil {
+			return err
+		}
+	}
+	if d.FrontMatterSeparator != nil {
+		if err := ValidateDecisionFrontMatterSeparator(*d.FrontMatterSeparator); err != nil {
+			return err
+		}
+	}
+	if d.FrontMatterFieldSeparator != nil {
+		if err := ValidateDecisionFrontMatterFieldSeparator(*d.FrontMatterFieldSeparator); err != nil {
+			return err
+		}
+	}
+	return ValidateDecisionFollowUps(d.FollowUps)
+}
+
 // DefaultPendingEventsMax is the pending_events_max fallback.
 const DefaultPendingEventsMax = 500
 
@@ -7002,6 +7390,9 @@ func validateLoaded(cfg *Config) error {
 		return err
 	}
 	if err := cfg.UI.validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Decisions.validate(); err != nil {
 		return err
 	}
 	if err := cfg.Identity.validate(); err != nil {

@@ -112,6 +112,49 @@ func (c *Coordinator) questionPass(ctx context.Context) {
 		return
 	}
 	c.m.QuestionTick(ctx)
+	c.m.DecisionRecordTick(ctx)
+}
+
+// SetDecisionRecords attaches the decision record service the coordinator
+// tick reconciles on every poll.
+func (m *Manager) SetDecisionRecords(d *DecisionRecords) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.decisionRecords = d
+}
+
+// DecisionRecords returns the attached decision record service, or nil.
+func (m *Manager) DecisionRecords() *DecisionRecords {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.decisionRecords
+}
+
+// DecisionRecordTick runs one pass over the decision records. It first scans
+// the decision folder (autonomous.decisions.folder; empty means no scan) so a
+// new, edited or deleted file creates, updates or withdraws its record, then
+// reconciles the records against their questions: it raises a missing
+// question, brings a drifted open question back to the record, and marks a
+// record withdrawn when its question was withdrawn. It runs on the caller's
+// goroutine, starts none, and does nothing when no service is attached or a
+// switch is off.
+func (m *Manager) DecisionRecordTick(ctx context.Context) {
+	d := m.DecisionRecords()
+	if d == nil || ctx.Err() != nil {
+		return
+	}
+	d.ScanFolder()
+	if ctx.Err() != nil {
+		return
+	}
+	rep := d.Reconcile()
+	for _, e := range rep.Errors {
+		log.Printf("[autonomous] decision record reconcile: %s", e)
+	}
+	if rep.Changed() {
+		log.Printf("[autonomous] decision record reconcile: raised=%d linked=%d updated=%d withdrawn=%d",
+			rep.Raised, rep.Linked, rep.Updated, rep.Withdrawn)
+	}
 }
 
 // QuestionTick runs one pass: it reads the answered and withdrawn questions

@@ -78,12 +78,14 @@ var DefaultQuestionLabels = []string{
 
 // Question sources: how a question reached the store. A worker session's
 // DATAWATCH_QUESTION: marker line is "marker"; POST /api/questions is "rest";
-// a held question the daemon raises from its fixed table is "held".
+// a held question the daemon raises from its fixed table is "held"; a
+// question the daemon raises from a decision record is "decision_record".
 // An empty source (a record written before the field existed) is accepted.
 const (
-	QuestionSourceMarker = "marker"
-	QuestionSourceRest   = "rest"
-	QuestionSourceHeld   = "held"
+	QuestionSourceMarker         = "marker"
+	QuestionSourceRest           = "rest"
+	QuestionSourceHeld           = "held"
+	QuestionSourceDecisionRecord = "decision_record"
 )
 
 // questionLineSHA256Len is the length of a hex SHA-256 digest.
@@ -149,6 +151,10 @@ type Question struct {
 	Blocking         bool   `json:"blocking,omitempty"`
 	Source           string `json:"source,omitempty"`
 	SourceLineSHA256 string `json:"source_line_sha256,omitempty"`
+	// DecisionRecordID links the question to the decision record it asks
+	// about: empty, or a 'dr-' id. It is what lets a restart or a repeated
+	// call find the question that already exists for a record.
+	DecisionRecordID string `json:"decision_record_id,omitempty"`
 }
 
 // Answer is an immutable reply to a question, stored with the operator's
@@ -264,7 +270,7 @@ func ValidateNewQuestion(q *Question) error {
 	// came from and the hash of its line (the dedupe key); a line hash is a
 	// hex SHA-256 digest, so no line text can ride in that field.
 	switch q.Source {
-	case "", QuestionSourceRest, QuestionSourceHeld:
+	case "", QuestionSourceRest, QuestionSourceHeld, QuestionSourceDecisionRecord:
 	case QuestionSourceMarker:
 		if q.SessionID == "" {
 			add("source marker requires session_id")
@@ -273,10 +279,21 @@ func ValidateNewQuestion(q *Question) error {
 			add("source marker requires source_line_sha256")
 		}
 	default:
-		add("source is %q; it must be empty, %q, %q or %q", q.Source, QuestionSourceMarker, QuestionSourceRest, QuestionSourceHeld)
+		add("source is %q; it must be empty, %q, %q, %q or %q", q.Source,
+			QuestionSourceMarker, QuestionSourceRest, QuestionSourceHeld, QuestionSourceDecisionRecord)
 	}
 	if q.SourceLineSHA256 != "" && !isLowerHexDigest(q.SourceLineSHA256) {
 		add("source_line_sha256 must be %d lowercase hex characters", questionLineSHA256Len)
+	}
+
+	// Decision record link: empty, or a 'dr-' id with something after the
+	// prefix.
+	if q.DecisionRecordID != "" {
+		if !strings.HasPrefix(q.DecisionRecordID, decisionIDPrefix) || len(q.DecisionRecordID) == len(decisionIDPrefix) {
+			add("decision_record_id %q must be empty or a %q id", q.DecisionRecordID, decisionIDPrefix)
+		} else if len(q.DecisionRecordID) > decisionLinkMaxBytes {
+			add("decision_record_id is %d bytes; the cap is %d", len(q.DecisionRecordID), decisionLinkMaxBytes)
+		}
 	}
 
 	// Text is required and capped.

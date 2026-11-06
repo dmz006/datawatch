@@ -9358,6 +9358,28 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.request_watch.raise_alert': DOCS_DEFINITIONS + '#autonomous-request-watch-raise-alert',
   'autonomous.request_watch.raise_question': DOCS_DEFINITIONS + '#autonomous-request-watch-raise-question',
   'autonomous.request_watch.remediation_options': DOCS_DEFINITIONS + '#autonomous-request-watch-remediation-options',
+  settings_automata_decisions_enabled: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder_glob: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_front_matter_delimiter: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_front_matter_separator: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_front_matter_field_separator: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_front_matter_keys: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_folder_withdraw_on_delete: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_clarity_mode: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_clarity_min_text_chars: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_clarity_require_tradeoffs: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_clarity_require_label: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_clarity_tracker_id_pattern: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_doc_root: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_doc_status_mode: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_doc_status_pattern: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_doc_status_template: DOCS_DEFINITIONS + '#decision-record-settings',
+  settings_automata_decisions_follow_ups: DOCS_DEFINITIONS + '#decision-record-settings',
+  // Decision records card (Automata area): every decision record, newest
+  // first, with the folder watch status line; the settings rows control its
+  // folder and the document status line it reports.
+  decision_record_card_title: DOCS_DEFINITIONS + '#decision-records-in-the-pwa',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -18338,6 +18360,24 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.questions.held_mode', label: 'Held questions mode (off, shadow or on; default shadow)', labelKey: 'held_question_settings_mode', type: 'select', options: ['off', 'shadow', 'on'], default: 'shadow' },
     { key: 'autonomous.questions.held_states', label: 'Held question states (comma-separated held task state ids; empty = all five)', labelKey: 'held_question_settings_states', type: 'text', placeholder: 'review_held, decompose_blocked, decompose_stalled, decompose_failed, decompose_rejected', csv: true },
     { key: 'autonomous.questions.worker_marker', label: 'Let a worker raise a question with a marker in its output (off by default)', labelKey: 'settings_automata_questions_worker_marker', helpKey: 'settings_automata_questions_worker_marker_help', type: 'toggle' },
+    { key: 'autonomous.decisions.enabled', label: 'Decision records (on by default)', labelKey: 'settings_automata_decisions_enabled', docsKey: 'settings_automata_decisions_enabled', type: 'toggle', },
+    { key: 'autonomous.decisions.folder', label: 'Decision record folder to watch (empty = folder watch off)', labelKey: 'settings_automata_decisions_folder', docsKey: 'settings_automata_decisions_folder', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.folder_glob', label: 'Decision record file pattern (default *.md)', labelKey: 'settings_automata_decisions_folder_glob', docsKey: 'settings_automata_decisions_folder_glob', type: 'text', placeholder: '*.md', default: '*.md', },
+    { key: 'autonomous.decisions.front_matter_delimiter', label: 'Decision file front matter delimiter (default ---)', labelKey: 'settings_automata_decisions_front_matter_delimiter', docsKey: 'settings_automata_decisions_front_matter_delimiter', type: 'text', placeholder: '---', default: '---', },
+    { key: 'autonomous.decisions.front_matter_separator', label: 'Decision file key and value separator (default :)', labelKey: 'settings_automata_decisions_front_matter_separator', docsKey: 'settings_automata_decisions_front_matter_separator', type: 'text', placeholder: ':', default: ':', },
+    { key: 'autonomous.decisions.front_matter_field_separator', label: 'Decision file option part separator (default |)', labelKey: 'settings_automata_decisions_front_matter_field_separator', docsKey: 'settings_automata_decisions_front_matter_field_separator', type: 'text', placeholder: '|', default: '|', },
+    { key: 'autonomous.decisions.front_matter_keys', label: 'Decision file key names (JSON object, canonical name to the name your files use, empty = canonical names)', labelKey: 'settings_automata_decisions_front_matter_keys', docsKey: 'settings_automata_decisions_front_matter_keys', type: 'textarea', },
+    { key: 'autonomous.decisions.folder_withdraw_on_delete', label: 'Withdraw a decision record when its file is deleted (on by default)', labelKey: 'settings_automata_decisions_folder_withdraw_on_delete', docsKey: 'settings_automata_decisions_folder_withdraw_on_delete', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_mode', label: 'Decision record clarity check (off, warn or refuse, default warn)', labelKey: 'settings_automata_decisions_clarity_mode', docsKey: 'settings_automata_decisions_clarity_mode', type: 'select', options: ['off', 'warn', 'refuse'], default: 'warn', },
+    { key: 'autonomous.decisions.clarity_min_text_chars', label: 'Decision record minimum text length (characters, 0 = no length check, default 60)', labelKey: 'settings_automata_decisions_clarity_min_text_chars', docsKey: 'settings_automata_decisions_clarity_min_text_chars', type: 'number', min: 0, step: 1, placeholder: '60', default: '60', },
+    { key: 'autonomous.decisions.clarity_require_tradeoffs', label: 'Decision record needs a trade-off line on every option (on by default)', labelKey: 'settings_automata_decisions_clarity_require_tradeoffs', docsKey: 'settings_automata_decisions_clarity_require_tradeoffs', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_require_label', label: 'Decision record needs a short label (on by default)', labelKey: 'settings_automata_decisions_clarity_require_label', docsKey: 'settings_automata_decisions_clarity_require_label', type: 'toggle', },
+    { key: 'autonomous.decisions.clarity_tracker_id_pattern', label: 'Decision record tracker id pattern (regular expression, empty = built-in default)', labelKey: 'settings_automata_decisions_clarity_tracker_id_pattern', docsKey: 'settings_automata_decisions_clarity_tracker_id_pattern', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.doc_root', label: 'Decision record document folder (empty = the daemon\'s working directory)', labelKey: 'settings_automata_decisions_doc_root', docsKey: 'settings_automata_decisions_doc_root', type: 'text', placeholder: '', },
+    { key: 'autonomous.decisions.doc_status_mode', label: 'Decision record document status line (off, report or on, default report)', labelKey: 'settings_automata_decisions_doc_status_mode', docsKey: 'settings_automata_decisions_doc_status_mode', type: 'select', options: ['off', 'report', 'on'], default: 'report', },
+    { key: 'autonomous.decisions.doc_status_pattern', label: 'Decision record status line pattern (regular expression, default ^Confirmed:.*$)', labelKey: 'settings_automata_decisions_doc_status_pattern', docsKey: 'settings_automata_decisions_doc_status_pattern', type: 'text', placeholder: '^Confirmed:.*$', default: '^Confirmed:.*$', },
+    { key: 'autonomous.decisions.doc_status_template', label: 'Decision record status line text ({choice}, {choice_label}, {quote}, {actor}, {date}, {decision_id})', labelKey: 'settings_automata_decisions_doc_status_template', docsKey: 'settings_automata_decisions_doc_status_template', type: 'text', placeholder: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', default: 'Confirmed: {choice} - "{quote}" ({actor}, {date})', },
+    { key: 'autonomous.decisions.follow_ups', label: 'Decision record follow-ups (JSON list of name, kind and target; kind is start_template or open_automaton; empty = none)', labelKey: 'settings_automata_decisions_follow_ups', docsKey: 'settings_automata_decisions_follow_ups', type: 'textarea', },
     // Progress engine parameters (0 or empty = the default shown as placeholder).
     { key: 'autonomous.progress.lanes', label: 'Progress lanes (parallel lanes of Automata used for utilization, 0 = 5)', labelKey: 'settings_progress_lanes', type: 'number', placeholder: '5', min: 0, step: 1, default: '0' },
     { key: 'autonomous.progress.inactive_gap_hours', label: 'Progress inactive gap (hours without activity that count as an inactive window, 0 = 3)', labelKey: 'settings_progress_inactive_gap_hours', type: 'number', placeholder: '3', min: 0, step: 0.5, default: '0' },
@@ -19615,7 +19655,7 @@ function loadGeneralConfig() {
             html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
               <div class="settings-label">${escHtml(fLabel)}</div>
               <textarea class="form-input general-cfg-input" rows="4" style="margin-top:4px;resize:vertical;font-size:11px;"
-                onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
+                onchange="saveGeneralField('${f.key}', this.value)">${escHtml(_cfgTextareaText(val))}</textarea>
             </div>`;
           } else {
             // Array values (e.g. the smoke-package pattern list) render as
@@ -20245,6 +20285,17 @@ function saveGeneralConfigPut(key, value) {
       }
     })
     .catch(() => showToast('Save failed', 'error'));
+}
+
+// A textarea setting whose stored value is a list or an object (the decision
+// record follow-ups and file key names) shows its JSON text; an empty list or
+// object shows nothing.
+function _cfgTextareaText(val) {
+  if (val && typeof val === 'object') {
+    if (Array.isArray(val)) return val.length ? JSON.stringify(val) : '';
+    return Object.keys(val).length ? JSON.stringify(val) : '';
+  }
+  return String(val || '');
 }
 
 function saveGeneralField(key, value) {
@@ -24983,7 +25034,7 @@ function _automataCardsHtml() {
   const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
   const empty = `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
   const base = _automataBaseList();
-  return _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
+  return _decisionRecordSlotHtml() + _tagBrowseMountHTML('automata', _automataFilteredList(), base.length, (p, also) => renderAutomataCard(p, also), empty) + _automataLoadMoreHtml();
 }
 function _automataAfterPaint(panel, openIds) {
   if (openIds && openIds.size) {
@@ -25018,7 +25069,7 @@ function _automataLoader() {
     key: 'automata', el: 'automataPanel', pollMs: 30000,
     fetch: _automataFetchAll,
     active: _automataActive,
-    render: d => { _automataApplyData(d); return _automataCardsHtml(); },
+    render: d => { _automataApplyData(d); window.loadDecisionRecordCard(); return _automataCardsHtml(); },
     beforePaint: _automataOpenIds,
     afterPaint: _automataAfterPaint,
   });
@@ -29081,7 +29132,10 @@ function _decisionLineRow(d) {
   const chipColor = d && d.state === 'answered' ? 'var(--success,#22c55e)'
     : d && d.state === 'open' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
   const chip = `<span class="decision-state-chip decision-state-${escHtml(String((d && d.state) || '').replace(/[^a-z_]/g, ''))}" style="display:inline-block;padding:1px 8px;border:1px solid ${chipColor};border-radius:10px;font-size:11px;font-weight:700;color:${chipColor};">${escHtml(stateText)}</span>`;
-  const head = `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0;"><code class="decision-id" style="overflow-wrap:anywhere;">${escHtml(d.id || '')}</code>${chip}</div>`;
+  const recRefs = (d && d.record_id)
+    ? ` · <span class="decision-record-ref" style="color:var(--text2);font-size:11px;">${escHtml(t('decision_record_ref') || 'record')}</span> <code class="decision-record-ref-id" style="overflow-wrap:anywhere;">${escHtml(d.record_id)}</code>`
+    : '';
+  const head = `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0;"><code class="decision-id" style="overflow-wrap:anywhere;">${escHtml(d.id || '')}</code>${chip}${recRefs}</div>`;
   const question = `<div class="decision-question" style="overflow-wrap:anywhere;">${escHtml(d.question || '')}</div>`;
   let answer = '';
   const a = d.answer;
@@ -29122,6 +29176,166 @@ window.loadDecisionLineCard = function(prdID) {
       if (el) el.innerHTML = '';
     });
 };
+
+// ── Decision records card (Automata area) ────────────────────────────
+// One card at the top of the Automata area list: every decision record,
+// newest first, plus the folder watch status line. A decision record is the
+// structured description of one operator decision — the title and situation,
+// the deciding question, the options with their stated cost and risk, the
+// recommendation and the forced default — and the daemon raises its queue
+// question from it. The card is a read-only convenience: it shows the record
+// fields the REST list gives it, the operator's answer verbatim when the
+// record is answered, the document status line outcome when one was
+// reported or applied, and the follow-up outcome when one ran. A failed
+// fetch shows a plain unavailable line; records always come back from the
+// API, so the card never fabricates an empty state on an error.
+
+let _decisionRecordData = null;   // last successful body, or null
+let _decisionRecordFailed = false; // the last attempt failed
+
+const DECISION_RECORD_STATE_KEYS = {
+  open: 'decision_record_state_open',
+  answered: 'decision_record_state_answered',
+  withdrawn: 'decision_record_state_withdrawn',
+};
+
+function _decisionRecordRow(r) {
+  if (!r || typeof r !== 'object') return '';
+  const s = String(r.state || '');
+  const stateKey = DECISION_RECORD_STATE_KEYS[s] || '';
+  const stateText = (stateKey && t(stateKey)) ? t(stateKey) : (s || '');
+  const color = s === 'answered' ? 'var(--success,#22c55e)'
+    : s === 'open' ? 'var(--warning,#f59e0b)' : 'var(--text2)';
+  const chip = stateText
+    ? `<span class="decision-record-state decision-record-state-${s.replace(/[^a-z_]/g, '')}" style="display:inline-block;padding:1px 8px;border:1px solid ${color};border-radius:10px;font-size:11px;font-weight:700;color:${color};">${escHtml(stateText)}</span>`
+    : '';
+  const parts = [];
+  parts.push(`<div class="decision-record-head" style="display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-width:0;"><span class="decision-record-title ${s || 'unknown'}" style="font-weight:700;overflow-wrap:anywhere;">${escHtml(r.title || '')}</span><code class="decision-record-id" style="overflow-wrap:anywhere;">${escHtml(r.id || '')}</code>${chip}</div>`);
+  const field = (cls, label, value) => (value
+    ? `<div class="decision-record-${cls}" style="overflow-wrap:anywhere;margin:2px 0;"><span style="color:var(--text2);">${escHtml(label)}</span> ${escHtml(value)}</div>`
+    : '');
+  if (r.situation) parts.push(field('situation', t('decision_record_situation') || 'Situation', r.situation));
+  if (r.deciding) parts.push(field('deciding', t('decision_record_deciding') || 'Deciding', r.deciding));
+  const opts = Array.isArray(r.options) ? r.options.filter(o => o && typeof o === 'object') : [];
+  if (opts.length) {
+    const items = opts.map(o =>
+      `<li class="decision-record-option" style="overflow-wrap:anywhere;">${escHtml(o.label || o.id || '')}${o.tradeoff ? ` <span class="decision-record-option-tradeoff" style="color:var(--text2);">— ${escHtml(o.tradeoff)}</span>` : ''}</li>`
+    ).join('');
+    parts.push(`<ul class="decision-record-options" style="margin:2px 0 2px 18px;padding:0;">${items}</ul>`);
+  }
+  const rec = r.recommendation && typeof r.recommendation === 'object' ? r.recommendation : null;
+  if (rec) {
+    const recText = [rec.label, rec.reason].filter(v => v !== undefined && v !== null && String(v) !== '').map(String).join(' — ');
+    if (recText) parts.push(field('recommendation', t('decision_record_recommendation') || 'Recommendation', recText));
+  }
+  if (r.default) parts.push(field('forced-default', t('decision_record_default') || 'default', String(r.default)));
+  const ans = r.answer && typeof r.answer === 'object' ? r.answer : null;
+  if (ans) {
+    const meta = [];
+    if (ans.actor) meta.push(`${t('decision_record_answer_actor') || 'By'} ${ans.actor}`);
+    if (ans.surface) meta.push(`${t('decision_record_answer_surface') || 'via'} ${ans.surface}`);
+    const metaHtml = meta.length
+      ? `<div class="decision-record-answer-meta" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(meta.join(' · '))}</div>`
+      : '';
+    const quoteHtml = ans.quote
+      ? `<blockquote class="decision-record-answer-quote" style="margin:2px 0 0;padding:2px 8px;border-left:2px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere;">${escHtml(String(ans.quote))}</blockquote>`
+      : '';
+    if (metaHtml || quoteHtml) {
+      parts.push(`<div class="decision-record-answer" style="margin:4px 0 0;padding:4px 8px;border:1px solid var(--border);border-radius:6px;min-width:0;">${metaHtml}${quoteHtml}</div>`);
+    }
+  }
+  const dc = r.doc_change && typeof r.doc_change === 'object' ? r.doc_change : null;
+  if (dc && dc.status) {
+    const bits = [];
+    if (dc.status === 'applied') bits.push(t('decision_record_doc_change_applied') || 'applied');
+    else if (dc.status === 'reported') bits.push(t('decision_record_doc_change_reported') || 'would be rewritten');
+    else bits.push(String(dc.status));
+    if (dc.path) bits.push(String(dc.path));
+    if (dc.before) bits.push(String(dc.before));
+    if (dc.after) bits.push('→ ' + String(dc.after));
+    parts.push(field('doc-change', t('decision_record_doc_change') || 'Document', bits.join('  ')));
+  }
+  const fu = r.follow_up && typeof r.follow_up === 'object' ? r.follow_up : null;
+  if (fu && (fu.name || fu.kind || fu.target || fu.status || fu.result)) {
+    const bits = [fu.name, fu.kind, fu.target, fu.status, fu.result]
+      .filter(v => v !== undefined && v !== null && String(v) !== '').map(String);
+    if (bits.length) parts.push(field('follow-up', t('decision_record_follow_up') || 'Follow-up', bits.join(' · ')));
+  }
+  return `<section class="decision-record-row ${s || 'unknown'}" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${parts.join('')}</section>`;
+}
+
+function _decisionRecordFolderLine(folder) {
+  if (!folder || typeof folder !== 'object') return '';
+  const issues = [].concat(folder.errors || [], folder.notes || [])
+    .filter(p => p && typeof p === 'object' && (p.file || p.message));
+  const issueBits = issues.map(p =>
+    `${t('decision_record_folder_issue') || 'issue'} ${p.file || ''}${p.message ? ': ' + p.message : ''}`);
+  if (!folder.enabled) {
+    const bits = [t('decision_record_folder_off') || 'Folder watch is off'];
+    if (folder.path) bits.push(String(folder.path));
+    bits.push(...issueBits);
+    return `<div class="decision-record-folder decision-record-folder-off" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(bits.join(' · '))}</div>`;
+  }
+  const bits = [];
+  if (folder.path) bits.push(String(folder.path));
+  bits.push(`${folder.files_seen || 0} ${t('decision_record_folder_files') || 'files read'}`);
+  bits.push(...issueBits);
+  return `<div class="decision-record-folder" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(bits.join(' · '))}</div>`;
+}
+
+// decisionRecordCardHtml(view) is the whole card body for one list view from
+// GET /api/autonomous/decision-records. view null means "not fetched yet" and
+// renders the loading line; an empty decision_records array renders the empty
+// line. Every value is escaped; a hostile value stays inert markup.
+window.decisionRecordCardHtml = function(view) {
+  const head = `<div class="cap-title decision-record-card-title">${escHtml(t('decision_record_card_title') || 'Decision records')}</div>`;
+  if (view === null || view === undefined) {
+    return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}<div class="decision-record-loading" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_loading') || 'Loading…')}</div></div>`;
+  }
+  const recs = Array.isArray(view.decision_records) ? view.decision_records : [];
+  let body;
+  if (recs.length === 0) {
+    body = `<div class="decision-record-empty" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_empty') || 'No decision records yet.')}</div>`;
+  } else {
+    body = recs.map(_decisionRecordRow).join('');
+  }
+  return `<div class="prd-capacity-card decision-record-card" style="min-width:0;">${head}${body}${_decisionRecordFolderLine(view.folder)}</div>`;
+};
+
+window.decisionRecordCardFailedHtml = function() {
+  const head = `<div class="cap-title decision-record-card-title">${escHtml(t('decision_record_card_title') || 'Decision records')}</div>`;
+  return `<div class="prd-capacity-card decision-record-card decision-record-card-failed" style="min-width:0;">${head}<div class="decision-record-error" style="color:var(--text2);overflow-wrap:anywhere;">${escHtml(t('decision_record_unavailable') || 'The decision records are not available.')}</div></div>`;
+};
+
+// loadDecisionRecordCard() fetches the list from
+// GET /api/autonomous/decision-records and paints the remembered view into
+// #drCard when it is live in the document; the result is kept either way so
+// the next paint of the Automata area draws the last known view until a newer
+// one arrives. A failure paints the unavailable line, never an empty card.
+window.loadDecisionRecordCard = function() {
+  _decisionRecordFailed = false;
+  return apiFetch('/api/autonomous/decision-records?limit=100')
+    .then(view => {
+      _decisionRecordData = view && typeof view === 'object' ? view : { decision_records: [] };
+      const el = typeof document !== 'undefined' && document.getElementById && document.getElementById('drCard');
+      if (el && el.isConnected !== false) el.innerHTML = window.decisionRecordCardHtml(_decisionRecordData);
+    })
+    .catch(() => {
+      _decisionRecordFailed = true;
+      const el = typeof document !== 'undefined' && document.getElementById && document.getElementById('drCard');
+      if (el && el.isConnected !== false) el.innerHTML = window.decisionRecordCardFailedHtml();
+    });
+};
+
+// decisionRecordSlotHtml() is the card shell at the top of the Automata area
+// list; it paints the remembered view (or its loading line) in place, so a
+// rebuild of the list never loses the last loaded records.
+function _decisionRecordSlotHtml() {
+  const inner = _decisionRecordFailed
+    ? window.decisionRecordCardFailedHtml()
+    : window.decisionRecordCardHtml(_decisionRecordData);
+  return `<div id="drCard" class="decision-record-slot" style="margin:0 0 10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg);min-width:0;">${inner}</div>`;
+}
 
 // decisionAnswerLinkHtml(d) is the answer link on one Automaton decision log
 // entry: an operator_answer entry that names its question and its answer

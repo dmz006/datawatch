@@ -1826,6 +1826,67 @@ The ship steps run when a release is finished, in this order: **push** the branc
 
 The ship CI watch (`autonomous.ship.ci_watch`) follows the CI runs of the pushed commit and of the tag after a successful ship step, limited to the workflows named in `autonomous.ship.ci_workflows` (an empty list watches every workflow). Each ref ends as success, failure, still running or timeout. In `shadow` mode a failure is only recorded; in `on` mode a failure also raises an alert on the Automaton's triage record. It is separate from the repo CI watch (`autonomous.automation.repo_ci_watch.*`), which watches the repository's default branch on a schedule.
 
+### Decision records in the PWA
+
+A decision record is the structured description of one operator decision. It
+keeps the decision's title and situation, the deciding question, the options
+with each one-line tradeoff, a recommendation and its reason, and the forced
+default; the daemon raises its queue question from the record, so the record
+is the answerable thing, not just a log line.
+
+The PWA shows decision records in two places. The Automata area carries one
+card at the top of its list: every record, newest first, each with its title,
+record id, state (open, answered, or withdrawn), situation, deciding
+question, options with their tradeoffs, recommendation, default, the
+operator's answer (actor, surface, and the quote verbatim) when the record
+is answered, the document status line outcome when one was reported or
+applied, and the follow-up outcome when one ran. The card ends with the
+folder watch status line: the watched directory and file count while the
+folder is enabled, or a plain line that the folder watch is off, plus any
+per-file read problems. A record answered by an Automaton's daemon also shows
+that record id on its per-Automaton decision log line. The card is read-only:
+it renders what the REST list returns and shows a short unavailable line when
+the fetch fails; it never invents records.
+
+Both places are driven by the same `autonomous.decisions.*` keys, which the
+Settings → Automata panel exposes as rows and whose docs link opens the
+section below or here:
+
+| Key | Meaning |
+|---|---|
+| `autonomous.decisions.enabled` | Raise the record's queue question at all (the master switch). |
+| `autonomous.decisions.folder` | Directory of decision files the daemon watches; empty means the folder watch is off, which the card's status line states. |
+| `autonomous.decisions.folder_glob` | Which files in the folder are read (default `*.md`). |
+| `autonomous.decisions.folder_withdraw_on_delete` | Withdraw a record when its file is deleted (default true). |
+| `autonomous.decisions.front_matter_delimiter` | Line that opens and closes a file's front matter (default `---`). |
+| `autonomous.decisions.front_matter_separator` | Splits a front matter line into key and value (default `:`). |
+| `autonomous.decisions.front_matter_field_separator` | Separates the parts of an option or recommendation line (default `|`). |
+| `autonomous.decisions.front_matter_keys` | Map a canonical front matter key to the name a file uses for it. |
+| `autonomous.decisions.clarity_mode` | `off`, `warn` (default) or `refuse`: how a low-clarity record is treated on read. |
+| `autonomous.decisions.clarity_min_text_chars` | Fewest characters the situation and the deciding text may have (default 60). |
+| `autonomous.decisions.clarity_require_tradeoffs` | Ask every option for a one-line tradeoff (default true). |
+| `autonomous.decisions.clarity_require_label` | Ask for a short label on the record (default true). |
+| `autonomous.decisions.clarity_tracker_id_pattern` | Regex that spots an internal tracker identifier in a record; empty means the built-in pattern. |
+| `autonomous.decisions.doc_root` | Directory that a record's document paths resolve against. |
+| `autonomous.decisions.doc_status_mode` | `off`, `report` (default) or `on`: whether an answer is written back to the linked document's status line; `report` only shows the change and `on` applies it, and the card shows whichever outcome the record got. |
+| `autonomous.decisions.doc_status_pattern` | Regex that finds the status line (default the built-in pattern). |
+| `autonomous.decisions.doc_status_template` | Text the status line is replaced with; placeholders include `{choice}`, `{choice_label}`, `{quote}`, `{actor}`, `{date}`. |
+| `autonomous.decisions.follow_ups` | The follow-up actions an answered record may request. |
+
+### Decision record settings
+
+The settings under `autonomous.decisions` (Settings → Automata) control the decision record: a structured description of one operator decision, with a title, the situation in plain words, what is being decided, the options with a line of cost and risk each, a recommendation and a forced default. The daemon raises its operator question from the record, never from the caller's own prose. Every key reads its default when absent, an explicit `false` or `0` is kept, and a bad value is refused on every surface (the config file load, `PUT /api/config`, the MCP config tools, the CLI and the comm channel `configure` verb). A change applies at once, with no restart.
+
+**Switch and folder** — `enabled` (on by default) is the master switch. `folder` names a folder of decision files the daemon watches; empty turns the folder watch off. `folder_glob` (default `*.md`) picks which files are read. `folder_withdraw_on_delete` (on by default) withdraws a record when its file is deleted.
+
+**File format** — `front_matter_delimiter` (default `---`) opens and closes the front matter of a file, `front_matter_separator` (default `:`) splits a line into key and value, and `front_matter_field_separator` (default `|`) separates the parts of an option or recommendation line. None of the three may be empty. `front_matter_keys` maps a canonical key name to the name your files use; empty means the canonical names.
+
+**Clarity check** — `clarity_mode` is `off`, `warn` (the default) or `refuse`, and decides what happens to a record that reads badly. `clarity_min_text_chars` (default 60, 0 = no length check) is the fewest characters the situation and the deciding text may have. `clarity_require_tradeoffs` and `clarity_require_label` (both on by default) ask for a cost-and-risk line on every option and a short human label. `clarity_tracker_id_pattern` is a regular expression that spots an internal tracker identifier; empty uses the built-in pattern.
+
+**Document status line** — `doc_root` is the folder document paths on a record resolve against and must stay inside; empty is the daemon's working directory. `doc_status_mode` is `off`, `report` (the default, shows what would change) or `on` (writes the change). `doc_status_pattern` (default `^Confirmed:.*$`) finds the status line and `doc_status_template` is the text it is replaced with, using `{choice}`, `{choice_label}`, `{quote}`, `{actor}`, `{date}` and `{decision_id}`.
+
+**Follow-ups** — `follow_ups` is a list of `{name, kind, target}`. `kind` is `start_template` (target is a template id) or `open_automaton` (target is an Automaton id). The list is empty by default, so nothing runs unless you configure it. A name may not be empty or repeat.
+
 **Lane** — one channel an Automaton can run in. There are two kinds. A **GPU lane** is one of the channels on the local model pool; which machine serves a given session is not fixed per lane, so the pool is full when every GPU lane is in use wherever it runs. A **Claude lane** runs one Automaton at a time on the Claude backend. A lane is **occupied** while work runs in it and **idle** otherwise. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).
 
 **Lane fill** — the daemon's own check that every lane stays busy. On each poll it looks at the idle lanes and the queued Automata, and decides what each idle lane should start: a decomposed Automaton that is ready, or a draft to decompose ahead. A lane that cannot take anything shows the reason it stays idle. Lane fill never merges, never judges design or difficulty, and never holds GPU work because of Claude usage limits. See [howto/automation-lane-fill.md](howto/automation-lane-fill.md).

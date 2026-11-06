@@ -205,3 +205,34 @@ func TestDecisionLine(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildDecisionLine_RecordID checks the record_id of an entry: filled from
+// the question's decision record link, and an empty string (still present in
+// the JSON) for a question that has no record.
+func TestBuildDecisionLine_RecordID(t *testing.T) {
+	store := newDecisionGateStore(t)
+	plain := mustRaise(t, store, sampleQuestion("Which way for the plain one?"))
+	linked := sampleQuestion("Which way for the one with a record?")
+	linked.DecisionRecordID = "dr-0123456789abcdef0123"
+	withRecord := mustRaise(t, store, linked)
+
+	byID := map[string]DecisionLineEntry{}
+	for _, e := range BuildDecisionLine(QuestionFilter{}, store, nil) {
+		byID[e.ID] = e
+	}
+	if got := byID[withRecord].RecordID; got != "dr-0123456789abcdef0123" {
+		t.Errorf("record_id of the linked decision = %q, want the record id", got)
+	}
+	if got := byID[plain].RecordID; got != "" {
+		t.Errorf("record_id of the plain decision = %q, want empty", got)
+	}
+	b, err := json.Marshal(byID[plain])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	_ = json.Unmarshal(b, &m)
+	if v, ok := m["record_id"]; !ok || v != "" {
+		t.Errorf("plain entry record_id key = %v (present %v), want an empty string: %s", v, ok, b)
+	}
+}

@@ -156,6 +156,11 @@ const (
 	// Subject: the session id. Details: session_id, reason (a category such as
 	// malformed or too_long), line_sha256.
 	ActionQuestionMarkerRefused = "question_marker_refused"
+	// ActionQuestionUpdated — an open question was changed in place (its
+	// text, options, links or other editable fields). Subject: the question
+	// id. Details: question_id, actor, changed (the names of the changed
+	// fields), option_count.
+	ActionQuestionUpdated = "question_updated"
 	// Usage-calculator record mutations (Design 8 / Decision 9). Each is
 	// emitted once, on the daemon that stores the write — the keeper for the
 	// shared series, the daemon itself for its local remaining-work figure.

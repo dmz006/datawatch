@@ -7082,6 +7082,29 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					amgr.SetDecisionGate(qstore, func() config.AutonomousQuestionsConfig {
 						return cfg.Autonomous.Questions
 					})
+					// The decision records: structured decisions whose queue
+					// question the daemon builds and keeps in step. The service
+					// reads both switches from the live config on every call.
+					if drstore, drerr := autonomouspkg.NewDecisionRecordStore(filepath.Join(expandHome(cfg.DataDir), "decision_records.jsonl")); drerr != nil {
+						fmt.Fprintf(os.Stderr, "[warn] decision record store: %v\n", drerr)
+					} else {
+						decisionRecords := autonomouspkg.NewDecisionRecords(drstore, qstore,
+							func() config.AutonomousDecisionsConfig { return cfg.Autonomous.Decisions },
+							func() config.AutonomousQuestionsConfig { return cfg.Autonomous.Questions },
+							time.Now)
+						// An answered decision record question is applied to
+						// its record promptly: the service chains onto the
+						// change hook set above (it does not replace it) and
+						// wakes the executor holding a task on the answer the
+						// same way any other answered question does.
+						decisionRecords.SetAnswerRelease(func(c autonomouspkg.QuestionChange) {
+							if api := questionAPI.Load(); api != nil {
+								api.OnQuestionChange(c)
+							}
+						})
+						decisionRecords.ChainQuestionHook()
+						amgr.SetDecisionRecords(decisionRecords)
+					}
 					// The question lifecycle events (question.answered /
 					// question.withdrawn) fire through the same dispatcher and
 					// the engine's per-subscriber queue as every other kind:
@@ -7098,6 +7121,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					applyQuestionEvents(cfg.Autonomous.Questions.Enabled)
 					httpServer.SetQuestionEventsSwitch(applyQuestionEvents)
 					httpServer.SetQuestions(qstore)
+					// An answer may name a configured follow-up; the decision
+					// record service records the request before the answer.
+					if dr := amgr.DecisionRecords(); dr != nil {
+						httpServer.SetDecisionFollowUps(dr)
+						httpServer.SetDecisionRecords(dr)
+					}
 					// Question-raise notification (the "notify" legs beside the
 					// channel): the server dispatches non-blockingly on each
 					// successful raise — WS broadcast for the PWA, this fan-out to
@@ -7475,6 +7504,13 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
 			questionAPI.Store(aAPI)
+			// The follow-ups an answered decision record can run (the
+			// configured autonomous.decisions.follow_ups): start a template or
+			// open a held Automaton, through the same Automaton API calls the
+			// MCP tools use.
+			if dr := amgr.DecisionRecords(); dr != nil {
+				dr.SetFollowUpTargets(aAPI, autonomouspkg.NewDecisionAutomatonOpener(aAPI))
+			}
 			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).

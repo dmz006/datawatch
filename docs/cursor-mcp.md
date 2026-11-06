@@ -132,8 +132,10 @@ Selected core tools:
 | `question_raise` | raise an operator question to this daemon's operator (the operator-question channel) |
 | `question_list` | list the daemon's stored operator questions, optionally filtered (the poll read) |
 | `question_get` | read one stored question and its current answer (the asker's return path) |
-| `question_answer` | answer a stored question by option id and/or the operator's own words; a changed mind supersedes, never edits |
+| `question_answer` | answer a stored question by option id and/or the operator's own words; a changed mind supersedes, never edits; optional `follow_up` names one configured follow-up (`autonomous.decisions.follow_ups`) that the daemon runs once when the answer is applied |
 | `question_withdraw` | withdraw an open question with a reason, attributed to a named actor |
+| `autonomous_decision_record_create` / `autonomous_decision_record_update` / `autonomous_decision_record_withdraw` | Manage decision records — the structured operator decision (title, situation, deciding, options with unique ids, default — an option or `hold` — recommendation, label, links); the record is the source, the daemon builds the queue question from it and the answer comes back on it; proxies the POST, PUT and `/withdraw` of `/api/autonomous/decision-records`, needs `autonomous:write` |
+| `autonomous_decision_record_list` / `autonomous_decision_record_get` | List or read decision records: `state` (`open`, `answered` or `withdrawn`), `prd_id`, `limit` (1–1000, default 100); listing also returns the daemon's folder-watch status; read-only, needs `autonomous:read` |
 | `autonomous_prd_children` | List child PRDs spawned via `Task.SpawnPRD` |
 | `autonomous_prd_set_kind` | Set an Automaton's kind: `feature`, `bug` or `other` (empty derives it again) |
 | `autonomous_progress` | Read the progress metrics object: counts by kind, throughput, utilization, remaining work and the completion range; optional `automation_id`, `tag_id`, `since`, `until` |
