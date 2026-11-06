@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/supervisorloop"
@@ -112,6 +113,14 @@ type SupervisorLoopSteps struct {
 	engine *supervisorloop.Engine
 	hooks  SupervisorLoopHooks
 
+	// now is the clock the grace checks read. Injectable for tests; it
+	// defaults to time.Now. The engine's clock is reserved for run records.
+	now func() time.Time
+	// archiveBranchCheck, when non-nil, names a record that must not be
+	// archived this pass even when it is otherwise ready (a branch that must
+	// be kept). Nil (the default) archives everything eligible.
+	archiveBranchCheck func(*PRD) bool
+
 	mu           sync.Mutex
 	infraRetried map[string]bool // held tasks already retried by the loop
 	lastDeployed string          // newest shipped release already deployed
@@ -125,7 +134,7 @@ func NewSupervisorLoopSteps(c *Coordinator, engine *supervisorloop.Engine, hooks
 	if c == nil || engine == nil {
 		return nil
 	}
-	return &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, infraRetried: map[string]bool{}}
+	return &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, now: time.Now, infraRetried: map[string]bool{}}
 }
 
 // LastConflict returns the newest merge conflict the merge step recorded.
@@ -226,13 +235,33 @@ func (c *Coordinator) SetSupervisorLoopSteps(s *SupervisorLoopSteps) {
 // rejected or cancelled record to archived through the store and emits the
 // lifecycle status event. The tasks live inside the Automaton record and
 // close with it.
+//
+// Completed and rejected records are archived in the pass, as before. A
+// cancelled record earns a grace first: it is archived only once the time
+// since its most recent cancel reaches the supervisor_loop.archive_cancelled_after_minutes
+// setting (0 archives it at once). The grace is so a cancelled branch can
+// still be inspected, or re-cancelled to push it back, before it disappears.
 func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, error) {
 	var errs []error
 	closed := 0
+	held := 0
+	now := s.now()
+	grace := s.settings().ArchiveCancelledAfterMinutes
 	for _, p := range s.c.m.Store().ListPRDs() {
 		switch p.Status {
 		case PRDCompleted, PRDRejected, PRDCancelled:
 		default:
+			continue
+		}
+		// A branch that must be kept is not archived in this pass, whatever
+		// its terminal status says.
+		if s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
+			continue
+		}
+		// The grace only shelters cancelled records; completed and rejected
+		// close in the same pass they reached their terminal state.
+		if p.Status == PRDCancelled && grace > 0 && now.Sub(s.cancelTime(p)) < time.Duration(grace)*time.Minute {
+			held++
 			continue
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
@@ -241,7 +270,24 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		}
 		closed++
 	}
-	return fmt.Sprintf("closed %d finished records", closed), errors.Join(errs...)
+	detail := fmt.Sprintf("closed %d finished records", closed)
+	if held > 0 {
+		detail += fmt.Sprintf(" (held %d cancelled within the %d-minute grace)", held, grace)
+	}
+	return detail, errors.Join(errs...)
+}
+
+// cancelTime is when the grace for a cancelled record starts running: the
+// timestamp of its latest cancel decision, or, when it has none, the time the
+// record was last updated.
+func (s *SupervisorLoopSteps) cancelTime(p *PRD) time.Time {
+	t := p.UpdatedAt
+	for _, d := range p.Decisions {
+		if d.Kind == "cancel" && d.At.After(t) {
+			t = d.At
+		}
+	}
+	return t
 }
 
 // deployAfterShip runs the operator's deploy step once per newly shipped
