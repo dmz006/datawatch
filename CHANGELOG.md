@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.103.1 — Container images drop the vulnerable x/net
+
+The container images no longer carry a vulnerable HTTP/HTML library, and the agent-base container scan passes again.
+
+- Trivy reported `golang.org/x/net` v0.60.0 (CVE-2026-78661, HIGH, a denial of service in `golang.org/x/net/html`, fixed in 0.62.0) in the agent-base image, and the container build step failed on it in the v9.103.0 Release run. The library was in the GitHub CLI built into the image, so the pin that forces its `golang.org/x/net` moved to 0.62.0.
+- datawatch's own `go.mod` moves to `golang.org/x/net` v0.62.0 as well, with the `x/crypto`, `x/sys`, `x/term`, `x/text`, `x/sync` and `x/tools` versions Go resolved for it. The build and vet are clean.
+
 ## v9.103.0 — Read-only task recovery and unverifiable-task refusal
 
 - **A task held for review can be fixed in place.** `edit_task` (REST, MCP `autonomous_prd_edit_task`, CLI, chat) now accepts a `review_needed` task in a blocked Automaton, so its spec, read-only mark and report path can be corrected; running and pending tasks of a blocked Automaton and completed tasks are still refused, and an edit never changes the task's status. The retry decision (`resolve_task_review`, MCP `autonomous_prd_resolve_task_review`, `datawatch autonomous resolve-review --read-only --report-path`, chat `review-task read_only= report_path=`) also takes an optional `read_only` mark and `report_path`; every change is checked first, so a refused change leaves the task held. A refused edit no longer leaves the spec or read-only mark half-applied.

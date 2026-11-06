@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.103.0 (2026-11-06).** A review-held task can be edited in place, and a read-only task with neither a verification script nor a usable report path is flagged at decompose time. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.103.1 (2026-11-06).** The agent-base container scan passes again after golang.org/x/net moved to v0.62.0 (CVE-2026-78661). Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
