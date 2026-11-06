@@ -120,6 +120,9 @@ type SupervisorLoopSteps struct {
 	// archived this pass even when it is otherwise ready (a branch that must
 	// be kept). Nil (the default) archives everything eligible.
 	archiveBranchCheck func(*PRD) bool
+	// mergeGit is the git runner the branch check uses. Nil means the
+	// production runner; tests inject a fake.
+	mergeGit MergeGitRunner
 
 	mu           sync.Mutex
 	infraRetried map[string]bool // held tasks already retried by the loop
@@ -134,7 +137,9 @@ func NewSupervisorLoopSteps(c *Coordinator, engine *supervisorloop.Engine, hooks
 	if c == nil || engine == nil {
 		return nil
 	}
-	return &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, now: time.Now, infraRetried: map[string]bool{}}
+	s := &SupervisorLoopSteps{c: c, engine: engine, hooks: hooks, now: time.Now, infraRetried: map[string]bool{}}
+	s.archiveBranchCheck = s.archiveKeepsBranch
+	return s
 }
 
 // LastConflict returns the newest merge conflict the merge step recorded.
@@ -245,6 +250,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	var errs []error
 	closed := 0
 	held := 0
+	kept := 0
 	now := s.now()
 	grace := s.settings().ArchiveCancelledAfterMinutes
 	for _, p := range s.c.m.Store().ListPRDs() {
@@ -253,15 +259,16 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		default:
 			continue
 		}
-		// A branch that must be kept is not archived in this pass, whatever
-		// its terminal status says.
-		if s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
-			continue
-		}
 		// The grace only shelters cancelled records; completed and rejected
 		// close in the same pass they reached their terminal state.
 		if p.Status == PRDCancelled && grace > 0 && now.Sub(s.cancelTime(p)) < time.Duration(grace)*time.Minute {
 			held++
+			continue
+		}
+		// A cancelled record past its grace is still kept while its branch
+		// holds commits that are not on the base branch.
+		if p.Status == PRDCancelled && s.archiveBranchCheck != nil && s.archiveBranchCheck(p) {
+			kept++
 			continue
 		}
 		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
@@ -273,6 +280,9 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 	detail := fmt.Sprintf("closed %d finished records", closed)
 	if held > 0 {
 		detail += fmt.Sprintf(" (held %d cancelled within the %d-minute grace)", held, grace)
+	}
+	if kept > 0 {
+		detail += fmt.Sprintf(" (kept %d cancelled with unmerged branch work)", kept)
 	}
 	return detail, errors.Join(errs...)
 }
