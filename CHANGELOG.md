@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
+### Fixed
+
+- **The protected-paths restore commit no longer needs a git identity on the host.** When you reject a held Automaton task that changed protected paths, the daemon puts the paths back to their base version and records that as a new commit. That commit was made without a git identity, so on a host with no global git user name and email (a CI runner, a fresh server, a container) the restore failed and the task stayed blocked with "the restore could not be committed ... Author identity unknown". The restore commit now uses the same identity fallback as the task merge: your repository's own git identity when it has one, the daemon's identity otherwise. This also repairs the v9.104.0 release, which failed its test run for this reason and was never published; v9.104.1 carries everything v9.104.0 announced.
 
 ## v9.104.0 — Protect the project rules files from workers
 
