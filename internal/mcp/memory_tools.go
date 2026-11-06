@@ -963,7 +963,8 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 		mcpsdk.WithDescription("Set a configuration value. Key format: section.field (e.g. 'detection.prompt_debounce'). "+
 			"Automata tag browser keys: autonomous.tags.default_view (auto|attention|tags), autonomous.tags.attention_statuses (comma list of Automaton statuses), "+
 			"autonomous.tags.default_match_mode (any|all), autonomous.tags.direct_counts_visible (true|false), autonomous.tags.registry_keeper (federation peer name; empty = this daemon), "+
-			"autonomous.tags.registry_sync_seconds (whole seconds >= 5). "+
+			"autonomous.tags.registry_sync_seconds (whole seconds >= 5), "+
+			"autonomous.tags.placement.enabled (true|false) and, per axis (compute, peer, backend, lane, role, project), autonomous.tags.placement.<axis>.enabled (true|false) and autonomous.tags.placement.<axis>.template (a string carrying the axis' placeholder). "+
 			"Automata held-question keys: autonomous.questions.held_mode (off|shadow|on; default shadow), "+
 			"autonomous.questions.held_states (a JSON array of the state ids blocked, review_held, revision_requested, awaiting_decision, pending_insert; "+
 			"unset = all five, [] = none). A refused value returns the daemon's message."),

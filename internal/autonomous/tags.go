@@ -135,6 +135,32 @@ func (m *Manager) CreateTag(name, parentID, color, description string) (*Tag, er
 	return t, nil
 }
 
+// EnsureSystemTag returns the root tag with the given name, creating it as a
+// system tag when no root tag of that name is held. A system tag is one the
+// machine itself created — a placement tag, for instance — and its name and
+// lifetime belong to the machine: an operator assigning, renaming or deleting
+// it is refused (Tag.System is what carries those refusals). Create-or-return
+// by name, like a repeated placement: the tag found is returned as it is, so
+// no duplicate is made and the found tag's origin never changes.
+func (m *Manager) EnsureSystemTag(name string) (*Tag, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, fmt.Errorf("%w: name is required", ErrTagInvalid)
+	}
+	for _, existing := range m.ListTags() {
+		if existing.ParentID == "" && strings.EqualFold(existing.Name, name) {
+			return existing, nil
+		}
+	}
+	now := time.Now()
+	t := &Tag{ID: newID(), Name: name, System: true, CreatedAt: now, UpdatedAt: now}
+	if err := m.store.SaveTag(t); err != nil {
+		return nil, err
+	}
+	m.emitTagEvent(TagEvent{Kind: TagEventCreated, TagID: t.ID})
+	return t, nil
+}
+
 // RenameTag changes a tag's name.
 func (m *Manager) RenameTag(id, name string) (*Tag, error) {
 	name = strings.TrimSpace(name)
