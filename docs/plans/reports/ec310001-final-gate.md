@@ -8,15 +8,19 @@ missing PWA Settings section (three keys) and Monitor card, the missing
 locale keys (three, in five bundles), and the missing PWA story (TS-844).
 No version change, no gh, no daemon started in this worktree.
 
+Re-verified on attempt 2 (2026-11-06, fresh runs in this worktree) with the same
+outcome as the 2026-11-06 pass below.
+
 ## Checks
 
 | Check | Result |
 |---|---|
-| `go build ./...` | PASS — no output |
+| `make build` (A10: sync-docs + docs-index + `go build`) | PASS — binary built at `./bin/datawatch`, v9.67.0 |
 | `gofmt -l .` | PASS — 0 files (the 2026-11-05 gofmt FAIL — 3 unformatted files — is fixed; alignment to the Go 1.27.2 gofmt) |
-| `go test ./...` | PASS — 11087 passed, 0 failed in 100 packages (includes `TestObserverPullGlobalGate_DefaultsOff`, `TestObserverPullFetch_DisabledGateBlocksRequest`, `TestObserverPullReconcile_Lifecycle`, `TestObserverPullReconcile_NoStoreSafe`, `TestObserverPullConfig_DefaultsDisabled`, and the locale guard `TestLocales_CommonNavKeysPresent` with the three new keys) |
+| `go test ./...` | PASS — 11005 passed, 0 failed in 100 packages (re-measured on attempt 2; includes `TestObserverPullGlobalGate_DefaultsOff`, `TestObserverPullFetch_DisabledGateBlocksRequest`, `TestObserverPullReconcile_Lifecycle`, `TestObserverPullReconcile_NoStoreSafe`, `TestObserverPullConfig_DefaultsDisabled`, and the locale guard `TestLocales_CommonNavKeysPresent` with the three new keys) |
 | `node --test internal/server/web/*.test.js` | PASS — 2026 of 2026, 0 failures |
-| `golangci-lint run ./...` | PASS — no issues (the four unchecked `fmt.Fprintf` writes in `cmd/datawatch/cli_observer.go` now assign to `_`) |
+| `go vet ./...` | PASS — no output |
+| `make lint` (A12: all check scripts + `golangci-lint run ./...`) | PASS — 0 issues (the four unchecked `fmt.Fprintf` writes in `cmd/datawatch/cli_observer.go` now assign to `_`) |
 | Missing locale keys (en, de, es, fr, ja) | PASS — 0 missing (the twelve pull-mode keys and the three new `stats_observer_pull*` Monitor card keys are all present in all five bundles) |
 | Tracker-ID matches in the observer howto | PASS — 0 matches |
 

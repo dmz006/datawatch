@@ -2395,8 +2395,9 @@ this fix.
 | `gofmt -l .` | Pass | nothing printed (112 files aligned to the Go 1.27.2 gofmt) |
 | `go build ./...` | Pass | no output |
 | `go vet ./...` | Pass | no output |
-| `golangci-lint run ./...` | Pass | 0 issues (the four unchecked `fmt.Fprintf` writes in `cmd/datawatch/cli_observer.go` now assign to `_`) |
-| `go test ./...` | Pass | 4926 tests pass, 0 failures — includes the four new pull tests below and the config default pin |
+| `make lint` (all check scripts + `golangci-lint run ./...`) | Pass | 0 issues (the four unchecked `fmt.Fprintf` writes in `cmd/datawatch/cli_observer.go` now assign to `_`) |
+| `go test ./...` | Pass | full suite: 11005 pass, 0 failures in 100 packages — includes the new pull tests below and the config default pin |
+| `make build` | Pass | `./bin/datawatch` built (sync-docs + docs-index + `go build`) |
 | `node --check internal/server/web/app.js` | Pass | no output |
 | `node --test internal/server/web/*.test.js` | Pass | 2026 of 2026, including the settings-fields, Monitor card and locale guards |
 | `node --check scripts/test-stories/pwa/observer-pull-card.mjs` / `bash -n scripts/test-stories/TS-844.sh` | Pass | no output |
