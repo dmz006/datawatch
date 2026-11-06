@@ -595,9 +595,10 @@ func newQuestionAnswerCmd() *cobra.Command {
 		option     string
 		text       string
 		supersedes string
+		followUp   string
 	)
 	cmd := &cobra.Command{
-		Use:   "answer <id> (--option <option id> and/or --text <your words>) [--supersedes <answer id>]",
+		Use:   "answer <id> (--option <option id> and/or --text <your words>) [--supersedes <answer id>] [--follow-up <name>]",
 		Short: "Record your answer to a question: pick an option, say it in your own words, or both",
 		Long: `Answer one question. Pick one of the question's options with --option.
 Typing your own words with --text is optional when you pick an option, and
@@ -612,6 +613,10 @@ to have on record.
 A question that already has an answer accepts only a new answer that
 names its current answer with --supersedes: an answer is never edited, and
 a changed mind is a new answer that supersedes the old one.
+
+When the question was raised from a decision record, that record names the
+follow-ups it may ask for; --follow-up <name> picks one of them, and the
+daemon rejects a name the record does not allow (naming the ones it does).
 
 The answer is recorded with surface "cli" and the local login name as the
 actor.`,
@@ -635,6 +640,9 @@ actor.`,
 			if supersedes != "" {
 				body["supersedes"] = supersedes
 			}
+			if strings.TrimSpace(followUp) != "" {
+				body["follow_up"] = followUp
+			}
 			resp, err := daemonJSONBody(http.MethodPost, "/api/questions/"+url.PathEscape(id)+"/answer", body)
 			if err != nil {
 				return err
@@ -645,6 +653,7 @@ actor.`,
 	cmd.Flags().StringVar(&option, "option", "", "the chosen option id (one of the question's options)")
 	cmd.Flags().StringVar(&text, "text", "", "your own words, saved exactly as written with your choice (optional when you pick an option)")
 	cmd.Flags().StringVar(&supersedes, "supersedes", "", "the current answer id being superseded (required when the question is already answered)")
+	cmd.Flags().StringVar(&followUp, "follow-up", "", "the follow-up the decision record named, asked for with this answer (name; the daemon checks it against the record)")
 	return cmd
 }
 
