@@ -41,8 +41,12 @@ type resolveTaskReviewReq struct {
 	Model   string   `json:"model"`
 	Effort  string   `json:"effort"`
 	Files   []string `json:"files"`
-	Note    string   `json:"note"`
-	Actor   string   `json:"actor"`
+	// ReadOnly nil leaves the read-only mark unchanged; ReportPath "" leaves
+	// the report path unchanged.
+	ReadOnly   *bool  `json:"read_only,omitempty"`
+	ReportPath string `json:"report_path,omitempty"`
+	Note       string `json:"note"`
+	Actor      string `json:"actor"`
 }
 
 // handleSetFailureEscalation serves POST set_failure_escalation. The caller has
@@ -120,13 +124,15 @@ func (s *Server) handleResolveTaskReview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	res := autonomous.ReviewResolution{
-		Action:  req.Action,
-		Spec:    req.Spec,
-		Backend: req.Backend,
-		Model:   req.Model,
-		Effort:  autonomous.Effort(req.Effort),
-		Files:   req.Files,
-		Note:    req.Note,
+		Action:     req.Action,
+		Spec:       req.Spec,
+		Backend:    req.Backend,
+		Model:      req.Model,
+		Effort:     autonomous.Effort(req.Effort),
+		Files:      req.Files,
+		ReadOnly:   req.ReadOnly,
+		ReportPath: req.ReportPath,
+		Note:       req.Note,
 	}
 	updated, err := api.ResolveTaskReview(id, req.TaskID, res, req.Actor)
 	if err != nil {
@@ -138,12 +144,14 @@ func (s *Server) handleResolveTaskReview(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	s.audit(r.Context(), "resolve_task_review", "automaton", id, map[string]any{
-		"task_id":        req.TaskID,
-		"action":         req.Action,
-		"spec_changed":   req.Spec != "",
-		"worker_changed": req.Backend != "" || req.Model != "" || req.Effort != "",
-		"files_narrowed": len(req.Files) > 0,
-		"note":           req.Note,
+		"task_id":         req.TaskID,
+		"action":          req.Action,
+		"spec_changed":    req.Spec != "",
+		"worker_changed":  req.Backend != "" || req.Model != "" || req.Effort != "",
+		"files_narrowed":  len(req.Files) > 0,
+		"read_only_set":   req.ReadOnly != nil,
+		"report_path_set": req.ReportPath != "",
+		"note":            req.Note,
 	})
 	prd, _ := updated.(*autonomous.PRD)
 	s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")

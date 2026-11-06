@@ -140,3 +140,38 @@ func TestFailureEscalationCLIResolveReviewWhileAutomatonRunning(t *testing.T) {
 		t.Errorf("printed Automaton = %v", got)
 	}
 }
+
+// TestReviewRetryReadOnlyCLICarriesFields: resolve-review sends read_only only
+// when --read-only was given, and report_path when --report-path was given.
+func TestReviewRetryReadOnlyCLICarriesFields(t *testing.T) {
+	var sent map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		sent = nil
+		_ = json.Unmarshal(raw, &sent)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"p1"}`))
+	}))
+	t.Cleanup(srv.Close)
+	prev := serverURL
+	serverURL = srv.URL
+	t.Cleanup(func() { serverURL = prev })
+
+	if _, err := runEscalationCmd(t, newAutonomousResolveReviewCmd(), "p1",
+		"--task", "t1", "--action", "retry", "--read-only", "--report-path", ".datawatch/reports/r.md"); err != nil {
+		t.Fatalf("resolve-review: %v", err)
+	}
+	if sent["read_only"] != true || sent["report_path"] != ".datawatch/reports/r.md" {
+		t.Fatalf("body = %#v", sent)
+	}
+	if _, err := runEscalationCmd(t, newAutonomousResolveReviewCmd(), "p1",
+		"--task", "t1", "--action", "retry"); err != nil {
+		t.Fatalf("resolve-review without the fields: %v", err)
+	}
+	if _, ok := sent["read_only"]; ok {
+		t.Errorf("read_only sent although --read-only was not given: %#v", sent)
+	}
+	if _, ok := sent["report_path"]; ok {
+		t.Errorf("report_path sent although --report-path was not given: %#v", sent)
+	}
+}

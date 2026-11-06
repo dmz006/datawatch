@@ -4957,8 +4957,9 @@ paths:
         `read_only: true` in the same call.
         The same status gates as a
         spec edit apply to both fields: needs_review, revisions_asked and cancelled
-        Automata, and a blocked Automaton's failed or blocked task. A completed task
-        is immutable.
+        Automata, and a blocked Automaton's failed, blocked or review_needed (held)
+        task. Editing never changes the task's status: a held task is requeued with
+        resolve_task_review. A completed task is immutable.
       operationId: autonomousPRDEditTask
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
@@ -5053,8 +5054,13 @@ paths:
       description: |
         The operator's decision on a task whose status is review_needed. A
         retry requeues the task; it may carry a replaced spec, a worker (backend,
-        model and effort for this task) and a narrowed list of files it may
-        change. The held attempt report is cleared, and the operator's note is
+        model and effort for this task), a narrowed list of files it may
+        change, a `read_only` mark and a `report_path` (the one clean repo-relative
+        file a read-only task may write, under `.datawatch/reports/`). Every change
+        is checked before anything is written; a refused change (a bad report
+        path, a report path on a task that is not read-only, or a read-only task
+        left with planned files) answers 400 and leaves the task held. The held
+        attempt report is cleared, and the operator's note is
         given to the next attempt. A cancel cancels the task. The call works
         while the Automaton is running other tasks: it answers at once and starts
         no second executor, because the running executor picks the decision up.
@@ -5078,6 +5084,8 @@ paths:
                 model: {type: string, description: "Retry only. Worker model for this task."}
                 effort: {type: string, description: "Retry only. Worker effort for this task."}
                 files: {type: array, items: {type: string}, description: "Retry only. The narrowed list of files the task may change."}
+                read_only: {type: boolean, description: "Retry only. Mark (true) or clear (false) the read-only flag; omit to leave it unchanged."}
+                report_path: {type: string, description: "Retry only. The one clean repo-relative report file the read-only task may write (under .datawatch/reports/); requires the task to be read-only after the change; omit to leave it unchanged."}
                 note: {type: string, description: "Recorded on the decision log and given to the next attempt."}
                 actor: {type: string, description: "Who made the decision; defaults to operator."}
       responses:

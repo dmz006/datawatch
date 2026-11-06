@@ -43,6 +43,11 @@ type reviewRequeue struct {
 	workerChanged bool
 	filesChanged  bool
 	files         []string
+	// readOnlyChanged and readOnly carry the read-only mark; reportPath is the
+	// report path to set, empty when unchanged.
+	readOnlyChanged bool
+	readOnly        bool
+	reportPath      string
 }
 
 // apply makes the operator's changes to t and sets the hint the next attempt
@@ -74,6 +79,16 @@ func (r *reviewRequeue) apply(t *Task, now time.Time) {
 	if r.filesChanged {
 		t.FilesPlanned = r.files
 	}
+	if r.readOnlyChanged {
+		t.ReadOnly = r.readOnly
+		if !r.readOnly {
+			// A task that writes files cannot keep a report path.
+			t.ReportPath = ""
+		}
+	}
+	if r.reportPath != "" {
+		t.ReportPath = r.reportPath
+	}
 	t.PriorAttemptHint = r.hint()
 }
 
@@ -94,6 +109,19 @@ func (r *reviewRequeue) hint() string {
 	if r.filesChanged {
 		b.WriteString("The operator narrowed the files this task may change to: " + strings.Join(r.files, ", ") + ".\n")
 	}
+	if r.readOnlyChanged {
+		if r.readOnly {
+			b.WriteString("The operator marked this task read-only: it must not change any file")
+			if r.reportPath != "" {
+				b.WriteString(" except its report file " + r.reportPath)
+			}
+			b.WriteString(".\n")
+		} else {
+			b.WriteString("The operator cleared the read-only mark: this task may change files.\n")
+		}
+	} else if r.reportPath != "" {
+		b.WriteString("The operator set the report file of this read-only task to " + r.reportPath + ".\n")
+	}
 	if r.req.Note != "" {
 		b.WriteString("Operator note: " + r.req.Note + "\n")
 	}
@@ -112,6 +140,12 @@ func (r *reviewRequeue) decisionNote(taskID, actor string) string {
 	if r.filesChanged {
 		changes = append(changes, fmt.Sprintf("scope narrowed to %d files", len(r.files)))
 	}
+	if r.readOnlyChanged {
+		changes = append(changes, fmt.Sprintf("read_only=%t", r.readOnly))
+	}
+	if r.reportPath != "" {
+		changes = append(changes, "report_path="+r.reportPath)
+	}
 	what := "no changes"
 	if len(changes) > 0 {
 		what = strings.Join(changes, ", ")
@@ -125,10 +159,12 @@ func (r *reviewRequeue) decisionNote(taskID, actor string) string {
 
 // ResolveTaskReview is the operator's decision on a task held for review.
 //
-// Action "retry" requeues the task to pending, with three optional changes: a
+// Action "retry" requeues the task to pending, with optional changes: a
 // replaced spec; a worker (task-level backend, model and effort, checked the
-// way SetTaskLLM checks them); and a narrowed scope (the planned files, linted
-// the way the pre-spawn check lints them). Every change is checked before
+// way SetTaskLLM checks them); a narrowed scope (the planned files, linted
+// the way the pre-spawn check lints them); a read-only mark; and a report path
+// (checked with validateReportPath, and only for a task that is read-only after
+// the change, which must also end with no planned files). Every change is checked before
 // anything is written, so a refused change leaves the task held. Action
 // "cancel" cancels the task through CancelTask. Either action reopens a blocked
 // Automaton so the next Run rolls it up.
@@ -202,6 +238,25 @@ func (m *Manager) reviewRetryChanges(prdID string, prd *PRD, task *Task, story *
 			files = files[:reviewFilesMax]
 		}
 		r.files, r.filesChanged = files, true
+	}
+	if req.ReadOnly != nil {
+		r.readOnlyChanged, r.readOnly = true, *req.ReadOnly
+	}
+	readOnlyAfter := task.ReadOnly
+	if r.readOnlyChanged {
+		readOnlyAfter = r.readOnly
+	}
+	if req.ReportPath != "" {
+		if err := validateReportPath(req.ReportPath); err != nil {
+			return nil, err
+		}
+		if !readOnlyAfter {
+			return nil, fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", req.ReportPath, task.ID)
+		}
+		r.reportPath = req.ReportPath
+	}
+	if readOnlyAfter && len(files) > 0 && (r.readOnlyChanged || r.filesChanged) {
+		return nil, fmt.Errorf("a read_only task must not have planned files; task %q would end read_only with %d planned files (clear its files first, or do not mark it read_only)", task.ID, len(files))
 	}
 	if req.Spec != "" || r.filesChanged {
 		spec := task.Spec

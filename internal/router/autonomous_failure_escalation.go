@@ -21,7 +21,7 @@ import (
 
 const (
 	setFailureEscalationUsage = "usage: autonomous set-failure-escalation <automaton> [task] clear | [enabled=true|false] [max_failures=N] [steps=backend:model[@attempts],...]"
-	reviewTaskUsage           = "usage: autonomous review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [spec=...] [note=...]"
+	reviewTaskUsage           = "usage: autonomous review-task <automaton> <task> retry|cancel [backend=X] [model=Y] [effort=Z] [files=a,b] [read_only=true|false] [report_path=<path>] [spec=...] [note=...]"
 )
 
 // handleAutonomousSetFailureEscalation serves set-failure-escalation. args
@@ -133,8 +133,17 @@ func (r *Router) handleAutonomousReviewTask(args []string) {
 			textKey = key
 		case "files":
 			body["files"] = splitReviewWords(value)
+		case "read_only", "read-only":
+			b, err := strconv.ParseBool(value)
+			if err != nil {
+				r.reply(label+" failed", fmt.Sprintf("read_only must be true or false, got %q\n%s", value, reviewTaskUsage))
+				return
+			}
+			body["read_only"] = b
+		case "report_path", "report-path":
+			body["report_path"] = value
 		default:
-			r.reply(label+" failed", fmt.Sprintf("unknown key %q; valid keys: backend, model, effort, files, spec, note\n%s", key, reviewTaskUsage))
+			r.reply(label+" failed", fmt.Sprintf("unknown key %q; valid keys: backend, model, effort, files, read_only, report_path, spec, note\n%s", key, reviewTaskUsage))
 			return
 		}
 	}
