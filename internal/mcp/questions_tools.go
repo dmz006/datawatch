@@ -142,6 +142,9 @@ func (s *Server) toolQuestionAnswer() mcpsdk.Tool {
 		mcpsdk.WithString("source_message_id",
 			mcpsdk.Description("Optional id of the upstream message carrying the answer (comm channels; provenance only)."),
 		),
+		mcpsdk.WithString("follow_up",
+			mcpsdk.Description("Optional name of one entry of autonomous.decisions.follow_ups to run once the answer is applied to the decision record; the question must belong to a decision record. The daemon names the field and the missing entry in a 400."),
+		),
 	)
 }
 
@@ -336,6 +339,9 @@ func (s *Server) handleQuestionAnswer(ctx context.Context, req mcpsdk.CallToolRe
 	}
 	if msgID := strings.TrimSpace(req.GetString("source_message_id", "")); msgID != "" {
 		body["source_message_id"] = msgID
+	}
+	if followUp := strings.TrimSpace(req.GetString("follow_up", "")); followUp != "" {
+		body["follow_up"] = followUp
 	}
 	respBody, err := s.proxyJSON(http.MethodPost, questionsPathBase+"/"+url.PathEscape(id)+"/answer", body)
 	if err != nil {
