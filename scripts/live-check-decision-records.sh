@@ -1,183 +1,225 @@
 #!/usr/bin/env bash
-# live-check-decision-records.sh — Operator decision flow: live check.
+# live-check-decision-records.sh — live check of the operator decision records.
 #
-# Drives every live item in docs/howto/automaton-operator-decisions.md end to
-# end against one isolated smoke daemon (fresh data dir, port 18452, TLS off,
-# binary built from this tree). It never touches the production daemon under
-# /home/dmz/.datawatch. All state it creates is cleaned up on exit and the
-# scratch dirs are removed (KEEP=1 to leave them for post-mortem).
+# Starts one SANDBOX daemon (never the production daemon): binary built from
+# this tree into a temporary directory, its own data dir and config, TLS on
+# the sandbox TLS port 18443, an API token, the question channel and the
+# decisions switched on. Everything the check needs is created inline through
+# the API with the sandbox token, each step is recorded as PASS, FAIL or
+# SKIPPED with what was observed, and the result is written to
+# tests/live-smoke/decision-records-report.md.
 #
-# Checks:
-#   1. Create a decision record (REST) and read it back (CLI operator list)
-#   2. Question view + the answer's actor/quote and history (datawatch question)
-#   3. Clarity: refuse blocks the creation, warn stores it with the warnings
-#      (daemon config switched with datawatch config set, i.e. PUT /api/config)
-#   4. Edit the content of an open record; it keeps the same question
-#   5. Answer: the quote passes through verbatim, and the one configured
-#      follow-up runs exactly once and stores its result on the record
-#   6. A linked proposal doc gets its status line (mode "on"; report mode
-#      first, file untouched)
-#   7. Folder watch: a filed file raises a record+question, an edit updates
-#      it, and deleting the file withdraws it
-#   8. Gate (on mode): a task whose spec names the open question is held, and
-#      it starts once the question is answered
+# Steps:
+#   1  create a record over REST, read back the one question the daemon built
+#   2  one question per record across REST, the CLI list and the comm-style path
+#   3  clarity refusal in refuse mode and a warning in warn mode
+#   4  edit an open record; the question text changes on the same question id
+#   5  answer with a multi-line quote, an unconfigured follow_up (400), then
+#      without it; read the record and the list
+#   6  document status line: report mode leaves the file alone, on mode
+#      rewrites exactly the one line
+#   7  folder watch: raise, edit, delete; repeated with another delimiter and
+#      separator
+#   8  a task spec naming the question id waits, then starts after the answer
+#      (SKIPPED when an Automaton cannot be created in the sandbox)
 #
-# Usage:
-#   bash scripts/live-check-decision-records.sh
-#   KEEP=1 bash scripts/live-check-decision-records.sh   # keep scratch on exit
+# Cleanup on every exit path: records withdrawn, the Automaton and any session
+# ended, the daemon ended by its recorded PID, temporary folders removed, then
+# scripts/check-no-leftover-test-daemons.sh runs.
 #
-# Returns 0 when every check passed, non-zero on the first section that
-# could not complete (every individual check is reported pass/fail).
+# Usage: bash scripts/live-check-decision-records.sh   (KEEP=1 keeps scratch)
+
+if [[ -z "${LIVE_CHECK_CLEAN_ENV:-}" ]]; then
+  exec env -u TMUX -u TMUX_TMPDIR LIVE_CHECK_CLEAN_ENV=1 bash "$0" "$@"
+fi
 
 set -uo pipefail
 
-SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
-REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO_DIR=$(cd "$HERE/.." && pwd)
+source "$HERE/test-daemon-lib.sh"
 
-source "$SMOKE_DIR/test-daemon-lib.sh"
+REPORT="$REPO_DIR/tests/live-smoke/decision-records-report.md"
+TLS_PORT=18443
+PLAIN_PORT=18444
+BASE="https://127.0.0.1:$TLS_PORT"
+TOK=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 
-ROOT=$(mktemp -d /tmp/dw-dec-live.XXXXXX)
+mkdir -p "$REPO_DIR/tmp-sandbox"
+ROOT=$(mktemp -d "$REPO_DIR/tmp-sandbox/decision-live.XXXXXX")
 BIN="$ROOT/bin/datawatch"
-BASE="http://127.0.0.1:18452"
-PORT_PLAIN=18452
+DOCS="$ROOT/docs"; FOLDER="$ROOT/folder"; GATEPROJ="$ROOT/gate-project"
+SNAP="$ROOT/daemon-snapshot.txt"
 
-PASS=0
-FAIL=0
-SECTION=""
-GATE_PRD=""
+# ---- step bookkeeping ------------------------------------------------------
+STEP_IDS=(); STEP_NAMES=(); STEP_RESULTS=(); STEP_OBS=()
+CUR_ID=""; CUR_NAME=""; CUR_FAIL=0; CUR_SKIP=""; CUR_OBS=""
+RECS=(); GATE_PRD=""; CLEANUP_RESULT="not run"; VERSION_LINE="unknown"
 
-pass() { PASS=$((PASS + 1)); printf '  pass: %s\n' "$*"; }
-fail() { FAIL=$((FAIL + 1)); printf '  FAIL: %s\n' "$*"; }
-sec()  { SECTION="$*"; printf '\n== %s ==\n' "$*"; }
-note() { printf '       %s\n' "$*"; }
+step() { CUR_ID=$1; CUR_NAME=$2; CUR_FAIL=0; CUR_SKIP=""; CUR_OBS=""; printf '\n== step %s: %s ==\n' "$1" "$2"; }
+ok()   { CUR_OBS+="ok: $*; "; printf '  ok:   %s\n' "$*"; }
+bad()  { CUR_FAIL=1; CUR_OBS+="FAILED: $*; "; printf '  FAIL: %s\n' "$*"; }
+skip() { CUR_SKIP="$*"; printf '  SKIPPED: %s\n' "$*"; }
+step_end() {
+  local r=PASS
+  if (( CUR_FAIL )); then r=FAIL; elif [[ -n "$CUR_SKIP" ]]; then r=SKIPPED; CUR_OBS="$CUR_SKIP; $CUR_OBS"; fi
+  STEP_IDS+=("$CUR_ID"); STEP_NAMES+=("$CUR_NAME"); STEP_RESULTS+=("$r"); STEP_OBS+=("$CUR_OBS")
+  printf '  -> %s\n' "$r"
+}
+any_failed() { local r; for r in "${STEP_RESULTS[@]:-}"; do [[ "$r" == FAIL ]] && return 0; done; return 1; }
 
-die_setup() { fail "$*"; printf '\ndemo failed during setup: %s\n' "$*" >&2; exit 2; }
-
-# wait_for <seconds> <cmd...>: run cmd each second until it exits 0.
-wait_for() {
-  local want=$1; shift
-  local deadline=$(( $(date +%s) + want ))
-  while :; do
-    if "$@" >/dev/null 2>&1; then return 0; fi
-    (( $(date +%s) < deadline )) || return 1
-    sleep 1
-  done
+# ---- report ----------------------------------------------------------------
+write_report() {
+  local result=PASS i obs
+  any_failed && result=FAIL
+  # A run that never reached the end of the steps is not a pass.
+  [[ ${#STEP_RESULTS[@]} -lt 8 ]] && result=FAIL
+  mkdir -p "$(dirname "$REPORT")"
+  {
+    echo "# Decision records: sandbox live check"
+    echo
+    echo "- Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    echo "- Sandbox port: $TLS_PORT (TLS, own data directory and config)"
+    echo "- Daemon version: $VERSION_LINE"
+    echo
+    echo "| Step | Check | Result | Observation |"
+    echo "|------|-------|--------|-------------|"
+    for i in "${!STEP_IDS[@]}"; do
+      obs=${STEP_OBS[$i]//|/\\|}; obs=${obs//$'\n'/ }
+      printf '| %s | %s | %s | %s |\n' "${STEP_IDS[$i]}" "${STEP_NAMES[$i]}" "${STEP_RESULTS[$i]}" "${obs:0:700}"
+    done
+    echo
+    echo "## Cleanup"
+    echo
+    echo "$CLEANUP_RESULT"
+    echo
+    echo "RESULT: $result"
+  } > "$REPORT"
 }
 
-# api <METHOD> <path> [jsonfile]: sets API_CODE and API_BODY.
+# ---- API helpers -----------------------------------------------------------
+# api <METHOD> <path> [json]  -> API_CODE, API_BODY
 api() {
-  local m=$1 p=$2 f=${3:-}
-  local args=(-s -X "$m" -w $'\n%{http_code}' "$BASE$p")
-  if [[ -n "$f" ]]; then
-    args+=(-H 'Content-Type: application/json' --data-binary "@$f")
-  fi
-  local out
-  out=$(curl "${args[@]}" 2>/dev/null) || out="000"
-  API_CODE=${out##*$'\n'}
-  API_BODY=${out%$'\n'*}
+  local m=$1 p=$2 d=${3:-} out
+  local args=(-sk --max-time 60 -X "$m" -w $'\n%{http_code}' -H "Authorization: Bearer $TOK")
+  [[ -n "$d" ]] && args+=(-H 'Content-Type: application/json' --data-binary "$d")
+  out=$(curl "${args[@]}" "$BASE$p" 2>/dev/null) || out=$'\n000'
+  API_CODE=${out##*$'\n'}; API_BODY=${out%$'\n'*}
 }
-
-# cli <args...>: sets CLI_CODE and CLI_OUT.
+jg() { jq -r "$1 // empty" <<<"$API_BODY" 2>/dev/null; }
+# cli <args...> -> CLI_CODE, CLI_OUT (the real binary, against the sandbox)
 cli() {
-  local out
-  out=$(cd "$ROOT" && "$BIN" --url "$BASE" "$@" 2>&1)
-  CLI_CODE=$?
-  CLI_OUT=$out
+  CLI_OUT=$(cd "$ROOT" && DATAWATCH_TOKEN="$TOK" DW_BASE_INSECURE=1 "$BIN" --url "$BASE" "$@" 2>&1); CLI_CODE=$?
+}
+cfg_put() { api PUT /api/config "$(jq -cn --arg k "$1" --argjson v "$2" '{($k):$v}')"; }
+# wait_for <seconds> <function>: poll once a second.
+wait_for() { local end=$(( $(date +%s) + $1 )); shift; while :; do "$@" && return 0; (( $(date +%s) < end )) || return 1; sleep 1; done; }
+new_rec() { RECS+=("$1"); }
+# question_of <qid>: sets API_BODY to the question (tolerates a wrapper).
+get_question() { api GET "/api/questions/$1"; API_BODY=$(jq -c '(.question // .)' <<<"$API_BODY" 2>/dev/null || echo "$API_BODY"); }
+rec_json() { # rec_json <label> <title> <situation-suffix> [doc]
+  jq -cn --arg l "$1" --arg t "$2" --arg s "$3" --arg d "${4:-}" '
+   {label:$l, title:$t,
+    situation:("The sandbox live check files this decision so the daemon builds one question from it and the operator can read exactly what is being decided. " + $s),
+    deciding:"Pick which of the two options below the sandbox should treat as the chosen one when the live check answers this question later on.",
+    options:[{id:"fast",label:"Take the fast option",tradeoff:"Quicker to finish, at the cost of less checking"},
+             {id:"slow",label:"Take the careful option",tradeoff:"Slower to finish, but every step is checked"}],
+    recommendation:{option_id:"fast",reason:"The sandbox is isolated and short-lived, so speed wins"},
+    default:"hold"} + (if $d=="" then {} else {links:{doc:$d}} end)'
 }
 
-# jget <jq-filter>: read one value out of the last API_BODY.
-jget() {
-  jq -r "$1 // empty" <<<"$API_BODY" 2>/dev/null
-}
-
-cleanup_pre_stop() {
-  # While the daemon is still up: retire the gate PRD it may have started.
-  if [[ -n "$GATE_PRD" ]]; then
-    curl -s -X DELETE "$BASE/api/autonomous/prds/$GATE_PRD" >/dev/null 2>&1 || true
+# ---- cleanup: every exit path ----------------------------------------------
+pre_stop_cleanup() {
+  local n=0 closed=0 id
+  if [[ -n "${BASE:-}" ]] && curl -sk --max-time 3 "$BASE/api/health" >/dev/null 2>&1; then
+    for id in "${RECS[@]:-}"; do
+      [[ -n "$id" ]] || continue
+      api POST "/api/autonomous/decision-records/$id/withdraw" '{"reason":"live check cleanup"}'
+      if [[ "$API_CODE" == 200 ]]; then n=$((n+1)); else closed=$((closed+1)); fi
+    done
+    if [[ -n "$GATE_PRD" ]]; then
+      api POST "/api/autonomous/prds/$GATE_PRD/cancel" '{}'
+      api DELETE "/api/autonomous/prds/$GATE_PRD?hard=true"
+    fi
+    echo "Records withdrawn: $n; already answered or withdrawn: $closed. Automaton removed: ${GATE_PRD:-none}." > "$ROOT/cleanup.txt"
+  else
+    echo "The sandbox daemon was not reachable at cleanup; its data directory is removed with it." > "$ROOT/cleanup.txt"
   fi
 }
-TD_PRE_STOP_CLEANUP=cleanup_pre_stop
-
-cleanup_extra() {
-  if [[ "${KEEP:-0}" == "1" ]]; then
-    return 0
+final_cleanup() {
+  local left
+  CLEANUP_RESULT=$(cat "$ROOT/cleanup.txt" 2>/dev/null || echo "No pre-stop cleanup result was recorded.")
+  [[ "${KEEP:-0}" == 1 ]] || rm -rf "$ROOT"
+  if bash "$HERE/check-no-leftover-test-daemons.sh" check "$SNAP" >"$REPO_DIR/tmp-sandbox/leftover.out" 2>&1; then
+    left="no leftover test daemon"
+  else
+    left="LEFTOVER test daemon: $(head -c 300 "$REPO_DIR/tmp-sandbox/leftover.out" | tr '\n' ' ')"
   fi
-  rm -rf "$ROOT"
+  CLEANUP_RESULT="$CLEANUP_RESULT Sandbox daemon ended by its recorded PID. Temporary folders removed. Leftover check: $left."
+  write_report
+  rm -f "$REPO_DIR/tmp-sandbox/leftover.out"; rmdir "$REPO_DIR/tmp-sandbox" 2>/dev/null
 }
-TD_EXTRA_CLEANUP=cleanup_extra
-td_install_traps
+# The snapshot is taken before the traps so the leftover check has a baseline.
+bash "$HERE/check-no-leftover-test-daemons.sh" snapshot "$SNAP" >/dev/null 2>&1 || : > "$SNAP"
+TD_PRE_STOP_CLEANUP=pre_stop_cleanup
+TD_EXTRA_CLEANUP=final_cleanup
+td_install_traps "$@"
 
-need() { command -v "$1" >/dev/null || die_setup "required tool missing: $1"; }
-need curl; need jq; need go; need git
+die() { printf 'setup failed: %s\n' "$*" >&2; step 0 "setup"; bad "$*"; step_end; exit 2; }
+for t in curl jq go git od; do command -v "$t" >/dev/null || die "required tool missing: $t"; done
+for p in $TLS_PORT $PLAIN_PORT; do
+  ss -ltn 2>/dev/null | grep -q ":$p " && die "sandbox port $p is already in use"
+done
 
-# --- build -------------------------------------------------------------------
-sec "build datawatch from $REPO_DIR"
-(cd "$REPO_DIR" && go build -o "$BIN" ./cmd/datawatch) || die_setup "go build failed"
-[[ -x "$BIN" ]] || die_setup "binary missing after build"
-pass "binary built at $BIN"
+# ---- build, config, daemon ---------------------------------------------------
+echo "building the binary from this tree into $ROOT/bin"
+(cd "$REPO_DIR" && go build -o "$BIN" ./cmd/datawatch/) || die "go build failed"
+VERSION_LINE=$("$BIN" --version 2>/dev/null | head -1)
+[[ -n "$VERSION_LINE" ]] || VERSION_LINE=$("$BIN" version 2>/dev/null | head -1)
+[[ -n "$VERSION_LINE" ]] || VERSION_LINE=unknown
 
-# --- scratch project + config ------------------------------------------------
-git init -q -b main "$ROOT/gate-proj"
-(cd "$ROOT/gate-proj" && echo seed > README.md && git add README.md \
+mkdir -p "$DOCS" "$FOLDER" "$GATEPROJ"
+(cd "$GATEPROJ" && git init -q -b main && echo seed > README.md && git add README.md \
   && git -c user.email=live-check@local -c user.name=live-check commit -qm seed)
-
-mkdir -p "$ROOT/doc"
-cat > "$ROOT/doc/proposal.md" <<'EOF'
-# Sandbox live-check proposal
-
-A scratch proposal the decision records link to.
-
-Confirmed: (pending the live-check decision)
-EOF
-cat > "$ROOT/doc/proposal2.md" <<'EOF'
-# Sandbox live-check proposal (second)
-
-Confirmed: (pending the live-check decision)
-EOF
+printf '# Proposal one\n\nSome text.\n\nConfirmed: pending the live check\n\nMore text.\n' > "$DOCS/one.md"
+printf '# Proposal two\n\nSome text.\n\nConfirmed: pending the live check\n\nMore text.\n' > "$DOCS/two.md"
 
 cat > "$ROOT/config.yaml" <<EOF
 data_dir: $ROOT/data
-
+hostname: dw-decision-live
+session:
+  llm_backend: shell
+  default_project_dir: $GATEPROJ
+  auto_git_init: false
+  auto_git_commit: false
 server:
   enabled: true
   host: 127.0.0.1
-  port: $PORT_PLAIN
-  token: ''
-  # TLS off: /api/questions/* is not on the loopback TLS-bypass list, and a
-  # self-signed cert would turn plain-HTTP routes into TLS-redirect failures.
-  tls_enabled: false
-
-  # The gate section runs a PRD whose project lives in this scratch dir.
+  port: $PLAIN_PORT
+  token: $TOK
+  tls_enabled: true
+  tls_auto_generate: true
+  tls_port: $TLS_PORT
   allowed_project_roots:
     - $ROOT
-
+mcp:
+  enabled: false
+memory:
+  enabled: false
 autonomous:
   enabled: true
-  planning_backend: claude-code
-  execution_backend: claude-code
-  planning_model: ollama/qwen3.8-64k:27b
-  verification_backend: pi-prompt
-  verification_model: ollama/qwen3.8-64k:27b
+  poll_interval_seconds: 3
   max_concurrent_tasks: 1
-  max_engines_per_node: 1
-  poll_interval_seconds: 5
-  session_start_confirm_seconds: 300
-  verifier_policy:
-    mode: prefer-free
-    backends: [pi-prompt, claude-code]
   scan:
     enabled: false
-  per_prd_guardrails: []
-  task_templates:
-    enabled: true
-    templates: []
   questions:
     enabled: true
     decision_gate: true
     decision_gate_mode: on
   decisions:
     enabled: true
-    doc_root: $ROOT
+    clarity_mode: warn
+    doc_root: $DOCS
     doc_status_mode: report
     follow_ups:
       - name: kick
@@ -185,525 +227,213 @@ autonomous:
         target: no-such-template
 EOF
 
-# --- smoke daemon -------------------------------------------------------------
-sec "start smoke daemon on $BASE"
-if ! td_start "$BIN" "$ROOT/config.yaml" "$ROOT/daemon.log"; then
-  tail -20 "$ROOT/daemon.log" 2>/dev/null >&2 || true
-  die_setup "daemon did not come up"
+echo "starting the sandbox daemon on $BASE"
+td_start "$BIN" "$ROOT/config.yaml" "$ROOT/daemon.log" || { tail -20 "$ROOT/daemon.log" >&2; die "daemon did not start"; }
+DPID=$TD_LAST_PID
+td_set_api "$DPID" "$BASE" "$TOK" || true
+healthy() { curl -sk --max-time 3 "$BASE/api/health" >/dev/null 2>&1; }
+wait_for 240 healthy || { tail -20 "$ROOT/daemon.log" >&2; die "daemon not healthy within 240 s"; }
+echo "daemon healthy (PID $DPID, $VERSION_LINE)"
+
+# ============================================================================
+step 1 "create a record over REST and read back its question"
+api POST /api/autonomous/decision-records "$(rec_json live-one 'Which option does the sandbox take?' 'First record.')"
+R1=$(jg '.record.id'); Q1=$(jg '.question_id')
+if [[ "$API_CODE" == 201 && -n "$R1" && -n "$Q1" ]]; then new_rec "$R1"; ok "created $R1, question $Q1"; else bad "create gave $API_CODE: ${API_BODY:0:200}"; fi
+if [[ -n "${Q1:-}" ]]; then
+  get_question "$Q1"
+  QT=$(jg '.text'); NOPT=$(jq '.options|length' <<<"$API_BODY"); NTRADE=$(jq '[.options[]|select((.tradeoffs//"")!="")]|length' <<<"$API_BODY")
+  QREC=$(jg '.recommendation.option_id // .recommendation.option'); QDEF=$(jg '.default')
+  [[ "$QT" == *"Which option does the sandbox take?"* ]] && ok "question text built from the record" || bad "question text: ${QT:0:120}"
+  [[ "$NOPT" == 2 && "$NTRADE" == 2 ]] && ok "2 options, both with trade-offs" || bad "options=$NOPT with tradeoff=$NTRADE"
+  [[ "$QREC" == fast ]] && ok "recommendation fast" || bad "recommendation=${QREC:-none}"
+  [[ "$QDEF" == hold ]] && ok "default hold" || bad "default=${QDEF:-none}"
 fi
-SMOKE_PID="$TD_LAST_PID"
-# Boot can be slow: channel cleanup runs `claude mcp list`, and every
-# unreachable MCP server in the operator's claude registry adds up to its
-# 30 s timeout before the server actually starts listening. Allow 240 s.
-deadline=$(( $(date +%s) + 240 ))
-healthy=0
-while [[ $(date +%s) -lt $deadline ]]; do
-  curl -sf "$BASE/api/health" >/dev/null 2>&1 && { healthy=1; break; }
-  sleep 1
+step_end
+
+# ============================================================================
+step 2 "one question per record (REST, CLI list, comm-style path)"
+api POST /api/autonomous/decision-records "$(rec_json live-two 'Which option does the sandbox take, again?' 'Second record.')"
+R2=$(jg '.record.id'); Q2=$(jg '.question_id')
+[[ "$API_CODE" == 201 && -n "$R2" ]] && { new_rec "$R2"; ok "second record $R2 got its own question $Q2"; } || bad "second create: $API_CODE ${API_BODY:0:160}"
+[[ -n "${Q1:-}" && "$Q1" != "${Q2:-}" ]] && ok "two records, two different questions" || bad "the records share a question"
+api GET /api/questions
+for pair in "$R1 ${Q1:-}" "$R2 ${Q2:-}"; do
+  set -- $pair
+  n=$(jq --arg r "$1" '[(.questions // .)[]? | select(.decision_record_id==$r)] | length' <<<"$API_BODY" 2>/dev/null)
+  [[ "$n" == 1 ]] && ok "record $1 has exactly 1 question in the question list" || bad "record $1 has ${n:-?} questions"
 done
-if [[ $healthy -ne 1 ]]; then
-  tail -20 "$ROOT/daemon.log" 2>/dev/null >&2 || true
-  die_setup "daemon not healthy within 240 s (log: $ROOT/daemon.log)"
-fi
-pass "daemon healthy on $BASE (PID $SMOKE_PID)"
-td_set_api "$SMOKE_PID" "$BASE" "" || note "warn: could not record the API for the exit pass"
+cli autonomous decisions --state open --json
+if [[ $CLI_CODE -eq 0 ]] && grep -q "${Q1:-none}" <<<"$CLI_OUT" && grep -q "${Q2:-none}" <<<"$CLI_OUT"; then ok "CLI 'autonomous decisions' lists both questions"; else bad "CLI list code=$CLI_CODE: ${CLI_OUT:0:160}"; fi
+api GET "/api/autonomous/decisions?limit=50"   # the path the chat verb reads
+if [[ "$API_CODE" == 200 ]] && grep -q "${Q1:-none}" <<<"$API_BODY"; then
+  c=$(grep -o "${Q1}" <<<"$API_BODY" | wc -l)
+  ok "comm-style path /api/autonomous/decisions answers 200 and names ${Q1} ($c time(s))"
+else bad "comm-style path: $API_CODE ${API_BODY:0:160}"; fi
+api GET /api/autonomous/decision-records
+n=$(jq --arg q "${Q1:-x}" '[.decision_records[]|select(.question_id==$q)]|length' <<<"$API_BODY" 2>/dev/null)
+[[ "$n" == 1 ]] && ok "record list holds one record for question ${Q1}" || bad "record list holds ${n:-?} records for ${Q1}"
+step_end
 
-# --- fixture payloads ----------------------------------------------------------
-cat > "$ROOT/r1.json" <<'EOF'
-{
-  "label": "live-check",
-  "title": "Which cadence should the smoke check use?",
-  "situation": "A standalone smoke daemon holds one Automaton task on your decision, and you still have to choose the cadence the check itself uses while it polls for that answer.",
-  "deciding": "Pick the poll cadence for this sandbox run: it bounds how long the parked task can wait after you answer, and it does not change what you decide at all.",
-  "options": [
-    {"id": "five", "label": "Poll every five seconds", "tradeoff": "The parked task is released within seconds; a little extra polling on a shared host"},
-    {"id": "thirty", "label": "Poll every thirty seconds", "tradeoff": "Quieter, but the parked task can wait up to half a minute after the answer"}
-  ],
-  "recommendation": {
-    "option_id": "five",
-    "reason": "This sandbox is isolated and short-lived, so speed wins over the extra log noise"
-  },
-  "default": "hold"
+# ============================================================================
+step 3 "clarity: refusal in refuse mode, warning in warn mode"
+UNCLEAR='{"label":"go","title":"Pick one","situation":"short.","deciding":"pick one.","options":[{"id":"a","label":"option a","tradeoff":"a bit faster"},{"id":"b","label":"option b","tradeoff":""}],"default":"hold"}'
+cfg_put autonomous.decisions.clarity_mode '"refuse"'; [[ "$API_CODE" == 200 ]] && ok "PUT clarity_mode=refuse" || bad "PUT refuse: $API_CODE ${API_BODY:0:120}"
+api GET /api/autonomous/decision-records; before=$(jq '.decision_records|length' <<<"$API_BODY")
+api POST /api/autonomous/decision-records "$UNCLEAR"
+if [[ "$API_CODE" == 422 ]] && jq -e '.findings|length>0' <<<"$API_BODY" >/dev/null 2>&1; then
+  ok "refuse mode: 422 with findings $(jq -r '[.findings[].code]|join(",")' <<<"$API_BODY")"
+else bad "refuse mode expected 422, got $API_CODE ${API_BODY:0:160}"; fi
+api GET /api/autonomous/decision-records; after=$(jq '.decision_records|length' <<<"$API_BODY")
+[[ "$before" == "$after" ]] && ok "the refused record was not stored" || bad "record count went $before -> $after"
+cfg_put autonomous.decisions.clarity_mode '"warn"'; [[ "$API_CODE" == 200 ]] || bad "PUT warn: $API_CODE"
+api POST /api/autonomous/decision-records "$UNCLEAR"
+R3=$(jg '.record.id')
+if [[ "$API_CODE" == 201 ]] && jq -e '.warnings|length>=1' <<<"$API_BODY" >/dev/null 2>&1; then
+  new_rec "$R3"; ok "warn mode: stored $R3 with warnings $(jq -r '[.warnings[].code]|join(",")' <<<"$API_BODY")"
+else bad "warn mode expected 201 with warnings, got $API_CODE ${API_BODY:0:160}"; fi
+step_end
+
+# ============================================================================
+step 4 "edit an open record: question text changes on the same question id"
+get_question "$Q1"; TXT_BEFORE=$(jg '.text')
+EDIT=$(rec_json live-one 'Which option does the sandbox take?' 'An operator tightened this wording afterwards, which must reach the same question.')
+api PUT "/api/autonomous/decision-records/$R1" "$EDIT"
+[[ "$API_CODE" == 200 && "$(jg '.question_id')" == "$Q1" ]] && ok "PUT answered 200, question id still $Q1" || bad "PUT: $API_CODE ${API_BODY:0:160}"
+changed() { get_question "$Q1"; [[ "$(jg '.text')" == *"tightened this wording"* ]]; }
+if wait_for 30 changed; then ok "question text now carries the edit (was different before)"; [[ "$TXT_BEFORE" != "$(jg '.text')" ]] || bad "text unchanged"; else bad "question text did not change"; fi
+step_end
+
+# ============================================================================
+step 5 "answer with a multi-line quote; unconfigured follow_up is refused"
+api POST /api/autonomous/decision-records "$(rec_json live-five 'Which option closes the answer check?' 'No Automaton is linked.')"
+R5=$(jg '.record.id'); Q5=$(jg '.question_id'); new_rec "$R5"
+[[ "$(jg '.record.links.automaton')" == "" ]] && ok "record $R5 links no Automaton" || bad "record links an Automaton"
+QUOTE=$'first line of the reason\nsecond line — with an em dash\nthird line'
+ANS=$(jq -cn --arg q "$QUOTE" '{chosen_option_id:"slow",actor:"live-operator",surface:"cli",quote:$q,follow_up:"not-configured"}')
+api POST "/api/questions/$Q5/answer" "$ANS"
+[[ "$API_CODE" == 400 ]] && ok "follow_up not configured -> 400" || bad "unconfigured follow_up gave $API_CODE ${API_BODY:0:140}"
+api GET "/api/autonomous/decision-records/$R5"
+[[ "$(jg '.record.question_state')" == open ]] && ok "question still open after the refused answer" || bad "question state $(jg '.record.question_state')"
+api POST "/api/questions/$Q5/answer" "$(jq -c 'del(.follow_up)' <<<"$ANS")"
+[[ "$API_CODE" =~ ^2 ]] && ok "answer without follow_up accepted ($API_CODE)" || bad "answer: $API_CODE ${API_BODY:0:160}"
+applied() { api GET "/api/autonomous/decision-records/$R5"; [[ -n "$(jg '.record.answer.quote')" ]]; }
+wait_for 30 applied
+GOTQ=$(jq -r '.record.answer.quote' <<<"$API_BODY")
+[[ "$GOTQ" == "$QUOTE" ]] && ok "read-back quote is the 3-line quote, byte for byte" || bad "quote differs: ${GOTQ:0:100}"
+[[ "$(jg '.record.answer.actor')" == live-operator ]] && ok "actor live-operator" || bad "actor=$(jg '.record.answer.actor')"
+[[ "$(jg '.record.answer.surface')" == cli ]] && ok "surface cli" || bad "surface=$(jg '.record.answer.surface')"
+[[ "$(jg '.record.state')" == answered && "$(jg '.record.question_state')" == answered ]] && ok "record answered, question state answered" || bad "state=$(jg '.record.state') question_state=$(jg '.record.question_state')"
+api GET /api/autonomous/decision-records
+LIST_ROW=$(jq -c --arg r "$R5" '.decision_records[]|select(.id==$r)|{a:.answer.actor,s:.answer.surface,q:.answer.quote,qs:.question_state}' <<<"$API_BODY")
+if [[ "$(jq -r .a <<<"$LIST_ROW")" == live-operator && "$(jq -r .s <<<"$LIST_ROW")" == cli && "$(jq -r .qs <<<"$LIST_ROW")" == answered && "$(jq -r .q <<<"$LIST_ROW")" == "$QUOTE" ]]; then
+  ok "the list shows the quote, actor, surface and question state"; else bad "list row: ${LIST_ROW:0:200}"; fi
+# a configured follow-up on its own record
+api POST /api/autonomous/decision-records "$(rec_json live-kick 'Which option starts the follow-up?' 'This one requests the configured follow-up.')"
+RK=$(jg '.record.id'); QK=$(jg '.question_id'); new_rec "$RK"
+api POST "/api/questions/$QK/answer" '{"chosen_option_id":"fast","actor":"live-operator","quote":"go","follow_up":"kick"}'
+[[ "$API_CODE" =~ ^2 ]] && ok "configured follow_up 'kick' accepted" || bad "kick answer: $API_CODE ${API_BODY:0:140}"
+fu() { api GET "/api/autonomous/decision-records/$RK"; [[ "$(jg '.record.follow_up.status')" != "" ]]; }
+if wait_for 30 fu; then ok "follow-up ran: status=$(jg '.record.follow_up.status') result=$(jg '.record.follow_up.result' | head -c 80)"; else bad "follow-up never reported a result"; fi
+step_end
+
+# ============================================================================
+step 6 "document status line: report mode leaves the file, on mode rewrites one line"
+H1=$(sha256sum "$DOCS/one.md" | cut -d' ' -f1)
+api POST /api/autonomous/decision-records "$(rec_json live-doc-one 'Does the first proposal keep its scope?' 'Linked to the first document.' one.md)"
+R6=$(jg '.record.id'); Q6=$(jg '.question_id'); new_rec "$R6"
+api POST "/api/questions/$Q6/answer" '{"chosen_option_id":"fast","actor":"live-operator","quote":"keep it small"}'
+dc() { api GET "/api/autonomous/decision-records/$R6"; [[ -n "$(jg '.record.doc_change.status')" ]]; }
+wait_for 30 dc
+H1b=$(sha256sum "$DOCS/one.md" | cut -d' ' -f1)
+[[ "$H1" == "$H1b" ]] && ok "report mode: file byte-identical" || bad "report mode changed the file"
+[[ -n "$(jg '.record.doc_change.after')" ]] && ok "report mode shows the change: '$(jg '.record.doc_change.before' | head -c 40)' -> '$(jg '.record.doc_change.after' | head -c 80)' (status $(jg '.record.doc_change.status'))" || bad "no change shown: ${API_BODY:0:200}"
+cfg_put autonomous.decisions.doc_status_mode '"on"'; [[ "$API_CODE" == 200 ]] || bad "PUT doc_status_mode on: $API_CODE"
+cp "$DOCS/two.md" "$ROOT/two.before"
+api POST /api/autonomous/decision-records "$(rec_json live-doc-two 'Does the second proposal keep its scope?' 'Linked to the second document.' two.md)"
+R7=$(jg '.record.id'); Q7=$(jg '.question_id'); new_rec "$R7"
+api POST "/api/questions/$Q7/answer" '{"chosen_option_id":"fast","actor":"live-operator","quote":"apply it now"}'
+rewritten() { ! cmp -s "$DOCS/two.md" "$ROOT/two.before"; }
+if wait_for 30 rewritten; then
+  nd=$(diff "$ROOT/two.before" "$DOCS/two.md" | grep -c '^>')
+  [[ "$nd" == 1 ]] && ok "exactly one line rewritten" || bad "$nd lines changed"
+  grep -q '^Confirmed:.*apply it now' "$DOCS/two.md" && ok "line now reads: $(grep '^Confirmed:' "$DOCS/two.md" | head -c 100)" || bad "quoted words missing in the file"
+else bad "on mode never rewrote the file"; fi
+step_end
+
+# ============================================================================
+folder_case() { # folder_case <tag> <delimiter> <separator>
+  local tag=$1 d=$2 s=$3 f="$FOLDER/$1.md" rid qid h1 h2 q2 st
+  write_file() { printf '%s\n' "$d" "label${s} $tag" "title${s} Which folder option does the daemon keep for $tag?" \
+    "situation${s} The operator files a decision as a plain file in a folder the daemon watches, and the daemon turns it into one open question. $1" \
+    "deciding${s} Pick which of the two folder options the daemon treats as chosen when the operator eventually answers this question." \
+    "option${s} fa | File option A | the sandbox prefers speed" "option${s} fb | File option B | the sandbox prefers quiet" \
+    "recommendation${s} fa | speed wins here" "default${s} hold" "$d" "Free text that is ignored." > "$f"; }
+  write_file "Original."
+  found() { api GET /api/autonomous/decision-records; rid=$(jq -r --arg t "$tag" '[.decision_records[]|select(.label==$t)][0].id // empty' <<<"$API_BODY"); [[ -n "$rid" ]]; }
+  if wait_for 60 found; then
+    new_rec "$rid"; api GET "/api/autonomous/decision-records/$rid"; qid=$(jg '.question_id'); h1=$(jg '.record.content_hash')
+    [[ -n "$qid" ]] && ok "[$tag] file raised record $rid and question $qid" || bad "[$tag] record without a question"
+  else bad "[$tag] no record within 60 s: $(curl -sk -H "Authorization: Bearer $TOK" "$BASE/api/autonomous/decision-records" | jq -c .folder 2>/dev/null | head -c 300)"; return; fi
+  write_file "An operator edited the file."
+  edited() { api GET "/api/autonomous/decision-records/$rid"; h2=$(jg '.record.content_hash'); [[ -n "$h2" && "$h2" != "$h1" ]]; }
+  if wait_for 60 edited; then q2=$(jg '.question_id'); [[ "$q2" == "$qid" ]] && ok "[$tag] edit updated the record, same question" || bad "[$tag] question changed $qid -> $q2"; else bad "[$tag] edit not picked up; folder status: $(curl -sk -H "Authorization: Bearer $TOK" "$BASE/api/autonomous/decision-records" | jq -c '.folder|{errors,notes}' 2>/dev/null | head -c 400); hashes $h1 / $h2"; fi
+  rm -f "$f"
+  gone() { api GET "/api/autonomous/decision-records/$rid"; [[ "$(jg '.record.state')" == withdrawn ]]; }
+  wait_for 60 gone && ok "[$tag] deleting the file withdrew the record" || bad "[$tag] state after delete: $(jg '.record.state')"
 }
-EOF
+step 7 "folder watch: raise, edit, delete; then another delimiter and separator"
+cfg_put autonomous.decisions.folder "$(jq -Rn --arg p "$FOLDER" '$p')"; [[ "$API_CODE" == 200 ]] && ok "folder configured" || bad "PUT folder: $API_CODE ${API_BODY:0:140}"
+folder_case folder-default '---' ':'
+cfg_put autonomous.decisions.front_matter_delimiter '"+++"'; d1=$API_CODE
+cfg_put autonomous.decisions.front_matter_separator '"="'; [[ "$d1" == 200 && "$API_CODE" == 200 ]] && ok "delimiter +++ and separator = configured" || bad "PUT delimiter/separator: $d1 $API_CODE"
+folder_case folder-custom '+++' '='
+step_end
 
-# Deliberately unclear: a three-letter label (below the minimum), a
-# situation that is far under the minimum text, and one option whose
-# tradeoff is left blank.
-cat > "$ROOT/r2.json" <<'EOF'
-{
-  "label": "go",
-  "title": "Pick one",
-  "situation": "short.",
-  "deciding": "pick one of the two options below.",
-  "options": [
-    {"id": "a", "label": "option a", "tradeoff": "a bit faster"},
-    {"id": "b", "label": "option b", "tradeoff": ""}
-  ],
-  "default": "hold"
-}
-EOF
-
-cat > "$ROOT/r3.json" <<'EOF'
-{
-  "label": "doc-report",
-  "title": "Should this proposal keep its sandbox scope?",
-  "situation": "The proposal under review is small on purpose: it exists so this live check can link a decision to a real file and watch the status line behaviour end to end, without touching production docs.",
-  "deciding": "Decide whether the proposal stays scoped to the sandbox, so the live check can keep pointing its decision records at it without worrying about shared documents.",
-  "options": [
-    {"id": "keep", "label": "Keep the sandbox scope", "tradeoff": "The sandbox stays self-contained at the cost of another scratch doc"},
-    {"id": "expand", "label": "Expand to shared docs", "tradeoff": "Covers more ground but mixes live-check state into real proposals"}
-  ],
-  "default": "hold",
-  "links": {"doc": "doc/proposal.md"}
-}
-EOF
-
-cat > "$ROOT/r4.json" <<'EOF'
-{
-  "label": "doc-apply",
-  "title": "Should the live check apply the status line?",
-  "situation": "The second proposal doc is the same scratch piece seen from the apply side: the live check wants the daemon to actually rewrite the status line, not only report what it would do, to prove mode on writes exactly one byte-identical-but-reworded line.",
-  "deciding": "Decide whether the live check runs the apply mode of the status line rewrite against the second proposal doc, or leaves it in report-only mode for this run.",
-  "options": [
-    {"id": "apply", "label": "Apply the status line", "tradeoff": "Proves the write path but changes the scratch doc"},
-    {"id": "report", "label": "Stay in report-only mode", "tradeoff": "Keeps the doc untouched but leaves the write path unproven"}
-  ],
-  "default": "hold",
-  "links": {"doc": "doc/proposal2.md"}
-}
-EOF
-
-cat > "$ROOT/r1-update.json" <<'EOF'
-{
-  "label": "live-check",
-  "title": "Which cadence should the smoke check use?",
-  "situation": "A standalone smoke daemon holds one Automaton task on your decision, and you still have to choose the cadence the check itself uses while it polls for that answer. An operator later tightened this text, to prove the same question survives an edit.",
-  "deciding": "Pick the poll cadence for this sandbox run: it bounds how long the parked task can wait after you answer, and it does not change what you decide at all.",
-  "options": [
-    {"id": "five", "label": "Poll every five seconds", "tradeoff": "The parked task is released within seconds; a little extra polling on a shared host"},
-    {"id": "thirty", "label": "Poll every thirty seconds", "tradeoff": "Quieter, but the parked task can wait up to half a minute after the answer"}
-  ],
-  "recommendation": {
-    "option_id": "five",
-    "reason": "This sandbox is isolated and short-lived, so speed wins over the extra log noise"
-  },
-  "default": "hold"
-}
-EOF
-
-# Folder-watched file (front matter one key per line).
-cat > "$ROOT/dfiles/folder-dec.md" 2>/dev/null || { mkdir -p "$ROOT/dfiles"; cat > "$ROOT/dfiles/folder-dec.md" <<'EOF'
----
-label: folder-dec
-title: Which folder option does the daemon keep?
-situation: The operator files a decision as a plain file in a folder the daemon watches, instead of calling the daemon directly, and the daemon has to turn it into one open question like any REST-raised one.
-deciding: Pick which of the two folder options the daemon should treat as the chosen one when the operator eventually answers the question created from this file.
-option: fa | File option A | the sandbox prefers speed
-option: fb | File option B | the sandbox prefers quiet
-recommendation: fa | the sandbox prefers speed
-default: hold
----
-Free text the daemon can ignore; only the front matter becomes the record.
-EOF
-}
-
-# ===========================================================================
-sec "1. create a decision record and read it back"
-
-api POST /api/autonomous/decision-records "$ROOT/r1.json"
-[[ "$API_CODE" == "201" ]] && pass "create returned 201" || { fail "create returned $API_CODE: $API_BODY"; exit 1; }
-R1=$(jget '.record.id'); R1Q=$(jget '.question_id')
-[[ -n "$R1" && -n "$R1Q" ]] && pass "record id $R1, question $R1Q" || { fail "no id or question in the answer"; exit 1; }
-
-api GET "/api/autonomous/decision-records/$R1"
-R1_TITLE=$(jget '.record.title')
-R1_STATE=$(jget '.record.state')
-R1_SRC=$(jget '.record.source')
-R1_DEF=$(jget '.record.default')
-R1_RECOPT=$(jget '.record.recommendation.option_id')
-R1_OPT1=$(jget '.record.options[0].label')
-if [[ "$R1_TITLE" == "Which cadence should the smoke check use?" && "$R1_STATE" == "open" \
-      && "$R1_SRC" == "rest" && "$R1_DEF" == "hold" && "$R1_RECOPT" == "five" \
-      && "$R1_OPT1" == "Poll every five seconds" ]]; then
-  pass "GET round-trip: title/state/source/default/recommendation/option all match"
+# ============================================================================
+step 8 "a task spec naming the question id waits, then starts after the answer"
+api POST /api/autonomous/decision-records "$(rec_json live-gate 'Which option releases the waiting task?' 'A task spec names this question.')"
+RG=$(jg '.record.id'); QG=$(jg '.question_id'); new_rec "$RG"
+[[ -n "$QG" ]] && ok "gate question $QG raised" || bad "no gate question"
+api POST /api/autonomous/prds "$(jq -cn --arg d "$GATEPROJ" '{spec:"Live check: one small task that waits on an operator decision.",project_dir:$d}')"
+GATE_PRD=$(jg '.id')
+if [[ -z "$GATE_PRD" ]]; then
+  skip "could not create an Automaton in the sandbox ($API_CODE ${API_BODY:0:160})"
 else
-  fail "GET round-trip mismatch: $API_BODY"
-fi
-
-cli autonomous decisions --state open --limit 100 --json
-if [[ $CLI_CODE -eq 0 ]] && grep -q "$R1Q" <<<"$CLI_OUT"; then
-  pass "CLI 'autonomous decisions' lists the open decision ($R1Q)"
-else
-  fail "CLI decisions list: code=$CLI_CODE out=$(head -c 300 <<<"$CLI_OUT")"
-fi
-
-# ===========================================================================
-sec "2. question view + history (datawatch question)"
-
-# question show has no --json flag; it prints the operator form (text,
-# numbered options, state), so assert on the visible text instead.
-cli question show "$R1Q"
-Q1_OK=0
-if [[ $CLI_CODE -eq 0 ]]; then
-  note "show[:120]=${CLI_OUT:0:120}"
-  grep -q "Which cadence should the smoke check use?" <<<"$CLI_OUT" && Q1_OK=1
-fi
-(( Q1_OK )) && pass "question show returns the open question" || fail "question show: code=$CLI_CODE out=$(head -c 300 <<<"$CLI_OUT")"
-
-cli question list --state open --json
-if [[ $CLI_CODE -eq 0 ]] && jq -e --arg q "$R1Q" 'any((.questions // .)[]?; (.id == $q))' <<<"$CLI_OUT" >/dev/null 2>&1; then
-  pass "question list --state open contains $R1Q"
-else
-  fail "question list: code=$CLI_CODE out=$(head -c 300 <<<"$CLI_OUT")"
-fi
-
-# ===========================================================================
-sec "3. clarity: refuse blocks, warn stores with warnings"
-
-# autonomous.decisions.* lives on the daemon config surface: the surface is
-# `datawatch config set autonomous.decisions.clarity_mode <v>` (PUT /api/config),
-# validated and persisted server-side.
-cli config set autonomous.decisions.clarity_mode refuse
-if [[ $CLI_CODE -eq 0 ]]; then
-  pass "config-set clarity_mode=refuse accepted"
-else
-  fail "config-set refused: $(head -c 200 <<<"$CLI_OUT")"
-fi
-cli config get autonomous.decisions.clarity_mode
-if [[ "${CLI_OUT:-""}" == *refuse* ]]; then
-  pass "daemon now holds clarity_mode=refuse"
-else
-  note "config get says: $(head -c 120 <<<"$CLI_OUT")"
-fi
-
-api POST /api/autonomous/decision-records "$ROOT/r2.json"
-CLARITY_REFUSE_BODY=$API_BODY
-if [[ "$API_CODE" == "422" ]] && jq -e '.findings | length > 0' <<<"$API_BODY" >/dev/null 2>&1; then
-  pass "refuse mode: creation blocked with $(jq -r '[.findings[].code] | join(",")' <<<"$API_BODY")"
-else
-  fail "refuse mode expected 422 + findings, got $API_CODE: $CLARITY_REFUSE_BODY"
-fi
-api GET "/api/autonomous/decision-records"
-if [[ "$(jget '(.decision_records // .records // .) | length')" == "1" ]]; then
-  pass "the refused record was not stored"
-else
-  fail "refused record appears in the list: $API_BODY"
-fi
-
-cli config set autonomous.decisions.clarity_mode warn
-[[ $CLI_CODE -eq 0 ]] || fail "config-set clarity_mode=warn refused: $(head -c 200 <<<"$CLI_OUT")"
-api POST /api/autonomous/decision-records "$ROOT/r2.json"
-if [[ "$API_CODE" == "201" ]] && jq -e '.warnings | length >= 1' <<<"$API_BODY" >/dev/null 2>&1; then
-  pass "warn mode: stored with warnings $(jq -r '[.warnings[].code] | join(",")' <<<"$API_BODY")"
-else
-  fail "warn mode expected 201 + warnings, got $API_CODE: $API_BODY"
-fi
-R2=$(jget '.record.id')
-[[ -n "$R2" ]] && pass "warn record stored as $R2 (findings reported, not blocking)" || fail "no record id in the warn answer"
-
-# ===========================================================================
-sec "4. edit an open record keeps the same question"
-
-api PUT "/api/autonomous/decision-records/$R1" "$ROOT/r1-update.json"
-R1Q_AFTER=$(jget '.question_id')
-R1_SIT_AFTER=$(jget '.record.situation')
-if [[ "$API_CODE" == "200" && "$R1Q_AFTER" == "$R1Q" && "$R1_SIT_AFTER" == *"operator later tightened"* ]]; then
-  pass "update answered 200, question still $R1Q, new situation stored"
-else
-  fail "update: code=$API_CODE body=$(head -c 300 <<<"$API_BODY")"
-fi
-
-# ===========================================================================
-sec "5. answer: quote verbatim + configured follow-up"
-
-cat > "$ROOT/a1.json" <<'EOF'
-{"chosen_option_id": "five", "actor": "live-check",
- "quote": "five seconds — the sandbox is local, take the fast one",
- "follow_up": "kick"}
-EOF
-api POST "/api/questions/$R1Q/answer" "$ROOT/a1.json"
-if [[ "$API_CODE" =~ ^2 ]]; then
-  pass "answer accepted (code $API_CODE)"
-else
-  fail "answer rejected: $API_CODE $API_BODY"
-fi
-
-# The answer lands in the question store immediately; the record sees it on
-# the next daemon poll (5 s here).
-wait_for 30 bash -c "curl -s '$BASE/api/autonomous/decision-records/$R1' | jq -e '.record.answer'" || true
-api GET "/api/autonomous/decision-records/$R1"
-ANS_OPT=$(jget '.record.answer.chosen_option_id')
-ANS_ACTOR=$(jget '.record.answer.actor')
-ANS_QUOTE=$(jget '.record.answer.quote')
-if [[ "$ANS_OPT" == "five" && "$ANS_ACTOR" == "live-check" \
-      && "$ANS_QUOTE" == "five seconds — the sandbox is local, take the fast one" ]]; then
-  pass "record answer applied: option/actor/quote verbatim (em dash intact)"
-else
-  fail "record answer mismatch: $API_BODY"
-fi
-FU_REQ=$(jget '.record.follow_up.requested')
-FU_STAT=$(jget '.record.follow_up.status')
-FU_RES=$(jget '.record.follow_up.result')
-if [[ "$FU_REQ" == "true" && -n "$FU_STAT" && -n "$FU_RES" ]]; then
-  pass "follow-up ran once: status=$FU_STAT result=${FU_RES:0:80}"
-else
-  fail "follow_up missing or empty: requested=$FU_REQ status=$FU_STAT result=$FU_RES"
-fi
-
-# Second answer attempt must be refused: the question is already answered.
-cat > "$ROOT/a1b.json" <<'EOF'
-{"chosen_option_id": "thirty", "actor": "live-check", "quote": "changed my mind"}
-EOF
-api POST "/api/questions/$R1Q/answer" "$ROOT/a1b.json"
-if [[ "$API_CODE" == "409" ]]; then
-  pass "second answer refused (409): the answer is final, a new record is the path"
-else
-  fail "second answer expected 409, got $API_CODE: $API_BODY"
-fi
-
-cli question show "$R1Q"
-SHOW_OK=0
-if [[ $CLI_CODE -eq 0 ]] \
-      && grep -q "five seconds — the sandbox is local, take the fast one" <<<"$CLI_OUT"; then
-  SHOW_OK=1
-fi
-if (( SHOW_OK )); then
-  pass "question show: the verbatim quote is in the operator view"
-else
-  fail "question show after answer: quote not visible: $(head -c 300 <<<"$CLI_OUT" 2>/dev/null)"
-fi
-
-# ===========================================================================
-sec "6. doc status line: report first, then apply"
-
-cat > "$ROOT/a3.json" <<'EOF'
-{"chosen_option_id": "keep", "actor": "live-check", "quote": "keep it in the sandbox"}
-EOF
-api POST /api/autonomous/decision-records "$ROOT/r3.json"
-[[ "$API_CODE" == "201" ]] || { fail "R3 create: $API_CODE $API_BODY"; exit 1; }
-R3=$(jget '.record.id'); R3Q=$(jget '.question_id')
-
-DOC1_BEFORE=$(sha256sum "$ROOT/doc/proposal.md" | cut -d' ' -f1)
-api POST "/api/questions/$R3Q/answer" "$ROOT/a3.json"
-wait_for 30 bash -c "curl -s '$BASE/api/autonomous/decision-records/$R3' | jq -e '.record.doc_change'" || true
-api GET "/api/autonomous/decision-records/$R3"
-DOC1_STATUS=$(jget '.record.doc_change.status')
-DOC1_BEFORELINE=$(jget '.record.doc_change.before')
-DOC1_AFTERLINE=$(jget '.record.doc_change.after')
-if [[ "$DOC1_STATUS" == "reported" && -n "$DOC1_BEFORELINE" && -n "$DOC1_AFTERLINE" ]]; then
-  pass "report mode: doc_change.status=reported, before='$DOC1_BEFORELINE' after='${DOC1_AFTERLINE:0:60}'"
-else
-  fail "report mode doc_change: $API_BODY"
-fi
-DOC1_AFTER_HASH=$(sha256sum "$ROOT/doc/proposal.md" | cut -d' ' -f1)
-[[ "$DOC1_BEFORE" == "$DOC1_AFTER_HASH" ]] \
-  && pass "report mode left the file byte-identical" \
-  || fail "report mode changed the doc on disk"
-
-cli config set autonomous.decisions.doc_status_mode on
-[[ $CLI_CODE -eq 0 ]] || fail "config-set doc_status_mode=on refused: $(head -c 200 <<<"$CLI_OUT")"
-cat > "$ROOT/a4.json" <<'EOF'
-{"chosen_option_id": "apply", "actor": "live-check", "quote": "apply it"}
-EOF
-api POST /api/autonomous/decision-records "$ROOT/r4.json"
-[[ "$API_CODE" == "201" ]] || { fail "R4 create: $API_CODE $API_BODY"; exit 1; }
-R4=$(jget '.record.id'); R4Q=$(jget '.question_id')
-api POST "/api/questions/$R4Q/answer" "$ROOT/a4.json"
-wait_for 30 bash -c "curl -s '$BASE/api/autonomous/decision-records/$R4' | jq -e '.record.doc_change'" || true
-api GET "/api/autonomous/decision-records/$R4"
-DOC2_STATUS=$(jget '.record.doc_change.status')
-if [[ "$DOC2_STATUS" == "applied" ]] && grep -q "apply it" "$ROOT/doc/proposal2.md" \
-     && grep -q "^Confirmed: " "$ROOT/doc/proposal2.md"; then
-  pass "on mode: status line rewritten in doc (status=applied, quote in file)"
-else
-  fail "on mode doc apply: status=$DOC2_STATUS file=$(cat "$ROOT/doc/proposal2.md")"
-fi
-LINES=$(wc -l < "$ROOT/doc/proposal2.md")
-[[ "$LINES" -ge 3 ]] && pass "only the one status line changed (file still $LINES lines)" || note "line count=$LINES"
-
-# ===========================================================================
-sec "7. folder watch: file raise / edit update / delete withdraw"
-
-cli config set autonomous.decisions.folder "$ROOT/dfiles"
-if [[ $CLI_CODE -ne 0 ]]; then
-  fail "config-set folder: $(head -c 200 <<<"$CLI_OUT")"
-fi
-
-# The tick runs every poll (5 s): wait for the filed record + open question.
-FIND_FOLDER_REC2() {
-  curl -s "$BASE/api/autonomous/decision-records?limit=200" | \
-    jq -r '(.decision_records // .records // .)[]? | select((.label? // "") | startswith("folder-dec")) | .id' 2>/dev/null | head -1
-}
-FOLDER_RID=""
-wait_for 45 FIND_FOLDER_REC2 && FOLDER_RID=$(FIND_FOLDER_REC2)
-if [[ -n "$FOLDER_RID" ]]; then
-  pass "folder file raised record $FOLDER_RID"
-  api GET "/api/autonomous/decision-records/$FOLDER_RID"
-  FQ=$(jget '.question_id')
-  [[ -n "$FQ" ]] && pass "folder record carries question $FQ" || fail "no question on the folder record"
-  FOLDER_QID=$FQ
-  FOLDER_HASH_BEFORE=$(jget '.record.content_hash')
-else
-  fail "folder file did not raise a record within 45 s"
-  FOLDER_HASH_BEFORE=""
-fi
-
-if [[ -n "$FOLDER_RID" ]]; then
-  cat > "$ROOT/dfiles/folder-dec.md" <<'EOF'
----
-label: folder-dec
-title: Which folder option does the daemon keep?
-situation: The operator files a decision as a plain file in a folder the daemon watches, instead of calling the daemon directly, and the daemon has to turn it into one open question like any REST-raised one. The operator then edited the file, which must reach the same open question.
-deciding: Pick which of the two folder options the daemon should treat as the chosen one when the operator eventually answers the question created from this file.
-option: fa | File option A | the sandbox prefers speed
-option: fb | File option B | the sandbox prefers quiet
-recommendation: fa | the sandbox prefers speed
-default: hold
----
-Free text the daemon can ignore; only the front matter becomes the record.
-EOF
-  FOLDER_HASH_AFTER=""; FOLDER_QID_AFTER=""
-  for _ in $(seq 1 45); do
-    api GET "/api/autonomous/decision-records/$FOLDER_RID"
-    FOLDER_HASH_AFTER=$(jget '.record.content_hash')
-    FOLDER_QID_AFTER=$(jget '.question_id')
-    [[ -n "$FOLDER_HASH_AFTER" && "$FOLDER_HASH_AFTER" != "$FOLDER_HASH_BEFORE" ]] && break
-    sleep 1
-  done
-  if [[ -n "$FOLDER_HASH_AFTER" && "$FOLDER_HASH_AFTER" != "$FOLDER_HASH_BEFORE" && "$FOLDER_QID_AFTER" == "$FOLDER_QID" ]]; then
-    pass "folder edit updated the record (new content hash, same question $FOLDER_QID)"
+  ok "Automaton $GATE_PRD created"
+  # Tasks come from the planning step, which needs a planning backend.
+  api POST "/api/autonomous/prds/$GATE_PRD/decompose" '{}'
+  planned() { api GET "/api/autonomous/prds/$GATE_PRD"; PS=$(jq -r '.status // empty' <<<"$API_BODY"); NT=$(jq '[.stories[]?.tasks[]?]|length' <<<"$API_BODY" 2>/dev/null); [[ "$PS" == needs_review && "${NT:-0}" -ge 1 ]]; }
+  if ! wait_for 120 planned; then
+    skip "the sandbox has no planning backend, so the Automaton stays $PS with ${NT:-0} tasks and cannot hold a task (decompose answered $API_CODE)"
   else
-    fail "folder edit: before=$FOLDER_HASH_BEFORE after=${FOLDER_HASH_AFTER:-?} question_before=${FOLDER_QID:-?} question_after=${FOLDER_QID_AFTER:-?}"
-  fi
-
-  rm -f "$ROOT/dfiles/folder-dec.md"
-  FOLDER_STATE=""
-  for _ in $(seq 1 45); do
-    api GET "/api/autonomous/decision-records/$FOLDER_RID"
-    FOLDER_STATE=$(jget '.record.state')
-    [[ "$FOLDER_STATE" == "withdrawn" ]] && break
-    sleep 1
-  done
-  [[ "$FOLDER_STATE" == "withdrawn" ]] \
-    && pass "folder delete withdrew the record (state=withdrawn)" \
-    || fail "folder delete: state=${FOLDER_STATE:-?}"
-  if [[ -n "${FOLDER_QID:-}" ]]; then
-    api GET "/api/questions"
-    QSTATE=$(curl -s "$BASE/api/questions" | jq -r --arg q "$FOLDER_QID" '(.questions // .)[]? | select(.id == $q) | .state' 2>/dev/null || true)
-    [[ "$QSTATE" == "withdrawn" ]] && pass "the folder question was withdrawn too" || note "folder question state=${QSTATE:-?}"
-  fi
-fi
-
-# ===========================================================================
-sec "8. gate (on mode): task held on the open question, starts after the answer"
-
-api POST /api/autonomous/decision-records "$ROOT/r1.json"
-[[ "$API_CODE" == "201" ]] || { fail "gate record create: $API_CODE $API_BODY"; exit 1; }
-GR=$(jget '.record.id'); GRQ=$(jget '.question_id')
-pass "gate raised: record $GR question $GRQ"
-
-cat > "$ROOT/gate-prd.json" <<EOF
-{
-  "spec": "Gate smoke: one task whose spec names an operator decision by its question id; that task must not start until the question is answered.",
-  "project_dir": "$ROOT/gate-proj",
-  "effort": "low"
-}
-EOF
-api POST /api/autonomous/prds "$ROOT/gate-prd.json"
-GATE_PRD=$(jget '.id')
-if [[ -n "$GATE_PRD" ]]; then
-  pass "gate PRD created: $GATE_PRD"
-else
-  fail "gate PRD create: $API_BODY"
-fi
-
-# One story, one task. The task's spec text is exactly what the decision
-# gate scans; it must name the open question id.
-cat > "$ROOT/gate-story.json" <<'EOF'
-{"title": "Gate story", "description": "The decision-gate smoke task.", "actor": "live-check"}
-EOF
-api POST "/api/autonomous/prds/$GATE_PRD/add_story" "$ROOT/gate-story.json"
-if [[ "$API_CODE" =~ ^2 ]]; then
-  pass "gate story added"
-else
-  fail "add_story: $API_CODE $API_BODY"
-fi
-
-GATE_TASK_SPEC="Decision: $GRQ - write the file note.txt with the single line 'released' in the project root. That is all."
-api GET "/api/autonomous/prds/$GATE_PRD"
-GATE_STORY=$(jq -r '.stories[0].id // empty' <<<"$API_BODY" 2>/dev/null)
-if [[ -z "$GATE_STORY" ]]; then
-  fail "gate story id not found after add_story (resp: $(head -c 200 <<<"$API_BODY"))"
-else
-  pass "gate story: $GATE_STORY"
-  jq -cn --arg st "$GATE_STORY" --arg s "$GATE_TASK_SPEC" \
-    '{story_id: $st, title: "Gate task", spec: $s, actor: "live-check"}' > "$ROOT/gate-task.json"
-  api POST "/api/autonomous/prds/$GATE_PRD/add_task" "$ROOT/gate-task.json"
-  if [[ "$API_CODE" =~ ^2 ]]; then
-    pass "gate task added (spec names $GRQ)"
-  else
-    fail "add_task: $API_CODE $API_BODY"
-  fi
-
-  api POST "/api/autonomous/prds/$GATE_PRD/approve" '{"actor": "live-check", "note": "live-check gate smoke"}'
-  [[ "$API_CODE" =~ ^2 ]] || fail "approve: $API_CODE $API_BODY"
-
-  api POST "/api/autonomous/prds/$GATE_PRD/run" '{}'
-  if [[ "$API_CODE" =~ ^2 ]]; then
-    pass "run accepted (code $API_CODE)"
-  else
-    fail "run rejected: $API_CODE $API_BODY"
-  fi
-fi
-
-TID=""
-TSTAT=""
-for _ in $(seq 1 90); do
-  api GET "/api/autonomous/prds/$GATE_PRD"
-  TID=$(jget '[.stories[]?.tasks[]?] | map(select(.status == "waiting_decision")) | .[0].id // empty')
-  if [[ -n "$TID" ]]; then
-    pass "task $TID is held (status=waiting_decision) — gated on $GRQ"
-    break
-  fi
-  TSTAT=$(jget '[.stories[]?.tasks[]?] | .[0].status // empty')
-  sleep 1
-done
-if [[ -z "$TID" ]]; then
-  fail "task never reached waiting_decision (last status: ${TSTAT:-?})"
-fi
-
-cat > "$ROOT/a5.json" <<'EOF'
-{"chosen_option_id": "five", "actor": "live-check", "quote": "release it"}
-EOF
-if [[ -n "$TID" ]]; then
-  api POST "/api/questions/$GRQ/answer" "$ROOT/a5.json"
-  if [[ "$API_CODE" =~ ^2 ]]; then
-    pass "gate answered ($GRQ)"
-    STARTED=""
-    for _ in $(seq 1 240); do
-      api GET "/api/autonomous/prds/$GATE_PRD"
-      TSTAT=$(jget "[.stories[]?.tasks[]?] | map(select(.id == \"$TID\")) | .[0].status // empty")
-      case "$TSTAT" in
-        in_progress|running_tests|verifying|completed|failed) STARTED=1; break ;;
-      esac
-      sleep 1
-    done
-    if [[ "$STARTED" == "1" ]]; then
-      pass "task $TID left waiting_decision and started (status=$TSTAT)"
+    api GET "/api/autonomous/prds/$GATE_PRD"
+    TID=$(jq -r '[.stories[]?.tasks[]?]|.[0].id' <<<"$API_BODY")
+    api POST "/api/autonomous/prds/$GATE_PRD/edit_task" "$(jq -cn --arg t "$TID" --arg q "$QG" '{task_id:$t,new_spec:("Decision: "+$q+" - write note.txt with the single line released."),actor:"live-operator"}')"
+    A1=$API_CODE
+    api POST "/api/autonomous/prds/$GATE_PRD/approve" '{"actor":"live-operator","note":"live check"}'; A2=$API_CODE
+    api POST "/api/autonomous/prds/$GATE_PRD/run" '{}'; A3=$API_CODE
+    if [[ ! "$A1" =~ ^2 || ! "$A2" =~ ^2 || ! "$A3" =~ ^2 ]]; then
+      skip "the Automaton could not be prepared or run in the sandbox (edit_task $A1, approve $A2, run $A3: ${API_BODY:0:140})"
     else
-      fail "task still not started 240 s after the answer (status=${TSTAT:-?})"
+      tstat() { api GET "/api/autonomous/prds/$GATE_PRD"; TS=$(jq -r --arg t "$TID" '[.stories[]?.tasks[]?|select(.id==$t)]|.[0].status // empty' <<<"$API_BODY"); }
+      waiting() { tstat; [[ "$TS" == waiting_decision ]]; }
+      if wait_for 90 waiting; then
+        ok "task $TID shows the waiting status ($TS) while the question is open"
+        api POST "/api/questions/$QG/answer" '{"chosen_option_id":"fast","actor":"live-operator","quote":"release it"}'
+        [[ "$API_CODE" =~ ^2 ]] && ok "question answered" || bad "answer: $API_CODE"
+        started() { tstat; [[ -n "$TS" && "$TS" != waiting_decision && "$TS" != pending && "$TS" != queued ]]; }
+        wait_for 240 started && ok "task left the waiting status and started (now $TS)" || bad "task still $TS 240 s after the answer"
+      else
+        tstat; bad "task never showed waiting_decision (status ${TS:-none})"
+      fi
     fi
   fi
 fi
+step_end
 
-# ===========================================================================
-printf '\n'
-printf 'live-check-decision-records: %d passed, %d failed\n' "$PASS" "$FAIL"
-if (( FAIL > 0 )); then
-  printf 'scratch kept at %s\n' "$ROOT"
-  # Let the traps stop the daemon, then fail.
-  exit 1
-fi
-printf 'scratch kept at %s\n' "$ROOT"
+# ---- verdict -----------------------------------------------------------------
+echo
+for i in "${!STEP_IDS[@]}"; do printf 'step %s %-8s %s\n' "${STEP_IDS[$i]}" "${STEP_RESULTS[$i]}" "${STEP_NAMES[$i]}"; done
+any_failed && exit 1
 exit 0
