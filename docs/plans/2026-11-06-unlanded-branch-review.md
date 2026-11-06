@@ -59,3 +59,18 @@ sub-branches of a live parent go when the parent merges, not before.
    will need a merge helper and probably a port of `openapi.yaml` and `app.js`.
 3. **The cleanup is not at fault** (see the redesign doc): the gap is that nothing resolves archived-but-unlanded work.
    The Housekeeping "Unlanded work" action list (decision 6) is built from this review.
+
+## Cleanup done 2026-11-06 10:18 (operator approved: "a - yes delete and recover the 3")
+
+Operator answer, quoted: "a - yes delete and recover the 3" (option A of question 8).
+
+- Deleted 15 branches and their worktrees (all had an archived record, none live): the 9 superseded (`28510001`,
+  `68c40001`, `2713dbb9`, `597a5120`, `da660001`, `6ac20001`, `3ebd0001`, `5154c783`, `77190001`), the dropped `85d00001`
+  and `1f850001`, and the 4 junk (`47c7eb15`, `f07d6046`, `3b518952`, `e6443290`). `b20f0001` is kept until `718a0001`
+  lands.
+- Safety copies in `supervisor-scratch/review/`: `deleted-branches-2026-11-06.bundle` (every deleted branch, verified)
+  and, for `28510001`, whose worktree held uncommitted edits (a 17-line diff and three drift-mode test files) that were
+  already superseded: `28510001-uncommitted.patch` and `28510001-untracked-tests.tgz`.
+- Recovery of the three orphans (`42950001`, `dc6c597b`, `4e190001`) is with a merge helper; the result is recorded in
+  the registry when it ships.
+- The remaining branches are the sub-branches of live Automata and wait for their parents to merge.
