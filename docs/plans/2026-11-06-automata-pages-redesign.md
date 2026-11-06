@@ -154,10 +154,58 @@ decisions below are findings to settle, not yet decided.
 | Cost report | Counts Claude output tokens and 69 thousand input tokens, with no cache reads or cache writes (the burn script counts 64 million cache-read and 3.3 million cache-write tokens for the last few hours alone), so tokens and dollars are both wrong for real usage. The 359 pi sessions and 48 subprocess sessions show zero tokens. The reconciliation against the usage reading and burn rate is the "reassess" the operator asks for (registry row `090f0001`, cost report, still a draft). |
 | Search | Operator: looks good. Unknown whether anything calls it; check the search usage counts and the callers. |
 
+### 4. Dashboard cards: keep, fix or remove (asked 2026-11-06 08:55)
+
+Operator answer, quoted: "we can add/remove dashboards as we need so no need to remove if we can fix the data for
+them or clearly know what they are used for so operators can use or not use them. if the data isn't fixed then they
+should be removed. network could be useful if we properly linked all of things from project->multi automations
+->many prd -> many sessions and we could browse/rotate/review it has potential just is a mess. same for ekg. see
+what creative ways we can fix the datasets based on all of the 10.0 changes and observations we have made we may
+even have new dashboards right?"
+
+Decision: the rule is "fix the data or remove the card". No card is removed now; each card gets a data fix and a
+one-line purpose, and a card whose data cannot be fixed is removed. Network and Multi-EKG are kept as ideas to
+rebuild on linked data. New dashboards are welcome.
+
+## Data that exists today and can feed the cards (checked 2026-11-06)
+
+- **Progress history.** The progress trend has a point per day since 2026-10-24 (completed Automata 170 on 10-24,
+  260 on 11-01, 315 on 11-05; known and estimated tasks, throughput, utilization, a completion range and the
+  direction "widening"). This is the month the 30-Day card cannot show from sessions, and it is real history.
+  One oddity to file: the 11-06 point reads 0 completed, 0 throughput and a completion range of 8 to 396 days,
+  computed right after the redeploy; the point should not be written from an empty post-restart state.
+- **Linked work trace.** The trace rollup links project, Automaton, task and session (it returned 227 thousand
+  characters, so it is rich). Placement tags add node, lane and role to each session. This is the linkage the
+  Network card needs.
+- **Capacity ledger.** Leases with acquire times, holders, pools, node and model, plus verifier wait and run
+  statistics (runs, average wait, pass and timeout categories). This gives lane occupancy over time, which no card
+  shows.
+- **Usage readings and the burn.** The operator's readings, the pace line and the burn per day.
+- **Supervisor loop runs and stats, decision records, defect intake, held questions, attention list,
+  infrastructure retries, shipped counts, release and CI state.**
+
+## Proposed fixes per card, and new dashboards (to settle with the operator, none built)
+
+| Card | Fix |
+|---|---|
+| Network | Rebuild as a work map: project, then Automations, Automata, tasks and sessions as a linked graph from the trace data, coloured by node and lane. Click a project to expand and rotate through its running work; sessions open from it. |
+| Multi-EKG | Rebuild as lane pulse: one trace per lane and node from lease start and end (busy, idle, waiting), with the usage burn panel in points against the pace line, not dollars. |
+| Live Events | Feed it from the daemon's own events (task started and verified, lease taken, merge shipped, decision recorded), the same stream as the Events tab, so it works for pi workers. |
+| Timeline | Draw it from Automaton and task timestamps; this becomes the Gantt on the project page. |
+| 30-Day Activity | Read the daily progress history and shipped counts, and the release tags, so the 9.0 to 10.0 month shows. |
+| CI & release | Show the real release and CI state (ship status, latest tag, failing runs), and say "repo CI watch off" when it is off. |
+| Smoke Run | Verify why the smoke runs do not register; if the scripts cannot post progress, fix that or remove the card. |
+| Cost | Reconcile against the usage readings: count cache tokens and pi tokens, and label dollars as API-equivalent or show points. |
+| Search | Show who calls it (counts by caller) so its use is visible. |
+
+New dashboards the data now allows: lane utilization over time (an Automaton `a4b40001` already exists for a lane
+utilization view); throughput and completion forecast (the progress trend with its low and high range); verifier
+health (waits, runs, pass rate per node); release train (tags, CI, deploy state); review backlog (plans waiting for
+a decision, held questions and their age); defects found and fixed per day.
+
 ## Questions still to ask (one at a time)
 
-4. What the dashboard is, now that the cards are counted: one operator console of a few working cards (recommended),
-   or boards. Held until the Triage and Events answers are built.
+4. (answered above)
 5. The usage page layout (small bounded dashboards for allowance, pace line and burn; text moved out).
 6. Housekeeping: what stays as an action card (uncommitted work with a commit button, permission errors with a fix)
    and what becomes events.
