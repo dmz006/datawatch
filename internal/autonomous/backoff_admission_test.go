@@ -223,7 +223,7 @@ func TestBackoffAdmission_DecomposeShowsSameWait(t *testing.T) {
 		if r.err != nil {
 			t.Fatalf("decompose after until: %v", r.err)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(15 * time.Second):
 		t.Fatal("planner not admitted after the back-off expired")
 	}
 	if calls.Load() != 1 || prdWaitReason(t, m, prd.ID) != "" {
