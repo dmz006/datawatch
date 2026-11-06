@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.102.1 — Decision record list no longer sizes memory from a request value
+
+- **Decision record list no longer sizes memory from a request value.** Listing decision records with a very large limit (for example from the REST query value) still returns at most 1000 records, newest first, with the same filters and order; the list now grows as records are found instead of reserving space from the limit you sent. This closes a code-scanning finding (uncontrolled allocation size) and changes nothing you can see.
+
 ## v9.102.0 — Decision records: the daemon builds the operator question from a structured decision
 
 - **Decision records: write down a decision once and let the daemon ask you about it.** A decision record holds the situation, the question, two or more options with a one-line trade-off each, an optional recommendation and default, and an optional link to a document. The daemon builds the question that appears in the operator question queue from the record, so you no longer word the question by hand. There is exactly one question per record, kept in step: edit an open record and the same question changes; withdraw the record and its question is withdrawn. A record that has been answered cannot be edited.
