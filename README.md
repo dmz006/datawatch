@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.101.0 (2026-11-06).** A project can now run configured post-ship hook steps after a ship (registry row, parity issue, tag, notify, or its own command), off by default and recorded without ever failing the ship. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.101.1 (2026-11-06).** Recovers three small fixes from archived Automata: the usage back-off reset time in the daemon zone, `autonomous:task:` session names, and a bounded wait for question notifications at shutdown. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

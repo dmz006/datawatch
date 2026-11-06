@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.101.1 — Recovered back-off zone fix, task session names, question notify wait
+
+### Fixed
+
+- **The usage back-off now shows the provider's reset time in the daemon's own time zone.** When a provider's rate-limit message names a reset time in another zone (UTC or New York, for example), the back-off deadline and its "reset HH:MM" reason are converted to the daemon zone, both when the pause starts and when it is rebuilt after a restart. Back-off tests for the capacity card, the wiring and a browser story came along with the fix.
+- **Automaton task sessions are named `autonomous:task:<title>`.** The sessions an Automaton starts to do a task used to share the bare `autonomous:` prefix with nothing to tell them apart from other kinds; they now carry the task kind in the name, so the session list shows `autonomous:task:...` for them. The verifier, decompose and guardrail session names are unchanged.
+- **The daemon waits for in-flight question notifications before it exits.** A question-raise notification that was still being written to the alert store could be cut off at shutdown and made some tests flaky; shutdown now gives it a bounded wait, and a regression test covers it.
+
 ## v9.101.0 — Post-ship hooks
 
 ### Added
