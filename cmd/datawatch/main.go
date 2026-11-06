@@ -11644,6 +11644,11 @@ func newSessionCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if groupBy, _ := cmd.Flags().GetString("group-by"); groupBy != "" {
+				// Grouping read: GET /api/sessions?group_by=... — the grouping lives
+				// in the REST handler; the CLI only sends the query and renders it.
+				return daemonGetSessionGroups(cmd)
+			}
 			allServers, _ := cmd.Flags().GetBool("all-servers")
 			orphaned, _ := cmd.Flags().GetBool("orphaned")
 			if orphaned {
@@ -11678,6 +11683,8 @@ func newSessionCmd() *cobra.Command {
 	sessionListCmd.Flags().Bool("summary", false, "compact JSON list: long text fields truncated, only the newest finished sessions kept")
 	sessionListCmd.Flags().String("states", "", "comma list of states to include (e.g. running,waiting_input); 'active' = every non-finished state")
 	sessionListCmd.Flags().String("since", "", "only sessions updated after this time (RFC3339 or unix seconds)")
+	sessionListCmd.Flags().String("group-by", "", "group the list by tag, state, node, project or automaton (a header with count and state mix, then the group's sessions indented underneath)")
+	sessionListCmd.Flags().String("tag-prefix", "", "with --group-by tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"

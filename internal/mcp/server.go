@@ -1683,6 +1683,12 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("since",
 			mcpsdk.Description("Only sessions updated after this time (RFC3339 or unix seconds). Always JSON."),
 		),
+		mcpsdk.WithString("group_by",
+			mcpsdk.Description("Group the list by axis: tag, state, node, project or automaton. Returns the grouped response: one group per key with its count, per-state mix and its sessions, plus per-state totals. On automaton each Automaton also carries its story blocks and progress (done/total). Always JSON; tag_prefix narrows the tag axis."),
+		),
+		mcpsdk.WithString("tag_prefix",
+			mcpsdk.Description("With group_by=tag: only tags with this prefix (e.g. automation:) form groups; the rest collect in the ungrouped group. Ignored without group_by=tag."),
+		),
 	)
 }
 
