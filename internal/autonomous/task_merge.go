@@ -192,8 +192,20 @@ func (m *Manager) MergeTaskBranch(ctx context.Context, prd *PRD, t *Task) (Merge
 		m.setMergeState(t, MergeStateMerged, sha)
 		return MergeOutcomeMerged, nil
 	}
-	if dirty := strings.TrimSpace(gitText(ctx, dir, "status", "--porcelain", "--untracked-files=no")); dirty != "" {
-		return MergeOutcomeDeferred, fmt.Errorf("task merge: PRD worktree %s has uncommitted changes; not merging over them", dir)
+	if blk := dirtyWorktreeBlock(ctx, dir); blk != nil {
+		first := t.MergeBlock == nil || t.MergeBlock.Kind != blk.Kind
+		blk.LastRetryAt = time.Now()
+		if err := m.setMergeBlock(t, *blk); err != nil {
+			return MergeOutcomeDeferred, err
+		}
+		m.setMergeState(t, MergeStatePending, "")
+		if first {
+			m.alertMergeBlocked(t, blk)
+		}
+		return MergeOutcomeDeferred, nil
+	}
+	if err := m.clearMergeBlock(t); err != nil {
+		return MergeOutcomeDeferred, err
 	}
 
 	msg := fmt.Sprintf("Merge task %s: %s", t.ID, t.Title)
