@@ -4,7 +4,9 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 )
@@ -37,7 +39,11 @@ func (m *Manager) setMergeBlock(t *Task, b MergeBlock) error {
 		}
 		t.MergeBlock = &b
 	})
-	return m.store.SaveTask(t)
+	if err := m.store.SaveTask(t); err != nil {
+		return err
+	}
+	m.refreshMergeBlockTriageFor(t)
+	return nil
 }
 
 // clearMergeBlock removes the task's merge block record, saving only when
@@ -53,7 +59,102 @@ func (m *Manager) clearMergeBlock(t *Task) error {
 	if !had {
 		return nil
 	}
-	return m.store.SaveTask(t)
+	if err := m.store.SaveTask(t); err != nil {
+		return err
+	}
+	m.refreshMergeBlockTriageFor(t)
+	return nil
+}
+
+// refreshMergeBlockTriageFor refreshes the triage record of the task's
+// Automaton; a task whose Automaton is not in the store changes nothing.
+func (m *Manager) refreshMergeBlockTriageFor(t *Task) {
+	if prd, ok := m.store.GetPRD(t.PRDID); ok {
+		m.refreshMergeBlockTriage(prd)
+	}
+}
+
+// refreshMergeBlockTriage writes or refreshes the Automaton's triage record
+// while at least one task is merge blocked, even though the Automaton keeps
+// running, and removes the merge-blocked part when none is. A failed or
+// blocked record keeps its own fields: only its MergeBlocks list changes.
+func (m *Manager) refreshMergeBlockTriage(prd *PRD) {
+	if m == nil || m.store == nil || prd == nil {
+		return
+	}
+	snap, ok := m.store.SnapshotPRD(prd.ID)
+	if !ok {
+		return
+	}
+	var blocks []TriageMergeBlock
+	for i := range snap.Story {
+		for j := range snap.Story[i].Tasks {
+			t := &snap.Story[i].Tasks[j]
+			if t.MergeBlock == nil {
+				continue
+			}
+			blocks = append(blocks, TriageMergeBlock{
+				TaskID: t.ID, TaskTitle: t.Title, Reason: t.MergeBlock.Reason,
+				Action: t.MergeBlock.Action, Since: t.MergeBlock.Since, Attempts: t.MergeBlock.Attempts,
+			})
+		}
+	}
+	now := time.Now()
+	for attempt := 0; attempt < 3; attempt++ {
+		rev, ok := m.store.PRDRev(prd.ID)
+		if !ok {
+			return
+		}
+		err := m.store.CommitPRDIfRev(prd.ID, rev, func(p *PRD) bool {
+			switch tr := p.Triage; {
+			case tr == nil && len(blocks) == 0:
+				return false
+			case tr == nil:
+				name, member := m.mergeBlockOwner(p)
+				p.Triage = &TriageRecord{
+					AutomationID: p.AutomationID, AutomationName: name, MemberID: member,
+					PRDID: p.ID, PRDTitle: p.Title, Status: TriageStatusMergeBlocked,
+					RetryBudget: m.ResolvedTriageBudget(p), FirstSeenAt: now, UpdatedAt: now,
+					MergeBlocks: blocks,
+				}
+			case tr.Status == TriageStatusMergeBlocked && len(blocks) == 0:
+				p.Triage = nil
+			case tr.Status == TriageStatusMergeBlocked ||
+				tr.Status == string(PRDFailed) || tr.Status == string(PRDBlocked):
+				if len(tr.MergeBlocks) == 0 && len(blocks) == 0 {
+					return false
+				}
+				tr.MergeBlocks = blocks
+				tr.UpdatedAt = now
+			default:
+				return false // merge_pending and other records are left alone
+			}
+			return true
+		})
+		if err == nil || !errors.Is(err, ErrPRDStale) {
+			if err != nil {
+				log.Printf("[autonomous] merge block triage for %s: %v", prd.ID, err)
+			}
+			return
+		}
+	}
+}
+
+// mergeBlockOwner resolves the owning Automation's name and member ID.
+func (m *Manager) mergeBlockOwner(p *PRD) (name, member string) {
+	if m.automations == nil || p.AutomationID == "" {
+		return "", ""
+	}
+	a, ok := m.automations.Get(p.AutomationID)
+	if !ok {
+		return "", ""
+	}
+	for i := range a.Members {
+		if a.Members[i].PRDID == p.ID {
+			return a.Name, a.Members[i].ID
+		}
+	}
+	return a.Name, ""
 }
 
 // dirtyWorktreeFileCap is the most file names a dirty-worktree block lists.
