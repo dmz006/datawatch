@@ -1145,7 +1145,9 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // retries resolves that held task (see resolveInfraHoldAnswer). Other change
 // kinds are ignored: a withdrawn or expired decision keeps its task parked. An answered
 // uncommitted-work question is routed to its own handler instead
-// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold.
+// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold. The
+// same goes for an answered protected-paths question
+// (protected_paths_answer.go).
 func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
@@ -1155,6 +1157,10 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	}
 	if c.Question.Label == UncommittedQuestionLabel {
 		a.onUncommittedWorkAnswered(c)
+		return
+	}
+	if c.Question.Label == ProtectedPathsQuestionLabel {
+		a.onProtectedPathsAnswered(c)
 		return
 	}
 	for _, p := range a.M.Store().ListPRDs() {
