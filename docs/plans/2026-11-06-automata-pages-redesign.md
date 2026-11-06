@@ -99,3 +99,22 @@ the last few weeks as something needed."
 Decision: A. A Projects tab. The designs above were checked; the dashboard proposal's per-project option was never
 decided, so this answer settles it for the Automata pages. The project page also hosts the Gantt charts, the
 project policy and the per-project merge pipeline.
+
+### 2. Where the Events tab lives (asked 2026-11-06 08:45)
+
+Options offered: A a new Events sub-tab in the Automata view (one scrollable, searchable stream with kind and
+project filters), B events only on the project page, C reuse the Live Events dashboard card.
+
+Operator answer, quoted: "a - events sub-tab in automata view before templates."
+
+Decision: A. The Automata view's sub-tabs become Automation, Automata, Events, Templates (Events sits before
+Templates). It is one stream with kind chips and a project filter; the project page shows it filtered.
+
+Same message, a new requirement, quoted: "also noticed above automation/automata/templates but under Server: there is
+a 'repo CI: off, no failing or pending runs, last poll never' -- that is not needed/wanted and if there are events
+like that iti is alerts && || in an events log somewhere".
+
+Decision: remove the always-visible "repo CI" status line from under the sub-tab bar. When the repo CI watch is off
+it shows nothing. Anything it would have said (a failing or pending run, a poll that has not happened) becomes an
+alert, an Events entry, or both, never a permanent status strip. This is a general rule for the page: a status that
+is "off", "none" or "never" is not shown at all.
