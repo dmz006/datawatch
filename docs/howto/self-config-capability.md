@@ -1,3 +1,24 @@
+---
+docs:
+  index: true
+  topics: [self-config, capability, group, allow_self_config, audit, hardening, bootstrap]
+exec_steps:
+  - tool: get_config
+    description: Read the current configuration first (the mcp section carries allow_self_config, self_config_audit_path and self_config_audit_denied). Reading is never gated by the alias
+    args: {section: "mcp"}
+    read_only: true
+  - tool: self_config_audit
+    description: Read the self-config audit trail, newest first. One record per configuration-write attempt, allowed and (by default) refused, with the surface (mcp/rest/comm), the keys and the caller. Never gated by the alias, so the history is reviewable even while the gate is closed
+    args: {limit: 20}
+    read_only: true
+  - tool: config_set
+    description: Worked example, a state-changing call while the alias is on (the default). Raise the session cap; the attempt is recorded in the audit file. Any config-write tool through self-config requires the alias to be on
+    args: {key: "session.max_sessions", value: "3"}
+  - tool: config_set
+    description: Worked example, a refusal that is recorded the same way. The alias itself is bootstrap-protected — config_set can never write mcp.allow_self_config in any state, so a self-configuring session can never re-open the gate that closed it. Re-enabling is an operator act (remove the false, restart)
+    args: {key: "mcp.allow_self_config", value: "true"}
+---
+
 # Self-config — Operator Guide
 
 **Self-config** is the ability of a session or a connected agent to change the
