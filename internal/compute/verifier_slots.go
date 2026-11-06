@@ -51,7 +51,7 @@ func FreeGPUMB(obs NodeObservation) (freeMB uint64, ok bool) {
 			return 0, false
 		}
 		if g.UsedBytes < g.TotalBytes {
-			freeMB += (g.TotalBytes - g.UsedBytes) / 1024 / 1024
+			freeMB += bytesToMB(g.TotalBytes - g.UsedBytes)
 		}
 	}
 	return freeMB, true
