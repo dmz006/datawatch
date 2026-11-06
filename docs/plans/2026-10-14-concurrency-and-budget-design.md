@@ -1951,3 +1951,24 @@ The operator's words: "claude is at 73% do we need claude for sandbox test and c
 previous reading was 72% at 11:10, so 1 point in about 2.3 hours (0.43 per hour against 0.60 allowed). The question
 about the sandbox live-check tasks is answered in the tick report and recorded as the decision on question 11 below
 once the operator picks.
+
+### Reading, 2026-11-06 16:26
+
+The operator's words: "claude is at 76%". The previous reading was 73% at 13:35, so 3 points in about 3 hours
+(about 1.0 per hour against 0.60 allowed). The pace line is about 77, headroom about 1 point. The burn came from the
+two Claude sonnet live-check attempts, verifiers, six helper agents (merges, the security fix, the live-check debug)
+and this supervisor session. New Claude work is held until the burn is back under the line.
+
+### Decision, 2026-11-06 16:35: weekend plan after the 76% reading
+
+Question (asked in chat): A keep the burn guard on and use Claude only for final merge helpers and security fixes, with
+the pi lanes carrying everything else; B pause all new Claude work until Sunday 07:00; C accept going over the line.
+
+Operator answer, quoted: "keep the guard on, we need supervisor working throughout until sunday reset so we can keep
+the pi sessions active all the way through".
+
+Decision: A. The guard stays on. The supervisor keeps running, with the watch every 20 minutes and the hourly tick,
+until the Sunday 07:00 reset, and its job is to keep both pi lanes busy: approved Automata with pi tasks first
+(`16760001`, `55270001`, `ecf30001`, `a4940001`), merges only when an Automaton is ready, repairs of wedged
+Automata as the blockers clear. To protect the allowance the supervisor's own burn is kept small: short reports,
+no new decomposes on Claude, helper agents only for merges and security fixes, and a reading request at each tick.
