@@ -3349,5 +3349,16 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "settings.self_config": "Self-config",
+  "settings.self_config.allow": "Allow agent self-config",
+  "settings.self_config.allow_help": "On: an agent holding the self-config group (mcp.allow_self_config) may change its own non-secret settings — config, sessions, observers, LLMs, quota. Off: every self-config attempt is denied and audited.",
+  "settings.self_config.audit_path": "Audit log path",
+  "settings.self_config.audit_denied": "Also record denied attempts",
+  "settings.self_config.audit_denied_help": "On (default): denied attempts are logged too, with their reason. Off: only allowed writes are logged.",
+  "settings.self_config_recent": "Recent self-config audit records",
+  "settings.self_config_recent_loading": "Loading…",
+  "settings.self_config_recent_empty": "No self-config audit records yet.",
+  "settings.self_config_recent_more": "%1$d older record(s) not shown",
+  "settings.self_config_recent_unavailable": "Self-config audit log unavailable"
 }

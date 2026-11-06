@@ -69,6 +69,18 @@ func NewConfigAuditor(path string, recordDenied bool) *ConfigAuditor {
 	return &ConfigAuditor{path: path, denied: recordDenied}
 }
 
+// Path returns the JSONL file the sink appends to ("" when the sink was
+// created without one). Exposed so read-only views — the
+// GET /api/audit/self-config handler and the self_config_audit MCP tool
+// — can report and read the same file the audit point writes to, rather
+// than re-deriving the default path independently.
+func (a *ConfigAuditor) Path() string {
+	if a == nil {
+		return ""
+	}
+	return a.path
+}
+
 // Record emits one config-write attempt. It never fails the call: audit
 // is a record, not a blocking dependency — a file I/O error is logged to
 // stderr and dropped. Denied attempts are dropped without being written
