@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // ---- helpers ----
@@ -85,6 +86,8 @@ type fakeShip struct {
 	mu    sync.Mutex
 	calls []string
 	fail  string // a call name that returns an error
+	// deploy is what Deploy reports; the zero value is a finished deploy.
+	deploy ShipResult
 }
 
 func (f *fakeShip) note(c string) error {
@@ -100,7 +103,12 @@ func (f *fakeShip) Tag(_ context.Context, _, tag, _ string) error { return f.not
 func (f *fakeShip) Push(_ context.Context, _, b, tag string) error {
 	return f.note("push " + b + " " + tag)
 }
-func (f *fakeShip) Deploy(_ context.Context, _ string) error { return f.note("deploy") }
+func (f *fakeShip) Deploy(_ context.Context, _ string) (ShipResult, error) {
+	if err := f.note("deploy"); err != nil {
+		return ShipResult{}, err
+	}
+	return f.deploy, nil
+}
 func (f *fakeShip) Hook(_ context.Context, _ string, s Step) (string, error) {
 	return "hook ran", f.note("hook " + s.Name)
 }
@@ -482,3 +490,74 @@ func TestRunWithoutVersionFilesFailsTheBumpStep(t *testing.T) {
 		t.Fatalf("want a version_files error, got %v", err)
 	}
 }
+
+func runMergeWithDeploy(t *testing.T, ship ShipRunner) autonomous.MergePipelineRun {
+	t.Helper()
+	dir := newMergeRepo(t)
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship}
+	res, _ := r.Run(context.Background(), RunRequest{Title: "Add the feature", Branches: []string{"feature"}})
+	return res.Run
+}
+
+func deployStep(t *testing.T, run autonomous.MergePipelineRun) autonomous.MergeStepRun {
+	t.Helper()
+	for _, st := range run.Steps {
+		if st.Step == "deploy-latest" {
+			return st
+		}
+	}
+	t.Fatal("no deploy-latest step recorded")
+	return autonomous.MergeStepRun{}
+}
+
+func TestMergeDeployNotConfiguredIsSkippedAndRunContinues(t *testing.T) {
+	run := runMergeWithDeploy(t, ExecShipRunnerForTest(&fakeShip{deploy: ShipResult{Status: ShipSkipped, Note: "deploy is not configured, so nothing was deployed"}}))
+	st := deployStep(t, run)
+	if st.Result != autonomous.MergeStepSkipped || !strings.Contains(st.Detail, "not configured") {
+		t.Fatalf("deploy step = %q %q, want skipped with a not-configured note", st.Result, st.Detail)
+	}
+	if run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run = %q, want ok", run.Result)
+	}
+}
+
+func TestMergeDeployExecRunnerNotConfiguredIsSkipped(t *testing.T) {
+	res, err := ExecShipRunner{}.Deploy(context.Background(), t.TempDir())
+	if err != nil || res.Status != ShipSkipped || !strings.Contains(res.Note, "not configured") {
+		t.Fatalf("got %+v, %v", res, err)
+	}
+}
+
+func TestMergeDeployExecRunnerRefusesUnscopedTmuxKill(t *testing.T) {
+	e := ExecShipRunner{DeployConfig: config.DeployConfig{RestartCommand: "tmux kill-server"}}
+	res, _ := e.Deploy(context.Background(), t.TempDir())
+	if res.Status != ShipFailed {
+		t.Fatalf("got %+v, want failed", res)
+	}
+}
+
+func TestMergeDeployDeferredIsNotAFailure(t *testing.T) {
+	run := runMergeWithDeploy(t, &fakeShip{deploy: ShipResult{Status: ShipDeferred, Note: "deploy deferred: 1 final-gate task(s) still running"}})
+	st := deployStep(t, run)
+	if st.Result == autonomous.MergeStepFailed || !strings.HasPrefix(st.Detail, "deploy deferred: ") {
+		t.Fatalf("deploy step = %q %q", st.Result, st.Detail)
+	}
+	if run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run = %q, want ok", run.Result)
+	}
+}
+
+func TestMergeDeployFailedContinuesAndRunFinishes(t *testing.T) {
+	run := runMergeWithDeploy(t, &fakeShip{deploy: ShipResult{Status: ShipFailed, Note: "deploy failed: build failed"}})
+	st := deployStep(t, run)
+	if st.Result != autonomous.MergeStepFailed || !strings.Contains(st.Detail, "build failed") {
+		t.Fatalf("deploy step = %q %q, want failed with its note", st.Result, st.Detail)
+	}
+	if run.Result == "" || run.Result == autonomous.MergeStepRunning {
+		t.Fatalf("run did not finish: %q", run.Result)
+	}
+}
+
+// ExecShipRunnerForTest returns the fake itself; it keeps the not-configured
+// case readable at the call site.
+func ExecShipRunnerForTest(s *fakeShip) ShipRunner { return s }
