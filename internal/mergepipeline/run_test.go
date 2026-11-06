@@ -391,6 +391,205 @@ func TestShipFailureOnPushStopsBeforeDeploy(t *testing.T) {
 	}
 }
 
+// ---- post-ship hooks ----
+
+// postShipPipeline is a minimal pipeline whose push-release step succeeds, so
+// the post-ship hooks (when enabled) are due.
+func postShipPipeline(t *testing.T) *Resolver {
+	t.Helper()
+	def := Definition{Steps: []Step{
+		{Name: "merge", Kind: KindShip, Action: ActionMergeBranches},
+		{Name: "push-release", Kind: KindShip, Action: ActionPushRelease},
+	}}
+	return resolverWithRecord(t, def)
+}
+
+func TestPostShipHooksRunAfterTheShipInConfiguredOrder(t *testing.T) {
+	dir := newMergeRepo(t)
+	ship := &fakeShip{}
+	r := &Runner{
+		VersionFiles: testVersionFiles, Dir: dir, Project: "p",
+		Resolver: postShipPipeline(t), Ship: ship,
+		PostShip: PostShipSettings{
+			Enabled:             true,
+			CompanionRepository: "dmz006/companion",
+			IssueTitleTemplate:  "Shipped {project} {version}",
+			Hooks: []PostShipHook{
+				{Name: "issue-first", Builtin: "parity_issue", Enabled: true},
+				{Name: "cmd-second", Command: "echo second", Enabled: true},
+				{Name: "off", Builtin: "parity_issue", Enabled: false}, // records nothing
+			},
+		}}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run %q err %v", res.Run.Result, err)
+	}
+	var names []string
+	for _, s := range res.Run.Steps {
+		names = append(names, s.Step)
+	}
+	if strings.Join(names, "|") != "merge|push-release|issue-first|cmd-second" {
+		t.Fatalf("steps %v: hooks must run after the ship, in configured order; a disabled hook records nothing", names)
+	}
+	for _, s := range res.Run.Steps[2:] {
+		if s.Kind != "post_ship_hook" || s.Source != "post_ship" || s.OnFailure != string(OnFailureContinue) || s.Result != autonomous.MergeStepOK {
+			t.Errorf("hook step record %+v", s)
+		}
+	}
+	// the built-in reached the fake ShipRunner, the command reached Ship.Hook,
+	// nothing ran a shell directly
+	want := "push main v1.2.3|issue dmz006/companion Shipped p 1.2.3|hook cmd-second"
+	if strings.Join(ship.calls, "|") != want {
+		t.Errorf("ship calls %v, want %v", ship.calls, want)
+	}
+}
+
+func TestFailingPostShipHookKeepsTheRunResultAndLetsLaterHooksRun(t *testing.T) {
+	hooks := []PostShipHook{
+		{Name: "leaks", Command: "echo secret=abc", Enabled: true},
+		{Name: "still-runs", Builtin: "parity_issue", Enabled: true},
+	}
+	postShip := PostShipSettings{
+		Enabled: true, Hooks: hooks,
+		CompanionRepository: "dmz006/companion",
+		IssueTitleTemplate:  "Shipped {project} {version}",
+	}
+
+	// a run the pipeline gave ok: the failing hook records a failed step
+	// and the result stays ok
+	dir := newMergeRepo(t)
+	ship := &fakeShip{fail: "hook leaks"}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: postShipPipeline(t), Ship: ship, PostShip: postShip}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("a failing hook must not change the run result: %q err %v", res.Run.Result, err)
+	}
+	got := stepResults(res.Run)
+	if got["leaks"] != autonomous.MergeStepFailed || got["still-runs"] != autonomous.MergeStepOK {
+		t.Fatalf("steps %v: the failure stays on the hook's step and later hooks run", got)
+	}
+	failed := res.Run.Steps[2]
+	if failed.Result != autonomous.MergeStepFailed || failed.Detail == "" || failed.End == nil {
+		t.Errorf("failed hook step %+v", failed)
+	}
+	if strings.Contains(failed.Detail, "abc") || strings.Contains(failed.Detail, "secret=") {
+		t.Errorf("detail leaks its input: %q", failed.Detail)
+	}
+
+	// a run the pipeline gave completed_with_failures keeps that value
+	def := Definition{Steps: []Step{
+		{Name: "soft", Kind: KindCustom, Command: "exit 1", OnFailure: OnFailureContinue},
+		{Name: "merge", Kind: KindShip, Action: ActionMergeBranches},
+		{Name: "push-release", Kind: KindShip, Action: ActionPushRelease},
+	}}
+	dir2 := newMergeRepo(t)
+	ship2 := &fakeShip{fail: "hook leaks"}
+	r2 := &Runner{VersionFiles: testVersionFiles, Dir: dir2, Project: "p", Resolver: resolverWithRecord(t, def), Ship: ship2, PostShip: postShip}
+	res2, err := r2.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res2.Run.Result != autonomous.MergeRunCompletedWithFailures {
+		t.Fatalf("want completed_with_failures with a failing hook, got %q err %v", res2.Run.Result, err)
+	}
+	if got2 := stepResults(res2.Run); got2["leaks"] != autonomous.MergeStepFailed || got2["still-runs"] != autonomous.MergeStepOK {
+		t.Errorf("steps %v", got2)
+	}
+}
+
+func TestPostShipHooksSkipWhenPushReleaseFailsOrTheBlockIsOff(t *testing.T) {
+	hook := PostShipHook{Name: "should-not-run", Command: "echo x", Enabled: true}
+
+	// push-release failed: the hooks are not due
+	dir := newMergeRepo(t)
+	ship := &fakeShip{fail: "push main v1.2.4"}
+	r := &Runner{VersionFiles: testVersionFiles, Dir: dir, Project: "p", Ship: ship,
+		PostShip: PostShipSettings{Enabled: true, Hooks: []PostShipHook{hook}}}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err == nil || stepResults(res.Run)["push-release"] != autonomous.MergeStepFailed {
+		t.Fatalf("want a failed push, got %q err %v", res.Run.Result, err)
+	}
+	if _, ran := stepResults(res.Run)["should-not-run"]; ran {
+		t.Error("a hook step was recorded although push-release failed")
+	}
+	for _, c := range ship.calls {
+		if strings.HasPrefix(c, "hook ") {
+			t.Errorf("a hook ran although push-release failed: %v", ship.calls)
+		}
+	}
+
+	// block not enabled: enabled hooks stay off
+	dir2 := newMergeRepo(t)
+	ship2 := &fakeShip{}
+	r2 := &Runner{VersionFiles: testVersionFiles, Dir: dir2, Project: "p", Resolver: postShipPipeline(t), Ship: ship2,
+		PostShip: PostShipSettings{Enabled: false, Hooks: []PostShipHook{hook}}}
+	res2, err := r2.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res2.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run %q err %v", res2.Run.Result, err)
+	}
+	if _, ran := stepResults(res2.Run)["should-not-run"]; ran {
+		t.Error("a hook step was recorded although the block is not enabled")
+	}
+	for _, c := range ship2.calls {
+		if strings.HasPrefix(c, "hook ") {
+			t.Errorf("a hook ran although the block is not enabled: %v", ship2.calls)
+		}
+	}
+}
+
+func TestBuiltInPostShipHooksReachTheirWiring(t *testing.T) {
+	dir := newMergeRepo(t)
+	putFile(t, dir, "registry.md", "| project | status |\n| p | open |\n| other | open |\n")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-q", "-m", "registry")
+	ship := &fakeShip{}
+	nf := &fakeNotify{}
+
+	r := &Runner{
+		VersionFiles: testVersionFiles, Dir: dir, Project: "p", Resolver: postShipPipeline(t),
+		Ship: ship, Notifier: nf,
+		PostShip: PostShipSettings{
+			Enabled:            true,
+			RegistryFile:       "registry.md",
+			RegistryRowPattern: "| p |",
+			NotifyTemplate:     "shipped {project} {version}",
+			Hooks: []PostShipHook{
+				{Name: "row", Builtin: "registry_row", Enabled: true},
+				{Name: "taghook", Builtin: "tag", Enabled: true},
+				{Name: "say", Builtin: "notify", Enabled: true},
+				{Name: "warp", Builtin: "warp_drive", Enabled: true},
+			},
+		}}
+	res, err := r.Run(context.Background(), RunRequest{Title: "t", Branches: []string{"feature"}})
+	if err != nil || res.Run.Result != autonomous.MergeRunOK {
+		t.Fatalf("run %q err %v", res.Run.Result, err)
+	}
+	got := stepResults(res.Run)
+	for name, want := range map[string]string{
+		"row": autonomous.MergeStepOK, "taghook": autonomous.MergeStepOK, "say": autonomous.MergeStepOK,
+		"warp": autonomous.MergeStepFailed, // unknown built-in: on its step, result unchanged
+	} {
+		if got[name] != want {
+			t.Errorf("steps %v", got)
+		}
+	}
+	if !strings.Contains(getFile(t, dir, "registry.md"), "| p | Shipped 1.2.3 |") {
+		t.Errorf("registry not updated: %q", getFile(t, dir, "registry.md"))
+	}
+	if strings.Join(ship.calls, "|") != "push main v1.2.3|tag v1.2.3" {
+		t.Errorf("ship calls %v", ship.calls)
+	}
+	if len(nf.texts) != 1 || nf.texts[0] != "shipped p 1.2.3" {
+		t.Errorf("notifications %v", nf.texts)
+	}
+}
+
+type fakeNotify struct {
+	texts []string
+}
+
+func (f *fakeNotify) Notify(_ context.Context, text string) error {
+	f.texts = append(f.texts, text)
+	return nil
+}
+
 func TestFileSourceIsInEffectAndRecorded(t *testing.T) {
 	dir := newMergeRepo(t)
 	putFile(t, dir, DefaultFileName, "steps:\n  - name: say\n    kind: custom\n    command: echo hi\n")
