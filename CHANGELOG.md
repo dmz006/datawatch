@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.103.0 — Read-only task recovery and unverifiable-task refusal
+
+- **A task held for review can be fixed in place.** `edit_task` (REST, MCP `autonomous_prd_edit_task`, CLI, chat) now accepts a `review_needed` task in a blocked Automaton, so its spec, read-only mark and report path can be corrected; running and pending tasks of a blocked Automaton and completed tasks are still refused, and an edit never changes the task's status. The retry decision (`resolve_task_review`, MCP `autonomous_prd_resolve_task_review`, `datawatch autonomous resolve-review --read-only --report-path`, chat `review-task read_only= report_path=`) also takes an optional `read_only` mark and `report_path`; every change is checked first, so a refused change leaves the task held. A refused edit no longer leaves the spec or read-only mark half-applied.
+
 ## v9.102.1 — Decision record list no longer sizes memory from a request value
 
 - **Decision record list no longer sizes memory from a request value.** Listing decision records with a very large limit (for example from the REST query value) still returns at most 1000 records, newest first, with the same filters and order; the list now grows as records are found instead of reserving space from the limit you sent. This closes a code-scanning finding (uncontrolled allocation size) and changes nothing you can see.
