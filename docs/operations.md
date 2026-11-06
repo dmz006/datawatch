@@ -928,35 +928,46 @@ task's own `verification_script`, when present, is still run and must exit
 did produce real changes does not use this rule; the usual verification
 path handles its diff.
 
-**Recovering a blocked Automaton — make the task verifiable.** *Retry* is
-the review decision that requeues a held task, and it is the surface that
-carries the read-only mark and the report path: you can mark the task
-read-only (or clear the mark), set its `report_path`, and change its spec,
-worker or file scope in the same call. Every change is checked before
-anything is written, so a refused change leaves the task held — for example
-a `report_path` is only accepted when the task is read-only *after* the
-change and has no planned files. The CLI, the REST endpoint, the MCP tool and
-the comm channel all accept this, and each accepts a note that is recorded on
-the decision log and given to the
-next attempt:
+**Recovering a blocked Automaton — make the task verifiable.** While the
+Automaton is blocked the held task can be patched in place. Edit-task
+patches the held task while it is held — its `spec`, its read-only mark and
+its `report_path`, in one or more calls — and retry (action `retry`) then
+requeues it, carrying the same optional mark and report path along with any
+spec, worker or file-scope change. Both check everything before anything is
+written, so a refused change leaves the task held: a `report_path` is only
+accepted when the task is read-only *after* the change (already flagged, or
+flagged in the same call), and a task that ends read-only must end with no
+planned files. While the Automaton is blocked only a failed, blocked, or
+held (`review_needed`) task can be edited — you patch the stuck task, not
+its pending siblings. Every surface offers both, edit-task and then retry:
 
 ```sh
-# CLI
+# CLI — edit the held task, then retry it
+# (edit-task: prd-edit-task; retry: resolve-review)
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --read-only --report-path .datawatch/reports/ci-audit.txt
 datawatch autonomous resolve-review <automaton-id> --task <task-id> --action retry \
-  --read-only --report-path .datawatch/reports/ci-audit.txt \
-  --note "verdict goes in the report"
+  --note "report holds the verdict"
 
 # REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<automaton-id>/edit_task \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","read_only":true,"report_path":".datawatch/reports/ci-audit.txt","actor":"operator"}'
 curl -sX POST http://localhost:7433/api/autonomous/prds/<automaton-id>/resolve_task_review \
   -H "Content-Type: application/json" \
-  -d '{"task_id":"<task-id>","action":"retry","read_only":true,"report_path":".datawatch/reports/ci-audit.txt","note":"verdict goes in the report","actor":"operator"}'
+  -d '{"task_id":"<task-id>","action":"retry","note":"report holds the verdict","actor":"operator"}'
 ```
 
-MCP: `autonomous_prd_resolve_task_review(id="<automaton-id>", task_id="<task-id>",
-action="retry", read_only=true, report_path=".datawatch/reports/ci-audit.txt",
-note="verdict goes in the report")`.
-Comm channel: `autonomous review-task <automaton> <task> retry
-read_only=true report_path=.datawatch/reports/ci-audit.txt note=...`.
+MCP: `autonomous_prd_edit_task(id="<automaton-id>", task_id="<task-id>",
+read_only=true, report_path=".datawatch/reports/ci-audit.txt")`, then
+`autonomous_prd_resolve_task_review(id="<automaton-id>",
+task_id="<task-id>", action="retry", note="report holds the verdict")`. The
+retry carries the same `spec`, `read_only`, `report_path`, `files` and worker
+fields, so the fix can instead be made in the retry alone — the note is
+recorded on the decision log and given to the next attempt.
+Comm channel: `autonomous edit-task <automaton> <task> read_only=true
+report_path=.datawatch/reports/ci-audit.txt [new-spec…]`, then
+`autonomous review-task <automaton> <task> retry note=...`.
 
 **Cancelling the held task is terminal.** `cancel` records the operator's
 decision with the reason "cancelled after operator review" (your note, when
