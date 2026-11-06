@@ -3107,6 +3107,19 @@ function renderSessionsView() {
   // and the select bar always operate on what the user can actually see.
   state._visibleDone = visible.filter(s => DONE_STATES.has(s.state));
 
+  // "show more" page paging (every mode): the first page is the first
+  // paint, and any filter change (state chip, text search, watch filter,
+  // tag selection, history) starts the paging back at page one.
+  let tagSel = '';
+  try { tagSel = (_tagBrowse && _tagBrowse.session ? (_tagBrowse.session.sel || []).join(',') : ''); } catch (_) { tagSel = ''; }
+  const pageKey = [chip, filterText, state.sessionWatchFilter ? 'w' : 'n', state.showHistory ? 'h' : 'n', tagSel].join('|');
+  if (state._sessionsPageKey !== pageKey) {
+    state._sessionsPageKey = pageKey;
+    state._sessionsPageLimit = _sessionsPageSize();
+  }
+  const paging = _sessionsPagingState(visible, state._sessionsPageLimit);
+  const viewMode = _sessionsViewMode();
+
   const filterVal = escHtml(state.sessionFilter || '');
   // Collect unique backend types from all sessions for compact filter badges
   const backendTypes = [...new Set(state.sessions.map(s => s.backend_family).filter(Boolean))].sort();
@@ -3281,11 +3294,16 @@ function renderSessionsView() {
   // BL348 — tree mode or flat list
   const cards = state.sessionTreeView
     ? renderSessionsAsTree(visible)
-    : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
+    : (viewMode === 'list'
+        ? paging.shown.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('')
+        : renderSessionTileGrid(paging.shown.map(sess => renderSessionTile(sess, now)).join(''), viewMode));
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    ${toggleBtn}<div class="session-list">${cards}</div>${_sessionsLoadMoreHtml()}</div>`;
+    ${renderSessionsModeToggle(viewMode)}
+    ${toggleBtn}
+    ${renderSessionsSummaryBar(visible)}<div class="session-list">${cards}</div>
+    ${_sessionsShowMoreHTML(paging)}${_sessionsLoadMoreHtml()}</div>`;
 
   // Restore filter input focus and cursor position
   if (filterText) {
@@ -3318,6 +3336,215 @@ function renderSessionsView() {
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
   _sessionTagsEnsure(renderSessionsView, state.sessions);
+}
+
+// ── Sessions view modes: list / tiles / compact ─────────────────────────
+// The sessions view gets the same card vocabulary as the Automata/Automation
+// tiles (the shared renderWorkTile), plus a per-state summary bar and page
+// paging with a Show more button so a 300+ session fleet stays responsive.
+// The mode is per-device (localStorage, try/catch because storage can be
+// blocked) and defaults by viewport when the device has never chosen one:
+// phone widths open as the list, everything wider opens as tiles. `compact`
+// is the dense two-row grid; the normal tile grid still follows the width-based
+// mode on resizes via _tileSyncModes, while compact keeps its density there.
+// Tags, filter and search apply before rendering, so they work in every mode.
+const SESSIONS_VIEW_MODES = ['list', 'tiles', 'compact'];
+const SESSIONS_VIEW_MODE_KEY = 'cs_sessions_view_mode';
+const SESSIONS_TILE_PAGE_SIZE = 60;        // first page / one Show-more step (configurable)
+const SESSIONS_MODE_PHONE_WIDTH = 600;     // matches the window.innerWidth < 600 convention elsewhere
+
+function _sessionsViewModeNormalize(mode) {
+  return SESSIONS_VIEW_MODES.indexOf(mode) >= 0 ? mode : null;
+}
+
+function _sessionsTileModeDefault(width) {
+  const w = Number(width);
+  if (!Number.isFinite(w) || w <= 0) return 'tiles'; // unknown width: treat as not-phone
+  return w < SESSIONS_MODE_PHONE_WIDTH ? 'list' : 'tiles';
+}
+
+function _sessionsReadStoredMode(lse) {
+  let v = null;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.getItem === 'function') v = ls.getItem(SESSIONS_VIEW_MODE_KEY);
+  } catch (_) { v = null; }
+  return (typeof v === 'string' && v) ? v : null;
+}
+
+function _sessionsStoreMode(mode, lse) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  try {
+    const ls = lse || (typeof localStorage !== 'undefined' ? localStorage : null);
+    if (ls && typeof ls.setItem === 'function') ls.setItem(SESSIONS_VIEW_MODE_KEY, m);
+  } catch (_) { /* storage blocked: the choice lives in memory for this page */ }
+}
+
+function _sessionsPageSize() {
+  const n = Number(state && Number.isFinite(Number(state._sessionsPageOverride)) ? state._sessionsPageOverride : SESSIONS_TILE_PAGE_SIZE);
+  return (Number.isFinite(n) && n > 0) ? Math.floor(n) : SESSIONS_TILE_PAGE_SIZE;
+}
+
+function _sessionsViewMode() {
+  if (SESSIONS_VIEW_MODES.indexOf(state.sessionsViewMode) >= 0) return state.sessionsViewMode;
+  const stored = _sessionsViewModeNormalize(_sessionsReadStoredMode());
+  if (stored) { state.sessionsViewMode = stored; return stored; }
+  state.sessionsViewMode = _sessionsTileModeDefault(_tileViewportWidth());
+  return state.sessionsViewMode;
+}
+
+function _sessionsPagingState(sessions, limit) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const size = _sessionsPageSize();
+  let lim = Number(limit);
+  if (!Number.isFinite(lim) || lim <= 0) lim = size;
+  lim = Math.floor(lim);
+  return {
+    shown: list.slice(0, lim),
+    shownCount: Math.min(lim, list.length),
+    total: list.length,
+    hasMore: lim < list.length,
+  };
+}
+
+function _sessionsSummaryCounts(sessions) {
+  const list = Array.isArray(sessions) ? sessions : [];
+  const order = ['running', 'waiting_input', 'rate_limited', 'complete', 'failed', 'killed'];
+  const by = {};
+  list.forEach(s => {
+    const st = (s && typeof s.state === 'string' && s.state) || 'unknown';
+    by[st] = (by[st] || 0) + 1;
+  });
+  const rows = order.filter(st => by[st]).map(st => ({ state: st, count: by[st] }));
+  Object.keys(by).filter(st => order.indexOf(st) < 0).sort().forEach(st => rows.push({ state: st, count: by[st] }));
+  return rows;
+}
+
+window._sessionsViewModes = SESSIONS_VIEW_MODES;
+window._sessionsViewModeKey = SESSIONS_VIEW_MODE_KEY;
+window._sessionsViewModeNormalize = _sessionsViewModeNormalize;
+window._sessionsTileModeDefault = _sessionsTileModeDefault;
+window._sessionsReadStoredMode = _sessionsReadStoredMode;
+window._sessionsStoreMode = _sessionsStoreMode;
+window._sessionsPageSize = _sessionsPageSize;
+window._sessionsViewMode = _sessionsViewMode;
+window._sessionsPagingState = _sessionsPagingState;
+window._sessionsSummaryCounts = _sessionsSummaryCounts;
+
+function _sessionsSetViewMode(mode) {
+  const m = _sessionsViewModeNormalize(mode);
+  if (!m) return;
+  state.sessionsViewMode = m;
+  _sessionsStoreMode(m);
+  state._sessionsPageLimit = _sessionsPageSize();
+  state.selectedSessions.clear();
+  if (state.activeView === 'sessions') renderSessionsView();
+}
+window._sessionsSetViewMode = _sessionsSetViewMode;
+window.setSessionsViewMode = _sessionsSetViewMode;
+
+function _sessionsShowMore() {
+  const base = (Number(state._sessionsPageLimit) > 0) ? state._sessionsPageLimit : _sessionsPageSize();
+  state._sessionsPageLimit = base + _sessionsPageSize();
+  renderSessionsView();
+}
+window._sessionsShowMore = _sessionsShowMore;
+window.sessionsShowMore = _sessionsShowMore;
+
+function renderSessionsModeToggle(mode) {
+  const defs = [
+    { key: 'list', label: t('sessions_view_list') || 'List', icon: '☰' },
+    { key: 'tiles', label: t('sessions_view_tiles') || 'Tiles', icon: '▦' },
+    { key: 'compact', label: t('sessions_view_compact') || 'Compact', icon: '▤' },
+  ];
+  const btns = defs.map(d =>
+    `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
+  ).join('');
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(t('sessions_view_toggle') || 'Sessions view mode')}">${btns}</div>`;
+}
+
+function renderSessionsSummaryBar(sessions) {
+  const rows = _sessionsSummaryCounts(sessions);
+  if (!rows.length) return '';
+  const dot = {
+    running: 'var(--success,#10b981)',
+    waiting_input: 'var(--warning,#f59e0b)',
+    rate_limited: 'var(--warning,#f59e0b)',
+    complete: 'var(--success,#10b981)',
+    failed: 'var(--error,#ef4444)',
+    killed: 'var(--text2,#9ca3af)',
+  };
+  const items = rows.map(r => {
+    const cur = r.state === state.sessionStateChip;
+    return `<button type="button" class="sessions-summary-chip${cur ? ' active' : ''}" onclick="setSessionStateChip('${escHtml(r.state)}')" title="${escHtml(r.state)}: ${r.count}${cur ? '' : ' — filter to this state'}">
+      <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
+      <span class="sessions-summary-count">${r.count}</span></button>`;
+  }).join('');
+  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(t('sessions_total_label') || 'sessions')} ${escHtml(String(sessions.length))}</span></div>`;
+}
+
+// One session as a work tile: name, state chip, backend · model, node or peer,
+// tags (shared overflow chip), last activity and progress — the session's
+// actions move into the ⋯ overflow menu, which renderWorkTile keeps visible
+// in every grid mode exactly because the tile carries menu items.
+function renderSessionTile(sess, nowMs) {
+  const now = Number(nowMs) > 0 ? Number(nowMs) : Date.now();
+  const fullId = sess.full_id || sess.id || '';
+  const shortId = sess.id || (sess.full_id || '').split('-').pop() || '????';
+  const stKey = (sess.state || 'unknown').replace(/[^a-z0-9_-]/gi, '');
+  const isActive = !DONE_STATES.has(sess.state);
+  const title = sess.name || sess.task || shortId;
+  const backend = [sess.backend_family, sess.llm_ref].filter(Boolean).join(' · ');
+  let menu = '';
+  if (isActive) {
+    menu += _tileMenuItem('■', t('sessions_tile_stop') || 'Stop', `killSession('${escHtml(fullId)}')`);
+    if (sess.state === 'waiting_input') {
+      menu += _tileMenuItem('⌨', t('sessions_quick_commands') || 'Commands', `showCardCmds('${escHtml(fullId)}')`);
+    }
+  } else {
+    menu += _tileMenuItem('↻', t('sessions_tile_restart') || 'Restart', `restartSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('✕', t('sessions_tile_delete') || 'Delete', `deleteSession('${escHtml(fullId)}')`);
+  }
+  if (state._summarizerEnabled) {
+    menu += _tileMenuItem('🧠', t('sessions_tile_summary') || 'Summary', `manualSummarize('${escHtml(fullId)}')`);
+  }
+  menu += _tileMenuItem('👁', t('session_action_watch') || 'Watch for updates', `toggleSessionWatch('${escHtml(fullId)}')`);
+  menu += _tileMenuItem('🔕', t('session_action_mute') || 'Mute notifications', `toggleSessionMute('${escHtml(fullId)}')`);
+  const node = sess.hostname || sess.server || sess.compute_node_ref || '';
+  return renderWorkTile({
+    id: shortId,
+    rootId: 'sess-tile-' + fullId,
+    rootAttrs: ` data-sess-id="${escHtml(fullId)}"`,
+    onOpen: `navigate('session-detail', '${escHtml(fullId)}')`,
+    statusClass: 'prd-card-status-' + stKey,
+    statusHtml: `<span class="state state-badge-${stKey}" style="border:1px solid currentColor;border-radius:10px;padding:0 7px;font-size:10px;font-weight:600;line-height:1.5;white-space:nowrap;">${escHtml(sess.state || 'unknown')}</span>`,
+    title,
+    backend,
+    tagIds: [...(sess.tags || []), ...(sess.inherited_tags || [])],
+    tagsById: _tagsState.byId,
+    progress: { done: 0, total: 0 },
+    updatedAt: sess.updated_at || sess.last_activity,
+    nowMs: now,
+    bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
+    menuHtml: menu,
+  });
+}
+window.renderSessionTile = renderSessionTile;
+
+// Both density variants draw through the same grid; compact is a fixed dense
+// row mode while tiles follows the width-based mode (and keeps following it
+// on resizes, see _tileSyncModes).
+function renderSessionTileGrid(innerHTML, mode) {
+  const compact = (mode === 'compact');
+  const gridMode = compact ? 'compact' : _tileRowMode(_tileViewportWidth());
+  return `<div class="work-tile-grid session-tile-grid${compact ? ' session-tile-grid-compact' : ''}" data-tile-mode="${gridMode}">${innerHTML}</div>`;
+}
+window.renderSessionTileGrid = renderSessionTileGrid;
+
+function _sessionsShowMoreHTML(paging) {
+  if (!paging.hasMore) return '';
+  return `<div class="sessions-show-more"><button type="button" class="btn-secondary" onclick="_sessionsShowMore()">${escHtml(t('sessions_show_more') || 'Show more')} (${paging.shownCount}/${paging.total})</button></div>`;
 }
 
 function _sessionsLoadMoreHtml() {
@@ -46030,10 +46257,14 @@ function _tileGridHTML(innerHTML) {
 }
 
 // _tileSyncModes re-applies the row mode to every grid on screen after a
-// resize, so the layout follows the window without a re-render.
+// resize, so the layout follows the window without a re-render. A session
+// grid the operator pinned to `compact` keeps its density there.
 function _tileSyncModes() {
   const mode = _tileRowMode(_tileViewportWidth());
-  document.querySelectorAll('.work-tile-grid').forEach(el => { el.dataset.tileMode = mode; });
+  document.querySelectorAll('.work-tile-grid').forEach(el => {
+    if (el.classList && typeof el.classList.contains === 'function' && el.classList.contains('session-tile-grid-compact')) return;
+    el.dataset.tileMode = mode;
+  });
 }
 if (typeof window !== 'undefined' && !window._tileResizeBound) {
   window._tileResizeBound = true;

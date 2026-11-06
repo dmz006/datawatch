@@ -256,7 +256,7 @@ test('the Automata card and the Automation card both draw through renderWorkTile
 test('the source has one tile renderer, and both lists draw through the shared tag browser', () => {
   const src = fs.readFileSync(path.join(WEB, 'app.js'), 'utf8');
   assert.equal((src.match(/^function renderWorkTile\(/gm) || []).length, 1);
-  assert.equal((src.match(/return renderWorkTile\(\{/g) || []).length, 2);
+  assert.equal((src.match(/return renderWorkTile\(\{/g) || []).length, 3, 'Automata, Automation and sessions all draw through the one tile renderer');
   // Each list mounts the browser, and the browser wraps its flat grid and its sections in the tile grid.
   assert.equal((src.match(/_tagBrowseMountHTML\('automata',/g) || []).length, 1);
   assert.equal((src.match(/_tagBrowseMountHTML\('automation',/g) || []).length, 1);

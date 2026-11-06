@@ -37,6 +37,7 @@ function makeStubElement(onSetInnerHTML) {
     setAttribute() {}, getAttribute() { return null; }, removeAttribute() {},
     querySelector() { return null; }, querySelectorAll() { return []; },
     focus() {}, blur() {}, click() {},
+    setSelectionRange() {}, select() {},
     scrollIntoView() {},
     getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }; },
   };
