@@ -1268,6 +1268,15 @@ type Task struct {
 	// attempt was admitted. A requeue or reset clears them.
 	AdmittedBackend string `json:"admitted_backend,omitempty"`
 	AdmittedModel   string `json:"admitted_model,omitempty"`
+	// AdmittedTaskBackend and AdmittedTaskModel snapshot the task's own
+	// Backend/Model at the moment its current attempt was admitted. admittedWorker
+	// uses them to tell a still-running attempt (task fields unchanged, so the
+	// recorded pair stands) from a task whose worker the operator re-overrode
+	// after admission: once Backend/Model differ from the snapshot, the
+	// recorded pair is stale and admission follows the task's current worker.
+	// Cleared wherever the admitted pair is cleared.
+	AdmittedTaskBackend string `json:"admitted_task_backend,omitempty"`
+	AdmittedTaskModel   string `json:"admitted_task_model,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for

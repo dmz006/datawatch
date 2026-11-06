@@ -202,6 +202,7 @@ func (m *Manager) applyQueuedTaskLLM(prdID, taskID, backend, effort, model, acto
 	task.Effort = Effort(effort)
 	task.Model = model
 	task.AdmittedBackend, task.AdmittedModel = "", ""
+	task.AdmittedTaskBackend, task.AdmittedTaskModel = "", ""
 	task.UpdatedAt = now
 	prd.UpdatedAt = now
 	prd.Decisions = append(prd.Decisions, Decision{
