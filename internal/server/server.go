@@ -530,6 +530,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline", api.handleMergePipeline)                  // merge pipeline in effect for a project: definition, source, reason, conflict policy, overrides
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/record", api.handleMergePipelineRecord)     // PUT sets and DELETE removes a project's daemon-held pipeline record
 	apiMux.HandleFunc("/api/autonomous/merge-pipeline/validate", api.handleMergePipelineValidate) // POST checks a pipeline body or a repository file without saving
+	apiMux.HandleFunc("/api/autonomous/deploy", api.handleAutonomousDeploy)                       // GET effective deploy settings, last deploy phase and outcome, deferral, snapshot time and SHA-256
+	apiMux.HandleFunc("/api/autonomous/deploy/run", api.handleAutonomousDeployRun)                // POST starts the deploy sequence for the current build now; 409 while a merge or deploy runs
 	apiMux.HandleFunc("/api/autonomous/triage", api.handleAutonomousTriage)                       // triage records: the Automata waiting (failed/blocked), newest first
 	apiMux.HandleFunc("/api/autonomous/decisions", api.handleAutonomousDecisions)                 // decisions: operator questions with their tasks and answers, newest first
 	apiMux.HandleFunc("/api/autonomous/held-questions", api.handleHeldQuestions)                  // held questions: mode, covered state ids, open held questions and shadow-mode notes (GET only)
