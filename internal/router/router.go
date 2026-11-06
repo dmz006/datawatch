@@ -1058,6 +1058,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleNew(cmd)
 	case CmdList:
 		r.handleList(cmd.Text)
+	case CmdSessionGroups:
+		r.handleSessionGroups(cmd.Text)
 	case CmdStatus:
 		r.handleStatus(cmd)
 	case CmdSend:
