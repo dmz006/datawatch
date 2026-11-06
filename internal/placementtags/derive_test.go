@@ -105,8 +105,7 @@ func TestPlacementTags_EmptyValueSkipped(t *testing.T) {
 }
 
 func TestPlacementTags_CustomAxisFromFileFields(t *testing.T) {
-	s := DefaultSettings()
-	s = Settings{
+	s := Settings{
 		Compute: AxisSetting{Enabled: true, Template: "compute:{node}"},
 		Custom: []CustomAxis{
 			{Name: "env", Field: "env", Template: "env:{value}", Enabled: true},

@@ -311,7 +311,7 @@ func TestSystemTag_OriginKeptThroughPeerMerge(t *testing.T) {
 	}
 
 	// Both peers agree on the one tag now.
-	pa.Sync(ctx)
+	_ = pa.Sync(ctx)
 	sharedPA := byName(t, pa.View().Tags, placementTag, 0)
 	if sharedPA.ID != keeperSide.Tag.ID || !sharedPA.System {
 		t.Fatalf("a's copy does not hold the shared tag: %+v", sharedPA)
