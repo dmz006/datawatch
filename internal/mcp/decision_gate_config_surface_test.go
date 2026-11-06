@@ -66,7 +66,7 @@ func newDecisionGateMCPServer(t *testing.T) (*decisionGateMCPDaemon, *Server) {
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	t.Cleanup(srv.Close)
-	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func decisionGateConfigSet(t *testing.T, s *Server, key, value string) string {

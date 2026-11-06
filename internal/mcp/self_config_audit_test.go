@@ -15,7 +15,7 @@ func TestAuditSelfConfig_WritesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "audit", "config-self-modify.jsonl")
 	s := &Server{cfg: &config.MCPConfig{
-		AllowSelfConfig:     true,
+		AllowSelfConfig:     config.BoolPtr(true),
 		SelfConfigAuditPath: path,
 	}}
 
@@ -66,7 +66,7 @@ func TestAuditSelfConfig_NilCfg_NoCrash(t *testing.T) {
 }
 
 func TestAuditSelfConfig_NoFilePath_StderrOnly(t *testing.T) {
-	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 	// SelfConfigAuditPath empty — must not panic, must not error.
 	s.auditSelfConfig("x", "y")
 }
