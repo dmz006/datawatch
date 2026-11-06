@@ -3410,5 +3410,15 @@
   "sessions_view_delete": "Delete",
   "sessions_view_new": "New view",
   "sessions_view_ok": "OK",
-  "sessions_view_name_ph": "View name"
+  "sessions_view_name_ph": "View name",
+  "sessions_view_list": "List",
+  "sessions_view_tiles": "Tiles",
+  "sessions_view_compact": "Compact",
+  "sessions_view_toggle": "Sessions view mode",
+  "sessions_total_label": "sessions",
+  "sessions_tile_stop": "Stop",
+  "sessions_tile_restart": "Restart",
+  "sessions_tile_delete": "Delete",
+  "sessions_tile_summary": "Summary",
+  "sessions_show_more": "Show more"
 }

@@ -3410,5 +3410,15 @@
   "sessions_view_new": "Neu",
   "sessions_view_ok": "OK",
   "sessions_view_rename": "Umbenennen",
-  "sessions_view_title": "Ansichten"
+  "sessions_view_title": "Ansichten",
+  "sessions_view_list": "Liste",
+  "sessions_view_tiles": "Kacheln",
+  "sessions_view_compact": "Kompakt",
+  "sessions_view_toggle": "Sitzungsansicht",
+  "sessions_total_label": "Sitzungen",
+  "sessions_tile_stop": "Stopp",
+  "sessions_tile_restart": "Neustart",
+  "sessions_tile_delete": "Löschen",
+  "sessions_tile_summary": "Zusammenfassung",
+  "sessions_show_more": "Mehr anzeigen"
 }
