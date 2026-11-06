@@ -9,7 +9,7 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/sessions` | `list_sessions` | Complete | `name`/`state`/`backend`/`alive` filters match the REST params. `view` (`full` default, or `summary`), `states` and `since` map to the REST `view`/`states`/`since` params; using any of them returns the REST JSON array, plus a text note with the `X-Datawatch-Sessions-Omitted` count when the summary cap dropped sessions. Not combinable with `orphaned`. |
+| `GET /api/sessions` | `list_sessions` | Complete | `name`/`state`/`backend`/`alive` filters match the REST params. `view` (`full` default, or `summary`), `states` and `since` map to the REST `view`/`states`/`since` params; using any of them returns the REST JSON array, plus a text note with the `X-Datawatch-Sessions-Omitted` count when the summary cap dropped sessions. Not combinable with `orphaned`. `group_by` (`tag`/`state`/`node`/`project`/`automaton`) and `tag_prefix` return the grouped REST response — one group per key with its count, per-state mix and its sessions, plus per-state totals; on `automaton` each Automaton also carries its story blocks and done/total progress. The same read backs the PWA Group-by picker, `datawatch session list --group-by/--tag-prefix` and the comm verb `sessions groups`; see [`docs/howto/sessions-tiles-and-grouping.md`](howto/sessions-tiles-and-grouping.md). |
 | `POST /api/sessions/start` | `start_session` | Complete | `git` boolean param (opt-in git init/snapshot/auto-commit; default false) is forwarded to the REST `git` body field. |
 | `GET /api/output?id=&n=` | `session_output` | Complete | |
 | `GET /api/sessions/timeline` | `session_timeline` | Complete | |
