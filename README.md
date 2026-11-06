@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.100.2 (2026-11-06).** Accepts five new unfixed HIGH Debian findings in the agent images with traced registry entries, so the container images of 9.100.1 and later can build. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.101.0 (2026-11-06).** A project can now run configured post-ship hook steps after a ship (registry row, parity issue, tag, notify, or its own command), off by default and recorded without ever failing the ship. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
