@@ -9343,6 +9343,7 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_policy': DOCS_DEFINITIONS + '#parallel-task-worktrees',
+  'autonomous.parallel.merge_retry_seconds': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.merge_conflict_model': DOCS_DEFINITIONS + '#parallel-task-worktrees',
   task_merge_state_badge: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   parallel_metrics_card_title: DOCS_DEFINITIONS + '#parallel-execution-metrics',
@@ -18196,6 +18197,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.parallel.merge_conflict_policy', label: 'Task merge conflict policy (additive_then_model, block or triage; default additive_then_model)', labelKey: 'settings_parallel_merge_conflict_policy', docsKey: 'autonomous.parallel.merge_conflict_policy', type: 'select', options: ['additive_then_model', 'block', 'triage'], default: 'additive_then_model',
       optionLabelKeys: { additive_then_model: 'parallel_policy_additive_then_model', block: 'parallel_policy_block', triage: 'parallel_policy_triage' } },
     { key: 'autonomous.parallel.merge_conflict_model', label: 'Task merge conflict model (model that resolves a merge conflict, empty = strongest planning model)', labelKey: 'settings_parallel_merge_conflict_model', docsKey: 'autonomous.parallel.merge_conflict_model', type: 'text', placeholder: '' },
+    { key: 'autonomous.parallel.merge_retry_seconds', label: 'Task merge retry interval (seconds between retries of a pending task merge; 0 = off; default 60)', labelKey: 'settings_parallel_merge_retry_seconds', helpKey: 'settings_parallel_merge_retry_seconds_help', docsKey: 'autonomous.parallel.merge_retry_seconds', type: 'number', min: 0, step: 1, default: 60 },
     { key: 'autonomous.parallel.read_only_tasks', label: 'Read-only tasks in parallel (a task flagged read only skips the tree lock and runs beside other tasks; on by default)', labelKey: 'settings_parallel_read_only_tasks', docsKey: 'autonomous.parallel.read_only_tasks', type: 'toggle' },
     // Supervisor loop (autonomous.supervisor_loop.*) — the loop that keeps every Automaton moving;
     // the keys are the plan's supervisor_loop.* keys, and the Supervisor loop card in the Automaton view reads it.
