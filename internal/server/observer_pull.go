@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -104,6 +105,112 @@ func observerPullDefaults(s *Server) config.ObserverPullConfig {
 		}
 	}
 	return def
+}
+
+// handleObserverPull — GET /api/observer/pull — lists the observer pull
+// protocol's current state: every peer in the pull target set (federated,
+// enabled, opted in via observer_pull, URL set), plus any name the pull
+// collector already holds state for (e.g. an entry disabled milliseconds
+// before the worker stopped). Rows are sorted by name. Fields:
+//
+//	name             peer name
+//	source           always "pull"
+//	shadow           true when the same name is ALSO push-registered
+//	stale            last fetch failed (or not yet fetched: false)
+//	stale_reason     none | timeout | error | forbidden | not_permitted | bad_payload | unknown
+//	last_success_at  last successful fetch (null while none)
+//	interval_s       effective pull interval (entry value, else the global default)
+//	timeout_s        effective per-pull timeout (entry value, else the global default)
+//
+// Bearer tokens never appear in the response.
+func (s *Server) handleObserverPull(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapObserversRead) {
+		return
+	}
+	writeJSONOK(w, map[string]any{"peers": s.pullStatusRows()})
+}
+
+// pullStatusRows builds the /api/observer/pull row set (see
+// handleObserverPull). It is shared by the REST endpoint and the tests.
+func (s *Server) pullStatusRows() []map[string]any {
+	def := observerPullDefaults(s)
+	seen := map[string]bool{}
+	var names []string
+	addName := func(n string) {
+		if n == "" || seen[n] {
+			return
+		}
+		seen[n] = true
+		names = append(names, n)
+	}
+	if s.serverStore != nil {
+		for _, e := range s.serverStore.ListFederated() {
+			if e == nil {
+				continue
+			}
+			if e.Enabled && e.Federated && e.ObserverPull && e.URL != "" {
+				addName(e.Name)
+			}
+		}
+	}
+	if p := s.observerPull; p != nil && p.col != nil {
+		for _, st := range p.col.Snapshot() {
+			addName(st.Name)
+		}
+	}
+	sort.Strings(names)
+
+	rows := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		row := map[string]any{
+			"name":            name,
+			"source":          observer.PullSource,
+			"shadow":          s.peerPushRegistered(name),
+			"stale":           false,
+			"stale_reason":    observer.ReasonNone,
+			"last_success_at": nil,
+			"interval_s":      s.pullIntervalS(name),
+			"timeout_s":       s.pullTimeoutS(name, def),
+		}
+		if st, ok := s.pullStateFor(name); ok {
+			row["stale"] = st.Stale
+			if st.StaleReason != "" {
+				row["stale_reason"] = st.StaleReason
+			}
+			if !st.LastSuccessAt.IsZero() {
+				t := st.LastSuccessAt
+				row["last_success_at"] = &t
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// peerPushRegistered reports whether name is also registered in the
+// observer push peer registry (shadow case: a push peer that is ALSO
+// pulled). False when the push registry is disabled on this host.
+func (s *Server) peerPushRegistered(name string) bool {
+	if s == nil || s.peerRegistry == nil {
+		return false
+	}
+	_, ok := s.peerRegistry.Get(name)
+	return ok
+}
+
+// pullTimeoutS resolves name's effective per-pull timeout in seconds:
+// the entry's value when set, else the observer.pull global default.
+func (s *Server) pullTimeoutS(name string, def config.ObserverPullConfig) int {
+	if s != nil && s.serverStore != nil {
+		if e, ok := s.serverStore.Get(name); ok && e != nil && e.ObserverPullTimeoutS > 0 {
+			return e.ObserverPullTimeoutS
+		}
+	}
+	return def.DefaultTimeoutS
 }
 
 // Fetch pulls one peer's v2 stats once; it implements observer.PullFetcher.
