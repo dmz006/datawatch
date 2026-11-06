@@ -275,6 +275,39 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Builtin:     true,
 		Caps:        []string{CapConfigRead, CapConfigWrite, CapUsageRead, CapUsageWrite},
 	},
+	// self-config (BL412 option C, docs/plans/2026-10-29-bl412-self-config-
+	// gate-proposal.md; operator answer 2026-11-01: fold the allow_self_config
+	// switch into the capability system as a built-in group, covering only
+	// non-secret settings). Holds exactly the configuration-write capabilities
+	// a session needs to change daemon settings:
+	//   config:write     — config_set, every *_config_set tool (detection,
+	//                     dns channel, proxy, channel routing, council,
+	//                     orchestrator, autonomous, autonomous scan, smoke
+	//                     forward), compute_pin_settings, usage_backoff_set
+	//   autonomous:write — autonomous_config_set, orchestrator_config_set,
+	//                     autonomous_scan_config_set (and their getters'
+	//                     sibling settings writers)
+	//   observers:write  — observer_config_set
+	//   llms:write       — llm_add / llm_update / llm_delete and the rest of
+	//                     the LLM registry writes
+	//   usage:write      — burn_guard_config_set, usage_extra_credit_set,
+	//                     usage_remaining_work_set
+	// Chosen exclusions, recorded here per the operator's "non-secret
+	// settings only" answer: secrets:* (secret_set and friends),
+	// federation:* — so server_add / server_update write the upstream-server
+	// registry but are granted only via federation:write, never this group;
+	// identity and daemon-control (restart_daemon / reload) have no dedicated
+	// capability to withhold, so they are kept OUT of the self-config
+	// classification instead (IsConfigWriteTool in mcp_tool_caps.go). This
+	// group is granted by the allow_self_config alias (follow-up task), not
+	// by session-default: this task adds the group only and does not change
+	// the session-default grant.
+	"self-config": {
+		Name:        "self-config",
+		Description: "Session config-write surface (BL412 option C): the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded by operator answer (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
+		Builtin:     true,
+		Caps:        []string{CapConfigWrite, CapAutonomousWrite, CapObserversWrite, CapLLMsWrite, CapUsageWrite},
+	},
 	"analytics-viewer": {
 		Name:        "analytics-viewer",
 		Description: "Cost analytics, dashboard, and audit log",
@@ -479,7 +512,7 @@ func Check(granted []string, required string) bool {
 func ListBuiltinGroups() []*CapabilityGroup {
 	order := []string{
 		"monitor", "session-viewer", "session-operator",
-		"inference-admin", "config-reader", "config-admin",
+		"inference-admin", "config-reader", "config-admin", "self-config",
 		"analytics-viewer", "autonomous-operator", "council-operator",
 		"federation-peer", "comm-bridge", "comms-channel-agent", "session-default", "read-only", "full-control",
 	}
