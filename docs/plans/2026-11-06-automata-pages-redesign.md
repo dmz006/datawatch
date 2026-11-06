@@ -346,3 +346,16 @@ Automations, arcs, plans and projects fit together.
    the 9.0 to 10.0 history kept from Automaton records.
 6. Retention and cleanup policy per project (how long an archived Automaton keeps its branch), so the unlanded-branch
    gap does not come back.
+
+## Filed 2026-11-06 10:25 (decision 8)
+
+Eleven draft Automata, none decomposed yet, in two Automations (drafts until the plans are validated and the first
+member is approved):
+
+- Automation `3981110c` "Automata pages redesign" (arc): `6a1b0001` Triage cards and the repo CI strip, then
+  `85430001` Events tab, `9f8f0001` Settings move and usage cards, `ba340001` Housekeeping action list, `d3680001`
+  Projects tab, `edc10001` dashboard data fixes, chained by on-complete edges in the decided order.
+- Automation `869ff55c` "Defect fixes 2026-11-06" (arc): `3b7c0001` task merge-back, `55270001` verifier idle and task
+  override, `21610001` resumed-session lease, `08800001` zombie badge, `70900001` configuration parity audit.
+- Note: the redesign arc was created by reusing an empty draft Automation made by a schema probe; the defects arc is a
+  chain too, so its fixes run one after another; if parallel is wanted they can be rewired with a fork and a join.
