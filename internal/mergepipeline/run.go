@@ -41,6 +41,10 @@ type ShipRunner interface {
 	Deploy(ctx context.Context, dir string) error
 	// Hook runs a post-ship (or other leaving-the-machine) command step.
 	Hook(ctx context.Context, dir string, step Step) (string, error)
+	// FileIssue files an issue in repo with title and body, through gh
+	// with an argument list (never a shell string) and a --body-file from
+	// a temporary file.
+	FileIssue(ctx context.Context, dir, repo, title, body string) error
 }
 
 // RunRequest is one merge to run.
@@ -642,4 +646,25 @@ func (e ExecShipRunner) Deploy(ctx context.Context, dir string) error {
 // Hook implements ShipRunner.
 func (e ExecShipRunner) Hook(ctx context.Context, dir string, step Step) (string, error) {
 	return e.run(ctx, dir, "sh", "-c", step.Command)
+}
+
+// FileIssue implements ShipRunner. It runs `gh issue create` with an
+// argument list, never a shell string, and passes the body through a
+// temporary file with --body-file.
+func (e ExecShipRunner) FileIssue(ctx context.Context, dir, repo, title, body string) error {
+	tmp, err := os.CreateTemp(dir, "issue-body-*.tmp")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, werr := tmp.WriteString(body); werr != nil {
+		tmp.Close()
+		return werr
+	}
+	if cerr := tmp.Close(); cerr != nil {
+		return cerr
+	}
+	_, err = e.run(ctx, dir, "gh", "issue", "create", "--repo", repo, "--title", title, "--body-file", name) // #nosec G204 -- fixed binary, arguments built here
+	return err
 }

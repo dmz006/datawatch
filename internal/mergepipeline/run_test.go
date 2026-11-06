@@ -104,6 +104,9 @@ func (f *fakeShip) Deploy(_ context.Context, _ string) error { return f.note("de
 func (f *fakeShip) Hook(_ context.Context, _ string, s Step) (string, error) {
 	return "hook ran", f.note("hook " + s.Name)
 }
+func (f *fakeShip) FileIssue(_ context.Context, _, repo, title, _ string) error {
+	return f.note("issue " + repo + " " + title)
+}
 
 type memRecorder struct {
 	mu   sync.Mutex
