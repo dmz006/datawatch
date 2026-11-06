@@ -346,7 +346,6 @@ type decisionFolderBody struct {
 	Path      string                             `json:"path"`
 	FilesSeen int                                `json:"files_seen"`
 	Errors    []autonomous.DecisionFolderProblem `json:"errors"`
-	Notes     []autonomous.DecisionFolderProblem `json:"notes"`
 	LastScan  *time.Time                         `json:"last_scan"`
 }
 
@@ -386,14 +385,10 @@ func (s *Server) handleDecisionRecordList(w http.ResponseWriter, r *http.Request
 		Path:      st.Path,
 		FilesSeen: st.FilesSeen,
 		Errors:    st.Errors,
-		Notes:     st.Notes,
 		LastScan:  st.LastScan,
 	}
 	if folder.Errors == nil {
 		folder.Errors = []autonomous.DecisionFolderProblem{}
-	}
-	if folder.Notes == nil {
-		folder.Notes = []autonomous.DecisionFolderProblem{}
 	}
 	writeJSONOK(w, struct {
 		DecisionRecords []decisionRecordView `json:"decision_records"`
