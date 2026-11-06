@@ -59,6 +59,18 @@ func (a *API) ListTags(includeSub bool) []any {
 	return out
 }
 
+// TagSystem reports whether the tag exists and is a system tag. A system tag
+// is one the tag registry created itself — a placement tag, for instance —
+// which is machine-managed: a session may carry it as a read-only system tag,
+// but an operator assigning it is refused (server.handleSessionTags).
+func (a *API) TagSystem(id string) (bool, error) {
+	t, err := a.M.requireTag(id)
+	if err != nil {
+		return false, err
+	}
+	return t.System, nil
+}
+
 // ListTagsWithCounts returns the tag list in the counts form, sorted like
 // ListTags, with the untagged totals. Count follows includeSub as in ListTags;
 // the subtree and direct counts do not depend on it.

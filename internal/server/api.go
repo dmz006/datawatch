@@ -8501,6 +8501,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Validated in handlePutConfig before this runs; Set stores the
 			// normalized value and leaves the block unchanged on a refusal.
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
+		// autonomous.tags.placement: the placement tag axes (internal/
+		// placementtags), per-key like the tag settings above.
+		case "autonomous.tags.placement.enabled",
+			"autonomous.tags.placement.compute.enabled", "autonomous.tags.placement.compute.template",
+			"autonomous.tags.placement.peer.enabled", "autonomous.tags.placement.peer.template",
+			"autonomous.tags.placement.backend.enabled", "autonomous.tags.placement.backend.template",
+			"autonomous.tags.placement.lane.enabled", "autonomous.tags.placement.lane.template",
+			"autonomous.tags.placement.role.enabled", "autonomous.tags.placement.role.template",
+			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template":
+			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
 			// "block"). handlePutConfig rejects invalid modes loudly; this

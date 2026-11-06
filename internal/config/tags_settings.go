@@ -221,6 +221,23 @@ func (t *TagsConfig) Set(name string, value interface{}) error {
 	if err != nil {
 		return err
 	}
+	if name == "placement.enabled" {
+		t.Placement.Enabled = v.(bool)
+		return nil
+	}
+	if axis, field, ok := splitPlacementAxisKey(name); ok {
+		setting := t.PlacementAxisSetting(axis)
+		if setting == nil {
+			return tagSettingErr(name, "unknown placement axis")
+		}
+		switch field {
+		case "enabled":
+			setting.Enabled = v.(bool)
+		case "template":
+			setting.Template = v.(string)
+		}
+		return nil
+	}
 	switch name {
 	case "default_view":
 		t.DefaultView = v.(string)
@@ -342,6 +359,12 @@ func placementCustomNameOK(name string) bool {
 // parseTagSetting returns the stored form of one setting: a string, a []string,
 // a bool or an int, depending on the setting.
 func parseTagSetting(name string, value interface{}) (interface{}, error) {
+	if name == "placement.enabled" {
+		return parsePlacementBool(name, value)
+	}
+	if axis, field, ok := splitPlacementAxisKey(name); ok {
+		return parsePlacementAxisSetting(name, axis, field, value)
+	}
 	switch name {
 	case "default_view":
 		if isBlankTagValue(value) {
@@ -364,6 +387,90 @@ func parseTagSetting(name string, value interface{}) (interface{}, error) {
 		return parseTagSyncSeconds(value)
 	}
 	return nil, tagSettingErr(name, "unknown tag setting")
+}
+
+// splitPlacementAxisKey reads a per-axis placement key, one of
+//
+//	placement.<axis>.enabled — is <axis>'s placement tag derived at all
+//	placement.<axis>.template — the tag name <axis> derives
+//
+// where <axis> is a built-in axis and <field> is enabled or template. The
+// master key placement.enabled and the custom axes are not matched here (the
+// custom axes are list-valued and take no per-key surface). Anything else
+// reports false so the usual unknown-setting refusal applies.
+func splitPlacementAxisKey(name string) (axis, field string, ok bool) {
+	rest, found := strings.CutPrefix(name, "placement.")
+	if !found || !strings.Contains(rest, ".") {
+		return "", "", false
+	}
+	axis, field, _ = strings.Cut(rest, ".")
+	if axis == "" || (field != "enabled" && field != "template") {
+		return "", "", false
+	}
+	if _, known := placementtags.AxisPlaceholders[axis]; !known {
+		return "", "", false
+	}
+	return axis, field, true
+}
+
+// PlacementAxisSetting returns the built-in axis config that name names, so
+// Set can write placement.<axis>.<field> through one place. It is nil when
+// name is not a built-in axis.
+func (t *TagsConfig) PlacementAxisSetting(axis string) *PlacementAxis {
+	switch axis {
+	case "compute":
+		return &t.Placement.Compute
+	case "peer":
+		return &t.Placement.Peer
+	case "backend":
+		return &t.Placement.Backend
+	case "lane":
+		return &t.Placement.Lane
+	case "role":
+		return &t.Placement.Role
+	case "project":
+		return &t.Placement.Project
+	}
+	return nil
+}
+
+// parsePlacementBool accepts a JSON bool, or the strings true and false. It
+// is the placement-keyed twin of parseTagBool, carrying the key's own name in
+// the refusal.
+func parsePlacementBool(name string, value interface{}) (interface{}, error) {
+	switch v := value.(type) {
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return nil, tagSettingErr(name, "must be true or false")
+}
+
+// parsePlacementAxisSetting parses one value of a placement.<axis>.<field>
+// key. enabled accepts true or false; template must be a non-empty tag name
+// carrying the axis's own placeholder. The refusal names the axis, the same
+// way validatePlacement does, so a bad value is refused the same whether it
+// arrives keyed or in the YAML block.
+func parsePlacementAxisSetting(name, axis, field string, value interface{}) (interface{}, error) {
+	if field == "enabled" {
+		return parsePlacementBool(name, value)
+	}
+	s, _ := value.(string)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, tagSettingErr(name, "must be a tag template")
+	}
+	placeholder, _ := placementtags.AxisPlaceholders[axis]
+	if !strings.Contains(s, placeholder) {
+		return nil, fmt.Errorf("%splacement.%s: template %q must contain %s", TagSettingPrefix, axis, s, placeholder)
+	}
+	return s, nil
 }
 
 func tagSettingErr(name, reason string) error {

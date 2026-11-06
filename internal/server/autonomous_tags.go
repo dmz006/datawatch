@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -33,7 +34,40 @@ func tagSettingsForDisplay(t config.TagsConfig) map[string]interface{} {
 		"direct_counts_visible": e.DirectCountsVisible,
 		"registry_keeper":       e.RegistryKeeper,
 		"registry_sync_seconds": e.RegistrySyncSeconds,
+		"placement":             placementForDisplay(e.Placement),
 	}
+}
+
+// placementForDisplay renders the effective placement block for
+// GET /api/config. enabled and template are shown per axis, so the operator
+// sees what a daemon with no placement config of its own would derive.
+func placementForDisplay(p config.PlacementConfig) map[string]interface{} {
+	return map[string]interface{}{
+		"enabled": p.Enabled,
+		"axes": map[string]interface{}{
+			"compute": axisForDisplay(p.Compute),
+			"peer":    axisForDisplay(p.Peer),
+			"backend": axisForDisplay(p.Backend),
+			"lane":    axisForDisplay(p.Lane),
+			"role":    axisForDisplay(p.Role),
+			"project": axisForDisplay(p.Project),
+		},
+		"custom": customAxesForDisplay(p.Custom),
+	}
+}
+
+func axisForDisplay(a config.PlacementAxis) map[string]interface{} {
+	return map[string]interface{}{"enabled": a.Enabled, "template": a.Template}
+}
+
+func customAxesForDisplay(cs []config.PlacementCustomAxis) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, map[string]interface{}{
+			"name": c.Name, "field": c.Field, "template": c.Template, "enabled": c.Enabled,
+		})
+	}
+	return out
 }
 
 // firstTagSettingError returns the first refusal among the autonomous.tags keys
@@ -64,9 +98,10 @@ type tagAPI interface {
 	SetPRDTagsAndPrimary(prdID string, tagIDs []string, primary *string) (any, error)
 	ListPRDsByTag(tagID string, includeSub bool) ([]any, error)
 	AttentionAutomata(statuses []string) []any
-	// RequireTag and AutomatonTagIDs back the session tag registry and the
-	// inherited-tag lookup (session_tags.go).
+	// RequireTag, TagSystem and AutomatonTagIDs back the session tag
+	// registry and the inherited-tag lookup (session_tags.go).
 	RequireTag(id string) error
+	TagSystem(id string) (bool, error)
 	AutomatonTagIDs(prdID string) ([]string, bool)
 }
 
@@ -104,6 +139,90 @@ func queryBool(r *http.Request, key string, def bool) bool {
 	return def
 }
 
+// tagListFilters reads the optional system and axis filters of the tag
+// listing (see handleAutonomousTags). system is nil when the parameter is
+// absent, so filtering only happens on request; axis is "" without the
+// parameter. A present but unrecognised system value is a refusal, and an
+// axis name outside the axis rule (lowercase letters, digits, hyphens) is
+// one too.
+func tagListFilters(r *http.Request) (system *bool, axis string, err error) {
+	switch strings.ToLower(r.URL.Query().Get("system")) {
+	case "":
+		// No filter.
+	case "1", "true", "yes":
+		v := true
+		system = &v
+	case "0", "false", "no":
+		v := false
+		system = &v
+	default:
+		return nil, "", fmt.Errorf("system must be true or false")
+	}
+	axis = strings.ToLower(strings.TrimSpace(r.URL.Query().Get("axis")))
+	if axis != "" && !axisNameOK(axis) {
+		return nil, "", fmt.Errorf("axis must be lowercase letters, digits and hyphens")
+	}
+	return system, axis, nil
+}
+
+// axisNameOK is the placement axis name rule (see
+// config.placementCustomNameOK): lowercase letters, digits and hyphens.
+func axisNameOK(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if !('0' <= r && r <= '9' || 'a' <= r && r <= 'z' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// tagIdentity reads the name and system-ness of one tag element of a tag
+// listing, whichever of the two list shapes it is.
+func tagIdentity(tag any) (name string, system bool, ok bool) {
+	switch t := tag.(type) {
+	case autonomous.TagView:
+		return t.Name, t.System, true
+	case autonomous.TagCountView:
+		return t.Name, t.System, true
+	}
+	return "", false, false
+}
+
+// tagMatchesAxis reports whether a tag name belongs to the axis: the bare
+// axis name, or an axis-derived name "<axis>:<value>".
+func tagMatchesAxis(name, axis string) bool {
+	return name == axis || strings.HasPrefix(name, axis+":")
+}
+
+// filterTagList keeps the tags matching the listing filters (see
+// tagListFilters). An element in neither shape of a tag listing is returned
+// untouched, so the filter degrades to a pass-through rather than dropping
+// data.
+func filterTagList(tags []any, system *bool, axis string) []any {
+	if system == nil && axis == "" {
+		return tags
+	}
+	out := make([]any, 0, len(tags))
+	for _, tag := range tags {
+		name, isSystem, ok := tagIdentity(tag)
+		if !ok {
+			out = append(out, tag)
+			continue
+		}
+		if system != nil && isSystem != *system {
+			continue
+		}
+		if axis != "" && !tagMatchesAxis(name, axis) {
+			continue
+		}
+		out = append(out, tag)
+	}
+	return out
+}
+
 // writeTagError maps a tag error to its HTTP status. Refusals (children,
 // assigned Automata, cycle, a peer that is not the keeper) are 409; an
 // assigned-Automata refusal carries the count in the body. A keeper that cannot
@@ -125,7 +244,7 @@ func writeTagError(w http.ResponseWriter, err error) {
 			body["count"] = inUse.Count
 		}
 	case errors.Is(err, autonomous.ErrTagHasChildren), errors.Is(err, autonomous.ErrTagCycle),
-		errors.Is(err, tagregistry.ErrNotKeeper):
+		errors.Is(err, tagregistry.ErrNotKeeper), errors.Is(err, tagregistry.ErrTagSystem):
 		status = http.StatusConflict
 	case errors.Is(err, tagregistry.ErrKeeperUnreachable):
 		status = http.StatusServiceUnavailable
@@ -174,6 +293,12 @@ func (s *Server) handleAutonomousAttention(w http.ResponseWriter, r *http.Reques
 // counts=true adds subtree_count, direct_count, session_subtree_count and
 // session_direct_count to each tag, and an untagged {count, session_count}
 // object to the reply. The count field keeps its include_sub meaning.
+//
+// system=false keeps the operator tags only and system=true the system tags
+// only; axis=<axis> keeps the tags of one placement axis: any tag starting
+// with "<axis>:" plus the bare axis name when it exists. Both filters may
+// be combined and each is optional — omitting both leaves the listing
+// unchanged.
 func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
@@ -192,13 +317,18 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			includeSub := queryBool(r, "include_sub", false)
+			system, axis, filterErr := tagListFilters(r)
+			if filterErr != nil {
+				http.Error(w, filterErr.Error(), http.StatusBadRequest)
+				return
+			}
 			registry := s.tagRegistryStatus()
 			if queryBool(r, "counts", false) {
 				tags, untagged := api.ListTagsWithCounts(includeSub)
-				writeJSONOK(w, map[string]any{"tags": tags, "untagged": untagged, "registry": registry})
+				writeJSONOK(w, map[string]any{"tags": filterTagList(tags, system, axis), "untagged": untagged, "registry": registry})
 				return
 			}
-			writeJSONOK(w, map[string]any{"tags": api.ListTags(includeSub), "registry": registry})
+			writeJSONOK(w, map[string]any{"tags": filterTagList(api.ListTags(includeSub), system, axis), "registry": registry})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
