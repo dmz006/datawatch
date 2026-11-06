@@ -3017,6 +3017,9 @@ type AutonomousConfig struct {
 	// overridden per project. An unset key reads its default. See
 	// MergePipelineConfig.
 	MergePipeline MergePipelineConfig `yaml:"merge_pipeline,omitempty" json:"merge_pipeline,omitempty"`
+	// Deploy — how a shipped build becomes a running daemon: build, install,
+	// restart, health check. The zero value does nothing. See DeployConfig.
+	Deploy DeployConfig `yaml:"deploy,omitempty" json:"deploy,omitempty"`
 	// RequestWatch — observation of the in-flight model request of a worker
 	// or verifier whose model runs on a registered compute node, so a hung
 	// request can be told from a slow one. Observation only: it never ends a
@@ -6427,6 +6430,9 @@ func validateLoaded(cfg *Config) error {
 		return fmt.Errorf("autonomous.%w", err)
 	}
 	if err := cfg.Autonomous.RequestWatch.Validate(); err != nil {
+		return err
+	}
+	if err := cfg.Autonomous.Deploy.Validate(); err != nil {
 		return err
 	}
 	return nil

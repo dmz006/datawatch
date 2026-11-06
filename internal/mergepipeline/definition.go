@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/tmuxscope"
 )
 
 // Kind classifies what a step is for.
@@ -92,25 +94,12 @@ func (e *ValidationError) Error() string {
 
 // unscopedTmuxKill matches a tmux kill-server, or a kill-session -a, which
 // would reach the operator's live tmux server unless scoped.
-var unscopedTmuxKill = regexp.MustCompile(`tmux([ \t]+[^|;&]*)?[ \t]+(kill-server|kill-session([ \t]+[^|;&]*)?[ \t]-[A-Za-z]*a)`)
-
-// tmuxKillScoped matches the accepted scopings within one simple command: an
-// explicit socket on the tmux call, or a scrubbed environment prefixing it.
-var tmuxKillScoped = regexp.MustCompile(`tmux[ \t]+(-[A-Za-z]*S[ \t]|-L[ \t])|env[ \t]+(-u[ \t]+TMUX[ \t]+-u[ \t]+TMUX_TMPDIR|-u[ \t]+TMUX_TMPDIR[ \t]+-u[ \t]+TMUX)[ \t][^|;&\n]*tmux`)
-
-// commandSeparators splits a command line into simple commands.
-var commandSeparators = regexp.MustCompile(`[;&|\n]+`)
-
 // CallsUnscopedTmuxKill reports whether any simple command in command kills
 // tmux without an explicit throwaway socket or a scrubbed environment on that
-// same command. A scoping marker on another command does not count.
+// same command. The check lives in internal/tmuxscope so internal/config can
+// share it without an import cycle.
 func CallsUnscopedTmuxKill(command string) bool {
-	for _, seg := range commandSeparators.Split(command, -1) {
-		if unscopedTmuxKill.MatchString(seg) && !tmuxKillScoped.MatchString(seg) {
-			return true
-		}
-	}
-	return false
+	return tmuxscope.CallsUnscopedTmuxKill(command)
 }
 
 var makeTarget = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
