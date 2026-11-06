@@ -46,7 +46,7 @@ func supervisorLoopDeploy(ctx context.Context, mgr *autonomous.Manager, cfg conf
 		return "", autonomous.ErrSupervisorStepNotConfigured
 	}
 	project := filepath.Base(repo)
-	runner := newMergeRunner(mgr, cfg, repo, project)
+	runner := newMergeRunner(mgr, cfg, repo, project, mergepipeline.ExecShipRunner{})
 	res, err := runner.Resolver.Resolve(project)
 	if err != nil {
 		return "", fmt.Errorf("resolve merge pipeline: %w", err)
@@ -108,7 +108,7 @@ func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, cfg confi
 
 	runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo)).Run(runCtx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), mergepipeline.ExecShipRunner{}).Run(runCtx, mergepipeline.RunRequest{
 		Title: "supervisor loop merge", Branches: branches,
 	})
 	if err == nil {
