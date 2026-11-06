@@ -30,6 +30,10 @@ type View struct {
 	// Overrides holds the per-project values; nil when the project has none.
 	Overrides       map[string]json.RawMessage `json:"overrides"`
 	RecordUpdatedAt string                     `json:"record_updated_at"`
+	// PostShip is the post-ship hook state: on or off, how many hooks are
+	// defined, and the names of the ones that would run. The block is global,
+	// so it is the same for every project.
+	PostShip ViewPostShip `json:"post_ship"`
 }
 
 // ViewSettings are the resolution settings in effect for the project.
@@ -38,6 +42,13 @@ type ViewSettings struct {
 	SourceOrder       []string `json:"source_order"`
 	FallbackOnBadFile string   `json:"fallback_on_bad_file"`
 	VersionFiles      []string `json:"version_files"`
+}
+
+// ViewPostShip is the post-ship hook state as the text shows it.
+type ViewPostShip struct {
+	Enabled      bool     `json:"enabled"`
+	HookCount    int      `json:"hook_count"`
+	EnabledHooks []string `json:"enabled_hooks"`
 }
 
 // ValidationReport is the body of POST /api/autonomous/merge-pipeline/validate.
@@ -123,6 +134,18 @@ func RenderViewText(v View) string {
 	fmt.Fprintf(&b, "Order sources are tried in: %s\n", listOrNone(v.Settings.SourceOrder))
 	fmt.Fprintf(&b, "When the repository file is unusable: %s\n", dash(v.Settings.FallbackOnBadFile))
 	fmt.Fprintf(&b, "Files that hold the version: %s\n", listOrNone(v.Settings.VersionFiles))
+	switch {
+	case v.PostShip.Enabled:
+		if len(v.PostShip.EnabledHooks) == 0 {
+			fmt.Fprintf(&b, "Post-ship hooks: on, %d defined, none to run\n", v.PostShip.HookCount)
+		} else {
+			fmt.Fprintf(&b, "Post-ship hooks: on, %d of %d defined would run: %s\n", len(v.PostShip.EnabledHooks), v.PostShip.HookCount, strings.Join(v.PostShip.EnabledHooks, ", "))
+		}
+	case v.PostShip.HookCount > 0:
+		fmt.Fprintf(&b, "Post-ship hooks: off (%d defined)\n", v.PostShip.HookCount)
+	default:
+		b.WriteString("Post-ship hooks: off (none defined)\n")
+	}
 	fmt.Fprintf(&b, "Merge conflict policy: %s", dash(v.ConflictPolicy))
 	if v.ConflictPolicyInEffect != "" && v.ConflictPolicyInEffect != v.ConflictPolicy {
 		fmt.Fprintf(&b, " (acting as %s", v.ConflictPolicyInEffect)
