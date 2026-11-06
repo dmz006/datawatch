@@ -150,6 +150,21 @@ datawatch config init
 
 ---
 
+## Optional: What sessions may change about the daemon
+
+datawatch's sessions can change the daemon's own settings through their usual tools (MCP `config_set`, the comm `configure` verb, session-scoped REST) — this is **on by default** (`mcp.allow_self_config` enables the builtin **self-config** group, which carries `config:write` in every session's scoped credential). Everything they can change is a *setting*; identity, tokens, secrets and daemon control stay out of that set, and the alias itself cannot be flipped by a session (bootstrap-protected). Every attempt — allowed or refused — is audit-logged (`mcp.self_config_audit_path`).
+
+If you don't want sessions touching daemon settings, harden now:
+
+```yaml
+mcp:
+  allow_self_config: false   # sessions lose config:write; config_set is refused + audit-logged
+```
+
+then restart. Full walkthrough, the complete capability set, and the audit queries: [howto/self-config-capability.md](howto/self-config-capability.md); the setting's definition: [datawatch-definitions.md — Self-config](datawatch-definitions.md#self-config).
+
+---
+
 ## Optional: Set up Voice Input (Whisper)
 
 Voice messages sent via Telegram or Signal can be automatically transcribed to text. This requires OpenAI Whisper running locally.
