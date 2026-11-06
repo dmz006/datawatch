@@ -143,12 +143,18 @@ func RedactConfigValue(key, value string) string {
 }
 
 // ExtractConfigPatch pulls the changed key(s) and values out of a
-// config-write body. For the flat dot-path map shape (REST /api/config
+// config-write body. For the top-level object shape (REST /api/config
 // and /api/cost/rates PUT bodies, or an MCP config-write tool argument
-// map) it returns the sorted keys with redacted values; for any
-// unrecognized shape it returns nil — the call still gets its audit
-// record (surface, tool/route, caller, allowed, reason), just without
-// key detail.
+// map) it returns the sorted changed keys with redacted values, so a
+// write named in the record is always a key that was actually written:
+// dot-path keys (config_set's flat map) and the individual sub-keys of
+// one-level objects are both expanded (a "/api/cost/rates" body of
+// {"rates":{"claude":{...},"openai":{...}}} yields rates.claude and
+// rates.openai, not a lumped "rates"); nested objects beyond that depth
+// are kept as their redacted compact-JSON value. Any unrecognized shape
+// (array, scalar, non-object) returns nil — the call still gets its
+// audit record (surface, tool/route, caller, allowed, reason), just
+// without key detail.
 func ExtractConfigPatch(raw []byte) (keys []string, values map[string]string) {
 	var patch map[string]any
 	if len(raw) == 0 {
@@ -157,21 +163,39 @@ func ExtractConfigPatch(raw []byte) (keys []string, values map[string]string) {
 	if err := json.Unmarshal(raw, &patch); err != nil {
 		return nil, nil
 	}
-	names := make([]string, 0, len(patch))
-	for k := range patch {
-		names = append(names, k)
+	values = make(map[string]string)
+	for k, v := range patch {
+		for _, dk := range expandPatchKey(values, k, v) {
+			keys = append(keys, dk)
+		}
 	}
-	sort.Strings(names)
-	values = make(map[string]string, len(patch))
-	for _, k := range names {
-		keys = append(keys, k)
-		values[k] = RedactConfigValue(k, stringifyPatchValue(patch[k]))
-	}
+	sort.Strings(keys)
 	return keys, values
 }
 
+// expandPatchKey adds one top-level patch entry to values and returns the
+// key name(s) it covers. A JSON object value (e.g. the "rates" map in a
+// cost-rates PUT) is expanded into its direct entries so the audit record
+// names the individual keys actually written; everything else is a single
+// dot-path key. Values are redacted for secret-like keys (and credential
+// shapes) either way.
+func expandPatchKey(values map[string]string, k string, v any) []string {
+	if obj, ok := v.(map[string]any); ok && len(obj) > 0 {
+		children := make([]string, 0, len(obj))
+		for child, cv := range obj {
+			name := k + "." + child
+			values[name] = RedactConfigValue(name, stringifyPatchValue(cv))
+			children = append(children, name)
+		}
+		return children
+	}
+	values[k] = RedactConfigValue(k, stringifyPatchValue(v))
+	return []string{k}
+}
+
 // stringifyPatchValue renders a JSON patch value for the audit sink:
-// strings verbatim, everything else as compact JSON.
+// strings verbatim, everything else as compact JSON. The result passes
+// through the caller's RedactConfigValue before it is stored.
 func stringifyPatchValue(v any) string {
 	if s, ok := v.(string); ok {
 		return s

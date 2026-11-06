@@ -1352,8 +1352,10 @@ func (s *HTTPServer) SetMCPSamplingDispatcher(d MCPSamplingAPI) {
 func (s *HTTPServer) SetMCPElicitationDispatcher(d MCPElicitationAPI) {
 	s.api.SetMCPElicitationDispatcher(d)
 }
-func (s *HTTPServer) SetStatsCollector(c *stats.Collector)           { s.api.statsCollector = c }
-func (s *HTTPServer) SetTestMessageHandler(fn func(string) []string) { s.api.SetTestMessageHandler(fn) }
+func (s *HTTPServer) SetStatsCollector(c *stats.Collector) { s.api.statsCollector = c }
+func (s *HTTPServer) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
+	s.api.SetTestMessageHandler(fn)
+}
 
 // SetSmokeForward (#54) — wires cross-instance smoke-run forwarding.
 func (s *HTTPServer) SetSmokeForward(url, token string) {

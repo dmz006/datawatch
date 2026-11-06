@@ -77,12 +77,16 @@ func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"rates": out})
 	case http.MethodPut:
-		if !s.fedCap(w, r, federation.CapConfigWrite) {
-			return
-		}
 		// BL110 extension — the single REST audit point for config writes,
-		// shared sink with the MCP and comm surfaces.
-		s.auditConfigPut("/api/cost/rates", s.handleCostRatesPut)(w, r)
+		// wrapping the capability gate AND the handler (one record per
+		// call, allowed or denied), shared sink with the MCP and comm
+		// surfaces.
+		s.auditConfigPut("/api/cost/rates", func(w http.ResponseWriter, r *http.Request) {
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			s.handleCostRatesPut(w, r)
+		})(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

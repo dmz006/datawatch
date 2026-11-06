@@ -88,6 +88,68 @@ func (s *Server) configWriteCallerFrom(ctx context.Context) (string, bool) {
 	return "", false
 }
 
+// TestMessageAttribution carries the calling credential's identity and
+// capability decision to the comm router for session-attributed test
+// injection (POST /api/test/message), mirroring router's
+// ConfigureAttribution. The zero value is an operator (admin) call: no
+// session credential is involved and the comm configure path is not
+// audited as a session write — consistent with the REST and MCP surfaces,
+// which only record scoped (session/peer) credential use.
+type TestMessageAttribution struct {
+	// Caller names the session or peer ("session:<id>" / "peer:<name>").
+	// Empty = operator/admin.
+	Caller string
+	// ConfigWriteAllowed is the config:write capability decision made
+	// here, from the credential this request carries.
+	ConfigWriteAllowed bool
+	// DenyReason is the denial carried into the comm audit record when
+	// ConfigWriteAllowed is false (e.g. the exact missing capability).
+	DenyReason string
+}
+
+// configureWriteAttribution resolves the calling credential of a
+// /api/test/message request into the attribution the comm configure path
+// needs (identity + config:write decision), using the same gate (fedCap)
+// the REST config-write routes use — the same session token or peer caps,
+// the same capability, the same denials. An unresolvable session
+// credential still names itself ("session:unresolved") so a denied comm
+// write is auditable against something.
+func (s *Server) configureWriteAttribution(r *http.Request) TestMessageAttribution {
+	ctx := r.Context()
+	if sessionCaps := sessionCapsFromContext(ctx); sessionCaps != nil {
+		caller := "session:unresolved"
+		if s.sessionTokens != nil {
+			if tok := callerTokenFromContext(ctx); tok != "" {
+				if id := s.sessionTokens.SessionIDForToken(tok); id != "" {
+					caller = "session:" + id
+				}
+			}
+		}
+		if !federation.Check(sessionCaps, federation.CapConfigWrite) {
+			return TestMessageAttribution{
+				Caller:     caller,
+				DenyReason: "session token lacks capability: " + federation.CapConfigWrite,
+			}
+		}
+		return TestMessageAttribution{Caller: caller, ConfigWriteAllowed: true}
+	}
+	if peer := peerFromContext(ctx); peer != nil {
+		var custom map[string]*federation.CapabilityGroup
+		if s.fedGroupStore != nil {
+			custom = s.fedGroupStore.AsMap()
+		}
+		resolved := federation.Resolve(peer.Capabilities, custom)
+		if !federation.Check(resolved, federation.CapConfigWrite) {
+			return TestMessageAttribution{
+				Caller:     "peer:" + peer.Name,
+				DenyReason: "federation peer lacks capability: " + federation.CapConfigWrite,
+			}
+		}
+		return TestMessageAttribution{Caller: "peer:" + peer.Name, ConfigWriteAllowed: true}
+	}
+	return TestMessageAttribution{} // admin/operator — not a session write
+}
+
 // configPutRecorder captures the status code and the (bounded) response
 // body so a denied REST write can carry the denial reason in its audit
 // record.

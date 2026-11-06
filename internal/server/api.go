@@ -468,7 +468,9 @@ type Server struct {
 
 	// testMessageHandler is an optional function that routes a simulated incoming
 	// message through the router, enabling comm channel testing via the API.
-	testMessageHandler func(text string) []string
+	// The attribution parameter carries the calling credential and its
+	// config:write decision (see TestMessageAttribution).
+	testMessageHandler func(text string, at TestMessageAttribution) []string
 
 	// memoryAPI provides memory operations for the REST API.
 	memoryAPI MemoryAPI
@@ -5735,13 +5737,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleGetConfig(w, r)
 	case http.MethodPut:
-		if !s.fedCap(w, r, federation.CapConfigWrite) {
-			return
-		}
 		// BL110 extension — the single REST audit point for config writes:
-		// one record per call (allowed or denied), shared sink with the
-		// MCP and comm surfaces.
-		s.auditConfigPut("/api/config", s.handlePutConfig)(w, r)
+		// it wraps the capability gate AND the handler, so exactly one
+		// record per call is written, allowed or denied (denied records
+		// carry the gate's refusal reason). Shared sink with the MCP and
+		// comm surfaces.
+		s.auditConfigPut("/api/config", func(w http.ResponseWriter, r *http.Request) {
+			if !s.fedCap(w, r, federation.CapConfigWrite) {
+				return
+			}
+			s.handlePutConfig(w, r)
+		})(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -9393,8 +9399,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 }
 
 // SetTestMessageHandler wires a function that routes simulated messages through
-// the router. Used by POST /api/test/message for comm channel testing.
-func (s *Server) SetTestMessageHandler(fn func(text string) []string) {
+// the router. Used by POST /api/test/message for comm channel testing. The
+// handler receives the request's TestMessageAttribution (calling credential +
+// config:write decision) so a session-attributed configure is audited once
+// (surface "comm") and refused without the capability.
+func (s *Server) SetTestMessageHandler(fn func(text string, at TestMessageAttribution) []string) {
 	s.testMessageHandler = fn
 }
 
@@ -9421,7 +9430,7 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "need {\"text\":\"...\"}", http.StatusBadRequest)
 		return
 	}
-	responses := s.testMessageHandler(req.Text)
+	responses := s.testMessageHandler(req.Text, s.configureWriteAttribution(r))
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"input":     req.Text,
