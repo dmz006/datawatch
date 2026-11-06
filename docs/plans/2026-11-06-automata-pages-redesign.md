@@ -72,6 +72,30 @@ automata pages". Also: "there will be more but this is first pass of redesign of
 6. A project axis: pick a project and see its Automations, Automata, sessions, progress and cost, including history
    (the 9.0 to 10.0 runs), next to the cross-project in-flight view.
 
+## Prior designs found (searched 2026-11-06 after the operator recalled a projects idea)
+
+- `2026-10-30-dashboard-purpose-proposal.md` (registry row 273, `Confirmed: no`): option 3 is a per-project view
+  (same cards filtered to one project, "needs a project picker"); option 4 is configurable boards (console, health,
+  project). Nothing was decided. This answer decides the project view part.
+- `2026-11-02-dashboard-card-audit.md`: the Gantt "Timeline" card is marked "Keep (primary project view)", so the
+  Gantt work (Automaton `ef660001`) belongs on the project page.
+- Registry row 334 (shipped 9.88.0): per-project automation policy under `projects.<alias>.policy`, a tier between an
+  Automaton's settings and the daemon defaults. The project page shows and edits it.
+- Registry row 268 and `2026-11-01-merge-pipeline-and-onboarding-report.md`: the merge pipeline as per-project
+  configuration (`autonomous.merge_pipeline.*` with per-project overrides). The "no project" the operator saw on the
+  merge pipeline card is this per-project setting with no project chosen.
+
 ## Decisions (asked one at a time; answers quoted)
 
-(none yet)
+### 1. The project view (asked 2026-11-06 08:40)
+
+Options offered: A a new Projects tab (project page with Automations, Automata, sessions, progress, cost and
+history, plus a project filter chip on the existing lists), B a filter on every existing tab, C project as the top
+level of everything.
+
+Operator answer, quoted: "a yes projects tab - in fact check designs i beleive that this was brought up sometime in
+the last few weeks as something needed."
+
+Decision: A. A Projects tab. The designs above were checked; the dashboard proposal's per-project option was never
+decided, so this answer settles it for the Automata pages. The project page also hosts the Gantt charts, the
+project policy and the per-project merge pipeline.
