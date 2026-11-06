@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
 
 // mergeRunSpy is a Manager double for the run route: it records the runs the
@@ -70,5 +73,23 @@ func TestMergeRunRoute_BadBody(t *testing.T) {
 	s := &Server{autonomousMgr: &mergeRunSpy{repo: t.TempDir()}}
 	if rec := postMergeRun(s, http.MethodPost, `{`); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad body = %d, want 400", rec.Code)
+	}
+}
+
+func TestMergeRunnerDeployNotConfiguredIsSkipped(t *testing.T) {
+	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, config.DeployConfig{}, t.TempDir(), "p")
+	res, err := r.Ship.Deploy(context.Background(), t.TempDir())
+	if err != nil || res.Status != mergepipeline.ShipSkipped {
+		t.Fatalf("deploy = %+v, %v; want skipped", res, err)
+	}
+}
+
+func TestMergeRunnerDeployConfiguredUsesDeploySequence(t *testing.T) {
+	cfg := config.DeployConfig{BuildCommand: "false"}
+	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, cfg, t.TempDir(), "p")
+	t.Setenv("DATAWATCH_DATA_DIR", t.TempDir())
+	res, err := r.Ship.Deploy(context.Background(), t.TempDir())
+	if err != nil || res.Status != mergepipeline.ShipFailed || !strings.Contains(res.Note, "deploy failed") {
+		t.Fatalf("deploy = %+v, %v; want a failed deploy with its note", res, err)
 	}
 }

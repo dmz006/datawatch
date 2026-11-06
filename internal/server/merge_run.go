@@ -21,6 +21,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/deploy"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/mergepipeline"
 )
@@ -60,7 +61,7 @@ func mergeDataDir() string {
 // settings. Nothing here names a repository or path: the project directory is
 // the configured worktree base repo, and the version files, conflict policy
 // and pipeline sources are autonomous.merge_pipeline settings.
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project string) *mergepipeline.Runner {
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, deployCfg config.DeployConfig, repo, project string) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
 	if rs, err := mergepipeline.NewRecordStore(mergeDataDir()); err == nil {
 		records = rs
@@ -79,8 +80,11 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 	runner := &mergepipeline.Runner{
 		Dir: repo, Project: project, Resolver: resolver,
 		VersionFiles: cfg.EffectiveVersionFiles(project),
-		Ship:         mergepipeline.ExecShipRunner{},
-		Recorder:     mr,
+		Ship: mergepipeline.ExecShipRunner{
+			DeployConfig: deployCfg,
+			NewDeploy:    newDeployRunner,
+		},
+		Recorder: mr,
 		ConflictSettings: func() mergepipeline.ConflictSettings {
 			s := mergepipeline.DefaultConflictSettings()
 			// The model is not wired here, so the model policy degrades to
@@ -140,7 +144,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), s.deployConfig(), repo, project).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches,
 	})
 	out := map[string]any{"run": res.Run}
@@ -156,4 +160,37 @@ func (s *Server) mergePipelineConfig() config.MergePipelineConfig {
 		return config.MergePipelineConfig{}
 	}
 	return s.cfg.Autonomous.MergePipeline.Clone()
+}
+
+// deployConfig returns the operator's autonomous.deploy block.
+func (s *Server) deployConfig() config.DeployConfig {
+	if s.cfg == nil {
+		return config.DeployConfig{}
+	}
+	return s.cfg.Autonomous.Deploy.Clone()
+}
+
+// noFinalGateDrain reports no running final-gate task: the daemon has no
+// final-gate counter to read yet, so the drain wait never blocks.
+type noFinalGateDrain struct{}
+
+func (noFinalGateDrain) RunningFinalGate(context.Context) (int, error) { return 0, nil }
+
+// noRestartRecord records nothing about sessions or leases before a restart.
+type noRestartRecord struct{}
+
+func (noRestartRecord) RunningSessionIDs(context.Context) ([]string, error) { return nil, nil }
+func (noRestartRecord) HeldLeaseCount(context.Context) (int, error)         { return 0, nil }
+
+// newDeployRunner builds the deploy sequence Runner for dir.
+func newDeployRunner(dir string, cfg config.DeployConfig) *deploy.Runner {
+	data := mergeDataDir()
+	return &deploy.Runner{
+		Config: cfg, Dir: dir, DataDir: data,
+		Cmd:     deploy.ExecCommandRunner{},
+		Drain:   noFinalGateDrain{},
+		Clock:   deploy.SystemClock{},
+		Store:   deploy.FileStore{Path: filepath.Join(data, "deploy", "state.json")},
+		Restart: noRestartRecord{},
+	}
 }
