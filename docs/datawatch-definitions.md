@@ -1617,6 +1617,53 @@ Four settings in Settings → Automata (Autonomous Automata planning) control ho
 
 **Queue preview lines** (`autonomous.questions.queue_preview_lines`) — how many lines of each open question the queue row shows before its *Show more* control. The default is 3. A whole number of 1 or more. It is for the operator who wants a longer or shorter glance at each question without opening it; the full text is always one click away.
 
+### Decision records in the PWA
+
+A decision record is the structured description of one operator decision. It
+keeps the decision's title and situation, the deciding question, the options
+with each one-line tradeoff, a recommendation and its reason, and the forced
+default; the daemon raises its queue question from the record, so the record
+is the answerable thing, not just a log line.
+
+The PWA shows decision records in two places. The Automata area carries one
+card at the top of its list: every record, newest first, each with its title,
+record id, state (open, answered, or withdrawn), situation, deciding
+question, options with their tradeoffs, recommendation, default, the
+operator's answer (actor, surface, and the quote verbatim) when the record
+is answered, the document status line outcome when one was reported or
+applied, and the follow-up outcome when one ran. The card ends with the
+folder watch status line: the watched directory and file count while the
+folder is enabled, or a plain line that the folder watch is off, plus any
+per-file read problems. A record answered by an Automaton's daemon also shows
+that record id on its per-Automaton decision log line. The card is read-only:
+it renders what the REST list returns and shows a short unavailable line when
+the fetch fails; it never invents records.
+
+Both places are driven by the same `autonomous.decisions.*` keys, which the
+Settings → Automata panel exposes as rows and whose docs link opens the
+section below or here:
+
+| Key | Meaning |
+|---|---|
+| `autonomous.decisions.enabled` | Raise the record's queue question at all (the master switch). |
+| `autonomous.decisions.folder` | Directory of decision files the daemon watches; empty means the folder watch is off, which the card's status line states. |
+| `autonomous.decisions.folder_glob` | Which files in the folder are read (default `*.md`). |
+| `autonomous.decisions.folder_withdraw_on_delete` | Withdraw a record when its file is deleted (default true). |
+| `autonomous.decisions.front_matter_delimiter` | Line that opens and closes a file's front matter (default `---`). |
+| `autonomous.decisions.front_matter_separator` | Splits a front matter line into key and value (default `:`). |
+| `autonomous.decisions.front_matter_field_separator` | Separates the parts of an option or recommendation line (default `|`). |
+| `autonomous.decisions.front_matter_keys` | Map a canonical front matter key to the name a file uses for it. |
+| `autonomous.decisions.clarity_mode` | `off`, `warn` (default) or `refuse`: how a low-clarity record is treated on read. |
+| `autonomous.decisions.clarity_min_text_chars` | Fewest characters the situation and the deciding text may have (default 60). |
+| `autonomous.decisions.clarity_require_tradeoffs` | Ask every option for a one-line tradeoff (default true). |
+| `autonomous.decisions.clarity_require_label` | Ask for a short label on the record (default true). |
+| `autonomous.decisions.clarity_tracker_id_pattern` | Regex that spots an internal tracker identifier in a record; empty means the built-in pattern. |
+| `autonomous.decisions.doc_root` | Directory that a record's document paths resolve against. |
+| `autonomous.decisions.doc_status_mode` | `off`, `report` (default) or `on`: whether an answer is written back to the linked document's status line; `report` only shows the change and `on` applies it, and the card shows whichever outcome the record got. |
+| `autonomous.decisions.doc_status_pattern` | Regex that finds the status line (default the built-in pattern). |
+| `autonomous.decisions.doc_status_template` | Text the status line is replaced with; placeholders include `{choice}`, `{choice_label}`, `{quote}`, `{actor}`, `{date}`. |
+| `autonomous.decisions.follow_ups` | The follow-up actions an answered record may request. |
+
 ### Decision record settings
 
 The settings under `autonomous.decisions` (Settings → Automata) control the decision record: a structured description of one operator decision, with a title, the situation in plain words, what is being decided, the options with a line of cost and risk each, a recommendation and a forced default. The daemon raises its operator question from the record, never from the caller's own prose. Every key reads its default when absent, an explicit `false` or `0` is kept, and a bad value is refused on every surface (the config file load, `PUT /api/config`, the MCP config tools, the CLI and the comm channel `configure` verb). A change applies at once, with no restart.

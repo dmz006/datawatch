@@ -220,20 +220,20 @@ func TestDecisionRecordConfigSurface_PWASettings(t *testing.T) {
 		if !strings.Contains(src, "key: 'autonomous.decisions."+k+"'") {
 			t.Errorf("app.js settings list has no entry for autonomous.decisions.%s", k)
 		}
-		if !strings.Contains(src, "labelKey: 'settings_decisions_"+k+"'") {
+		if !strings.Contains(src, "labelKey: 'settings_automata_decisions_"+k+"'") {
 			t.Errorf("app.js entry for autonomous.decisions.%s has no labelKey", k)
 		}
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
 		for _, k := range keys {
-			v, ok := bundle["settings_decisions_"+k]
+			v, ok := bundle["settings_automata_decisions_"+k]
 			if !ok || strings.TrimSpace(v) == "" {
-				t.Errorf("locale %s: missing or empty settings_decisions_%s", lang, k)
+				t.Errorf("locale %s: missing or empty settings_automata_decisions_%s", lang, k)
 				continue
 			}
 			if prdWord.MatchString(v) || strings.Contains(v, "Automation") {
-				t.Errorf("locale %s: settings_decisions_%s uses a reserved word: %q", lang, k, v)
+				t.Errorf("locale %s: settings_automata_decisions_%s uses a reserved word: %q", lang, k, v)
 			}
 		}
 	}
