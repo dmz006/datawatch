@@ -209,6 +209,7 @@ Settings: add the `autonomous.decisions` keys that an operator is likely to chan
 
 ## Filed issue
 
-- Issue: [dmz006/datawatch-app#382](https://github.com/dmz006/datawatch-app/issues/382), "[sync] Decision records: the daemon builds the operator question from a structured record", open.
+- Issue: [dmz006/datawatch-app#382](https://github.com/dmz006/datawatch-app/issues/382), "feat(i18n): add 39 decision record keys (decision_record_*, settings_automata_decisions_*) for decision records parity (datawatch v9.102.0)", open.
 - Filed: 2026-11-06.
 - No open issue covered this contract (#302 covers only the decision line and gate), so a new issue was created.
+- At merge (2026-11-06, datawatch v9.102.0) the same issue was retitled `feat(i18n): add 39 decision record keys (decision_record_*, settings_automata_decisions_*) for decision records parity (datawatch v9.102.0)` and the parent release plus the 39 locale keys with their EN values were appended to its body.
