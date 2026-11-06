@@ -8,8 +8,8 @@ exec_steps:
     description: Read the decisions settings (folder, clarity rules, document status mode and the configured follow-ups)
     args: {section: "autonomous"}
     read_only: true
-  - tool: autonomous_decisions
-    description: Read the decision line, which carries the record id on each decision raised from a record
+  - tool: autonomous_decision_record_list
+    description: List the decision records, newest first, with their state and question id
     args: {}
     read_only: true
 ---
@@ -102,12 +102,55 @@ record, and `POST /api/autonomous/decision-records/{id}/withdraw` withdraws it
 (optional body `{"reason": "..."}`). The body can only carry the content
 fields; state, source, question link and answer cannot be set by a caller.
 
-### MCP, the CLI and the chat channel
+### MCP
 
-There is no record-creating MCP tool, `datawatch` verb or chat command yet.
-Create records from REST or from a file in the folder. The decision line is
-readable over MCP with `autonomous_decisions`, and answering works on every
-surface (see Follow-ups for what each one can name).
+`autonomous_decision_record_create` takes the content fields. `options`,
+`recommendation` and `links` are JSON text:
+
+```json
+{"tool": "autonomous_decision_record_create", "arguments": {
+  "label": "design choice",
+  "title": "Which storage layout for the report archive",
+  "situation": "The report archive is growing and the current single folder is slow to list. Two layouts are on the table.",
+  "deciding": "Pick the layout the archive uses from now on.",
+  "options": "[{\"id\":\"by-month\",\"label\":\"One folder per month\",\"tradeoff\":\"Simple to browse; a busy month is still large.\"},{\"id\":\"by-hash\",\"label\":\"Folders by id prefix\",\"tradeoff\":\"Even spread; harder to browse.\"}]",
+  "recommendation": "{\"option_id\":\"by-month\",\"reason\":\"People browse by date.\"}",
+  "default": "hold"
+}}
+```
+
+The other tools are `autonomous_decision_record_update` (`id` plus content),
+`autonomous_decision_record_withdraw` (`id`, optional `reason`),
+`autonomous_decision_record_get` and `autonomous_decision_record_list`.
+
+### The CLI
+
+```bash
+datawatch autonomous decision-records create \
+  --title "Which storage layout for the report archive" \
+  --situation "The report archive is growing and the current single folder is slow to list." \
+  --deciding "Pick the layout the archive uses from now on." \
+  --option by-month="One folder per month" --option by-hash="Folders by id prefix" \
+  --tradeoff by-month="Simple to browse; a busy month is still large" \
+  --tradeoff by-hash="Even spread; harder to browse" \
+  --recommend by-month --rationale "People browse by date" \
+  --default hold --doc docs/plans/report-archive.md
+```
+
+`--option` and `--tradeoff` repeat, once per option, in the form `id=text`.
+`--file <path>` (or `--file -`) takes the whole record as JSON instead. The
+other verbs are `list`, `show <id>`, `update <id>` and `withdraw <id>
+[--reason ...]`.
+
+### The chat channel
+
+```text
+autonomous decision-record create {"title":"Which storage layout for the report archive","situation":"The report archive is growing and the current folder is slow to list.","deciding":"Pick the layout the archive uses from now on.","options":[{"id":"by-month","label":"One folder per month","tradeoff":"Simple to browse"},{"id":"by-hash","label":"Folders by id prefix","tradeoff":"Even spread"}],"default":"hold"}
+```
+
+The reply names the record id, the question id and any warnings. Other verbs:
+`autonomous decision-records [automaton-id]`, `autonomous decision-record <id>`
+and `autonomous decision-record withdraw <id> [reason]`.
 
 ### A file in the configured folder
 
@@ -232,8 +275,8 @@ skipped and the message names the rule.
 
 ## One question per record, edits and withdrawals
 
-A record raises exactly one question. When you edit an open record, from REST,
-REST or by changing its file, the same open question is updated
+A record raises exactly one question. When you edit an open record, from REST, MCP,
+the CLI, chat or by changing its file, the same open question is updated
 in place, with the same id. Nothing new is raised, so a task that names the
 question keeps waiting on the right one. When you withdraw a record, or its
 file is deleted with withdrawal on delete, its open question is withdrawn too.
@@ -320,9 +363,8 @@ unless you configure it.** `autonomous.decisions.follow_ups` is a list of
 An answer names one by its `name`:
 
 - REST: `follow_up` in the body of `POST /api/questions/{id}/answer`.
-
-The CLI `datawatch question answer` and the MCP `question_answer` tool take no
-follow-up yet; answer over REST when you want one to run.
+- CLI: `datawatch question answer <id> --option <id> --follow-up <name>`.
+- MCP: the `follow_up` argument of `question_answer`.
 
 A name that is not in the list is refused. The record's `follow_up` shows what
 was requested, its status and its result.
@@ -332,8 +374,10 @@ was requested, its status and its result.
 | Surface | How |
 |---|---|
 | REST | `GET /api/autonomous/decision-records` (filters `state`, `prd_id`, `limit`), or `GET /api/autonomous/decision-records/{id}` |
-| MCP | `autonomous_decisions` (the decision line, with the record id on each) |
-| CLI, chat | not available for records yet |
+| MCP | `autonomous_decision_record_list` and `autonomous_decision_record_get` (the decision line is `autonomous_decisions`) |
+| CLI | `datawatch autonomous decision-records list [--state ...] [--automaton ...] [--limit n] [--json]` and `show <id>` |
+| Chat | `autonomous decision-records [automaton-id]` and `autonomous decision-record <id>` |
+| PWA | the **Decision records** card in the Automata area |
 
 The decision line (`GET /api/autonomous/decisions`) carries the record id on
 each decision raised from a record.
