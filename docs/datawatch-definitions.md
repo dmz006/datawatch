@@ -1880,6 +1880,8 @@ The ship CI watch (`autonomous.ship.ci_watch`) follows the CI runs of the pushed
 - **`supervisor_loop.escalate_after_failures`** — How many failed attempts in one run before you are asked. Default 2.
 <a id="supervisor-loop-run-retention"></a>
 - **`supervisor_loop.run_retention`** — How many recent run records are kept. Default 500.
+<a id="supervisor-loop-archive-cancelled-after-minutes"></a>
+- **`supervisor_loop.archive_cancelled_after_minutes`** — The grace, in minutes, before a cancelled Automaton is archived: it is archived only once the time since its most recent cancel reaches this value (0 archives it at once). It exists so a cancelled branch can still be inspected, or re-cancelled to push it back, before it disappears. Default 60.
 <a id="supervisor-loop-lane-count-min"></a>
 - **`supervisor_loop.lane_count.min`** — The lowest lane count the loop may set.
 <a id="supervisor-loop-lane-count-max"></a>

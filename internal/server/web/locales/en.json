@@ -3526,6 +3526,8 @@
   "supervisor_loop_validator_retries": "Validator retries (retries after a failed check, default 2)",
   "supervisor_loop_escalate_after_failures": "Escalate after failures (failed runs before a stronger model takes over, default 2)",
   "supervisor_loop_run_retention": "Run history kept (number of recent runs, default 500)",
+  "supervisor_loop_archive_cancelled_after_minutes": "Archive a cancelled Automaton after (minutes since its most recent cancel, 0 = at once, default 60)",
+  "supervisor_loop_archive_cancelled_after_minutes_hint": "The grace before the loop archives a cancelled Automaton; while it lasts the branch can still be inspected or re-cancelled.",
   "supervisor_loop_lane_count_min": "Lane count minimum (lowest lane count the loop may set)",
   "supervisor_loop_lane_count_max": "Lane count maximum (highest lane count the loop may set, 0 = no bounds so the step moves nothing)",
   "supervisor_loop_group_title": "Supervisor loop",
