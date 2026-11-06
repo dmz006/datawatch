@@ -1,4 +1,4 @@
-**Title:** [sync] feat(automaton): protected-paths gate and rules read from the base commit
+**Title:** feat(i18n): add 39 protected paths keys (protected_paths_*, settings_automation_protected_paths*, rules_review_source_*) for protected paths parity (datawatch v9.104.0)
 **Issue:** https://github.com/dmz006/datawatch-app/issues/381
 **Number:** 381
 
@@ -240,3 +240,5 @@ Capability parity is required; implementation parity is not: each platform uses 
 The issue text above is the exact body as posted.
 
 ## Corrections posted as comments
+
+- Edited at merge (v9.104.0): title and parent release set; the card moved to the Housekeeping sub-tab of the Automation screen. URL: https://github.com/dmz006/datawatch-app/issues/381
