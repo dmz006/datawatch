@@ -47,7 +47,11 @@ func (r *Registry) applyLocked(w Write) (WriteResult, error) {
 
 // createLocked adds a tag. A tag id the registry already holds is a retried
 // write and returns the existing tag. A pending write whose parent and name
-// match a tag of the keeper merges into that tag instead.
+// match a tag of the keeper merges into that tag instead. A write that creates
+// a system tag is create-or-return: a tag with the same name under the same
+// parent is returned as it is, so a placement repeated on this daemon or
+// another never makes a duplicate and never changes the existing tag's
+// origin.
 func (r *Registry) createLocked(w Write) (WriteResult, error) {
 	name := strings.TrimSpace(w.Name)
 	if w.TagID == "" || name == "" {
@@ -64,6 +68,11 @@ func (r *Registry) createLocked(w Write) (WriteResult, error) {
 			return r.mergeLocked(w, i), nil
 		}
 	}
+	if w.System {
+		if i := r.sameNameLocked(w.ParentID, name); i >= 0 {
+			return r.resultLocked(i), nil
+		}
+	}
 	now := r.clock.Now()
 	r.st.Tags = append(r.st.Tags, Tag{
 		ID:          w.TagID,
@@ -72,6 +81,7 @@ func (r *Registry) createLocked(w Write) (WriteResult, error) {
 		Color:       w.Color,
 		Description: w.Description,
 		OriginNode:  w.OriginNode,
+		System:      w.System,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	})
@@ -128,6 +138,9 @@ func (r *Registry) editLocked(w Write, field string) (WriteResult, error) {
 	if err != nil {
 		return WriteResult{}, err
 	}
+	if field == fieldName && r.st.Tags[i].System {
+		return WriteResult{}, refuseSystemEdit("rename", r.st.Tags[i].Name)
+	}
 	if r.conflictLocked(w.TagID, field, w.BaseRevision) {
 		return r.conflictResultLocked(i, field), nil
 	}
@@ -151,6 +164,9 @@ func (r *Registry) reparentLocked(w Write) (WriteResult, error) {
 	i, err := r.requireLocked(w.TagID)
 	if err != nil {
 		return WriteResult{}, err
+	}
+	if r.st.Tags[i].System {
+		return WriteResult{}, refuseSystemEdit("re-parent", r.st.Tags[i].Name)
 	}
 	if w.ParentID != "" && r.indexLocked(w.ParentID) < 0 {
 		return WriteResult{}, fmt.Errorf("%w: parent %q", ErrTagNotFound, w.ParentID)
@@ -186,6 +202,9 @@ func (r *Registry) checkDeleteLocked(id string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if r.st.Tags[i].System {
+		return 0, refuseSystemEdit("delete", r.st.Tags[i].Name)
+	}
 	for _, t := range r.st.Tags {
 		if t.ParentID == id {
 			return 0, fmt.Errorf("%w: %q has child tag %q", ErrTagHasChildren, id, t.ID)
@@ -208,6 +227,13 @@ func (r *Registry) requireLocked(id string) (int, error) {
 		return 0, fmt.Errorf("%w: %q", ErrTagNotFound, id)
 	}
 	return i, nil
+}
+
+// refuseSystemEdit is the refusal for an operator edit of a system tag. A
+// system tag is a tag the registry created itself, such as a placement tag,
+// and its name, parent and lifetime belong to the registry.
+func refuseSystemEdit(op, name string) error {
+	return fmt.Errorf("%w: %q is a system tag, so %s of it is refused", ErrTagSystem, name, op)
 }
 
 // indexLocked returns the index of a tag id, or -1.

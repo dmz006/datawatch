@@ -140,6 +140,7 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		row := autonomous.BuildSummaryRow(prd)
+		s.fillInheritedTags(&row.SummaryView)
 		st := string(row.Status)
 		if len(statuses) > 0 && !statuses[st] &&
 			(!statusShipped || !shipEnabled || !prd.IsShipped()) {

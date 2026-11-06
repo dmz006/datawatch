@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/placementtags"
 )
 
 // The autonomous.tags block configures the Automata tag browser: how it opens,
@@ -71,6 +73,110 @@ type TagsConfig struct {
 	// RegistrySyncSeconds is the whole number of seconds (>= 5) between
 	// registry sync checks. Default 30.
 	RegistrySyncSeconds int `yaml:"registry_sync_seconds" json:"registry_sync_seconds"`
+	// Placement configures the placement tags: automatic tags that record
+	// where a piece of work ran, one tag per enabled axis. See
+	// PlacementConfig; an unset block takes DefaultPlacementConfig's values.
+	Placement PlacementConfig `yaml:"placement" json:"placement"`
+}
+
+// PlacementAxis configures one built-in placement axis under
+// autonomous.tags.placement: whether the axis is on, and the template its tag
+// is built from. The template must contain the axis's placeholder ({node} for
+// compute, {peer} for peer, {backend} for backend, {lane} for lane, {role} for
+// role, {project} for project), which is replaced with the fact value.
+type PlacementAxis struct {
+	// Enabled turns the axis on or off. A disabled axis never yields a tag.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Template is the tag template; it must contain the axis's placeholder.
+	Template string `yaml:"template" json:"template"`
+}
+
+// PlacementCustomAxis configures one user-defined placement axis. It always
+// uses the {value} placeholder and reads its value from the session field
+// named in Field.
+type PlacementCustomAxis struct {
+	// Name labels the axis. Lowercase letters, digits and hyphens only,
+	// unique across custom axes, and not a built-in axis name.
+	Name string `yaml:"name" json:"name"`
+	// Field is the session field the axis reads. One of
+	// placementtags.SessionFields: Name, Backend, Model, Node, PRDID, Role,
+	// Project.
+	Field string `yaml:"field" json:"field"`
+	// Template is the tag template; it must contain the {value} placeholder.
+	Template string `yaml:"template" json:"template"`
+	// Enabled turns the axis on or off.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+}
+
+// PlacementConfig is the autonomous.tags.placement block.
+//
+// Enabled is the master switch: when false no placement tags are derived at
+// all. One PlacementAxis covers each built-in axis; Custom holds
+// user-defined axes. A piece of work that is missing an axis's fact value
+// still yields no tag for that axis.
+type PlacementConfig struct {
+	// Enabled is the master switch. Default true.
+	Enabled bool          `yaml:"enabled" json:"enabled"`
+	Compute PlacementAxis `yaml:"compute" json:"compute"`
+	Peer    PlacementAxis `yaml:"peer" json:"peer"`
+	Backend PlacementAxis `yaml:"backend" json:"backend"`
+	Lane    PlacementAxis `yaml:"lane" json:"lane"`
+	Role    PlacementAxis `yaml:"role" json:"role"`
+	Project PlacementAxis `yaml:"project" json:"project"`
+	// Custom holds user-defined axes, empty by default.
+	Custom []PlacementCustomAxis `yaml:"custom" json:"custom"`
+}
+
+// defaultPlacementAxis builds one built-in axis's default: on with the
+// conventional "<axis>:<placeholder>" template, except project, which is off.
+func defaultPlacementAxis(name string) PlacementAxis {
+	template, _ := placementtags.DefaultTemplate(name)
+	return PlacementAxis{Enabled: name != "project", Template: template}
+}
+
+// DefaultPlacementConfig returns the placement block's defaults: the master
+// switch on; compute, peer, backend, lane and role on and project off, each
+// with its conventional template; no custom axes.
+func DefaultPlacementConfig() PlacementConfig {
+	return PlacementConfig{
+		Enabled: true,
+		Compute: defaultPlacementAxis("compute"),
+		Peer:    defaultPlacementAxis("peer"),
+		Backend: defaultPlacementAxis("backend"),
+		Lane:    defaultPlacementAxis("lane"),
+		Role:    defaultPlacementAxis("role"),
+		Project: defaultPlacementAxis("project"),
+	}
+}
+
+// EffectivePlacement returns p with every axis that was never set (an empty
+// template marks an unset axis) replaced by its default; an unset block (no
+// axis template and no custom axes) takes all defaults, master switch
+// included.
+func (p PlacementConfig) EffectivePlacement() PlacementConfig {
+	out := p
+	if p.Compute.Template == "" && p.Peer.Template == "" && p.Backend.Template == "" &&
+		p.Lane.Template == "" && p.Role.Template == "" && p.Project.Template == "" &&
+		len(p.Custom) == 0 {
+		return DefaultPlacementConfig()
+	}
+	defaultAxes := []struct {
+		ax  *PlacementAxis
+		def PlacementAxis
+	}{
+		{ax: &out.Compute, def: defaultPlacementAxis("compute")},
+		{ax: &out.Peer, def: defaultPlacementAxis("peer")},
+		{ax: &out.Backend, def: defaultPlacementAxis("backend")},
+		{ax: &out.Lane, def: defaultPlacementAxis("lane")},
+		{ax: &out.Role, def: defaultPlacementAxis("role")},
+		{ax: &out.Project, def: defaultPlacementAxis("project")},
+	}
+	for _, e := range defaultAxes {
+		if e.ax.Template == "" {
+			*e.ax = e.def
+		}
+	}
+	return out
 }
 
 // Effective returns t with each setting that has a default and is unset
@@ -89,6 +195,7 @@ func (t TagsConfig) Effective() TagsConfig {
 	if out.RegistrySyncSeconds <= 0 {
 		out.RegistrySyncSeconds = TagRegistrySyncDefaultSeconds
 	}
+	out.Placement = out.Placement.EffectivePlacement()
 	return out
 }
 
@@ -113,6 +220,23 @@ func (t *TagsConfig) Set(name string, value interface{}) error {
 	v, err := parseTagSetting(name, value)
 	if err != nil {
 		return err
+	}
+	if name == "placement.enabled" {
+		t.Placement.Enabled = v.(bool)
+		return nil
+	}
+	if axis, field, ok := splitPlacementAxisKey(name); ok {
+		setting := t.PlacementAxisSetting(axis)
+		if setting == nil {
+			return tagSettingErr(name, "unknown placement axis")
+		}
+		switch field {
+		case "enabled":
+			setting.Enabled = v.(bool)
+		case "template":
+			setting.Template = v.(string)
+		}
+		return nil
 	}
 	switch name {
 	case "default_view":
@@ -143,6 +267,9 @@ func loadTags(cfg *Config) error {
 
 // validateLoadedTags checks every setting of the block.
 func validateLoadedTags(t TagsConfig) error {
+	if err := validatePlacement(t.Placement); err != nil {
+		return err
+	}
 	fields := map[string]interface{}{
 		"default_view":          t.DefaultView,
 		"attention_statuses":    t.AttentionStatuses,
@@ -164,9 +291,80 @@ func validateLoadedTags(t TagsConfig) error {
 	return nil
 }
 
+// validatePlacement checks the placement block: every built-in template must
+// carry its own placeholder, and every custom axis a well-formed unique name
+// that is not a built-in axis, an allowed session field, and a template that
+// carries {value}. The master switch does not gate these checks, so a bad
+// value cannot wait in storage for the block to be switched back on.
+func validatePlacement(p PlacementConfig) error {
+	axes := []struct {
+		name string
+		ax   PlacementAxis
+	}{
+		{"compute", p.Compute},
+		{"peer", p.Peer},
+		{"backend", p.Backend},
+		{"lane", p.Lane},
+		{"role", p.Role},
+		{"project", p.Project},
+	}
+	for _, a := range axes {
+		placeholder, _ := placementtags.AxisPlaceholders[a.name]
+		if !strings.Contains(a.ax.Template, placeholder) {
+			return fmt.Errorf("%splacement.%s: template %q must contain %s",
+				TagSettingPrefix, a.name, a.ax.Template, placeholder)
+		}
+	}
+	seen := map[string]bool{}
+	for _, c := range p.Custom {
+		if !placementCustomNameOK(c.Name) {
+			return fmt.Errorf("%splacement.custom: name %q must be lowercase letters, digits and hyphens",
+				TagSettingPrefix, c.Name)
+		}
+		if seen[c.Name] {
+			return fmt.Errorf("%splacement.custom: name %q is used more than once",
+				TagSettingPrefix, c.Name)
+		}
+		seen[c.Name] = true
+		if _, ok := placementtags.AxisPlaceholders[c.Name]; ok {
+			return fmt.Errorf("%splacement.custom: name %q collides with a built-in placement axis",
+				TagSettingPrefix, c.Name)
+		}
+		if !placementtags.IsSessionField(c.Field) {
+			return fmt.Errorf("%splacement.custom: field %q must be one of %s",
+				TagSettingPrefix, c.Field, strings.Join(placementtags.SessionFields, ", "))
+		}
+		if !strings.Contains(c.Template, placementtags.CustomPlaceholder) {
+			return fmt.Errorf("%splacement.custom: template %q must contain %s",
+				TagSettingPrefix, c.Template, placementtags.CustomPlaceholder)
+		}
+	}
+	return nil
+}
+
+// placementCustomNameOK accepts a name made of lowercase letters, digits and
+// hyphens; an empty name or any other character is refused.
+func placementCustomNameOK(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, r := range name {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
 // parseTagSetting returns the stored form of one setting: a string, a []string,
 // a bool or an int, depending on the setting.
 func parseTagSetting(name string, value interface{}) (interface{}, error) {
+	if name == "placement.enabled" {
+		return parsePlacementBool(name, value)
+	}
+	if axis, field, ok := splitPlacementAxisKey(name); ok {
+		return parsePlacementAxisSetting(name, axis, field, value)
+	}
 	switch name {
 	case "default_view":
 		if isBlankTagValue(value) {
@@ -189,6 +387,90 @@ func parseTagSetting(name string, value interface{}) (interface{}, error) {
 		return parseTagSyncSeconds(value)
 	}
 	return nil, tagSettingErr(name, "unknown tag setting")
+}
+
+// splitPlacementAxisKey reads a per-axis placement key, one of
+//
+//	placement.<axis>.enabled — is <axis>'s placement tag derived at all
+//	placement.<axis>.template — the tag name <axis> derives
+//
+// where <axis> is a built-in axis and <field> is enabled or template. The
+// master key placement.enabled and the custom axes are not matched here (the
+// custom axes are list-valued and take no per-key surface). Anything else
+// reports false so the usual unknown-setting refusal applies.
+func splitPlacementAxisKey(name string) (axis, field string, ok bool) {
+	rest, found := strings.CutPrefix(name, "placement.")
+	if !found || !strings.Contains(rest, ".") {
+		return "", "", false
+	}
+	axis, field, _ = strings.Cut(rest, ".")
+	if axis == "" || (field != "enabled" && field != "template") {
+		return "", "", false
+	}
+	if _, known := placementtags.AxisPlaceholders[axis]; !known {
+		return "", "", false
+	}
+	return axis, field, true
+}
+
+// PlacementAxisSetting returns the built-in axis config that name names, so
+// Set can write placement.<axis>.<field> through one place. It is nil when
+// name is not a built-in axis.
+func (t *TagsConfig) PlacementAxisSetting(axis string) *PlacementAxis {
+	switch axis {
+	case "compute":
+		return &t.Placement.Compute
+	case "peer":
+		return &t.Placement.Peer
+	case "backend":
+		return &t.Placement.Backend
+	case "lane":
+		return &t.Placement.Lane
+	case "role":
+		return &t.Placement.Role
+	case "project":
+		return &t.Placement.Project
+	}
+	return nil
+}
+
+// parsePlacementBool accepts a JSON bool, or the strings true and false. It
+// is the placement-keyed twin of parseTagBool, carrying the key's own name in
+// the refusal.
+func parsePlacementBool(name string, value interface{}) (interface{}, error) {
+	switch v := value.(type) {
+	case bool:
+		return v, nil
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		}
+	}
+	return nil, tagSettingErr(name, "must be true or false")
+}
+
+// parsePlacementAxisSetting parses one value of a placement.<axis>.<field>
+// key. enabled accepts true or false; template must be a non-empty tag name
+// carrying the axis's own placeholder. The refusal names the axis, the same
+// way validatePlacement does, so a bad value is refused the same whether it
+// arrives keyed or in the YAML block.
+func parsePlacementAxisSetting(name, axis, field string, value interface{}) (interface{}, error) {
+	if field == "enabled" {
+		return parsePlacementBool(name, value)
+	}
+	s, _ := value.(string)
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, tagSettingErr(name, "must be a tag template")
+	}
+	placeholder, _ := placementtags.AxisPlaceholders[axis]
+	if !strings.Contains(s, placeholder) {
+		return nil, fmt.Errorf("%splacement.%s: template %q must contain %s", TagSettingPrefix, axis, s, placeholder)
+	}
+	return s, nil
 }
 
 func tagSettingErr(name, reason string) error {

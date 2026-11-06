@@ -61,6 +61,18 @@ func (a *API) ListTags(includeSub bool) []any {
 	return out
 }
 
+// TagSystem reports whether the tag exists and is a system tag. A system tag
+// is one the tag registry created itself — a placement tag, for instance —
+// which is machine-managed: a session may carry it as a read-only system tag,
+// but an operator assigning it is refused (server.handleSessionTags).
+func (a *API) TagSystem(id string) (bool, error) {
+	t, err := a.M.requireTag(id)
+	if err != nil {
+		return false, err
+	}
+	return t.System, nil
+}
+
 // ListTagsWithCounts returns the tag list in the counts form, sorted like
 // ListTags, with the untagged totals. Count follows includeSub as in ListTags;
 // the subtree and direct counts do not depend on it.
@@ -176,6 +188,7 @@ func (a *API) AttentionAutomata(statuses []string) []any {
 	out := []any{}
 	for _, p := range prds {
 		view := BuildSummaryView(p)
+		view.InheritedTags = a.M.InheritedTagsForPRD(p.ID)
 		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 || reviewBlockHoldText(p) != "" {
 			out = append(out, view)
 		}
@@ -237,4 +250,12 @@ func (a *API) SetAutoTagsDaemon(f func() config.AutoTagsConfig) {
 // when the daemon-level autonomous.auto_tags block is flipped.
 func (a *API) SyncAutoTagsAll() {
 	a.M.SyncAutoTagsAll()
+}
+
+// InheritedTagsForPRD returns the read-only inherited tag union of an
+// Automaton: the sorted, de-duplicated union of the system tags carried by
+// the sessions that carry its PRD ID. Never stored on the PRD (see
+// InheritedTagsForPRD on the Manager).
+func (a *API) InheritedTagsForPRD(prdID string) []string {
+	return a.M.InheritedTagsForPRD(prdID)
 }

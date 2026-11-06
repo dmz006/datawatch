@@ -145,6 +145,53 @@ func parsePRDDetail(r *http.Request) (string, bool) {
 	}
 }
 
+// inheritedTagReader is the optional AutonomousAPI extension that reads the
+// inherited_tags field of the summary views: the union of the system tags
+// (placement tags) carried by the Automaton's sessions. autonomous.API
+// implements it; unwired managers (tests) leave the field absent.
+type inheritedTagReader interface {
+	InheritedTagsForPRD(prdID string) []string
+}
+
+// fillInheritedTags sets the view's read-only inherited_tags field — the
+// union of the system tags carried by the Automaton's sessions — when the
+// manager provides the reader. The stored PRD record is never changed.
+func (s *Server) fillInheritedTags(view *autonomous.SummaryView) {
+	if ir, ok := s.autonomousMgr.(inheritedTagReader); ok {
+		view.InheritedTags = ir.InheritedTagsForPRD(view.ID)
+	}
+}
+
+// withInheritedTags adds the read-only inherited_tags field to the
+// full-detail record response: the union of the system tags (placement
+// tags) carried by the Automaton's sessions. The stored PRD record itself
+// never carries the field; it is added to the response copy only, and
+// omitted when the manager has no reader or no inherited tags.
+func (s *Server) withInheritedTags(rec any, prdID string) any {
+	ir, ok := s.autonomousMgr.(inheritedTagReader)
+	if !ok {
+		return rec
+	}
+	tags := ir.InheritedTagsForPRD(prdID)
+	if len(tags) == 0 {
+		return rec
+	}
+	raw, err := json.Marshal(rec)
+	if err != nil {
+		return rec
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return rec
+	}
+	b, err := json.Marshal(tags)
+	if err != nil {
+		return rec
+	}
+	m["inherited_tags"] = b
+	return m
+}
+
 // prdDetailCap returns the per-field byte cap for the default PRD detail
 // reply: 0 (no cap) when the request carries full=1, otherwise the
 // autonomous.detail_text_cap_bytes setting.
@@ -174,15 +221,18 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		if detail == "summary" {
-			writeJSONOK(w, autonomous.BuildSummaryView(p))
+			view := autonomous.BuildSummaryView(p)
+			s.fillInheritedTags(&view)
+			writeJSONOK(w, view)
 			return
 		}
 		view := autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap))
+		s.fillInheritedTags(&view.SummaryView)
 		s.attachTaskObservations(&view)
 		writeJSONOK(w, view)
 	default:
 		if textCap <= 0 {
-			writeJSONOK(w, s.prdWithObservations(prd, prdIDOf(prd)))
+			writeJSONOK(w, s.withInheritedTags(s.prdWithObservations(prd, prdIDOf(prd)), prdIDOf(prd)))
 			return
 		}
 		p, err := toPRD(prd)
@@ -191,7 +241,7 @@ func (s *Server) writePRDDetail(w http.ResponseWriter, prd any, detail string, t
 			return
 		}
 		capped := autonomous.CapPRDText(p, textCap)
-		writeJSONOK(w, s.prdWithObservations(capped, capped.ID))
+		writeJSONOK(w, s.withInheritedTags(s.prdWithObservations(capped, capped.ID), capped.ID))
 	}
 }
 

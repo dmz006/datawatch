@@ -17,6 +17,8 @@ func (s *Server) toolAutonomousTagList() mcpsdk.Tool {
 		mcpsdk.WithDescription("List Automata tags (a tree via parent_id) with the number of Automata carrying each tag."),
 		mcpsdk.WithBoolean("include_sub", mcpsdk.Description("Roll each tag's Automata count up to include its descendant tags (default false)")),
 		mcpsdk.WithBoolean("counts", mcpsdk.Description("Add subtree and direct counts for Automata and sessions to each tag, plus an untagged total (default false)")),
+		mcpsdk.WithBoolean("system", mcpsdk.Description("Keep only the system tags (true, the registry-created tags such as placement tags) or only the operator tags (false); omit to keep every tag")),
+		mcpsdk.WithString("axis", mcpsdk.Description("Keep only the tags of one placement axis: the \"<axis>:<value>\" names and the bare axis name when it exists (e.g. \"lane\"); omit to keep every axis")),
 	)
 }
 func (s *Server) handleAutonomousTagList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -26,6 +28,21 @@ func (s *Server) handleAutonomousTagList(_ context.Context, req mcpsdk.CallToolR
 	}
 	if req.GetBool("counts", false) {
 		q.Set("counts", "true")
+	}
+	// system is passed only when given: the list API keeps every tag when
+	// the filter is absent, so a false default would wrongly keep only the
+	// operator tags.
+	if args := req.GetArguments(); args != nil {
+		if system, given := args["system"]; given {
+			if b, ok := system.(bool); !ok {
+				return toolError("autonomous_tag_list", fmt.Errorf("system must be true or false")), nil
+			} else {
+				q.Set("system", fmt.Sprintf("%t", b))
+			}
+		}
+		if axis, ok := args["axis"].(string); ok && axis != "" {
+			q.Set("axis", axis)
+		}
 	}
 	out, err := s.proxyGet("/api/autonomous/tags", q)
 	if err != nil {

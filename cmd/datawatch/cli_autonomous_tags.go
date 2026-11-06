@@ -21,6 +21,7 @@ func tagPath(id string) string { return autonomousTagsPath + "/" + url.PathEscap
 
 func newAutonomousTagListCmd() *cobra.Command {
 	var includeSub, counts bool
+	var system, axis string
 	cmd := &cobra.Command{
 		Use:     "tag-list",
 		Aliases: []string{"tags"},
@@ -34,6 +35,12 @@ func newAutonomousTagListCmd() *cobra.Command {
 			if counts {
 				q.Set("counts", "true")
 			}
+			if system != "" {
+				q.Set("system", system)
+			}
+			if axis != "" {
+				q.Set("axis", axis)
+			}
 			path := autonomousTagsPath
 			if len(q) > 0 {
 				path += "?" + q.Encode()
@@ -43,6 +50,8 @@ func newAutonomousTagListCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&includeSub, "include-sub", false, "roll each count up to include descendant tags")
 	cmd.Flags().BoolVar(&counts, "counts", false, "add subtree and direct counts (Automata and sessions) per tag, plus an untagged total")
+	cmd.Flags().StringVar(&system, "system", "", "true or false: keep only the system tags (true) or only the operator tags (false); omit to keep every tag")
+	cmd.Flags().StringVar(&axis, "axis", "", "keep only the tags of one placement axis (e.g. lane), i.e. its \"<axis>:<value>\" names; omit to keep every axis")
 	return cmd
 }
 

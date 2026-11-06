@@ -63,6 +63,24 @@ func putTagPatch(t *testing.T, s *Server, body map[string]interface{}) *httptest
 	return putTagBody(t, s, string(b))
 }
 
+// defaultPlacementDisplay is the autonomous.tags.placement object a default
+// config renders: every built-in axis on with its conventional template, except
+// project, which is off by default.
+func defaultPlacementDisplay() map[string]interface{} {
+	return map[string]interface{}{
+		"enabled": true,
+		"axes": map[string]interface{}{
+			"compute": map[string]interface{}{"enabled": true, "template": "compute:{node}"},
+			"peer":    map[string]interface{}{"enabled": true, "template": "peer:{peer}"},
+			"backend": map[string]interface{}{"enabled": true, "template": "backend:{backend}"},
+			"lane":    map[string]interface{}{"enabled": true, "template": "lane:{lane}"},
+			"role":    map[string]interface{}{"enabled": true, "template": "role:{role}"},
+			"project": map[string]interface{}{"enabled": false, "template": "project:{project}"},
+		},
+		"custom": []interface{}{},
+	}
+}
+
 func TestTagSettings_DefaultsOnGet(t *testing.T) {
 	s, _ := newTagSettingsServer(t)
 	want := map[string]interface{}{
@@ -72,6 +90,7 @@ func TestTagSettings_DefaultsOnGet(t *testing.T) {
 		"direct_counts_visible": false,
 		"registry_keeper":       "",
 		"registry_sync_seconds": float64(30),
+		"placement":             defaultPlacementDisplay(),
 	}
 	if got := getTagSettings(t, s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("GET autonomous.tags = %v, want %v", got, want)
@@ -98,6 +117,7 @@ func TestTagSettings_PutThenGetRoundTrip(t *testing.T) {
 		"direct_counts_visible": true,
 		"registry_keeper":       "peer-b",
 		"registry_sync_seconds": float64(60),
+		"placement":             defaultPlacementDisplay(),
 	}
 	if got := getTagSettings(t, s); !reflect.DeepEqual(got, want) {
 		t.Fatalf("GET after PUT = %v, want %v", got, want)
@@ -248,6 +268,9 @@ func TestTagSettings_CommHelpListsEveryKeyTwice(t *testing.T) {
 		"autonomous.tags.direct_counts_visible",
 		"autonomous.tags.registry_keeper",
 		"autonomous.tags.registry_sync_seconds",
+		"autonomous.tags.placement.enabled",
+		"autonomous.tags.placement.<axis>.enabled",
+		"autonomous.tags.placement.<axis>.template",
 	}
 	help := readRel(t, "internal/router/router.go", keys...)
 	for _, k := range keys {
@@ -267,6 +290,9 @@ func TestTagSettings_MCPConfigSetDescriptionNamesTheKeys(t *testing.T) {
 		"autonomous.tags.direct_counts_visible",
 		"autonomous.tags.registry_keeper",
 		"autonomous.tags.registry_sync_seconds",
+		"autonomous.tags.placement.enabled",
+		"autonomous.tags.placement.<axis>.enabled",
+		"autonomous.tags.placement.<axis>.template",
 	)
 }
 

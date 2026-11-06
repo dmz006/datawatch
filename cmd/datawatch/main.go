@@ -7282,6 +7282,17 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
 			classifyWiring.ledger.Store(capLedger)
+			// placement-tags — restart backfill: the ledger now holds the leases that
+			// survived the restart (adoption hold still on, so the session manager
+			// accepts no new work yet). Restore each running lease-bound session's
+			// placement system tags under the live tags.placement block: a no-op
+			// when already in place, and only those sessions' SystemTags are ever
+			// written, never their operator or inherited tags.
+			if res := autonomouspkg.BackfillPlacementTags(capLedger, mgr, cfg.Autonomous.Tags.Placement); res.Failed > 0 {
+				log.Printf("[autonomous] placement tags backfill: %d of %d lease tag writes failed", res.Failed, res.Leases)
+			} else if res.Backfilled > 0 {
+				log.Printf("[autonomous] placement tags backfill: restored system tags on %d running session(s)", res.Backfilled)
+			}
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed

@@ -14,7 +14,9 @@ type TagBook interface {
 
 // AutonomousStore is the Store the registry writes through. It maps the
 // registry's tags onto the autonomous tag records. The records have no origin
-// node or pending flag, so those two fields live only in the registry's cache.
+// node or pending flag, so those two fields live only in the registry's
+// cache; the system flag is a property of the tag itself, so it is carried on
+// the record.
 type AutonomousStore struct {
 	Book TagBook
 }
@@ -61,6 +63,7 @@ func tagFromRecord(t *autonomous.Tag) Tag {
 		ParentID:    t.ParentID,
 		Color:       t.Color,
 		Description: t.Description,
+		System:      t.System,
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,
 	}
@@ -74,6 +77,7 @@ func recordFromTag(t Tag) *autonomous.Tag {
 		ParentID:    t.ParentID,
 		Color:       t.Color,
 		Description: t.Description,
+		System:      t.System,
 		CreatedAt:   t.CreatedAt,
 		UpdatedAt:   t.UpdatedAt,
 	}

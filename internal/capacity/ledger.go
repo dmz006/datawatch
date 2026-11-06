@@ -1537,6 +1537,26 @@ func (l *Ledger) Reap(live func(Lease) bool) []string {
 	return out
 }
 
+// Leases returns a copy of every lease currently held, one per holder, in
+// holder-name order (stable for tests and logs). It is the flat lease list
+// for readers that do not need the pool, limit or waiting view (Snapshot
+// provides those); each Lease keeps the Holder, PRD and SessionID the
+// acquirer named.
+func (l *Ledger) Leases() []Lease {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	names := make([]string, 0, len(l.leases))
+	for h := range l.leases {
+		names = append(names, h)
+	}
+	sort.Strings(names)
+	out := make([]Lease, 0, len(names))
+	for _, h := range names {
+		out = append(out, *l.leases[h])
+	}
+	return out
+}
+
 // Snapshot returns the current state.
 func (l *Ledger) Snapshot() Status {
 	l.mu.Lock()

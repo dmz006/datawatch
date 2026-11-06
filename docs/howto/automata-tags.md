@@ -66,6 +66,11 @@ by area — browse them by group, and see at a glance which ones need you.
 - Tags are stored in `tags.jsonl` in the autonomous data directory, so
   they survive a daemon restart. When several daemons share a registry, the
   tags are shared too; see [automata-tag-registry](automata-tag-registry.md).
+- A second kind of tag is written by the **machine**, not by you: **placement
+  tags** (system tags) record where a piece of work ran — which node, which
+  federated peer, which backend, lane and role, and which project. They are
+  read-only everywhere: you filter by them and group by them, but you do not
+  rename, move or delete them. See [Placement tags](#placement-tags-the-system-tags).
 - Tags only organise. They never start, stop or schedule anything.
 
 ## Base requirements
@@ -295,6 +300,155 @@ The YAML file takes the same keys under `autonomous.tags:`; the annotated
 template is in [config-reference](../config-reference.yaml). Changes apply
 without a restart.
 
+## Placement tags (the system tags)
+
+Everything above is about tags **you** name, assign and edit. Placement tags
+are the other kind: the machine derives them from **where a piece of work
+ran** and stamps them on every session it starts, as **system tags** in the
+tag registry. You never assign them yourself and you can't rename, move or
+delete them; you use them to see at a glance which node ran what, on which
+peer, under which backend or lane — and to filter and group the session
+list, the dashboard and the Gantt by exactly that.
+
+### The six axes
+
+| Axis | Default tag shape | Records |
+|---|---|---|
+| `compute` | `compute:<node>` | the compute node that ran the session |
+| `peer` | `peer:<name>` | the federation peer that ran the session (federated work only) |
+| `backend` | `backend:<name>` | the backend the session runs on (e.g. `claude`, `pi`) |
+| `lane` | `lane:<name>` | the lane that ran the session |
+| `role` | `role:<name>` | the capacity role (e.g. `worker`) |
+| `project` | `project:<name>` | the project the work belongs to |
+
+**Defaults:** `compute`, `peer`, `backend`, `lane` and `role` are **on**.
+`project` is **off** — that axis is the one you opt into, because it repeats
+other information you already have. A master switch covers all of them.
+
+A tag is written **per enabled axis with a value**. A missing value is not an
+error and produces no tag: local work writes **no `peer:` tag at all**, and
+`peer:<name>` appears when the work ran on another daemon.
+
+### The peer axis (federated work)
+
+The `peer:<name>` tag is how federated work shows up in the tag list. The
+name comes only from the **peer name in the explicit placement record** the
+daemon wrote for that session — never inferred from a DNS name, an IP
+address or a hostname. So the tag always says the peer's name as the daemon
+knows it, and a value no operator typed can never leak into a tag.
+
+### Templates
+
+Each axis stamps its tag from a **template** in which the axis's own
+placeholder is replaced by the value. The default template of each axis is
+the conventional `<axis>:<placeholder>`:
+
+| Axis | Default template | Placeholder |
+|---|---|---|
+| `compute` | `compute:{node}` | `{node}` |
+| `peer` | `peer:{peer}` | `{peer}` |
+| `backend` | `backend:{backend}` | `{backend}` |
+| `lane` | `lane:{lane}` | `{lane}` |
+| `role` | `role:{role}` | `{role}` |
+| `project` | `project:{project}` | `{project}` |
+
+A template **must contain its axis's placeholder** — the compute template
+must contain `{node}`, the project template `{project}`, and so on — anything
+else is refused and nothing is written. You may add your own text around it:
+`compute:{node}-box` writes `compute:nodeA-box` for a session that ran on
+`nodeA`.
+
+### Custom axes
+
+The YAML config file can declare additional axes, one block per axis, under
+`autonomous.tags.placement.custom`. Each entry has:
+
+| Field | Rule |
+|---|---|
+| `name` | lowercase letters, digits and hyphens; unique; not one of the six built-in axis names |
+| `field` | one of the session fields: `Name`, `Backend`, `Model`, `Node`, `PRDID`, `Role`, `Project` |
+| `template` | must contain the placeholder `{value}`, replaced by the field's value |
+| `enabled` | on or off for that axis |
+
+A custom axis writes its tag whenever the field has a value; empty fields
+write nothing. There are no custom axes by default. Because the block is a
+list, it is not settable as a single `key=value`: write it in the YAML file
+(or a full config write), not with `config set`.
+
+### System tags: visible everywhere, immutable to you
+
+Placement tags land in the tag registry as **system tags**, top-level in the
+tree:
+
+- **Create-or-return.** A placement tag name always resolves to the same
+  registry entry: a repeated placement on this daemon, or the same fact
+  stamped by another daemon, returns the existing tag. Repeats never create
+  duplicates and never change the tag that is found.
+- **Refused edits.** Renaming, moving and deleting a system tag are refused
+  with nothing changed. That is what makes a federated tree trustworthy:
+  every daemon that derives the same fact resolves the same name, so the tag
+  keeps pointing at the same registry entry.
+- **Filter and group, don't edit.** Every surface can filter by a system
+  tag or by a whole axis (`compute:*`); the PWA groups them by axis in the
+  header Tags menu, the session list and the dashboard.
+
+### Stamping, re-stamping and the startup backfill
+
+- **Every session the machine starts is stamped at placement** with the
+  tags of its placement record: node, backend, lane, role, project
+  (and the peer, when the placement names one). The tags live in the
+  session's `system_tags`, which the machine owns.
+- **A retry on another node re-stamps the same session.** The whole
+  `system_tags` list is replaced, so the old node's `compute:` tag and any
+  old `peer:` tag are gone and the new placement's tags are the ones you
+  see. The list always says where the work last ran, not where it first ran.
+- **Starting up fills in what it missed.** Once at daemon startup a
+  backfill pass derives tags for the live sessions the daemon still holds
+  a lease on, from the lease's facts (node, backend, model, project).
+  Finished sessions and sessions the daemon no longer owns are skipped;
+  rerunning the pass at the next startup changes nothing.
+- **Turning the switch off clears.** When you set the master switch (or one
+  axis) to `false`, the next time a session is (re-)stamped the placement
+  tags (or that axis's tag) are removed instead of rewritten.
+
+### Inherited by sessions and Automata
+
+- **Sessions** carry their placement tags in `system_tags`, separate from
+  the tags **you** assign on the session. They are read-only: the session
+  tag editor never sends them, and editing your own tags on the session
+  leaves them in place.
+- **Automata** show placement tags as a **read-only inherited set**: the
+  union of the system tags of the sessions the Automaton owns, computed when
+  the Automaton is read and never stored on it. The Automaton's own tag list
+  stays exactly yours; the placement tags only ride along for display, so an
+  Automaton's card shows where its work ran without you touching it.
+
+### Configuration
+
+Under `autonomous.tags.placement`, one key per axis, plus the master:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `autonomous.tags.placement.enabled` | `true` | master switch; `false` turns the whole block off |
+| `autonomous.tags.placement.<axis>.enabled` | `true` (`project` is `false`) | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`) |
+| `autonomous.tags.placement.<axis>.template` | `<axis>:<placeholder>` (see the table above) | the tag text with the axis's placeholder |
+| `autonomous.tags.placement.custom` | empty list | user-defined axes (YAML file or full config write) |
+
+Set and read them the same way as the tag-browser keys above: `PUT/GET
+/api/config`, the PWA **Settings → General → Automata → Placement tags**
+group, `datawatch config set|get autonomous.tags.placement.…`, the MCP
+`config_set`/`config_get` tools, and the comm channel's `configure` /
+`config get` with the same keys. An invalid template (one missing its axis's
+placeholder) or an invalid custom block is refused on every surface with the
+same message and nothing written. Changes apply without a restart.
+
+Listing the tags takes the same five surfaces as the rest of this howto, plus
+two filters for the system tags: `GET /api/autonomous/tags` accepts
+`?system=true` (system tags only) and `?axis=<name>` (one axis — the
+`<axis>:<value>` names and the bare axis name when one exists); the MCP
+`autonomous_tag_list` tool takes the same `system` and `axis` parameters, and
+the CLI `tag-list` takes `--axis`.
+
 ## Same thing from every other surface
 
 | Task | REST | MCP | CLI (`datawatch autonomous …`) | Comm channel (`autonomous …`) |
@@ -330,6 +484,12 @@ An empty tag list clears an Automaton's or a session's own tags.
 - **Tags across daemons.** Tags are federated only when the daemons share a
   registry (`autonomous.tags.registry_keeper`). Otherwise each daemon has its own
   tags; see [automata-tag-registry](automata-tag-registry.md).
+- **Tried to rename or delete a placement tag.** They are system tags: the
+  registry refuses rename, move and delete. Filter by the tag or its axis
+  (`axis:*`) instead.
+- **Looking for a `peer:` tag on local work.** Local sessions run on this
+  daemon and write no peer tag; `peer:<name>` appears only when the session
+  ran on another daemon.
 
 ## Next steps
 

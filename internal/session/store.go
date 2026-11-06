@@ -340,6 +340,16 @@ type Session struct {
 	// never stored here; Manager.InheritedTags computes them on read.
 	Tags []string `json:"tags,omitempty"`
 
+	// SystemTags are the tags the system writes for this session
+	// (placement tags: where the task ran, which backend and model, which
+	// lane or role it held, which project it served) — not operator-
+	// selected tag IDs. They live in their own list so the machine-managed
+	// tags never mix with the operator tags in Tags and so the PWA detail
+	// view can group them separately. Replacing SystemTags (Manager.
+	// SetSystemTags) never touches Tags, and vice versa. Empty/nil =
+	// nothing placed, or the placement master switch is off.
+	SystemTags []string `json:"system_tags,omitempty"`
+
 	// WriteScope (auto-commit leak fix): the session's effective write
 	// directories (PRD.WriteDirs or task ProjectDir override). Automatic
 	// commits stage only files under these directories instead of the

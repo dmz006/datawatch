@@ -601,6 +601,20 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"node_backend_versions_loading",
 		"node_backend_below_minimum",
 		"node_backend_versions_failed",
+		// Placement tags (v5.28.x): sessions list/grouping, tag menu section,
+		// dashboard+Gantt filter, and the settings group the operator sees.
+		"sessions_group_none",
+		"sessions_group_by_label",
+		"session_group_filter_on",
+		"tags_menu_placement",
+		"placement_tag_tip",
+		"sessions_group_untagged",
+		"dash_filter_placement_all",
+		"dash_filter_placement_axis",
+		"settings_placement_group",
+		"settings_placement_enabled",
+		"settings_placement_compute",
+		"settings_placement_project_template",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

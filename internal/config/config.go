@@ -6412,6 +6412,7 @@ func DefaultConfig() *Config {
 				AttentionStatuses:   append([]string(nil), DefaultTagAttentionStatuses...),
 				DefaultMatchMode:    TagMatchAny,
 				RegistrySyncSeconds: TagRegistrySyncDefaultSeconds,
+				Placement:           DefaultPlacementConfig(),
 			},
 			Notify: AutonomousNotifyConfig{
 				DefaultEvents: []string{

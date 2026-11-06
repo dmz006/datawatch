@@ -1272,6 +1272,25 @@ type Manager struct {
 	// sessionTags counts the sessions carrying a tag, for the delete-in-use
 	// check (tags.go). Wired by the server; nil = Automata only.
 	sessionTags SessionTagCounter
+	// placementTagsSink persists the placement tags the executor writes into
+	// a session's system tags (placement_tags.go); wired by the daemon.
+	// nil = placement tags are not applied.
+	placementTagsSink SystemTagsSink
+	// placementTagsSettings returns the tags.placement config block on every
+	// use, so an operator edit takes effect on the next placement. nil =
+	// placement tags are not applied.
+	placementTagsSettings func() config.PlacementConfig
+	// placementPeerSource names the federated peer a placed task runs on, for
+	// the peer axis of the placement tags (placement_tags_peer.go). Wired by
+	// the peer placement build; nil = the peer name comes from the placement
+	// record only, which is correct for today's local-only placements. The
+	// value is always an explicit peer name — never a DNS, IP or hostname
+	// inference (see PeerSource).
+	placementPeerSource PeerSource
+	// inheritedTagReader reads the system tags of a PRD's sessions, backing
+	// the inherited_tags read field (placement_tags_inherit.go). Wired by
+	// the daemon; nil = no inherited tags.
+	inheritedTagReader SessionSystemTagReader
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	// defect intake (defect_intake.go): the DefectIntake implementation; the

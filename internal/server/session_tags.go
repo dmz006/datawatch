@@ -11,6 +11,7 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/requestwatch"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/tagregistry"
 )
 
 // sessionTagBridge lets the session manager validate session tags and read
@@ -78,13 +79,16 @@ func (s *Server) wireSessionTags() {
 }
 
 // sessionTagView is a session's JSON with the read-time inherited_tags
-// added. The embedded tags field is the session's own tags. inherited_tags
-// comes from the owning Automaton and is never persisted. model_request is
-// the request watch's observation of the session's in-flight model request,
-// read at response time and never persisted; it is omitted when the session
-// has none.
+// added. The embedded tags field is the session's own tags. system_tags is
+// the session's machine-managed system tags (placement tags and the like):
+// read-only, shown separately from the operator-set tags, and always
+// present. inherited_tags comes from the owning Automaton and is never
+// persisted. model_request is the request watch's observation of the
+// session's in-flight model request, read at response time and never
+// persisted; it is omitted when the session has none.
 type sessionTagView struct {
 	*session.Session
+	SystemTags    []string                  `json:"system_tags"`
 	InheritedTags []string                  `json:"inherited_tags"`
 	ModelRequest  *requestwatch.Observation `json:"model_request,omitempty"`
 }
@@ -93,6 +97,7 @@ type sessionTagView struct {
 func (s *Server) sessionView(sess *session.Session) sessionTagView {
 	return sessionTagView{
 		Session:       sess,
+		SystemTags:    append([]string(nil), sess.SystemTags...),
 		InheritedTags: s.manager.InheritedTags(sess),
 		ModelRequest:  s.sessionObservation(sess),
 	}
@@ -134,6 +139,18 @@ func (s *Server) handleSessionTags(w http.ResponseWriter, r *http.Request) {
 	if req.ID == "" {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
+	}
+	// A system tag is machine-managed (a placement tag, for instance): the
+	// session may carry it as a read-only system tag, but an operator
+	// assigning it is refused before anything is written.
+	if api, ok := s.tagAPI(); ok {
+		for _, id := range req.TagIDs {
+			system, err := api.TagSystem(id)
+			if err == nil && system {
+				writeTagError(w, fmt.Errorf("%w: %q", tagregistry.ErrTagSystem, id))
+				return
+			}
+		}
 	}
 	sess, err := s.manager.SetSessionTags(req.ID, req.TagIDs)
 	if err != nil {
