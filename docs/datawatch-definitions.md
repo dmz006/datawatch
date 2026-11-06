@@ -2352,6 +2352,8 @@ When an Automaton completes it records how well its tasks ran in parallel. `tota
 
 **Merge conflict model** (`autonomous.parallel.merge_conflict_model`) — the model that resolves a merge conflict under `additive_then_model`. Empty, the default, uses the strongest configured planning model.
 
+**Merge retry interval** (`autonomous.parallel.merge_retry_seconds`, default `60`) — how many seconds the daemon waits before it tries again to merge a task branch whose merge is still `pending`. While an earlier merge is pending, the next task is held. `0` turns the timed retry off.
+
 ### Read-only tasks
 
 A **read-only task** is a task flagged `read_only` because it changes no files, for example a task that only reads code and reports. While `autonomous.parallel.read_only_tasks` is on (the default), a read-only task skips the per-tree write lock and runs beside other tasks of the same Automaton instead of waiting for them. A task that is not flagged still takes the lock. Flag a task when you add or edit it (the `read_only` option of `autonomous_prd_add_task` and `autonomous_prd_edit_task`, or the task edit in the web app). The default is on because that is the operator's choice for this installation; other users may switch it off with `autonomous.parallel.read_only_tasks: false`, and every task then takes the lock as before.
