@@ -1972,3 +1972,8 @@ until the Sunday 07:00 reset, and its job is to keep both pi lanes busy: approve
 (`16760001`, `55270001`, `ecf30001`, `a4940001`), merges only when an Automaton is ready, repairs of wedged
 Automata as the blockers clear. To protect the allowance the supervisor's own burn is kept small: short reports,
 no new decomposes on Claude, helper agents only for merges and security fixes, and a reading request at each tick.
+
+### Reading, 2026-11-06 17:21
+
+The operator's words: "claude at 76%". The previous reading was 76% at 16:26, so no change in about an hour while the
+guard held Claude (the burn since was 0.3 points, all supervisor session). The weekend plan stands.
