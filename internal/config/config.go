@@ -1988,6 +1988,20 @@ type MCPConfig struct {
 	// stream writes to. Default <data_dir>/audit/config-self-modify.jsonl.
 	// Empty disables the file sink (events still go to stderr).
 	SelfConfigAuditPath string `yaml:"self_config_audit_path,omitempty"`
+
+	// SelfConfigAuditDenied (BL110 extension) controls whether DENIED
+	// config-write attempts are recorded by the shared audit sink in
+	// addition to allowed writes. Absent (nil) reads as true — an
+	// attempt is an attempt; operators who want allowed-only logs write
+	// self_config_audit_denied: false.
+	SelfConfigAuditDenied *bool `yaml:"self_config_audit_denied,omitempty"`
+}
+
+// SelfConfigAuditDeniedOn resolves the self_config_audit_denied tri-state:
+// an absent key (nil) reads as true (denied attempts ARE recorded), and
+// an explicit false disables them.
+func (m MCPConfig) SelfConfigAuditDeniedOn() bool {
+	return m.SelfConfigAuditDenied == nil || *m.SelfConfigAuditDenied
 }
 
 // SelfConfigEnabled resolves the allow_self_config alias: an absent key

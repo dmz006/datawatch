@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -61,10 +62,14 @@ type Router struct {
 	statsFn              func() string                          // optional func returning system stats summary
 	capacityFn           func() string                          // optional func returning the capacity ledger summary
 	configureFn          func(key, value string) error          // optional func to set a config value
-	chanTracker          *stats.ChannelCounters                 // per-channel message counters
-	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
-	visioner             Visioner                               // optional image-to-text describer (BL368)
-	remote               *proxy.RemoteDispatcher                // optional remote server dispatcher
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// for the comm-channel configure path (surface "comm"); nil = the
+	// configure path produces no audit record.
+	configAudit *federation.ConfigAuditor
+	chanTracker *stats.ChannelCounters  // per-channel message counters
+	transcriber transcribe.Transcriber  // optional voice-to-text transcriber
+	visioner    Visioner                // optional image-to-text describer (BL368)
+	remote      *proxy.RemoteDispatcher // optional remote server dispatcher
 
 	// Memory system — optional, nil when memory is disabled
 	memoryRetriever MemoryRetriever
@@ -192,6 +197,11 @@ func (r *Router) handleReload(cmd Command) {
 func (r *Router) SetStatsFunc(fn func() string)                     { r.statsFn = fn }
 func (r *Router) SetCapacityFunc(fn func() string)                  { r.capacityFn = fn }
 func (r *Router) SetConfigureFunc(fn func(key, value string) error) { r.configureFn = fn }
+
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the comm-channel configure path. Nil (the default)
+// means the configure path produces no audit record.
+func (r *Router) SetConfigAuditor(a *federation.ConfigAuditor) { r.configAudit = a }
 
 // SetChannelTracker sets the per-channel stats counters for this router.
 func (r *Router) SetChannelTracker(ct *stats.ChannelCounters) { r.chanTracker = ct }
@@ -874,11 +884,40 @@ func (r *Router) handleConfigure(cmd Command) {
 	}
 	key := strings.TrimSpace(text[:eqIdx])
 	value := strings.TrimSpace(text[eqIdx+1:])
-	if err := r.configureFn(key, value); err != nil {
+	err := r.configureAudited(key, value)
+	if err != nil {
 		r.send(fmt.Sprintf("[%s] Configure failed: %v", r.hostname, err))
 	} else {
 		r.send(fmt.Sprintf("[%s] Set %s = %s. Restart may be required.", r.hostname, key, value))
 	}
+}
+
+// configureAudited is the single audit point for the comm-channel
+// configure path: it runs the real write (configureFn — a loopback REST
+// PUT on the admin token) and records exactly one
+// federation.ConfigAuditRecord per attempted write with surface "comm",
+// allowed or denied. The caller is the comm group this router serves
+// (this surface carries no session credential). When configAudit is
+// nil the audit is a silent no-op.
+func (r *Router) configureAudited(key, value string) error {
+	err := r.configureFn(key, value)
+	if r.configAudit == nil {
+		return err
+	}
+	rec := federation.ConfigAuditRecord{
+		Surface: "comm",
+		Tool:    "configure",
+		Caller:  "comm:" + r.groupID,
+		Allowed: err == nil,
+	}
+	if raw, merr := json.Marshal(map[string]any{key: value}); merr == nil {
+		rec.Keys, rec.Values = federation.ExtractConfigPatch(raw)
+	}
+	if err != nil {
+		rec.Reason = err.Error()
+	}
+	r.configAudit.Record(rec)
+	return err
 }
 
 func (r *Router) handleCapacity() {

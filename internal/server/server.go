@@ -851,6 +851,14 @@ func (s *HTTPServer) SetSessionTokenStore(store *auth.SessionTokenStore) {
 // that encrypt discussion WAL, participants, and channel routing (BL334 T43a).
 func (s *HTTPServer) SetEncKey(key []byte) { s.api.SetEncKey(key) }
 
+// SetConfigAuditor wires the shared config-write audit sink (BL110
+// extension) into the REST config-write routes (PUT /api/config, PUT
+// /api/cost/rates — surface "rest"). Nil (the default) means those
+// routes produce no audit record.
+func (s *HTTPServer) SetConfigAuditor(a *federation.ConfigAuditor) {
+	s.api.configAudit = a
+}
+
 // SetMatrixBackend wires the Matrix messaging backend for /api/matrix/* endpoints (BL241).
 func (s *HTTPServer) SetMatrixBackend(b matrixBackendAPI) { s.api.SetMatrixBackend(b) }
 

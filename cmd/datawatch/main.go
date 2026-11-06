@@ -14359,6 +14359,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
+		ConfigAudit:         federation.NewConfigAuditor(cfg.MCP.SelfConfigAuditPath, cfg.MCP.SelfConfigAuditDeniedOn()),
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

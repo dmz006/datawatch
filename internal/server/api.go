@@ -251,10 +251,16 @@ type Server struct {
 	// valid until oldTokenExpiry (a 60s grace window from rotation) so a
 	// client that already has the previous token isn't cut off mid-flight;
 	// after that it's hard-revoked, same as if it had never existed.
-	tokenMu            sync.RWMutex
-	oldToken           string
-	oldTokenExpiry     time.Time
-	availableBackends  []string // registered LLM backend names
+	tokenMu           sync.RWMutex
+	oldToken          string
+	oldTokenExpiry    time.Time
+	availableBackends []string // registered LLM backend names
+	// configAudit (BL110 extension) — the shared config-write audit sink
+	// (surface "rest"); nil means REST config writes produce no audit
+	// record. One audited record per PUT /api/config or PUT
+	// /api/cost/rates from session or peer callers (admin excluded — see
+	// auditConfigPut).
+	configAudit        *federation.ConfigAuditor
 	cfg                *config.Config
 	cfgPath            string
 	schedStore         *session.ScheduleStore
@@ -5732,7 +5738,10 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
-		s.handlePutConfig(w, r)
+		// BL110 extension — the single REST audit point for config writes:
+		// one record per call (allowed or denied), shared sink with the
+		// MCP and comm surfaces.
+		s.auditConfigPut("/api/config", s.handlePutConfig)(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
