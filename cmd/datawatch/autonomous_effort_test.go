@@ -196,8 +196,8 @@ func TestAutonomousSessionBodyCarriesTaskTitle(t *testing.T) {
 	if got := body["task_title"]; got != "Add retry to fetcher" {
 		t.Errorf("task_title = %v, want %q", got, "Add retry to fetcher")
 	}
-	if body["name"] != "autonomous:Add retry to fetcher" {
-		t.Errorf("name = %v, want the autonomous: prefixed title", body["name"])
+	if body["name"] != "autonomous:task:Add retry to fetcher" {
+		t.Errorf("name = %v, want the autonomous:task: prefixed title", body["name"])
 	}
 
 	req.Title = ""
