@@ -1135,6 +1135,10 @@ type Manager struct {
 	// value is always an explicit peer name — never a DNS, IP or hostname
 	// inference (see PeerSource).
 	placementPeerSource PeerSource
+	// inheritedTagReader reads the system tags of a PRD's sessions, backing
+	// the inherited_tags read field (placement_tags_inherit.go). Wired by
+	// the daemon; nil = no inherited tags.
+	inheritedTagReader SessionSystemTagReader
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	tagEventFn func(TagEvent)

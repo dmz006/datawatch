@@ -916,6 +916,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// peer name may come only from an explicit placement record, never from
 	// DNS, an IP address or the hostname (placement_tags_peer.go).
 	amgr.SetPlacementTagSink(mgr)
+	// Inherited tags: the Automaton's read-only inherited_tags field is the
+	// union of the system tags of the sessions that carry its PRD ID.
+	amgr.SetInheritedTagReader(mgr)
 	amgr.SetPlacementTagSettings(func() config.PlacementConfig {
 		return cfg.Autonomous.Tags.Placement
 	})

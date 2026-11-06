@@ -59,8 +59,15 @@ type SummaryView struct {
 	Backend string `json:"backend,omitempty"`
 	// Tags and PrimaryTagID are always present, so a tag browser reads the
 	// same shape for an untagged Automaton as for a tagged one.
-	Tags             []string       `json:"tags"`
-	PrimaryTagID     string         `json:"primary_tag_id"`
+	Tags         []string `json:"tags"`
+	PrimaryTagID string   `json:"primary_tag_id"`
+	// InheritedTags is the read-only union of the system tags (placement
+	// tags) carried by the sessions owned by this Automaton: a session
+	// belongs to the Automaton when it carries this PRD's ID (Session.PRDID).
+	// It is computed on every read from the session records, never stored on
+	// the PRD and never editable — Tags above is the only tag list an
+	// Automaton carries. Absent when no owned session carries a system tag.
+	InheritedTags    []string       `json:"inherited_tags,omitempty"`
 	Cost             float64        `json:"cost"`
 	ParentPRDID      string         `json:"parent_prd_id,omitempty"`
 	Priority         int            `json:"priority,omitempty"`

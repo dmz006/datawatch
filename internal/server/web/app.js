@@ -42097,7 +42097,21 @@ function _renderDetailTagRow(prd) {
   const el = document.getElementById('prdDetailTagRow');
   if (!el || el.dataset.prd !== prd.id) return;
   const idJ = escHtml(JSON.stringify(prd.id));
-  el.innerHTML = `${_tagChipsHTML(prd)}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;margin-left:4px;" onclick="event.stopPropagation();openPRDTagsModal(${idJ})">${escHtml(_tagT('tag_edit', 'Tags'))}</button>`;
+  el.innerHTML = `${_tagChipsHTML(prd)}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;margin-left:4px;" onclick="event.stopPropagation();openPRDTagsModal(${idJ})">${escHtml(_tagT('tag_edit', 'Tags'))}</button>${_inheritedChipsHTML(prd)}`;
+}
+
+// inherited tags are read-only placement tags inherited from the sessions
+// owned by this Automaton (union of their system tags). They are displayed
+// as distinct grey chips and are never sent back: the tag editor above only
+// edits the Automaton's own tags.
+function _inheritedChipsHTML(prd) {
+  const tags = (prd && prd.inherited_tags) || [];
+  return tags.map(id => {
+    const tg = _tagsState.byId[id];
+    const label = tg ? tg.name : id;
+    const c = (tg && tg.color) || 'var(--text2,#8b949e)';
+    return `<span title="${escHtml(_tagT('tag_inherited_title', 'Inherited from this Automaton\'s sessions (read-only)'))}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;margin-left:4px;">${escHtml(label)}${escHtml(_tagT('tag_inherited_mark', ' (inherited)'))}</span>`;
+  }).join('');
 }
 
 // The primary tag is optional and only sorts an Automaton inside a tag section; it

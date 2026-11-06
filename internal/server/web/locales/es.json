@@ -2328,6 +2328,8 @@
   "tag_deleted": "Etiqueta eliminada",
   "tag_edit": "Etiquetas",
   "tag_edit_title": "Etiquetas del autómata",
+  "tag_inherited_title": "Heredada de las sesiones de este autómata (solo lectura)",
+  "tag_inherited_mark": " (heredada)",
   "tag_err_cycle": "Una etiqueta no se puede mover bajo sí misma ni bajo sus propias subetiquetas",
   "tag_err_has_children": "La etiqueta tiene subetiquetas: muévelas o elimínalas primero",
   "tag_err_in_use": "La etiqueta la usan %1$d autómatas: quítala de ellos primero",

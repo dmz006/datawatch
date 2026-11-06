@@ -122,6 +122,27 @@ func (m *Manager) InheritedTags(sess *Session) []string {
 	return append(out, dedupeTagIDs(ids)...)
 }
 
+// SystemTagsByPRD returns the system tags carried by every session, active
+// and archived, whose PRDID equals prdID, in no particular order and with
+// repeats. It is a read-only source for the Automaton's inherited tags
+// (autonomous.SessionSystemTagReader); the union, de-dup and sorting are
+// done by the reader's consumer. An empty prdID matches no session.
+func (m *Manager) SystemTagsByPRD(prdID string) []string {
+	out := []string{}
+	if prdID == "" {
+		return out
+	}
+	for _, sess := range m.store.List() {
+		if sess.PRDID == prdID {
+			out = append(out, sess.SystemTags...)
+		}
+	}
+	for _, sess := range m.ListArchivedSessions(SessionFilter{}, func(s *Session) bool { return s.PRDID == prdID }, "", time.Time{}, 0) {
+		out = append(out, sess.SystemTags...)
+	}
+	return out
+}
+
 // CountSessionsWithTag counts the sessions, active and archived, that carry
 // tagID as one of their own tags. Inherited tags are not counted. The
 // autonomous tag registry calls it to refuse deleting a tag still in use.
