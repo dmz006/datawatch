@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.99.0 (2026-11-05).** Automation reports what it needs against what is configured, and no model is pulled without your consent. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.100.0 (2026-11-06).** Sessions and Automata now carry automatic placement tags for the compute node, peer, backend, lane, role and project, with a filter, grouping and settings. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

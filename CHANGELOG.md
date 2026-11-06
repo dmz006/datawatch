@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.100.0 — Placement auto-tags on sessions and Automata
+
+Sessions and Automata now carry automatic placement tags that record where the work ran: the compute node, the federation peer, the backend, the lane, the role and the project.
+
+- **Placement tags.** Every session the executor starts is stamped with a system tag per enabled axis (`compute:<node>`, `peer:<name>` for federated work, `backend:<name>`, `lane:<name>`, `role:<name>`, `project:<name>`). The tags sit in the session's `system_tags`, apart from the operator's own `tags`, and a retry on another node replaces them with the new placement. Sessions already running at startup are backfilled.
+- **System tags.** Placement tags live in the tag registry as system tags: they cannot be renamed, moved or deleted, and an Automaton shows the union of the placement tags of its sessions as a read-only `inherited_tags` list.
+- **Settings.** `autonomous.tags.placement` has a master switch, an on/off switch and a template for each axis (compute, peer, backend, lane and role on, project off by default), and a `custom` list of operator-defined axes in the config file. A template that misses its axis placeholder is refused and nothing is written.
+- **Everywhere.** REST (`GET /api/autonomous/tags?system=true&axis=<name>`), MCP, the CLI, the chat channel, the config file and the web app (placement filter on the dashboard, tree and Gantt, a group-by-placement session list, a Placement tags group in Settings), with five locales.
+- **Documentation.** The tags how-to has a Placement tags section and the config reference lists the new block.
+
 ## v9.99.0 — Requirements and model-pull consent
 
 Automation now reports what it needs against what is configured, and no model is pulled without the operator's consent.
