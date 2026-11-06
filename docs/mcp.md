@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
-| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
+| Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_triage`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `capacity_status` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
@@ -1156,6 +1156,7 @@ instead.
 | `chosen_option_id` | one with `quote` | The option you pick: one of the question's option ids |
 | `quote` | one with `chosen_option_id` | Your own words. Optional when you pick an option, and the only thing needed when you do not. Whatever you type is saved exactly as written, with your choice, as the record of your decision, and the asker reads it as your answer (capped at 16 KiB) |
 | `supersedes` | no | The id of the answer this answer replaces (a changed mind; `409` if the id is wrong) |
+| `follow_up` | no | Optionally names one entry of the configured follow-up list (`autonomous.decisions.follow_ups`); when the answer is applied the daemon runs it once (statuses `done`, `skipped` or `error` on the owning decision record). Unknown names — or any name while the list is empty — are refused, naming the configured follow-ups. See [Decision records](#decision-records) |
 | `actor` | no | Who is answering (default: the caller of record) |
 
 **`question_withdraw` parameters:**
@@ -1170,6 +1171,103 @@ The full surface — the CLI `datawatch question` group, the comm
 verbs, the PWA automation queue, the answer log and the
 supersession rule — is walked through in
 [`howto/operator-questions-answering.md`](howto/operator-questions-answering.md).
+
+### Decision records
+
+A **decision record** is the structured description of one operator
+decision: the `label` (a short name), the `title` (the decision in one
+line), the `situation` (what is true right now), the `deciding` (what
+the operator is being asked to make), the `options` (each a
+`{"id","label","tradeoff"}` object; the ids are what the answer
+picks), the author's `recommendation` (`{"option_id","reason"}`,
+optional), the `default` (the option id chosen when the decision times
+out, optional) and the `links` (`doc`, `automaton`, `registry_row`).
+Beside that the store owns the bookkeeping: the `state` (`open`,
+`answered` or `withdrawn`), the `question_id` and `question_state` (the
+queue question built from the record), the `answer` (once it is
+applied: `quote`, `actor`, `surface`, `answered_at`), the `doc_change` and
+the `follow_up` outcome (once set).
+
+The record is the **source**: the daemon builds the queue question from
+it and raises it, and the answer comes back on the record — so the five
+tools here manage the record and the operator-question tools above read
+and answer the question. The tools proxy the
+`/api/autonomous/decision-records` REST surface one-for-one and need
+the `autonomous:read` (`autonomous_decision_record_list`,
+`autonomous_decision_record_get`) or `autonomous:write` (`create`,
+`update`, `withdraw`) capability when called by a federated peer.
+
+| Tool | What it does | Rest call |
+|---|---|---|
+| `autonomous_decision_record_create` | Create a decision record; the daemon builds its queue question from it and raises it | `POST /api/autonomous/decision-records` |
+| `autonomous_decision_record_list` | List decision records with the daemon's folder-watch status (read-only) | `GET /api/autonomous/decision-records` |
+| `autonomous_decision_record_get` | Read one decision record and its bookkeeping (read-only) | `GET /api/autonomous/decision-records/{id}` |
+| `autonomous_decision_record_update` | Replace the content of an open record; the daemon rebuilds its queue question | `PUT /api/autonomous/decision-records/{id}` |
+| `autonomous_decision_record_withdraw` | Mark a record withdrawn so its question stops asking | `POST /api/autonomous/decision-records/{id}/withdraw` |
+
+**`autonomous_decision_record_create` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `title` | yes | The decision in one line |
+| `situation` | yes | What is true right now, in plain words |
+| `deciding` | yes | The decision the operator is being asked to make |
+| `options` | yes | At least 2 (at most 20) options: a JSON array of `{"id","label","tradeoff"}` objects with unique non-empty ids; the ids are what the answer picks |
+| `default` | yes | The option id chosen when the decision times out, or the word `hold` |
+| `label` | no | A short name for the decision (default: `decision`) |
+| `recommendation` | no | The author's pick and why: `{"option_id","reason"}`; `option_id` must be one of the options |
+| `links` | no | What the record is about: any of `{"doc","automaton","registry_row"}` |
+
+**`autonomous_decision_record_update` parameters:** `id` (required) plus the
+same content fields, which replace the record's content — the given content
+must satisfy the same rules as create (title, situation, deciding, at least
+2 options, a default). Updating a record that is already `answered` or
+`withdrawn` is refused (the daemon's `409`).
+
+**`autonomous_decision_record_withdraw` parameters:** `id` (required) and
+`reason` (optional, what the operator said when withdrawing).
+
+**`autonomous_decision_record_list` parameters:**
+
+| Parameter | Required | Description |
+|---|---|---|
+| `state` | no | `open`, `answered` or `withdrawn` (anything else is refused) |
+| `prd_id` | no | Only the records linked to this Automaton |
+| `limit` | no | At most this many records, most recently updated first; default 100, maximum 1000 |
+
+**`autonomous_decision_record_get` parameters:** `id` (required) — the
+decision record id.
+
+**Common behaviour.** While the daemon's decision switches
+(`autonomous.decisions.enabled`, `autonomous.questions.enabled`) are off a
+create or update answers the daemon's `503` naming the switch. A record
+that is not clear enough is refused with the clarity findings
+(`422`) — fix them and send it again — or, when the clarity mode is
+`warn`, raised with the findings under `warnings`. Create and update
+answer `201` / `200` with `record`, `question_id` and `warnings`; a
+question that could not be brought in step yet comes back as the
+`question_not_in_step` warning (the next daemon poll retries) rather
+than as a failure. Unknown ids are `404`.
+
+```
+autonomous_decision_record_create(label="storage choice", title="Pick the question storage",
+  situation="The question store is in-memory", deciding="Which store to move to",
+  options=[{"id":"jsonl","label":"JSONL","tradeoff":"simple, single file"},
+           {"id":"sqlite","label":"SQLite","tradeoff":"new dependency"}],
+  recommendation={"option_id":"jsonl","reason":"no new dependency"}, default="jsonl",
+  links={"automaton":"d0442737d38c"})
+autonomous_decision_record_list()
+autonomous_decision_record_list(state="open", prd_id="d0442737d38c", limit=20)
+autonomous_decision_record_get(id="rec-1")
+autonomous_decision_record_update(id="rec-1", title="Pick the question storage", options=[{"id":"jsonl","label":"JSONL"}])
+autonomous_decision_record_withdraw(id="rec-1", reason="superseded by a newer plan")
+```
+
+When answering a record's question, `question_answer` accepts the
+optional `follow_up` name that runs one of the configured follow-ups
+(`autonomous.decisions.follow_ups`) once per record; the outcome is
+stored on the record under `follow_up` with a `status` of `done`,
+`skipped` or `error` and a one-line `result`.
 
 ---
 
