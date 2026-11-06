@@ -61,3 +61,13 @@ Further rows are added as the run goes on: completion and advance, what the Auto
 6. **A held auto-fix task retried with an explicit backend still waits on the local pool.** `resolve-review --action retry --backend claude-code --model sonnet` set the task record to the cloud backend, but admission used the verifier policy order (local pool first), so the task waited over an hour on full local nodes while the cloud lane was idle. It was the only thing blocking a merge. Filed as a bugs-stage defect at priority 85.
 7. **A planning run already queued on the local pool cannot be re-routed.** Changing an Automaton's decomposition profile to the cloud backend, restarting the decompose, and resetting it to draft (refused while planning) all left the run waiting on the full local pool, while the cloud lane sat idle. Fix to file: changing the planning backend of a queued planning run should cancel and re-queue it on the new pool, and the wait reason should show the pool of the current profile. Until then, set the planning profile before the first decompose.
    - **Addressed — 2026-11-03, queued requeue (next patch above main).** Changing `decomposition_profile` / `decomposition_model` with `set_llm` while the planning run is still queued retargets that run's single queue entry in place to the pool the current profile resolves to (outcome `requeued`; the wait reason now names the current pool), and re-calling `decompose` while the run is queued re-queues it on the current pool instead of starting a second run. A run that already started is left alone (`deferred_to_next_run`) — wait for it or cancel it. No retry-budget consumption, no leaked capacity, wait budget not reset. See `docs/howto/autonomous-planning.md` ("Changing the planning backend while planning") and `docs/operations.md` ("Planning requeue").
+
+## 2026-11-06 finding: an Automation activated while its first member is a draft cannot recover
+
+Activating Automation `869ff55c` while its entry member `3b7c0001` was still a draft Automaton at needs_review made it
+blocked at once ("next member ... is needs_review") with a cursor on the entry member. After the Automaton was
+validated and approved, the Automation refused both `resume` ("needs an automation that is paused") and
+`return-to-draft` ("has a cursor ... so it was started"). The only way out is to cancel it and create it again. Rule for
+now: validate and approve every member first, then activate. The supervisor ran `3b7c0001` directly to keep the
+Claude lane busy and will recreate the arc once its members are approved. Fix wanted: a blocked Automation whose
+blocker is cleared should resume, or activation should refuse a draft entry member with that reason.
