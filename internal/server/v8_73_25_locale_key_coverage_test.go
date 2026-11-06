@@ -38,6 +38,7 @@ func TestLocales_AllAppJSKeysExistInEnglishBundle(t *testing.T) {
 		"chat_quick_reply_":      true, // + lowercased quick-reply label
 		"repo_ci_watch_mode_":    true, // + off/shadow/on mode string
 		"supervisor_watch_mode_": true, // + off/shadow/on mode string
+		"federation_observer_pull_source_": true, // + push/pull/shadow source string
 	}
 
 	seen := map[string]bool{}
