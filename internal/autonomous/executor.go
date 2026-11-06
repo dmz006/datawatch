@@ -1791,6 +1791,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		vrFinal := vr
 		m.store.WithLock(func() { t.Verification = &vrFinal })
+		// Protected paths: deterministic, once per worker attempt, whatever
+		// the verifier said and in direct and worktree mode alike. A hold
+		// parks the task (the way the uncommitted-work hold does); the block
+		// action leaves it blocked with no question and the walk stops here,
+		// as it does for a file-drift block.
+		if held, perr := m.checkProtectedPaths(ctx, prd, t); perr != nil {
+			return perr
+		} else if held {
+			return nil
+		}
+		if m.protectedPathsBlockedTask(t) {
+			return m.store.SaveTask(t)
+		}
 		// File drift: deterministic, once per worker attempt.
 		// Pre-existing findings block under DriftMode "block" (the default)
 		// unless the PRD/profile explicitly opts out; in-run findings
