@@ -9000,6 +9000,11 @@ const DOCS_LINKS_BY_KEY = {
   settings_automata_questions_quality_tracker_id_pattern: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_automata_questions_queue_preview_lines: DOCS_DEFINITIONS + '#automata-question-quality-and-queue-settings',
   settings_uncommitted_work_check: DOCS_DEFINITIONS + '#uncommitted-work-check',
+  settings_protected_paths_group: DOCS_DEFINITIONS + '#protected-paths',
+  settings_protected_paths: DOCS_DEFINITIONS + '#protected-paths',
+  settings_protected_paths_action: DOCS_DEFINITIONS + '#protected-paths-action',
+  settings_rules_review_source: DOCS_DEFINITIONS + '#rules-review-source',
+  automaton_authorised_paths: DOCS_DEFINITIONS + '#authorised-paths',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
   // Settings -> Plugins
@@ -14310,6 +14315,7 @@ function renderTask(prd, story, task, editable) {
     ${renderTaskFileDrift(task)}
     ${renderTaskUndeclaredEdits(task)}
     ${window.uncommittedWorkTaskHtml(task)}
+    ${window.protectedPathsTaskHtml(task)}
     ${filesP}
     ${filesT}
     ${filesG}
@@ -14318,7 +14324,7 @@ function renderTask(prd, story, task, editable) {
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">
     <div class="prd-task-header" onclick="_prdToggleTask('${escHtml(taskID)}')" title="${isExpanded ? 'Collapse' : 'Expand'}">
       <span class="prd-task-chevron">${chevron}</span>
-      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}
+      ${statusGlyphSpan}${heldBadge}${infraRetryBadges}${window.uncommittedWorkChipHtml(task)}${window.protectedPathsChipHtml(task)}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${piProgressBlock}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
@@ -16569,6 +16575,14 @@ const GENERAL_CONFIG_FIELDS = [
       optionLabelKeys: { hold: 'uncommitted_work_policy_hold', warn: 'uncommitted_work_policy_warn', off: 'uncommitted_work_policy_off' } },
     { key: 'autonomous.automation.uncommitted_work_scope', label: 'Automaton uncommitted-work scope (task_files or worktree; default task_files)', labelKey: 'settings_automation_uncommitted_work_scope', type: 'select', options: ['task_files', 'worktree'], default: 'task_files',
       optionLabelKeys: { task_files: 'uncommitted_work_scope_task_files', worktree: 'uncommitted_work_scope_worktree' } },
+    // Protected paths — files an Automaton task may not change without an operator decision. The card in the Automata
+    // overview reads GET /api/autonomous/protected-paths; the list saves as a comma separated string.
+    { label: 'Protected paths', labelKey: 'settings_automation_protected_paths_group', docsKey: 'settings_protected_paths_group', type: 'group' },
+    { key: 'autonomous.automation.protected_paths', label: 'Automaton protected paths (comma-separated, repository-relative; empty uses the default list)', labelKey: 'settings_automation_protected_paths', docsKey: 'settings_protected_paths', type: 'text', csv: true, placeholder: 'AGENT.md, .github/workflows/' },
+    { key: 'autonomous.automation.protected_paths_action', label: 'Automaton protected-paths action (hold, warn, block or off; default hold)', labelKey: 'settings_automation_protected_paths_action', docsKey: 'settings_protected_paths_action', type: 'select', options: ['hold', 'warn', 'block', 'off'], default: 'hold',
+      optionLabelKeys: { hold: 'protected_paths_action_hold', warn: 'protected_paths_action_warn', block: 'protected_paths_action_block', off: 'protected_paths_action_off' } },
+    { key: 'autonomous.automation.rules_review_source', label: 'Automaton rules review source (base_commit or worktree; default base_commit)', labelKey: 'settings_automation_rules_review_source', docsKey: 'settings_rules_review_source', type: 'select', options: ['base_commit', 'worktree'], default: 'base_commit',
+      optionLabelKeys: { base_commit: 'rules_review_source_base_commit', worktree: 'rules_review_source_worktree' } },
     { key: 'autonomous.automation.disk_alert_percent', label: 'Automata disk alert (percent of the disk in use that raises an alert, 1-100, default 85)', labelKey: 'settings_automation_disk_alert_percent', type: 'number', placeholder: '85', min: 1, max: 100, step: 1, default: '85' },
     // Merged member — what an Automaton does when a member ends with its work already merged into the project's default branch.
     // Repo CI watch (autonomous.automation.repo_ci_watch.*) — the
@@ -24113,6 +24127,8 @@ function _renderDetailContent(prd) {
     ${header}
     ${tabStrip}
     ${window.uncommittedWorkBannerHtml(prd)}
+    ${window.protectedPathsBannerHtml(prd)}
+    ${window.protectedPathsAuthorisedHtml(prd)}
     ${triageSlot}
     ${mergeSlot}
     <div id="prdDecisionLine" class="prd-capacity-slot decision-line-slot" data-prd="${escHtml(prd.id || '')}" style="margin-top:10px;"></div>
@@ -26161,6 +26177,190 @@ window.cleanupCardHtml = function(status) {
     `<div class="cleanup-disk" style="padding:3px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">${diskBody}</div></div>`;
 };
 
+// ── Automata protected-paths card ────────────────────────────────────────────
+// protectedPathsCardHtml(status) draws the body of
+// GET /api/autonomous/protected-paths: { action, rules_source, paths, held:
+// [{automaton_id, automaton_title, task_id, task_title, paths, action, reason,
+// question_id, since, awaiting_spec_change}], authorized: [{automaton_id,
+// automaton_title, paths}] }. It is read-only: the action, rules source and
+// list are changed in the Automata settings, and a held task is answered
+// through its question. A missing or malformed body reads as nothing held.
+// Every value is escaped; the loader owns the loading and failed states.
+const PROTECTED_PATHS_HELP_HREF = '/diagrams.html#docs/datawatch-definitions.md#protected-paths';
+const PROTECTED_PATHS_ACTIONS = ['hold', 'warn', 'block', 'off'];
+const PROTECTED_PATHS_SOURCES = ['base_commit', 'worktree'];
+const PROTECTED_PATHS_SHOWN = 50;
+
+// _protectedPathsHelpLink is the small help link beside a card title. It
+// follows the Settings "show inline doc links" preference like the other links.
+function _protectedPathsHelpLink() {
+  try { if (localStorage.getItem('cs_show_docs_links') === '0') return ''; } catch (e) { /* storage unavailable: show the link */ }
+  const label = t('protected_paths_help_link');
+  return ` <a href="${PROTECTED_PATHS_HELP_HREF}" target="_blank" rel="noopener noreferrer" class="docs-link protected-paths-help" onclick="event.stopPropagation()" title="${escHtml(label)}">${escHtml(label)}</a>`;
+}
+
+// _protectedPathsValueText words an action or rules source; a value this
+// version does not know shows as it came.
+function _protectedPathsValueText(prefix, list, v) {
+  const s = String(v == null ? '' : v);
+  if (!list.includes(s)) return s;
+  const key = prefix + s;
+  const text = t(key);
+  return (text && text !== key) ? text : s;
+}
+
+function _protectedPathsStrings(v) {
+  return (Array.isArray(v) ? v : []).filter(x => typeof x === 'string' && x !== '');
+}
+
+// _protectedPathsListHtml is one expandable path list: a summary with the
+// count and the paths as escaped code items, capped so a long list stays light.
+function _protectedPathsListHtml(labelKey, paths, cls) {
+  if (!paths.length) return '';
+  const shown = paths.slice(0, PROTECTED_PATHS_SHOWN);
+  const more = paths.length > shown.length
+    ? `<li style="color:var(--text2);">${escHtml(t('protected_paths_more', [paths.length - shown.length]))}</li>` : '';
+  return `<details class="${cls}" style="margin-top:4px;min-width:0;">` +
+    `<summary style="cursor:pointer;font-size:11px;font-weight:600;color:var(--text2);">${escHtml(t(labelKey, [paths.length]))}</summary>` +
+    `<ul style="margin:4px 0 0 16px;font-size:11px;min-width:0;overflow-wrap:anywhere;">${shown.map(p => `<li><code>${escHtml(p)}</code></li>`).join('')}${more}</ul></details>`;
+}
+
+// _protectedPathsHoldHtml is the body shared by a held row, a held task and the
+// Automaton banner: the changed paths, the reason, since when, a note while the
+// task waits for its instructions to change, and the button that opens the
+// question. The button is the uncommitted-work one with this feature's label.
+function _protectedPathsHoldHtml(hold, since) {
+  const h = (hold && typeof hold === 'object') ? hold : {};
+  const lines = [];
+  if (h.reason) lines.push(_cleanupLine(t('protected_paths_reason', [String(h.reason)])));
+  const when = since ? _triageTime(h.since) : '';
+  if (when) lines.push(_cleanupLine(t('protected_paths_since', [when])));
+  if (h.awaiting_spec_change) lines.push(_cleanupLine(t('protected_paths_awaiting_spec_change')));
+  const open = _uncommittedWorkQuestionButton(h.question_id, 'protected_paths_open_question');
+  return _protectedPathsListHtml('protected_paths_paths', _protectedPathsStrings(h.paths), 'protected-paths-list') +
+    lines.join('') + (open ? `<div style="margin-top:4px;">${open}</div>` : '');
+}
+
+function _protectedPathsEntryHtml(e) {
+  const entry = (e && typeof e === 'object') ? e : {};
+  const task = String(entry.task_title || entry.task_id || '');
+  const name = String(entry.automaton_title || entry.automaton_id || '');
+  return `<div class="protected-paths-row" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">${escHtml(t('protected_paths_held_task', [task, name]))}</div>` +
+    _protectedPathsHoldHtml(entry, true) + `</div>`;
+}
+
+function _protectedPathsAuthorisedLine(e) {
+  const entry = (e && typeof e === 'object') ? e : {};
+  const name = String(entry.automaton_title || entry.automaton_id || '');
+  return _cleanupLine(t('protected_paths_authorised_line', [name, _protectedPathsStrings(entry.paths).join(', ')]));
+}
+
+window.protectedPathsCardHtml = function(status) {
+  const s = (status && typeof status === 'object' && !Array.isArray(status)) ? status : {};
+  const held = Array.isArray(s.held) ? s.held : [];
+  const authorised = (Array.isArray(s.authorized) ? s.authorized : []).filter(e => e && typeof e === 'object' && _protectedPathsStrings(e.paths).length);
+  const head = `<div class="cap-title">${escHtml(t('protected_paths_card_title'))}${_protectedPathsHelpLink()}</div>`;
+  const note = _cleanupLine(t('protected_paths_read_only'));
+  const paths = _protectedPathsStrings(s.paths);
+  const settings = _cleanupLine(t('protected_paths_action_line', [_protectedPathsValueText('protected_paths_action_', PROTECTED_PATHS_ACTIONS, s.action)])) +
+    _cleanupLine(t('protected_paths_source_line', [_protectedPathsValueText('rules_review_source_', PROTECTED_PATHS_SOURCES, s.rules_source)])) +
+    (paths.length ? _protectedPathsListHtml('protected_paths_list_line', paths, 'protected-paths-effective') : _cleanupLine(t('protected_paths_list_none')));
+  const auth = authorised.map(_protectedPathsAuthorisedLine).join('');
+  const body = held.length
+    ? held.map(_protectedPathsEntryHtml).join('')
+    : `<div class="protected-paths-empty" style="padding:6px 0;border-top:1px solid rgba(128,128,128,.25);color:var(--text2);">${escHtml(t('protected_paths_empty'))}</div>`;
+  return `<div class="prd-capacity-card protected-paths-card" style="min-width:0;">${head}${note}${settings}${auth}${body}</div>`;
+};
+
+// protectedPathsChipHtml is the chip on a task row whose JSON carries
+// protected_path_hold; its tooltip lists the paths. Empty for any other task.
+window.protectedPathsChipHtml = function(task) {
+  const h = task && task.protected_path_hold;
+  if (!h || typeof h !== 'object') return '';
+  const paths = _protectedPathsStrings(h.paths);
+  const tip = [h.reason ? String(h.reason) : t('protected_paths_chip_tip')].concat(paths).join('\n');
+  return `<span class="prd-verdict-badge prd-verdict-warn protected-paths-chip" title="${escHtml(tip)}">&#9888; ${escHtml(t('protected_paths_chip', [paths.length]))}</span>`;
+};
+
+// protectedPathsTaskHtml is the body of a held task: the changed paths, the
+// reason, since when and the button that opens the question.
+window.protectedPathsTaskHtml = function(task) {
+  const h = task && task.protected_path_hold;
+  if (!h || typeof h !== 'object') return '';
+  return `<div class="prd-task-error protected-paths-task" style="border-color:var(--warning,#d90);min-width:0;">${_protectedPathsHoldHtml(h, true)}</div>`;
+};
+
+// protectedPathsBannerHtml is the banner on an Automaton with held tasks: the
+// count and, per held task, its paths and the button that opens its question.
+// The tasks are read from the stories the detail page carries.
+window.protectedPathsBannerHtml = function(automaton) {
+  const a = (automaton && typeof automaton === 'object') ? automaton : {};
+  const held = [];
+  (Array.isArray(a.stories) ? a.stories : []).forEach(st => {
+    (st && Array.isArray(st.tasks) ? st.tasks : []).forEach(tk => {
+      if (tk && tk.protected_path_hold && typeof tk.protected_path_hold === 'object') held.push(tk);
+    });
+  });
+  if (!held.length) return '';
+  const name = String(a.title || a.id || '');
+  const rows = held.map(tk => `<div class="protected-paths-banner-task" style="margin-top:4px;min-width:0;">` +
+    `<div style="overflow-wrap:anywhere;">${escHtml(t('protected_paths_held_task', [String(tk.title || tk.id || ''), name]))}</div>` +
+    _protectedPathsHoldHtml(tk.protected_path_hold, false) + `</div>`).join('');
+  return `<div class="protected-paths-banner prd-task-error" role="alert" title="${escHtml(t('protected_paths_held_automaton', [name]))}" style="border-color:var(--warning,#d90);min-width:0;">` +
+    `<div style="font-weight:600;overflow-wrap:anywhere;">&#9888; ${escHtml(t('protected_paths_banner', [held.length]))}</div>${rows}</div>`;
+};
+
+// ── Authorised paths editor on the Automaton detail ──────────────────────────
+// protectedPathsAuthorisedHtml(prd) is the Authorised paths card: the list the
+// Automaton carries in authorized_paths and a text field that saves a comma
+// separated list through POST .../set_authorized_paths. An empty field clears
+// the list. The server checks every entry; its message shows under the field.
+function _protectedPathsAuthorisedListHtml(paths) {
+  return paths.length
+    ? `<ul style="margin:4px 0 0 16px;font-size:11px;min-width:0;overflow-wrap:anywhere;">${paths.map(p => `<li><code>${escHtml(p)}</code></li>`).join('')}</ul>`
+    : _cleanupLine(t('protected_paths_authorised_none'));
+}
+
+window.protectedPathsAuthorisedHtml = function(prd) {
+  if (!prd || typeof prd !== 'object' || !prd.id) return '';
+  const paths = _protectedPathsStrings(prd.authorized_paths);
+  return `<div class="prd-capacity-card protected-paths-authorised" style="margin-top:10px;min-width:0;">` +
+    `<div class="cap-title">${escHtml(t('protected_paths_authorised_title'))}${defsLink('automaton_authorised_paths')}</div>` +
+    _cleanupLine(t('protected_paths_authorised_hint')) +
+    `<div id="protectedPathsAuthList" class="protected-paths-authorised-list">${_protectedPathsAuthorisedListHtml(paths)}</div>` +
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px;min-width:0;">` +
+    `<input id="protectedPathsAuthInput" type="text" class="form-input protected-paths-authorised-input" style="flex:1;min-width:160px;" value="${escHtml(paths.join(', '))}" placeholder="${escHtml(t('protected_paths_authorised_placeholder'))}" aria-label="${escHtml(t('protected_paths_authorised_label'))}" />` +
+    `<button type="button" class="btn-secondary protected-paths-authorised-save" data-prd="${escHtml(String(prd.id))}" style="font-size:11px;padding:3px 10px;" onclick="window.protectedPathsSaveAuthorised(this)">${escHtml(t('protected_paths_authorised_save'))}</button>` +
+    `</div><div id="protectedPathsAuthMsg" class="protected-paths-authorised-msg" role="status" style="font-size:11px;margin-top:4px;overflow-wrap:anywhere;"></div></div>`;
+};
+
+// protectedPathsSaveAuthorised saves the field. The Automaton id travels in a
+// data attribute and is read back here, never put into script text. A 400 from
+// the server (a bad entry) shows its message and leaves the list as it was.
+window.protectedPathsSaveAuthorised = function(btn) {
+  const id = btn && btn.getAttribute ? btn.getAttribute('data-prd') : '';
+  const input = document.getElementById('protectedPathsAuthInput');
+  const msg = document.getElementById('protectedPathsAuthMsg');
+  if (!id || !input) return Promise.resolve(null);
+  const paths = String(input.value || '').split(',').map(p => p.trim()).filter(Boolean);
+  const say = (cls, text) => { if (msg) msg.innerHTML = `<span class="${cls}">${escHtml(text)}</span>`; };
+  btn.disabled = true;
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/set_authorized_paths', {
+    method: 'POST', body: JSON.stringify({ paths }),
+  }).then(updated => {
+    const saved = (updated && typeof updated === 'object' && !Array.isArray(updated) && updated.id) ? _protectedPathsStrings(updated.authorized_paths) : paths;
+    const list = document.getElementById('protectedPathsAuthList');
+    if (list) list.innerHTML = _protectedPathsAuthorisedListHtml(saved);
+    input.value = saved.join(', ');
+    say('protected-paths-ok', t('protected_paths_authorised_saved'));
+    return saved;
+  }).catch(err => {
+    say('protected-paths-error', t('protected_paths_authorised_failed', [String((err && err.message) || err || '').trim()]));
+    return null;
+  }).then(r => { btn.disabled = false; return r; });
+};
+
 // ── Automata uncommitted-work card ───────────────────────────────────────────
 // uncommittedWorkCardHtml(status) draws the body of
 // GET /api/autonomous/uncommitted-work: { policy, scope, held: [{automaton_id,
@@ -26211,9 +26411,9 @@ function _uncommittedWorkFilesHtml(labelKey, files, cls) {
 // _uncommittedWorkQuestionButton opens the question a hold raised. The id
 // travels in a data attribute and is read back by the handler, never put into
 // script text.
-function _uncommittedWorkQuestionButton(qid) {
+function _uncommittedWorkQuestionButton(qid, labelKey) {
   if (!qid) return '';
-  return `<button type="button" class="btn-secondary uncommitted-work-open" data-question="${escHtml(String(qid))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkOpenQuestion(this)">${escHtml(t('uncommitted_work_open_question'))}</button>`;
+  return `<button type="button" class="btn-secondary uncommitted-work-open" data-question="${escHtml(String(qid))}" style="font-size:11px;padding:3px 10px;" onclick="window.uncommittedWorkOpenQuestion(this)">${escHtml(t(labelKey || 'uncommitted_work_open_question'))}</button>`;
 }
 window.uncommittedWorkOpenQuestion = function(btn) {
   const qid = btn && btn.getAttribute ? btn.getAttribute('data-question') : '';
@@ -28666,14 +28866,15 @@ const _AUTOMATION_SUBTABS = [
       <div id="automationInfraRetryCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationSafeDeleteCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationCleanupCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
-      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
+      <div id="automationUncommittedWorkCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
+      <div id="automationProtectedPathsCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>`,
     mount() {
-      listLoaderAll([_automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
+      listLoaderAll([_automationProtectedPathsLoader(), _automationCapacityLoader(), _automationUsageLoader(), _automationLaneFillLoader(), _automationInfraRetryLoader(), _automationSafeDeleteLoader(), _automationCleanupLoader(), _automationUncommittedWorkLoader()]);
       // The progress card renders into its slot on this sub-tab; it has no
       // listLoader of its own, so nothing for stop() to end.
       if (typeof window.loadProgressCard === 'function' && document.getElementById('progressCard')) window.loadProgressCard();
     },
-    stop() { _automationStopLoaders(['automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
+    stop() { _automationStopLoaders(['automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work']); },
   },
   {
     id: 'chains',
@@ -28756,7 +28957,7 @@ function _automationMount() {
 // sub-tab); the per-sub-tab stop() entries pass only their own keys. Their
 // state stays, and the sub-tab's mount() starts them again.
 function _automationStopLoaders(keys) {
-  const all = ['automation', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
+  const all = ['automation', 'automation_protected_paths', 'automation_capacity', 'automation_usage', 'automation_lane_fill', 'automation_infra_retry', 'automation_triage', 'automation_security_failure', 'automation_questions', 'automation_safe_delete', 'automation_cleanup', 'automation_uncommitted_work'];
   (keys || all).forEach(k => {
     const ctl = window._listLoaders && window._listLoaders[k];
     if (ctl) ctl.stop();
@@ -28900,6 +29101,19 @@ function _automationUncommittedWorkLoader() {
     failedText: msg => t('uncommitted_work_failed', [msg]),
     active: () => !!document.getElementById('automationUncommittedWorkCard'),
     render: status => window.uncommittedWorkCardHtml(status),
+  });
+}
+
+// _automationProtectedPathsLoader reads the protected-paths holds on the
+// Overview sub-tab, beside the uncommitted-work card. The read is built from the
+// stored Automata and the settings, so it polls at the same rate; its failed
+// state is the list loader's banner. The card is read-only.
+function _automationProtectedPathsLoader() {
+  return window._listLoaders.automation_protected_paths || listLoader({
+    key: 'automation_protected_paths', el: 'automationProtectedPathsCard', url: '/api/autonomous/protected-paths', pollMs: 30000,
+    failedText: msg => t('protected_paths_failed', [msg]),
+    active: () => !!document.getElementById('automationProtectedPathsCard'),
+    render: status => window.protectedPathsCardHtml(status),
   });
 }
 
