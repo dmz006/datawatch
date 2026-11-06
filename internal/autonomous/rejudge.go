@@ -167,7 +167,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// verdict describes the old head, and an unchanged head would give the
 	// same answer. Refuse before touching anything.
 	if heldReview {
-		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
+		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
 		head := judgeVerdictCommitSHA(prd, inv)
 		heldSHA := ""
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil {
@@ -189,7 +189,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	cacheOn := m.judgeVerdictCacheEnabled()
 	var headSHA string
 	if cacheOn {
-		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
+		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
 		headSHA = judgeVerdictCommitSHA(prd, inv)
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil && headSHA != "" && stored.JudgedCommitSHA != headSHA {
 			ctx = withJudgeVerdictCacheLookupBypassed(ctx)
@@ -208,7 +208,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 	v.Guardrail = "rules-review"
 	if headSHA == "" {
-		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
+		inv, _ := m.buildPRDRulesReviewInvocation(prd, "") // head lookup only: no rules read, no fallback Decision
 		headSHA = judgeVerdictCommitSHA(prd, inv)
 	}
 	v.JudgedCommitSHA = headSHA
