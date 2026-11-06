@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Post-ship hooks — the hook steps a project runs after the ship, off by default.** A project lists its post-ship hook steps under `autonomous.merge_pipeline.post_ship`: the `enabled` switch (default off), an ordered `hooks` list of up to 20 entries where each is either a builtin — `registry_row` updates a registry row, `parity_issue` files an issue through the ship runner, `tag` adds a version tag that is not there yet, `notify` sends a rendered template — with its built-in target, or a `command` the daemon runs in the project, and each has its own `enabled`. After the merge pipeline ships (the push and the deploy), the daemon runs the enabled hooks in list order and records every result in the merge run record; a failed hook changes nothing about the ship, does not undo the deploy, does not stop the later hooks, and leaves one triage note with source `post_ship` only when the run belongs to an Automaton. The block and the hook list are readable and writable from every settings surface: YAML and `GET`/`PUT /api/config`, the `post_ship` block on the `autonomous_merge_pipeline_get` MCP tool, `datawatch autonomous merge-pipeline post-ship set|show` on the command line, `configure` and `help` on the comm channel, and the **Post-ship hooks** card in the PWA settings with the locale keys in all five bundles. How-to: [howto/post-ship-hooks.md](docs/howto/post-ship-hooks.md). Definitions: [Post-ship hooks](docs/datawatch-definitions.md#post-ship-hooks). Flow: [the post-ship hook flow](docs/flow/post-ship-hook-flow.md).
+
 ## v9.67.0 — Cost report
 
 ### Added
