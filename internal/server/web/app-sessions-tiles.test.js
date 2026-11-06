@@ -98,7 +98,7 @@ test('phone widths default to the list, wider screens default to tiles', () => {
   assert.equal(sb._sessionsTileModeDefault(600), 'tiles', 'the boundary sits on the tile side');
   assert.equal(sb._sessionsTileModeDefault(1024), 'tiles');
   assert.equal(sb._sessionsTileModeDefault(undefined), 'list', 'an unknown width keeps the classic list');
-  assert.equal(sb._sessionsTileModeDefault(-1), 'tiles');
+  assert.equal(sb._sessionsTileModeDefault(-1), 'list', 'a non-positive width is unknown, so the list');
 });
 
 test('a first visit opens by viewport, and later visits honor the stored choice', () => {
@@ -253,7 +253,6 @@ test('the toggle offers all three modes with the current one active', () => {
   assert.match(html, /Compact/);
 });
 
-const plain = x => JSON.parse(JSON.stringify(x));
 
 test('missing locale keys fall back to the English label, never the raw key', () => {
   const sb = loadApp();
