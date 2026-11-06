@@ -1571,6 +1571,8 @@ type Manager struct {
 	fallthroughs       map[string]CapacityAlternate
 	// sessionNode names the compute node an adopted session runs on.
 	sessionNode SessionNodeFn
+	// sessionBackend reads the backend and model a resumed session really runs.
+	sessionBackend SessionBackendFn
 	// entryNodes counts the compute nodes an LLM entry lists (nil = unknown).
 	entryNodes EntryNodesFn
 	// sessionEndpoint reads the endpoint a session was placed on, for logging.

@@ -99,6 +99,19 @@ func (m *Manager) SetSessionNode(fn SessionNodeFn) {
 	m.sessionNode = fn
 }
 
+// SessionBackendFn reports the backend and model a session really runs
+// (both "" when the session is unknown or records no backend).
+type SessionBackendFn func(sessionID string) (backend, model string)
+
+// SetSessionBackend wires the lookup adoptCapacity uses to read the backend a
+// resumed session really runs. Nil leaves adopted leases on the task's own
+// resolved backend.
+func (m *Manager) SetSessionBackend(fn SessionBackendFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionBackend = fn
+}
+
 // SessionEndpointFn names the endpoint a session was placed on (its node
 // address, else its engine URL), "" when it records none. adoptCapacity only
 // logs it, to show which endpoint matched no compute node.
