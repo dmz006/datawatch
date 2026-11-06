@@ -1912,7 +1912,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 
 		var vr VerificationResult
 		if verify != nil {
-			vr, err = verify(ctx, prd, t)
+			var idleHeld bool
+			vr, idleHeld, err = m.verifyRetryingIdle(ctx, prd, t, verify)
+			if idleHeld {
+				return err
+			}
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
 					return nil
