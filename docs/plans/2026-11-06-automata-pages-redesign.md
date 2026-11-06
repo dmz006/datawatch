@@ -251,3 +251,30 @@ work in there to use!!"
 Decision: A, with the review of the 77 unlanded branches done first (the C step), so the list starts sorted and any
 useful work is recovered before anything is deleted. The review result is recorded in
 `2026-11-06-unlanded-branch-review.md`.
+
+## Why the worktree cleanup did not prevent this (operator question 2026-11-06 09:08)
+
+Quoted: "so yes c a one time review too need to get worktrees fixed and why did our work on cleaning up and having
+datawatch manage worktrees see this is this a bug, overlook or what?"
+
+Checked: the cleanup from registry row 256 (`f8f60001`) is on and working. Its last status shows worktrees: mode
+on, 67 removed by the owner and 229 removed in total, 37.6 GB freed in total, and the last pass skipped 168. It
+removes only branches whose commits are all on the base branch (the safe-to-delete rule in
+`internal/autonomous/merge_safe_delete.go`: "strictly read-only ... deletion stays a separate, operator-approved
+step") and never touches a running Automaton, a live session or lease, or a tree with uncommitted changes. So the
+168 skipped are exactly the work it is built to protect.
+
+Finding: an overlook in the design, not a bug in the cleaner. Cleanup covers the safe side (landed work) and the
+live side; nothing resolves the middle. An archived Automaton whose commits never reached main stays forever:
+the cleaner keeps it, the safe-to-delete report does not list it (it lists only safe entries), and
+`scripts/branch-audit.py` flags only a PENDING record (a completed Automaton not on main). The audit's category
+"other" (archived, not landed, 77 now) has no rule that says it must be merged or recorded as dropped. Two causes
+feed that middle: the supervisor loop archives a cancelled Automaton within seconds (defect `61c60001`, running,
+which keeps an Automaton with unmerged commits from that fix on, but does nothing for the existing ones), and
+Automata that failed or were replaced were archived without a recorded outcome.
+
+Fix in three parts: (1) the one-time review of the 77 (running, results in
+`2026-11-06-unlanded-branch-review.md`); (2) the "Unlanded work" action list on the Housekeeping tab (decision 6),
+so each one gets an outcome (land, keep as reference, delete after classification); (3) the registry audit rule and
+`branch-audit.py` treat "other" as a finding to be resolved, and the cleaner reports the skipped worktrees by
+reason with the unlanded ones named.
