@@ -24,12 +24,15 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
-// allowSelfConfigCheck returns a denied result if mcp.allow_self_config is not
-// set, nil otherwise.  Shared by all _config_set tools.
+// allowSelfConfigCheck returns a denied result if the allow_self_config
+// alias (the builtin "self-config" capability group) is disabled, nil
+// otherwise. Shared by all _config_set tools. The alias defaults to
+// ENABLED (absent key = on); an explicit allow_self_config: false
+// closes it.
 func (s *Server) allowSelfConfigCheck() *mcpsdk.CallToolResult {
-	if s.cfg == nil || !s.cfg.AllowSelfConfig {
+	if s.cfg == nil || !s.cfg.SelfConfigEnabled() {
 		return mcpsdk.NewToolResultText(
-			"permission denied: set mcp.allow_self_config=true in the config file (and restart) to enable self-modify",
+			"permission denied: self-modify is disabled (mcp.allow_self_config: false) — remove the explicit false (the default is enabled) and restart to enable",
 		)
 	}
 	return nil

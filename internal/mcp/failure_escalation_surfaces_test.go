@@ -38,7 +38,7 @@ func newEscalationDaemon(t *testing.T) (*escalationDaemon, *Server) {
 	d := &escalationDaemon{overrides: map[string]any{}, config: map[string]any{}}
 	srv := httptest.NewServer(http.HandlerFunc(d.serve))
 	t.Cleanup(srv.Close)
-	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	return d, &Server{webPort: bl427Port(t, srv), cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 }
 
 func (d *escalationDaemon) serve(w http.ResponseWriter, r *http.Request) {

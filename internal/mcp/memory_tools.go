@@ -988,14 +988,15 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 		return toolErrorf("config_set", "key and value are required"), nil
 	}
 
-	// BL110 — permission gate. Default closed; operators flip
-	// mcp.allow_self_config=true when they want an in-process AI to
-	// be able to tune its own config. Bootstrap protection: the gate
-	// itself cannot be opened via config_set, only via direct YAML
-	// edit + restart.
-	if s.cfg == nil || !s.cfg.AllowSelfConfig {
+	// BL110 — permission gate; BL412 option C followup: the gate is the
+	// allow_self_config alias for the builtin "self-config" capability
+	// group, which defaults to ENABLED. An explicit
+	// allow_self_config: false closes it. Bootstrap protection: the
+	// gate itself cannot be opened via config_set, only via direct
+	// YAML edit + restart.
+	if s.cfg == nil || !s.cfg.SelfConfigEnabled() {
 		return mcpsdk.NewToolResultText(
-			"permission denied: set mcp.allow_self_config=true in the config file (and restart) to enable self-modify",
+			"permission denied: self-modify is disabled (mcp.allow_self_config: false) — remove the explicit false (the default is enabled) and restart to enable",
 		), nil
 	}
 	if key == "mcp.allow_self_config" {

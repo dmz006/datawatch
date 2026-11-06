@@ -1487,9 +1487,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				sessionChannelEnv["DATAWATCH_CA_CERT"] = v
 			}
 			if sessionTokenStore != nil {
+				// BL412 option C followup — the session-default grant for
+				// the spawned session's scoped credential carries the
+				// builtin "self-config" capability group when the
+				// allow_self_config alias is enabled (the default); an
+				// explicit operator grant (session.capabilities) is always
+				// used as-written, which is how the group is removed or
+				// narrowed on purpose.
 				grantCaps := cfg.Session.Capabilities
 				if len(grantCaps) == 0 {
-					grantCaps = []string{"session-default"}
+					grantCaps = federation.SessionDefaultGrantCaps(cfg.MCP.SelfConfigEnabled())
 				}
 				resolved := federation.Resolve(grantCaps, nil)
 				if tok, err := sessionTokenStore.Mint(sess.FullID, resolved); err != nil {
@@ -8817,9 +8824,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			fmt.Println("[docsindex] LLM translator attached (uses configured Ollama/OpenWebUI backend)")
 		}
 	}
-	// BL110 — default self-modify audit path when AllowSelfConfig is on
-	// and the operator hasn't picked an explicit one.
-	if cfg.MCP.AllowSelfConfig && cfg.MCP.SelfConfigAuditPath == "" {
+	// BL110 — default self-modify audit path when the allow_self_config
+	// alias is enabled (it defaults to enabled since the BL412 option C
+	// followup) and the operator hasn't picked an explicit one.
+	if cfg.MCP.SelfConfigEnabled() && cfg.MCP.SelfConfigAuditPath == "" {
 		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
 			"audit", "config-self-modify.jsonl")
 	}

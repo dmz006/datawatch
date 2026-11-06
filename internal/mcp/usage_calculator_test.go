@@ -507,7 +507,7 @@ func TestUsageCalcConfigSetVariant(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	port, _ := strconv.Atoi(strings.Split(srv.URL, ":")[2])
-	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: true}}
+	s := &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(true)}}
 
 	res, err := s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "usage.calculator.variant", "value": "pace-gauge",
@@ -524,7 +524,7 @@ func TestUsageCalcConfigSetVariant(t *testing.T) {
 
 	// A denied server (mcp.allow_self_config off) refuses before any
 	// request is made.
-	s = &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: false}}
+	s = &Server{webPort: port, cfg: &config.MCPConfig{AllowSelfConfig: config.BoolPtr(false)}}
 	rec.method = ""
 	res, err = s.handleConfigSet(context.Background(), callReq(map[string]any{
 		"key": "usage.calculator.variant", "value": "pace-gauge",

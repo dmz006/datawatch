@@ -298,12 +298,15 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 	// registry but are granted only via federation:write, never this group;
 	// identity and daemon-control (restart_daemon / reload) have no dedicated
 	// capability to withhold, so they are kept OUT of the self-config
-	// classification instead (IsConfigWriteTool in mcp_tool_caps.go). This
-	// group is granted by the allow_self_config alias (follow-up task), not
-	// by session-default: this task adds the group only and does not change
-	// the session-default grant.
-	"self-config": {
-		Name:        "self-config",
+	// classification instead (IsConfigWriteTool in mcp_tool_caps.go).
+	//
+	// BL412 option C followup: mcp.allow_self_config is the ALIAS for this
+	// group and defaults to ENABLED. When the alias is enabled, spawned
+	// sessions' scoped credentials are minted with this group added to the
+	// session-default grant (SessionDefaultGrantCaps below); an explicit
+	// grant (session.capabilities) can remove or narrow it.
+	SelfConfigGroup: {
+		Name:        SelfConfigGroup,
 		Description: "Session config-write surface (BL412 option C): the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded by operator answer (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
 		Builtin:     true,
 		Caps:        []string{CapConfigWrite, CapAutonomousWrite, CapObserversWrite, CapLLMsWrite, CapUsageWrite},
@@ -454,6 +457,27 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 		Builtin:     true,
 		Caps:        allCaps,
 	},
+}
+
+// SelfConfigGroup is the name of the builtin capability group that
+// mcp.allow_self_config aliases (BL412 option C followup,
+// docs/plans/2026-10-29-bl412-self-config-gate-proposal.md). Defined as a
+// constant so the alias and the group cannot drift apart.
+const SelfConfigGroup = "self-config"
+
+// SessionDefaultGrantCaps is the grant list (group names) minted into a
+// spawned session's scoped credential when the operator has NOT set
+// session.capabilities: the builtin "session-default" group plus, when
+// the allow_self_config alias is enabled (its default), the builtin
+// "self-config" group. An explicit operator grant (session.capabilities)
+// is always used as-written instead of this helper — that is how the
+// self-config group is removed or narrowed on purpose.
+func SessionDefaultGrantCaps(selfConfigEnabled bool) []string {
+	grant := []string{"session-default"}
+	if selfConfigEnabled {
+		grant = append(grant, SelfConfigGroup)
+	}
+	return grant
 }
 
 // Resolve expands a slice of capability strings (group names and/or individual
