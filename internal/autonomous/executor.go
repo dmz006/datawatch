@@ -412,6 +412,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					return err
 				}
 			}
+			// The walk is done but a task waits for an earlier merge to land.
+			if !nudged && i >= len(order) && m.mergeHoldPending(prd) {
+				if !m.awaitMergeLanding(ctx, prd, wake) {
+					return ctx.Err()
+				}
+				nudged = true
+			}
 			if nudged {
 				if latest, _ := m.store.GetPRD(prdID); latest != nil {
 					prd = latest
@@ -492,6 +499,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			} else if m.decisionGateHold(prd, t) {
 				// The spec names a decision that is not answered. The task
 				// stays parked and its dependents wait behind it.
+				heldIDs[tid] = true
+				continue
+			} else if m.mergeHold(prd, t) {
+				// An earlier task's branch is not merged yet. The task stays
+				// pending and the walk looks again once the merge lands.
 				heldIDs[tid] = true
 				continue
 			} else {
@@ -675,6 +687,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.decisionGateHold(prd, t) {
 					continue
 				}
+				// An earlier task's branch is not merged yet: skip, stay
+				// pending, and look again on the next pass.
+				if m.mergeHold(prd, t) {
+					continue
+				}
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
 					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
@@ -824,9 +841,27 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						return err
 					}
 				}
+				// A task waits for an earlier task's merge. Wait for it to land,
+				// then launch again.
+				if m.mergeHoldPending(prd) {
+					if !m.awaitMergeLanding(ctx, prd, wake) {
+						return ctx.Err()
+					}
+					if st, ok := m.prdStatusOf(prdID); !ok || st != PRDRunning {
+						return nil
+					}
+					reviewDecisions()
+					continue
+				}
 				// No ready tasks and nothing in-flight — dependency deadlock
 				// should not happen with a valid topo sort.
 				break
+			}
+			// A held task needs a periodic look while others run: the merge
+			// can land from the retry timer with no task result to report it.
+			var holdTick <-chan time.Time
+			if m.mergeHoldPending(prd) {
+				holdTick = time.After(mergeHoldPoll)
 			}
 			select {
 			case <-ctx.Done():
@@ -836,6 +871,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					delete(inFlight, r.tid)
 				}
 				return ctx.Err()
+			case <-holdTick:
+				if _, merr := m.MergeCompletedTasks(ctx, prd); merr != nil {
+					log.Printf("[autonomous] %s merge hold pass: %v", prdID, merr)
+				}
+				reviewDecisions()
 			case <-wake:
 				// An operator review decision landed while tasks were running.
 				// Re-read the Automaton and launch what it made ready. Tasks
