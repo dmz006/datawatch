@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.104.1 — Protected-paths restore commit needs no git identity
+
+
 ## v9.104.0 — Protect the project rules files from workers
 
 ### Added
