@@ -121,12 +121,12 @@ func RunRegistryRow(ctx context.Context, dir, project, version string, s PostShi
 		return "", builtinErr("temp file in %s: %s", dirName, err)
 	}
 	tmpName := tmp.Name()
-	defer os.Remove(tmpName) // no-op once the rename succeeds
+	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
 	if fi, serr := os.Stat(path); serr == nil {
 		_ = os.Chmod(tmpName, fi.Mode().Perm())
 	}
 	if _, werr := tmp.WriteString(strings.Join(lines, "\n")); werr != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return "", builtinErr("writing %s: %s", rel, werr)
 	}
 	if cerr := tmp.Close(); cerr != nil {

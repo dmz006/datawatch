@@ -73,7 +73,7 @@ func (f *smokeShip) FileIssue(_ context.Context, _, repo, title, body string) er
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("the hosting service answered %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))

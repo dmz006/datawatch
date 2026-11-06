@@ -298,10 +298,10 @@ const postShipStepSource = "post_ship"
 // Built-in post-ship hook names, matching the setting vocabulary in
 // internal/config.
 const (
-	builtinRegistryRow  = "registry_row"
-	builtinParityIssue  = "parity_issue"
-	builtinTag          = "tag"
-	builtinNotify       = "notify"
+	builtinRegistryRow = "registry_row"
+	builtinParityIssue = "parity_issue"
+	builtinTag         = "tag"
+	builtinNotify      = "notify"
 )
 
 // runPostShipHooks runs the configured post-ship hooks when the block is on
@@ -332,7 +332,7 @@ func (s *runState) runPostShipHooks(ctx context.Context) {
 		} else {
 			do = func(c context.Context) (string, string, error) { return hookOutcome(s.hook(c, step)) }
 		}
-		s.recordStep(ctx, postShipStepSource, step, DefaultStepTimeout, do)
+		_, _, _ = s.recordStep(ctx, postShipStepSource, step, DefaultStepTimeout, do)
 	}
 }
 
@@ -765,9 +765,9 @@ func (e ExecShipRunner) FileIssue(ctx context.Context, dir, repo, title, body st
 		return err
 	}
 	name := tmp.Name()
-	defer os.Remove(name)
+	defer func() { _ = os.Remove(name) }()
 	if _, werr := tmp.WriteString(body); werr != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return werr
 	}
 	if cerr := tmp.Close(); cerr != nil {

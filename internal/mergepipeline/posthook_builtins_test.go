@@ -195,7 +195,7 @@ func TestRegistryRowRequiresExactlyOneMatch(t *testing.T) {
 func TestRegistryRowStaysInsideTheProject(t *testing.T) {
 	dir := t.TempDir()
 	outside := filepath.Join(filepath.Dir(dir), "registry-outside.md")
-	defer os.Remove(outside)
+	defer func() { _ = os.Remove(outside) }()
 	for _, file := range []string{"../registry-outside.md", "/tmp/registry-outside.md"} {
 		_, err := RunRegistryRow(context.Background(), dir, "acme", "9.9.9",
 			registryRowSettings(file, "post-ship actions v9.9.9"))
