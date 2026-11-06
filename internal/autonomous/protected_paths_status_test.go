@@ -21,7 +21,6 @@ type protectedStatusRig struct {
 	alphaT1, alphaT2    string
 	betaT1              string
 	sinceOne, sinceTwo  time.Time
-	gitCalls            int
 	sortedIDs           []string
 	sortedAlphaTaskIDs  []string
 	sortedAuthorizedIDs []string

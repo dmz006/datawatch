@@ -173,7 +173,7 @@ func newAutonomousAuthorizePathsCmd() *cobra.Command {
 				map[string]any{"paths": list})
 			if err != nil {
 				if strings.Contains(err.Error(), "HTTP 404") {
-					return fmt.Errorf("Automaton %s was not found", id)
+					return fmt.Errorf("Automaton %s was not found", id) //nolint:staticcheck // ST1005: the product word "Automaton" opens the operator-facing sentence
 				}
 				return err
 			}
