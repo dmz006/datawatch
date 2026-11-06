@@ -4071,5 +4071,19 @@
   "node_backend_none": "このノードにはバックエンドがありません。",
   "node_backend_not_installed": "未インストール",
   "node_backend_below_minimum": "最低値未満",
-  "node_backend_versions_failed": "バックエンドのバージョンを読み込めませんでした: %1$s"
+  "node_backend_versions_failed": "バックエンドのバージョンを読み込めませんでした: %1$s",
+  "merge_blocked_status": "マージ ブロック中",
+  "merge_blocked_card_title": "マージ待ちの Automaton",
+  "merge_blocked_what": "この Automaton には完了した作業がありますが、まだマージできないため、マージを待っています。",
+  "merge_blocked_line": "マージがブロック中: %1$s。次の操作: %2$s",
+  "merge_blocked_why": "理由: %1$s",
+  "merge_blocked_how_long": "ブロック時間: %1$s",
+  "merge_blocked_next_action": "次の操作: %1$s",
+  "merge_blocked_reason_unknown": "理由は記録されていません",
+  "merge_blocked_action_unknown": "操作は記録されていません",
+  "merge_blocked_age_now": "1分未満",
+  "merge_blocked_age_minutes": "%1$s分",
+  "merge_blocked_age_hours": "%1$s時間",
+  "merge_blocked_age_days": "%1$s日",
+  "merge_blocked_help_link": "マージのブロックとは? Automaton のマージ ヘルプを開く"
 }

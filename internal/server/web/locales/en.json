@@ -4071,5 +4071,19 @@
   "node_backend_none": "No backends on this node.",
   "node_backend_not_installed": "not installed",
   "node_backend_below_minimum": "below minimum",
-  "node_backend_versions_failed": "Could not load the backend versions: %1$s"
+  "node_backend_versions_failed": "Could not load the backend versions: %1$s",
+  "merge_blocked_status": "merge blocked",
+  "merge_blocked_card_title": "Automaton waiting to merge",
+  "merge_blocked_what": "This Automaton has finished work that cannot merge yet, so it is waiting to merge.",
+  "merge_blocked_line": "Merge blocked: %1$s. Next: %2$s",
+  "merge_blocked_why": "Why: %1$s",
+  "merge_blocked_how_long": "Blocked for: %1$s",
+  "merge_blocked_next_action": "Next action: %1$s",
+  "merge_blocked_reason_unknown": "reason not recorded",
+  "merge_blocked_action_unknown": "no action recorded",
+  "merge_blocked_age_now": "less than a minute",
+  "merge_blocked_age_minutes": "%1$s min",
+  "merge_blocked_age_hours": "%1$s h",
+  "merge_blocked_age_days": "%1$s d",
+  "merge_blocked_help_link": "What does a blocked merge mean? Open the Automaton merge help"
 }
