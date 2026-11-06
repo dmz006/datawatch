@@ -272,7 +272,7 @@ func (m *Manager) reviewRetryChanges(prdID string, prd *PRD, task *Task, story *
 
 // cancelHeldTask cancels a held task through CancelTask, then reopens a blocked
 // Automaton so the next Run can roll it up. The review decision is recorded on
-// the Automaton.
+// the Automaton (reopenBlockedPRD, manager.go).
 func (m *Manager) cancelHeldTask(prdID, taskID, actor, note string) (*PRD, error) {
 	reason := "cancelled after operator review"
 	if note != "" {
@@ -281,30 +281,7 @@ func (m *Manager) cancelHeldTask(prdID, taskID, actor, note string) (*PRD, error
 	if _, err := m.CancelTask(prdID, taskID, actor, reason); err != nil {
 		return nil, err
 	}
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok {
-		return nil, fmt.Errorf("prd %q not found", prdID)
-	}
-	now := time.Now()
-	var old PRDStatus
-	m.store.WithLock(func() {
-		old = prd.Status
-		if prd.Status == PRDBlocked {
-			prd.Status = PRDRunning
-			prd.BlockedReason = ""
-		}
-		prd.UpdatedAt = now
-		prd.Decisions = append(prd.Decisions, Decision{
-			At: now, Kind: reviewDecisionKind, Actor: reviewDecisionActor,
-			Note: fmt.Sprintf("task=%s cancelled after operator review requested by %s", taskID, actor),
-		})
-	})
-	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
-	}
-	if prd.Status != old {
-		m.emitPRDStatus(prd, old, lastDecision(prd, reviewDecisionKind), nil)
-	}
+	m.reopenBlockedPRD(prdID, taskID, actor)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }

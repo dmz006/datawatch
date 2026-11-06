@@ -4316,8 +4316,57 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	m.releaseCapacity(taskID)
 	emitCancelled()
 	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
+	// Operator cancel with a reason closes out the work it cancels. When the
+	// Automaton is blocked and this was the last outstanding task, reopen it
+	// the way the review-cancel path does, so the next Run can roll it up.
+	// Without a reason the operator is just stopping a task; with non-terminal
+	// tasks still in flight the blocked Automaton keeps its hold, both as
+	// before. No Run is started here — the caller (API layer) or the
+	// reconcile loop runs it.
+	if reason != "" && prd.Status == PRDBlocked && !m.nonTerminalRemain(prd) {
+		m.reopenBlockedPRD(prdID, taskID, actor)
+	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
+}
+
+// reopenBlockedPRD is the shared reopen for the review-cancel path
+// (cancelHeldTask) and the operator CancelTask path. It records the
+// review_resolved decision naming the cancelled task, and when the Automaton
+// is blocked it flips the status back to running and clears the blocked
+// reason so the next Run can roll up the remaining work. When it is not
+// blocked the status is left untouched and the PRD's existing flow — a live
+// executor, or the operator's next action — continues. It starts no Run: the
+// caller (API layer) or the reconcile loop does that. The all-terminal
+// precondition the operator CancelTask path applies is checked by the caller.
+func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	var old PRDStatus
+	reopened := false
+	m.store.WithLock(func() {
+		old = prd.Status
+		if prd.Status == PRDBlocked {
+			prd.Status = PRDRunning
+			prd.BlockedReason = ""
+			reopened = true
+		}
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: reviewDecisionKind, Actor: reviewDecisionActor,
+			Note: fmt.Sprintf("task=%s cancelled by %s", taskID, actor),
+		})
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s record cancel reopen: %v", prdID, err)
+		return
+	}
+	if reopened {
+		m.emitPRDStatus(prd, old, lastDecision(prd, reviewDecisionKind), nil)
+	}
 }
 
 // EditStory (v5.26.32) lets the operator rewrite an LLM-decomposed
