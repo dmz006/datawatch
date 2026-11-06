@@ -1,6 +1,8 @@
 package autonomous
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -228,5 +230,74 @@ func TestVerifierWatchdogMessageNamesWatchdogAndLimit(t *testing.T) {
 	msg := VerifierWatchdogMessage(15 * time.Minute)
 	if !strings.Contains(msg, "verifier no-progress watchdog") || !strings.Contains(msg, "15m0s") {
 		t.Fatalf("message %q does not name the watchdog and limit", msg)
+	}
+}
+
+// TestVerifierIdleErrorCarriesWatchdogText pins that the exported error
+// type carries exactly the watchdog text, so the two spellings of a tripped
+// watchdog stay interchangeable.
+func TestVerifierIdleErrorCarriesWatchdogText(t *testing.T) {
+	idle := NewVerifierIdleError(15 * time.Minute)
+	want := VerifierWatchdogMessage(15 * time.Minute)
+	if idle.Error() != want {
+		t.Fatalf("VerifierIdleError text %q != watchdog message %q", idle.Error(), want)
+	}
+	if !IsVerifierIdleError(idle) {
+		t.Fatal("a VerifierIdleError must classify as a verifier idle")
+	}
+}
+
+// TestVerifierIdleErrorClassifiesTrippedWatchdogFailures covers the
+// classification of every spelling a tripped watchdog currently reaches a
+// caller as: the new VerifierIdleError and the OneShotNoOutputError the
+// one-shot loop builds from the watchdog text, each bare and wrapped in the
+// error chain.
+func TestVerifierIdleErrorClassifiesTrippedWatchdogFailures(t *testing.T) {
+	idle := NewVerifierIdleError(15 * time.Minute)
+	watchdogNoOutput := &OneShotNoOutputError{Msg: VerifierWatchdogMessage(15 * time.Minute)}
+
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"bare-idle-error", idle},
+		{"wrapped-idle-error", fmt.Errorf("verify task-1: %w", idle)},
+		{"double-wrapped-idle-error", fmt.Errorf("outer: %w", fmt.Errorf("verify: %w", idle))},
+		{"bare-watchdog-no-output", watchdogNoOutput},
+		{"wrapped-watchdog-no-output", fmt.Errorf("one-shot verify ended: %w", watchdogNoOutput)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !IsVerifierIdleError(tc.err) {
+				t.Fatalf("%v (%T) must classify as a verifier idle", tc.err, tc.err)
+			}
+		})
+	}
+}
+
+// TestVerifierIdleErrorDoesNotClassifyWorkerFailures covers that errors that
+// are not a tripped watchdog are not classified as idle: plain errors,
+// timeouts, and the other one-shot no-output endings (waiting_input, failed
+// state) with and without wrapping.
+func TestVerifierIdleErrorDoesNotClassifyWorkerFailures(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"nil", nil},
+		{"plain-error", errors.New("some other failure")},
+		{"wrapped-plain-error", fmt.Errorf("outer: %w", errors.New("worker crashed"))},
+		{"one-shot-timeout", &OneShotNoOutputError{Msg: "one-shot verify session timed out after 30m0s", TimedOut: true}},
+		{"wrapped-one-shot-timeout", fmt.Errorf("judge gave up: %w", &OneShotNoOutputError{Msg: "guardrail session timed out after 30m0s", TimedOut: true})},
+		{`waiting-input-end`, &OneShotNoOutputError{Msg: "one-shot verify session s-1 ended with state waiting_input without producing output (backend=claude-code, model=\"\")"}},
+		{`failed-state-end`, &OneShotNoOutputError{Msg: "one-shot verify session s-1 ended with state failed without producing output (backend=claude-code, model=\"\")"}},
+		{"decompose-no-output", &OneShotNoOutputError{Msg: "claude-code one-shot decompose session ended with state failed without producing output (backend=claude-code, model=\"\")"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if IsVerifierIdleError(tc.err) {
+				t.Fatalf("%v (%T) must not classify as a verifier idle", tc.err, tc.err)
+			}
+		})
 	}
 }

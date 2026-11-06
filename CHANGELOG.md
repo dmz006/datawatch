@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- Verifier no-progress watchdog failures now have an exported error type and classifier: `autonomous.VerifierIdleError` (built with the standard watchdog text by `NewVerifierIdleError`) and `autonomous.IsVerifierIdleError`, which recognizes a tripped-watchdog failure — the new type, or the one-shot no-output error carrying the watchdog text — anywhere in the error chain, so callers can tell a verifier that went idle apart from a worker failure (timeout, ended state).
+
 ## v9.103.1 — Container images drop the vulnerable x/net
 
 The container images no longer carry a vulnerable HTTP/HTML library, and the agent-base container scan passes again.
