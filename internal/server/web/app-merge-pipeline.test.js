@@ -4,9 +4,12 @@
 // /api/autonomous/merge-pipeline body into the Automation Overview card: the
 // source in effect with its reason, the steps in order, the conflict policy and
 // the conflict model. The Autonomous settings group carries the six
-// autonomous.merge_pipeline.* fields, docsLinkForKey maps them and the card to
-// the four glossary sections, and every merge_pipeline_ and
-// settings_merge_pipeline_ locale key is present in all five bundles.
+// autonomous.merge_pipeline.* fields plus the Post-ship hooks card (the
+// autonomous.merge_pipeline.post_ship.* fields), docsLinkForKey maps the
+// merge pipeline keys and card to the four glossary sections and the
+// post-ship keys and card to the Post-ship hooks howto, and every
+// merge_pipeline_, settings_merge_pipeline_, post_ship_ and
+// settings_post_ship_ locale key is present in all five bundles.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -65,7 +68,14 @@ function view(over) {
 function mergeFields() {
   const sandbox = loadApp();
   return JSON.parse(vm.runInContext(
-    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.filter(f => (f.key || '').startsWith('autonomous.merge_pipeline.')))",
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.filter(f => { const k = f.key || ''; return k.startsWith('autonomous.merge_pipeline.') && !k.startsWith('autonomous.merge_pipeline.post_ship.'); }))",
+    sandbox));
+}
+
+function postShipFields() {
+  const sandbox = loadApp();
+  return JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.filter(f => (f.key || '').startsWith('autonomous.merge_pipeline.post_ship.')))",
     sandbox));
 }
 
@@ -243,6 +253,126 @@ test('every merge_pipeline field has a label key, an inline description key and 
   }
 });
 
+// ── post-ship hooks ─────────────────────────────────────────────────────────
+
+const HOWTO = 'howto/post-ship-hooks.md';
+
+test('the Autonomous settings group has the Post-ship hooks card with the seven post-ship keys and the right types', () => {
+  const fields = postShipFields();
+  const byKey = Object.fromEntries(fields.map(f => [f.key, f]));
+  const want = {
+    'autonomous.merge_pipeline.post_ship.enabled': 'toggle',
+    'autonomous.merge_pipeline.post_ship.hooks': 'post_ship_hooks',
+    'autonomous.merge_pipeline.post_ship.registry_file': 'text',
+    'autonomous.merge_pipeline.post_ship.registry_row_pattern': 'text',
+    'autonomous.merge_pipeline.post_ship.companion_repository': 'text',
+    'autonomous.merge_pipeline.post_ship.issue_title_template': 'text',
+    'autonomous.merge_pipeline.post_ship.notify_template': 'textarea',
+  };
+  assert.equal(fields.length, 7, 'expected seven post-ship fields: ' + fields.map(f => f.key).join(','));
+  for (const [key, type] of Object.entries(want)) {
+    assert.ok(byKey[key], key + ' missing');
+    assert.equal(byKey[key].type, type, key + ' has the wrong type');
+  }
+});
+
+test('the Post-ship hooks group entry carries the card title and a docs link', () => {
+  const sandbox = loadApp();
+  const group = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.type === 'group' && f.labelKey === 'post_ship_card_title'))",
+    sandbox));
+  assert.ok(group, 'the Post-ship hooks group entry is missing');
+  assert.equal(group.labelKey, 'post_ship_card_title');
+  assert.ok(group.docsKey, 'the group has no docs link');
+  assert.equal(docsLink(group.docsKey), HOWTO);
+  assert.ok(bundle('en').post_ship_card_title, 'card title key missing in en');
+});
+
+test('every post-ship field has a label key, an inline description key and a docs link', () => {
+  const en = bundle('en');
+  for (const f of postShipFields()) {
+    const name = f.key.slice('autonomous.merge_pipeline.post_ship.'.length);
+    assert.equal(f.labelKey, 'settings_post_ship_' + name, f.key + ' labelKey');
+    assert.equal(f.hintKey, 'settings_post_ship_' + name + '_hint', f.key + ' hintKey');
+    assert.ok(en[f.labelKey] && en[f.hintKey], f.key + ' label or description missing in en');
+    assert.ok(f.docsKey, f.key + ' has no docs link');
+    assert.ok(docsLink(f.docsKey), f.key + ' docs link does not resolve');
+  }
+});
+
+test('docsLinkForKey maps the post-ship keys to the howto sections, before the merge pipeline map', () => {
+  assert.equal(docsLink('autonomous.merge_pipeline.post_ship.enabled'), HOWTO + '#enabling');
+  assert.equal(docsLink('autonomous.merge_pipeline.post_ship.hooks'), HOWTO + '#the-hook-list');
+  for (const name of ['registry_file', 'registry_row_pattern', 'companion_repository', 'issue_title_template', 'notify_template']) {
+    assert.equal(docsLink('autonomous.merge_pipeline.post_ship.' + name), HOWTO + '#the-built-in-targets', name);
+    assert.equal(docsLink('settings_post_ship_' + name), HOWTO + '#the-built-in-targets', name);
+  }
+  assert.equal(docsLink('post_ship_card_title'), HOWTO);
+  assert.equal(docsLink('settings_post_ship_hooks_hint'), HOWTO + '#the-hook-list');
+  assert.equal(docsLink('post_ship_hook_max'), HOWTO + '#the-hook-list');
+  // The merge pipeline keys keep their own definitions links.
+  assert.equal(docsLink('autonomous.merge_pipeline.file_name'), DEFS + 'merge-pipeline-source');
+  assert.equal(docsLink('autonomous.merge_pipeline.conflict_policy'), DEFS + 'merge-conflict-policy');
+  assert.equal(docsLink('autonomous.merge_pipeline.conflict_model'), DEFS + 'merge-conflict-model');
+});
+
+test('the hook list adds, orders and removes hooks client-side', () => {
+  const sandbox = loadApp();
+  sandbox._postShipHooks = [{ name: 'one', kind: 'builtin', builtin: 'registry_row', command: '', enabled: true }];
+  vm.runInContext("addPostShipHook()", sandbox);
+  assert.equal(sandbox._postShipHooks.length, 2);
+  assert.equal(sandbox._postShipHooks[1].enabled, false, 'a new hook starts off');
+  vm.runInContext("_postShipSetCommand(1, 'make ship-smoke')", sandbox);
+  vm.runInContext("_postShipSetKind(1, 'command')", sandbox);
+  assert.equal(sandbox._postShipHooks[1].kind, 'command');
+  vm.runInContext("_postShipMove(1, -1)", sandbox);
+  assert.equal(sandbox._postShipHooks[0].kind, 'command', 'the move did not reorder');
+  vm.runInContext("_postShipRemove(0)", sandbox);
+  assert.equal(sandbox._postShipHooks.length, 1);
+  assert.equal(sandbox._postShipHooks[0].name, 'one');
+  assert.equal(sandbox._postShipHooks[0].enabled, true);
+});
+
+test('the hook list refuses the hook beyond the maximum', () => {
+  const sandbox = loadApp();
+  sandbox._postShipHooks = Array.from({ length: 20 }, (_, i) => ({ name: 'h' + i, kind: 'command', builtin: '', command: 'x', enabled: false }));
+  vm.runInContext("addPostShipHook()", sandbox);
+  assert.equal(sandbox._postShipHooks.length, 20, 'the hook beyond the maximum must not be added');
+});
+
+test('saving sends the whole hook list as one PUT, with exactly one of builtin or command per hook', async () => {
+  const sandbox = loadApp();
+  sandbox._calls = [];
+  vm.runInContext("fetch = (url, o) => { _calls.push([url, o && o.method, o && o.body]); return Promise.resolve({ ok: true }); };", sandbox);
+  sandbox._postShipHooks = [
+    { name: 'registry', kind: 'builtin', builtin: 'registry_row', command: 'stray', enabled: true },
+    { name: 'smoke', kind: 'command', builtin: 'notify', command: 'make ship-smoke', enabled: false },
+  ];
+  await vm.runInContext('savePostShipHooks()', sandbox);
+  await new Promise(r => setImmediate(r));
+  assert.equal(sandbox._calls.length, 1, 'exactly one PUT: ' + JSON.stringify(sandbox._calls));
+  const [url, method, body] = sandbox._calls[0];
+  assert.equal(url, '/api/config');
+  assert.equal(method, 'PUT');
+  assert.deepEqual(JSON.parse(body), {
+    'autonomous.merge_pipeline.post_ship.hooks': [
+      { name: 'registry', builtin: 'registry_row', command: '', enabled: true },
+      { name: 'smoke', builtin: '', command: 'make ship-smoke', enabled: false },
+    ],
+  });
+});
+
+test('a rejected save surfaces the daemon message instead of guessing', async () => {
+  const sandbox = loadApp();
+  sandbox._toasts = [];
+  vm.runInContext("showToast = (m) => { _toasts.push(m); };", sandbox);
+  sandbox._postShipHooks = [{ name: 'x', kind: 'builtin', builtin: 'tag', command: '', enabled: true }];
+  vm.runInContext("fetch = () => Promise.resolve({ ok: false, status: 400, json: () => Promise.resolve({ error: 'hook 1: a target is missing' }) });", sandbox);
+  await vm.runInContext('savePostShipHooks()', sandbox);
+  await new Promise(r => setImmediate(r));
+  assert.ok(sandbox._toasts.includes('hook 1: a target is missing'), JSON.stringify(sandbox._toasts));
+});
+
 // ── locale keys ─────────────────────────────────────────────────────────────
 
 function ownKeys(b) {
@@ -292,6 +422,52 @@ test('every merge_pipeline key the app references exists in all five bundles', (
   // A string that is only the start of other keys is a help-link prefix, not a key.
   const enKeys = Object.keys(bundle('en'));
   for (const k of [...referenced]) if (enKeys.some(e => e !== k && e.startsWith(k))) referenced.delete(k);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' missing in ' + lang);
+  }
+});
+
+// ── post-ship locale keys ───────────────────────────────────────────────────
+
+const POST_SHIP_PREFIXES = ['settings_post_ship_', 'post_ship_'];
+
+function postShipKeys(b) {
+  return Object.keys(b).filter(k => POST_SHIP_PREFIXES.some(p => k.startsWith(p))).sort();
+}
+
+test('the post_ship and settings_post_ship keys are identical in all five bundles', () => {
+  const en = postShipKeys(bundle('en'));
+  assert.ok(en.length >= 25, 'too few keys in en: ' + en.length);
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    assert.deepEqual(postShipKeys(b), en, lang + ' key set differs from en');
+    for (const k of en) assert.ok(typeof b[k] === 'string' && b[k].length > 0, k + ' empty in ' + lang);
+  }
+});
+
+test('the post-ship strings are translated in the non-English bundles', () => {
+  const en = bundle('en');
+  for (const lang of LANGS.filter(l => l !== 'en')) {
+    const b = bundle(lang);
+    const same = postShipKeys(en).filter(k => b[k] === en[k]);
+    assert.ok(same.length <= 3, lang + ' leaves English text in: ' + same.join(','));
+  }
+});
+
+test('no post-ship string uses the word PRD', () => {
+  for (const lang of LANGS) {
+    const b = bundle(lang);
+    for (const k of postShipKeys(b)) assert.ok(!/\bPRD/i.test(b[k]), k + ' uses PRD in ' + lang);
+  }
+});
+
+test('every post_ship key the app references exists in all five bundles', () => {
+  const src = fs.readFileSync(APP_JS, 'utf8');
+  const referenced = new Set();
+  for (const m of src.matchAll(/t\(\s*['"`]((?:settings_)?post_ship_[a-z_]+)['"`]/g)) referenced.add(m[1]);
+  for (const m of src.matchAll(/(?:labelKey|hintKey|docsKey):\s*['"`]((?:settings_)?post_ship_[a-z_]+)['"`]/g)) referenced.add(m[1]);
+  assert.ok(referenced.size >= 20, 'too few references found: ' + referenced.size);
   for (const lang of LANGS) {
     const b = bundle(lang);
     for (const k of referenced) assert.ok(typeof b[k] === 'string', k + ' missing in ' + lang);

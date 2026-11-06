@@ -9164,6 +9164,22 @@ const DOCS_ONBOARDING_REPORT_LINKS = [
   [['onboarding_report.', 'settings_onboarding_report_', 'onboarding_report_'], DOCS_DEFINITIONS + '#onboarding-report'],
 ];
 
+// Post-ship hooks: the Post-ship hooks card settings and the card itself map
+// to sections of the Post-ship hooks howto. The first matching prefix wins,
+// so the specific ones come first. These keys sit under
+// autonomous.merge_pipeline. (which would otherwise match
+// DOCS_MERGE_PIPELINE_LINKS), so docsLinkForKey checks this array first.
+const DOCS_POST_SHIP_LINKS = [
+  [['autonomous.merge_pipeline.post_ship.enabled', 'settings_post_ship_enabled'], 'howto/post-ship-hooks.md#enabling'],
+  [['autonomous.merge_pipeline.post_ship.hooks', 'settings_post_ship_hooks', 'post_ship_hook_'], 'howto/post-ship-hooks.md#the-hook-list'],
+  [['autonomous.merge_pipeline.post_ship.registry_file', 'settings_post_ship_registry_file',
+    'autonomous.merge_pipeline.post_ship.registry_row_pattern', 'settings_post_ship_registry_row_pattern',
+    'autonomous.merge_pipeline.post_ship.companion_repository', 'settings_post_ship_companion_repository',
+    'autonomous.merge_pipeline.post_ship.issue_title_template', 'settings_post_ship_issue_title_template',
+    'autonomous.merge_pipeline.post_ship.notify_template', 'settings_post_ship_notify_template'], 'howto/post-ship-hooks.md#the-built-in-targets'],
+  [['autonomous.merge_pipeline.post_ship.', 'settings_post_ship_', 'post_ship_card_title', 'post_ship_'], 'howto/post-ship-hooks.md'],
+];
+
 // The merge pipeline settings and the Merge pipeline card map to four glossary
 // sections: the pipeline itself, where it comes from, and the conflict policy
 // and model. The first matching prefix wins, so the specific ones come first.
@@ -9189,6 +9205,11 @@ function docsLinkForKey(key) {
   if (key.startsWith('cc_global_')) return docsLinkForChannelType(key.slice('cc_global_'.length));
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
   if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
+  // Post-ship hooks: before the merge pipeline array — the post-ship keys sit
+  // under autonomous.merge_pipeline.post_ship. and the first match wins.
+  for (const [prefixes, link] of DOCS_POST_SHIP_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
   for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
@@ -17052,6 +17073,19 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.merge_pipeline.conflict_policy', label: 'Merge conflict policy (stop_and_ask, mechanical or mechanical_and_model; default mechanical_and_model)', labelKey: 'settings_merge_pipeline_conflict_policy', hintKey: 'settings_merge_pipeline_conflict_policy_hint', docsKey: 'autonomous.merge_pipeline.conflict_policy', type: 'select', options: ['stop_and_ask', 'mechanical', 'mechanical_and_model'], optionLabelKeys: { stop_and_ask: 'merge_pipeline_policy_stop_and_ask', mechanical: 'merge_pipeline_policy_mechanical', mechanical_and_model: 'merge_pipeline_policy_mechanical_and_model' }, default: 'mechanical_and_model' },
     { key: 'autonomous.merge_pipeline.conflict_model', label: 'Merge conflict model (a name in the LLM registry; empty means no model)', labelKey: 'settings_merge_pipeline_conflict_model', hintKey: 'settings_merge_pipeline_conflict_model_hint', docsKey: 'autonomous.merge_pipeline.conflict_model', type: 'text', placeholder: 'claude-opus-5-5' },
     { key: 'autonomous.merge_pipeline.version_files', label: 'Merge pipeline version files (comma separated project paths that carry the version line; none by default)', labelKey: 'settings_merge_pipeline_version_files', hintKey: 'settings_merge_pipeline_version_files_hint', docsKey: 'autonomous.merge_pipeline.version_files', type: 'text', placeholder: 'cmd/app/main.go', csv: true },
+    // Post-ship hooks — what runs once a merge pipeline succeeds. Off by default;
+    // every hook is disabled until you switch it on. The four builtins are
+    // registry_row, parity_issue, tag and notify; the registry, companion
+    // repository and templates are the targets of the first three. A hook can
+    // instead carry any shell command, which the daemon runs with `bash -c`.
+    { label: 'Post-ship hooks', labelKey: 'post_ship_card_title', docsKey: 'post_ship_card_title', type: 'group' },
+    { key: 'autonomous.merge_pipeline.post_ship.enabled', label: 'Post-ship hooks (run the enabled hooks once a merge pipeline succeeds; off by default)', labelKey: 'settings_post_ship_enabled', hintKey: 'settings_post_ship_enabled_hint', docsKey: 'settings_post_ship_enabled', type: 'toggle' },
+    { key: 'autonomous.merge_pipeline.post_ship.hooks', label: 'Post-ship hook list (the hooks in run order, each with its own switch)', labelKey: 'settings_post_ship_hooks', hintKey: 'settings_post_ship_hooks_hint', docsKey: 'settings_post_ship_hooks', type: 'post_ship_hooks' },
+    { key: 'autonomous.merge_pipeline.post_ship.registry_file', label: 'Registry file (the file whose row the registry_row hook marks shipped; {project} is substituted at run time)', labelKey: 'settings_post_ship_registry_file', hintKey: 'settings_post_ship_registry_file_hint', docsKey: 'settings_post_ship_registry_file', type: 'text', placeholder: 'docs/registry.md' },
+    { key: 'autonomous.merge_pipeline.post_ship.registry_row_pattern', label: 'Registry row pattern (the text that must match exactly one row; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_registry_row_pattern', hintKey: 'settings_post_ship_registry_row_pattern_hint', docsKey: 'settings_post_ship_registry_row_pattern', type: 'text', placeholder: 'myproject' },
+    { key: 'autonomous.merge_pipeline.post_ship.companion_repository', label: 'Companion repository (repository the parity_issue hook opens the issue in)', labelKey: 'settings_post_ship_companion_repository', hintKey: 'settings_post_ship_companion_repository_hint', docsKey: 'settings_post_ship_companion_repository', type: 'text', placeholder: 'owner/parity-tracker' },
+    { key: 'autonomous.merge_pipeline.post_ship.issue_title_template', label: 'Issue title template (the title the parity_issue hook files; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_issue_title_template', hintKey: 'settings_post_ship_issue_title_template_hint', docsKey: 'settings_post_ship_issue_title_template', type: 'text', placeholder: 'Parity: {project} {version}' },
+    { key: 'autonomous.merge_pipeline.post_ship.notify_template', label: 'Notify template (the message the notify hook sends; {project} and {version} are substituted at run time)', labelKey: 'settings_post_ship_notify_template', hintKey: 'settings_post_ship_notify_template_hint', docsKey: 'settings_post_ship_notify_template', type: 'textarea' },
     // Onboarding report — what is configured, what is missing and what to try next. The
     // list is comma separated; an id that names no check is ignored.
     { label: 'Onboarding report', labelKey: 'settings_onboarding_report_group', docsKey: 'onboarding_report_card_title', type: 'group' },
@@ -18176,6 +18210,32 @@ function loadGeneralConfig() {
                   });
               };
             }, 0);
+          } else if (f.type === 'post_ship_hooks') {
+            // Seed the editable copy from the config GET (the daemon returns
+            // the array) and render the initial rows straight into the html.
+            window._postShipHooks = Array.isArray(val)
+              ? val.map(h => ({
+                  name: String(h.name || ''),
+                  kind: h.builtin ? 'builtin' : 'command',
+                  builtin: String(h.builtin || ''),
+                  command: String(h.command || ''),
+                  enabled: !!h.enabled,
+                }))
+              : [];
+            const _psRows = window._postShipHooks.length
+              ? window._postShipHooks.map(_postShipRowHTML).join('')
+              : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('post_ship_hook_empty'))}</div>`;
+            const _psHint = _fieldHintHTML(f);
+            html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+              <div class="settings-label">${escHtml(fLabel)}${f.docsKey ? defsLink(f.docsKey) : ''}</div>
+              ${_psHint}
+              <div id="post_ship_hooks_list" style="margin-top:6px;display:flex;flex-direction:column;gap:4px;">${_psRows}</div>
+              <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+                <button type="button" class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" onclick="addPostShipHook()">+ ${escHtml(t('post_ship_hook_add'))}</button>
+                <button type="button" class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="savePostShipHooks()">${escHtml(t('post_ship_save'))}</button>
+              </div>
+              <div id="post_ship_hooks_status" style="display:none;font-size:11px;margin-top:4px;"></div>
+            </div>`;
           } else if (f.type === 'failure_escalation_steps') {
             // The config GET returns the steps as a JSON array; the field edits
             // the compact text form, which the server parses on save.
@@ -18721,6 +18781,144 @@ function saveGeneralConfigPut(key, value) {
 
 function saveGeneralField(key, value) {
   saveGeneralConfigPut(key, value);
+}
+
+// Post-ship hooks: the hook list is one array under
+// autonomous.merge_pipeline.post_ship. The PWA keeps the editable copy in
+// window._postShipHooks and saves the whole array in one PUT, which is the
+// form the daemon accepts (nil, a JSON text or the array itself). The daemon
+// owns every rule — name, exactly one of builtin or command, a target for an
+// enabled builtin (except tag), the max — and an error toast carries its
+// message back.
+const POST_SHIP_HOOKS_MAX = 20;
+const POST_SHIP_BUILTINS = ['registry_row', 'parity_issue', 'tag', 'notify'];
+
+function _postShipHooksStatus(msg, ok) {
+  const el = document.getElementById('post_ship_hooks_status');
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.color = ok ? 'var(--ok, #4caf50)' : 'var(--error, #e5484d)';
+  el.textContent = msg;
+  setTimeout(() => { el.style.display = 'none'; el.textContent = ''; }, 3000);
+}
+
+function _postShipRowHTML(h, i) {
+  const isBuiltin = h.kind === 'builtin';
+  const kindSel = `<select class="form-select" style="font-size:11px;width:auto;" onchange="_postShipSetKind(${i}, this.value)">`
+    + `<option value="builtin"${isBuiltin ? ' selected' : ''}>${escHtml(t('post_ship_hook_kind_builtin'))}</option>`
+    + `<option value="command"${!isBuiltin ? ' selected' : ''}>${escHtml(t('post_ship_hook_kind_command'))}</option>`
+    + `</select>`;
+  const action = isBuiltin
+    ? `<select class="form-select" style="font-size:11px;width:auto;" onchange="_postShipSetBuiltin(${i}, this.value)">`
+      + POST_SHIP_BUILTINS.map(b => `<option value="${b}"${h.builtin === b ? ' selected' : ''}>${escHtml(b)}</option>`).join('')
+      + `</select>`
+    : `<input type="text" class="form-input" style="font-size:11px;flex:1;min-width:120px;" value="${escHtml(h.command)}" placeholder="${escHtml(t('post_ship_hook_command_placeholder'))}" onchange="_postShipSetCommand(${i}, this.value)" />`;
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <label class="toggle-switch" style="transform:scale(0.8);transform-origin:left center;">
+      <input type="checkbox"${h.enabled ? ' checked' : ''} onchange="_postShipSetEnabled(${i}, this.checked)" />
+      <span class="toggle-slider"></span>
+    </label>
+    <input type="text" class="form-input" style="font-size:11px;width:110px;" value="${escHtml(h.name)}" placeholder="${escHtml(t('post_ship_hook_name_placeholder'))}" onchange="_postShipSetName(${i}, this.value)" />
+    ${kindSel}
+    ${action}
+    <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" title="${escHtml(t('post_ship_hook_up'))}" onclick="_postShipMove(${i}, -1)"\u003e\u2191</button>
+    <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" title="${escHtml(t('post_ship_hook_down'))}" onclick="_postShipMove(${i}, 1)"\u003e\u2193</button>
+    <button type="button" class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" title="${escHtml(t('post_ship_hook_remove'))}" onclick="_postShipRemove(${i})"\u003e\u2715</button>
+  </div>`;
+}
+
+function _postShipRenderHooks() {
+  const hooks = window._postShipHooks || [];
+  const list = document.getElementById('post_ship_hooks_list');
+  if (!list) return;
+  list.innerHTML = hooks.length
+    ? hooks.map(_postShipRowHTML).join('')
+    : `<div style="font-size:11px;color:var(--text2);">${escHtml(t('post_ship_hook_empty'))}</div>`;
+  const parent = list.parentElement || list.parentNode;
+  const add = parent ? parent.querySelector('button[onclick="addPostShipHook()"]') : null;
+  if (add) add.disabled = hooks.length >= POST_SHIP_HOOKS_MAX;
+}
+
+function _postShipSet(index, patch) {
+  const hooks = window._postShipHooks || [];
+  if (!hooks[index]) return;
+  hooks[index] = Object.assign({}, hooks[index], patch);
+  _postShipRenderHooks();
+}
+
+function addPostShipHook() {
+  const hooks = window._postShipHooks || [];
+  if (hooks.length >= POST_SHIP_HOOKS_MAX) {
+    _postShipHooksStatus(String(t('post_ship_hook_max')).replace('{max}', String(POST_SHIP_HOOKS_MAX)), false);
+    return;
+  }
+  hooks.push({ name: '', kind: 'builtin', builtin: 'registry_row', command: '', enabled: false });
+  window._postShipHooks = hooks;
+  _postShipRenderHooks();
+}
+
+function _postShipRemove(index) {
+  const hooks = window._postShipHooks || [];
+  hooks.splice(index, 1);
+  window._postShipHooks = hooks;
+  _postShipRenderHooks();
+}
+
+function _postShipMove(index, delta) {
+  const hooks = window._postShipHooks || [];
+  const to = index + delta;
+  if (to < 0 || to >= hooks.length) return;
+  const row = hooks.splice(index, 1)[0];
+  hooks.splice(to, 0, row);
+  window._postShipHooks = hooks;
+  _postShipRenderHooks();
+}
+
+function _postShipSetName(i, v) { _postShipSet(i, { name: v }); }
+function _postShipSetEnabled(i, v) { _postShipSet(i, { enabled: !!v }); }
+function _postShipSetKind(i, v) {
+  const hooks = window._postShipHooks || [];
+  if (!hooks[i]) return;
+  if (v === 'builtin') hooks[i] = Object.assign({}, hooks[i], { kind: 'builtin', builtin: hooks[i].builtin || 'registry_row' });
+  else hooks[i] = Object.assign({}, hooks[i], { kind: 'command', command: hooks[i].command || '' });
+  window._postShipHooks = hooks;
+  _postShipRenderHooks();
+}
+function _postShipSetBuiltin(i, v) { _postShipSet(i, { builtin: v }); }
+function _postShipSetCommand(i, v) { _postShipSet(i, { command: v }); }
+
+function savePostShipHooks() {
+  const hooks = window._postShipHooks || [];
+  const payload = hooks.map(h => ({
+    name: String(h.name || '').trim(),
+    builtin: h.kind === 'builtin' ? (h.builtin || '') : '',
+    command: h.kind === 'command' ? (h.command || '') : '',
+    enabled: !!h.enabled,
+  }));
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ 'autonomous.merge_pipeline.post_ship.hooks': payload }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast('Saved', 'success', 1500);
+        _postShipHooksStatus(String(t('post_ship_saved')), true);
+      } else {
+        return r.json().then(d => {
+          const msg = (d && (d.error || d.message)) || String(t('post_ship_save_failed'));
+          showToast(msg, 'error');
+          _postShipHooksStatus(msg, false);
+        }).catch(() => {
+          showToast(String(t('post_ship_save_failed')), 'error');
+          _postShipHooksStatus(String(t('post_ship_save_failed')), false);
+        });
+      }
+    })
+    .catch(() => {
+      showToast(String(t('post_ship_save_failed')), 'error');
+      _postShipHooksStatus(String(t('post_ship_save_failed')), false);
+    });
 }
 
 // savePromptNumberSetting saves a UI prompt handling numeric setting once
