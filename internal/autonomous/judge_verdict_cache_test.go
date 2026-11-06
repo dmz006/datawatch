@@ -354,7 +354,7 @@ func TestJudgeVerdictCacheDisabled(t *testing.T) {
 // old head is left in place.
 func TestJudgeVerdictCacheStoresEntryForNewHead(t *testing.T) {
 	m, id, _, got := runRejudgeHeadChange(t)
-	inv, _ := m.prdRulesReviewInvocation(got)
+	inv, _ := m.prdRulesReviewInvocation(context.Background(), got)
 	c := m.judgeVerdictCacheRef()
 	if c == nil {
 		t.Fatal("manager has no judge verdict cache")

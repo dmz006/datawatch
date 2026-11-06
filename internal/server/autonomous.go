@@ -198,6 +198,12 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					// hold|warn|off (policy) or task_files|worktree (scope).
 					UncommittedWorkPolicy *string `json:"uncommitted_work_policy"`
 					UncommittedWorkScope  *string `json:"uncommitted_work_scope"`
+					// Protected-paths keys: the action must be hold|warn|block|off,
+					// the source base_commit|worktree and the list a list of
+					// clean repository-relative entries.
+					ProtectedPaths       json.RawMessage `json:"protected_paths"`
+					ProtectedPathsAction *string         `json:"protected_paths_action"`
+					RulesReviewSource    *string         `json:"rules_review_source"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -277,6 +283,24 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.UncommittedWorkScope != nil {
 					if verr := validateUncommittedWorkScope(*auto.UncommittedWorkScope); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.ProtectedPathsAction != nil {
+					if verr := validateProtectedPathsAction(*auto.ProtectedPathsAction); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.RulesReviewSource != nil {
+					if verr := validateRulesReviewSource(*auto.RulesReviewSource); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.ProtectedPaths != nil {
+					if verr := validateProtectedPathsRaw(auto.ProtectedPaths); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}
@@ -2739,6 +2763,46 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_continue_on_story_failure", "automaton", id, map[string]any{"continue_on_story_failure": req.ContinueOnStoryFailure}) // GH#201 Phase 4
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+
+	// Per-Automaton authorised protected paths: the protected paths this
+	// Automaton's tasks may change without an operator decision. An empty
+	// list clears them. The manager records the decision and writes its own
+	// audit entry; the request audit below names the caller.
+	case "set_authorized_paths":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		setter, ok := s.autonomousMgr.(authorizedPathsSetter)
+		if !ok {
+			http.Error(w, "Automaton authorised paths unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		var req struct {
+			Paths []string `json:"paths"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		updated, err := setter.SetAuthorizedProtectedPaths(id, req.Paths, s.auditActor(r.Context()))
+		if err != nil {
+			if _, exists := s.autonomousMgr.GetPRD(id); !exists {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_authorized_paths", "automaton", id, map[string]any{"paths": req.Paths})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-Automaton notify_events list: the lifecycle event kinds that

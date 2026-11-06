@@ -117,7 +117,7 @@ func TestJudgeKeepsPinnedModel_PRDShape(t *testing.T) {
 		t.Fatalf("per-story guardrail: blocked=%v err=%v, want clean pass", blocked, err)
 	}
 	// rules-review invocation (run by the completion rollup and rejudge)
-	inv, err := m.prdRulesReviewInvocation(prd)
+	inv, err := m.prdRulesReviewInvocation(context.Background(), prd)
 	if err != nil {
 		t.Fatalf("rules-review invocation: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestGuardrailJudgeModel_PathTierTable(t *testing.T) {
 			}
 			assertRecorderModel(t, rec, "per-story", sc.unitWant)
 
-			inv, err := m.prdRulesReviewInvocation(prd)
+			inv, err := m.prdRulesReviewInvocation(context.Background(), prd)
 			if err != nil {
 				t.Fatalf("rules-review invocation: %v", err)
 			}
@@ -280,7 +280,7 @@ func TestGuardrailJudgeModel_FailLoudlyWhenNoTier(t *testing.T) {
 	t.Run("rules-review-invocation", func(t *testing.T) {
 		m := newNoModelShapeManager(t)
 		prd, _, _ := newJudgeShapePRD(t, m)
-		_, err := m.prdRulesReviewInvocation(prd)
+		_, err := m.prdRulesReviewInvocation(context.Background(), prd)
 		if !errors.Is(err, ErrNoGuardrailModel) {
 			t.Fatalf("invocation error = %v, want one wrapping %v", err, ErrNoGuardrailModel)
 		}

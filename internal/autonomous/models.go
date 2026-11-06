@@ -218,6 +218,23 @@ type UncommittedWorkHold struct {
 	HeldAt       time.Time `json:"held_at"`
 }
 
+// ProtectedPathHold records why a task is held because its commit changed
+// protected paths. Paths lists the changed protected paths and Action is the
+// protected-paths action in force when the hold was raised. BaseCommit is the
+// commit the task started from, the state a rejection puts the paths back to.
+// QuestionID names the operator question raised for the hold; it is empty when
+// no question store was wired. AwaitingSpecChange is set once the operator
+// chose to change the task's instructions and the task waits for that edit.
+type ProtectedPathHold struct {
+	Paths              []string  `json:"paths"`
+	Action             string    `json:"action"`
+	Reason             string    `json:"reason,omitempty"`
+	QuestionID         string    `json:"question_id,omitempty"`
+	BaseCommit         string    `json:"base_commit,omitempty"`
+	Since              time.Time `json:"since"`
+	AwaitingSpecChange bool      `json:"awaiting_spec_change,omitempty"`
+}
+
 // PRD is the operator-supplied feature description.
 type PRD struct {
 	// Truncated is set only on the capped copy the default detail GET
@@ -535,6 +552,12 @@ type PRD struct {
 	// opts in), which HALTS the PRD (-> PRDBlocked) as soon as a story
 	// fails rather than continuing into later, independent stories.
 	ContinueOnStoryFailure *bool `json:"continue_on_story_failure,omitempty"`
+
+	// AuthorizedProtectedPaths lists the protected paths (exact files,
+	// directories with a trailing slash, or globs) this Automaton's tasks may
+	// change without an operator decision. Set by SetAuthorizedProtectedPaths;
+	// empty means nothing is authorised.
+	AuthorizedProtectedPaths []string `json:"authorized_paths,omitempty"`
 
 	// BL428 §3a ii — refuse-dirty-tree override for this PRD's tasks.
 	// nil inherits the daemon-wide config.Autonomous.refuse_dirty_tree_start
@@ -1292,6 +1315,13 @@ type Task struct {
 	// still carries uncommitted files after the task finished (see
 	// holdForUncommittedWork). Nil when no hold was ever recorded.
 	UncommittedWork *UncommittedWorkHold `json:"uncommitted_work,omitempty"`
+	// ProtectedPathHold — set while the task is held because its commit
+	// changed protected paths (see holdForProtectedPaths). Nil when no hold
+	// was ever recorded.
+	ProtectedPathHold *ProtectedPathHold `json:"protected_path_hold,omitempty"`
+	// ApprovedProtectedPaths — the protected paths the operator approved for
+	// this task; the protected-paths gate lets them through.
+	ApprovedProtectedPaths []string `json:"approved_protected_paths,omitempty"`
 	// AttemptCommitSHAs — the deterministic commit shas recorded for this
 	// task's finished attempts, in order (RecordAttemptCommit; duplicates
 	// and empty values are ignored).

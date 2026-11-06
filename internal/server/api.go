@@ -6578,6 +6578,11 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				// Effective, not raw: an unset key reads hold and task_files.
 				"uncommitted_work_policy": s.cfg.Autonomous.Automation.EffectiveUncommittedWorkPolicy(),
 				"uncommitted_work_scope":  s.cfg.Autonomous.Automation.EffectiveUncommittedWorkScope(),
+				// Effective, not raw: an unset key reads the default list, hold
+				// and base_commit.
+				"protected_paths":        protectedPathsEffectiveList(s.cfg),
+				"protected_paths_action": s.cfg.Autonomous.Automation.EffectiveProtectedPathsAction(),
+				"rules_review_source":    s.cfg.Autonomous.Automation.EffectiveRulesReviewSource(),
 			},
 			"lane_fill": laneFillConfigSurface(s.cfg.Autonomous.LaneFill),
 			// Effective, not raw: every supervisor_loop key with its default
@@ -7085,6 +7090,26 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, verr.Error(), http.StatusBadRequest)
 				return
 			}
+		}
+	}
+	// Protected-paths keys (autonomous.automation.protected_paths,
+	// protected_paths_action and rules_review_source): strict. The action must
+	// be hold|warn|block|off and the source base_commit|worktree, each refused
+	// with a message naming the allowed words; a list entry that is absolute,
+	// has a .. segment or is over 256 bytes, or a list over 100 entries, is
+	// refused naming it. One bad key rejects the whole PUT.
+	for _, key := range []string{protectedPathsActionKey, rulesReviewSourceKey} {
+		if v, ok := patch[key]; ok {
+			if verr := validateProtectedPathsWord(key, v); verr != nil {
+				http.Error(w, verr.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+	}
+	if v, ok := patch[protectedPathsKey]; ok {
+		if _, verr := parseProtectedPathsValue(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
 		}
 	}
 	// Security failure (autonomous.automation.security_failure.*): the only
@@ -7695,6 +7720,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 				}
 				if raw, ok := partial["automation"]; ok && patchTouchesSupervisorWatch(patch) {
 					partial["automation"] = withSupervisorWatchClears(raw, s.cfg.Autonomous.Automation.SupervisorWatch)
+				}
+				if _, touched := patch[protectedPathsKey]; touched {
+					if raw, ok := partial["automation"]; ok {
+						partial["automation"] = withProtectedPathsList(raw, s.cfg.Autonomous.Automation.ProtectedPaths)
+					}
 				}
 				if b, err := json.Marshal(partial); err == nil {
 					_ = s.autonomousMgr.SetConfig(json.RawMessage(b))
@@ -9216,6 +9246,22 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.automation.uncommitted_work_scope":
 			if validateUncommittedWorkValue(k, v) == nil {
 				cfg.Autonomous.Automation.UncommittedWorkScope = toString(v)
+			}
+		case protectedPathsKey:
+			// Validated above in handlePutConfig. An empty list clears the key
+			// back to the default list; a value that fails the check here is
+			// left unchanged. The change reaches the live manager through the
+			// autonomous.* forward after the apply.
+			if list, err := parseProtectedPathsValue(v); err == nil {
+				cfg.Autonomous.Automation.ProtectedPaths = list
+			}
+		case protectedPathsActionKey, rulesReviewSourceKey:
+			if validateProtectedPathsWord(k, v) == nil {
+				if k == rulesReviewSourceKey {
+					cfg.Autonomous.Automation.RulesReviewSource = toString(v)
+				} else {
+					cfg.Autonomous.Automation.ProtectedPathsAction = toString(v)
+				}
 			}
 		case "autonomous.automation.repo_ci_watch.mode",
 			"autonomous.automation.repo_ci_watch.repos",

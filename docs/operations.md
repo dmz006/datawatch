@@ -5942,6 +5942,78 @@ The MCP tool `config_set` takes the same dotted keys; `autonomous_config_set` ta
 The read is GET-only (any other method is 405), needs the autonomous read capability when called by a federated peer, and answers 503 until the watch is wired. It returns `enabled`, `poll_seconds`, `no_progress_minutes` and `observations`; each observation carries `session_id`, `automaton_id`, `task_id`, `role`, `node`, `model`, `state`, `last_change`, `no_progress_seconds`, `last_poll`, `over_threshold`, `error` (left out when empty) and `summary`. With the watch off the list is empty.
 
 **Limits.** A large model can take many minutes to give a first response, and until then it reads as `idle`; raise `no_progress_minutes` for slow hardware and attach an observer to the node so GPU activity can show the work. The time without progress starts at the first poll that sees the session.
+## Automaton protected paths (a task may not change the rules without a decision)
+
+A worker can edit any file inside the project, including the file that holds the project's rules, the supervisor rules, the code owners file and the workflow files, and the review that should catch it used to read the rules from the same tree the worker changed. Protected paths close that gap with two parts: a **gate** that, after a worker attempt, compares the task's directory with the base commit and acts when a protected path changed that the Automaton is not authorised for, and a **base-commit rules read** that gives the rules review the rules as they were before the work started. Neither is tied to one repository: the gate runs read-only git in the task's own directory and works for any project. The operator guide is [howto/automaton-protected-paths.md](howto/automaton-protected-paths.md).
+
+**The three keys.**
+
+| Key | Meaning | Default | Allowed |
+|---|---|---|---|
+| `autonomous.automation.protected_paths` | The paths a task may not change without a decision | The project rules file (`autonomous.rules_file`, `AGENT.md` when unset), `docs/plans/2026-10-17-supervisor-rules-and-lessons.md`, `CODEOWNERS`, `.github/workflows/` | A list of repository-relative files, directories (trailing slash or `/**`) and globs (`*`, `?`, `[ ]`; a `*` never crosses a slash); at most 100 entries of at most 256 bytes; an absolute entry or a `..` segment is refused; an empty list reads the default; an explicit list replaces the default entirely |
+| `autonomous.automation.protected_paths_action` | What happens when a task changes a protected path | `hold` | `hold`, `warn`, `block`, `off` (anything else is refused on every write surface; an unset key reads `hold`) |
+| `autonomous.automation.rules_review_source` | Where the rules review reads the project rules | `base_commit` | `base_commit`, `worktree` (anything else is refused on every write surface; an unset key reads `base_commit`) |
+
+`hold` parks the task as blocked with the changed paths and raises one question; the task consumes no automatic-retry budget and records no failed attempt. `warn` records a decision, an audit event and a warning alert and lets the task go on. `block` parks the task as blocked with the error `protected_path_blocked: <paths>` and raises no question. `off` does no check. The gate never reverts, resets, amends or rewrites anything. `base_commit` gives the judge the rules and context files as they were at the Automaton's base commit; `worktree` tells it to read them from the working directory. The rules review itself runs only when `rules-review` is in the Automaton's guardrail list.
+
+**Changing the settings.**
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` → `autonomous:` → `automation:` → `protected_paths`, `protected_paths_action` and `rules_review_source` |
+| **CLI** | `datawatch config set autonomous.automation.protected_paths_action warn` (and `datawatch config set autonomous.automation.protected_paths "AGENT.md,ops/"`) |
+| **Web UI** | Settings → General → Automata settings → **Protected paths** |
+| **REST API** | `PUT /api/config` with `{"autonomous.automation.protected_paths_action": "warn"}` (the list takes a JSON array or one comma-separated string), or `PUT /api/autonomous/config` with the `automation` object; `GET /api/config` shows the effective values, the list being the one in effect |
+| **Comm channel** | `configure autonomous.automation.protected_paths_action=warn` |
+
+The MCP tool `config_set` takes the same dotted keys. A value that is not allowed is refused with an error naming the allowed words or the offending entry, and nothing is written. All three are read live; a change applies to the next task that finishes an attempt, with no restart.
+
+**What the gate compares.** It resolves the base commit for the task (the commit recorded before its first attempt, then before its latest attempt, then the merge-base of its directory and the Automaton's base branch, each checked to be a commit and an ancestor of the head) and takes the union of `git diff --name-only --no-renames <base>` and the untracked files. A file that was already modified or untracked before the task started is left out unless a commit made since the base touched it. It runs in direct mode and in worktree mode, whatever the verifier said, after the verification result is stored and before the file-drift checks. When the base commit or the changed files cannot be read, it records a `protected_paths_check_skipped` decision, raises a warning alert and lets the task continue. The daemon's own write into the rules file is checked like any other change.
+
+**The question.** A hold raises one question, label `protected_paths`, with the options `approve`, `reject` and `change_spec` (labels *Approve this change*, *Reject it* and *Change the spec*) and the default `hold` (nothing changes until it is answered). It lists at most the first 20 paths and carries no recommendation. Only the question the hold itself names is acted on: an answer to a stale question, and a withdrawn or expired question, change nothing and keep the hold. **approve** adds the paths to the task's approved paths and completes the task (the approval is for this task only and never changes the Automaton's authorised paths). **reject** restores each listed path to its content at the base commit, removes a path the task added, commits that as a new commit `task(<short id>): restore protected paths`, then runs the task again with a note that the paths must not change; it refuses everything if a path lies outside the task directory, never rewrites history and uses no retry budget. **change_spec** keeps the task blocked until its instructions are edited and it is reset. If a restore cannot be done the hold stays, a warning alert is raised and a fresh question is raised.
+
+**Authorised paths.** One Automaton can be authorised for some protected paths in advance. The list replaces the current one and an empty list clears it; entries follow the same three forms and the same limits as the protected list. A path under it passes in every action and the first use is recorded as a `protected_paths_authorised` decision. Authorising does not answer a task that is already held.
+
+| Method | How |
+|--------|-----|
+| **REST API** | `POST /api/autonomous/prds/{id}/set_authorized_paths` with `{"paths": ["RULES.md", "ops/"]}`; the answer is the updated Automaton with `authorized_paths` when any are set |
+| **MCP** | `autonomous_prd_set_authorized_paths` with `id` and `paths` (an empty array clears the list) |
+| **CLI** | `datawatch autonomous authorize-paths <automaton-id> --path RULES.md --path ops/` or `--clear` |
+| **Comm channel** | `autonomous authorize-paths <automaton-id> <path> [<path>...]` or `autonomous authorize-paths <automaton-id> clear` |
+| **Web UI** | The Automaton's detail page → **Authorised paths** card |
+
+**Where to see.**
+
+| Location | What you see |
+|----------|-------------|
+| **Web UI** | Automation view → Overview sub-tab → **Automata protected paths** card, refreshed every 30 seconds; a **Protected paths (N)** chip on a held task; a banner on a held Automaton |
+| **REST API** | `GET /api/autonomous/protected-paths` (optional `?automaton=<id>`) → `action`, `rules_source`, `paths`, `held[]`, `authorized[]` |
+| **MCP** | `autonomous_protected_paths` (read-only; optional `automaton` argument) |
+| **CLI** | `datawatch autonomous protected-paths [--automaton <id>] [--json]` |
+| **Comm channel** | `autonomous protected-paths [automaton-id]` |
+| **Audit log** | Events listed below |
+| **Automaton decision log** | Decisions listed below |
+| **Alerts** | Warning alerts *Protected paths held*, *Protected paths warning*, *Protected paths blocked*, *Protected paths check skipped* and *Protected paths not restored* |
+
+The read is GET-only (any other method is 405), answers 503 while Automata are disabled, and needs the autonomous read capability when called by a federated peer. It is built from the hold records stored on each task and the authorised list stored on each Automaton and runs no git command. It returns `action`, `rules_source`, `paths`, `held` and `authorized`; `paths`, `held` and `authorized` are empty lists, never null. A `held` entry has `automaton_id`, `automaton_title`, `task_id`, `task_title`, `paths`, `action`, `reason`, `question_id`, `since`, `base_commit` and `awaiting_spec_change`; an `authorized` entry has `automaton_id`, `automaton_title` and `paths`. The hold also appears as `protected_path_hold` on the held task in the task list, the approved paths as `approved_protected_paths`, and the authorised list as `authorized_paths` on the Automaton. The full field documentation is in `docs/api/openapi.yaml`.
+
+| Moment | Audit event | Decision kind |
+|---|---|---|
+| A task is held | `autonomous_protected_paths_held` | `protected_paths_held` |
+| The `warn` action records a finding | `autonomous_protected_paths_warned` | `protected_paths_warned` |
+| The `block` action parks a task | `autonomous_protected_paths_blocked` | `protected_paths_blocked` |
+| An operator answer is acted on | `autonomous_protected_paths_answered` | `protected_paths_approved`, `protected_paths_rejected` or `protected_paths_spec_change_requested` |
+| An answer did not match the hold | — | `protected_paths_answer_ignored`, `protected_paths_answer_invalid` |
+| An Automaton's authorised list is set | `autonomous_protected_paths_authorised_set` | `protected_paths_authorised_set` |
+| A task changed a path the authorised list covers | — | `protected_paths_authorised` |
+| The check could not run | — | `protected_paths_check_skipped` |
+| The rules review fell back to the working tree | — | `rules_review_source_fallback` |
+
+The audit details carry the Automaton id, the task id, the paths and the base commit (the answered event carries the chosen option, the actor and the question id as well). A held task carries the task error `protected_path: <paths>`, a blocked one `protected_path_blocked: <paths>`.
+
+**Known limits.** In direct mode a change made by the operator or by a parallel task in the same tree during the task can be attributed to it. A file that was dirty before the task started is not attributed unless a commit made since the base touched it. When the base commit cannot be resolved the gate skips with a warning and the rules review reads the working tree for that run; both are recorded.
+
+**What the gate never does.** It never reverts, resets, amends or rewrites a change by itself, never pushes or merges, and never changes the list, the action or an authorised list on its own. Only the **reject** answer puts files back, only the exact paths of the hold, in a new commit. The status read never runs git and never changes anything. In `off` it does not look at the tree at all.
 
 ---
 

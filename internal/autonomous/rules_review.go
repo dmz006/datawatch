@@ -40,37 +40,118 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"slices"
+	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
-// rulesReviewSuffix returns the review-time pointer text for whichever
-// of the configured rules/context files actually exist in
-// prd.ProjectDir — the completion-time sibling of rulesContextSuffix's
-// own planning-time pointer (same gate, same file-detection logic,
-// different prose: a review task reads the real diff against the
-// rules, not a spec against them before writing one). Empty ProjectDir
-// or no file found means there's nothing to check against, so the
-// review is skipped entirely by the caller (see
-// runPRDCompletionRulesReview) — exactly like rulesContextSuffix's own
-// behavior for decompose.
-func (m *Manager) rulesReviewSuffix(prd *PRD) string {
+// rulesReviewSuffix returns the review-time text for whichever of the
+// configured rules/context files exist — the completion-time sibling of
+// rulesContextSuffix's own planning-time pointer (same gate, different
+// prose: a review task reads the real diff against the rules, not a spec
+// against them before writing one). Empty ProjectDir or no file found
+// means there's nothing to check against, so the review is skipped
+// entirely by the caller (see runPRDCompletionRulesReview) — exactly
+// like rulesContextSuffix's own behavior for decompose.
+//
+// With autonomous.automation.rules_review_source = base_commit (the
+// default) the rules text comes from the Automaton's base commit and is
+// embedded verbatim, never read from the working tree the worker changed:
+// a worker can neither weaken the rules it is graded against nor skip the
+// review by deleting the rules file. Existence is decided at the base
+// commit. When the base cannot be resolved or a git read fails, the old
+// working-tree behaviour is used for that run and one
+// rules_review_source_fallback Decision is appended to the Automaton.
+// With the worktree source the working-directory pointer text is kept.
+func (m *Manager) rulesReviewSuffix(ctx context.Context, prd *PRD) string {
+	if prd.ProjectDir == "" {
+		return ""
+	}
+	if m.Config().Automation.EffectiveRulesReviewSource() == config.RulesReviewSourceBaseCommit {
+		files, sha, _, err := m.readRulesFilesAtBase(ctx, prd)
+		if err == nil {
+			text := baseCommitRulesReviewText(files, sha)
+			if text == "" {
+				return ""
+			}
+			return text + m.generatedArtefactReviewText(prd)
+		}
+		m.recordRulesReviewSourceFallback(prd, err)
+	}
+	return m.worktreeRulesReviewSuffix(prd)
+}
+
+// recordRulesReviewSourceFallback logs and records (one Decision, Kind
+// rules_review_source_fallback) that the rules review is reading the
+// working tree this run because the base commit could not be used. The
+// caller's own save persists the Decision.
+func (m *Manager) recordRulesReviewSourceFallback(prd *PRD, reason error) {
+	log.Printf("[autonomous] %s: rules review falls back to the working-tree rules files: %v", prd.ID, reason)
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:    time.Now(),
+		Kind:  "rules_review_source_fallback",
+		Actor: "autonomous",
+		Note:  "the rules review read the rules files from the working tree because the Automaton base commit could not be used: " + reason.Error(),
+	})
+}
+
+// worktreeRulesReviewSuffix is the working-tree pointer text: the judge is
+// told to read the files at the root of its working directory.
+func (m *Manager) worktreeRulesReviewSuffix(prd *PRD) string {
 	list := m.presentRulesContextFiles(prd)
 	if list == "" {
 		return ""
 	}
 	return "Read " + list + " at the root of your working directory yourself," +
 		" using your own tools — they define this project's development," +
-		" testing and documentation rules. Then check the REAL changes this" +
-		" automaton actually made (run your own git log / git diff against" +
-		" the branch this worktree started from — do not assume; look) against" +
-		" those rules. This is a judgment review, not a fixed checklist: some" +
-		" rules will apply and some won't, and only you can tell which, since" +
-		" you can see what actually changed and what the rules actually say." +
-		" Report every rule you find violated or skipped, not just the" +
-		" first one you notice. A clean pass is a real possibility — do not" +
-		" invent an issue just to have something to report." +
+		" testing and documentation rules. " + rulesReviewJudgmentText +
 		m.generatedArtefactReviewText(prd)
+}
+
+// rulesReviewJudgmentText is the judgment instruction shared by both
+// sources.
+const rulesReviewJudgmentText = "Then check the REAL changes this" +
+	" automaton actually made (run your own git log / git diff against" +
+	" the branch this worktree started from — do not assume; look) against" +
+	" those rules. This is a judgment review, not a fixed checklist: some" +
+	" rules will apply and some won't, and only you can tell which, since" +
+	" you can see what actually changed and what the rules actually say." +
+	" Report every rule you find violated or skipped, not just the" +
+	" first one you notice. A clean pass is a real possibility — do not" +
+	" invent an issue just to have something to report."
+
+// baseCommitRulesReviewText embeds each rules/context file as it was at the
+// base commit in a delimited block. No file at the base means "" (the
+// review is skipped).
+func baseCommitRulesReviewText(files []baseRulesFile, sha string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	short := shortSHA(sha)
+	var b strings.Builder
+	b.WriteString("The text of this project's rules, taken from the commit before this" +
+		" Automaton's changes, is given below. They define this project's development," +
+		" testing and documentation rules. Do NOT read the rules from your working" +
+		" directory: the working-tree copy may have been changed by the work you are" +
+		" judging. If the working-tree copy differs from the text given here, report" +
+		" the difference as a finding.\n\n")
+	for _, f := range files {
+		heading := fmt.Sprintf("Rules file %s as of commit %s (the state before this Automaton's changes)", f.Path, short)
+		b.WriteString("===== BEGIN " + heading + " =====\n")
+		b.WriteString(f.Content)
+		if !strings.HasSuffix(f.Content, "\n") {
+			b.WriteString("\n")
+		}
+		if f.Truncated {
+			fmt.Fprintf(&b, "[truncated: %s is longer than %d bytes; the text above is only its first part]\n", f.Path, baseCommitFileCap)
+		}
+		b.WriteString("===== END " + heading + " =====\n\n")
+	}
+	b.WriteString(rulesReviewJudgmentText)
+	return b.String()
 }
 
 // presentRulesContextFiles returns whichever of the resolved rules/
@@ -119,13 +200,20 @@ func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 // Returns an error wrapping ErrNoGuardrailModel when no tier resolves a
 // model the backend can serve; callers must then record
 // NoGuardrailModelVerdict instead of launching a judge (v9.10.18).
-func (m *Manager) prdRulesReviewInvocation(prd *PRD) (GuardrailInvocation, error) {
+func (m *Manager) prdRulesReviewInvocation(ctx context.Context, prd *PRD) (GuardrailInvocation, error) {
+	return m.buildPRDRulesReviewInvocation(prd, m.rulesReviewSuffix(ctx, prd))
+}
+
+// buildPRDRulesReviewInvocation is prdRulesReviewInvocation with the
+// review text already computed, so a caller that needs the text itself
+// (the completion rollup's skip check) computes it once.
+func (m *Manager) buildPRDRulesReviewInvocation(prd *PRD, suffix string) (GuardrailInvocation, error) {
 	inv := GuardrailInvocation{
 		PRDID:      prd.ID,
 		Level:      "prd",
 		UnitID:     prd.ID,
 		UnitTitle:  prd.Title,
-		UnitSpec:   fmt.Sprintf("Original request for this automaton:\n%s\n\n%s", prd.Spec, m.rulesReviewSuffix(prd)),
+		UnitSpec:   fmt.Sprintf("Original request for this automaton:\n%s\n\n%s", prd.Spec, suffix),
 		Guardrail:  "rules-review",
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
@@ -148,12 +236,12 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	if fn == nil {
 		return false, nil, nil
 	}
-	suffix := m.rulesReviewSuffix(prd)
+	suffix := m.rulesReviewSuffix(ctx, prd)
 	if suffix == "" {
 		return false, nil, nil
 	}
 
-	inv, resErr := m.prdRulesReviewInvocation(prd)
+	inv, resErr := m.buildPRDRulesReviewInvocation(prd, suffix)
 
 	// BL410 Phase 1 — bounded, escalating auto-retry for an infra-
 	// category block (the guardrail session itself failed — this is

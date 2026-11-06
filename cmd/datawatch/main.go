@@ -4647,6 +4647,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// accessors resolve the defaults (hold, task_files).
 				UncommittedWorkPolicy: acfgIn.Automation.UncommittedWorkPolicy,
 				UncommittedWorkScope:  acfgIn.Automation.UncommittedWorkScope,
+				// Protected-paths and rules-review keys: raw values; the
+				// Effective* accessors resolve the defaults (default list,
+				// hold, base_commit).
+				ProtectedPaths:       acfgIn.Automation.ProtectedPaths,
+				ProtectedPathsAction: acfgIn.Automation.ProtectedPathsAction,
+				RulesReviewSource:    acfgIn.Automation.RulesReviewSource,
 				// security failure mode (autonomous.automation.security_failure.mode)
 				SecurityFailure: autonomouspkg.SecurityFailureConfig{Mode: acfgIn.Automation.SecurityFailure.Mode},
 				// supervisor watch block (autonomous.automation.supervisor_watch.*):

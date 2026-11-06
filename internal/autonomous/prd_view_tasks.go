@@ -56,6 +56,9 @@ type TaskEntry struct {
 	// response time, never stored, and omitted when the task has none. Its
 	// summary field carries the plain-text wait; Status is unchanged.
 	ModelRequest *requestwatch.Observation `json:"model_request,omitempty"`
+	// ProtectedPathHold is the hold on a task whose commit changed protected
+	// paths; omitted when the task carries none.
+	ProtectedPathHold *ProtectedPathHold `json:"protected_path_hold,omitempty"`
 }
 
 // TaskVerification is the outcome of a task's verification. It deliberately
@@ -86,16 +89,17 @@ func BuildTasksView(prd *PRD) TasksView {
 // buildTaskEntry copies the listing fields of one task into a TaskEntry.
 func buildTaskEntry(task *Task) TaskEntry {
 	entry := TaskEntry{
-		ID:              task.ID,
-		Title:           task.Title,
-		Status:          task.Status,
-		Error:           task.Error,
-		SessionID:       task.SessionID,
-		Progress:        task.Progress,
-		LoopingWarning:  task.LoopingWarning,
-		UncommittedWork: task.UncommittedWork,
-		MergeState:      task.MergeState,
-		MergeCommit:     task.MergeCommit,
+		ID:                task.ID,
+		Title:             task.Title,
+		Status:            task.Status,
+		Error:             task.Error,
+		SessionID:         task.SessionID,
+		Progress:          task.Progress,
+		LoopingWarning:    task.LoopingWarning,
+		UncommittedWork:   task.UncommittedWork,
+		MergeState:        task.MergeState,
+		MergeCommit:       task.MergeCommit,
+		ProtectedPathHold: task.ProtectedPathHold,
 	}
 	if v := task.Verification; v != nil {
 		entry.Verification = &TaskVerification{

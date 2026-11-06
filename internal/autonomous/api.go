@@ -1314,7 +1314,9 @@ func (a *API) ResolveTaskReview(prdID, taskID string, req ReviewResolution, acto
 // retries resolves that held task (see resolveInfraHoldAnswer). Other change
 // kinds are ignored: a withdrawn or expired decision keeps its task parked. An answered
 // uncommitted-work question is routed to its own handler instead
-// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold.
+// (uncommitted_work_answer.go); a withdrawn or expired one keeps the hold. The
+// same goes for an answered protected-paths question
+// (protected_paths_answer.go).
 func (a *API) OnQuestionChange(c QuestionChange) {
 	if c.Kind != QuestionChangeAnswered || c.Question.ID == "" {
 		return
@@ -1329,6 +1331,10 @@ func (a *API) OnQuestionChange(c QuestionChange) {
 	}
 	if c.Question.Label == UncommittedQuestionLabel {
 		a.onUncommittedWorkAnswered(c)
+		return
+	}
+	if c.Question.Label == ProtectedPathsQuestionLabel {
+		a.onProtectedPathsAnswered(c)
 		return
 	}
 	for _, p := range a.M.Store().ListPRDs() {
@@ -2154,6 +2160,26 @@ func (a *API) CleanupStatus() CleanupStatus { return a.M.CleanupStatus() }
 // answers 503 in a running daemon.
 func (a *API) UncommittedWorkStatus(automatonID string) UncommittedWorkStatus {
 	return a.M.UncommittedWorkStatus(automatonID)
+}
+
+// ProtectedPathsStatus — the protected-paths read surface behind
+// GET /api/autonomous/protected-paths. Without it the route's interface
+// check fails and the route answers 503 in a running daemon.
+func (a *API) ProtectedPathsStatus(automatonID string) ProtectedPathsStatus {
+	return a.M.ProtectedPathsStatus(automatonID)
+}
+
+// SetAuthorizedProtectedPaths sets the protected paths the Automaton's tasks
+// may change without an operator decision (an empty list clears it) and
+// returns the updated Automaton. A validation error comes back unchanged so
+// the caller can show the operator which entry was refused.
+func (a *API) SetAuthorizedProtectedPaths(prdID string, paths []string, actor string) (any, error) {
+	if _, err := a.M.SetAuthorizedProtectedPaths(prdID, paths, actor); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
 }
 
 func (a *API) GetAutomation(id string) (any, bool) {

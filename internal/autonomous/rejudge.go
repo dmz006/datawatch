@@ -55,7 +55,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD, back
 	if fn == nil {
 		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
-	inv, resErr := m.prdRulesReviewInvocation(prd)
+	inv, resErr := m.prdRulesReviewInvocation(ctx, prd)
 	backend = strings.TrimSpace(backend)
 	if resErr != nil && backend == "" {
 		// v9.10.18 — no judge model resolvable at any level: loud,
@@ -167,7 +167,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	// verdict describes the old head, and an unchanged head would give the
 	// same answer. Refuse before touching anything.
 	if heldReview {
-		inv, _ := m.prdRulesReviewInvocation(prd)
+		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
 		head := judgeVerdictCommitSHA(prd, inv)
 		heldSHA := ""
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil {
@@ -189,7 +189,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	cacheOn := m.judgeVerdictCacheEnabled()
 	var headSHA string
 	if cacheOn {
-		inv, _ := m.prdRulesReviewInvocation(prd)
+		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
 		headSHA = judgeVerdictCommitSHA(prd, inv)
 		if stored := lastBlockVerdict(prd.Verdicts); stored != nil && headSHA != "" && stored.JudgedCommitSHA != headSHA {
 			ctx = withJudgeVerdictCacheLookupBypassed(ctx)
@@ -208,7 +208,7 @@ func (m *Manager) RejudgeCompletionGuardrail(ctx context.Context, prdID, actor, 
 	}
 	v.Guardrail = "rules-review"
 	if headSHA == "" {
-		inv, _ := m.prdRulesReviewInvocation(prd)
+		inv, _ := m.prdRulesReviewInvocation(ctx, prd)
 		headSHA = judgeVerdictCommitSHA(prd, inv)
 	}
 	v.JudgedCommitSHA = headSHA

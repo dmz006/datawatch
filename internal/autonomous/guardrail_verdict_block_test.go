@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // recordedVerdictJudge is a recorded GuardrailFn fake. It records every
@@ -58,6 +60,9 @@ func newRulesReviewVerdictPRD(t *testing.T) (*Manager, *PRD) {
 	// model) so the recorded fake rules-review judge is reachable; the
 	// tests assert its verdict, not a resolution-failure block.
 	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	// These tests assert verdict recording on a plain (non-git) directory;
+	// the working-tree source keeps the Decision log to the verdict alone.
+	cfg.Automation.RulesReviewSource = config.RulesReviewSourceWorktree
 	m, err := NewManager(t.TempDir(), cfg, fakeDecompose)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

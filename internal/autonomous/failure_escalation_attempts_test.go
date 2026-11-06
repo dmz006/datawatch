@@ -25,6 +25,10 @@ func newFailureEscalationFixture(t *testing.T, dir string) (*Manager, *API) {
 	// scenarios need; the product default stays one.
 	cfg := DefaultConfig()
 	cfg.AutoFixRetries = 3
+	// These scenarios run in plain temp directories with no git history and
+	// count alerts; the protected-paths gate has its own tests and would add
+	// a "check skipped" alert here.
+	cfg.Automation.ProtectedPathsAction = "off"
 	m, err := NewManager(dir, cfg, fakeLLM)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

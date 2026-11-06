@@ -176,7 +176,7 @@ test('the Housekeeping sub-tab carries the slot and the stop-all list ends the l
   }
   const src = fs.readFileSync(APP_JS, 'utf8');
   assert.ok(src.includes("url: '/api/autonomous/uncommitted-work'"), 'loader must read the route');
-  assert.ok(/'automation_cleanup', 'automation_uncommitted_work'\]/.test(src), 'stop lists must include the loader');
+  assert.ok(/'automation_cleanup', 'automation_uncommitted_work'[,\]]/.test(src), 'stop lists must include the loader');
 });
 
 // ── the Automaton detail ─────────────────────────────────────────────────────

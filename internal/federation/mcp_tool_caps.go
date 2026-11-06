@@ -110,6 +110,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_scan_fix":                      CapAutonomousWrite,
 	"autonomous_prd_scan_results":                  CapAutonomousRead,
 	"autonomous_prd_scan_rules":                    CapAutonomousRead,
+	"autonomous_prd_set_authorized_paths":          CapAutonomousWrite,
 	"autonomous_prd_set_continue_on_story_failure": CapAutonomousWrite,
 	"autonomous_prd_set_git":                       CapAutonomousWrite, // BL407 Phase 5
 	"autonomous_prd_set_guided_mode":               CapAutonomousWrite,
@@ -245,6 +246,7 @@ var MCPToolCap = map[string]string{
 	"usage_backoff_recheck":                CapConfigWrite,
 	"usage_backoff_set":                    CapConfigWrite,
 	"usage_backoff_status":                 CapConfigRead,
+	"autonomous_protected_paths":           CapAutonomousRead,
 	// Usage calculator (design docs/plans/2026-10-23-usage-calculator-design.md):
 	// reads of the shared series and its advice; writes to the series and the
 	// extra-credit / remaining-work settings.

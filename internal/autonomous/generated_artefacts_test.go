@@ -193,12 +193,12 @@ func TestRulesReviewSuffix_ListsGeneratedArtefactsAsDocumentation(t *testing.T) 
 		t.Fatal(err)
 	}
 	// Before generation every enabled kind is expected but missing.
-	before := m.rulesReviewSuffix(prd)
+	before := m.rulesReviewSuffix(context.Background(), prd)
 	if !strings.Contains(before, "is a finding") || !strings.Contains(before, "none exist yet") {
 		t.Errorf("missing artefacts not flagged: %q", before)
 	}
 	completeWithRecord(t, m, prd, task)
-	got := m.rulesReviewSuffix(prd)
+	got := m.rulesReviewSuffix(context.Background(), prd)
 	for _, want := range []string{"prd1-changelog.md", "prd1-registry-row.md", "documentation checks", "changelog, parity, tracker and registry"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("suffix lacks %q: %q", want, got)
@@ -216,7 +216,7 @@ func TestRulesReviewSuffix_DisabledKindNotAFinding(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(prd.ProjectDir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := m.rulesReviewSuffix(prd)
+	got := m.rulesReviewSuffix(context.Background(), prd)
 	if strings.Contains(got, "registry-row") {
 		t.Errorf("disabled kind must not be listed or expected: %q", got)
 	}

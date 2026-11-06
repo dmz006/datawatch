@@ -583,6 +583,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/automation/requirements-report", api.handleRequirementsReport)
 	apiMux.HandleFunc("/api/automation/model-consent", api.handleModelConsent)
 	apiMux.HandleFunc("/api/compute/nodes/{name}/versions", api.handleNodeBackendVersions) // the compute node's backend name and version, with the recorded time
+	apiMux.HandleFunc("/api/autonomous/protected-paths", api.handleProtectedPaths)              // protected-paths holds: action, rules source, effective list, held tasks, authorised Automata
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)
 	apiMux.HandleFunc("/api/channel/notify", api.handleChannelNotify)
 	apiMux.HandleFunc("/api/channel/send", api.handleChannelSend)

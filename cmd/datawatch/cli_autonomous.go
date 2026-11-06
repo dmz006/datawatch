@@ -92,6 +92,15 @@ Subcommands:
                                    The in-flight model request of each worker or verifier session whose model
                                    runs on a compute node: generating, idle or unreachable, and for how long
                                    (read only, nothing is ended, retried or unloaded)
+  protected-paths [--automaton ID] [--json]
+                                   Protected-paths status: the action and rules source in effect, the
+                                   effective protected list, the tasks held because their commit changed
+                                   protected paths (with the question to answer) and the paths each
+                                   Automaton authorises in advance (read only, nothing is approved or
+                                   rejected)
+  authorize-paths <automaton-id> [--path P ...] [--clear]
+                                   Replace the protected paths an Automaton may change without an operator
+                                   decision (--clear empties the list; give --path or --clear)
   overlap [--title T] [--spec S | <spec>] [--json]
                                   Search before you create: the Automata, registry rows and branches
                                   that already cover a plan's title and spec, best match first
@@ -306,6 +315,8 @@ Subcommands:
 		newAutonomousUncommittedWorkCmd(),
 		newAutonomousPlanningRoutingCmd(),
 		newAutonomousRequestWatchCmd(),
+		newAutonomousProtectedPathsCmd(),
+		newAutonomousAuthorizePathsCmd(),
 		newAutonomousMergedMembersCmd(),
 		// Search-before-create read (docs/plans/2026-10-29-search-before-create.md).
 		newAutonomousOverlapCmd(),

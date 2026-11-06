@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -3963,6 +3964,27 @@ type AutonomousAutomationConfig struct {
 	// an unknown word reads as task_files through
 	// EffectiveUncommittedWorkScope.
 	UncommittedWorkScope string `yaml:"uncommitted_work_scope,omitempty" json:"uncommitted_work_scope,omitempty"`
+	// ProtectedPaths lists the paths a task commit must not touch without the
+	// operator. Each entry is a repository-relative exact file path, a
+	// directory (trailing slash, matches everything below it) or a glob using
+	// * ? [ ] (path.Match semantics, no **; an entry ending in /** is the same
+	// as the directory form). An unset or empty list reads the default list
+	// (DefaultProtectedPaths) through EffectiveProtectedPaths; an explicit
+	// list replaces the default entirely.
+	ProtectedPaths []string `yaml:"protected_paths,omitempty" json:"protected_paths,omitempty"`
+	// ProtectedPathsAction decides what happens when a task commit touches a
+	// protected path (hold|warn|block|off): hold = the task is held for the
+	// operator; warn = record and alert but let the task complete; block =
+	// refuse the commit; off = no check. An unset key or an unknown word
+	// reads as hold (the safe default) through EffectiveProtectedPathsAction.
+	ProtectedPathsAction string `yaml:"protected_paths_action,omitempty" json:"protected_paths_action,omitempty"`
+	// RulesReviewSource sets where the rules review reads the project rules
+	// from (base_commit|worktree): base_commit = the rules as committed on the
+	// base the work branched from, so a task cannot change the rubric it is
+	// judged by; worktree = the rules file in the task's working tree. An
+	// unset key or an unknown word reads as base_commit through
+	// EffectiveRulesReviewSource.
+	RulesReviewSource string `yaml:"rules_review_source,omitempty" json:"rules_review_source,omitempty"`
 }
 
 // autonomous.automation.create_search_mode values and defaults.
@@ -4089,6 +4111,130 @@ func (c AutonomousAutomationConfig) EffectiveUncommittedWorkScope() string {
 		return UncommittedWorkScopeWorktree
 	}
 	return UncommittedWorkScopeTaskFiles
+}
+
+// autonomous.automation protected-paths and rules-review values.
+// ProtectedPathsAction decides what happens when a task commit touches a
+// protected path: hold (the default) holds the task for the operator; warn
+// records and alerts but lets the task complete; block refuses the commit;
+// off skips the check. RulesReviewSource decides where the rules review reads
+// the project rules: base_commit (the default) is the rules as committed on
+// the base, worktree is the file in the task's working tree.
+const (
+	ProtectedPathsActionHold  = "hold"
+	ProtectedPathsActionWarn  = "warn"
+	ProtectedPathsActionBlock = "block"
+	ProtectedPathsActionOff   = "off"
+
+	RulesReviewSourceBaseCommit = "base_commit"
+	RulesReviewSourceWorktree   = "worktree"
+)
+
+// defaultProtectedRulesFile is the rules file name used when
+// autonomous.rules_file is unset.
+const defaultProtectedRulesFile = "AGENT.md"
+
+// DefaultProtectedPaths returns the protected-path list that applies when
+// autonomous.automation.protected_paths is unset or empty: the effective
+// project rules file (rulesFile, AGENT.md when empty), the supervisor rules
+// document, CODEOWNERS and the workflows directory. The entries are
+// normalised the same way as an explicit list.
+func DefaultProtectedPaths(rulesFile string) []string {
+	if strings.TrimSpace(rulesFile) == "" {
+		rulesFile = defaultProtectedRulesFile
+	}
+	return NormalizeProtectedPaths([]string{
+		rulesFile,
+		"docs/plans/2026-10-17-supervisor-rules-and-lessons.md",
+		"CODEOWNERS",
+		".github/workflows/",
+	})
+}
+
+// NormalizeProtectedPaths cleans a protected-path list: every entry is
+// trimmed, a leading "./" or "/" is removed, a trailing "/**" becomes the
+// directory form, the rest is cleaned with path.Clean (a trailing slash on a
+// directory entry is kept). Empty entries and entries with a ".." segment are
+// dropped, duplicates are removed and the order is kept.
+func NormalizeProtectedPaths(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, raw := range in {
+		e := strings.TrimSpace(raw)
+		for {
+			if strings.HasPrefix(e, "./") {
+				e = e[2:]
+			} else if strings.HasPrefix(e, "/") {
+				e = e[1:]
+			} else {
+				break
+			}
+		}
+		hasDotDot := false
+		for _, seg := range strings.Split(e, "/") {
+			if seg == ".." {
+				hasDotDot = true
+				break
+			}
+		}
+		if hasDotDot {
+			continue
+		}
+		dir := strings.HasSuffix(e, "/")
+		if strings.HasSuffix(e, "/**") {
+			e = strings.TrimSuffix(e, "**")
+			dir = true
+		}
+		e = path.Clean(e)
+		if e == "." || e == "" || e == "**" {
+			continue
+		}
+		if dir {
+			e += "/"
+		}
+		if seen[e] {
+			continue
+		}
+		seen[e] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+// EffectiveProtectedPaths returns the protected-path list in effect: the
+// normalised explicit list when it has at least one usable entry, otherwise
+// DefaultProtectedPaths(rulesFile). rulesFile is the effective
+// autonomous.rules_file value (empty reads AGENT.md).
+func (c AutonomousAutomationConfig) EffectiveProtectedPaths(rulesFile string) []string {
+	if len(c.ProtectedPaths) > 0 {
+		if list := NormalizeProtectedPaths(c.ProtectedPaths); len(list) > 0 {
+			return list
+		}
+	}
+	return DefaultProtectedPaths(rulesFile)
+}
+
+// EffectiveProtectedPathsAction returns the protected-paths action in
+// effect: warn, block and off are explicit operator choices; an unset key
+// (empty) and any unknown value read as ProtectedPathsActionHold, the safe
+// default.
+func (c AutonomousAutomationConfig) EffectiveProtectedPathsAction() string {
+	switch c.ProtectedPathsAction {
+	case ProtectedPathsActionWarn, ProtectedPathsActionBlock, ProtectedPathsActionOff:
+		return c.ProtectedPathsAction
+	default:
+		return ProtectedPathsActionHold
+	}
+}
+
+// EffectiveRulesReviewSource returns where the rules review reads the
+// project rules from: worktree is an explicit operator choice; an unset key
+// (empty) and any unknown value read as RulesReviewSourceBaseCommit.
+func (c AutonomousAutomationConfig) EffectiveRulesReviewSource() string {
+	if c.RulesReviewSource == RulesReviewSourceWorktree {
+		return RulesReviewSourceWorktree
+	}
+	return RulesReviewSourceBaseCommit
 }
 
 // EffectiveCleanupRetentionHours returns the cleanup retention window in
