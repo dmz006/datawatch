@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.100.2 — Accept five new unfixed HIGH container findings
+
+Adds traced accepted-risk entries, each expiring 2026-12-06, for five new HIGH findings that Trivy reported with no fixed Debian bookworm version in the agent-base image and that blocked the container images of the 9.100.1 release: CVE-2026-115506 (libexpat1), CVE-2026-119374 and CVE-2026-119379 (libsqlite3-0), CVE-2026-119741 (rsync) and CVE-2026-85091 (zlib1g). The traces found no reachable path for three of them; CVE-2026-115506 and CVE-2026-119374 are recorded as unknown for the Python-based worker images. No code change.
+
 ## v9.100.1 — Fix two lint findings in the placement tag settings
 
 Fixes the two staticcheck findings (S1005, unnecessary assignment to the blank identifier) in `internal/config/tags_settings.go` that made the lint step of the 9.100.0 CI and Release runs fail, so the release artifacts were not built. No behaviour change.

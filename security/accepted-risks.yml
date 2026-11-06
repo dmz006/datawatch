@@ -3931,3 +3931,103 @@ entries:
     expires: "2026-12-05"
     validated_by: "claude-session"
     reason: "The Trivy scan of agent-base in the 9.93.0 Release run lists CVE-2026-76844 (HIGH) on zlib1g 1:1.2.13.dfsg-1 as affected with no fixed version and a title that names a Node.js package; re-check security-tracker.debian.org and the Trivy database for a corrected mapping each release and remove this entry when one ships."
+  - id: cve/CVE-2026-115506
+    kind: container
+    package: "libexpat1"
+    version: "2.5.0-1+deb12u5"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "unknown"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l libexpat1 shows 2.5.0-1+deb12u5, identical to the scanned version; apt-cache rdepends --installed libexpat1 lists only git; ldd of every ELF in /usr/bin, /usr/lib/git-core and /usr/lib/x86_64-linux-gnu shows that only git-http-push links libexpat. The same two commands on the older datawatch-agent-aider and datawatch-agent-gemini 8.73.2 images (libexpat1 2.5.0-1+deb12u4) list git and python3.11-minimal; a grep of the installed aider package for xml.etree, xml.dom, xml.sax, pyexpat and plistlib finds nothing. Debian tracker page read: bookworm and bookworm-security are vulnerable, fixed only in sid 2.10.0-1. A built parent-full image was not inspected."
+      analysis: "A denial of service in libexpat through 2.9.0: the billion-laughs amplification check in accountingDiffTolerated() fires too late, so a moderately sized XML document with a large DTD and nested entities can burn tens of seconds of CPU per parse. It needs attacker supplied XML handed to an expat parser. In agent-base the only dependent is git and the only git program that links it is git-http-push, the WebDAV push helper, which datawatch never runs (it clones and pushes over ssh and smart HTTPS). The datawatch binary is pure Go (CGO_ENABLED=0) and uses Go's own XML parser, not libexpat. The residual is the Python-based images: agent-aider and agent-gemini carry python3.11 whose pyexpat module links libexpat1, so any script run in a worker session that parses attacker XML with Python's expat-based parsers would hit this. No datawatch code and no aider code found by the grep does that, but a worker can run arbitrary commands, so reachability in those images is not ruled out and is recorded as unknown. The impact is bounded CPU use in a disposable worker container, not code execution."
+    first_added: "2026-11-06"
+    added: "2026-11-06"
+    expires: "2026-12-06"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-115506 (HIGH) on libexpat1 2.5.0-1+deb12u5 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-119374
+    kind: container
+    package: "libsqlite3-0"
+    version: "3.40.1-2+deb12u2"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "unknown"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l libsqlite3-0 shows 3.40.1-2+deb12u2, identical to the scanned version; apt-cache rdepends --installed libsqlite3-0 lists only gpg; ldd of every ELF in /usr/bin, /usr/sbin, /usr/lib/git-core and /usr/local/bin shows that only /usr/bin/gpg links libsqlite3; grep -a of gpg for sqlite3_ symbols shows only basic calls (open, prepare_v2, step, bind, exec, close) and no changeset or fts5 strings; libsqlite3.so.0 contains the fts5 module. On the older datawatch-agent-aider 8.73.2 image: rdepends lists libpython3.11-stdlib (the _sqlite3 module) and gpg, diskcache 5.6.3 is installed in the aider pipx venv, and aider/repomap.py sets TAGS_CACHE_DIR to .aider.tags.cache.v<N>, a SQLite cache inside the repository being worked on. Debian tracker page read: bookworm vulnerable, fixed only in sid 3.54.1-2. A built parent-full image was not inspected."
+      analysis: "A heap buffer overflow in SQLite's FTS5 fts5DoSecureDelete() (SQLite before 3.54.0), triggered by a crafted database file whose FTS5 index has corrupt footer key offsets, when rows are deleted from that FTS5 table with FTS5 secure-delete enabled. In agent-base the only consumer is gpg, which uses SQLite solely for its optional TOFU trust database with fixed SQL statements; it never creates or deletes from an FTS5 table, and TOFU is off under the default trust model. The datawatch binary uses modernc.org/sqlite, a pure-Go implementation (CGO_ENABLED=0), never the Debian libsqlite3. The agent-aider image is different: python3's sqlite3 module links libsqlite3, and aider opens a diskcache SQLite file stored in the repository (.aider.tags.cache). A hostile repository could commit a crafted cache.db; diskcache itself issues no FTS5 statements, but SQLite runs triggers stored in an opened database file, so a planted trigger on diskcache's own tables that deletes from an FTS5 table is a plausible, unproven path to this bug. That path was not exercised here, so reachability is recorded as unknown, not no. The impact is a heap overflow in the aider process inside a disposable worker container; the mitigation is that aider workers only clone repositories the operator configured."
+    first_added: "2026-11-06"
+    added: "2026-11-06"
+    expires: "2026-12-06"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-119374 (HIGH) on libsqlite3-0 3.40.1-2+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-119379
+    kind: container
+    package: "libsqlite3-0"
+    version: "3.40.1-2+deb12u2"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l libsqlite3-0 shows 3.40.1-2+deb12u2, identical to the scanned version; apt-cache rdepends --installed libsqlite3-0 lists only gpg; ldd scan of all ELF files shows only /usr/bin/gpg links libsqlite3, and grep -a of gpg for sqlite3_ symbols and for changeset finds no session or changeset call; libsqlite3.so.0 exports sqlite3changeset_apply. On the older datawatch-agent-aider 8.73.2 image: grep -rl changeset over the installed aider and diskcache Python packages finds nothing. Debian tracker page read: bookworm vulnerable, fixed only in sid 3.54.1-2. A built parent-full image was not inspected."
+      analysis: "A heap buffer overflow in the sqlite3changeset_apply() C API of SQLite's session extension (SQLite before 3.54.0), triggered by a crafted changeset blob whose table name repeats with a larger column count. It is reached only by a program that calls the session API and feeds it an untrusted changeset; a database file or an SQL statement cannot invoke it. The library exports the function, but no program in agent-base calls it (gpg's SQLite calls are limited to open, prepare, bind, step, exec and close), Python's standard sqlite3 module has no binding for the session extension, and neither aider nor diskcache references changesets. The datawatch binary uses pure-Go modernc.org/sqlite, not libsqlite3. No caller exists, so the vulnerable function is unreachable."
+    first_added: "2026-11-06"
+    added: "2026-11-06"
+    expires: "2026-12-06"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-119379 (HIGH) on libsqlite3-0 3.40.1-2+deb12u2 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-119741
+    kind: container
+    package: "rsync"
+    version: "3.2.7-1+deb12u6"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l rsync shows 3.2.7-1+deb12u6, identical to the scanned version; /etc/rsyncd.conf and /etc/rsync* do not exist; /etc/default/rsync has RSYNC_ENABLE=false; no sshd binary is present (which sshd and ls /usr/sbin/sshd fail); docker inspect shows ENTRYPOINT tini -- datawatch-entrypoint, CMD start --foreground and exposed ports 8080, 8081 and 8443 only (no 873); grep of the datawatch-entrypoint script finds no rsync. Repo grep for rsync: Dockerfile.agent-base installs it (builder stage for make sync-docs, runtime stage in the tool list), Makefile line 23 runs a local rsync -a between two local directories, and no Go source runs rsync (only the smoke-config lint regex mentions the word). Debian tracker page read: bookworm and bookworm-security are vulnerable, fixed only in sid 3.5.2+ds1-1."
+      analysis: "A denial of service in rsync before 3.5.2: in the delta-transfer sender, hash_search() does unbounded strong-checksum work when the peer that receives the file supplies weak checksums that collide with consecutive rolling windows. The attacker must be the receiving peer of a transfer in which this rsync is the sender, in practice an unauthenticated client pulling from an rsync daemon module. The image runs no rsync daemon (RSYNC_ENABLE=false, no rsyncd.conf, port 873 not exposed), has no ssh server through which a remote rsync could start a sender, and the only repo use of rsync is a local directory copy in the Makefile docs sync. The remaining case is a worker session that is told to push files with rsync to an attacker controlled host, which is an operator or agent action and not a datawatch code path; its impact would be CPU exhaustion of one disposable worker container. rsync stays installed on purpose as a general worker tool."
+    first_added: "2026-11-06"
+    added: "2026-11-06"
+    expires: "2026-12-06"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-119741 (HIGH) on rsync 3.2.7-1+deb12u6 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
+  - id: cve/CVE-2026-85091
+    kind: container
+    package: "zlib1g"
+    version: "1:1.2.13.dfsg-1"
+    severity: high
+    images:
+      - agent-base
+      - agent-gemini
+      - agent-aider
+      - parent-full
+    impact:
+      traced: true
+      reachable: "no"
+      method: "docker run --network none --entrypoint sh on the built agent-base 9.93.0 image: dpkg -l zlib1g shows 1:1.2.13.dfsg-1, identical to the scanned version; apt-cache rdepends --installed zlib1g lists sudo, wget, util-linux, apt, rsync, openssh-client, curl, git, gpg, dpkg and others; a loop over every ELF in /usr/bin, /usr/sbin, /usr/lib/git-core, /usr/local/bin and /usr/lib/x86_64-linux-gnu that links libz.so.1 with grep -a for the gz API names finds gzdopen and gzwrite in dpkg-deb and wget, gzdopen, gzflush and gzwrite in sudo_logsrvd, gzdopen in sudoreplay and sudo_sendlog, and no program that references gzprintf, gzvprintf, gzputs, gzputc, gzbuffer or gzsetparams; grep -c gz_vacate on libz.so.1 returns 0. Debian tracker page read: bookworm is listed vulnerable, fixed only in sid 1:1.3.dfsg+really1.3.2-4, and its notes say non-blocking support in the gz routines was introduced in zlib v1.3.1.2."
+      analysis: "A heap buffer overflow in gz_vacate() in zlib versions 1.3.1.2 through 1.3.2, triggered when a program using the gz* routines in non-blocking mode calls gzprintf() or gzvprintf() after a gzwrite() stall. Two things keep it out of reach. First, the scanned package is zlib 1.2.13, which predates the non-blocking gz* support (added in 1.3.1.2) that the Debian tracker notes name as the origin of the flaw, so the Debian vulnerable status looks like an unversioned default. Second, no program in the image calls gzprintf or gzvprintf, and the few gzwrite users (dpkg-deb, wget, sudo log tools) use ordinary blocking files, not non-blocking descriptors. The datawatch binary is pure Go (CGO_ENABLED=0) and uses the stdlib compress packages, never libz; Python's zlib module in the aider and gemini images uses deflate and inflate, not the gz* API. zlib1g cannot be removed because dpkg, curl, git and others depend on it. A built parent-full image was not inspected."
+    first_added: "2026-11-06"
+    added: "2026-11-06"
+    expires: "2026-12-06"
+    validated_by: "claude-session"
+    reason: "The Trivy scan of agent-base in the 9.100.1 Release run (run 42190519222) lists CVE-2026-85091 (HIGH) on zlib1g 1:1.2.13.dfsg-1 as affected with no fixed version; the Debian security tracker (read 2026-11-06) lists bookworm as vulnerable with no fixed bookworm version; re-check security-tracker.debian.org each release and remove this entry when a fix ships."
