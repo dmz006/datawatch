@@ -50,7 +50,8 @@ order. Each entry has:
 | `command` | Any shell command line, or empty for a built-in hook. Give this or `builtin`, never both. |
 | `enabled` | The hook's own switch. Off by default. |
 
-In the PWA (Settings > Automation > Post-ship hooks) you add hooks one at a
+In the PWA — the **Post-ship hooks** card in Settings, the card directly
+below the **Merge pipeline** card — you add hooks one at a
 time, set each to a built-in or a command, order them with the up and down
 buttons and toggle each one, then press **Save hooks** to send the whole list.
 The daemon re-checks every rule on the way in — the name, exactly one of
@@ -84,11 +85,19 @@ is left as written.
 | `issue_title_template` | `parity_issue` | The issue's title. May contain `{project}` and `{version}`. |
 | `notify_template` | `notify` | The message body. Also the parity issue's body when set — without it the issue gets a default one. May contain `{project}` and `{version}`. |
 
-All keys live under `autonomous.merge_pipeline.post_ship` and can be set with
-`datawatch config set` (for example `datawatch config set
-autonomous.merge_pipeline.post_ship.enabled true`), the same `PUT /api/config`
-the card writes to, or the card itself in the PWA. The card's help links open
-the sections of this page.
+All keys live under `autonomous.merge_pipeline.post_ship` and can be set every
+way below. The card's help links open the sections of this page.
+
+| Method | How |
+|---|---|
+| **YAML** | Edit `~/.datawatch/config.yaml` → `autonomous.merge_pipeline.post_ship:` — `enabled`, `hooks` (the list) and the five target keys |
+| **CLI** | `datawatch autonomous merge-pipeline post-ship set <key> <value>` (the `hooks` key takes its JSON text); read it back with `datawatch autonomous merge-pipeline post-ship show` |
+| **Web UI** | Settings → the **Merge pipeline** card → the **Post-ship hooks** card directly below it |
+| **REST API** | `PUT /api/config` with e.g. `{"autonomous.merge_pipeline.post_ship.enabled": true}`; read with `GET /api/config` |
+| **Comm channel** | `configure autonomous.merge_pipeline.post_ship.<key>=<value>`; the `hooks` key takes its value as the list's JSON text |
+
+The daemon re-validates every value on each of these surfaces, so a bad list
+is refused with the problem named and nothing is written.
 
 ## Reading the results
 
@@ -100,7 +109,13 @@ error, so the missing setting or the reason for the failure is readable in
 the record; a hook that skips (an already-existing tag) reads as a success
 with the reason.
 
+When a run belongs to an Automaton, every failed hook also lands as one triage
+note (source `post_ship`) on that Automaton's triage record, so whoever reads
+the Automaton sees which hook failed without opening the merge run record.
+A hook that succeeds or skips writes no note; when the run belongs to no
+Automaton the hook failures live on the merge run record alone.
+
 ## See also
 
 - [How-to: Merge pipeline](merge-pipeline.md) — the pipeline the hooks attach to.
-- Settings > Automation > Post-ship hooks — the card in the PWA.
+- Settings → the **Merge pipeline** card → the **Post-ship hooks** card — where the block is edited in the PWA.

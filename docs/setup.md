@@ -583,6 +583,41 @@ cost_report:
 
 See [howto/cost-report.md](howto/cost-report.md).
 
+## Post-ship hooks setup (optional)
+
+Post-ship hooks are the steps a project runs after a merge pipeline's push step
+succeeds — marking its registry row shipped, filing a parity issue, tagging the
+release, notifying people, or running any shell line. They are off by default
+and a failed hook never blocks or fails the ship; its failure is recorded on the
+merge run record (`pipeline_runs`) and, when the run belongs to an Automaton, as
+a triage note on that Automaton. To turn them on, set the block's `enabled`
+switch, list the hooks, and give each built-in its target:
+
+```yaml
+autonomous:
+  merge_pipeline:
+    post_ship:
+      enabled: true
+      hooks:
+        - {name: registry row, builtin: registry_row, enabled: true}
+        - {name: notify, builtin: notify, enabled: true}
+      registry_file: docs/registry.md
+      registry_row_pattern: myproject
+      companion_repository: owner/parity-tracker
+      issue_title_template: "Parity: {project} {version}"
+      notify_template: "Shipped {version} of {project}"
+```
+
+| Method | How |
+|--------|-----|
+| **YAML config** | `autonomous.merge_pipeline.post_ship.*` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch autonomous merge-pipeline post-ship set <key> <value>`; read it back with `post-ship show` |
+| **Web UI** | Settings → the **Merge pipeline** card → the **Post-ship hooks** card directly below it |
+| **REST API** | `PUT /api/config` with `{"autonomous.merge_pipeline.post_ship.<key>": value}`; read with `GET /api/config` |
+| **Comm channel** | `configure autonomous.merge_pipeline.post_ship.<key>=<value>` |
+
+The full guide is [howto/post-ship-hooks.md](howto/post-ship-hooks.md).
+
 ## Troubleshooting
 
 ### signal-cli fails to start
