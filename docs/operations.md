@@ -892,7 +892,7 @@ time.
 **The planning refusals.** Two deterministic checks, no LLM, both refuse a
 read-only task that declares neither a verification script nor a report
 path under `.datawatch/reports/`. "Read-only" means the `read_only` flag,
-or a spec whose first non-empty line is `READ-ONLY:`; no task kind is
+or a spec whose first non-empty line begins with `READ-ONLY:`; no task kind is
 exempt:
 
 - The **decompose lint rule `read_only_unverifiable`** (`block`): it fires
@@ -935,8 +935,9 @@ read-only (or clear the mark), set its `report_path`, and change its spec,
 worker or file scope in the same call. Every change is checked before
 anything is written, so a refused change leaves the task held — for example
 a `report_path` is only accepted when the task is read-only *after* the
-change and has no planned files. All four decision surfaces accept this,
-each accepting a note that is recorded on the decision log and given to the
+change and has no planned files. The CLI, the REST endpoint, the MCP tool and
+the comm channel all accept this, and each accepts a note that is recorded on
+the decision log and given to the
 next attempt:
 
 ```sh
