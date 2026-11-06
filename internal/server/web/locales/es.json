@@ -1534,6 +1534,8 @@
   "settings_title": "Ajustes",
   "settings_update": "Actualización",
   "settings_verifier_diff_max_bytes": "Verifier diff max bytes (0 = 8192 default)",
+  "settings_verifier_min_free_mem_mb": "Memoria libre mínima del verificador (MB; vacío = 1024, 0 = sin comprobar)",
+  "settings_verifier_headroom_max_age_hours": "Antigüedad máxima de la medición de memoria del verificador (horas; 0 o vacío = 24)",
   "settings_version": "Versión",
   "settings_web_search_enabled": "Activar inyección de búsqueda web (sesiones opencode + goose)",
   "settings_web_search_engine": "Motor de búsqueda (separado por comas, predeterminado: bing)",

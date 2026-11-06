@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Verifier headroom settings and one shared measurement store.** Two new config keys, `autonomous.verifier_min_free_mem_mb` (free GPU MB a node keeps with extra verifier slots running; unset = 1024, `0` = check off) and `autonomous.verifier_headroom_max_age_hours` (how old a headroom measurement may be and still count as fresh; `0` or unset = 24). Both are settable over REST config, MCP `autonomous_config_set`, the CLI `config set` and the comm `configure` command, and show in the PWA general settings. A negative value is a validation error. The daemon builds one headroom store at startup and both verifier gates read it with the same floor and age.
+- **Verifier admission and write gates on the measurement.** The capacity sync clamps a node's verifier pool to 1 unless its fresh measurement supports the configured `verifier_slots`; the refusal is logged once per change. A node save (REST, MCP, CLI, comm) with `verifier_slots` above 1 is refused with 409 unless the same measurement supports it; the message names the node, the measured free memory and the shortfall. Setting `0` or `1` is never gated. Config load keeps the value and the admission gate holds the effective cap at 1, so a restart does not fail on a memory-only store.
+
 ## v9.99.0 — Requirements and model-pull consent
 
 Automation now reports what it needs against what is configured, and no model is pulled without the operator's consent.

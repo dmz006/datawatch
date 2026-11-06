@@ -3493,9 +3493,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		pipeAdapter = pipelinePkg.NewRouterAdapter(pipeExec)
 	}
 
+	// One headroom-measurement store for the whole daemon: attached to the REST
+	// server below and read by the capacity admission gate (wireCapacity).
+	headroom := newHeadroomWiring(cfg)
 	// Start the PWA/WebSocket server if enabled
 	if cfg.Server.Enabled {
 		httpServer = server.New(&cfg.Server, cfg, resolveConfigPath(), cfg.DataDir, mgr, cfg.Hostname, llm.Names())
+		headroom.attach(httpServer)
 		server.Version = Version
 		// BL334 T43a — wire derived key so file-persisted handlers encrypt
 		// discussion WAL, participants, and channel routing when --secure.
@@ -7275,7 +7279,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}, amgr)
 			var requestWatchReader requestwatch.Reader = requestWatcher
 			httpServer.SetRequestWatch(requestWatchReader, requestWatchCfg)
-			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, headroom.Gate, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			}, alertStore)
 			// Pin-time model check: refuse (or warn on) a worker or verifier

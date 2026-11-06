@@ -66,7 +66,8 @@ Common kv pairs:
   tags=<csv>                  cost_per_hour=<usd>
   session_slots=<N>           (0 = derive from observer GPU data)
   verifier_slots=<N>          (worker slots for verifiers; leave out = 1 if
-                               the node hosts a local engine, else 0; 0 = none)
+                               the node hosts a local engine, else 0; 0 = none;
+                               above 1 needs a fresh headroom measurement)
   verifier_min_free_mem_mb=<N>(free GPU MB required before a verifier slot
                                starts; leave out = 1024 MB; 0 = check off)
   verifier_context_mb=<N>     (context MB one verifier slot holds, for the

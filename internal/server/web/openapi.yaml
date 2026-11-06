@@ -2829,7 +2829,7 @@ paths:
                     description: Extra context memory in MB one verifier slot holds; used to size the advice figure from the node's free GPU memory. 0 = none.
     put:
       summary: Replace one compute node
-      description: Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).
+      description: Replaces the whole node. Omitting session_slots clears the override, omitting the verifier settings resets them to their defaults, and omitting max_concurrent_sessions clears the ceiling. A verifier_slots above 1 is refused with 409 unless the node's fresh headroom measurement supports it (the message names the node, the measured free memory and the shortfall). Negative verifier values are refused ("compute node: verifier_slots %d must be >= 0" and the like).
       operationId: computeNodePut
       tags: [Compute]
       parameters:
@@ -2849,6 +2849,8 @@ paths:
       responses:
         "200":
           description: The updated node record
+        "409":
+          description: verifier_slots above 1 is not supported by the node's fresh headroom measurement; nothing is saved and the effective cap stays 1
 
   /api/compute/nodes/{name}/detail:
     get:

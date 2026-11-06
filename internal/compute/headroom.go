@@ -111,6 +111,9 @@ func (s *HeadroomStore) Put(x HeadroomMeasurement) {
 
 // Get returns the latest measurement for node.
 func (s *HeadroomStore) Get(node string) (HeadroomMeasurement, bool) {
+	if s == nil {
+		return HeadroomMeasurement{}, false
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	x, ok := s.m[node]
