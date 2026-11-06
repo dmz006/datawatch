@@ -1573,6 +1573,9 @@ type Manager struct {
 	sessionNode SessionNodeFn
 	// sessionBackend reads the backend and model a resumed session really runs.
 	sessionBackend SessionBackendFn
+	// adoptMismatchAlerted records the task+session pairs already alerted for a
+	// backend mismatch, so repeated adoptCapacity calls raise one alert.
+	adoptMismatchAlerted map[string]bool
 	// entryNodes counts the compute nodes an LLM entry lists (nil = unknown).
 	entryNodes EntryNodesFn
 	// sessionEndpoint reads the endpoint a session was placed on, for logging.
