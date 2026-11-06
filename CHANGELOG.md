@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- A verifier that goes idle no longer counts against the worker: the executor records a verifier incident and retries on a fresh verifier session (up to 3 retries), leaving the task's attempts and escalation failures untouched; when the cap is used up the task is held for operator review.
 - Verifier no-progress watchdog failures now have an exported error type and classifier: `autonomous.VerifierIdleError` (built with the standard watchdog text by `NewVerifierIdleError`) and `autonomous.IsVerifierIdleError`, which recognizes a tripped-watchdog failure — the new type, or the one-shot no-output error carrying the watchdog text — anywhere in the error chain, so callers can tell a verifier that went idle apart from a worker failure (timeout, ended state).
 
 ## v9.103.1 — Container images drop the vulnerable x/net
