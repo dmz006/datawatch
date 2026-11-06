@@ -50,6 +50,13 @@ func MergePipelineConfigureKeys() []string {
 		"autonomous.merge_pipeline.conflict_policy",
 		"autonomous.merge_pipeline.conflict_model",
 		"autonomous.merge_pipeline.version_files",
+		"autonomous.merge_pipeline.post_ship.enabled",
+		"autonomous.merge_pipeline.post_ship.registry_file",
+		"autonomous.merge_pipeline.post_ship.registry_row_pattern",
+		"autonomous.merge_pipeline.post_ship.companion_repository",
+		"autonomous.merge_pipeline.post_ship.issue_title_template",
+		"autonomous.merge_pipeline.post_ship.notify_template",
+		"autonomous.merge_pipeline.post_ship.hooks",
 	}
 }
 

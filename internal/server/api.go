@@ -6979,8 +6979,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	// The merge pipeline block is checked as a whole too: an unknown key, an
 	// absolute or escaping file name, an unknown source, fallback or policy
-	// refuses the whole PUT with a message naming the key.
-	if err := validateMergePipelinePatch(patch); err != nil {
+	// refuses the whole PUT with a message naming the key. The check reads the
+	// live block first, so a post_ship hook whose built-in target the block
+	// already holds is accepted, as is a single PUT that sets the target and
+	// the hook together.
+	if err := validateMergePipelinePatchBase(s.cfg.Autonomous.MergePipeline, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

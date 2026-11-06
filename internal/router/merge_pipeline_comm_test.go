@@ -158,8 +158,19 @@ func TestMergePipelineComm_VerbAndConfigureKeysListed(t *testing.T) {
 		t.Errorf("verbs: %v", v)
 	}
 	keys := MergePipelineConfigureKeys()
-	if len(keys) != 6 {
+	if len(keys) != 13 {
 		t.Errorf("keys: %v", keys)
+	}
+	for _, want := range []string{"autonomous.merge_pipeline.post_ship.enabled", "autonomous.merge_pipeline.post_ship.hooks"} {
+		found := false
+		for _, k := range keys {
+			if k == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing key %q: %v", want, keys)
+		}
 	}
 	for _, k := range keys {
 		if !strings.HasPrefix(k, "autonomous.merge_pipeline.") {
