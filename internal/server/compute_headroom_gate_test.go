@@ -119,3 +119,31 @@ func TestConfigPut_VerifierHeadroomKeys(t *testing.T) {
 		t.Errorf("max age after 0 = %v, want the 24h default", got)
 	}
 }
+
+// TestNodeWriteGate_SaveWithStoredVerifierSlotsNotRefused pins that the write
+// gate guards a raise, not every save: a node already stored with
+// verifier_slots 3 (no measurement) can be saved with other fields changed,
+// while a raise to 4 with no measurement is still refused.
+func TestNodeWriteGate_SaveWithStoredVerifierSlotsNotRefused(t *testing.T) {
+	srv, _, reg := newHeadroomGateServer(t)
+	three := 3
+	// Store the node with verifier_slots 3 directly in the registry, bypassing
+	// the handler (the gate is in the handler), as a node saved earlier would be.
+	if err := reg.Update(&compute.Node{Name: "gpubox", Kind: "ollama", Address: "http://gpubox:11434", VerifierSlots: &three}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	put := func(body string) int {
+		rec := httptest.NewRecorder()
+		srv.handleComputeNodes(rec, httptest.NewRequest(http.MethodPut, "/api/compute/nodes/gpubox?probe=skip", strings.NewReader(body)))
+		return rec.Code
+	}
+	if code := put(`{"name":"gpubox","kind":"ollama","address":"http://gpubox:11434","verifier_slots":3,"session_slots":2}`); code != http.StatusOK {
+		t.Fatalf("save with unchanged verifier_slots 3: status %d, want 200", code)
+	}
+	if n, _ := reg.Get("gpubox"); n == nil || n.SessionSlots != 2 {
+		t.Fatalf("unrelated field not saved: %+v", n)
+	}
+	if code := put(`{"name":"gpubox","kind":"ollama","address":"http://gpubox:11434","verifier_slots":4}`); code != http.StatusConflict {
+		t.Fatalf("raise to 4 with no measurement: status %d, want 409", code)
+	}
+}

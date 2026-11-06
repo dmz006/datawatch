@@ -3627,6 +3627,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				seed = append(seed, n)
 			}
 			computeReg.Seed(seed)
+			// Config load: a configured verifier_slots above 1 that the shared
+			// store does not support is recorded here and held at 1 by admission.
+			recordConfigVerifierSlotsRefusals(headroom.Store, cfg, time.Now())
 			// v7.0.0-alpha.23 Q7 — one-time pass that moves any
 			// historically auto-applied tag (e.g. "v7-cfg-migration")
 			// from operator-visible Tags to internal AutoTags. Idempotent.
@@ -4448,6 +4451,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if res.Error != "" {
 				return fmt.Errorf("%s", res.Error)
 			}
+			// Config reload: the same verifier_slots check as config load.
+			recordConfigVerifierSlotsRefusals(headroom.Store, cfg, time.Now())
 			return nil
 		})
 		httpServer.RegisterReloader("filters", func() error {
@@ -7285,6 +7290,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Pin-time model check: refuse (or warn on) a worker or verifier
 			// model that no registered node serves.
 			wireModelRouting(cfg, amgr, httpServer)
+			// The verifier headroom measurer is the one production writer of the
+			// store the cap gates read. It starts after model routing so the
+			// served-models cache it reads through is wired.
+			startVerifierHeadroomMeasurer(ctx, headroom.Store, httpServer, capLedger, servedModelsCache)
 			classifyWiring.ledger.Store(capLedger)
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer

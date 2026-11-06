@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -72,8 +73,10 @@ func TestVerifierCapGate_OneAgeAndFloorDriveBothGates(t *testing.T) {
 		st, _ := cache.VerifierNodeStateOf("gpubox")
 		return led.Limit(capacity.VerifierPool("gpubox")), st.CapRefusal
 	}
-	write := func() int {
-		body := `{"name":"gpubox","kind":"ollama","address":"http://gpubox:11434","verifier_slots":3}`
+	// write saves the node with the given verifier_slots. A save that raises
+	// the stored value is gated; one that leaves it unchanged is not.
+	write := func(slots int) int {
+		body := fmt.Sprintf(`{"name":"gpubox","kind":"ollama","address":"http://gpubox:11434","verifier_slots":%d}`, slots)
 		rec := httptest.NewRecorder()
 		srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPut, "/api/compute/nodes/gpubox?probe=skip", strings.NewReader(body)))
 		return rec.Code
@@ -83,7 +86,7 @@ func TestVerifierCapGate_OneAgeAndFloorDriveBothGates(t *testing.T) {
 	if got, why := admit(); got != 1 || !strings.Contains(why, "measurement stale") {
 		t.Fatalf("admission (24h) = cap %d reason %q, want cap 1 and a stale refusal", got, why)
 	}
-	if code := write(); code != http.StatusConflict {
+	if code := write(3); code != http.StatusConflict {
 		t.Fatalf("write (24h) status = %d, want 409", code)
 	}
 
@@ -92,18 +95,21 @@ func TestVerifierCapGate_OneAgeAndFloorDriveBothGates(t *testing.T) {
 	if got, why := admit(); got != 3 || why != "" {
 		t.Fatalf("admission (48h) = cap %d reason %q, want cap 3 and no refusal", got, why)
 	}
-	if code := write(); code != http.StatusOK {
+	if code := write(3); code != http.StatusOK {
 		t.Fatalf("write (48h) status = %d, want 200", code)
 	}
 
-	// Step 3: raise the floor to 3584 MB. 4096 - 3584 = 512 < 2048 needed. Both refuse again.
+	// Step 3: raise the floor to 3584 MB. 4096 - 3584 = 512 < 2048 needed for
+	// cap 3, so admission refuses cap 3 again. The stored value is already 3,
+	// so re-saving it is not a raise and is not gated; raising to 4 is gated
+	// with the floor shortfall for cap 4: 4096 - 3584 = 512 < 3072 needed.
 	floor := 3584
 	cfg.Autonomous.VerifierMinFreeMemMB = &floor
 	got, why := admit()
 	if got != 1 || !strings.Contains(why, "shortfall 1536 MB") {
 		t.Fatalf("admission (floor 3584) = cap %d reason %q, want cap 1 with shortfall 1536 MB", got, why)
 	}
-	if code := write(); code != http.StatusConflict {
-		t.Fatalf("write (floor 3584) status = %d, want 409", code)
+	if code := write(4); code != http.StatusConflict {
+		t.Fatalf("raise to 4 (floor 3584) status = %d, want 409", code)
 	}
 }

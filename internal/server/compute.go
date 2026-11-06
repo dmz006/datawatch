@@ -49,11 +49,19 @@ func (s *Server) HeadroomStore() *compute.HeadroomStore { return s.headroomStore
 // value above 1 is accepted only when the shared measurement supports it,
 // using the same floor and freshness bound as the admission gate
 // (autonomous.verifier_min_free_mem_mb and autonomous.verifier_headroom_max_age_hours).
-// Unset, 0 and 1 are always accepted. The refusal names the node, the
-// measured free memory and the shortfall.
+// Unset, 0 and 1 are always accepted, and so is a save that leaves
+// verifier_slots at the value already stored: the gate guards a raise, so an
+// unrelated edit of the same node is not refused. The refusal names the node,
+// the measured free memory and the shortfall.
 func (s *Server) checkVerifierSlotsWrite(n *compute.Node) error {
 	if n.VerifierSlots == nil || *n.VerifierSlots <= 1 {
 		return nil
+	}
+	if s.computeReg != nil {
+		if old, err := s.computeReg.Get(n.Name); err == nil && old != nil &&
+			old.VerifierSlots != nil && *old.VerifierSlots == *n.VerifierSlots {
+			return nil
+		}
 	}
 	var ac config.AutonomousConfig
 	if s.cfg != nil {

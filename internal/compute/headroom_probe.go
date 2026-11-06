@@ -289,7 +289,7 @@ func (p *OllamaHeadroomProbe) generate(ctx context.Context, node Node, model str
 	if err != nil {
 		return fmt.Errorf("probe request for %s to node %s: %w", model, nodeID(node), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	_, _ = io.Copy(io.Discard, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("probe request for %s to node %s: HTTP %d", model, nodeID(node), resp.StatusCode)
@@ -312,7 +312,7 @@ func (p *OllamaHeadroomProbe) residentFromPS(ctx context.Context, node Node) (st
 	if err != nil {
 		return "", fmt.Errorf("read resident model of node %s: %w", nodeID(node), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("read resident model of node %s: HTTP %d", nodeID(node), resp.StatusCode)
 	}

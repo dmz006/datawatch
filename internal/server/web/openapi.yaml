@@ -11245,6 +11245,8 @@ components:
         failure_escalation: {$ref: "#/components/schemas/FailureEscalationPolicy"}
         default_auto_pr: {type: boolean, description: "Turns auto-PR on or off for this project's Automata"}
         max_concurrent_tasks: {type: integer, minimum: 1}
+        verifier_min_free_mem_mb: {type: integer, minimum: 0, description: "Free GPU MB a node must keep with extra verifier slots running; gates verifier caps above 1 and verifier_slots writes above 1. Unset = 1024; 0 turns the check off; negative is a validation error."}
+        verifier_headroom_max_age_hours: {type: integer, minimum: 0, description: "How old, in hours, a headroom measurement may be and still count as fresh for the verifier cap gates. 0 or unset = the default of 24 hours; negative is a validation error."}
         plan_tier_max_inflight:
           type: object
           description: "Per-plan-tier inflight caps; a negative budget is a validation error"

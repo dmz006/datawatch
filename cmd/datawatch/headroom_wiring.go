@@ -12,6 +12,9 @@
 package main
 
 import (
+	"log"
+	"time"
+
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/server"
@@ -37,4 +40,33 @@ func (w headroomWiring) attach(srv *server.HTTPServer) {
 		return
 	}
 	srv.SetHeadroomStore(w.Store)
+}
+
+// recordConfigVerifierSlotsRefusals is the config load and reload half of the
+// write gate. Each compute node in the config with verifier_slots above 1 is
+// checked against the store with the same floor and age the write gate uses.
+// The configured value is kept in the config, so it applies as soon as a
+// measurement supports it; until then the admission gate holds the node's
+// verifier cap at 1, and this function records that as a logged refusal.
+// It returns the refusal texts, one per refused node.
+func recordConfigVerifierSlotsRefusals(store *compute.HeadroomStore, cfg *config.Config, now time.Time) []string {
+	if cfg == nil {
+		return nil
+	}
+	var refused []string
+	for _, c := range cfg.ComputeNodes {
+		n := computeNodeFromConfig(c)
+		if n.VerifierSlots == nil || *n.VerifierSlots <= 1 {
+			continue
+		}
+		err := compute.CheckVerifierSlotsWrite(store, n.Name, *n.VerifierSlots,
+			cfg.Autonomous.EffectiveVerifierMinFreeMB(), cfg.Autonomous.EffectiveVerifierHeadroomMaxAge(), now)
+		if err == nil {
+			continue
+		}
+		log.Printf("[capacity] config verifier_slots %d kept for node %s, effective cap held at 1: %s",
+			*n.VerifierSlots, n.Name, err)
+		refused = append(refused, err.Error())
+	}
+	return refused
 }

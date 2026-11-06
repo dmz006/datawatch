@@ -247,12 +247,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if v := req.GetFloat("verifier_diff_max_bytes", -1); v >= 0 {
 		body["verifier_diff_max_bytes"] = int(v)
 	}
-	// Verifier headroom gates: the REST config route refuses negatives.
-	if v := req.GetFloat("verifier_min_free_mem_mb", -1); v >= 0 {
-		body["verifier_min_free_mem_mb"] = int(v)
-	}
-	if v := req.GetFloat("verifier_headroom_max_age_hours", -1); v >= 0 {
-		body["verifier_headroom_max_age_hours"] = int(v)
+	// Verifier headroom gates: a present negative value is refused with a tool
+	// error, not dropped, so the caller sees the refusal the descriptions name.
+	// Presence is checked on the arguments, so 0 is forwarded (0 = check off for
+	// the floor, default 24 hours for the age).
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"verifier_min_free_mem_mb", "verifier_headroom_max_age_hours"} {
+			if _, ok := args[k]; !ok {
+				continue
+			}
+			v := req.GetFloat(k, 0)
+			if v < 0 {
+				return mcpsdk.NewToolResultError(k + " must be >= 0"), nil
+			}
+			body[k] = int(v)
+		}
 	}
 	// BL304: accept new planning_* params; also check legacy decomposition_* for back-compat.
 	for _, pair := range [][2]string{
