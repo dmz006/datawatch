@@ -235,7 +235,7 @@ func (s *SupervisorLoopSteps) closeFinishedRecords(_ context.Context) (string, e
 		default:
 			continue
 		}
-		if _, err := s.c.m.Archive(p.ID); err != nil {
+		if _, err := s.c.m.Archive(p.ID, supervisorLoopActor); err != nil {
 			errs = append(errs, fmt.Errorf("archive %s: %w", p.ID, err))
 			continue
 		}

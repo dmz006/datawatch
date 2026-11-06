@@ -253,7 +253,7 @@ func TestArchive_CleansUpOrphanedWorktree(t *testing.T) {
 		t.Fatalf("sanity: worktree must survive Cancel per Decision 5 (kept for inspection): %v", serr)
 	}
 
-	if _, err := m.Archive(prd.ID); err != nil {
+	if _, err := m.Archive(prd.ID, "operator"); err != nil {
 		t.Fatalf("Archive: %v", err)
 	}
 	if _, serr := os.Stat(worktreePath); serr == nil {

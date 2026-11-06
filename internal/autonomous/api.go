@@ -950,7 +950,7 @@ func (a *API) Approve(id, actor, note string) (any, error) {
 	return out, err
 }
 func (a *API) Archive(id string) (any, error) {
-	out, err := a.M.Archive(id)
+	out, err := a.M.Archive(id, "operator")
 	if err == nil {
 		a.M.EmitPRDUpdate(id)
 	}
