@@ -592,3 +592,7 @@ Question (asked in chat, option 1 of 3 recommended): should the sessions tile wo
 Operator answer, quoted: "1 yes"
 
 Decision: option 1. `a12f0001` is revised so the Sessions list, the Automata list and the Automation list all offer the list, tile and compact modes, the remembered per-device choice, and grouping by a tag or tag prefix, state, node or project, with collapsible groups, counts and the state mix. The Automata cards already tile, so that list gets the mode toggle and grouping rather than a new grid; the Automation list gets the same grid. The mode toggle sits in each list's header in the same position as on the sessions list.
+
+### Follow-up, 2026-11-05 19:47: how the decision was carried out
+
+The revision of `a12f0001` after the answer "1 yes" produced a plan that covers the Sessions list only; the planner did not take the extension to the Automata and Automation lists from the revision note. Rather than hand-edit a 22-task plan, `a12f0001` runs as the Sessions part (it builds the shared tile and grouping component), and the extension is a second Automaton, `68b70001` (draft, held until `a12f0001` is merged so it is planned against the shipped component): the mode toggle, remembered choice and grouping for the Automata list, and the tile grid, toggle and grouping for the Automation list, one shared component, parity record for all three lists.
