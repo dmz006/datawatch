@@ -1,4 +1,4 @@
-Issue: pending, filed at the merge
+Issue: https://github.com/dmz006/datawatch-app/issues/380 (datawatch v9.101.0)
 
 # [sync] Post-ship hooks: the autonomous.merge_pipeline.post_ship settings block, the post_ship state in GET /api/autonomous/merge-pipeline, the Post-ship hooks PWA card with its help links, 28 locale keys
 
