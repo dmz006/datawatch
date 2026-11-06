@@ -3410,5 +3410,15 @@
   "sessions_view_new": "新規",
   "sessions_view_ok": "OK",
   "sessions_view_rename": "名前の変更",
-  "sessions_view_title": "保存ビュー"
+  "sessions_view_title": "保存ビュー",
+  "sessions_view_list": "リスト",
+  "sessions_view_tiles": "タイル",
+  "sessions_view_compact": "コンパクト",
+  "sessions_view_toggle": "セッション表示モード",
+  "sessions_total_label": "セッション",
+  "sessions_tile_stop": "停止",
+  "sessions_tile_restart": "再起動",
+  "sessions_tile_delete": "削除",
+  "sessions_tile_summary": "要約",
+  "sessions_show_more": "もっと見る"
 }

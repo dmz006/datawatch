@@ -3410,5 +3410,15 @@
   "sessions_view_new": "Nouvelle",
   "sessions_view_ok": "OK",
   "sessions_view_rename": "Renommer",
-  "sessions_view_title": "Vues"
+  "sessions_view_title": "Vues",
+  "sessions_view_list": "Liste",
+  "sessions_view_tiles": "Tuiles",
+  "sessions_view_compact": "Compact",
+  "sessions_view_toggle": "Mode d'affichage des sessions",
+  "sessions_total_label": "sessions",
+  "sessions_tile_stop": "Arrêter",
+  "sessions_tile_restart": "Redémarrer",
+  "sessions_tile_delete": "Supprimer",
+  "sessions_tile_summary": "Résumé",
+  "sessions_show_more": "Afficher plus"
 }

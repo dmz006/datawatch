@@ -3410,5 +3410,15 @@
   "sessions_view_new": "Nueva",
   "sessions_view_ok": "OK",
   "sessions_view_rename": "Renombrar",
-  "sessions_view_title": "Vistas"
+  "sessions_view_title": "Vistas",
+  "sessions_view_list": "Lista",
+  "sessions_view_tiles": "Mosaicos",
+  "sessions_view_compact": "Compacto",
+  "sessions_view_toggle": "Modo de vista de sesiones",
+  "sessions_total_label": "sesiones",
+  "sessions_tile_stop": "Detener",
+  "sessions_tile_restart": "Reiniciar",
+  "sessions_tile_delete": "Eliminar",
+  "sessions_tile_summary": "Resumen",
+  "sessions_show_more": "Mostrar más"
 }
