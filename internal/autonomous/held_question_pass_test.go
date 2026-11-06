@@ -160,12 +160,12 @@ func (h *heldHarness) addPendingInsert(a *Automation, prdID, id string) {
 	h.t.Helper()
 	if _, err := h.m.automations.Update(a.ID, 0, func(a *Automation) error {
 		a.PendingInserts = []PendingInsert{{
-			ID:        id,
-			PRDID:     prdID,
-			Actor:     "operator",
-			Reason:    "operator asked for a review member",
-			AddedAt:   time.Now(),
-			Status:    MemberPending,
+			ID:      id,
+			PRDID:   prdID,
+			Actor:   "operator",
+			Reason:  "operator asked for a review member",
+			AddedAt: time.Now(),
+			Status:  MemberPending,
 		}}
 		return nil
 	}); err != nil {
@@ -301,9 +301,9 @@ func TestHeldQuestionRaise(t *testing.T) {
 					tk.FailureReason = &FailureReason{Category: FailureCategoryContent}
 					tk.EscalationFailures = 3
 					tk.ReviewSummary = &ReviewSummary{
-						FailureCount:  3,
-						TotalSeconds:  420,
-						Text:          "two failed attempts, both out of budget",
+						FailureCount: 3,
+						TotalSeconds: 420,
+						Text:         "two failed attempts, both out of budget",
 					}
 				})
 				return tid
@@ -546,8 +546,8 @@ func TestHeldQuestionDedupeSecondPass(t *testing.T) {
 	// The two open questions are the two (item, state) pairs, each with
 	// its own stable dedupe hash.
 	want := map[string]bool{
-		"held:" + h.prds[0].ID + ":" + string(HeldBlocked):      false,
-		"held:" + tid + ":" + string(HeldReviewHeld):            false,
+		"held:" + h.prds[0].ID + ":" + string(HeldBlocked): false,
+		"held:" + tid + ":" + string(HeldReviewHeld):       false,
 	}
 	for _, q := range opens {
 		marker := ""
@@ -629,7 +629,7 @@ func TestHeldQuestionDedupeDifferentStateSameItem(t *testing.T) {
 		h.t.Fatalf("open held questions = %d, want 2: %+v", len(opens), opens)
 	}
 	markers := map[string]int{
-		"held:ins1:" + string(HeldPendingInsert): 0,
+		"held:ins1:" + string(HeldPendingInsert):     0,
 		"held:" + tid + ":" + string(HeldReviewHeld): 0,
 	}
 	for _, q := range opens {
@@ -851,22 +851,22 @@ func TestHeldQuestionStatesFilter(t *testing.T) {
 		t.Errorf("open question is not the review_held one: %+v", opens[0])
 	}
 
-		// Reversing the filter stops covering the review-held state, so its
-		// open question is withdrawn on the next pass; the blocked state is
-		// now covered and its question is raised.
-		h.setStates([]string{string(HeldBlocked)})
-		h.c.heldQuestionPass()
+	// Reversing the filter stops covering the review-held state, so its
+	// open question is withdrawn on the next pass; the blocked state is
+	// now covered and its question is raised.
+	h.setStates([]string{string(HeldBlocked)})
+	h.c.heldQuestionPass()
 
-		opens = h.openHeld()
-		if len(opens) != 1 {
-			h.t.Fatalf("open held questions = %d, want 1 (review withdrawn, blocked raised): %+v", len(opens), opens)
-		}
-		if opens[0].SourceLineSHA256 != heldQuestionLineHash("held:"+h.prds[0].ID+":"+string(HeldBlocked)) {
-			t.Errorf("open question is not the blocked one: %+v", opens[0])
-		}
-		if n := h.countAudits("held_question_withdraw"); n != 1 {
-			t.Errorf("held_question_withdraw = %d, want 1 (review question lost coverage)", n)
-		}
+	opens = h.openHeld()
+	if len(opens) != 1 {
+		h.t.Fatalf("open held questions = %d, want 1 (review withdrawn, blocked raised): %+v", len(opens), opens)
+	}
+	if opens[0].SourceLineSHA256 != heldQuestionLineHash("held:"+h.prds[0].ID+":"+string(HeldBlocked)) {
+		t.Errorf("open question is not the blocked one: %+v", opens[0])
+	}
+	if n := h.countAudits("held_question_withdraw"); n != 1 {
+		t.Errorf("held_question_withdraw = %d, want 1 (review question lost coverage)", n)
+	}
 }
 
 // ---- no held state: no pass records at all ---------------------------

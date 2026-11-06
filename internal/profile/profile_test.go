@@ -19,9 +19,9 @@ func TestValidateName(t *testing.T) {
 		{"a", true},
 		{"my-profile", true},
 		{"datawatch-app", true},
-		{"MyProfile", false},          // uppercase
-		{"-leading", false},           // leading hyphen
-		{"trailing-", false},          // trailing hyphen
+		{"MyProfile", false}, // uppercase
+		{"-leading", false},  // leading hyphen
+		{"trailing-", false}, // trailing hyphen
 		{"has.dots", false},
 		{"has_underscore", false},
 		{"has space", false},
@@ -65,19 +65,19 @@ func TestProjectProfile_Validate_Ok(t *testing.T) {
 
 func TestProjectProfile_Validate_Errors(t *testing.T) {
 	cases := map[string]func(*ProjectProfile){
-		"missing git url":   func(p *ProjectProfile) { p.Git.URL = "" },
-		"bad git provider":  func(p *ProjectProfile) { p.Git.Provider = "bitbucket" },
-		"no agent":          func(p *ProjectProfile) { p.ImagePair.Agent = "" },
-		"unknown agent":     func(p *ProjectProfile) { p.ImagePair.Agent = "agent-imaginary" },
-		"unknown sidecar":   func(p *ProjectProfile) { p.ImagePair.Sidecar = "lang-cobol" },
-		"bad memory mode":   func(p *ProjectProfile) { p.Memory.Mode = "invalid" },
+		"missing git url":  func(p *ProjectProfile) { p.Git.URL = "" },
+		"bad git provider": func(p *ProjectProfile) { p.Git.Provider = "bitbucket" },
+		"no agent":         func(p *ProjectProfile) { p.ImagePair.Agent = "" },
+		"unknown agent":    func(p *ProjectProfile) { p.ImagePair.Agent = "agent-imaginary" },
+		"unknown sidecar":  func(p *ProjectProfile) { p.ImagePair.Sidecar = "lang-cobol" },
+		"bad memory mode":  func(p *ProjectProfile) { p.Memory.Mode = "invalid" },
 		"negative idle":    func(p *ProjectProfile) { p.IdleTimeout = -time.Second },
 		"negative budget":  func(p *ProjectProfile) { p.SpawnBudgetTotal = -1 },
 		"budget but no spawn allow": func(p *ProjectProfile) {
 			p.AllowSpawnChildren = false
 			p.SpawnBudgetTotal = 5
 		},
-		"bad name":          func(p *ProjectProfile) { p.Name = "BadName" },
+		"bad name": func(p *ProjectProfile) { p.Name = "BadName" },
 	}
 	for label, mutate := range cases {
 		t.Run(label, func(t *testing.T) {
@@ -522,16 +522,16 @@ func TestProjectStore_EffectiveNamespacesFor_NoSharing(t *testing.T) {
 func TestProjectStore_EffectiveNamespacesFor_MutualSharing(t *testing.T) {
 	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
 	_ = store.Create(&ProjectProfile{
-		Name: "a",
-		Git:  GitSpec{URL: "https://github.com/x/a"},
+		Name:      "a",
+		Git:       GitSpec{URL: "https://github.com/x/a"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"b"}},
+		Memory:    MemorySpec{Mode: MemoryShared, SharedWith: []string{"b"}},
 	})
 	_ = store.Create(&ProjectProfile{
-		Name: "b",
-		Git:  GitSpec{URL: "https://github.com/x/b"},
+		Name:      "b",
+		Git:       GitSpec{URL: "https://github.com/x/b"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
+		Memory:    MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
 	})
 	gotA := store.EffectiveNamespacesFor("a")
 	if len(gotA) != 2 || gotA[0] != "project-a" || gotA[1] != "project-b" {
@@ -548,16 +548,16 @@ func TestProjectStore_EffectiveNamespacesFor_MutualSharing(t *testing.T) {
 func TestProjectStore_EffectiveNamespacesFor_SingleSidedRejected(t *testing.T) {
 	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
 	_ = store.Create(&ProjectProfile{
-		Name: "greedy",
-		Git:  GitSpec{URL: "https://github.com/x/g"},
+		Name:      "greedy",
+		Git:       GitSpec{URL: "https://github.com/x/g"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"private"}},
+		Memory:    MemorySpec{Mode: MemoryShared, SharedWith: []string{"private"}},
 	})
 	_ = store.Create(&ProjectProfile{
-		Name: "private",
-		Git:  GitSpec{URL: "https://github.com/x/p"},
+		Name:      "private",
+		Git:       GitSpec{URL: "https://github.com/x/p"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared}, // no SharedWith
+		Memory:    MemorySpec{Mode: MemoryShared}, // no SharedWith
 	})
 	got := store.EffectiveNamespacesFor("greedy")
 	if len(got) != 1 || got[0] != "project-greedy" {
@@ -569,16 +569,16 @@ func TestProjectStore_EffectiveNamespacesFor_SingleSidedRejected(t *testing.T) {
 func TestProjectStore_EffectiveNamespacesFor_MissingPeerSkipped(t *testing.T) {
 	store, _ := NewProjectStore(filepath.Join(t.TempDir(), "p.json"))
 	_ = store.Create(&ProjectProfile{
-		Name: "a",
-		Git:  GitSpec{URL: "https://github.com/x/a"},
+		Name:      "a",
+		Git:       GitSpec{URL: "https://github.com/x/a"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"ghost", "b"}},
+		Memory:    MemorySpec{Mode: MemoryShared, SharedWith: []string{"ghost", "b"}},
 	})
 	_ = store.Create(&ProjectProfile{
-		Name: "b",
-		Git:  GitSpec{URL: "https://github.com/x/b"},
+		Name:      "b",
+		Git:       GitSpec{URL: "https://github.com/x/b"},
 		ImagePair: ImagePair{Agent: "agent-claude"},
-		Memory: MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
+		Memory:    MemorySpec{Mode: MemoryShared, SharedWith: []string{"a"}},
 	})
 	got := store.EffectiveNamespacesFor("a")
 	if len(got) != 2 || got[1] != "project-b" {
@@ -598,12 +598,12 @@ func TestProjectStore_EffectiveNamespacesFor_UnknownProfile(t *testing.T) {
 
 func TestProjectProfile_Validate_OnCrash(t *testing.T) {
 	cases := map[string]bool{
-		"":                       true,  // empty defaults to fail_parent
-		"fail_parent":            true,
-		"respawn_once":           true,
-		"respawn_with_backoff":   true,
-		"unknown_policy":         false,
-		"FAIL_PARENT":            false, // case-sensitive on purpose
+		"":                     true, // empty defaults to fail_parent
+		"fail_parent":          true,
+		"respawn_once":         true,
+		"respawn_with_backoff": true,
+		"unknown_policy":       false,
+		"FAIL_PARENT":          false, // case-sensitive on purpose
 	}
 	for v, ok := range cases {
 		t.Run(v, func(t *testing.T) {
@@ -624,7 +624,7 @@ func TestProjectProfile_Validate_OnCrash(t *testing.T) {
 
 func TestProjectProfile_Validate_Mode(t *testing.T) {
 	cases := map[string]bool{
-		"":          true,  // empty = ephemeral default
+		"":          true, // empty = ephemeral default
 		"ephemeral": true,
 		"service":   true,
 		"daemon":    false,

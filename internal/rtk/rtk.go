@@ -39,10 +39,10 @@ type SessionInfo struct {
 
 // Status holds the current RTK installation and hook status.
 type Status struct {
-	Installed    bool   `json:"installed"`
-	Version      string `json:"version"`
-	HooksActive  bool   `json:"hooks_active"`
-	Binary       string `json:"binary"`
+	Installed   bool   `json:"installed"`
+	Version     string `json:"version"`
+	HooksActive bool   `json:"hooks_active"`
+	Binary      string `json:"binary"`
 }
 
 // binary stores the configured RTK binary path.

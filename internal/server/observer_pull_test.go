@@ -18,7 +18,9 @@ import (
 
 // newObserverPullServer builds a minimal Server whose federation peer store
 // holds one federated, pull-opted-in entry named "peer1" pointing at url,
-// authenticated with token. mutate can tweak the entry before Add.
+// authenticated with token. The daemon-wide observer.pull.enabled gate is
+// on, matching a daemon configured for pull mode. mutate can tweak the
+// entry before Add.
 func newObserverPullServer(t *testing.T, url, token string, mutate func(*multiserver.Entry)) *Server {
 	t.Helper()
 	st, err := multiserver.NewStore(t.TempDir(), nil)
@@ -26,13 +28,13 @@ func newObserverPullServer(t *testing.T, url, token string, mutate func(*multise
 		t.Fatalf("NewStore: %v", err)
 	}
 	e := &multiserver.Entry{
-		Name:                 "peer1",
-		URL:                  url,
-		Token:                token,
-		Enabled:              true,
-		Federated:            true,
-		ObserverPull:         true,
-		Capabilities:         []string{federation.CapObserversRead},
+		Name:                  "peer1",
+		URL:                   url,
+		Token:                 token,
+		Enabled:               true,
+		Federated:             true,
+		ObserverPull:          true,
+		Capabilities:          []string{federation.CapObserversRead},
 		ObserverPullIntervalS: 30,
 		ObserverPullTimeoutS:  5,
 	}
@@ -42,7 +44,17 @@ func newObserverPullServer(t *testing.T, url, token string, mutate func(*multise
 	if err := st.Add(e); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	return &Server{serverStore: st, cfg: &config.Config{}}
+	pull := config.DefaultObserverPullConfig()
+	pull.Enabled = true
+	return &Server{serverStore: st, cfg: &config.Config{Observer: config.ObserverConfig{Pull: pull}}}
+}
+
+// observerPullConfigOn builds a config with the daemon-wide observer pull
+// gate enabled (the shipped default is disabled).
+func observerPullConfigOn(enabled bool) *config.Config {
+	pull := config.DefaultObserverPullConfig()
+	pull.Enabled = enabled
+	return &config.Config{Observer: config.ObserverConfig{Pull: pull}}
 }
 
 // statsOK writes a minimal valid v2 StatsResponse.
@@ -368,11 +380,11 @@ func TestObserverPullFetch_TargetsUseEntryAndGlobalDefaults(t *testing.T) {
 	}
 	// A third peer opted out — must never be a target.
 	e3 := &multiserver.Entry{
-		Name:       "peer3",
-		URL:        srv.URL,
-		Token:      "token-3",
-		Enabled:    true,
-		Federated:  true,
+		Name:         "peer3",
+		URL:          srv.URL,
+		Token:        "token-3",
+		Enabled:      true,
+		Federated:    true,
 		Capabilities: []string{federation.CapObserversRead},
 	}
 	if err := s.serverStore.Add(e3); err != nil {
@@ -405,5 +417,117 @@ func TestObserverPullFetch_TargetsUseEntryAndGlobalDefaults(t *testing.T) {
 	}
 	if t0.Timeout != time.Duration(def.DefaultTimeoutS)*time.Second {
 		t.Errorf("peer0 Timeout = %s, want global default %s", t0.Timeout, time.Duration(def.DefaultTimeoutS)*time.Second)
+	}
+}
+
+// TestObserverPullGlobalGate_DefaultsOff pins the shipped default: with an
+// otherwise-plain config the daemon-wide observer.pull.enabled gate is off,
+// so there are no pull targets and Fetch is refused before any request.
+func TestObserverPullGlobalGate_DefaultsOff(t *testing.T) {
+	s := &Server{cfg: &config.Config{}}
+	if s.observerPullEnabled() {
+		t.Fatal("default config: the observer.pull.enabled gate must be off")
+	}
+	op := &observerPull{s: s}
+	if got := op.targets(); got != nil {
+		t.Fatalf("targets with the gate off: got %d, want none", len(got))
+	}
+	_, err := op.Fetch(context.Background(), "peer1")
+	if err == nil {
+		t.Fatal("Fetch must be refused while the gate is off")
+	}
+	if !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("want 'disabled' in the Fetch error, got: %v", err)
+	}
+}
+
+// TestObserverPullFetch_DisabledGateBlocksRequest pins that flipping the
+// gate off on a wired peer store refuses Fetch and targets WITHOUT issuing
+// any network request.
+func TestObserverPullFetch_DisabledGateBlocksRequest(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		statsOK(w, r)
+	}))
+	defer srv.Close()
+
+	s := newObserverPullServer(t, srv.URL, "token-abc", nil)
+	s.cfg = observerPullConfigOn(false) // flip the gate off
+
+	if got := (&observerPull{s: s}).targets(); got != nil {
+		t.Fatalf("targets with the gate off: got %d, want none", len(got))
+	}
+	if _, err := (&observerPull{s: s}).Fetch(context.Background(), "peer1"); err == nil {
+		t.Fatal("Fetch must be refused while the gate is off")
+	}
+	if hits != 0 {
+		t.Fatalf("gate-off Fetch must not issue a network request; got %d", hits)
+	}
+}
+
+// TestObserverPullReconcile_Lifecycle pins the collector lifecycle against
+// the observer.pull.enabled gate: off by default, started (and seeded) when
+// the gate turns on, idempotent on repeat calls, stopped and cleared when
+// the gate turns off again.
+func TestObserverPullReconcile_Lifecycle(t *testing.T) {
+	st, err := multiserver.NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	e := &multiserver.Entry{
+		Name: "peer1", URL: "http://127.0.0.1:1", Token: "t",
+		Enabled: true, Federated: true, ObserverPull: true,
+		Capabilities: []string{federation.CapObserversRead},
+	}
+	if err := st.Add(e); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	s := &Server{serverStore: st, cfg: observerPullConfigOn(false)}
+
+	s.ReconcileObserverPull()
+	if s.observerPull != nil {
+		t.Fatal("gate off: the collector must not be started")
+	}
+
+	s.cfg = observerPullConfigOn(true)
+	s.ReconcileObserverPull()
+	if s.observerPull == nil || s.observerPull.col == nil {
+		t.Fatal("gate on: the collector must be started")
+	}
+	if got := s.observerPull.targets(); len(got) != 1 {
+		t.Fatalf("targets after reconcile = %d, want 1", len(got))
+	}
+
+	first := s.observerPull
+	s.ReconcileObserverPull()
+	if s.observerPull != first {
+		t.Fatal("a second reconcile must not allocate a new collector")
+	}
+
+	s.cfg = observerPullConfigOn(false)
+	s.ReconcileObserverPull()
+	if s.observerPull != nil {
+		t.Fatal("gate off after on: the collector must be stopped and cleared")
+	}
+}
+
+// TestObserverPullReconcile_IdempotentWithNoStore pins that reconcile is
+// safe on a Server without a wired store (startup order independence):
+// it may start an empty collector when the gate is on and never panic.
+func TestObserverPullReconcile_NoStoreSafe(t *testing.T) {
+	s := &Server{cfg: observerPullConfigOn(true)}
+	s.ReconcileObserverPull()
+	if s.observerPull == nil || s.observerPull.col == nil {
+		t.Fatal("gate on: the collector must be started even without a store")
+	}
+	if got := s.observerPull.targets(); got != nil {
+		t.Fatalf("targets without a store = %d, want none", len(got))
+	}
+	s.ReconcileObserverPull()
+	s.cfg = observerPullConfigOn(false)
+	s.ReconcileObserverPull()
+	if s.observerPull != nil {
+		t.Fatal("gate off: the collector must be stopped and cleared")
 	}
 }

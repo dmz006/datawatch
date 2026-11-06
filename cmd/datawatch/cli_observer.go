@@ -117,10 +117,10 @@ Use --json to print the raw GET /api/observer/peers response instead.`,
 			if err != nil {
 				// Not the expected JSON envelope — show the raw body
 				// rather than hiding the server response.
-				fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
 				return nil
 			}
-			fmt.Fprint(cmd.OutOrStdout(), table)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), table)
 			return nil
 		},
 	}
@@ -198,10 +198,10 @@ Use --json to print the raw GET /api/observer/pull response instead.`,
 				if err != nil {
 					// Not the expected JSON envelope — show the raw body
 					// rather than hiding the server response.
-					fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(string(body)))
 					return nil
 				}
-				fmt.Fprint(cmd.OutOrStdout(), table)
+				_, _ = fmt.Fprint(cmd.OutOrStdout(), table)
 				return nil
 			},
 		},

@@ -54,7 +54,7 @@ func ValidateName(name string) error {
 // git reachable, cluster unreachable").
 type SmokeResult struct {
 	Name     string    `json:"name"`
-	Checks   []string  `json:"checks"`            // ordered human-readable list
+	Checks   []string  `json:"checks"` // ordered human-readable list
 	Warnings []string  `json:"warnings,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
 	RanAt    time.Time `json:"ran_at"`
@@ -82,11 +82,11 @@ func (r *SmokeResult) addWarning(msg string) {
 // MemoryMode controls how a worker's episodic memory interacts with
 // the parent's. One of:
 //
-//   "shared"     — worker connects directly to parent's pgvector;
-//                  all writes immediately visible
-//   "sync-back"  — worker has its own local memory; changes copy to
-//                  parent on session end (or periodically)
-//   "ephemeral"  — worker uses a tmpfs sqlite; nothing persists
+//	"shared"     — worker connects directly to parent's pgvector;
+//	               all writes immediately visible
+//	"sync-back"  — worker has its own local memory; changes copy to
+//	               parent on session end (or periodically)
+//	"ephemeral"  — worker uses a tmpfs sqlite; nothing persists
 //
 // Default when unset in the profile: "sync-back" (safest: worker can
 // survive parent outages; parent still sees results eventually).
@@ -218,4 +218,3 @@ func deepCopyMap(in map[string]string) map[string]string {
 	}
 	return out
 }
-

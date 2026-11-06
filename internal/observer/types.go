@@ -18,24 +18,24 @@ import "time"
 // broadcast over MsgStats. Every field is stable; additive changes
 // are allowed, breaking changes require a v3 bump.
 type StatsResponse struct {
-	V           int         `json:"v"` // schema version, always 2
-	Host        Host        `json:"host"`
-	CPU         CPU         `json:"cpu"`
-	Mem         Mem         `json:"mem"`
-	Disk        []Disk      `json:"disk,omitempty"`
-	GPU         []GPU       `json:"gpu,omitempty"`
+	V    int    `json:"v"` // schema version, always 2
+	Host Host   `json:"host"`
+	CPU  CPU    `json:"cpu"`
+	Mem  Mem    `json:"mem"`
+	Disk []Disk `json:"disk,omitempty"`
+	GPU  []GPU  `json:"gpu,omitempty"`
 	// GPUError explains why GPU is empty when a GPU probe was selected but its
 	// most recent poll failed (e.g. a driver/library version mismatch) — as
 	// opposed to GPU being empty because no GPU hardware/driver was found at
 	// all, which leaves this "". Set by whichever probe SetGPUErrFn wires.
-	GPUError    string      `json:"gpu_error,omitempty"`
-	Net         Net         `json:"net"`
-	Sessions    Sessions    `json:"sessions"`
-	Backends    []Backend   `json:"backends,omitempty"`
-	Processes   Processes   `json:"processes,omitempty"`
-	Envelopes   []Envelope  `json:"envelopes,omitempty"`
-	Cluster     *Cluster    `json:"cluster,omitempty"` // populated by Shape C only
-	Peers       []Peer      `json:"peers,omitempty"`   // aggregator view only
+	GPUError  string     `json:"gpu_error,omitempty"`
+	Net       Net        `json:"net"`
+	Sessions  Sessions   `json:"sessions"`
+	Backends  []Backend  `json:"backends,omitempty"`
+	Processes Processes  `json:"processes,omitempty"`
+	Envelopes []Envelope `json:"envelopes,omitempty"`
+	Cluster   *Cluster   `json:"cluster,omitempty"` // populated by Shape C only
+	Peers     []Peer     `json:"peers,omitempty"`   // aggregator view only
 
 	// v1 back-compat aliases — flat scalars that existed on the old
 	// StatsDto. New consumers read the structured objects; old ones
@@ -73,10 +73,10 @@ type Host struct {
 // can render an honest "enabled / pending kernel probes / off" badge
 // rather than a misleading boolean toggle. (v4.1.1)
 type EBPFStatus struct {
-	Configured     bool   `json:"configured"`
-	Capability     bool   `json:"capability"`
-	KprobesLoaded  bool   `json:"kprobes_loaded"`
-	Message        string `json:"message,omitempty"`
+	Configured    bool   `json:"configured"`
+	Capability    bool   `json:"capability"`
+	KprobesLoaded bool   `json:"kprobes_loaded"`
+	Message       string `json:"message,omitempty"`
 }
 
 type CPU struct {
@@ -116,9 +116,9 @@ type GPU struct {
 }
 
 type Net struct {
-	RxBytesPerSec uint64        `json:"rx_bytes_per_sec"`
-	TxBytesPerSec uint64        `json:"tx_bytes_per_sec"`
-	PerProcess    []NetProc     `json:"per_process,omitempty"` // Shape C only (eBPF)
+	RxBytesPerSec uint64    `json:"rx_bytes_per_sec"`
+	TxBytesPerSec uint64    `json:"tx_bytes_per_sec"`
+	PerProcess    []NetProc `json:"per_process,omitempty"` // Shape C only (eBPF)
 }
 
 type NetProc struct {
@@ -137,19 +137,19 @@ type Sessions struct {
 }
 
 type Backend struct {
-	Name          string `json:"name"`
-	Reachable     bool   `json:"reachable"`
-	LastOkUnixMs  int64  `json:"last_ok_unix_ms,omitempty"`
-	LatencyMs     int    `json:"latency_ms,omitempty"`
-	ErrorMessage  string `json:"error,omitempty"`
+	Name         string `json:"name"`
+	Reachable    bool   `json:"reachable"`
+	LastOkUnixMs int64  `json:"last_ok_unix_ms,omitempty"`
+	LatencyMs    int    `json:"latency_ms,omitempty"`
+	ErrorMessage string `json:"error,omitempty"`
 }
 
 // Processes is the full sub-process tree sampled per-tick. top_n
 // controls how many top-CPU processes are included in each payload;
 // the rest are summarised by the envelopes[] rollup.
 type Processes struct {
-	SampledAtUnixMs int64       `json:"sampled_at_unix_ms"`
-	TotalTracked    int         `json:"total_tracked"`
+	SampledAtUnixMs int64         `json:"sampled_at_unix_ms"`
+	TotalTracked    int           `json:"total_tracked"`
 	Tree            []ProcessNode `json:"tree,omitempty"`
 }
 
@@ -186,7 +186,7 @@ const (
 // Envelope is a logical grouping of processes with rolled-up
 // metrics — the answer to "which session or backend is eating CPU?"
 type Envelope struct {
-	ID                 string       `json:"id"`    // stable: session:<full_id> | backend:<name>[-docker|-k8s] | container:<short_id>
+	ID                 string       `json:"id"` // stable: session:<full_id> | backend:<name>[-docker|-k8s] | container:<short_id>
 	Kind               EnvelopeKind `json:"kind"`
 	Label              string       `json:"label"`
 	RootPID            int          `json:"root_pid,omitempty"`
@@ -318,12 +318,12 @@ type ClusterNode struct {
 }
 
 type Peer struct {
-	Name          string    `json:"name"`
-	Shape         string    `json:"shape"` // daemon | cluster
-	Reachable     bool      `json:"reachable"`
-	LastPushUnixMs int64    `json:"last_push_unix_ms,omitempty"`
-	Address       string    `json:"address,omitempty"`
-	RegisteredAt  time.Time `json:"registered_at,omitempty"`
+	Name           string    `json:"name"`
+	Shape          string    `json:"shape"` // daemon | cluster
+	Reachable      bool      `json:"reachable"`
+	LastPushUnixMs int64     `json:"last_push_unix_ms,omitempty"`
+	Address        string    `json:"address,omitempty"`
+	RegisteredAt   time.Time `json:"registered_at,omitempty"`
 }
 
 // Config mirrors the YAML `observer:` block. Defaults are sane; a
@@ -367,11 +367,11 @@ type ProcessTreeCfg struct {
 }
 
 type EnvelopesCfg struct {
-	SessionAttribution bool                     `json:"session_attribution"`
-	BackendAttribution bool                     `json:"backend_attribution"`
-	DockerDiscovery    bool                     `json:"docker_discovery"`
-	GPUAttribution     bool                     `json:"gpu_attribution"`
-	BackendSignatures  map[string]BackendSig    `json:"backend_signatures,omitempty"`
+	SessionAttribution bool                  `json:"session_attribution"`
+	BackendAttribution bool                  `json:"backend_attribution"`
+	DockerDiscovery    bool                  `json:"docker_discovery"`
+	GPUAttribution     bool                  `json:"gpu_attribution"`
+	BackendSignatures  map[string]BackendSig `json:"backend_signatures,omitempty"`
 }
 
 type BackendSig struct {
@@ -380,16 +380,16 @@ type BackendSig struct {
 }
 
 type PeersCfg struct {
-	AllowRegister           bool   `json:"allow_register"`
-	TokenRotationGraceS     int    `json:"token_ttl_rotation_grace_s,omitempty"`
-	PushIntervalSeconds     int    `json:"push_interval_seconds,omitempty"`
-	ListenAddr              string `json:"listen_addr,omitempty"`
+	AllowRegister       bool   `json:"allow_register"`
+	TokenRotationGraceS int    `json:"token_ttl_rotation_grace_s,omitempty"`
+	PushIntervalSeconds int    `json:"push_interval_seconds,omitempty"`
+	ListenAddr          string `json:"listen_addr,omitempty"`
 }
 
 type ClusterCfg struct {
-	EBPFEnabled       bool   `json:"ebpf_enabled,omitempty"`
-	K8sMetricsScrape  bool   `json:"k8s_metrics_scrape,omitempty"`
-	DCGMEndpoint      string `json:"dcgm_endpoint,omitempty"`
+	EBPFEnabled      bool   `json:"ebpf_enabled,omitempty"`
+	K8sMetricsScrape bool   `json:"k8s_metrics_scrape,omitempty"`
+	DCGMEndpoint     string `json:"dcgm_endpoint,omitempty"`
 }
 
 // OllamaTapCfg (BL180 Phase 1) — when Endpoint is set, the observer

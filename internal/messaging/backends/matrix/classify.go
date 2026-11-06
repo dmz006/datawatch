@@ -14,14 +14,14 @@ import (
 type Origin int
 
 const (
-	OriginNative          Origin = iota // regular Matrix user
-	OriginBridgeSignal                  // Signal bridge ghost  (@signal_+1...:server)
-	OriginBridgeTelegram                // Telegram bridge ghost (@telegram_...:server)
-	OriginBridgeWhatsApp                // WhatsApp bridge ghost (@whatsapp_...:server)
-	OriginBridgeSlack                   // Slack bridge ghost    (@slack_...:server)
-	OriginBridgeDiscord                 // Discord bridge ghost  (@discord_...:server)
-	OriginBridgeIRC                     // IRC bridge ghost      (@irc_...:server or _irc_*)
-	OriginBridgeUnknown                 // unrecognised bridge prefix
+	OriginNative         Origin = iota // regular Matrix user
+	OriginBridgeSignal                 // Signal bridge ghost  (@signal_+1...:server)
+	OriginBridgeTelegram               // Telegram bridge ghost (@telegram_...:server)
+	OriginBridgeWhatsApp               // WhatsApp bridge ghost (@whatsapp_...:server)
+	OriginBridgeSlack                  // Slack bridge ghost    (@slack_...:server)
+	OriginBridgeDiscord                // Discord bridge ghost  (@discord_...:server)
+	OriginBridgeIRC                    // IRC bridge ghost      (@irc_...:server or _irc_*)
+	OriginBridgeUnknown                // unrecognised bridge prefix
 )
 
 // String returns the name used in audit logs.

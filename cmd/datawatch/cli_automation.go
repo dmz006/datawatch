@@ -98,8 +98,8 @@ func newAutomationListCmd() *cobra.Command {
 	var shippedSel string
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short:  "List Automations (narrow with --shipped true|false on the shipped state)",
-		Long:   `List Automations.
+		Short: "List Automations (narrow with --shipped true|false on the shipped state)",
+		Long: `List Automations.
 
 --shipped true keeps only Automations that carry shipped state (a
 non-empty merge commit — their non-skipped member PRs all landed); --shipped

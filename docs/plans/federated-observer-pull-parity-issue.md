@@ -1,7 +1,7 @@
 # Parity issue draft — observer pull mode (datawatch-app)
 
-**Title (filed on datawatch-app):** `feat(i18n): observer pull mode — DE/ES/FR/JA translations + Android/iOS parity`
-**Status:** DRAFT — no GitHub issue has been filed, and this task does not file one (per the operator instruction for this task: draft only, no `gh`). File it before the app ports observer pull mode.
+**Title (for the datawatch-app issue this draft will be filed as — see Status):** `feat(i18n): observer pull mode — DE/ES/FR/JA translations + Android/iOS parity`
+**Status:** DRAFT — no GitHub issue has been filed on datawatch-app, and this task does not file one (per the operator instruction for this task: draft only, no `gh`). File the issue before the app ports observer pull mode.
 **Parent release:** v9.67.1 (next patch above main at the time of this draft — placeholder; confirm at merge time).
 **Daemon counterpart (this repo):** `docs/howto/federated-observer.md` — *Pull mode*, `docs/api/observer.md` — *Observer pull mode*, `docs/config-reference.yaml` — `observer.pull`, the PWA federation peer form and peer rows (`internal/server/web/app.js`), and the twelve locale keys below.
 
@@ -57,6 +57,6 @@ Request **DE, ES, FR and JA** translations of all twelve keys in the app's local
 | CLI | Yes | `datawatch observer pull status [--json]`; `federation peer add/update --observer-pull [--observer-pull-interval N] [--observer-pull-timeout N]`; `config set observer.pull.*` |
 | comm channel | Yes | `observer pull status`; `rest` passthrough for the config and peer routes |
 | YAML/config | Yes | the `observer.pull` block in `docs/config-reference.yaml` |
-| PWA | Yes (reference) | federation peer form + peer rows in `internal/server/web/app.js`; five locale bundles already ship |
-| Android | Not yet implemented | follows in this issue |
-| iOS | Not yet implemented | follows in this issue |
+| PWA | Yes (reference) | federation peer form + peer rows in `internal/server/web/app.js`; the Settings → General "Federation — Observer Pull Mode" section (`observer.pull.enabled` / `default_interval_s` / `default_timeout_s`); the Observer view Monitor card "Federation — Observer Pull"; five locale bundles already ship |
+| Android | Not yet implemented | follows in the datawatch-app issue this draft describes (filed per the Status line before the port) |
+| iOS | Not yet implemented | follows in the datawatch-app issue this draft describes (filed per the Status line before the port) |

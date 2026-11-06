@@ -60,5 +60,5 @@ func (b *Backend) Subscribe(ctx context.Context, handler func(messaging.Message)
 	return nil
 }
 func (b *Backend) Link(deviceName string, onQR func(string)) error { return nil }
-func (b *Backend) SelfID() string                                   { return "ntfy:" + b.topic }
-func (b *Backend) Close() error                                     { return nil }
+func (b *Backend) SelfID() string                                  { return "ntfy:" + b.topic }
+func (b *Backend) Close() error                                    { return nil }

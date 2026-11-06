@@ -146,13 +146,13 @@ func (t *OllamaTap) Snapshot() ([]Envelope, error) {
 			name = m.Model
 		}
 		env := Envelope{
-			ID:         "ollama_model:" + name,
-			Kind:       EnvelopeBackend,
-			Label:      "ollama / " + name,
-			RSSBytes:   uint64(m.Size),
-			GPUMemBytes: uint64(m.SizeVRAM),
-			Caller:     name,
-			CallerKind: "ollama_model",
+			ID:                 "ollama_model:" + name,
+			Kind:               EnvelopeBackend,
+			Label:              "ollama / " + name,
+			RSSBytes:           uint64(m.Size),
+			GPUMemBytes:        uint64(m.SizeVRAM),
+			Caller:             name,
+			CallerKind:         "ollama_model",
 			LastActivityUnixMs: time.Now().UnixMilli(),
 		}
 		out = append(out, env)

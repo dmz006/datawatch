@@ -97,9 +97,9 @@ func TestGuardPiFamilySessionModel_PathTierTable(t *testing.T) {
 	cfg := map[string]struct {
 		cfgGuardrail, cfgVerification, cfgPlanning string
 	}{
-		"autonomous.guardrail_model tier":      {"g/guard:27b", "g/ver:27b", "g/plan:27b"},
-		"autonomous.verification_model tier":   {"", "g/ver:27b", "g/plan:27b"},
-		"autonomous.planning_model tier":       {"", "", "g/plan:27b"},
+		"autonomous.guardrail_model tier":    {"g/guard:27b", "g/ver:27b", "g/plan:27b"},
+		"autonomous.verification_model tier": {"", "g/ver:27b", "g/plan:27b"},
+		"autonomous.planning_model tier":     {"", "", "g/plan:27b"},
 	}
 	for _, path := range paths {
 		for tierName, tiers := range cfg {

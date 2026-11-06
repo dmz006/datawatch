@@ -229,7 +229,7 @@ func MigrateToEncrypted(store *Store, key []byte) (int, error) {
 	}
 
 	store.walLog("encrypt_migration", map[string]interface{}{
-		"fingerprint":  KeyFingerprint(key),
+		"fingerprint":   KeyFingerprint(key),
 		"rows_migrated": count,
 	})
 

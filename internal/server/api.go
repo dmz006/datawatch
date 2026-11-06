@@ -1136,8 +1136,27 @@ func (s *Server) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 }
 
 // SetRestartFunc wires the daemon self-restart function.
-func (s *Server) SetRestartFunc(fn func())             { s.restartFn = fn }
-func (s *Server) SetStatsCollector(c *stats.Collector) { s.statsCollector = c }
+func (s *Server) SetRestartFunc(fn func()) { s.restartFn = fn }
+func (s *Server) SetStatsCollector(c *stats.Collector) {
+	s.statsCollector = c
+	if c != nil {
+		// Observer pull (federated observer pull mode) — surfaced in the
+		// v1 stats snapshot next to the session counts.
+		c.SetObserverPullFunc(func() (bool, int, int) {
+			if s == nil {
+				return false, 0, 0
+			}
+			peers := s.pullStatusRows()
+			stale := 0
+			for _, row := range peers {
+				if b, _ := row["stale"].(bool); b {
+					stale++
+				}
+			}
+			return s.observerPullEnabled(), len(peers), stale
+		})
+	}
+}
 
 // SetACMEManager wires the ACME subsystem (BL397) into the API server.
 // The mux's /.well-known/acme-challenge/ route (registered unconditionally
@@ -7123,11 +7142,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	skipped := applyConfigPatch(s.cfg, patch)
 	// observer.pull.* — the pull collector reads these globals when it
 	// derives targets (a per-peer interval/timeout of 0 falls back here),
-	// so after a PUT that touches them re-sync the target set; no restart
-	// needed.
+	// and observer.pull.enabled is its master gate, so after a PUT that
+	// touches them reconcile the collector + target set; no restart needed.
 	for k := range patch {
 		if strings.HasPrefix(k, "observer.pull.") {
-			s.syncObserverPullTargets()
+			s.ReconcileObserverPull()
 			break
 		}
 	}

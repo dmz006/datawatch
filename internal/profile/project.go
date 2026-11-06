@@ -44,9 +44,9 @@ type ProjectProfile struct {
 
 	// Spawn budgets. When a worker tries to spawn children, the parent
 	// enforces these caps so runaway recursion is impossible.
-	AllowSpawnChildren    bool `json:"allow_spawn_children"`
-	SpawnBudgetTotal      int  `json:"spawn_budget_total,omitempty"`
-	SpawnBudgetPerMinute  int  `json:"spawn_budget_per_minute,omitempty"`
+	AllowSpawnChildren   bool `json:"allow_spawn_children"`
+	SpawnBudgetTotal     int  `json:"spawn_budget_total,omitempty"`
+	SpawnBudgetPerMinute int  `json:"spawn_budget_per_minute,omitempty"`
 
 	// PostTaskHooks are shell commands executed after the AI finishes
 	// its main task but before the session closes. Common uses: run

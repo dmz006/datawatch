@@ -13,6 +13,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -31,6 +33,8 @@ type observerPull struct {
 	col *observer.PullCollector
 }
 
+var ErrObserverPullDisabled = errors.New("observer pull is disabled on this daemon (observer.pull.enabled is off)")
+
 // NewObserverPullCollector builds the observer.PullCollector for s and
 // seeds it with the targets currently present in the peer store. It does
 // not start a daemon: the collector's per-target workers are the only
@@ -40,7 +44,42 @@ func NewObserverPullCollector(s *Server) *observer.PullCollector {
 	op.col = observer.NewPullCollector(observer.PullCollectorOptions{Fetcher: op})
 	s.observerPull = op
 	op.col.SetTargets(op.targets())
+	metrics.ObserverPullTargets.Set(float64(len(op.targets())))
 	return op.col
+}
+
+// observerPullEnabled reports the daemon-wide observer pull gate. A nil
+// config means the gate is off (the shipped default).
+func (s *Server) observerPullEnabled() bool {
+	return s != nil && s.cfg != nil && s.cfg.Observer.Pull.Enabled
+}
+
+// ReconcileObserverPull aligns the daemon's pull collector with the
+// observer.pull.enabled gate: it starts (and seeds) the collector when the
+// gate is on and stops it when the gate is off. Idempotent; call it at
+// startup (once the server store is wired) and after any config change that
+// touches observer.pull.* so the collector lifecycle tracks the gate and
+// the derived target set without a restart.
+func (s *Server) ReconcileObserverPull() {
+	if s == nil {
+		return
+	}
+	if !s.observerPullEnabled() {
+		if s.observerPull != nil && s.observerPull.col != nil {
+			s.observerPull.col.Stop()
+			s.observerPull = nil
+		}
+		metrics.ObserverPullTargets.Set(0)
+		return
+	}
+	if s.observerPull != nil && s.observerPull.col != nil {
+		s.observerPull.col.SetTargets(s.observerPull.targets())
+		return
+	}
+	s.observerPull = &observerPull{s: s}
+	s.observerPull.col = observer.NewPullCollector(observer.PullCollectorOptions{Fetcher: s.observerPull})
+	s.observerPull.col.SetTargets(s.observerPull.targets())
+	metrics.ObserverPullTargets.Set(float64(len(s.observerPull.targets())))
 }
 
 // syncObserverPullTargets re-derives the collector's target set from the
@@ -51,17 +90,24 @@ func (s *Server) syncObserverPullTargets() {
 	if s == nil || s.observerPull == nil || s.observerPull.col == nil {
 		return
 	}
-	s.observerPull.col.SetTargets(s.observerPull.targets())
+	targets := s.observerPull.targets()
+	s.observerPull.col.SetTargets(targets)
+	metrics.ObserverPullTargets.Set(float64(len(targets)))
 }
 
 // targets derives the collector's target list from the peer store. An entry
 // is a target only when it is enabled, federated, opted in via
 // observer_pull and has a URL; the capability gate stays in Fetch so a peer
 // that later loses observers:read surfaces as stale/not_permitted rather
-// than silently disappearing from the target set.
+// than silently disappearing from the target set. The daemon-wide
+// observer.pull.enabled gate is the outermost switch: when it is off there
+// are no targets at all, regardless of per-peer opt-in.
 func (p *observerPull) targets() []observer.PullTarget {
 	s := p.s
 	if s == nil || s.serverStore == nil {
+		return nil
+	}
+	if !s.observerPullEnabled() {
 		return nil
 	}
 	def := observerPullDefaults(s)
@@ -131,7 +177,7 @@ func (s *Server) handleObserverPull(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapObserversRead) {
 		return
 	}
-	writeJSONOK(w, map[string]any{"peers": s.pullStatusRows()})
+	writeJSONOK(w, map[string]any{"enabled": s.observerPullEnabled(), "peers": s.pullStatusRows()})
 }
 
 // pullStatusRows builds the /api/observer/pull row set (see
@@ -215,15 +261,61 @@ func (s *Server) pullTimeoutS(name string, def config.ObserverPullConfig) int {
 
 // Fetch pulls one peer's v2 stats once; it implements observer.PullFetcher.
 //
-// Before any network I/O the named entry is gated: it must exist in the
+// Fetch pulls one peer's v2 stats once; it implements observer.PullFetcher.
+// It records the outcome on the Prometheus metrics per peer and outcome
+// before returning.
+//
+// Before any network I/O the named peer is gated: the daemon-wide
+// observer.pull.enabled switch must be on, and the entry must exist in the
 // peer store, be enabled and federated, be opted in via observer_pull, and
 // (after group expansion) be granted observers:read. A gate failure returns
-// an error the collector maps to not_permitted, and no request is made.
-// The bearer token is only ever placed in the Authorization header; it
-// never appears in a log line or an error string.
+// an error the collector maps to a stable stale reason, and no request is
+// made. The bearer token is only ever placed in the Authorization header;
+// it never appears in a log line or an error string.
 func (p *observerPull) Fetch(ctx context.Context, name string) (*observer.StatsResponse, error) {
+	snap, err := p.fetch(ctx, name)
+	recordObserverPullOutcome(name, err)
+	return snap, err
+}
+
+// recordObserverPullOutcome mirrors the collector's error-to-reason mapping
+// into the per-peer Prometheus metrics: one counter increment per fetch
+// and a stale gauge (1 on failure, 0 on success).
+func recordObserverPullOutcome(name string, err error) {
+	if err != nil {
+		outcome := observer.ReasonError
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			outcome = observer.ReasonTimeout
+		case errors.Is(err, observer.ErrBadPayload):
+			outcome = observer.ReasonBadPayload
+		case errors.Is(err, observer.ErrNotPermitted):
+			outcome = observer.ReasonNotPermitted
+		}
+		var he *observer.PullHTTPError
+		if errors.As(err, &he) && (he.StatusCode == 401 || he.StatusCode == 403) {
+			outcome = observer.ReasonForbidden
+		}
+		metrics.ObserverPullFetches.WithLabelValues(name, outcome).Inc()
+		metrics.ObserverPullStale.WithLabelValues(name).Set(1)
+		return
+	}
+	metrics.ObserverPullFetches.WithLabelValues(name, observer.ReasonNone).Inc()
+	if name != "" {
+		metrics.ObserverPullStale.WithLabelValues(name).Set(0)
+	}
+}
+
+// fetch is the uninstrumented pull.
+func (p *observerPull) fetch(ctx context.Context, name string) (*observer.StatsResponse, error) {
 	s := p.s
-	if s == nil || s.serverStore == nil {
+	if s == nil {
+		return nil, fmt.Errorf("%w: no server", observer.ErrNotPermitted)
+	}
+	if !s.observerPullEnabled() {
+		return nil, fmt.Errorf("%w: observer pull is disabled on this daemon (observer.pull.enabled is off) for peer %q", observer.ErrNotPermitted, name)
+	}
+	if s.serverStore == nil {
 		return nil, fmt.Errorf("%w: the federation peer registry is not configured", observer.ErrNotPermitted)
 	}
 	entry, ok := s.serverStore.Get(name)

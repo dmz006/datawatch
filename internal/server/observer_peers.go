@@ -626,9 +626,9 @@ func (s *Server) mergedObserverPeers() []map[string]any {
 				continue
 			}
 			rows = append(rows, map[string]any{
-				"name":         e.Name,
-				"source":       "pull",
-				"shadow":       true,
+				"name":   e.Name,
+				"source": "pull",
+				"shadow": true,
 				// Shadow rows never auto-bind by name match — they carry
 				// no pushed data — so only an explicit ObserverPeer
 				// reference counts here.

@@ -58,9 +58,17 @@ type SystemStats struct {
 	TotalSessions  int `json:"total_sessions"`
 
 	// Tmux
-	TmuxSessions  int      `json:"tmux_sessions"`           // total tmux sessions with cs- prefix
+	TmuxSessions  int      `json:"tmux_sessions"`           // total tmux sessions with cs-
 	OrphanedTmux  []string `json:"orphaned_tmux,omitempty"` // tmux sessions with no matching datawatch session
 	UptimeSeconds int      `json:"uptime_seconds"`
+
+	// Observer pull (federated observer pull mode): daemon-wide gate on
+	// observer.pull.enabled, peers currently in the pull target set, and
+	// how many of those are stale (last fetch failed or never succeeded).
+	// Filled by the server alongside ActiveSessions.
+	ObserverPullEnabled bool `json:"observer_pull_enabled"`
+	ObserverPullTargets int  `json:"observer_pull_targets"`
+	ObserverPullStale   int  `json:"observer_pull_stale"`
 
 	// eBPF status
 	EBPFEnabled bool   `json:"ebpf_enabled"`
@@ -271,6 +279,9 @@ type Collector struct {
 
 	// sessionCountFn returns (active, total) session counts.
 	sessionCountFn func() (int, int)
+	// observerPullFn returns (enabled, targets, stale) for the federated
+	// observer pull protocol; nil leaves the ObserverPull* fields zero.
+	observerPullFn func() (bool, int, int)
 
 	// orphanDetectFn returns (tmux_count, orphaned_names)
 	orphanDetectFn func() (int, []string)
@@ -347,6 +358,12 @@ func NewCollector(dataDir string) *Collector {
 // SetSessionCountFunc sets the callback for session counts.
 func (c *Collector) SetSessionCountFunc(fn func() (int, int)) {
 	c.sessionCountFn = fn
+}
+
+// SetObserverPullFunc sets the callback reporting the federated observer
+// pull protocol state: (gate enabled, peer targets, stale peers).
+func (c *Collector) SetObserverPullFunc(fn func() (bool, int, int)) {
+	c.observerPullFn = fn
 }
 
 // SetOrphanDetectFunc sets the callback for detecting orphaned tmux sessions.
@@ -531,6 +548,12 @@ func (c *Collector) collect() {
 
 	if c.sessionCountFn != nil {
 		s.ActiveSessions, s.TotalSessions = c.sessionCountFn()
+	}
+
+	// Observer pull (federated observer pull mode). A disabled gate (or an
+	// unwired daemon) leaves the three fields at zero.
+	if c.observerPullFn != nil {
+		s.ObserverPullEnabled, s.ObserverPullTargets, s.ObserverPullStale = c.observerPullFn()
 	}
 
 	if c.orphanDetectFn != nil {

@@ -10911,7 +10911,7 @@ func runStatus(cfg *config.Config) error {
 	if len(sessions) == 0 {
 		store, err := session.NewStore(filepath.Join(dataDir, "sessions.json"))
 		if err == nil {
-		defer func() { _ = store.Close() }()
+			defer func() { _ = store.Close() }()
 			for _, s := range store.List() {
 				sessions = append(sessions, apiSession{
 					FullID:        s.FullID,

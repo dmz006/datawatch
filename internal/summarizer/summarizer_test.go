@@ -40,7 +40,9 @@ func newOllamaMockServer(t *testing.T, llmResponse string, capturePrompt func(st
 				"message": map[string]string{"content": llmResponse},
 			})
 		case "/api/generate":
-			var body struct{ Prompt string `json:"prompt"` }
+			var body struct {
+				Prompt string `json:"prompt"`
+			}
 			json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
 			if capturePrompt != nil {
 				capturePrompt(body.Prompt)
@@ -224,10 +226,10 @@ func TestParseDualSummary(t *testing.T) {
 			wantLong:  longText,
 		},
 		{
-			name:             "blank-line paragraph split",
-			raw:              shortText + "\n\n" + longText,
-			wantShort:        shortText,
-			wantLong:         longText,
+			name:      "blank-line paragraph split",
+			raw:       shortText + "\n\n" + longText,
+			wantShort: shortText,
+			wantLong:  longText,
 		},
 		{
 			name:             "sentence-split last resort: 3+ sentences",
@@ -326,10 +328,10 @@ func TestParseDualSummary(t *testing.T) {
 // TestExtractFirstNSentences verifies the sentence-boundary scanner.
 func TestExtractFirstNSentences(t *testing.T) {
 	tests := []struct {
-		name  string
-		text  string
-		n     int
-		want  string
+		name string
+		text string
+		n    int
+		want string
 	}{
 		{"exactly n sentences", "One. Two. Three.", 3, "One. Two. Three."},
 		{"more than n sentences", "One. Two. Three. Four. Five.", 3, "One. Two. Three."},
@@ -495,7 +497,7 @@ func TestIsSeparatorLine(t *testing.T) {
 		{"~~~", true},
 		{"- - -", true},
 		{"= = =", true},
-		{"", false},           // empty is not a separator
+		{"", false}, // empty is not a separator
 		{"text", false},
 		{"===SHORT===", false}, // contains letters
 		{"--- title ---", false},
@@ -835,7 +837,7 @@ func TestStripTrailingNoise(t *testing.T) {
 			want: "Work was done.",
 		},
 		{
-			name: "preserves all content when no noise present",
+			name:  "preserves all content when no noise present",
 			input: "The code was fixed.\nTests pass.",
 			want:  "The code was fixed.\nTests pass.",
 		},

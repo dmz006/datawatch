@@ -2440,3 +2440,74 @@ bucket, not a stored status value.
 - `internal/router/shipped_comm_test.go`,
   `sx2_parity_shipped_backfill_test.go` — the comm verb, its aliases, and the
   backfill/counts verbs.
+
+## Observer pull mode (observer.pull, per-peer observer_pull)
+
+The daemon pulls a federation peer's v2 observer stats on a schedule instead of
+the peer pushing them (see the Pull mode section of
+[howto/federated-observer](howto/federated-observer.md): when to use it, the
+failure taxonomy and the operator surfaces).
+
+- **Config block:** `observer.pull` (`config.ObserverPullConfig` in
+  `internal/config/config.go`,
+  `config.DefaultObserverPullConfig()` = `{Enabled: false, DefaultIntervalS: 30,
+  DefaultTimeoutS: 5}`). `Enabled` is the daemon-wide gate; `DefaultIntervalS`
+  / `DefaultTimeoutS` are the fallbacks for a peer record that did not set its
+  own. Pinning tests: `internal/config/config_test.go`
+  (`TestObserverPullConfig_DefaultsDisabled`).
+- **Peer opt-in:** `observer_pull` (bool, default false) plus
+  `observer_pull_interval_s` / `observer_pull_timeout_s` (0 = inherit the
+  global defaults) on the peer entry, `internal/server/multiserver/store.go`.
+  A peer reaches the pull target set only when **both** the daemon-wide gate
+  and its own record opt-in are set; its token must carry the `stats:read`
+  scope, otherwise the fetch is refused with `not_permitted`.
+- **Collector:** `internal/observer/pull_collector.go` — one
+  `PullCollector` per daemon; per peer an own interval (the daemon-wide
+  gate + per-peer opt-in decide the target set), each fetch
+  `GET {peer}/api/observer/stats?v=2`, per-fetch timeout, the last good
+  payload is kept, a failure flips the peer to stale with one of
+  `timeout | error | forbidden | not_permitted | bad_payload | unknown`
+  and never aborts the schedule.
+- **Server wiring:** `internal/server/observer_pull.go` —
+  `Server.observerPull` is set from `NewObserverPullCollector`; the global
+  gate `observerPullEnabled()` reads `observerPullConfig` (nil config = gate
+  off); `ReconcileObserverPull()` is the idempotent start/stop entry, called
+  from `internal/server/bl312_servers.go` `SetServerStore()` (daemon start)
+  and from the config PATCH handler in `internal/server/api.go` whenever
+  `observer.pull.*` or the peer set changes. `targets()` returns the
+  (global-gate ∧ per-peer) target set; `Fetch` short-circuits to
+  `ErrObserverPullDisabled` while the gate is off, so a request while the
+  gate is closed makes no network call at all.
+- **REST surface:** `GET /api/observer/pull` (`handleObserverPullStatus`):
+  2xx in both gate states; the body is `{"enabled": <bool>, "peers": [ {name,
+  source, shadow, stale, stale_reason, last_success_at, interval_s, timeout_s} ]}`.
+  `GET /api/stats` carries `observer_pull_enabled` /
+  `observer_pull_targets` / `observer_pull_stale`
+  (`internal/stats/collector.go`, wired via `SetObserverPullFunc`).
+- **MCP / CLI / comm:** the `observer_pull_status` MCP tool
+  (`internal/mcp/observer.go` — registered; the row is also listed in
+  `docs/mcp.md` and `docs/cursor-mcp.md`), CLI `datawatch observer pull status`
+  (`cmd/datawatch/cli_observer.go`), and the comm verb
+  `observer pull status` (`internal/router/bl220_comm_commands.go`).
+- **Prometheus (internal/metrics/prometheus.go):**
+  `datawatch_observer_pull_targets` (gauge), `datawatch_observer_pull_stale`
+  (gauge per peer), `datawatch_observer_pull_fetches_total` (counter per
+  peer + outcome), all registered; the outcomes map the reason vocabulary
+  above (`success` replaces `none`).
+- **PWA (internal/server/web/app.js):** the Settings → General section
+  "Federation — Observer Pull Mode" (`GENERAL_CONFIG_FIELDS`, id
+  `observerpull`, three `observer.pull.*` keys), and the Monitor card
+  "Federation — Observer Pull" in `renderStatsData` (renders only when
+  `observer_pull_enabled` is present in the stats body, so an older peer
+  daemon shows no card; `stats_observer_pull*` keys with English fallbacks,
+  plus the five locale bundles en/de/es/fr/ja).
+- **Tests:** `internal/server/observer_pull_test.go` (collector lifecycle,
+  the default-off gate, the gate refusing a fetch with no network call, the
+  idempotent `ReconcileObserverPull`, and the status route in both gate
+  states), `internal/config/config_test.go` (config defaults), plus the PWA
+  story `scripts/test-stories/pwa/observer-pull-card.mjs` (TS-844).
+- **How-to & API:** [howto/federated-observer](howto/federated-observer.md)
+  (Pull mode, including the failure taxonomy), [api/observer](api/observer.md)
+  (*Observer pull mode*), [mcp.md](mcp.md) / [cursor-mcp.md](cursor-mcp.md)
+  (the `observer_pull_status` row), [operations.md](operations.md) (the
+  "Observer pull mode" operation section and the three metrics).

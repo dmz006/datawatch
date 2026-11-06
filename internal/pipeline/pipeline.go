@@ -23,12 +23,12 @@ const (
 
 // Task is a single unit of work in a pipeline.
 type Task struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	DependsOn   []string `json:"depends_on,omitempty"`
-	State       State    `json:"state"`
-	SessionID   string   `json:"session_id,omitempty"` // datawatch session ID when running
-	Error       string   `json:"error,omitempty"`
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	DependsOn   []string   `json:"depends_on,omitempty"`
+	State       State      `json:"state"`
+	SessionID   string     `json:"session_id,omitempty"` // datawatch session ID when running
+	Error       string     `json:"error,omitempty"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 
@@ -79,7 +79,8 @@ func NewPipeline(name, projectDir string, tasks []*Task, maxParallel int) (*Pipe
 }
 
 // formatCycle joins cycle nodes with arrows and closes the loop:
-//   ["A","B","C"] → "A → B → C → A"
+//
+//	["A","B","C"] → "A → B → C → A"
 func formatCycle(cycle []string) string {
 	if len(cycle) == 0 {
 		return ""
@@ -348,7 +349,11 @@ func indexOf(s, sub string) int {
 
 func trim(s string) string {
 	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t') { start++ }
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') { end-- }
+	for start < end && (s[start] == ' ' || s[start] == '\t') {
+		start++
+	}
+	for end > start && (s[end-1] == ' ' || s[end-1] == '\t') {
+		end--
+	}
 	return s[start:end]
 }

@@ -33,7 +33,10 @@ type Backend interface {
 	ListWings() (map[string]int, error)
 	ListRooms(wing string) ([]string, error)
 	FindTunnels() (map[string][]string, error)
-	ListForReindex() ([]struct{ ID int64; Content string }, error)
+	ListForReindex() ([]struct {
+		ID      int64
+		Content string
+	}, error)
 	UpdateEmbedding(id int64, embedding []float32) error
 	ApplyRetention(policy RetentionPolicy) int64
 	WALRecent(n int) []WALEntry

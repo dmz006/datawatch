@@ -63,7 +63,7 @@ func (a *autoCompleter) Status(_ context.Context, _ *Agent) (State, error) {
 	return StateReady, nil
 }
 func (a *autoCompleter) Logs(_ context.Context, _ *Agent, _ int) (string, error) { return "", nil }
-func (a *autoCompleter) Terminate(_ context.Context, _ *Agent) error              { return nil }
+func (a *autoCompleter) Terminate(_ context.Context, _ *Agent) error             { return nil }
 
 // Single-node plan runs to Done.
 func TestOrchestrator_SingleNode_Done(t *testing.T) {

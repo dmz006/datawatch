@@ -314,6 +314,9 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"federation_observer_pull_source_pull",
 		"federation_observer_pull_source_shadow",
 		"federation_observer_pull_stale",
+		"stats_observer_pull",
+		"stats_observer_pull_targets",
+		"stats_observer_pull_stale",
 		// Failure escalation — the held-task status chip shown in the Automaton
 		// task rows and the Automation strip.
 		"task_status_review_needed",

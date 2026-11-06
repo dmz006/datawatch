@@ -172,9 +172,9 @@ func TestAutonomousNotifyConfigRejectsUnknownKinds(t *testing.T) {
 
 	for _, bad := range []map[string]any{
 		{"autonomous.notify.default_events": []string{"prd.blocked", "scope.warngin"}}, // typo / unknown
-		{"autonomous.notify.default_events": []string{"prd.blocked", ""}},                // empty entry
-		{"autonomous.notify.default_events": "scope warning"},                              // unknown CSV
-		{"autonomous.notify.default_events": "not-an-array"},                              // wrong type
+		{"autonomous.notify.default_events": []string{"prd.blocked", ""}},              // empty entry
+		{"autonomous.notify.default_events": "scope warning"},                          // unknown CSV
+		{"autonomous.notify.default_events": "not-an-array"},                           // wrong type
 	} {
 		bb, _ := json.Marshal(bad)
 		rr = httptest.NewRecorder()

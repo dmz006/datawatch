@@ -40,9 +40,9 @@ type Approval struct {
 // ApprovalStore is an in-memory map of token → Approval with TTL eviction.
 // Safe for concurrent use.
 type ApprovalStore struct {
-	mu     sync.Mutex
-	byTok  map[string]*Approval
-	ttl    time.Duration
+	mu    sync.Mutex
+	byTok map[string]*Approval
+	ttl   time.Duration
 }
 
 // NewApprovalStore returns an empty store with the default 5-minute TTL.

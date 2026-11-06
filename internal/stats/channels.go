@@ -9,11 +9,11 @@ import (
 
 // ChannelCounters holds atomic counters for a single communication channel.
 type ChannelCounters struct {
-	MsgSent   atomic.Int64
-	MsgRecv   atomic.Int64
-	Errors    atomic.Int64
-	BytesIn   atomic.Int64
-	BytesOut  atomic.Int64
+	MsgSent      atomic.Int64
+	MsgRecv      atomic.Int64
+	Errors       atomic.Int64
+	BytesIn      atomic.Int64
+	BytesOut     atomic.Int64
 	LastActivity atomic.Int64 // unix timestamp
 }
 

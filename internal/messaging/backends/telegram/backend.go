@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 
-	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/dmz006/datawatch/internal/messaging"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 // Backend implements messaging.Backend for Telegram.
@@ -175,7 +175,7 @@ func (b *Backend) downloadFile(fileID string) (string, error) {
 }
 
 func (b *Backend) Link(deviceName string, onQR func(string)) error { return nil }
-func (b *Backend) SelfID() string                                   { return b.bot.Self.UserName }
+func (b *Backend) SelfID() string                                  { return b.bot.Self.UserName }
 func (b *Backend) Close() error {
 	b.bot.StopReceivingUpdates()
 	return nil

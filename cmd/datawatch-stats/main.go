@@ -475,13 +475,13 @@ func runSetupEBPF() {
 // when envelopes come back empty/failed (see #211).
 //
 // Probes:
-//   1. /proc/self/status — process visibility baseline
-//   2. /proc/<other-pid>/cmdline — can we see other processes?
-//   3. docker.exec — is `docker` on PATH? group membership?
-//   4. DCGM scrape — is dcgm-exporter reachable?
-//   5. CAP_BPF — already covered by --setup-ebpf, repeated here
-//      with a one-line summary.
-//   6. ollama /api/ps — can we reach a local ollama?
+//  1. /proc/self/status — process visibility baseline
+//  2. /proc/<other-pid>/cmdline — can we see other processes?
+//  3. docker.exec — is `docker` on PATH? group membership?
+//  4. DCGM scrape — is dcgm-exporter reachable?
+//  5. CAP_BPF — already covered by --setup-ebpf, repeated here
+//     with a one-line summary.
+//  6. ollama /api/ps — can we reach a local ollama?
 func runDiagnostic() {
 	fmt.Println("datawatch-stats — envelope diagnostic")
 	fmt.Println("=====================================")

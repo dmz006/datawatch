@@ -9,10 +9,10 @@ import (
 
 // Layers implements the 4-layer memory wake-up stack.
 //
-//   L0: Identity       (~100 tokens)  — always loaded, from identity.txt + identity.yaml (BL257)
-//   L1: Critical facts  (~500 tokens) — auto-generated from top memories
-//   L2: Room context    (variable)    — loaded when topic matches a room
-//   L3: Deep search     (unlimited)   — on-demand recall (existing functionality)
+//	L0: Identity       (~100 tokens)  — always loaded, from identity.txt + identity.yaml (BL257)
+//	L1: Critical facts  (~500 tokens) — auto-generated from top memories
+//	L2: Room context    (variable)    — loaded when topic matches a room
+//	L3: Deep search     (unlimited)   — on-demand recall (existing functionality)
 //
 // Wake-up cost: ~600 tokens (L0+L1). Leaves 95%+ of context free.
 type Layers struct {

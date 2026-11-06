@@ -10,8 +10,9 @@ package docsindex
 
 // Searcher is the runtime search interface used by the MCP / REST /
 // CLI / comm surfaces. Multiple impls live behind this:
-//   BM25Index — keyword fallback (Sprint 1)
-//   HybridSearcher — vector primary + BM25 fallback (Sprint 2+)
+//
+//	BM25Index — keyword fallback (Sprint 1)
+//	HybridSearcher — vector primary + BM25 fallback (Sprint 2+)
 type Searcher interface {
 	Search(query string, limit int) []SearchHit
 }

@@ -131,7 +131,12 @@ func SpellCheck(text string, opts SpellCheckOpts) []SpellCheckSuggestion {
 	return suggestions
 }
 
-func abs(x int) int { if x < 0 { return -x }; return x }
+func abs(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
+}
 
 // levenshtein returns the edit distance between a and b. Standard
 // dynamic-programming impl with O(min(len(a),len(b))) space.

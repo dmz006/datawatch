@@ -229,6 +229,24 @@ var (
 		Name: "datawatch_ui_prompt_dismissals_total",
 		Help: "Interstitial UI-prompt dismissals by kind and outcome (dismissed, not_cleared, refused)",
 	}, []string{"kind", "outcome"})
+	// Observer pull protocol (federated observer pull mode).
+	// ObserverPullTargets: peers currently in the pull target set.
+	// ObserverPullStale: per-peer staleness (1 = last fetch failed / never
+	// succeeded recently, 0 = healthy).
+	// ObserverPullFetches: per-peer fetch outcomes (none, timeout, error,
+	// forbidden, not_permitted, bad_payload).
+	ObserverPullTargets = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "datawatch_observer_pull_targets",
+		Help: "Federation peers currently in the observer pull target set",
+	})
+	ObserverPullStale = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "datawatch_observer_pull_stale",
+		Help: "Observer pull per-peer staleness (1 = stale, 0 = healthy)",
+	}, []string{"peer"})
+	ObserverPullFetches = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_observer_pull_fetches_total",
+		Help: "Observer pull fetch outcomes by peer and reason",
+	}, []string{"peer", "outcome"})
 	// Session result endpoint metrics (scheduled-job structured results).
 	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
 	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
@@ -266,6 +284,7 @@ func Register() {
 			SupervisorWatchFindings, SupervisorWatchAgreedDays, SupervisorWatchLastPollAge,
 			BurnGuardLevel, BurnGuardProjectedPercent, BurnGuardOverByPoints, BurnGuardPointsPerHour,
 			BurnGuardTicksTotal, BurnGuardStepsTotal, BurnGuardRefitsTotal, BurnGuardErrorsTotal,
+			ObserverPullTargets, ObserverPullStale, ObserverPullFetches,
 		)
 	})
 }

@@ -1188,6 +1188,9 @@ Returns Prometheus text format with gauges, counters, and histograms:
 | `datawatch_memory_usage_bytes` | gauge | Memory usage |
 | `datawatch_messages_total` | counter | Messages sent/received (labels: channel, direction) |
 | `datawatch_uptime_seconds` | gauge | Daemon uptime |
+| `datawatch_observer_pull_targets` | gauge | Federation peers currently in the observer pull target set (pull mode) |
+| `datawatch_observer_pull_stale` | gauge | Pull targets whose fetch is stale or never succeeded (labels: peer) |
+| `datawatch_observer_pull_fetches_total` | counter | Pull fetch attempts (labels: peer, outcome: success \| timeout \| forbidden \| not_permitted \| error \| bad_payload) |
 
 ### Daemon info
 
@@ -4758,6 +4761,66 @@ reached is skipped and counts as zero, so a peer outage never stalls your
 work.
 
 ---
+
+## Observer pull mode (the daemon pulls a peer's stats)
+
+In the federation observer **push** model the peer daemon pushes its v2 stats
+to you on a schedule. In **pull mode** the direction is inverted: *your* daemon
+pulls `GET /api/observer/stats` from an opted-in peer on its own interval and
+keeps the same view — useful when the peer sits behind a NAT/firewall that
+blocks inbound pushes but allows you to reach it.
+
+**Default: off.** Two independent gates have to be open before a pull happens:
+
+1. **daemon-wide gate** — `observer.pull.enabled` (config, default `false`). While
+   it is off the pull target set is empty, fetches are refused locally
+   (nothing is sent to the peer), and the collector is stopped; turning it on
+   starts the collector. It is a gate, not a flag: `GET /api/observer/pull`
+   still answers `200 {"peers":[]}` either way.
+2. **per-peer opt-in** — the peer record's `observer_pull` field (boolean,
+   default `false`; optional `observer_pull_interval_s` / `observer_pull_timeout_s`,
+   0 = inherit `observer.pull.default_interval_s` / `observer.pull.default_timeout_s`,
+   the 30 s / 5 s defaults).
+   The peer's token must carry the `stats:read` scope.
+
+How to configure it:
+
+- **PWA**: Settings → General → **Federation — Observer Pull Mode** section
+  (`observer.pull.enabled` toggle + the two default-interval/timeouts); the
+  per-peer opt-in is the pull block on the peer form in Settings →
+  Federation Peers.
+- **REST / config**: config file, or `PUT /api/config` with `observer.pull.*`
+  (a PUT reconciles the collector — enabling starts it, disabling stops it
+  and clears the target set; at daemon startup the collector is always
+  re-derived from the config, so the state is correct after a restart too).
+- **CLI**: `datawatch observer pull status` lists the pull target set with the
+  same fields as the API.
+
+Where to read the state (all read-only, `observers:read`):
+
+- **REST**: `GET /api/observer/pull` — one row per pull target: `name`,
+  `source` ("pull"), `shadow` (true when the peer is also
+  push-registered, in which case the row is visibility-only and stays out of
+  the aggregates), `stale`, `stale_reason` (`none|timeout|error|forbidden|not_permitted|bad_payload|unknown`),
+  `last_success_at`, `interval_s`, `timeout_s`.
+- **MCP**: `observer_pull_status` (proxies the same endpoint).
+- **Comm**: `observer pull status`.
+- **Monitor card**: the Observer view's stats panel shows the
+  **Federation — Observer Pull** card (gate state, peer target count, stale
+  count) from the `observer_pull_enabled` / `observer_pull_targets` /
+  `observer_pull_stale` fields of `GET /api/stats`;
+  **Prometheus**: `datawatch_observer_pull_targets`,
+  `datawatch_observer_pull_stale` (per peer), `datawatch_observer_pull_fetches_total`
+  (per peer and outcome).
+
+**Failure modes.** A fetch failure never aborts the schedule; the peer is
+flagged `stale` with a reason (`timeout`, `error`, `forbidden` — 401/403,
+`not_permitted` — `stats:read` missing, `bad_payload`, `unknown`), and the last
+good copy is kept until the next success. Nothing in pull mode writes to the
+peer, registers the peer, or changes the push model — the howto
+[howto/federated-observer](howto/federated-observer.md) — *Pull mode* — is
+the operator reference, and [api/observer](api/observer.md) — *Observer pull
+mode* — the API reference.
 
 ## Resource fingerprint exchange between federated peers
 

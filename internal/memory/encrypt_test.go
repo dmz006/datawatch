@@ -121,7 +121,7 @@ func TestStoreUnencrypted_PlaintextPreserved(t *testing.T) {
 		t.Error("unencrypted store should not report encrypted")
 	}
 
-	s.Save("/proj", "plain text", "", "manual", "", nil)                               //nolint:errcheck
+	s.Save("/proj", "plain text", "", "manual", "", nil) //nolint:errcheck
 	var raw string
 	s.db.QueryRow(`SELECT content FROM memories WHERE id = 1`).Scan(&raw) //nolint:errcheck
 	if raw != "plain text" {

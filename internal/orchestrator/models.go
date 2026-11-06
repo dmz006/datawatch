@@ -31,18 +31,18 @@ const (
 type GraphStatus string
 
 const (
-	GraphDraft      GraphStatus = "draft"
-	GraphActive     GraphStatus = "active"
-	GraphCompleted  GraphStatus = "completed"
-	GraphBlocked    GraphStatus = "blocked"
-	GraphCancelled  GraphStatus = "cancelled"
+	GraphDraft     GraphStatus = "draft"
+	GraphActive    GraphStatus = "active"
+	GraphCompleted GraphStatus = "completed"
+	GraphBlocked   GraphStatus = "blocked"
+	GraphCancelled GraphStatus = "cancelled"
 )
 
 // Verdict is a guardrail's pass/warn/block judgment. A node-level
 // `block` halts the graph and requires operator intervention.
 type Verdict struct {
-	Outcome     string    `json:"outcome"`               // pass | warn | block
-	Severity    string    `json:"severity,omitempty"`    // info | low | medium | high | critical
+	Outcome     string    `json:"outcome"`            // pass | warn | block
+	Severity    string    `json:"severity,omitempty"` // info | low | medium | high | critical
 	Summary     string    `json:"summary"`
 	Issues      []string  `json:"issues,omitempty"`
 	VerdictAt   time.Time `json:"verdict_at"`
@@ -53,19 +53,19 @@ type Verdict struct {
 // run; Kind=guardrail nodes wrap one guardrail attestation that fires
 // after a specific PRD node completes.
 type Node struct {
-	ID        string     `json:"id"`         // 8-hex
-	GraphID   string     `json:"graph_id"`
-	Kind      NodeKind   `json:"kind"`
-	PRDID     string     `json:"prd_id,omitempty"`     // required when Kind==prd
-	Guardrail string     `json:"guardrail,omitempty"`  // name, when Kind==guardrail
-	DependsOn []string   `json:"depends_on,omitempty"` // node IDs
-	Status    NodeStatus `json:"status"`
-	Verdict   *Verdict   `json:"verdict,omitempty"`
-	Error     string     `json:"error,omitempty"`
-	StartedAt *time.Time `json:"started_at,omitempty"`
+	ID         string     `json:"id"` // 8-hex
+	GraphID    string     `json:"graph_id"`
+	Kind       NodeKind   `json:"kind"`
+	PRDID      string     `json:"prd_id,omitempty"`     // required when Kind==prd
+	Guardrail  string     `json:"guardrail,omitempty"`  // name, when Kind==guardrail
+	DependsOn  []string   `json:"depends_on,omitempty"` // node IDs
+	Status     NodeStatus `json:"status"`
+	Verdict    *Verdict   `json:"verdict,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
 
 	// ObserverSummary — server-side enrichment, never persisted on
 	// the graph. Populated only on read by the orchestrator REST
@@ -88,7 +88,7 @@ type ObserverSummary struct {
 
 // Graph is a set of Nodes composing one orchestrated run.
 type Graph struct {
-	ID         string      `json:"id"`           // 8-hex
+	ID         string      `json:"id"` // 8-hex
 	Title      string      `json:"title"`
 	ProjectDir string      `json:"project_dir,omitempty"`
 	PRDIDs     []string    `json:"prd_ids"`

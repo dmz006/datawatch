@@ -65,9 +65,9 @@ func (r *TokenRecord) Active(now time.Time) bool {
 // time — minting a new one supersedes the old (and triggers a
 // best-effort revoke).
 type TokenStore struct {
-	mu      sync.Mutex
-	path    string
-	tokens  map[string]*TokenRecord // key: WorkerID
+	mu     sync.Mutex
+	path   string
+	tokens map[string]*TokenRecord // key: WorkerID
 }
 
 // NewTokenStore loads the store at path (or creates an empty one).

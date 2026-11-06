@@ -27,13 +27,13 @@ import (
 
 // ASConfig holds the parameters needed to write registration.yaml.
 type ASConfig struct {
-	Homeserver   string
-	ASID         string // e.g. "datawatch"
-	Namespace    string // e.g. "@datawatch_*" (localpart regex)
-	ASToken      string
-	HSToken      string
-	CallbackURL  string // e.g. "http://localhost:29333"
-	ListenAddr   string // e.g. ":29333"
+	Homeserver  string
+	ASID        string // e.g. "datawatch"
+	Namespace   string // e.g. "@datawatch_*" (localpart regex)
+	ASToken     string
+	HSToken     string
+	CallbackURL string // e.g. "http://localhost:29333"
+	ListenAddr  string // e.g. ":29333"
 }
 
 // registrationYAML returns the content of registration.yaml that must be
@@ -76,10 +76,10 @@ type asTransaction struct {
 // ASHandler processes homeserver-pushed events for the Application Service path.
 // It is embedded in Backend when AS mode is active and satisfies http.Handler.
 type ASHandler struct {
-	hsToken  string
-	roomID   id.RoomID
-	botMXID  id.UserID
-	handler  func(msg event.MessageEventContent, sender string, roomID string, evID string)
+	hsToken string
+	roomID  id.RoomID
+	botMXID id.UserID
+	handler func(msg event.MessageEventContent, sender string, roomID string, evID string)
 }
 
 // NewASHandler creates an ASHandler. hsToken is validated on every request.

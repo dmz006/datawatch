@@ -59,7 +59,7 @@ type heldQuestionOpenEntry struct {
 // option it recommends and when the note landed.
 type heldQuestionShadowEntry struct {
 	PRDID             string    `json:"prd_id"`
-	State             string     `json:"state"`
+	State             string    `json:"state"`
 	RecommendedOption string    `json:"recommended_option,omitempty"`
 	At                time.Time `json:"at"`
 }

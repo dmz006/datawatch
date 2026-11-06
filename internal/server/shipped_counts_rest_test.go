@@ -395,4 +395,3 @@ func TestShippedCardData_NilManagerNoPayload(t *testing.T) {
 		t.Errorf("shippedCardData() without a manager = %v; want nil", got)
 	}
 }
-

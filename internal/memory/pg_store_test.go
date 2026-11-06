@@ -23,9 +23,9 @@ func skipIfNoPG(t *testing.T) *PGStore {
 		t.Skipf("PostgreSQL not available: %v", err)
 	}
 	// Clean test data
-	s.pool.Exec(t.Context(), "DELETE FROM memories WHERE project_dir LIKE '/test/%'")     //nolint:errcheck
-	s.pool.Exec(t.Context(), "DELETE FROM kg_triples WHERE source = 'test'")               //nolint:errcheck
-	s.pool.Exec(t.Context(), "DELETE FROM kg_entities WHERE name LIKE 'Test%'")            //nolint:errcheck
+	s.pool.Exec(t.Context(), "DELETE FROM memories WHERE project_dir LIKE '/test/%'") //nolint:errcheck
+	s.pool.Exec(t.Context(), "DELETE FROM kg_triples WHERE source = 'test'")          //nolint:errcheck
+	s.pool.Exec(t.Context(), "DELETE FROM kg_entities WHERE name LIKE 'Test%'")       //nolint:errcheck
 	return s
 }
 

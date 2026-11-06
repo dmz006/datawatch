@@ -129,16 +129,16 @@ func (s *PGStore) migrate() error {
 	// BL99 — closets/drawers.
 	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS drawer_id BIGINT DEFAULT 0`) //nolint:errcheck
 	// v6.0.0 — full mempalace spatial schema + sweeper + corpus_origin.
-	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS floor TEXT DEFAULT ''`)             //nolint:errcheck
-	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS shelf TEXT DEFAULT ''`)             //nolint:errcheck
-	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS box TEXT DEFAULT ''`)               //nolint:errcheck
-	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS source TEXT DEFAULT ''`)            //nolint:errcheck
-	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_hit_at BIGINT DEFAULT 0`)      //nolint:errcheck
-	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_floor ON memories(floor)`)             //nolint:errcheck
-	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_shelf ON memories(shelf)`)             //nolint:errcheck
-	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_box ON memories(box)`)                 //nolint:errcheck
-	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_source ON memories(source)`)           //nolint:errcheck
-	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_last_hit ON memories(last_hit_at)`)    //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS floor TEXT DEFAULT ''`)          //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS shelf TEXT DEFAULT ''`)          //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS box TEXT DEFAULT ''`)            //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS source TEXT DEFAULT ''`)         //nolint:errcheck
+	s.pool.Exec(ctx, `ALTER TABLE memories ADD COLUMN IF NOT EXISTS last_hit_at BIGINT DEFAULT 0`)   //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_floor ON memories(floor)`)          //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_shelf ON memories(shelf)`)          //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_box ON memories(box)`)              //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_source ON memories(source)`)        //nolint:errcheck
+	s.pool.Exec(ctx, `CREATE INDEX IF NOT EXISTS idx_pg_memories_last_hit ON memories(last_hit_at)`) //nolint:errcheck
 	// schema_version table — closes migrate.py audit partial.
 	_, _ = s.pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
 		version    TEXT PRIMARY KEY,
@@ -297,7 +297,11 @@ func (s *PGStore) SearchFiltered(wing, room string, queryVec []float32, topK int
 	return s.scanAndRankByVec(rows, queryVec, topK)
 }
 
-func (s *PGStore) scanAndRankByVec(rows interface{ Next() bool; Scan(...interface{}) error; Close() }, queryVec []float32, topK int) ([]Memory, error) {
+func (s *PGStore) scanAndRankByVec(rows interface {
+	Next() bool
+	Scan(...interface{}) error
+	Close()
+}, queryVec []float32, topK int) ([]Memory, error) {
 	type scored struct {
 		Memory
 		score float64
@@ -386,7 +390,10 @@ func (s *PGStore) ListFiltered(projectDir, role, since string, n int) ([]Memory,
 	return s.scanMemories(rows)
 }
 
-func (s *PGStore) scanMemories(rows interface{ Next() bool; Scan(...interface{}) error }) ([]Memory, error) {
+func (s *PGStore) scanMemories(rows interface {
+	Next() bool
+	Scan(...interface{}) error
+}) ([]Memory, error) {
 	var result []Memory
 	for rows.Next() {
 		var m Memory
@@ -459,12 +466,12 @@ func (s *PGStore) PruneByRole(role string, olderThan time.Duration) (int64, erro
 func (s *PGStore) Stats() MemoryStats {
 	var ms MemoryStats
 	ctx := context.Background()
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories`).Scan(&ms.TotalCount)                          //nolint:errcheck
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='manual'`).Scan(&ms.ManualCount)     //nolint:errcheck
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='session'`).Scan(&ms.SessionCount)   //nolint:errcheck
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='learning'`).Scan(&ms.LearningCount) //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories`).Scan(&ms.TotalCount)                           //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='manual'`).Scan(&ms.ManualCount)      //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='session'`).Scan(&ms.SessionCount)    //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='learning'`).Scan(&ms.LearningCount)  //nolint:errcheck
 	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM memories WHERE role='output_chunk'`).Scan(&ms.ChunkCount) //nolint:errcheck
-	s.pool.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&ms.DBSizeBytes)           //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&ms.DBSizeBytes)            //nolint:errcheck
 	ms.Encrypted = s.IsEncrypted()
 	ms.KeyFingerprint = KeyFingerprint(s.encKey)
 	return ms
@@ -546,15 +553,24 @@ func (s *PGStore) FindTunnels() (map[string][]string, error) {
 }
 
 // ListForReindex returns all IDs and content for batch re-embedding.
-func (s *PGStore) ListForReindex() ([]struct{ ID int64; Content string }, error) {
+func (s *PGStore) ListForReindex() ([]struct {
+	ID      int64
+	Content string
+}, error) {
 	rows, err := s.pool.Query(context.Background(), `SELECT id, content FROM memories ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var result []struct{ ID int64; Content string }
+	var result []struct {
+		ID      int64
+		Content string
+	}
 	for rows.Next() {
-		var r struct{ ID int64; Content string }
+		var r struct {
+			ID      int64
+			Content string
+		}
 		if rows.Scan(&r.ID, &r.Content) == nil {
 			r.Content = s.decryptField(r.Content)
 			result = append(result, r)
@@ -776,8 +792,8 @@ func (s *PGStore) KGTimeline(name string) ([]KGTriple, error) {
 func (s *PGStore) KGStats() KGStats {
 	var st KGStats
 	ctx := context.Background()
-	s.pool.QueryRow(ctx, `SELECT COUNT(DISTINCT name) FROM kg_entities`).Scan(&st.EntityCount)      //nolint:errcheck
-	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM kg_triples`).Scan(&st.TripleCount)                    //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(DISTINCT name) FROM kg_entities`).Scan(&st.EntityCount)        //nolint:errcheck
+	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM kg_triples`).Scan(&st.TripleCount)                     //nolint:errcheck
 	s.pool.QueryRow(ctx, `SELECT COUNT(*) FROM kg_triples WHERE valid_to = ''`).Scan(&st.ActiveCount) //nolint:errcheck
 	st.ExpiredCount = st.TripleCount - st.ActiveCount
 	return st

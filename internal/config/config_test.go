@@ -230,7 +230,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Signal.GroupID = "testgroup"
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
-	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
+	cfg.Server.PublicURL = "https://datawatch.example.com"      // F10 S4.2
 	cfg.MCP.PublicURL = "https://host.tailnet.example.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
@@ -1076,5 +1076,53 @@ func TestValidateUndeclaredEditMode(t *testing.T) {
 		if err := ValidateUndeclaredEditMode(bad); err == nil {
 			t.Errorf("ValidateUndeclaredEditMode(%q) = nil, want error", bad)
 		}
+	}
+}
+
+// TestObserverPullConfig_DefaultsDisabled pins the federated observer pull
+// protocol defaults: the daemon-wide observer.pull.enabled gate ships
+// DISABLED (enforced by zero-value semantics of the config struct — an
+// omitted observer block must leave it off), while the documented interval
+// and timeout defaults (30s / 5s) remain. An explicit
+// observer.pull.enabled: true is honored on load.
+func TestObserverPullConfig_DefaultsDisabled(t *testing.T) {
+	d := DefaultObserverPullConfig()
+	if d.Enabled {
+		t.Error("DefaultObserverPullConfig().Enabled must be false")
+	}
+	if d.DefaultIntervalS != 30 || d.DefaultTimeoutS != 5 {
+		t.Errorf("defaults = %ds/%ds, want 30s/5s", d.DefaultIntervalS, d.DefaultTimeoutS)
+	}
+
+	if cfg := DefaultConfig(); cfg.Observer.Pull.Enabled {
+		t.Error("DefaultConfig: the observer pull gate must be disabled")
+	}
+
+	// Omitted observer block → Load leaves the gate off.
+	cfg, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
+	if err != nil {
+		t.Fatalf("Load(missing): %v", err)
+	}
+	if cfg.Observer.Pull.Enabled {
+		t.Error("Load with no observer block: the gate must stay off")
+	}
+
+	path := filepath.Join(t.TempDir(), "enabled.yaml")
+	yamlSrc := "observer:\n  pull:\n    enabled: true\n    default_interval_s: 60\n"
+	if err := os.WriteFile(path, []byte(yamlSrc), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg2, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load(enabled): %v", err)
+	}
+	if !cfg2.Observer.Pull.Enabled {
+		t.Error("observer.pull.enabled: true must be honored")
+	}
+	if cfg2.Observer.Pull.DefaultIntervalS != 60 {
+		t.Errorf("DefaultIntervalS = %d, want 60", cfg2.Observer.Pull.DefaultIntervalS)
+	}
+	if cfg2.Observer.Pull.DefaultTimeoutS != 5 {
+		t.Errorf("DefaultTimeoutS = %d, want 5 (unspecified default)", cfg2.Observer.Pull.DefaultTimeoutS)
 	}
 }

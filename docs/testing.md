@@ -2373,3 +2373,65 @@ Still owed, and not claimed as done: the one-day shadow comparison on the operat
 | **Expected** | `gofmt -l` prints nothing, vet and lint report nothing, and all four tests, including `TestAutomationCommDecisionAssistantUsage` and `TestAutomationCommFixtureDrainsLateRequests`, pass under `-race` with no data race report. |
 | **Actual** | `gofmt -l` printed nothing, vet was clean, lint reported 0 issues, and all four tests passed under `-race`. |
 | **Result** | PASS |
+
+---
+
+## Observer pull mode — rules-review findings fix (2026-11-06)
+
+The rules-review pass over the observer pull protocol (federated daemon
+pulls a peer's v2 stats instead of the peer pushing) left five gaps open:
+the `observer.pull.enabled` gate was defined in `internal/config` but never
+read by the collector or the fetch path; the collector had no startup
+reconcile (a daemon started with the gate on and peers opted in never
+pulled); the PWA had no Settings → General section for the three
+`observer.pull.*` keys and no Monitor card; the five locale bundles carried
+no keys for the card; and no PWA story covered any of it. All closed by
+this fix.
+
+### Gates
+
+| Check | Result | Seen |
+|-------|--------|------|
+| `gofmt -l .` | Pass | nothing printed (112 files aligned to the Go 1.27.2 gofmt) |
+| `go build ./...` | Pass | no output |
+| `go vet ./...` | Pass | no output |
+| `golangci-lint run ./...` | Pass | 0 issues (the four unchecked `fmt.Fprintf` writes in `cmd/datawatch/cli_observer.go` now assign to `_`) |
+| `go test ./...` | Pass | 4926 tests pass, 0 failures — includes the four new pull tests below and the config default pin |
+| `node --check internal/server/web/app.js` | Pass | no output |
+| `node --test internal/server/web/*.test.js` | Pass | 2026 of 2026, including the settings-fields, Monitor card and locale guards |
+| `node --check scripts/test-stories/pwa/observer-pull-card.mjs` / `bash -n scripts/test-stories/TS-844.sh` | Pass | no output |
+| Locale guard (`TestLocales_*`, `internal/server/v5280_locales_test.go`) | Pass | the three new `stats_observer_pull` / `stats_observer_pull_targets` / `stats_observer_pull_stale` keys exist in the en/de/es/fr/ja bundles and in the guard's key list |
+
+### New / changed tests
+
+| Test | What it pins |
+|------|--------------|
+| `TestObserverPullGlobalGate_DefaultsOff` | The global gate is off without a store: `targets()` is empty, `Fetch` is refused locally (`ErrObserverPullDisabled`) — no network call is made |
+| `TestObserverPullFetch_DisabledGateBlocksRequest` | Gate off ⇒ `Fetch` refuses before touching the peer URL |
+| `TestObserverPullReconcile_Lifecycle` | Enabling starts the collector and admits opted-in peers; disabling stops it and clears the target set; reconcile is idempotent in both directions |
+| `TestObserverPullReconcile_NoStoreSafe` | Reconcile with no federation store is a no-op that never panics |
+| `TestObserverPullConfig_DefaultsDisabled` (`internal/config/config_test.go`) | `config.DefaultObserverPullConfig()` is `enabled: false`, 30 s interval, 5 s timeout; loading an explicit `enabled: true` is honored |
+| TS-844 / `scripts/test-stories/pwa/observer-pull-card.mjs` | PWA story against a live daemon: `GET /api/observer/pull` answers 200 with the `enabled` field and `source: "pull"` rows (each with a known `stale_reason`); the Observer view's Monitor card draws the same gate/target/stale values the `/api/stats` body reports; no sideways scroll at 390x844. Not run here (the Playwright sandbox daemon is out of this worktree's reach) — recorded in the "Still owed" list |
+
+### Docs and observability added with this fix
+
+- `docs/howto/federated-observer.md` — the **Pull mode** section (operator
+  guide: what it is, when to use it, the two gates, the stale taxonomy,
+  failure modes, every read surface).
+- `docs/plans/federated-observer-pull-parity-issue.md` — the "filed" vs "not
+  filed" status contradiction is resolved (the draft stays a draft: no GitHub
+  issue is filed), and its Parity surface row now lists the new PWA surfaces
+  (Settings → General section, Observer view Monitor card).
+- `docs/api/observer.md` (`GET /api/observer/pull`), `docs/mcp.md` and
+  `docs/cursor-mcp.md` (the `observer_pull_status` rows), `README.md` (the
+  how-to is in the "Comms + federation" docs table), `docs/operations.md`
+  (the new operations section and the three Prometheus metrics),
+  `docs/implementation.md` (the feature section: config block, peer opt-in,
+  collector, reconcile, surfaces, tests).
+- Prometheus (`internal/metrics/prometheus.go`): `datawatch_observer_pull_targets`
+  (gauge), `datawatch_observer_pull_stale` (gauge, per peer),
+  `datawatch_observer_pull_fetches_total` (counter, per peer + outcome).
+- SystemStats (`internal/stats/collector.go`): `observer_pull_enabled` /
+  `observer_pull_targets` / `observer_pull_stale` feed the Monitor card.
+- Still owed, and not claimed as done: a TS-844 run against a Playwright
+  sandbox daemon built from this tree.

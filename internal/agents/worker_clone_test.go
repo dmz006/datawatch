@@ -29,11 +29,11 @@ func TestRepoFromGitURL(t *testing.T) {
 
 func TestRepoNameFromURL(t *testing.T) {
 	cases := map[string]string{
-		"https://github.com/owner/repo":     "repo",
-		"https://github.com/owner/repo.git": "repo",
+		"https://github.com/owner/repo":      "repo",
+		"https://github.com/owner/repo.git":  "repo",
 		"git@github.com:owner/myproject.git": "myproject",
-		"":   "repo",
-		"/":  "repo",
+		"":                                   "repo",
+		"/":                                  "repo",
 	}
 	for in, want := range cases {
 		t.Run(in, func(t *testing.T) {
@@ -273,4 +273,3 @@ func mustGit(t *testing.T, cwd string, args ...string) {
 		t.Fatalf("git %v: %v", args, err)
 	}
 }
-

@@ -25,9 +25,9 @@ type PRDRunFn func(ctx context.Context, prdID string) (summary string, err error
 type GuardrailRequest struct {
 	GraphID    string
 	NodeID     string
-	PRDID      string   // the PRD this guardrail is attesting
-	Guardrail  string   // "rules" | "security" | …
-	Summary    string   // output of the PRD run
+	PRDID      string // the PRD this guardrail is attesting
+	Guardrail  string // "rules" | "security" | …
+	Summary    string // output of the PRD run
 	ProjectDir string
 }
 
@@ -38,13 +38,13 @@ type GuardrailFn func(ctx context.Context, req GuardrailRequest) (Verdict, error
 
 // Config mirrors the YAML orchestrator: block.
 type Config struct {
-	Enabled             bool     `json:"enabled"`
-	DefaultGuardrails   []string `json:"default_guardrails,omitempty"`
-	GuardrailTimeoutMs  int      `json:"guardrail_timeout_ms,omitempty"`
-	GuardrailBackend    string   `json:"guardrail_backend,omitempty"`
+	Enabled            bool     `json:"enabled"`
+	DefaultGuardrails  []string `json:"default_guardrails,omitempty"`
+	GuardrailTimeoutMs int      `json:"guardrail_timeout_ms,omitempty"`
+	GuardrailBackend   string   `json:"guardrail_backend,omitempty"`
 	// v5.26.16 — optional model override paired with GuardrailBackend.
-	GuardrailModel      string   `json:"guardrail_model,omitempty"`
-	MaxParallelPRDs     int      `json:"max_parallel_prds,omitempty"`
+	GuardrailModel  string `json:"guardrail_model,omitempty"`
+	MaxParallelPRDs int    `json:"max_parallel_prds,omitempty"`
 }
 
 func DefaultConfig() Config {

@@ -178,13 +178,13 @@ func EnsureClaudeCode(reg *Registry, binary string) {
 		return // already present
 	}
 	_ = reg.Add(&LLM{
-		Name:                 "claude-code",
-		Kind:                 KindClaudeCode,
-		Binary:               binary,
-		ChannelEnabled:       true,
-		SkipPermissions:      true,
-		DefaultEffort:        "normal",
-		AutoCreated:          true,
+		Name:            "claude-code",
+		Kind:            KindClaudeCode,
+		Binary:          binary,
+		ChannelEnabled:  true,
+		SkipPermissions: true,
+		DefaultEffort:   "normal",
+		AutoCreated:     true,
 	})
 }
 

@@ -22,10 +22,14 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 )
 
-// SetServerStore wires the runtime multi-server registry into the HTTP server.
-// Called from cmd/datawatch/main.go after the store is initialised.
+// SetServerStore wires the runtime multi-server registry into the HTTP
+// server. Called from cmd/datawatch/main.go after the store is initialised.
+// It also reconciles the observer pull collector against the
+// observer.pull.enabled gate, so a daemon with the gate on starts pulling
+// without a restart (and one with the gate off stays idle).
 func (s *Server) SetServerStore(st *multiserver.Store) {
 	s.serverStore = st
+	s.ReconcileObserverPull()
 }
 
 // SetFedGroupStore (BL316) wires the custom capability group store.

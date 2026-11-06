@@ -156,6 +156,7 @@ Selected core tools:
 | `guardrail_profile_create` / `guardrail_profile_update` | Optional `notify_events_json` (JSON array of event kinds) sets the profile tier of the same notify_events precedence chain; on update omitted = unchanged, `"[]"` = clear; invalid JSON → error |
 | `observer_stats` / `observer_envelopes` | Per-session + per-LLM-backend stats |
 | `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution |
+| `observer_pull_status` | Observer pull (pull-mode) states: every peer in the pull target set with live state — each row: `name`, `source` ("pull"), `shadow` (true when also push-registered), `stale`, `stale_reason` (`none\|timeout\|error\|forbidden\|not_permitted\|bad_payload\|unknown`), `last_success_at`, `interval_s`, `timeout_s`. Read-only (proxies `GET /api/observer/pull`) |
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
 | `orchestrator_graph_run` / `orchestrator_verdicts` | PRD-DAG orchestrator |
 | `automation_list` / `automation_get` / `automation_create` / `automation_update` / `automation_delete` / `automation_set_llm` / `automation_set_verification_llm` | Automation records — a chain of Automatons with per-outcome edges, entry member, optional budget policy and execution/verification defaults (data records only — no automatic advance yet). `automation_set_llm` and `automation_set_verification_llm` set the Automation's default execution, planning and verification LLMs |

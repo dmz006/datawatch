@@ -16740,6 +16740,16 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'audit.retention_days', label: 'Audit log retention (days, -1 = never prune)', labelKey: 'settings_audit_retention_days', type: 'number', placeholder: '30' },
     { key: 'audit.cef_mirror_enabled', label: 'Mirror audit logs in CEF format (for SIEM)', labelKey: 'settings_audit_cef_mirror_enabled', type: 'toggle' },
   ]},
+  // Federated observer pull mode — the daemon-wide gate + the global
+  // fallbacks a per-peer registry entry inherits. Per-peer opt-in
+  // (federated_observer_pull + interval/timeout) lives on the multi-server
+  // registry entry; the pull status card reads /api/observer/pull/status.
+  // See howto/federated-observer.md (“Observer Pull Mode”).
+  { id: 'observerpull', section: 'Federation — Observer Pull Mode', docs: 'howto/federated-observer.md', fields: [
+    { key: 'observer.pull.enabled', label: 'Observer pull mode (daemon-wide gate)', type: 'toggle' },
+    { key: 'observer.pull.default_interval_s', label: 'Default pull interval (sec, per-peer fallback)', type: 'number', min: 5, step: 1, placeholder: '30' },
+    { key: 'observer.pull.default_timeout_s', label: 'Default per-fetch timeout (sec, per-peer fallback)', type: 'number', min: 0, step: 1, placeholder: '5' },
+  ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
   // lives in LLM_CONFIG_FIELDS at the same id='rtk'.
@@ -35766,6 +35776,26 @@ function renderStatsData(el, data) {
       </div>`;
     } else if (data.ebpf_enabled && data.ebpf_active) {
       html += `<div style="font-size:10px;color:var(--success);padding:4px 12px;">● eBPF active — per-session network tracking</div>`;
+    }
+
+    // ── Federation — Observer Pull card ──
+    // The daemon's pull-side stats for the federated observer pull protocol
+    // (howto/federated-observer.md, “Observer Pull Mode”): the daemon-wide
+    // observer.pull.enabled gate, how many peer registry entries are pull
+    // targets on this daemon, and how many of those are stale (last fetch
+    // failed or never succeeded). Fields come from /api/stats (v1 path)
+    // populated by SetStatsCollector; only render the card when the daemon
+    // actually exposes them so older peers don't show a fake “Disabled”.
+    if ("observer_pull_enabled" in data) {
+      const opOn = !!data.observer_pull_enabled;
+      const opTargets = Number(data.observer_pull_targets) || 0;
+      const opStale = Number(data.observer_pull_stale) || 0;
+      html += `<div style="font-size:11px;color:var(--text2);font-weight:600;padding:8px 8px 4px;border-top:1px solid var(--border);">${t('stats_observer_pull')||'Federation — Observer Pull'}</div>`;
+      html += `<div style="display:flex;gap:16px;padding:4px 8px;align-items:center;font-size:11px;color:var(--text2);">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${opOn?'var(--success)':'var(--text2)'};margin-right:5px;"></span>${opOn?'Enabled':'Disabled'}</span>
+        <span>${t('stats_observer_pull_targets')||'Peers'}: <span style="color:var(--text);font-weight:600;">${escHtml(opTargets)}</span></span>
+        <span>${t('stats_observer_pull_stale')||'Stale'}: <span style="color:${opStale>0?'var(--error)':'var(--text)'};font-weight:600;">${escHtml(opStale)}</span></span>
+      </div>`;
     }
 
     // Per-session stats with expandable rows

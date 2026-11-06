@@ -101,9 +101,9 @@ func TestValidate_InconclusiveWhenSomeSignalsMissing(t *testing.T) {
 	// Result is OK but no audit events for memory writes.
 	fp := &fakeParent{
 		agent: map[string]any{
-			"id":    "w1",
-			"state": "stopped",
-			"task":  "scan only",
+			"id":     "w1",
+			"state":  "stopped",
+			"task":   "scan only",
 			"result": map[string]any{"status": "ok"},
 		},
 		auditEvents: []map[string]any{

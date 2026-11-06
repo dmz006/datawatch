@@ -221,9 +221,9 @@ func TestParseCommSubscribe(t *testing.T) {
 			kinds: []string{"scope_warning", "guardrail_warn"},
 		},
 		{
-			name:  "warning kinds mix with shorthands in one list",
-			args:  []string{"session_started", "scope_warning", "task=task_9"},
-			kinds: []string{"task.session_started", "scope_warning"},
+			name:   "warning kinds mix with shorthands in one list",
+			args:   []string{"session_started", "scope_warning", "task=task_9"},
+			kinds:  []string{"task.session_started", "scope_warning"},
 			taskID: "task_9",
 		},
 		{
