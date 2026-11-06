@@ -759,106 +759,193 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  # Operator identity — read, write, backups, restore and the explicit reset
   /api/identity:
     get:
       summary: Read the operator identity
+      description: Returns the saved operator identity (role, goals, projects, values, focus, context notes). An empty identity is returned as an object with no fields.
       operationId: getIdentity
       tags: [Identity]
       responses:
-        "200": {description: The identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
-        "401": {$ref: "#/components/responses/Unauthorized"}
+        "200":
+          description: The identity
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "503": {description: Identity is disabled (no identity manager wired)}
     put:
       summary: Replace the operator identity
       description: |
-        Replaces the whole identity after copying the file it replaces into the backups.
-        An all-empty body over a saved identity is refused with 409 (`identity_wipe_refused`)
-        and nothing is written; use `POST /api/identity/reset` to clear on purpose.
+        Replaces the whole identity. Before each write the file being replaced is copied to
+        the identity backups (see `GET /api/identity/backups`).
+
+        A body with no content over a saved identity is **refused** with 409 and
+        `code: identity_wipe_refused`; nothing is written. The body lists the fields that
+        were kept in `fields_kept`. To clear the identity on purpose use
+        `POST /api/identity/reset`. An empty body over an already empty identity is accepted.
       operationId: putIdentity
       tags: [Identity]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Identity"}
       responses:
-        "200": {description: The identity as saved, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "200":
+          description: The identity as saved
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
         "400": {description: Body is not valid JSON}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:write}
-        "409": {description: Refused - an empty body over a saved identity; nothing was written, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:write capability}
+        "409":
+          description: Refused - the body is empty and an identity is saved. Nothing was written.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IdentityWipeRefused"}
         "500": {description: The identity could not be written}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
     patch:
       summary: Merge fields into the operator identity
-      description: Merges the non-empty body fields; omitted and empty fields keep their saved value, so an all-empty body changes nothing.
+      description: |
+        Merges the non-empty fields of the body into the saved identity; omitted and empty
+        fields keep their saved value, so an all-empty body changes nothing. Emits the audit
+        action `identity_update`. The 409 of `PUT` is documented for completeness: it is
+        returned if the manager refuses a write that would leave the saved identity empty.
       operationId: patchIdentity
       tags: [Identity]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Identity"}
       responses:
-        "200": {description: The merged identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "200":
+          description: The merged identity
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
         "400": {description: Body is not valid JSON}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:write}
-        "409": {description: Refused - the write would leave the saved identity empty, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:write capability}
+        "409":
+          description: Refused - the write would replace the saved identity with an empty one
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IdentityWipeRefused"}
         "500": {description: The identity could not be written}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
     post:
       summary: Merge fields into the operator identity (alias of PATCH)
+      description: Same as `PATCH /api/identity`; kept for clients that cannot send PATCH.
       operationId: postIdentity
       tags: [Identity]
-      requestBody: {required: true, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/Identity"}
       responses:
-        "200": {description: The merged identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
+        "200":
+          description: The merged identity
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
         "400": {description: Body is not valid JSON}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:write}
-        "409": {description: Refused - the write would leave the saved identity empty, content: {application/json: {schema: {$ref: "#/components/schemas/IdentityWipeRefused"}}}}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:write capability}
+        "409":
+          description: Refused - the write would replace the saved identity with an empty one
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IdentityWipeRefused"}
         "500": {description: The identity could not be written}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
+
   /api/identity/backups:
     get:
-      summary: List identity backups, newest first, with the retention limit
+      summary: List the saved copies of the identity
+      description: |
+        Every identity write first copies the file it replaces into a backup directory next to
+        it. Returns those copies newest first and the retention limit in effect
+        (`identity.backups_to_keep`, never below 1). Requires the config:read capability.
       operationId: listIdentityBackups
       tags: [Identity]
       responses:
-        "200": {description: "Backups and the effective identity.backups_to_keep", content: {application/json: {schema: {$ref: "#/components/schemas/IdentityBackupList"}}}}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:read}
+        "200":
+          description: The backups, newest first
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/IdentityBackupList"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:read capability}
         "405": {description: Method not allowed (GET only)}
         "500": {description: The backup directory could not be read}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
+
   /api/identity/restore:
     post:
-      summary: Restore the identity from a backup name or `latest`
-      description: The identity being replaced is backed up first, so a restore can be undone. Audit action `identity_restore`.
+      summary: Restore the identity from a backup
+      description: |
+        Replaces the identity with a saved backup, given by its `name` from
+        `GET /api/identity/backups` or `latest` (the newest backup that has content). The
+        identity being replaced is backed up first, so a restore can itself be undone.
+        Emits the audit action `identity_restore`. Requires the config:write capability.
       operationId: restoreIdentity
       tags: [Identity]
       requestBody:
         required: true
         content:
           application/json:
-            schema: {type: object, required: [backup], properties: {backup: {type: string, description: "A name from GET /api/identity/backups, or latest"}}}
+            schema:
+              type: object
+              required: [backup]
+              properties:
+                backup: {type: string, description: "A backup name, or `latest`"}
       responses:
-        "200": {description: The restored identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
-        "400": {description: Bad JSON or no backup given}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:write}
-        "404": {description: Unknown backup, or a name that is not a backup file name}
+        "200":
+          description: The restored identity
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
+        "400": {description: Body is not valid JSON, or `backup` is missing}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:write capability}
+        "404": {description: No such backup - the name is unknown or not a backup name (a path is never accepted)}
         "405": {description: Method not allowed (POST only)}
-        "422": {description: The backup has no operator content}
+        "422": {description: The backup holds no operator content, so restoring it would clear the identity}
         "500": {description: The identity could not be written}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
+
   /api/identity/reset:
     post:
-      summary: Clear the identity on purpose (backs it up first)
-      description: The only way to empty a saved identity. Audit action `identity_reset`.
+      summary: Clear the identity on purpose
+      description: |
+        The explicit clear, and the only way to empty a saved identity. The saved identity is
+        copied to the backups first, so `POST /api/identity/restore` brings it back. Resetting
+        an identity that is already empty changes nothing. Emits the audit action
+        `identity_reset`. Requires the config:write capability.
       operationId: resetIdentity
       tags: [Identity]
       responses:
-        "200": {description: The empty identity, content: {application/json: {schema: {$ref: "#/components/schemas/Identity"}}}}
-        "401": {$ref: "#/components/responses/Unauthorized"}
-        "403": {description: Token lacks config:write}
+        "200":
+          description: The empty identity
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Identity"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: The peer or session token lacks the config:write capability}
         "405": {description: Method not allowed (POST only)}
         "500": {description: The identity could not be written}
-        "503": {description: Identity is disabled}
+        "503": {description: Identity is disabled (no identity manager wired)}
 
   /api/config:
     get:
@@ -929,6 +1016,20 @@ paths:
         `autonomous.failure_escalation.max_failures` (whole number of 1 or more, default 3),
         `autonomous.failure_escalation.steps` (a JSON array of step objects, or the text
         `backend:model[@attempts],...`; empty clears the ladder),
+        `autonomous.infra_retry.enabled` (true|false, default true),
+        `autonomous.infra_retry.max_tries` (whole number from 1 to 1000, default 3),
+        `autonomous.infra_retry.backoff_seconds` (a JSON array of whole seconds, or a
+        comma list such as `60,300,540`; each 0 to 604800; the last entry repeats when
+        there are more tries than entries; an empty list means no delay),
+        `autonomous.infra_retry.categories` (a JSON array of failure classes, or a
+        comma list; `spawn_error`, `storage_write`, `session_killed_before_delivery`,
+        `daemon_restart`; an empty list retries no class),
+        `autonomous.infra_retry.exhausted_action` (`hold` or `count`, default `hold`),
+        `autonomous.infra_retry.retry_dependents` (true|false, default true) and
+        `autonomous.infra_retry.raise_question` (true|false, default true). A bad
+        infrastructure retry value rejects the whole PUT with 400 and nothing is
+        written. GET returns all seven values in effect under `autonomous.infra_retry`
+        and the running Automaton manager picks up changes without a restart.
         `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
         claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
         list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
@@ -1335,6 +1436,43 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: Autonomous is disabled}
 
+  /api/autonomous/infra-retries:
+    get:
+      summary: Infrastructure retries
+      description: |
+        The infrastructure retry policy in effect (`enabled`, `max_tries`,
+        `backoff_seconds`, `categories`, `exhausted_action`, `retry_dependents` and
+        `raise_question`) and the tasks that were retried, or are held, because the
+        machinery around them failed: a worker that could not be spawned, a failed
+        storage write, a session killed before the task was delivered or a daemon
+        restart. Each task lists its retries with the failure class, the reason, when
+        each was decided, the delay and when it was due. A task is `held` while it
+        waits for the operator after its retries ran out, with `held_cause` and, when
+        an operator question is open for it, `question_id`. Tasks are listed with the
+        most recently retried first. `automaton` limits the list to one Automaton; an
+        Automaton that does not exist gives an empty list. `count` is the number of
+        tasks listed. Read-only; needs the autonomous read capability when called by
+        a federated peer.
+      operationId: autonomousInfraRetries
+      tags: [Autonomous]
+      parameters:
+        - {name: automaton, in: query, required: false, description: Only the tasks of this Automaton, schema: {type: string}}
+        - {name: limit, in: query, required: false, description: "Tasks to return, most recently retried first; a whole number from 1 to 1000, default 50", schema: {type: integer, minimum: 1, maximum: 1000, default: 50}}
+      responses:
+        "200":
+          description: The retry policy and the tasks retried or held
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InfraRetryStatus"
+        "400": {description: limit is not a whole number from 1 to 1000}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "501": {description: The Automaton manager does not offer the infrastructure retry read}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/decisions:
     get:
       summary: Operator decisions
@@ -1498,86 +1636,6 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
-  /api/autonomous/cleanup:
-    get:
-      summary: Automation cleanup status
-      description: |
-        The status of both Automaton cleanup passes, the disk readings behind them
-        and the rate-limited disk alert. `worktrees` is the finished-worktrees
-        pass (this daemon's own finished Automata branches and worktrees, and the
-        net finished entries removed or dry-run counted in the same pass),
-        `temp` the daemon temp-file sweep, each with its mode in effect, last run
-        time (null until that pass runs), the removed / would-removed / skipped /
-        failed counts, the bytes freed, the last error, and the split between
-        this daemon's own Automata and the rest. `worktree_disk` and
-        `temp_disk` (when present) are the disk readings behind the two passes;
-        a pass that has not run has no reading.
-        `disk_alert_percent` is the threshold in effect
-        (`autonomous.automation.disk_alert_percent`), `disk_alert` whether the
-        rate-limited alert is currently due, and `last_disk_alert_at` the last
-        time it fired (null until then). The status is read from the in-memory
-        watch kept by the coordination loop, so a read never scans the disk again.
-        Read-only; only GET is served, and a federated peer needs the autonomous
-        read capability.
-      operationId: autonomousCleanup
-      tags: [Autonomous]
-      responses:
-        "200":
-          description: Cleanup status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/CleanupStatus"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403": {description: Federated peer lacks the autonomous read capability}
-        "405": {description: Method not allowed}
-        "503": {description: Autonomous is disabled}
-
-  /api/autonomous/uncommitted-work:
-    get:
-      summary: Automaton uncommitted-work status
-      description: |
-        The uncommitted-work holds of the Automata. After a task finishes in an
-        Automaton that commits its own work, the worktree must be clean; when
-        files are still uncommitted the policy decides what happens. `policy`
-        (hold|warn|off) and `scope` (task_files|worktree) are the settings in
-        effect (`autonomous.automation.uncommitted_work_policy` and
-        `autonomous.automation.uncommitted_work_scope`). `held` lists every task
-        and every Automaton currently held: `kind` is `task` for a hold on one
-        task and `worktree` for files no single task owns, `files` the held
-        paths, `outside_scope` the subset the task did not declare, `reason` why
-        the hold was raised, `question_id` the operator question that waits for
-        an answer (commit, discard or retry) and `held_at` when the hold was
-        raised. `held` is an empty list, never null, when nothing is held or the
-        `automaton` filter matches nothing. The read is built from the stored
-        Automata and makes no git call. Read-only; only GET is served, and a
-        federated peer needs the autonomous read capability.
-      operationId: autonomousUncommittedWork
-      tags: [Autonomous]
-      parameters:
-        - name: automaton
-          in: query
-          required: false
-          schema: {type: string}
-          description: Narrow the list to the holds of this Automaton id. An id that matches nothing reads an empty list.
-      responses:
-        "200":
-          description: Uncommitted-work status
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UncommittedWorkStatus"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403": {description: Federated peer lacks the autonomous read capability}
-        "405":
-          description: Method not allowed; only GET is served
-          headers:
-            Allow:
-              schema: {type: string, example: GET}
-        "503": {description: Autonomous is disabled}
-
   /api/autonomous/protected-paths:
     get:
       summary: Automaton protected-paths status
@@ -1656,6 +1714,142 @@ paths:
                 type: array
                 items: {$ref: "#/components/schemas/SecurityFailureEntry"}
         "400": {description: status is not one of the watch statuses}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/cleanup:
+    get:
+      summary: Automation cleanup status
+      description: |-
+        The status of both Automaton cleanup passes, the disk readings behind
+        them and the rate-limited disk alert. `worktrees` is the
+        finished-worktrees pass (owned vs net finished entries, removal or
+        dry-run counts, bytes freed, last error); `temp` the daemon temp-file
+        sweep. `worktree_disk` and `temp_disk` (when present) are the disk
+        readings behind the two passes; a pass that has not run has no
+        reading. `disk_alert_percent` is the threshold in effect,
+        `disk_alert` whether the rate-limited alert (once per
+        autonomous.automation.disk_alert_interval_minutes, default 60) is
+        currently due, `last_disk_alert_at` the last fire (null until then).
+        The status comes from the in-memory watch, so a read never scans the
+        disk again. Read-only; needs the autonomous read capability when
+        called by a federated peer.
+      operationId: autonomousCleanup
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Cleanup status
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CleanupStatus"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/uncommitted-work:
+    get:
+      summary: Automaton uncommitted-work status
+      description: |
+        The uncommitted-work holds of the Automata. After a task finishes in an
+        Automaton that commits its own work, the worktree must be clean; when
+        files are still uncommitted the policy decides what happens. `policy`
+        (hold|warn|off) and `scope` (task_files|worktree) are the settings in
+        effect (`autonomous.automation.uncommitted_work_policy` and
+        `autonomous.automation.uncommitted_work_scope`). `held` lists every task
+        and every Automaton currently held: `kind` is `task` for a hold on one
+        task and `worktree` for files no single task owns, `files` the held
+        paths, `outside_scope` the subset the task did not declare, `reason` why
+        the hold was raised, `question_id` the operator question that waits for
+        an answer (commit, discard or retry) and `held_at` when the hold was
+        raised. `held` is an empty list, never null, when nothing is held or the
+        `automaton` filter matches nothing. The read is built from the stored
+        Automata and makes no git call. Read-only; only GET is served, and a
+        federated peer needs the autonomous read capability.
+      operationId: autonomousUncommittedWork
+      tags: [Autonomous]
+      parameters:
+        - name: automaton
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the list to the holds of this Automaton id. An id that matches nothing reads an empty list.
+      responses:
+        "200":
+          description: Uncommitted-work status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UncommittedWorkStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/supervisor-watch:
+    get:
+      summary: Supervisor watch state
+      description: |
+        The supervisor watch state at a glance: the mode in effect (`mode`,
+        off / shadow / on; an unset mode reads shadow — the release default,
+        reports only, never acts), the instant the coordinator last polled
+        (`last_poll_at`, the zero time when it never has), the stored findings
+        (`findings`, open first, most recently seen first: kind, subject, the
+        operator line, first and last seen, the shadow would-alert mark and the
+        raised-alert instant), and the comparison view (`comparison`: the last
+        recorded comparison against the script's record file, the days of full
+        agreement, and the last comparison's one-sided differences; an
+        unavailable script record is never recorded, so `last` is `null` until
+        one was). Read-only; needs the autonomous read capability when called
+        by a federated peer.
+      operationId: autonomousSupervisorWatch
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor watch state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorWatchStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Autonomous is disabled}
+
+  /api/autonomous/supervisor-watch/stats:
+    get:
+      summary: Supervisor watch stats
+      description: |
+        The supervisor watch as numbers for monitoring: the mode in effect
+        (`mode`), the instant the coordinator last polled (`last_poll_at`) and
+        how many seconds ago (`last_poll_age_seconds`, -1 when it never has),
+        the unresolved findings (`findings_open`, of which `findings_would_alert`
+        shadow marked alert-due and `findings_alerted` raised an alert), the
+        resolved ones (`findings_resolved`) and the days of full agreement with
+        the supervisor script (`agreed_days`). The same numbers ride in the
+        stats snapshot (`supervisor_watch_*`) and the Prometheus gauges
+        `datawatch_supervisor_watch_findings`, `datawatch_supervisor_watch_agreed_days`
+        and `datawatch_supervisor_watch_last_poll_age_seconds`. Read-only; needs
+        the autonomous read capability when called by a federated peer.
+      operationId: autonomousSupervisorWatchStats
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Supervisor watch stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupervisorWatchStats"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -2681,11 +2875,11 @@ paths:
         lint mode: the effective, normalized value is returned.
         The `automation` object carries the search-before-create settings:
         `create_search_mode` (off|shadow|on, default shadow) and
-        `create_search_threshold` (above 0 and at most 1, default 0.5). It also
-        carries the cleanup settings: `cleanup_mode` (off|report|on, default
-        report), `cleanup_retention_hours` (whole hours >= 1, default 24),
-        `cleanup_max_removals_per_pass` (whole number >= 1, default 10) and
-        `disk_alert_percent` (whole percent 1-100, default 85).
+        `create_search_threshold` (above 0 and at most 1, default 0.5).
+        It also carries the cleanup settings: `cleanup_mode` (off|report|on,
+        default report), `cleanup_retention_hours` (whole hours >= 1, default
+        24), `cleanup_max_removals_per_pass` (whole number >= 1, default 10)
+        and `disk_alert_percent` (whole percent 1-100, default 85).
         The `automation` object also carries the uncommitted-work settings:
         `uncommitted_work_policy` (hold|warn|off, default hold) and
         `uncommitted_work_scope` (task_files|worktree, default task_files);
@@ -2797,12 +2991,12 @@ paths:
         changes nothing. `PUT /api/config` accepts them as
         `autonomous.automation.create_search_mode` and
         `autonomous.automation.create_search_threshold`.
-        The cleanup settings under `automation` follow the same rule: an absent
-        key keeps the current value, and a present one must be a value a GET
-        reads back verbatim — `cleanup_mode` (off|report|on),
+        The cleanup settings under `automation` follow the same rule: an
+        absent key keeps the current value, and a present one must be one a
+        GET reads back verbatim - `cleanup_mode` (off|report|on),
         `cleanup_retention_hours` and `cleanup_max_removals_per_pass` (whole
-        numbers of at least 1) and `disk_alert_percent` (a whole percent in
-        1-100) — otherwise the whole PUT is rejected with 400 and changes
+        numbers of at least 1) and `disk_alert_percent` (whole percent in
+        1-100) - otherwise the whole PUT is rejected with 400 and changes
         nothing.
         The uncommitted-work settings under `automation` are strict in the same
         way: `uncommitted_work_policy` must be hold, warn or off and
@@ -2848,16 +3042,16 @@ paths:
                     cleanup_mode:
                       type: string
                       enum: [off, report, "on"]
-                      description: "The cleanup mode: off never removes anything, report removes nothing and records what it would remove, on performs the removals (autonomous.automation.cleanup_mode). Any other value rejects the PUT with 400."
+                      description: "The cleanup mode (autonomous.automation.cleanup_mode); any other value rejects the PUT with 400."
                     cleanup_retention_hours:
                       type: integer
-                      description: "Whole hours >= 1; only finished entries older than this are candidates (autonomous.automation.cleanup_retention_hours). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
+                      description: "Whole hours >= 1 (autonomous.automation.cleanup_retention_hours); zero, negative, fractional or non-numeric rejects the PUT with 400."
                     cleanup_max_removals_per_pass:
                       type: integer
-                      description: "Whole number >= 1; a pass removes at most this many entries (autonomous.automation.cleanup_max_removals_per_pass). Zero, a negative, a fractional or a non-numeric value rejects the PUT with 400."
+                      description: "Whole number >= 1 (autonomous.automation.cleanup_max_removals_per_pass); zero, negative, fractional or non-numeric rejects the PUT with 400."
                     disk_alert_percent:
                       type: integer
-                      description: "Whole percent in 1-100; the disk-usage threshold for the rate-limited cleanup disk alert (autonomous.automation.disk_alert_percent). A fractional or out-of-range value rejects the PUT with 400."
+                      description: "Whole percent in 1-100 (autonomous.automation.disk_alert_percent); fractional or out-of-range rejects the PUT with 400."
                     uncommitted_work_policy:
                       type: string
                       enum: [hold, warn, off]
@@ -6219,6 +6413,208 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Ollama not configured}}
 
   /api/questions:
+    get:
+      summary: List operator questions
+      description: |
+        Lists stored questions, filterable by `state`, `context`, `asker` and
+        `text`, newest first up to `limit`. Every row is the stored question
+        plus a computed `context_ref` (see the QuestionContextRef schema); the
+        reference is built for this read and is not part of the stored record.
+        Needs the autonomous read capability and `autonomous.questions.enabled`.
+      operationId: listQuestions
+      tags: [Questions]
+      parameters:
+        - {name: state, in: query, required: false, schema: {type: string, enum: [open, answered, withdrawn, expired, all]}}
+        - {name: context, in: query, required: false, schema: {type: string, enum: [none, prd, task, proposal, registry_row, all]}}
+        - {name: asker, in: query, required: false, schema: {type: string}}
+        - {name: text, in: query, required: false, schema: {type: string}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1}}
+      responses:
+        "200":
+          description: The matching questions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count: {type: integer}
+                  questions:
+                    type: array
+                    items:
+                      type: object
+                      description: The stored question fields, plus the computed context_ref.
+                      properties:
+                        context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+        "400": {description: Unknown state or context filter, or a bad limit, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+    post:
+      summary: Raise an operator question
+      description: |
+        Raises a question for the operator: text, at least two options, a
+        context and a default. The optional `tradeoffs` object maps an option
+        id to trade-off text; each entry fills that option's own `tradeoffs`
+        when it has none, and an id that matches no option is a 400 naming it.
+
+        After the question validates and before it is stored, the question
+        quality check runs under `autonomous.questions.quality_mode`. It
+        flags options without trade-offs, question text shorter than
+        `quality_min_text_chars`, and text that matches
+        `quality_tracker_id_pattern`. In `off` mode nothing is checked. In
+        `warn` mode (the default) the question is stored and the 201 body
+        carries the findings in `warnings`. In `refuse` mode nothing is
+        stored and the answer is 422 with the findings, so the asker can fix
+        the question and send it again. Needs the autonomous write
+        capability and `autonomous.questions.enabled`.
+      operationId: raiseQuestion
+      tags: [Questions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [context, text, options, default]
+              properties:
+                label: {type: string}
+                asked_by: {type: string}
+                asker_kind: {type: string}
+                session_id: {type: string}
+                context: {type: string}
+                text: {type: string}
+                options:
+                  type: array
+                  items:
+                    type: object
+                    required: [id, label]
+                    properties:
+                      id: {type: string}
+                      label: {type: string}
+                      tradeoffs: {type: string}
+                tradeoffs:
+                  type: object
+                  description: Trade-off text keyed by option id; fills an option that has none of its own.
+                  additionalProperties: {type: string}
+                recommendation:
+                  type: object
+                  properties:
+                    option_id: {type: string}
+                    rationale: {type: string}
+                default: {type: string}
+                risk: {type: string}
+                priority: {type: string}
+                return_path: {type: boolean}
+      responses:
+        "201":
+          description: The question was stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question: {type: object}
+                  warnings:
+                    type: array
+                    description: Quality findings, present only in warn mode when the check found something.
+                    items:
+                      type: object
+                      properties:
+                        code: {type: string, enum: [no_tradeoffs, text_too_short, tracker_id]}
+                        message: {type: string}
+        "400": {description: The question is malformed, or tradeoffs names an option that does not exist, content: {"text/plain": {schema: {type: string}}}}
+        "403": {description: Missing the autonomous write capability, content: {"text/plain": {schema: {type: string}}}}
+        "413": {description: Body larger than 64 KiB, content: {"text/plain": {schema: {type: string}}}}
+        "422":
+          description: Refused by the question quality check (refuse mode); nothing was stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: {type: string}
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code: {type: string, enum: [no_tradeoffs, text_too_short, tracker_id]}
+                        message: {type: string}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/quality:
+    get:
+      summary: Effective question quality policy
+      description: |
+        The effective values of the question quality keys under
+        `autonomous.questions`: `quality_mode` (off, warn or refuse),
+        `quality_min_text_chars`, `quality_tracker_id_pattern` and
+        `queue_preview_lines`. Absent keys read their defaults. Needs the
+        autonomous read capability and `autonomous.questions.enabled`.
+      operationId: questionQuality
+      tags: [Questions]
+      responses:
+        "200":
+          description: The effective policy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mode: {type: string, enum: [off, warn, refuse]}
+                  min_text_chars: {type: integer}
+                  tracker_id_pattern: {type: string}
+                  queue_preview_lines: {type: integer}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "405": {description: Method not allowed, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions/{id}:
+    get:
+      summary: One operator question with its answer metadata
+      description: |
+        The question, the number of answers ever recorded, the id of the
+        currently effective answer and that answer's summary (`answer` is null
+        until the question is answered). The `question` object is the stored
+        record plus a computed `context_ref`: the kind of context the question
+        was raised in, a title, the id, and for a proposal the
+        repository-relative `doc_path` and the in-app documents viewer link in
+        `viewer_url`. The reference is built for this read and is not part of
+        the stored record. Needs the autonomous read capability and
+        `autonomous.questions.enabled`.
+      operationId: getQuestion
+      tags: [Questions]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The question and its answer metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  question:
+                    type: object
+                    description: The stored question fields, plus the computed context_ref.
+                    properties:
+                      context_ref: {$ref: "#/components/schemas/QuestionContextRef"}
+                  answer_count: {type: integer}
+                  current_answer_id: {type: string}
+                  answer:
+                    type: object
+                    nullable: true
+                    properties:
+                      id: {type: string}
+                      chosen_option_id: {type: string}
+                      quote: {type: string}
+                      actor: {type: string}
+                      surface: {type: string}
+                      created_at: {type: string, format: date-time}
+        "403": {description: Missing the autonomous read capability, content: {"text/plain": {schema: {type: string}}}}
+        "404": {description: Unknown question, content: {"text/plain": {schema: {type: string}}}}
+        "503": {description: Operator questions are disabled or not available, content: {"text/plain": {schema: {type: string}}}}
+
+  /api/questions:
     post:
       summary: Raise an operator question
       description: |
@@ -6466,7 +6862,7 @@ components:
   schemas:
     Identity:
       type: object
-      description: The operator identity; every field is optional.
+      description: The operator identity. Every field is optional.
       properties:
         role: {type: string}
         north_star_goals: {type: array, items: {type: string}}
@@ -6477,27 +6873,30 @@ components:
         updated_at: {type: string, format: date-time}
     IdentityWipeRefused:
       type: object
-      description: 409 body for a write that would replace a saved identity with an empty one.
+      description: The 409 body for a write that would replace a saved identity with an empty one.
       required: [error, code, fields_kept]
       properties:
-        error: {type: string}
+        error: {type: string, description: A plain sentence that points at POST /api/identity/reset}
         code: {type: string, enum: [identity_wipe_refused]}
-        fields_kept: {type: array, items: {type: string}}
+        fields_kept: {type: array, items: {type: string}, description: Names of the fields that still hold content}
     IdentityBackup:
       type: object
       required: [name, created_at, size_bytes, role, field_count]
       properties:
-        name: {type: string}
+        name: {type: string, description: "File name; pass it to POST /api/identity/restore"}
         created_at: {type: string, format: date-time}
         size_bytes: {type: integer, format: int64}
-        role: {type: string}
-        field_count: {type: integer}
+        role: {type: string, description: The role held by the backup}
+        field_count: {type: integer, description: How many identity fields hold content}
     IdentityBackupList:
       type: object
       required: [backups, keep]
       properties:
-        backups: {type: array, items: {$ref: "#/components/schemas/IdentityBackup"}}
-        keep: {type: integer}
+        backups:
+          type: array
+          description: Newest first; empty when there are none
+          items: {$ref: "#/components/schemas/IdentityBackup"}
+        keep: {type: integer, description: The retention limit in effect}
     DecisionLine:
       type: object
       description: The operator decisions, as GET /api/autonomous/decisions returns them.
@@ -6570,6 +6969,64 @@ components:
         question_id: {type: string, description: "The operator decision the entry records"}
         answer_id: {type: string, description: "The answer the entry records; answer entries only"}
         decision_state: {type: string, enum: [open, answered, withdrawn, expired], description: "The decision state the entry stands for"}
+    QuestionContextRef:
+      type: object
+      description: |
+        Where a question was raised, computed on every read from the stored
+        context links. Never stored on the question record.
+      properties:
+        kind: {type: string, enum: [proposal, automaton, task, registry_row, none], description: "none when the question has no context or its link is missing"}
+        title: {type: string, description: "A proposal's file name; an Automaton's or task's stored name when it can be resolved and its id otherwise; a registry row's key"}
+        id: {type: string, description: "The Automaton id, task id or registry row key; empty for a proposal or no context"}
+        doc_path: {type: string, description: "A proposal's repository-relative path; empty when the stored path is not repository-relative"}
+        viewer_url: {type: string, description: "The in-app documents viewer link for a proposal that is a markdown file inside the served docs tree (for example /diagrams.html#docs/plans/plan.md); empty for any other path"}
+    InfraRetryStatus:
+      type: object
+      description: The infrastructure retry policy in effect and the tasks retried or held, as GET /api/autonomous/infra-retries returns it.
+      properties:
+        enabled: {type: boolean}
+        max_tries: {type: integer, description: "Tries a task gets before the exhausted action applies"}
+        backoff_seconds:
+          type: array
+          items: {type: integer}
+          description: "Delay in seconds before each retry; the last entry repeats"
+        categories:
+          type: array
+          items: {type: string, enum: [spawn_error, storage_write, session_killed_before_delivery, daemon_restart]}
+        exhausted_action: {type: string, enum: [hold, count]}
+        retry_dependents: {type: boolean}
+        raise_question: {type: boolean}
+        tasks:
+          type: array
+          items: {$ref: "#/components/schemas/InfraRetryTask"}
+        count: {type: integer, description: "Number of tasks listed"}
+    InfraRetryTask:
+      type: object
+      description: A task with infrastructure retries, or held for an infrastructure reason.
+      properties:
+        automaton_id: {type: string}
+        automaton_title: {type: string}
+        task_id: {type: string}
+        task_title: {type: string}
+        status: {type: string, description: "The task's status, for example review_needed while it is held"}
+        retry_count: {type: integer, description: "Consecutive retries in the current incident; 0 once the task got a fair attempt"}
+        max_tries: {type: integer}
+        retries:
+          type: array
+          items: {$ref: "#/components/schemas/InfraRetryEntry"}
+        held: {type: boolean, description: "True while the task waits for the operator after its retries ran out"}
+        held_cause: {type: string, description: "The failure class and cause; present only while held"}
+        question_id: {type: string, description: "The open operator question for the hold; present only when one is open"}
+    InfraRetryEntry:
+      type: object
+      description: One scheduled retry of a task.
+      properties:
+        number: {type: integer}
+        class: {type: string, enum: [spawn_error, storage_write, session_killed_before_delivery, daemon_restart]}
+        reason: {type: string}
+        at: {type: string, format: date-time, description: "When the retry was decided"}
+        delay_seconds: {type: integer}
+        next_at: {type: string, format: date-time, description: "When the retry was due"}
     UsageReading:
       type: object
       description: One usage reading in the shared series.
@@ -6747,134 +7204,6 @@ components:
               dirty: {type: boolean, description: True when the worktree has uncommitted changes}
               note: {type: string}
         held_dirty: {type: integer, description: Branches that are safe by state but held for uncommitted changes}
-    CleanupStatus:
-      type: object
-      description: |-
-        The automation cleanup status, as GET /api/autonomous/cleanup returns it.
-        A pass that has not run carries null for its last_run and zero counts;
-        `last_disk_alert_at` is null until the alert fires. `disk_alert` is
-        rate-limited by autonomous.automation.disk_alert_interval_minutes
-        (default 60) so a permanently full disk fires once per interval, not on
-        every pass.
-      required: [worktrees, temp, disk_alert_percent, disk_alert]
-      properties:
-        worktrees: {$ref: "#/components/schemas/CleanupPassStatus"}
-        temp: {$ref: "#/components/schemas/CleanupPassStatus"}
-        worktree_disk:
-          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
-          description: The disk reading behind the worktrees pass; absent until that pass runs
-        temp_disk:
-          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
-          description: The disk reading behind the daemon temp-file sweep; absent until it runs
-        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (whole percent, autonomous.automation.disk_alert_percent; default 85)"}
-        disk_alert: {type: boolean, description: "True while the rate-limited disk alert is due"}
-        last_disk_alert_at: {type: string, nullable: true, format: date-time, description: When the rate-limited alert last fired; null until it does}
-    UncommittedWorkStatus:
-      type: object
-      description: |-
-        The uncommitted-work status, as GET /api/autonomous/uncommitted-work
-        returns it. `held` is an empty list, never null, when nothing is held.
-      required: [policy, scope, held]
-      properties:
-        policy: {type: string, enum: [hold, warn, off], description: "The uncommitted-work policy in effect (autonomous.automation.uncommitted_work_policy; default hold)"}
-        scope: {type: string, enum: [task_files, worktree], description: "Which files the per-task check covers (autonomous.automation.uncommitted_work_scope; default task_files)"}
-        held:
-          type: array
-          items: {$ref: "#/components/schemas/UncommittedWorkEntry"}
-    UncommittedWorkEntry:
-      type: object
-      description: One task or Automaton held on files git still sees as uncommitted in the Automaton worktree.
-      required: [automaton_id, name, kind, files, outside_scope, held_at]
-      properties:
-        automaton_id: {type: string, description: The held Automaton}
-        name: {type: string, description: The Automaton title (its id when it has none)}
-        task_id: {type: string, description: The held task; absent for a worktree hold}
-        task_title: {type: string, description: The held task title; absent for a worktree hold}
-        kind: {type: string, enum: [task, worktree], description: "task for a hold on one task; worktree for files no single task owns"}
-        files: {type: array, items: {type: string}, description: The held paths}
-        outside_scope: {type: array, items: {type: string}, description: The held paths the task did not declare}
-        reason: {type: string, description: Why the hold was raised}
-        question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
-        held_at: {type: string, format: date-time, description: When the hold was raised}
-    ProtectedPathsStatus:
-      type: object
-      description: |-
-        The protected-paths status, as GET /api/autonomous/protected-paths
-        returns it. `paths`, `held` and `authorized` are empty lists, never null.
-      required: [action, rules_source, paths, held, authorized]
-      properties:
-        action: {type: string, enum: [hold, warn, block, off], description: "The protected-paths action in effect (autonomous.automation.protected_paths_action; default hold)"}
-        rules_source: {type: string, enum: [base_commit, worktree], description: "Where the rules review reads the project rules (autonomous.automation.rules_review_source; default base_commit)"}
-        paths: {type: array, items: {type: string}, description: "The effective protected list (autonomous.automation.protected_paths; the default list when none is set)"}
-        held:
-          type: array
-          items: {$ref: "#/components/schemas/ProtectedPathsHeldEntry"}
-        authorized:
-          type: array
-          items: {$ref: "#/components/schemas/ProtectedPathsAuthorizedEntry"}
-    ProtectedPathsHeldEntry:
-      type: object
-      description: One task held because its commit changed protected paths.
-      required: [automaton_id, automaton_title, task_id, task_title, paths, action, since, awaiting_spec_change]
-      properties:
-        automaton_id: {type: string, description: The Automaton of the held task}
-        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
-        task_id: {type: string, description: The held task}
-        task_title: {type: string, description: The held task title}
-        paths: {type: array, items: {type: string}, description: The changed protected paths, sorted}
-        action: {type: string, description: The protected-paths action in force when the hold was raised}
-        reason: {type: string, description: Why the hold was raised}
-        question_id: {type: string, description: The operator question that waits for an answer (approve, reject or change the spec); absent when no question store was wired}
-        since: {type: string, format: date-time, description: When the hold was raised}
-        base_commit: {type: string, description: The commit the task started from, the state a rejection puts the paths back to}
-        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions and the task waits for that edit}
-    ProtectedPathsAuthorizedEntry:
-      type: object
-      description: One Automaton that authorises protected paths in advance.
-      required: [automaton_id, automaton_title, paths]
-      properties:
-        automaton_id: {type: string, description: The Automaton}
-        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
-        paths: {type: array, items: {type: string}, description: The authorised protected paths, sorted}
-    ProtectedPathHold:
-      type: object
-      description: The hold on a task whose commit changed protected paths, as a task carries it in `protected_path_hold`.
-      required: [paths, action, since]
-      properties:
-        paths: {type: array, items: {type: string}, description: The changed protected paths}
-        action: {type: string, description: The protected-paths action in force when the hold was raised}
-        reason: {type: string, description: Why the hold was raised}
-        question_id: {type: string, description: The operator question that waits for an answer}
-        base_commit: {type: string, description: The commit the task started from}
-        since: {type: string, format: date-time, description: When the hold was raised}
-        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions}
-    CleanupPassStatus:
-      type: object
-      description: |-
-        One cleanup pass. `owner_*` fields cover this daemon's own finished
-        Automata; `net_*` covers the same pass's sweep of everything else that
-        qualifies.
-      required: [mode, last_run, removed, would_remove, skipped, failed, bytes_freed, last_error, owner_removed, net_removed, owner_bytes_freed, net_bytes_freed]
-      properties:
-        mode: {type: string, enum: [off, report, "on"], description: "The cleanup mode in effect when the pass last ran (autonomous.automation.cleanup_mode; default report)"}
-        last_run: {type: string, nullable: true, format: date-time, description: When the pass last ran; null until it runs}
-        removed: {type: integer, description: Entries removed on the last run}
-        would_remove: {type: integer, description: "report mode: entries that would be removed"}
-        skipped: {type: integer, description: Entries skipped on the last run}
-        failed: {type: integer, description: Entries that failed on the last run}
-        bytes_freed: {type: integer, format: int64, description: Bytes freed on the last run}
-        last_error: {type: string, description: The last error; empty when the pass succeeded}
-        owner_removed: {type: integer, description: "This daemon's own finished Automata entries"}
-        net_removed: {type: integer, description: Everything else the same pass removed}
-        owner_bytes_freed: {type: integer, format: int64}
-        net_bytes_freed: {type: integer, format: int64}
-    CleanupDiskCheck:
-      type: object
-      description: One disk-usage reading behind a cleanup pass
-      properties:
-        path: {type: string, description: The path the usage was measured for}
-        percent: {type: integer, description: Disk usage used percent}
-        alert: {type: boolean, description: "True when the reading is at or above the threshold"}
     TriageList:
       type: object
       description: |-
@@ -6987,6 +7316,230 @@ components:
           type: array
           description: Watch records, newest first; empty when nothing matches
           items: {$ref: "#/components/schemas/RepoCIWatchRecord"}
+    CleanupStatus:
+      type: object
+      description: The automation cleanup status, as GET /api/autonomous/cleanup returns it
+      required: [worktrees, temp, disk_alert_percent, disk_alert]
+      properties:
+        worktrees: {$ref: "#/components/schemas/CleanupPassStatus"}
+        temp: {$ref: "#/components/schemas/CleanupPassStatus"}
+        worktree_disk:
+          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
+          description: The disk reading behind the worktrees pass; absent until that pass runs
+        temp_disk:
+          allOf: [{$ref: "#/components/schemas/CleanupDiskCheck"}]
+          description: The disk reading behind the daemon temp-file sweep; absent until it runs
+        disk_alert_percent: {type: integer, description: "The disk-usage threshold in force (autonomous.automation.disk_alert_percent)"}
+        disk_alert: {type: boolean, description: "True while the rate-limited disk alert is due"}
+        last_disk_alert_at: {type: string, nullable: true, format: date-time, description: When the rate-limited alert last fired; null until it does}
+    UncommittedWorkStatus:
+      type: object
+      description: |-
+        The uncommitted-work status, as GET /api/autonomous/uncommitted-work
+        returns it. `held` is an empty list, never null, when nothing is held.
+      required: [policy, scope, held]
+      properties:
+        policy: {type: string, enum: [hold, warn, off], description: "The uncommitted-work policy in effect (autonomous.automation.uncommitted_work_policy; default hold)"}
+        scope: {type: string, enum: [task_files, worktree], description: "Which files the per-task check covers (autonomous.automation.uncommitted_work_scope; default task_files)"}
+        held:
+          type: array
+          items: {$ref: "#/components/schemas/UncommittedWorkEntry"}
+    UncommittedWorkEntry:
+      type: object
+      description: One task or Automaton held on files git still sees as uncommitted in the Automaton worktree.
+      required: [automaton_id, name, kind, files, outside_scope, held_at]
+      properties:
+        automaton_id: {type: string, description: The held Automaton}
+        name: {type: string, description: The Automaton title (its id when it has none)}
+        task_id: {type: string, description: The held task; absent for a worktree hold}
+        task_title: {type: string, description: The held task title; absent for a worktree hold}
+        kind: {type: string, enum: [task, worktree], description: "task for a hold on one task; worktree for files no single task owns"}
+        files: {type: array, items: {type: string}, description: The held paths}
+        outside_scope: {type: array, items: {type: string}, description: The held paths the task did not declare}
+        reason: {type: string, description: Why the hold was raised}
+        question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
+        held_at: {type: string, format: date-time, description: When the hold was raised}
+    ProtectedPathsStatus:
+      type: object
+      description: |-
+        The protected-paths status, as GET /api/autonomous/protected-paths
+        returns it. `paths`, `held` and `authorized` are empty lists, never null.
+      required: [action, rules_source, paths, held, authorized]
+      properties:
+        action: {type: string, enum: [hold, warn, block, off], description: "The protected-paths action in effect (autonomous.automation.protected_paths_action; default hold)"}
+        rules_source: {type: string, enum: [base_commit, worktree], description: "Where the rules review reads the project rules (autonomous.automation.rules_review_source; default base_commit)"}
+        paths: {type: array, items: {type: string}, description: "The effective protected list (autonomous.automation.protected_paths; the default list when none is set)"}
+        held:
+          type: array
+          items: {$ref: "#/components/schemas/ProtectedPathsHeldEntry"}
+        authorized:
+          type: array
+          items: {$ref: "#/components/schemas/ProtectedPathsAuthorizedEntry"}
+    ProtectedPathsHeldEntry:
+      type: object
+      description: One task held because its commit changed protected paths.
+      required: [automaton_id, automaton_title, task_id, task_title, paths, action, since, awaiting_spec_change]
+      properties:
+        automaton_id: {type: string, description: The Automaton of the held task}
+        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
+        task_id: {type: string, description: The held task}
+        task_title: {type: string, description: The held task title}
+        paths: {type: array, items: {type: string}, description: The changed protected paths, sorted}
+        action: {type: string, description: The protected-paths action in force when the hold was raised}
+        reason: {type: string, description: Why the hold was raised}
+        question_id: {type: string, description: The operator question that waits for an answer (approve, reject or change the spec); absent when no question store was wired}
+        since: {type: string, format: date-time, description: When the hold was raised}
+        base_commit: {type: string, description: The commit the task started from, the state a rejection puts the paths back to}
+        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions and the task waits for that edit}
+    ProtectedPathsAuthorizedEntry:
+      type: object
+      description: One Automaton that authorises protected paths in advance.
+      required: [automaton_id, automaton_title, paths]
+      properties:
+        automaton_id: {type: string, description: The Automaton}
+        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
+        paths: {type: array, items: {type: string}, description: The authorised protected paths, sorted}
+    ProtectedPathHold:
+      type: object
+      description: The hold on a task whose commit changed protected paths, as a task carries it in `protected_path_hold`.
+      required: [paths, action, since]
+      properties:
+        paths: {type: array, items: {type: string}, description: The changed protected paths}
+        action: {type: string, description: The protected-paths action in force when the hold was raised}
+        reason: {type: string, description: Why the hold was raised}
+        question_id: {type: string, description: The operator question that waits for an answer}
+        base_commit: {type: string, description: The commit the task started from}
+        since: {type: string, format: date-time, description: When the hold was raised}
+        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions}
+    CleanupPassStatus:
+      type: object
+      description: One cleanup pass; owner_* covers this daemon's own finished Automata, net_* the same pass's sweep of everything else
+      required: [mode, last_run, removed, would_remove, skipped, failed, bytes_freed, last_error, owner_removed, net_removed, owner_bytes_freed, net_bytes_freed]
+      properties:
+        mode: {type: string, enum: [off, report, "on"], description: "The cleanup mode in effect when the pass last ran (autonomous.automation.cleanup_mode; default report)"}
+        last_run: {type: string, nullable: true, format: date-time, description: When the pass last ran; null until it runs}
+        removed: {type: integer, description: Entries removed on the last run}
+        would_remove: {type: integer, description: "report mode: entries that would be removed"}
+        skipped: {type: integer, description: Entries skipped on the last run}
+        failed: {type: integer, description: Entries that failed on the last run}
+        bytes_freed: {type: integer, format: int64, description: Bytes freed on the last run}
+        last_error: {type: string, description: "The last error; empty when the pass succeeded"}
+        owner_removed: {type: integer, description: "This daemon's own finished Automata entries"}
+        net_removed: {type: integer, description: Everything else the same pass removed}
+        owner_bytes_freed: {type: integer, format: int64}
+        net_bytes_freed: {type: integer, format: int64}
+    CleanupDiskCheck:
+      type: object
+      description: One disk-usage reading behind a cleanup pass
+      properties:
+        path: {type: string, description: The path the usage was measured for}
+        percent: {type: integer, description: Disk usage used percent}
+        alert: {type: boolean, description: "True when the reading is at or above the threshold"}
+    SupervisorWatchStatus:
+      type: object
+      description: >-
+        The supervisor watch state, as GET /api/autonomous/supervisor-watch
+        returns it. `findings` is open first, most recently seen first;
+        `last_poll_at` is the coordinator's last poll instant (the zero time
+        when it never has); `mode` is the watch mode in effect (an unset mode
+        reads shadow — reports only, never acts).
+      required: [mode, last_poll_at, findings, comparison]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads shadow
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a supervisor watch pass; the zero time when it never has
+        findings:
+          type: array
+          description: The stored findings, open first, most recently seen first; empty when none are stored
+          items: {$ref: "#/components/schemas/SupervisorWatchFinding"}
+        comparison: {$ref: "#/components/schemas/SupervisorWatchComparisonView"}
+    SupervisorWatchStats:
+      type: object
+      description: >-
+        The supervisor watch as numbers, as GET /api/autonomous/supervisor-watch/stats
+        returns it.
+      required: [mode, last_poll_at, last_poll_age_seconds, findings_open, findings_would_alert, findings_alerted, findings_resolved, agreed_days]
+      properties:
+        mode:
+          type: string
+          enum: [off, shadow, on]
+          description: The watch mode in effect; an unset mode reads shadow
+        last_poll_at:
+          type: string
+          format: date-time
+          description: When the coordinator last ran a supervisor watch pass; the zero time when it never has
+        last_poll_age_seconds: {type: integer, description: "Whole seconds since the last poll; -1 when the coordinator never polled"}
+        findings_open: {type: integer, description: Findings not yet resolved, including the would-alert and alerted ones}
+        findings_would_alert: {type: integer, description: Open findings shadow marked alert-due without raising an alert}
+        findings_alerted: {type: integer, description: Open findings an alert was raised for}
+        findings_resolved: {type: integer, description: Stored findings whose check stopped reporting them}
+        agreed_days: {type: integer, description: Calendar days whose comparisons with the supervisor script all agreed}
+    SupervisorWatchFinding:
+      type: object
+      description: >-
+        One open (or resolved) supervisor watch finding: what the daemon-side
+        watch raised (or would have raised, in shadow mode) and records until an
+        operator closes it. Kind and subject are the finding's identity.
+      required: [kind, subject, first_seen_at, last_seen_at, resolved]
+      properties:
+        kind:
+          type: string
+          enum: [tmux_restart, daemon_inactive, model_not_resident, task_failed, task_review_needed, automaton_not_merged, idle_lane_eligible_work, worktree_no_gomod, worktree_not_registered, worktree_silent, verify_script_not_executable, main_checkout_dirty, ci_red, ci_stuck]
+          description: What the finding is about, one of the stable finding kinds
+        subject: {type: string, description: "The stable id the finding is about: an Automaton id, a node name, a lane name, a CI run id, or the main checkout's path"}
+        text: {type: string, description: The operator-facing line for the finding; empty when not set}
+        first_seen_at: {type: string, format: date-time, description: When the finding was first raised; preserved across refreshes}
+        last_seen_at: {type: string, format: date-time, description: When the finding was last re-raised or touched}
+        would_alert: {type: boolean, description: Shadow mode marked this finding alert-due without raising; false in on mode}
+        alerted_at:
+          nullable: true
+          type: string
+          format: date-time
+          description: When the alert for the finding was raised; null until it does
+        resolved: {type: boolean, description: The operator (or a later pass) closed the finding; a re-sighting re-opens it in place}
+    SupervisorWatchComparisonView:
+      type: object
+      description: >-
+        The comparison view the supervisor watch read route serves: the last
+        recorded comparison between the watch's findings and the script's
+        record file (null until one was recorded — an unavailable script record
+        is never recorded), the days whose comparisons all agreed, and the last
+        comparison's one-sided differences.
+      properties:
+        last:
+          nullable: true
+          description: The most recent recorded comparison
+          oneOf:
+            - type: 'null'
+            - $ref: "#/components/schemas/SupervisorWatchComparison"
+        agreed_days: {type: integer, description: Calendar days whose comparisons all agreed; a day with no comparisons does not count}
+        only_watch:
+          type: array
+          description: The last comparison's entries the watch raised that the script did not
+          items: {type: string}
+        only_script:
+          type: array
+          description: The last comparison's entries the script raised that the watch did not
+          items: {type: string}
+    SupervisorWatchComparison:
+      type: object
+      description: >-
+        One pass's comparison between the daemon-side supervisor watch's
+        findings and the script's record file: the two sides' kind/subject
+        sets, the two one-sided differences, and whether they agreed.
+      required: [at, watch_kinds, script_kinds, only_watch, only_script, agreed]
+      properties:
+        at: {type: string, format: date-time, description: When the pass ran the comparison}
+        watch_kinds: {type: array, description: The watch's kind/subject set, sorted and de-duplicated, items: {type: string}}
+        script_kinds: {type: array, description: The script's kind/subject set, sorted and de-duplicated, items: {type: string}}
+        only_watch: {type: array, description: Entries the watch raised that the script did not, items: {type: string}}
+        only_script: {type: array, description: Entries the script raised that the watch did not, items: {type: string}}
+        agreed: {type: boolean, description: The two sides raised exactly the same kind/subject set}
     SecurityFailureEntry:
       type: object
       description: >-
