@@ -8474,7 +8474,7 @@ components:
     DecisionRecordFolder:
       type: object
       description: The state of the decision folder watch.
-      required: [enabled, path, files_seen, errors, notes, last_scan]
+      required: [enabled, path, files_seen, errors, last_scan]
       properties:
         enabled: {type: boolean, description: True when a folder is configured and both switches are on}
         path: {type: string, description: "The configured folder; empty when the watch is off"}
@@ -8482,10 +8482,6 @@ components:
         errors:
           type: array
           description: Files the last scan could not use, each with a plain message
-          items: {$ref: "#/components/schemas/DecisionRecordProblem"}
-        notes:
-          type: array
-          description: Files read fine that could not change their record, such as an edit to an answered decision
           items: {$ref: "#/components/schemas/DecisionRecordProblem"}
         last_scan: {type: string, format: date-time, nullable: true, description: Null before the first scan}
     DecisionRecordList:
