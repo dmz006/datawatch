@@ -28,6 +28,23 @@ const maxTriageErrorLen = 2000
 // never by BuildTriageRecord, which only builds failed and blocked records.
 const TriageStatusMergePending = "merge_pending"
 
+// TriageStatusMergeBlocked is the TriageRecord.Status of an Automaton that is
+// still running but has at least one finished task whose merge cannot proceed.
+// It is written by refreshMergeBlockTriage (merge_block.go) only when the
+// Automaton has no failed or blocked record of its own; otherwise the same
+// list rides on that record in MergeBlocks.
+const TriageStatusMergeBlocked = "merge_blocked"
+
+// TriageMergeBlock is one task's merge block as the triage record reports it.
+type TriageMergeBlock struct {
+	TaskID    string    `json:"task_id"`
+	TaskTitle string    `json:"task_title,omitempty"`
+	Reason    string    `json:"reason,omitempty"`
+	Action    string    `json:"action,omitempty"`
+	Since     time.Time `json:"since,omitempty"`
+	Attempts  int       `json:"attempts,omitempty"`
+}
+
 // TriageNote is one append-only annotation written to an existing
 // record by a later lifecycle step. At is when it was written, Source
 // names the writing step (e.g. "alert", "review") and Text is the
@@ -115,6 +132,8 @@ type TriageRecord struct {
 	// block episode. Like AlertedAt and FirstSeenAt, it is preserved
 	// across refreshes.
 	Security *SecurityFailureReport `json:"security,omitempty"`
+	// MergeBlocks lists every task of the Automaton whose merge is blocked.
+	MergeBlocks []TriageMergeBlock `json:"merge_blocks,omitempty"`
 }
 
 // TriageRetryCategories are the four auto-retry budget categories, in
@@ -335,6 +354,11 @@ func (m *Manager) SaveTriageRecord(prdID string, fresh *TriageRecord) error {
 					// a refresh never erases the security report of the
 					// episode; a plain refresh keeps it too
 					fresh.Security = stored.Security
+				}
+				if len(fresh.MergeBlocks) == 0 && len(stored.MergeBlocks) > 0 &&
+					(fresh.Status == string(PRDFailed) || fresh.Status == string(PRDBlocked)) {
+					// a failed or blocked refresh never drops the merge blocks
+					fresh.MergeBlocks = stored.MergeBlocks
 				}
 			}
 			if fresh.AutomationID == "" {

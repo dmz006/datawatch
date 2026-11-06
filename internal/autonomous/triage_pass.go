@@ -180,6 +180,10 @@ func triageRecordUnchanged(stored, fresh *TriageRecord) bool {
 		// carries none — a plain refresh is not a change
 		b.Security = a.Security
 	}
+	if len(a.MergeBlocks) > 0 && len(b.MergeBlocks) == 0 &&
+		(b.Status == string(PRDFailed) || b.Status == string(PRDBlocked)) {
+		b.MergeBlocks = a.MergeBlocks
+	}
 	a.UpdatedAt, b.UpdatedAt = time.Time{}, time.Time{}
 	return reflect.DeepEqual(a, b)
 }
