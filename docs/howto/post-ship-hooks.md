@@ -118,4 +118,6 @@ Automaton the hook failures live on the merge run record alone.
 ## See also
 
 - [How-to: Merge pipeline](merge-pipeline.md) — the pipeline the hooks attach to.
+- [Post-ship hooks](../datawatch-definitions.md#post-ship-hooks) — the glossary entry.
+- [The post-ship hook flow](../flow/post-ship-hook-flow.md) — the ship, the hooks in order, the record.
 - Settings → the **Merge pipeline** card → the **Post-ship hooks** card — where the block is edited in the PWA.
