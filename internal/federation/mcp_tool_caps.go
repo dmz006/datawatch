@@ -96,6 +96,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_scan_fix":                      CapAutonomousWrite,
 	"autonomous_prd_scan_results":                  CapAutonomousRead,
 	"autonomous_prd_scan_rules":                    CapAutonomousRead,
+	"autonomous_prd_set_authorized_paths":          CapAutonomousWrite,
 	"autonomous_prd_set_continue_on_story_failure": CapAutonomousWrite,
 	"autonomous_prd_set_git":                       CapAutonomousWrite, // BL407 Phase 5
 	"autonomous_prd_set_guided_mode":               CapAutonomousWrite,
@@ -164,6 +165,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_safe_to_delete":       CapAutonomousRead,
 	"autonomous_cleanup_status":       CapAutonomousRead,
 	"autonomous_uncommitted_work":     CapAutonomousRead,
+	"autonomous_protected_paths":      CapAutonomousRead,
 	"autonomous_overlap_search":       CapAutonomousRead,
 	"security_failure_list":           CapAutonomousRead,
 	"supervisor_watch_list":           CapAutonomousRead,
