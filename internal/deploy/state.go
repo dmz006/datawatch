@@ -21,6 +21,11 @@ const (
 	PhaseRestarting    Phase = "restarting"
 	PhaseInstallFailed Phase = "install_failed"
 	PhaseRestartFailed Phase = "restart_failed"
+	PhaseDone          Phase = "done"
+	PhaseRolledBack    Phase = "rolled_back"
+	// PhaseRollbackFailed means the restore or the second restart failed; no
+	// further automatic action is taken.
+	PhaseRollbackFailed Phase = "rollback_failed"
 )
 
 // PreRestart is what the daemon held just before the restart.

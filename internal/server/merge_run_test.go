@@ -77,7 +77,7 @@ func TestMergeRunRoute_BadBody(t *testing.T) {
 }
 
 func TestMergeRunnerDeployNotConfiguredIsSkipped(t *testing.T) {
-	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, config.DeployConfig{}, t.TempDir(), "p")
+	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, config.DeployConfig{}, nil, t.TempDir(), "p")
 	res, err := r.Ship.Deploy(context.Background(), t.TempDir())
 	if err != nil || res.Status != mergepipeline.ShipSkipped {
 		t.Fatalf("deploy = %+v, %v; want skipped", res, err)
@@ -86,7 +86,7 @@ func TestMergeRunnerDeployNotConfiguredIsSkipped(t *testing.T) {
 
 func TestMergeRunnerDeployConfiguredUsesDeploySequence(t *testing.T) {
 	cfg := config.DeployConfig{BuildCommand: "false"}
-	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, cfg, t.TempDir(), "p")
+	r := newMergeRunner(&mergeRunSpy{repo: t.TempDir()}, config.MergePipelineConfig{}, cfg, nil, t.TempDir(), "p")
 	t.Setenv("DATAWATCH_DATA_DIR", t.TempDir())
 	res, err := r.Ship.Deploy(context.Background(), t.TempDir())
 	if err != nil || res.Status != mergepipeline.ShipFailed || !strings.Contains(res.Note, "deploy failed") {

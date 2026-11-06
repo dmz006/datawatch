@@ -1447,6 +1447,10 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	// The Claude lane history samples with the daemon and stops when ctx ends.
 	s.StartUsageLaneHistory(ctx)
 
+	// Finish a deploy the restart interrupted (health check, rollback) and
+	// retry a deferred one, in the background.
+	s.StartDeployResume(ctx)
+
 	// Wire real-time stats broadcast — fires on every collection (every 5s).
 	// Chain with any existing onCollect (e.g. Prometheus metrics update).
 	if s.api.statsCollector != nil {
