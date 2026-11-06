@@ -61,7 +61,7 @@ func (s *Server) handleObserverPeers(w http.ResponseWriter, r *http.Request) {
 		bound := s.peersBoundToNodes()
 		free := []map[string]any{}
 		for _, row := range s.mergedObserverPeers() {
-			if name, _ := row["name"].(string); !bound[name] {
+			if name, _ := row["name"].(string); !s.peerRowBound(bound, name, row) {
 				free = append(free, row)
 			}
 		}
@@ -355,6 +355,57 @@ func (s *Server) peersBoundToNodes() map[string]bool {
 	return bound
 }
 
+// peerRowBound reports whether a merged peer row counts as bound to a
+// ComputeNode for the /free view. Shadow rows (federated, observer_pull
+// off, never pushed) never auto-bind by name match — they carry no data
+// to bind and attaching them is rejected (409) — so only an explicit
+// ObserverPeer reference on a Node binds them.
+func (s *Server) peerRowBound(bound map[string]bool, peerName string, row map[string]any) bool {
+	if shadow, _ := row["shadow"].(bool); shadow {
+		return s.peerToNodeNameExplicit(peerName) != ""
+	}
+	return bound[peerName]
+}
+
+// peerToNodeNameExplicit is like peerToNodeName but WITHOUT the implicit
+// name-match fallback: it returns the Node that explicitly references
+// peerName in ObserverPeer, or "" if none.
+func (s *Server) peerToNodeNameExplicit(peerName string) string {
+	if s.computeReg == nil {
+		return ""
+	}
+	for _, n := range s.computeReg.List() {
+		if n.ObserverPeer == peerName {
+			return n.Name
+		}
+	}
+	return ""
+}
+
+// observerPeerAttachCheck classifies name for ComputeNode binding.
+// bindable: a registered push peer, or a federated peer opted into
+// observer pull (observer_pull on, enabled, URL set).
+// conflict: a shadow peer — present in the federated peer store but
+// not registered for push and not opted into pull (observer_pull off,
+// no data). Shadow peers are rejected with HTTP 409 so the operator
+// learns the peer carries no data to bind.
+func (s *Server) observerPeerAttachCheck(name string) (bindable, conflict bool) {
+	if s.peerRegistry != nil {
+		if _, ok := s.peerRegistry.Get(name); ok {
+			return true, false
+		}
+	}
+	if s.serverStore != nil {
+		if e, ok := s.serverStore.Get(name); ok && e != nil {
+			if s.pullConfigured(name) {
+				return true, false
+			}
+			return false, true // shadow: in the store but not bindable
+		}
+	}
+	return false, false
+}
+
 // peerToNodeName returns the ComputeNode name that observes peerName,
 // or "" if no Node is bound (peer is free). Explicit ObserverPeer
 // references take priority over implicit name match.
@@ -578,7 +629,10 @@ func (s *Server) mergedObserverPeers() []map[string]any {
 				"name":         e.Name,
 				"source":       "pull",
 				"shadow":       true,
-				"compute_node": s.peerToNodeName(e.Name),
+				// Shadow rows never auto-bind by name match — they carry
+				// no pushed data — so only an explicit ObserverPeer
+				// reference counts here.
+				"compute_node": s.peerToNodeNameExplicit(e.Name),
 				"pull":         s.pullInfoFor(e.Name),
 			})
 		}
