@@ -4071,5 +4071,19 @@
   "node_backend_none": "Aucun backend sur ce nœud.",
   "node_backend_not_installed": "non installé",
   "node_backend_below_minimum": "sous le minimum",
-  "node_backend_versions_failed": "Impossible de charger les versions des backends : %1$s"
+  "node_backend_versions_failed": "Impossible de charger les versions des backends : %1$s",
+  "merge_blocked_status": "fusion bloquée",
+  "merge_blocked_card_title": "Automaton en attente de fusion",
+  "merge_blocked_what": "Cet Automaton a du travail terminé qui ne peut pas encore être fusionné ; il attend la fusion.",
+  "merge_blocked_line": "Fusion bloquée : %1$s. Ensuite : %2$s",
+  "merge_blocked_why": "Raison : %1$s",
+  "merge_blocked_how_long": "Bloqué depuis : %1$s",
+  "merge_blocked_next_action": "Action suivante : %1$s",
+  "merge_blocked_reason_unknown": "raison non enregistrée",
+  "merge_blocked_action_unknown": "aucune action enregistrée",
+  "merge_blocked_age_now": "moins d'une minute",
+  "merge_blocked_age_minutes": "%1$s min",
+  "merge_blocked_age_hours": "%1$s h",
+  "merge_blocked_age_days": "%1$s j",
+  "merge_blocked_help_link": "Que signifie une fusion bloquée ? Ouvrir l'aide sur la fusion de l'Automaton"
 }
