@@ -1347,6 +1347,25 @@ autonomous_overlap_search(title="Add search before create", spec="Warn when a ne
 
 ---
 
+### `observer_pull_status`
+
+Observer pull (pull-mode) states: every peer in the pull target set with live state. Read-only — it proxies `GET /api/observer/pull` and changes nothing. The target set is empty while the daemon-wide gate `observer.pull.enabled` is off or while no peer is opted in via its `observer_pull` flag.
+
+**Parameters:** none.
+
+**Reply:** one row per pull target: `name`, `source` (`"pull"`), `shadow` (true when the peer is also push-registered), `stale` (no successful fetch within its interval), `stale_reason` (`none`, `timeout`, `error`, `forbidden`, `not_permitted`, `bad_payload` or `unknown`), `last_success_at` (RFC3339, empty until the first success), `interval_s` and `timeout_s` (the effective per-peer values after the global `observer.pull.default_interval_s` / `observer.pull.default_timeout_s` fallback). See [howto/federated-observer.md](howto/federated-observer.md) (Observer pull mode) and [api/observer.md](api/observer.md).
+
+**Example response (shortened):**
+```json
+[
+  {"name": "compute-2", "source": "pull", "shadow": true, "stale": false,
+   "stale_reason": "none", "last_success_at": "2026-11-06T01:40:12Z",
+   "interval_s": 30, "timeout_s": 5}
+]
+```
+
+---
+
 ## Operator identity and its backups
 
 The operator identity (role, north-star goals, current projects, values, current
