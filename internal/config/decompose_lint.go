@@ -197,6 +197,12 @@ type TaskTemplateDef struct {
 	// (the build and test commands its spec asserts) so it is not an
 	// unverifiable read-only task while it changes nothing.
 	VerificationScript string `yaml:"verification_script,omitempty" json:"verification_script,omitempty"`
+	// ReportPath, for a read-only template, is the one repo-relative
+	// file under .datawatch/reports/ the task may write its verdict
+	// and evidence to. It takes the same slots as the other string
+	// fields ({{feature}} is slugged into a file-name-safe form) and is
+	// copied onto the instantiated task after validation.
+	ReportPath string `yaml:"report_path,omitempty" json:"report_path,omitempty"`
 	// DependsOn lists ids of other templates this one depends on.
 	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
 	// AppliesWhen is a free-text condition for when this template is
