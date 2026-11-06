@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -166,5 +167,62 @@ func TestFailureEscalationToolsResolveWhileAutomatonRunning(t *testing.T) {
 	if got.ID != "p1" || got.Status != "running" || len(got.Stories) != 1 || len(got.Stories[0].Tasks) != 2 ||
 		got.Stories[0].Tasks[0].Status != "pending" || got.Stories[0].Tasks[1].Status != "in_progress" {
 		t.Errorf("result Automaton = %+v", got)
+	}
+}
+
+// TestReviewRetryReadOnlyToolProxiesFields: the resolve tool declares read_only
+// and report_path, sends them to the daemon, and leaves read_only out when the
+// caller did not pass it (so the daemon leaves the mark unchanged).
+func TestReviewRetryReadOnlyToolProxiesFields(t *testing.T) {
+	var c subUpdateCapture
+	s := subUpdateServer(t, &c, http.StatusOK, `{"id":"p1"}`)
+	props := s.toolAutonomousPRDResolveTaskReview().InputSchema.Properties
+	for _, k := range []string{"read_only", "report_path"} {
+		if _, ok := props[k]; !ok {
+			t.Errorf("resolve tool has no %s parameter", k)
+		}
+	}
+	req := subUpdateReq("autonomous_prd_resolve_task_review", map[string]any{
+		"id": "p1", "task_id": "t1", "action": "retry",
+		"read_only": true, "report_path": ".datawatch/reports/r.md",
+	})
+	if _, err := s.handleAutonomousPRDResolveTaskReview(context.Background(), req); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if c.body["read_only"] != true || c.body["report_path"] != ".datawatch/reports/r.md" {
+		t.Errorf("body = %v", c.body)
+	}
+	// A fresh capture: decoding into the old one would keep its keys.
+	var c2 subUpdateCapture
+	s = subUpdateServer(t, &c2, http.StatusOK, `{"id":"p1"}`)
+	req = subUpdateReq("autonomous_prd_resolve_task_review", map[string]any{"id": "p1", "task_id": "t1", "action": "retry"})
+	if _, err := s.handleAutonomousPRDResolveTaskReview(context.Background(), req); err != nil {
+		t.Fatalf("retry without the fields: %v", err)
+	}
+	if _, present := c2.body["read_only"]; present {
+		t.Errorf("read_only sent although not passed: %v", c2.body)
+	}
+	if _, present := c2.body["report_path"]; present {
+		t.Errorf("report_path sent although not passed: %v", c2.body)
+	}
+}
+
+// TestHeldTaskEditToolProxiesFields: the edit tool carries read_only and
+// report_path for a held task, and its description names the held-task case.
+func TestHeldTaskEditToolProxiesFields(t *testing.T) {
+	var c subUpdateCapture
+	s := subUpdateServer(t, &c, http.StatusOK, `{"id":"p1"}`)
+	if d := s.toolAutonomousPRDEditTask().Description; !strings.Contains(d, "review_needed") {
+		t.Errorf("edit tool description does not mention held tasks: %s", d)
+	}
+	req := subUpdateReq("autonomous_prd_edit_task", map[string]any{
+		"id": "p1", "task_id": "t1", "new_spec": "new",
+		"read_only": true, "report_path": ".datawatch/reports/r.md",
+	})
+	if _, err := s.handleAutonomousPRDEditTask(context.Background(), req); err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+	if c.path != "/api/autonomous/prds/p1/edit_task" || c.body["read_only"] != true || c.body["report_path"] != ".datawatch/reports/r.md" || c.body["new_spec"] != "new" {
+		t.Errorf("path=%s body=%v", c.path, c.body)
 	}
 }

@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **A task held for review can be fixed in place.** `edit_task` (REST, MCP `autonomous_prd_edit_task`, CLI, chat) now accepts a `review_needed` task in a blocked Automaton, so its spec, read-only mark and report path can be corrected; running and pending tasks of a blocked Automaton and completed tasks are still refused, and an edit never changes the task's status. The retry decision (`resolve_task_review`, MCP `autonomous_prd_resolve_task_review`, `datawatch autonomous resolve-review --read-only --report-path`, chat `review-task read_only= report_path=`) also takes an optional `read_only` mark and `report_path`; every change is checked first, so a refused change leaves the task held. A refused edit no longer leaves the spec or read-only mark half-applied.
+
 ## v9.99.0 — Requirements and model-pull consent
 
 Automation now reports what it needs against what is configured, and no model is pulled without the operator's consent.

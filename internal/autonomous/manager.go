@@ -3716,8 +3716,10 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // blocked, so a stuck task (e.g. one the pre-spawn scope lint rejected)
 // can be corrected and then retried via ResetTask without
 // cancel -> reset_to_draft -> re-decompose regenerating the whole tree.
-// While blocked, only a failed or blocked task may be edited: the point is
-// to patch the one stuck task, not to replan its pending siblings. A
+// While blocked, only a failed, blocked or review_needed (held) task may be
+// edited: the point is to patch the one stuck task, not to replan its pending
+// siblings. Editing never changes the task's status; a held task is then
+// requeued with ResolveTaskReview's retry. A
 // completed task's spec is immutable in every PRD status, since it is the
 // record of work already done. A failed PRD accepts an edit only for a task
 // that failed the pre-spawn scope lint (isScopeLintFailure), so that task can
@@ -3765,16 +3767,28 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 						editErr = fmt.Errorf("task %q is completed; completed task specs are immutable", taskID)
 						return
 					}
-					if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked {
+					if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked && ts != TaskReviewNeeded {
 						if ts == "" {
 							ts = TaskPending
 						}
-						editErr = fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
+						editErr = fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks (or tasks held for review) can be patched in place", taskID, ts, prdID)
 						return
 					}
 					if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
 						editErr = fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
 						return
+					}
+					// Check the report path before anything is written, so a
+					// refused edit leaves the task exactly as it was.
+					if reportPath != "" {
+						readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly
+						if readOnly != nil {
+							readOnlyAfter = *readOnly
+						}
+						if !readOnlyAfter {
+							editErr = fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
+							return
+						}
 					}
 					if newSpec != "" {
 						prd.Story[si].Tasks[ti].Spec = newSpec
@@ -3783,11 +3797,6 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 						prd.Story[si].Tasks[ti].ReadOnly = *readOnly
 					}
 					if reportPath != "" {
-						readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly || (readOnly != nil && *readOnly)
-						if !readOnlyAfter {
-							editErr = fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
-							return
-						}
 						prd.Story[si].Tasks[ti].ReportPath = reportPath
 					}
 					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()

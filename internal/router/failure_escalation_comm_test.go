@@ -150,3 +150,19 @@ func TestFailureEscalationCommReviewTaskRefusals(t *testing.T) {
 		t.Fatalf("a refused verb reached the REST loopback %d times", rec.hits)
 	}
 }
+
+// TestReviewRetryReadOnlyCommCarriesFields: review-task retry sends read_only as
+// a boolean and report_path as given, and refuses a read_only that is not a
+// boolean without reaching the daemon.
+func TestReviewRetryReadOnlyCommCarriesFields(t *testing.T) {
+	r, rec := newFailureEscalationRouter(t)
+	r.HandleTestMessage("autonomous review-task p1 t1 retry read_only=true report_path=.datawatch/reports/r.md note=report only")
+	if rec.body["read_only"] != true || rec.body["report_path"] != ".datawatch/reports/r.md" || rec.body["note"] != "report only" {
+		t.Fatalf("body = %v", rec.body)
+	}
+	hits := rec.hits
+	out := strings.Join(r.HandleTestMessage("autonomous review-task p1 t1 retry read_only=maybe"), "\n")
+	if !strings.Contains(out, "read_only must be true or false") || rec.hits != hits {
+		t.Fatalf("reply = %q, hits %d -> %d", out, hits, rec.hits)
+	}
+}
