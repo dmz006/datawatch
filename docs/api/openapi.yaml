@@ -1613,6 +1613,57 @@ paths:
         "405": {description: Method not allowed}
         "503": {description: The daemon configuration is not available}
 
+  /api/autonomous/deploy:
+    get:
+      summary: Deploy settings and last deploy state
+      description: |
+        The effective `autonomous.deploy` settings (the two timeouts with their
+        defaults filled in), whether a merge or deploy is running now, and the last
+        deploy: its `phase`, its `outcome`, why and when it was deferred, and the
+        saved binary's time and SHA-256. The saved binary's contents are never
+        returned. Read-only; a federated peer needs the autonomous read capability.
+      operationId: autonomousDeploy
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The deploy state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405": {description: Method not allowed}
+        "503": {description: Automata is disabled}
+
+  /api/autonomous/deploy/run:
+    post:
+      summary: Run the deploy now
+      description: |
+        Starts the deploy sequence (snapshot, build, wait for final-gate tasks,
+        install, restart) for the current build, the same step the merge pipeline
+        runs after a ship. It takes no body and shares the merge run lock. An empty
+        setting means that step does nothing; with no build, install or restart
+        command set the answer is `skipped`. `restarting` means the restart command
+        ran; the health check and any rollback finish after the daemon is back. A
+        federated peer needs the autonomous write capability.
+      operationId: autonomousDeployRun
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: The result of the run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeployRunResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "405": {description: Method not allowed}
+        "409": {description: A merge or deploy is already running}
+        "503": {description: Automata is disabled, or no worktree base repository is set}
+
   /api/autonomous/merge-pipeline:
     get:
       summary: Merge pipeline in effect for a project
@@ -7278,6 +7329,38 @@ components:
         version_files:
           type: array
           items: {type: string}
+    DeployStatus:
+      type: object
+      description: The deploy state, as GET /api/autonomous/deploy returns it.
+      properties:
+        settings:
+          type: object
+          description: "The seven autonomous.deploy keys as text; the two timeouts have their defaults filled in"
+          additionalProperties: true
+        running: {type: boolean, description: "A merge or deploy is running now"}
+        phase: {type: string, enum: [deferred, restarting, install_failed, restart_failed, done, rolled_back, rollback_failed], description: "Phase of the last deploy; absent when none is recorded"}
+        outcome: {type: string, enum: [ok, rolled_back, rollback_failed], description: "Last recorded outcome; absent when none"}
+        deferred:
+          type: object
+          description: "Present while the deploy is deferred"
+          properties:
+            reason: {type: string}
+            at: {type: string, format: date-time}
+        snapshot:
+          type: object
+          description: "The saved binary's identity, never its contents"
+          properties:
+            time: {type: string, format: date-time}
+            sha256: {type: string}
+      required: [settings, running]
+    DeployRunResult:
+      type: object
+      description: The answer of POST /api/autonomous/deploy/run.
+      properties:
+        status: {type: string, enum: [skipped, deferred, failed, restarting]}
+        note: {type: string, description: "What happened, in plain words"}
+        error: {type: string, description: "Present only when the step returned an error"}
+      required: [status]
     MergePipelineView:
       type: object
       description: The merge pipeline in effect for a project, as GET /api/autonomous/merge-pipeline returns it.

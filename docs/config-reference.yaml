@@ -1728,6 +1728,41 @@ autonomous:
   #   version_files: []
   #   projects: {}
 
+  # Deploy after ship (autonomous.deploy): how a shipped build becomes the
+  # running daemon: snapshot, build, wait for final-gate tasks, install,
+  # restart, health check, and a rollback with a question if it is unhealthy.
+  # Every key is optional and an empty value means that step does nothing; a
+  # daemon with none set never deploys. Settable at runtime through YAML,
+  # PUT /api/config, `datawatch config set autonomous.deploy.<key> <value>`,
+  # MCP autonomous_config_set or config_set, the comm `configure` verb and
+  # Settings -> Automation -> Deploy. State: GET /api/autonomous/deploy,
+  # `datawatch autonomous deploy show`, MCP autonomous_deploy_get, comm
+  # `autonomous deploy`. Run now: POST /api/autonomous/deploy/run,
+  # `datawatch autonomous deploy run`, MCP autonomous_deploy_run, comm
+  # `autonomous deploy run`.
+  # build_command: shell command line that builds the new binary, run in the
+  #   project. Empty (default) skips the build.
+  # install_command: shell command line that installs the new binary. Empty
+  #   (default) skips the install. Needs binary_path.
+  # binary_path: absolute path of the installed binary the install command
+  #   replaces. It is copied aside first so a failed deploy can go back to it.
+  # restart_command: shell command line that restarts the daemon. Empty
+  #   (default) skips the restart.
+  # health_check: shell command line whose exit code 0 means healthy. Empty
+  #   (default) means no health check.
+  # drain_timeout: duration, how long to wait for running final-gate tasks
+  #   before the deploy is deferred. Unset reads 10m.
+  # health_timeout: duration, how long the health check may keep failing
+  #   before the daemon rolls back. Unset reads 2m.
+  # deploy:
+  #   build_command: "make build"
+  #   install_command: "install -m 0755 ./build/app /usr/local/bin/app"
+  #   binary_path: /usr/local/bin/app
+  #   restart_command: "systemctl --user restart app"
+  #   health_check: "curl -fsS http://localhost:8080/healthz"
+  #   drain_timeout: 10m
+  #   health_timeout: 2m
+
   # Model request progress (the request watch): the daemon observes the
   # in-flight model request of a worker or verifier session whose model runs on
   # a registered compute node, so a hung request can be told from a slow one.

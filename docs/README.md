@@ -49,6 +49,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [howto/automata-tab-loading.md](howto/automata-tab-loading.md) | Automata tab loading: paged summary, Load more, loading / cached / stale / failed states, reconnect |
 | [howto/automation-tab.md](howto/automation-tab.md) | Automation view (first sub-tab of Automata): list, pipeline strip, create and edit form, member controls |
 | [howto/infrastructure-retry.md](howto/infrastructure-retry.md) | Infrastructure retry: the four transient failure classes, back-off, the held task and its question, dependents that recover, every key and surface |
+| [howto/deploy-after-ship.md](howto/deploy-after-ship.md) | Deploy after ship: build, install, restart and health check; every step off until set; the outcomes done, skipped, deferred, rolled back and rollback_failed |
 | [howto/merge-pipeline.md](howto/merge-pipeline.md) | Merge pipeline: a file in the repository or a daemon record, which wins, conflict policy and model, how a model proposal is tested before use |
 | [howto/onboarding-report.md](howto/onboarding-report.md) | Onboarding report: what is configured, what is missing, what to try next, on every surface; the checks and how to switch them off |
 | [howto/automaton-parallel-tasks.md](howto/automaton-parallel-tasks.md) | Parallel tasks in one Automaton: read-only tasks, a worktree per task, merging back in order, the merge conflict policy, the speedup numbers |

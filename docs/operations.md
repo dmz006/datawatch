@@ -750,6 +750,18 @@ A bad value sent through `PUT /api/config` (400), MCP, the CLI, the comm channel
 
 Each project has a merge pipeline: the ordered steps that take finished branches to shipped. The daemon picks it from the project's repository file (`.datawatch/merge-pipeline.yaml` by default), else a record it keeps for the project, else the built-in pipeline; `autonomous.merge_pipeline.source_order` sets the order and `fallback_on_bad_file` (`record` by default) says what is used when the file is unusable. Read what is in effect, and why, with `datawatch autonomous merge-pipeline show`, the `autonomous_merge_pipeline_get` tool, the chat verb `autonomous merge-pipeline` or Settings > Automation > Merge pipeline. Check a pipeline without saving it with `validate`; a pipeline that does not validate is refused with every problem named. On a conflict, `conflict_policy` (default `mechanical_and_model`) resolves additive hunks mechanically, then asks the `conflict_model` (a registry entry; empty means none) for the rest. The proposal is worked out in a scratch worktree and kept only if the pipeline's test step passes on it; otherwise the project is unchanged and the operator is asked. A pipeline that bumps the version needs `version_files`. The operator guide is [howto/merge-pipeline.md](howto/merge-pipeline.md).
 
+### Deploy after ship
+
+After a release ships the daemon can build, install, restart and health check itself. Every step is a setting under `autonomous.deploy` (`build_command`, `install_command`, `binary_path`, `restart_command`, `health_check`, `drain_timeout` default `10m`, `health_timeout` default `2m`) and an empty one does nothing, so nothing deploys until you set it up. The outcomes are done, skipped (nothing configured), deferred (final-gate tasks still running after `drain_timeout`), rolled back (the new binary failed its health check, lost a session or lost a capacity lease, so the previous binary is restored, the daemon restarts again and you are asked) and `rollback_failed` (the restore or the second restart failed; no further automatic action, and you are asked). The operator guide is [howto/deploy-after-ship.md](howto/deploy-after-ship.md).
+
+| Method | How |
+|--------|-----|
+| **YAML** | `~/.datawatch/config.yaml` > `autonomous:` > `deploy:` |
+| **CLI** | `datawatch config set autonomous.deploy.<key> <value>`; `datawatch autonomous deploy show`; `datawatch autonomous deploy run` |
+| **Web UI** | Settings > Automation > **Deploy** card (settings, last outcome, **Run now**) |
+| **REST API** | `PUT /api/config` with `{"autonomous.deploy.<key>": "value"}`; `GET /api/autonomous/deploy`; `POST /api/autonomous/deploy/run` |
+| **Comm channel** | `configure autonomous.deploy.<key>=<value>`; `autonomous deploy [show]`; `autonomous deploy run` |
+
 ### Onboarding report
 
 `datawatch automation onboarding-report` (also the PWA card, the `onboarding_report` tool, the chat verb `onboarding-report` and `GET /api/automation/onboarding-report`) lists what is configured, what is missing and what to try next. It runs six checks (`backends`, `models`, `projects`, `channels`, `memory`, `merge_pipeline`) and reads only configuration; it changes nothing. `onboarding_report.enabled` (default on) turns it off, `onboarding_report.disabled_checks` leaves chosen checks out, and `onboarding_report.include_next_steps` (default on) adds the suggestions. The operator guide is [howto/onboarding-report.md](howto/onboarding-report.md).

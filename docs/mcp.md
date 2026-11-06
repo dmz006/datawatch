@@ -364,6 +364,13 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_infra_retries(automaton="a1b2c3d4", limit=20)
   ```
 
+- **`autonomous_deploy_get`**, **`autonomous_deploy_run`** — the deploy after a ship. `_get` reads the effective `autonomous.deploy` settings, whether a merge or deploy is running, the last deploy phase and outcome, any deferral and its reason, and the snapshot's time and SHA-256 (never its contents). `_run` starts the deploy sequence for the current build now; it is refused with a conflict while a merge or deploy is running. Neither takes arguments. Change the settings with `config_set` (for example `config_set(key="autonomous.deploy.health_timeout", value="3m")`); an empty value means that step does nothing. `_get` needs the autonomous read capability and `_run` the write capability when called by a federated peer. See [howto/deploy-after-ship.md](howto/deploy-after-ship.md).
+
+  ```
+  autonomous_deploy_get()
+  autonomous_deploy_run()
+  ```
+
 - **`autonomous_merge_pipeline_get`**, **`autonomous_merge_pipeline_set_record`**, **`autonomous_merge_pipeline_validate`** — the merge pipeline of a project. `_get` reads the pipeline that would run, where it came from (the repository file, the record the daemon keeps, or the built-in pipeline) and why, the conflict policy and the project's overrides. `_set_record` keeps a pipeline record for a project (`yaml` text or a `definition` object, not both) or removes it (`clear=true`). `_validate` checks a pipeline you give, or the repository file (`file` is `true` or a file name inside the project), without saving; an invalid pipeline is a normal answer with every problem listed. All three answer in plain language, or with the daemon's JSON when `format` is `json`. The settings are changed with `autonomous_config_set` (`merge_pipeline_file_name`, `merge_pipeline_source_order`, `merge_pipeline_fallback_on_bad_file`, `merge_pipeline_conflict_policy`, `merge_pipeline_conflict_model`, `merge_pipeline_version_files`; `merge_pipeline_project` applies them to one project). Reads need the autonomous read capability, `_set_record` the write capability.
 
   ```

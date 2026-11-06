@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The daemon can now build, install, restart and health check itself after a ship.** Set any of `autonomous.deploy.build_command`, `install_command`, `binary_path`, `restart_command`, `health_check`, `drain_timeout` and `health_timeout`; an empty setting means that step does nothing, so nothing changes until you opt in. The sequence snapshots the installed binary, builds, waits for running final-gate tasks (deferring if they outlast the drain timeout), installs and restarts. If the restarted daemon fails its health check or a session or capacity lease did not come back, it restores the snapshot, restarts again and raises a question; if that rollback fails it stops and asks (`rollback_failed`). Read the state and run a deploy now from the Settings > Automation > Deploy card, `datawatch autonomous deploy show|run`, the `autonomous_deploy_get` and `autonomous_deploy_run` MCP tools, `GET`/`POST /api/autonomous/deploy[/run]` and the chat verb `autonomous deploy`. See `docs/howto/deploy-after-ship.md`.
+
 ## v9.67.0 — Cost report
 
 ### Added
