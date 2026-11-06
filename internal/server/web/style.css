@@ -7343,3 +7343,27 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .obs-row-nowrap > .obs-fluid { flex: 1 1 100%; }
   .obs-row-nowrap > button { max-width: 100%; }
 }
+
+/* ── Sessions view modes: list / tiles / compact ─────────────────────────
+   The tile + compact variants are the shared .work-tile-grid (drawn by the
+   same renderWorkTile as the Automata/Automation cards); these rules only
+   wrap the mode toggle, the per-state summary bar and the Show-more page
+   control that the sessions view adds around the grid. */
+.sessions-mode-toggle { display: flex; gap: 4px; padding: 6px 14px 2px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-mode-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.sessions-mode-btn:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-mode-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.sessions-summary-bar { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 14px; border-bottom: 1px solid var(--border); flex: 0 0 auto; }
+.sessions-summary-chip { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 11px; padding: 2px 9px; font-size: 11px; font-family: inherit; cursor: pointer; }
+.sessions-summary-chip:hover { color: var(--text); border-color: var(--accent2); }
+.sessions-summary-chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.sessions-summary-dot { font-size: 9px; line-height: 1; }
+.sessions-summary-count { font-weight: 700; font-variant-numeric: tabular-nums; }
+.sessions-summary-total { margin-left: auto; font-size: 11px; color: var(--text2); white-space: nowrap; }
+.sessions-show-more { text-align: center; padding: 10px 0 14px; }
+.session-tile-grid { margin: 4px 0; --session-tile-pad: 10px; }
+.session-tile-grid .work-tile { padding: var(--session-tile-pad); }
+.session-tile-grid-compact { --session-tile-pad: 8px; }
+@media (prefers-reduced-motion: reduce) {
+  .sessions-mode-btn, .sessions-summary-chip { transition: none; }
+}
