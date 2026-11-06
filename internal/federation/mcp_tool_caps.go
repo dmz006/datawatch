@@ -406,6 +406,7 @@ var MCPToolCap = map[string]string{
 	"observer_peers_by_node":         CapObserversList,
 	"observer_peers_free":            CapObserversList,
 	"observer_peers_list":            CapObserversList,
+	"observer_pull_status":           CapObserversRead,
 	"observer_stats":                 CapObserversRead,
 	"orchestrator_config_get":        CapAutonomousRead,
 	"orchestrator_config_set":        CapAutonomousWrite,
