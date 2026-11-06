@@ -8,9 +8,9 @@ exec_steps:
     description: Read the decisions settings (folder, clarity rules, document status mode and the configured follow-ups)
     args: {section: "autonomous"}
     read_only: true
-  - tool: autonomous_decision_record_list
-    description: List the decision records, newest first, with their state, the question each raised and the folder watch status
-    args: {state: "open"}
+  - tool: autonomous_decisions
+    description: Read the decision line, which carries the record id on each decision raised from a record
+    args: {}
     read_only: true
 ---
 # How-to: decision records, the structured way to put a decision in front of you
@@ -102,37 +102,12 @@ record, and `POST /api/autonomous/decision-records/{id}/withdraw` withdraws it
 (optional body `{"reason": "..."}`). The body can only carry the content
 fields; state, source, question link and answer cannot be set by a caller.
 
-### MCP
+### MCP, the CLI and the chat channel
 
-`autonomous_decision_record_create` takes the same fields as the REST body.
-The companions are `autonomous_decision_record_update`,
-`autonomous_decision_record_withdraw`, `autonomous_decision_record_get` and
-`autonomous_decision_record_list`.
-
-### CLI
-
-```bash
-datawatch autonomous decision-record create \
-  --label "design choice" \
-  --title "Which storage layout for the report archive" \
-  --situation "The report archive is growing and the current single folder is slow to list. Two layouts are on the table and both can be built this week." \
-  --deciding "Pick the layout the archive uses from now on." \
-  --option "by-month | One folder per month | Simple to browse; a very busy month is still one large folder." \
-  --option "by-hash | Folders by id prefix | Even spread; harder to browse by hand." \
-  --recommendation "by-month | People browse the archive by date." \
-  --default hold \
-  --doc docs/plans/report-archive.md
-```
-
-`--option` is repeatable, one per option. Related verbs:
-`datawatch autonomous decision-record list|show|update|withdraw`.
-
-### Chat channel
-
-Send `autonomous decision-record create` followed by the same lines the
-folder file uses (below), one key per line. The record is marked with the
-source `comm`. `autonomous decision-record list`, `show <id>` and
-`withdraw <id>` work the same way.
+There is no record-creating MCP tool, `datawatch` verb or chat command yet.
+Create records from REST or from a file in the folder. The decision line is
+readable over MCP with `autonomous_decisions`, and answering works on every
+surface (see Follow-ups for what each one can name).
 
 ### A file in the configured folder
 
@@ -258,7 +233,7 @@ skipped and the message names the rule.
 ## One question per record, edits and withdrawals
 
 A record raises exactly one question. When you edit an open record, from REST,
-MCP, the CLI, chat or by changing its file, the same open question is updated
+REST or by changing its file, the same open question is updated
 in place, with the same id. Nothing new is raised, so a task that names the
 question keeps waiting on the right one. When you withdraw a record, or its
 file is deleted with withdrawal on delete, its open question is withdrawn too.
@@ -345,8 +320,9 @@ unless you configure it.** `autonomous.decisions.follow_ups` is a list of
 An answer names one by its `name`:
 
 - REST: `follow_up` in the body of `POST /api/questions/{id}/answer`.
-- CLI: `datawatch question answer <id> --follow-up start-archive-work ...`
-- MCP: `question_answer` with `follow_up`.
+
+The CLI `datawatch question answer` and the MCP `question_answer` tool take no
+follow-up yet; answer over REST when you want one to run.
 
 A name that is not in the list is refused. The record's `follow_up` shows what
 was requested, its status and its result.
@@ -356,9 +332,8 @@ was requested, its status and its result.
 | Surface | How |
 |---|---|
 | REST | `GET /api/autonomous/decision-records` (filters `state`, `prd_id`, `limit`), or `GET /api/autonomous/decision-records/{id}` |
-| MCP | `autonomous_decision_record_list`, `autonomous_decision_record_get` |
-| CLI | `datawatch autonomous decision-record list`, `show <id>` |
-| Chat | `autonomous decision-record list`, `show <id>` |
+| MCP | `autonomous_decisions` (the decision line, with the record id on each) |
+| CLI, chat | not available for records yet |
 
 The decision line (`GET /api/autonomous/decisions`) carries the record id on
 each decision raised from a record.
