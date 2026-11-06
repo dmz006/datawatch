@@ -104,8 +104,10 @@ def build(prds, days):
     out["worker_time_hours"] = hours(sum(v[1] for v in by_backend.values()))
     out["by_backend"] = {b: {"attempts": v[0], "hours": hours(v[1])} for b, v in
                          sorted(by_backend.items(), key=lambda kv: -kv[1][1])}
-    out["by_kind"] = {k: dict(Counter(cls[p["id"]] for p in prds if (p.get("kind") or "other") == k))
-                      for k in sorted({(p.get("kind") or "other") for p in prds})}
+    def kind_of(p):
+        return p.get("kind") or "unclassified"
+    out["by_kind"] = {k: dict(Counter(cls[p["id"]] for p in prds if kind_of(p) == k))
+                      for k in sorted({kind_of(p) for p in prds})}
     auto = defaultdict(Counter)
     for p in prds:
         auto[p.get("automation_id") or "(none)"][cls[p["id"]]] += 1
@@ -116,6 +118,22 @@ def build(prds, days):
                          "automata_done": per_day_prds.get((today - timedelta(days=i)).isoformat(), 0),
                          "tasks_done": per_day_tasks.get((today - timedelta(days=i)).isoformat(), 0)}
                         for i in range(days)]
+    try:
+        import re as _re
+        txt = open("CHANGELOG.md").read()
+        secs = [x for x in _re.split(r"\n(?=## v)", txt) if x.startswith("## v9.")]
+        cnt = Counter()
+        for sec_ in secs:
+            head = None
+            for line in sec_.split("\n"):
+                m = _re.match(r"### (\w+)", line)
+                if m:
+                    head = m.group(1)
+                elif line.startswith("- ") and head in ("Added", "Fixed", "Changed", "Security"):
+                    cnt[head] += 1
+        out["changelog"] = {"release_sections": len(secs), **dict(cnt)}
+    except OSError:
+        out["changelog"] = None
     try:
         tags = subprocess.run(["git", "tag", "-l", "v*", "--sort=creatordate"],
                               capture_output=True, text=True).stdout.split()
@@ -148,6 +166,11 @@ def show(o):
           + "  (records carry no project yet)")
     print("  last days (Automata / tasks done): " + ", ".join(
         f"{d['date'][5:]} {d['automata_done']}/{d['tasks_done']}" for d in o["last_days"]))
+    cl = o.get("changelog")
+    if cl:
+        print(f"  changelog (9.x, {cl['release_sections']} release sections): {cl.get('Added', 0)} Added, "
+              f"{cl.get('Fixed', 0)} Fixed, {cl.get('Changed', 0)} Changed, {cl.get('Security', 0)} Security entries "
+              "(features shipped without an Automaton record show here, not in the Automata counts)")
     r = o.get("releases")
     if r:
         print(f"  releases in the 9.x line: {r['count']} tags, {r['first']} to {r['latest']} ({r['all_tags']} tags overall)")
