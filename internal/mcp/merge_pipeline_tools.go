@@ -37,7 +37,7 @@ func MergePipelineToolNames() []string {
 
 func (s *Server) toolAutonomousMergePipelineGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_merge_pipeline_get",
-		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
+		mcpsdk.WithDescription("Read the merge pipeline that would run for a project and why: the steps, where they came from (the repository file, the pipeline record the daemon keeps, or the built-in pipeline), the merge conflict policy and model, the post-ship hook block (the switch, the hooks it runs, and the targets the built-ins use), and the project's overrides. Read-only; the same object as GET /api/autonomous/merge-pipeline. project names the project (default: the merge base repository). format is text (the default, plain language) or json (the daemon's body)."),
 		mcpsdk.WithString("project", mcpsdk.Description("Optional — the project name; default is the merge base repository")),
 		mcpsdk.WithString("format", mcpsdk.Enum("text", "json"), mcpsdk.Description("Optional — text (default) or json")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
@@ -172,14 +172,55 @@ func (s *Server) handleAutonomousMergePipelineGet(_ context.Context, req mcpsdk.
 		}
 		return toolError(op, err), nil
 	}
+	// The post-ship detail is the read's one extra: the main pipeline answer is
+	// the contract, so a settings lookup that fails leaves the read as it was.
+	detail, dErr := s.postShipDetail()
+	if dErr != nil {
+		detail = nil
+	}
 	if asJSON {
-		return textOK(string(out)), nil
+		if detail == nil {
+			return textOK(string(out)), nil
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(out, &obj); err != nil {
+			return toolError(op, err), nil
+		}
+		var d map[string]any
+		if err := json.Unmarshal(detail, &d); err != nil {
+			return toolError(op, err), nil
+		}
+		obj["post_ship"] = d
+		merged, err := json.Marshal(obj)
+		if err != nil {
+			return toolError(op, err), nil
+		}
+		return textOK(string(merged)), nil
 	}
 	v, err := mergepipeline.ParseView(out)
 	if err != nil {
 		return toolError(op, err), nil
 	}
+	if detail != nil {
+		d, err := mergepipeline.ParsePostShipDetail(detail)
+		if err != nil {
+			return toolError(op, err), nil
+		}
+		return textOK(mergepipeline.RenderViewWithPostShip(v, d)), nil
+	}
 	return textOK(mergepipeline.RenderViewText(v)), nil
+}
+
+// postShipDetail reads the post-ship hook block from the daemon's settings
+// (autonomous.merge_pipeline.post_ship) and returns its raw JSON, or nil when
+// the daemon reports no block. The daemon answers both routes off the same
+// process, so a read reaching here always answers the view route too.
+func (s *Server) postShipDetail() ([]byte, error) {
+	out, err := s.proxyGet("/api/config", nil)
+	if err != nil {
+		return nil, err
+	}
+	return mergepipeline.PostShipDetailFromBody(out)
 }
 
 func (s *Server) handleAutonomousMergePipelineSetRecord(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

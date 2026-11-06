@@ -930,6 +930,20 @@ Each project has a merge pipeline: the ordered steps that take finished branches
 
 `autonomous.defect_queue` tunes how incoming defects are grouped into batch Automata and which changes qualify for the one-task tiny-fix lane. It is on by default (`enabled: true`). `batch.size_cap` (default 5) caps defects per batch; `batch.grouping_keys` (default `project_area, shared_files, shared_surfaces`), `batch.allow_unrelated` (default false) and `batch.priority_rule` (`highest_member` or `first_member`) decide what shares a batch. `tiny_fix.enabled`, `tiny_fix.max_files` (default 3), `tiny_fix.allowed_path_globs`, `tiny_fix.allowed_kinds` and `tiny_fix.operator_visible_path_globs` decide which changes take the tiny-fix lane; an operator-visible change never does. Per-project overrides go under `autonomous.defect_queue.projects.<project>.<batch|tiny_fix key>`. A bad value sent through `PUT /api/config`, MCP, the CLI, the comm channel or the web settings is refused with the key named and nothing is written; a bad value written by hand into `config.yaml` is rejected on load. Intake decisions are appended to `defect_intake_decisions.jsonl` in the data directory; that file is the audit trail and needs no cleanup. Full walkthrough and the key table: [howto/automata-defect-queue.md](howto/automata-defect-queue.md).
 
+### Post-ship hooks
+
+Post-ship hooks are the small steps a project runs after a merge pipeline's push step succeeds: the built-ins `registry_row` (mark the project's registry row shipped), `parity_issue` (file a parity issue in a companion repository), `tag` (tag the release, skipping when the tag exists) and `notify` (send a message through the daemon's notifier), or any shell command, in a list of at most 20 in run order. Off by default at two levels — the block's `enabled` switch and each hook's — and a failed hook never blocks or fails the ship: its failure is recorded on its own step with the detail redacted, the run keeps the result the pipeline's steps set, and the later hooks still run. Every enabled hook is one step of kind `post_ship_hook` in the merge run record (`pipeline_runs` of `GET /api/autonomous/merge`, the PWA's merge status view); when the run belongs to an Automaton each failed hook also appends one triage note (source `post_ship`) to that Automaton's triage record. The block is global, under `autonomous.merge_pipeline.post_ship`, and the daemon never guesses an empty target.
+
+| Method | How |
+|---|---|
+| **YAML** | `autonomous.merge_pipeline.post_ship:` in `~/.datawatch/config.yaml` — `enabled`, `hooks` and the five target keys |
+| **CLI** | `datawatch autonomous merge-pipeline post-ship set <key> <value>`; read with `post-ship show` |
+| **Web UI** | Settings → the **Merge pipeline** card → the **Post-ship hooks** card directly below it |
+| **REST API** | `PUT /api/config` with e.g. `{"autonomous.merge_pipeline.post_ship.enabled": true}`; read with `GET /api/config` |
+| **Comm channel** | `configure autonomous.merge_pipeline.post_ship.<key>=<value>` |
+
+The operator guide is [howto/post-ship-hooks.md](howto/post-ship-hooks.md).
+
 ### Onboarding report
 
 `datawatch automation onboarding-report` (also the PWA card, the `onboarding_report` tool, the chat verb `onboarding-report` and `GET /api/automation/onboarding-report`) lists what is configured, what is missing and what to try next. It runs six checks (`backends`, `models`, `projects`, `channels`, `memory`, `merge_pipeline`) and reads only configuration; it changes nothing. `onboarding_report.enabled` (default on) turns it off, `onboarding_report.disabled_checks` leaves chosen checks out, and `onboarding_report.include_next_steps` (default on) adds the suggestions. The operator guide is [howto/onboarding-report.md](howto/onboarding-report.md).

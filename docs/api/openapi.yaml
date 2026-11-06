@@ -977,6 +977,7 @@ paths:
         set for one project as `autonomous.merge_pipeline.projects.<project>.<key>`;
         null clears a key back to its default, and null on
         `autonomous.merge_pipeline.projects.<project>` removes that project's overrides.
+        The post-ship hook keys are global for every project and take no projects.<project> prefix: `autonomous.merge_pipeline.post_ship.enabled` (true|false; default false, and no hook runs while it is false), `autonomous.merge_pipeline.post_ship.registry_file` (the registry_row built-in's registry file, relative to the project) and `autonomous.merge_pipeline.post_ship.registry_row_pattern` (its row line template), `autonomous.merge_pipeline.post_ship.companion_repository` (the owner/name the parity_issue built-in files its issue in) and `autonomous.merge_pipeline.post_ship.issue_title_template` (its issue title), `autonomous.merge_pipeline.post_ship.notify_template` (the notify built-in's message body, and the parity_issue body; may name {project} and {version}) and `autonomous.merge_pipeline.post_ship.hooks` (a JSON array of objects; each has a non-empty unique name, exactly one of a built-in name — registry_row, parity_issue, tag or notify — or a command line, and an optional enabled flag that is false by default; at most 20). An enabled built-in is refused by name when its target is unset in the applied block, so one PUT may set the target and the hook together. 
         A bad merge pipeline value or an unknown key rejects the whole PUT with 400 and
         nothing is written. GET returns the values in effect under
         `autonomous.merge_pipeline`, with the per-project overrides under `projects`.
@@ -8595,6 +8596,16 @@ components:
         conflict_model: {type: string, description: "The conflict model configured"}
         conflict_model_in_effect: {type: string, description: "The conflict model that would be used; empty when none"}
         conflict_degraded_reason: {type: string, description: "Why the policy in effect differs from the one configured"}
+        post_ship:
+          type: object
+          description: "The global post-ship hook settings: whether the block is on, how many hooks are defined, and the names of the ones that would run"
+          properties:
+            enabled: {type: boolean, description: "False when the block is off; no hook runs while it is false"}
+            hook_count: {type: integer, description: "How many hooks are defined"}
+            enabled_hooks:
+              type: array
+              description: "The names of the hooks that would run"
+              items: {type: string}
         overrides:
           nullable: true
           allOf:

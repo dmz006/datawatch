@@ -183,6 +183,14 @@ daemon:
    it. On any failure, timeout, oversized prompt or unreadable reply, the scratch
    tree is thrown away, the project is unchanged and you are asked.
 
+## After the ship: post-ship hooks
+
+Once the pipeline's push step succeeds, the daemon can run the post-ship
+hooks a project has configured: mark its registry row shipped, file a parity
+issue, tag the release or send a notification. The hooks are off by default
+and a failed hook never blocks or fails the ship — the ship is already done.
+The operator guide is [How-to: Post-ship hooks](post-ship-hooks.md).
+
 ## Settings
 
 All keys are under `autonomous.merge_pipeline` and each can be overridden per

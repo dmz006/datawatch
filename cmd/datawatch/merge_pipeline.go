@@ -136,6 +136,12 @@ pipeline; the order is a setting.
   set-record --from-file F [--project P]  Keep a pipeline record for the project (F is - for stdin)
   clear-record [--project P]              Remove the project's record
   validate --from-file F | --repo-file    Check a pipeline without saving it
+  post-ship show                          The post-ship hook block: switch, hooks, targets
+  post-ship set KEY VALUE                 Set one key of it (the daemon validates the value)
+
+  POST-SHIP KEY: enabled, registry_file, registry_row_pattern, companion_repository,
+  issue_title_template, notify_template (text; empty clears), hooks (a JSON array of
+  {name, builtin or command, enabled} objects; empty removes all).
 `,
 	}
 	c.AddCommand(
@@ -143,6 +149,7 @@ pipeline; the order is a setting.
 		newMergePipelineSetRecordCmd(),
 		newMergePipelineClearRecordCmd(),
 		newMergePipelineValidateCmd(),
+		newMergePipelinePostShipCmd(),
 	)
 	return c
 }
@@ -334,4 +341,164 @@ func newMergePipelineValidateCmd() *cobra.Command {
 	c.Flags().Lookup("repo-file").NoOptDefVal = "true"
 	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON response")
 	return c
+}
+
+// mergePipelinePostShipKeys are the keys of the autonomous.merge_pipeline
+// post_ship block. The command lines and the daemon must agree on them; the
+// daemon is the last word on a value.
+var mergePipelinePostShipKeys = []string{
+	"enabled",
+	"registry_file",
+	"registry_row_pattern",
+	"companion_repository",
+	"issue_title_template",
+	"notify_template",
+	"hooks",
+}
+
+// newMergePipelinePostShipCmd is the `merge-pipeline post-ship` group: the
+// post-ship hooks of an Automaton pipeline, read with show and written one
+// key at a time with set.
+func newMergePipelinePostShipCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:   "post-ship",
+		Short: "Post-ship hooks: show the block, or set one key of it",
+	}
+	c.AddCommand(newMergePipelinePostShipShowCmd(), newMergePipelinePostShipSetCmd())
+	return c
+}
+
+// newMergePipelinePostShipShowCmd is `merge-pipeline post-ship show`: the
+// post-ship hook block as the daemon keeps it -- the switch, each hook with
+// its built-in or its command and whether it is on, and the targets the
+// built-ins use.
+func newMergePipelinePostShipShowCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "show",
+		Short: "Show the post-ship hook block (switch, hooks, targets)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body, err := mergePipelineSend(http.MethodGet, "/api/config", nil, nil)
+			if err != nil {
+				return err
+			}
+			detail, err := mergepipeline.PostShipDetailFromBody(body)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				if detail == nil {
+					detail = []byte("null")
+				}
+				_, err = cmd.OutOrStdout().Write(detail)
+				return err
+			}
+			if detail == nil {
+				_, err = fmt.Fprintln(cmd.OutOrStdout(), "Post-ship hooks: the daemon does not report a post-ship block")
+				return err
+			}
+			d, perr := mergepipeline.ParsePostShipDetail(detail)
+			if perr != nil {
+				return perr
+			}
+			_, err = fmt.Fprint(cmd.OutOrStdout(), mergepipeline.RenderPostShipDetailText(d))
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the raw JSON block instead of the text")
+	return c
+}
+
+// newMergePipelinePostShipSetCmd is `merge-pipeline post-ship set KEY VALUE`:
+// one key of the post-ship block, sent as a PUT /api/config write; the daemon
+// validates the value.
+func newMergePipelinePostShipSetCmd() *cobra.Command {
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "set KEY VALUE",
+		Short: "Set one key of the post-ship hook block",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			key, value := args[0], args[1]
+			payload, err := postShipSetPayload(key, value)
+			if err != nil {
+				return err
+			}
+			body, err := mergePipelineSend(http.MethodPut, "/api/config", nil, payload)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = cmd.OutOrStdout().Write(body)
+				return err
+			}
+			show := value
+			if key == "enabled" {
+				if b, berr := parsePostShipBool(value); berr == nil {
+					if b {
+						show = "true"
+					} else {
+						show = "false"
+					}
+				}
+			}
+			if len(show) > 60 {
+				show = show[:57] + "..."
+			}
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "Sent autonomous.merge_pipeline.post_ship.%s = %s to the daemon\n", key, show)
+			return err
+		},
+	}
+	c.Flags().BoolVar(&asJSON, "json", false, "print the daemon reply (status ok) as raw JSON")
+	return c
+}
+
+// postShipSetPayload builds the one-key PUT /api/config body for a post-ship
+// set. It checks the key locally so a typo is caught without a round trip;
+// the daemon still validates the value and is the last word on it.
+func postShipSetPayload(key, value string) ([]byte, error) {
+	known := false
+	for _, k := range mergePipelinePostShipKeys {
+		if k == key {
+			known = true
+			break
+		}
+	}
+	if !known {
+		return nil, fmt.Errorf("unknown post-ship key %q; use one of: %s", key, strings.Join(mergePipelinePostShipKeys, ", "))
+	}
+	full := "autonomous.merge_pipeline.post_ship." + key
+	payload := map[string]any{}
+	switch key {
+	case "enabled":
+		b, err := parsePostShipBool(value)
+		if err != nil {
+			return nil, err
+		}
+		payload[full] = b
+	case "hooks":
+		if text := strings.TrimSpace(value); text != "" {
+			var arr []map[string]any
+			if err := json.Unmarshal([]byte(text), &arr); err != nil {
+				return nil, fmt.Errorf("hooks must be a JSON array of {name, builtin or command, enabled} objects (or empty to remove all): %v", err)
+			}
+		}
+		payload[full] = value
+	default:
+		payload[full] = value
+	}
+	return json.Marshal(payload)
+}
+
+// parsePostShipBool reads the enabled value as a boolean; the daemon expects
+// a JSON boolean for it, so anything but true or false is refused here.
+func parsePostShipBool(value string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	}
+	return false, fmt.Errorf("enabled takes true or false, not %q", value)
 }

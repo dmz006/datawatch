@@ -1979,6 +1979,48 @@ autonomous:
   #   version_files: []
   #   projects: {}
 
+  # Post-ship hooks (autonomous.merge_pipeline.post_ship): the small steps a
+  # project runs once a merge pipeline's push step succeeded. Off by default
+  # at two levels: the block's enabled switch and each hook's own. A failed
+  # hook never blocks or fails the ship - its failure is recorded on its own
+  # step with the detail redacted, the run keeps the result the pipeline's
+  # steps set, and the later hooks still run. Global only: unlike the other
+  # merge pipeline keys it has no per-project form. Settable at runtime
+  # through YAML, PUT /api/config, CLI `datawatch autonomous merge-pipeline
+  # post-ship set <key> <value>` (show reads it back), MCP
+  # autonomous_merge_pipeline_get (its post_ship block), the comm
+  # `configure` verb and Settings -> the Merge pipeline card -> the
+  # Post-ship hooks card directly below it.
+  # enabled: true | false. Default false. Turns the whole block on; a hook
+  #   that is listed but not enabled produces no step at all.
+  # hooks: at most 20, in run order. Each entry is {name, builtin or command
+  #   (give one of the two, never both), enabled (default false)}. The
+  #   built-in names are registry_row, parity_issue, tag and notify.
+  # registry_file: the registry file the registry_row hook marks shipped,
+  #   relative to the project. May contain {project}.
+  # registry_row_pattern: the text that must match exactly one row of that
+  #   file; the row's status cell is what gets updated.
+  #   May contain {project} and {version}.
+  # companion_repository: the owner/name the parity_issue hook files its
+  #   issue in - the companion, never the project that was merged.
+  # issue_title_template: the parity_issue title. May contain
+  #   {project} and {version}.
+  # notify_template: the notify hook's message body; also the parity issue's
+  #   body when set, without which the issue gets a default one.
+  #   May contain {project} and {version}.
+  # A built-in whose target is empty fails its step and says which setting is
+  # missing; the daemon never guesses a registry file, a repository or a
+  # message body. The {project} and {version} placeholders are substituted at
+  # run time; any other {placeholder} is left as written.
+  # post_ship:
+  #   enabled: false
+  #   hooks: []
+  #   registry_file: docs/registry.md
+  #   registry_row_pattern: myproject
+  #   companion_repository: owner/parity-tracker
+  #   issue_title_template: "Parity: {project} {version}"
+  #   notify_template: "Shipped {version} of {project}"
+
   # Model request progress (the request watch): the daemon observes the
   # in-flight model request of a worker or verifier session whose model runs on
   # a registered compute node, so a hung request can be told from a slow one.

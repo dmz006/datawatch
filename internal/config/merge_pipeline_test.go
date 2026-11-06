@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -221,6 +222,234 @@ func TestMergePipelineConfig_YAMLUnsetStaysUnset(t *testing.T) {
 	}
 	if out.ConflictModel != nil || out.EffectiveConflictPolicy("") != ConflictPolicyStopAndAsk {
 		t.Fatalf("got %+v", out)
+	}
+}
+
+func TestMergePipelineConfig_PostShipDefaultsOff(t *testing.T) {
+	var c MergePipelineConfig
+	if !c.IsZero() {
+		t.Fatal("zero block must stay zero with post_ship unset")
+	}
+	var s PostShipConfig
+	if !s.IsZero() {
+		t.Fatal("zero post-ship block must be zero")
+	}
+	if s.HookEnabled("anything") {
+		t.Fatal("no hook may read as enabled")
+	}
+	if len(s.EffectiveHooks()) != 0 {
+		t.Fatal("unset hooks must read empty")
+	}
+	for name, got := range map[string]string{
+		"registry_file":        s.EffectiveRegistryFile(),
+		"registry_row_pattern": s.EffectiveRegistryRowPattern(),
+		"companion_repository": s.EffectiveCompanionRepository(),
+		"issue_title_template": s.EffectiveIssueTitleTemplate(),
+		"notify_template":      s.EffectiveNotifyTemplate(),
+	} {
+		if got != "" {
+			t.Fatalf("unset %s must read empty, got %q", name, got)
+		}
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("unset block must validate: %v", err)
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("zero block must validate: %v", err)
+	}
+
+	// A valid configured block: every built-in with its targets, tag with
+	// none, and a command hook.
+	s = PostShipConfig{
+		Enabled: true,
+		Hooks: []PostShipHook{
+			{Name: "row", Builtin: PostShipHookBuiltinRegistryRow, Enabled: true},
+			{Name: "issue", Builtin: PostShipHookBuiltinParityIssue, Enabled: true},
+			{Name: "tag", Builtin: PostShipHookBuiltinTag, Enabled: true},
+			{Name: "say", Builtin: PostShipHookBuiltinNotify, Enabled: true},
+			{Name: "custom", Command: "scripts/after-ship.sh", Enabled: true},
+		},
+		RegistryFile:        "{project}/docs/plans/README.md",
+		RegistryRowPattern:  "v{version} shipped",
+		CompanionRepository: "owner/companion",
+		IssueTitleTemplate:  "parity for {project} v{version}",
+		NotifyTemplate:      "shipped v{version}",
+	}
+	if s.IsZero() {
+		t.Fatal("configured block is not zero")
+	}
+	if err := s.Validate(); err != nil {
+		t.Fatalf("valid block must validate: %v", err)
+	}
+	if !s.HookEnabled("say") || s.HookEnabled("absent") {
+		t.Fatal("HookEnabled must read the named hook")
+	}
+
+	c.PostShip = s
+	got := c.EffectivePostShip()
+	got.Hooks[0].Enabled = false
+	got.Hooks[0].Name = "mutated"
+	if !c.PostShip.Hooks[0].Enabled || c.PostShip.Hooks[0].Name != "row" {
+		t.Fatal("EffectivePostShip must not alias the original")
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPostShipHook_ValidateEachKey(t *testing.T) {
+	const p = "autonomous.merge_pipeline.post_ship."
+	hook := func(name, builtin, command string, enabled bool) PostShipHook {
+		return PostShipHook{Name: name, Builtin: builtin, Command: command, Enabled: enabled}
+	}
+	targets := PostShipConfig{
+		RegistryFile:        "reg.md",
+		RegistryRowPattern:  "v{version}",
+		CompanionRepository: "owner/companion",
+		IssueTitleTemplate:  "title {project} {version}",
+		NotifyTemplate:      "v{version} out",
+	}
+	cases := []struct {
+		name string
+		s    PostShipConfig
+		want string // substring of the error, "" for valid
+	}{
+		{"unknown builtin", PostShipConfig{Hooks: []PostShipHook{hook("h", "warp", "", true)}}, p + "hooks[0].builtin"},
+		{"both builtin and command", PostShipConfig{Hooks: []PostShipHook{hook("h", "tag", "x.sh", true)}}, p + "hooks[0]"},
+		{"neither builtin nor command", PostShipConfig{Hooks: []PostShipHook{hook("h", "", "", true)}}, "builtin or command"},
+		{"empty name", PostShipConfig{Hooks: []PostShipHook{hook(" ", "tag", "", false)}}, "hooks[0].name"},
+		{"duplicate name", PostShipConfig{Hooks: []PostShipHook{hook("h", "tag", "", false), hook("h", "tag", "", false)}}, "list"},
+		{"too many hooks", PostShipConfig{Hooks: postShipHooks(21)}, "hooks: at most 20"},
+		{"exactly 20 hooks ok", PostShipConfig{Hooks: postShipHooks(20)}, ""},
+		{"registry row without file", PostShipConfig{Hooks: []PostShipHook{hook("h", PostShipHookBuiltinRegistryRow, "", true)}}, p + "registry_file"},
+		{"registry row without pattern", PostShipConfig{
+			RegistryFile: "reg.md", Hooks: []PostShipHook{hook("h", PostShipHookBuiltinRegistryRow, "", true)},
+		}, p + "registry_row_pattern"},
+		{"registry row with targets ok", PostShipConfig{
+			RegistryFile: "reg.md", RegistryRowPattern: "v{version}",
+			Hooks: []PostShipHook{hook("h", PostShipHookBuiltinRegistryRow, "", true)},
+		}, ""},
+		{"parity issue without repository", PostShipConfig{Hooks: []PostShipHook{hook("h", PostShipHookBuiltinParityIssue, "", true)}}, p + "companion_repository"},
+		{"parity issue without title", PostShipConfig{
+			CompanionRepository: "owner/companion",
+			Hooks:               []PostShipHook{hook("h", PostShipHookBuiltinParityIssue, "", true)},
+		}, p + "issue_title_template"},
+		{"parity issue with targets ok", PostShipConfig{
+			CompanionRepository: "owner/companion", IssueTitleTemplate: "t {version}",
+			Hooks: []PostShipHook{hook("h", PostShipHookBuiltinParityIssue, "", true)},
+		}, ""},
+		{"notify without template", PostShipConfig{Hooks: []PostShipHook{hook("h", PostShipHookBuiltinNotify, "", true)}}, p + "notify_template"},
+		{"notify with template ok", PostShipConfig{
+			NotifyTemplate: "v{version}", Hooks: []PostShipHook{hook("h", PostShipHookBuiltinNotify, "", true)},
+		}, ""},
+		{"tag needs no target", PostShipConfig{Hooks: []PostShipHook{hook("h", PostShipHookBuiltinTag, "", true)}}, ""},
+		{"disabled hook needs no target", PostShipConfig{
+			Hooks: []PostShipHook{hook("h", PostShipHookBuiltinRegistryRow, "", false)},
+		}, ""},
+		{"command hook needs no builtin target", PostShipConfig{
+			Hooks: []PostShipHook{hook("h", "", "x.sh --flag", true)},
+		}, ""},
+		{"registry file absolute", PostShipConfig{RegistryFile: "/etc/reg", Hooks: []PostShipHook{hook("h", "", "x.sh", false)}}, p + "registry_file"},
+		{"registry file escapes project", PostShipConfig{RegistryFile: "../reg", Hooks: []PostShipHook{hook("h", "", "x.sh", false)}}, p + "registry_file"},
+		{"registry file placeholder ok", targets, ""},
+		{"first bad hook named first", PostShipConfig{Hooks: []PostShipHook{
+			hook("ok", "", "x.sh", false), hook("bad", "warp", "", false)}},
+			"hooks[1].builtin"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.s.Validate()
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func postShipHooks(n int) []PostShipHook {
+	hooks := make([]PostShipHook, 0, n)
+	for i := 0; i < n; i++ {
+		hooks = append(hooks, PostShipHook{
+			Name: fmt.Sprintf("h%d", i), Command: "true", Enabled: true,
+		})
+	}
+	return hooks
+}
+
+func TestPostShipConfig_YAMLRoundTrip(t *testing.T) {
+	in := PostShipConfig{
+		Enabled: true,
+		Hooks: []PostShipHook{
+			{Name: "row", Builtin: PostShipHookBuiltinRegistryRow, Enabled: true},
+			{Name: "custom", Command: "scripts/after-ship.sh", Enabled: false},
+		},
+		RegistryFile:        "{project}/docs/plans/README.md",
+		RegistryRowPattern:  "v{version} shipped",
+		CompanionRepository: "owner/companion",
+		IssueTitleTemplate:  "parity for {project} v{version}",
+		NotifyTemplate:      "shipped v{version}",
+	}
+	data, err := yaml.Marshal(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out PostShipConfig
+	if err := yaml.Unmarshal(data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(in, out) {
+		t.Fatalf("round trip changed the block:\n%s\n%+v\n%+v", data, in, out)
+	}
+	if err := out.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPostShipConfig_YAMLUnsetStaysUnset(t *testing.T) {
+	data, err := yaml.Marshal(struct {
+		M PostShipConfig `yaml:"post_ship,omitempty"`
+	}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "post_ship") {
+		t.Fatalf("unset block written: %s", data)
+	}
+	var out PostShipConfig
+	if err := yaml.Unmarshal([]byte("enabled: true\n"), &out); err != nil {
+		t.Fatal(err)
+	}
+	if !out.Enabled || len(out.Hooks) != 0 || out.EffectiveNotifyTemplate() != "" {
+		t.Fatalf("partial block: %+v", out)
+	}
+	// Under the merge pipeline block, a block with hooks but no enabled
+	// hooks reads back intact.
+	var a AutonomousConfig
+	src := `merge_pipeline:
+  post_ship:
+    enabled: true
+    notify_template: "shipped v{version}"
+    hooks:
+      - name: say
+        builtin: notify
+        enabled: true
+`
+	if err := yaml.Unmarshal([]byte(src), &a); err != nil {
+		t.Fatal(err)
+	}
+	ps := a.MergePipeline.EffectivePostShip()
+	if !ps.Enabled || len(ps.Hooks) != 1 || ps.Hooks[0].Builtin != PostShipHookBuiltinNotify ||
+		!ps.HookEnabled("say") || ps.EffectiveNotifyTemplate() != "shipped v{version}" {
+		t.Fatalf("got %+v", ps)
+	}
+	if err := a.MergePipeline.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }
 

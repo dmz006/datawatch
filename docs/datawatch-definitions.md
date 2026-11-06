@@ -64,6 +64,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Change record](#change-record)
   - [Generated artefacts](#generated-artefacts)
   - [Merge pipeline](#merge-pipeline)
+  - [Post-ship hooks](#post-ship-hooks)
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
@@ -1982,6 +1983,14 @@ The merge pipeline is the ordered list of steps that takes finished branches to 
 **Merge pipeline version files** (`autonomous.merge_pipeline.version_files`, none by default) — the project files, relative to the project, that carry the `var Version = "X.Y.Z"` line the release-version step sets. With none, a pipeline that bumps the version fails that step until the files are named.
 
 Every key of the block can be overridden for one project under `autonomous.merge_pipeline.projects.<project>.<key>`; an unset key inherits the global value, then the default.
+
+### Post-ship hooks
+
+The post-ship hooks are the hook steps a project runs after the ship — after the merge pipeline's push and deploy have succeeded, in the order the project lists them. They are off by default. A post-ship hook is either one of the four builtins (`registry_row` updates a registry row, `parity_issue` files a parity issue through the ship runner, `tag` adds a version tag that is not there yet, `notify` sends a rendered template) with its built-in target, or a `command` the daemon runs in the project. Each hook has its own `enabled` switch. A failed hook records its result in the merge run record and, only for a run that belongs to an Automaton, leaves one triage note with source `post_ship`; it never changes the ship, never undoes the deploy and never stops the hooks after it. The block and the hook list are readable and writable from every settings surface: YAML, the `GET`/`PUT /api/config` and merge-pipeline reads, `autonomous_merge_pipeline_get` and `autonomous_config_set` on MCP, `datawatch autonomous merge-pipeline post-ship set|show` on the command line, `configure` and `help` on the comm channel, and the Post-ship hooks card in the PWA settings. See [howto/post-ship-hooks.md](howto/post-ship-hooks.md) for the walkthrough and [flow/post-ship-hook-flow.md](flow/post-ship-hook-flow.md) for the flow.
+
+**`autonomous.merge_pipeline.post_ship`** — the settings block: `enabled` (default `false`), `hooks` (the ordered list, up to 20, each a builtin with its target or a `command` with its own `enabled`), and the built-in targets `registry_row_repo_id` and `registry_row_path` (default `parity/`), `parity_issue_automaton`, `tag_ref`, `notify_backend` and `notify_template` (all unset by default; an unset target keeps that builtin disabled until it is set). Per-project: the same keys under `autonomous.merge_pipeline.projects.<project>.post_ship`.
+
+**Triage note, source `post_ship`** — one note a failed hook leaves on the run when the run belongs to an Automaton; it names the hook and its result and is read through the usual triage notes reads. A skipped hook leaves none.
 
 ### Merge pipeline source
 

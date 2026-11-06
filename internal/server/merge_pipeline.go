@@ -56,6 +56,37 @@ var mergePipelineFields = []string{
 	mergePipelineFieldConflictPolicy, mergePipelineFieldConflictModel, mergePipelineFieldVersionFiles,
 }
 
+// The post-ship hook keys. The post_ship block is global: the settings keep
+// one of them for all projects, so unlike the keys above they have no
+// projects.<project>. form.
+const (
+	mergePipelineFieldPostShipEnabled             = "post_ship.enabled"
+	mergePipelineFieldPostShipRegistryFile        = "post_ship.registry_file"
+	mergePipelineFieldPostShipRegistryRowPattern  = "post_ship.registry_row_pattern"
+	mergePipelineFieldPostShipCompanionRepository = "post_ship.companion_repository"
+	mergePipelineFieldPostShipIssueTitleTemplate  = "post_ship.issue_title_template"
+	mergePipelineFieldPostShipNotifyTemplate      = "post_ship.notify_template"
+	mergePipelineFieldPostShipHooks               = "post_ship.hooks"
+)
+
+// mergePipelinePostShipFields lists the post-ship keys in a fixed order, for
+// the error messages and MergePipelineConfigureKeys.
+var mergePipelinePostShipFields = []string{
+	mergePipelineFieldPostShipEnabled, mergePipelineFieldPostShipRegistryFile,
+	mergePipelineFieldPostShipRegistryRowPattern, mergePipelineFieldPostShipCompanionRepository,
+	mergePipelineFieldPostShipIssueTitleTemplate, mergePipelineFieldPostShipNotifyTemplate,
+	mergePipelineFieldPostShipHooks,
+}
+
+func isMergePipelinePostShipField(field string) bool {
+	for _, f := range mergePipelinePostShipFields {
+		if field == f {
+			return true
+		}
+	}
+	return false
+}
+
 // Bounds on what the routes and PUT /api/config accept.
 const (
 	mergePipelineMaxBodyBytes = 1 << 20
@@ -98,6 +129,10 @@ type mergePipelineView struct {
 	// Record is when the daemon's record for the project was last set; empty
 	// when there is none.
 	RecordUpdatedAt string `json:"record_updated_at,omitempty"`
+	// PostShip is the post-ship hook state that applies to the project
+	// regardless of the source: the block is global, so the same for every
+	// project: on or off, how many hooks are defined, and which would run.
+	PostShip mergePipelinePostShipView `json:"post_ship"`
 }
 
 // mergePipelineSettingsView is the resolution and version settings in effect.
@@ -106,6 +141,26 @@ type mergePipelineSettingsView struct {
 	SourceOrder       []string `json:"source_order"`
 	FallbackOnBadFile string   `json:"fallback_on_bad_file"`
 	VersionFiles      []string `json:"version_files"`
+}
+
+// mergePipelinePostShipView is the post_ship state in the view: whether the
+// block is on, how many hooks are defined, and the names of the ones that
+// would run.
+type mergePipelinePostShipView struct {
+	Enabled      bool     `json:"enabled"`
+	HookCount    int      `json:"hook_count"`
+	EnabledHooks []string `json:"enabled_hooks"`
+}
+
+// postShipView is the post_ship block seen from the view.
+func postShipView(p config.PostShipConfig) mergePipelinePostShipView {
+	enabled := make([]string, 0, len(p.Hooks))
+	for _, h := range p.Hooks {
+		if h.Enabled {
+			enabled = append(enabled, h.Name)
+		}
+	}
+	return mergePipelinePostShipView{Enabled: p.Enabled, HookCount: len(p.Hooks), EnabledHooks: enabled}
 }
 
 // mergePipelineRecordBody is the body of PUT .../record and POST .../validate.
@@ -263,6 +318,7 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 		def := res.Definition
 		view.Definition = &def
 	}
+	view.PostShip = postShipView(cfg.PostShip)
 	if res.FileError != nil {
 		view.FileError = res.FileError.Error()
 	}
@@ -498,7 +554,16 @@ func mergePipelineConfigSurface(c config.MergePipelineConfig) map[string]any {
 		mergePipelineFieldConflictPolicy:    c.EffectiveConflictPolicy(""),
 		mergePipelineFieldConflictModel:     c.EffectiveConflictModel(""),
 		mergePipelineFieldVersionFiles:      files,
-		"projects":                          projects,
+		"post_ship": map[string]any{
+			"enabled":              c.PostShip.Enabled,
+			"hooks":                c.PostShip.Hooks,
+			"registry_file":        c.PostShip.RegistryFile,
+			"registry_row_pattern": c.PostShip.RegistryRowPattern,
+			"companion_repository": c.PostShip.CompanionRepository,
+			"issue_title_template": c.PostShip.IssueTitleTemplate,
+			"notify_template":      c.PostShip.NotifyTemplate,
+		},
+		"projects": projects,
 	}
 }
 
@@ -525,25 +590,42 @@ func parseMergePipelineKey(key string) (pk mergePipelineKey, known bool, err err
 				return mergePipelineKey{project: name, field: f}, true, nil
 			}
 		}
+		if strings.Contains(rest, ".post_ship.") || strings.Contains(rest, ".projects.post_ship") {
+			return pk, true, fmt.Errorf("%s: the post_ship keys have no per-project form; the block is global, so set one of %s", key, strings.Join(mergePipelinePostShipFields, ", "))
+		}
 		if strings.TrimSpace(rest) == "" {
 			return pk, true, fmt.Errorf("%s: the project name is empty", key)
 		}
 		return mergePipelineKey{project: rest}, true, nil
 	}
 	f := strings.TrimPrefix(key, mergePipelineKeyPrefix)
+	for _, known := range mergePipelinePostShipFields {
+		if f == known {
+			return mergePipelineKey{field: f}, true, nil
+		}
+	}
 	for _, known := range mergePipelineFields {
 		if f == known {
 			return mergePipelineKey{field: f}, true, nil
 		}
 	}
-	return pk, true, fmt.Errorf("%s: unknown key; the keys are %s, and projects.<project>.<key> for one project",
-		key, strings.Join(mergePipelineFields, ", "))
+	return pk, true, fmt.Errorf("%s: unknown key; the keys are %s, %s, and projects.<project>.<key> for one project",
+		key, strings.Join(mergePipelineFields, ", "), strings.Join(mergePipelinePostShipFields, ", "))
 }
 
 // validateMergePipelinePatch checks the autonomous.merge_pipeline keys of a PUT
 // /api/config body before anything is applied. A key that is absent is not
 // checked. The error names the key and the valid values.
 func validateMergePipelinePatch(patch map[string]any) error {
+	return validateMergePipelinePatchBase(config.MergePipelineConfig{}, patch)
+}
+
+// validateMergePipelinePatchBase checks the patch against the block it applies
+// on top of. It refuses the whole patch if any key is bad, naming the key; an
+// enabled built-in hook is refused by name only when its target is unset in
+// the applied block, so a hook whose target the block already holds is
+// accepted, and a single PUT can set the target and the hook together.
+func validateMergePipelinePatchBase(base config.MergePipelineConfig, patch map[string]any) error {
 	keys := make([]string, 0, len(patch))
 	for k := range patch {
 		if strings.HasPrefix(k, mergePipelineKeyPrefix) {
@@ -554,7 +636,7 @@ func validateMergePipelinePatch(patch map[string]any) error {
 		return nil
 	}
 	sort.Strings(keys)
-	var scratch config.MergePipelineConfig
+	scratch := base.Clone()
 	for _, k := range keys {
 		if _, err := applyMergePipelineKey(&scratch, k, patch[k]); err != nil {
 			return err
@@ -585,6 +667,12 @@ func applyMergePipelineKey(c *config.MergePipelineConfig, key string, v any) (kn
 				key, mergePipelineProjectsPrefix)
 		}
 		delete(c.Projects, pk.project)
+		return true, nil
+	}
+	if isMergePipelinePostShipField(pk.field) {
+		if err := setMergePipelinePostShipKey(c, key, v); err != nil {
+			return true, err
+		}
 		return true, nil
 	}
 
@@ -658,6 +746,86 @@ func setMergePipelineField(o *config.MergePipelineOverride, key, field string, v
 		}
 	}
 	return nil
+}
+
+// setMergePipelinePostShipKey sets one global post_ship key on the block; a
+// bad value is refused with the key named.
+func setMergePipelinePostShipKey(c *config.MergePipelineConfig, key string, v any) error {
+	set := func(dst *string) error {
+		s, err := mergePipelineText(key, v)
+		if err != nil {
+			return err
+		}
+		*dst = s
+		return nil
+	}
+	switch key {
+	case mergePipelineKeyPrefix + "post_ship.enabled":
+		switch x := v.(type) {
+		case nil:
+			c.PostShip.Enabled = false
+			return nil
+		case bool:
+			c.PostShip.Enabled = x
+			return nil
+		default:
+			return fmt.Errorf("%s: %v is invalid; use true or false", key, v)
+		}
+	case mergePipelineKeyPrefix + "post_ship.registry_file":
+		return set(&c.PostShip.RegistryFile)
+	case mergePipelineKeyPrefix + "post_ship.registry_row_pattern":
+		return set(&c.PostShip.RegistryRowPattern)
+	case mergePipelineKeyPrefix + "post_ship.companion_repository":
+		return set(&c.PostShip.CompanionRepository)
+	case mergePipelineKeyPrefix + "post_ship.issue_title_template":
+		return set(&c.PostShip.IssueTitleTemplate)
+	case mergePipelineKeyPrefix + "post_ship.notify_template":
+		return set(&c.PostShip.NotifyTemplate)
+	case mergePipelineKeyPrefix + "post_ship.hooks":
+		hooks, err := mergePipelinePostShipHooks(key, v)
+		if err != nil {
+			return err
+		}
+		c.PostShip.Hooks = hooks
+		return nil
+	default:
+		return fmt.Errorf("%s: unknown post_ship key; use %s", key, strings.Join(mergePipelinePostShipFields, ", "))
+	}
+}
+
+// mergePipelinePostShipHooks reads the post_ship.hooks value: the hook list
+// straight from a REST body, or its JSON text as the chat channel sends it.
+// nil or the empty text clears the list. Every form a hook can take in is
+// checked by the block's Validate, which refuses a bad hook by its name, an
+// unknown built-in by name, a hook without exactly one of builtin or command,
+// an enabled built-in with an empty target in the block, and a list over
+// PostShipMaxHooks.
+func mergePipelinePostShipHooks(key string, v any) ([]config.PostShipHook, error) {
+	var decoded []config.PostShipHook
+	switch x := v.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		text := strings.TrimSpace(x)
+		if text == "" {
+			return []config.PostShipHook{}, nil
+		}
+		if err := json.Unmarshal([]byte(text), &decoded); err != nil {
+			return nil, fmt.Errorf("%s: %q is invalid; use a JSON array of {name, builtin or command, enabled} objects", key, text)
+		}
+		return decoded, nil
+	case []any:
+		b, err := json.Marshal(x)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %v is invalid; use a JSON array of {name, builtin or command, enabled} objects", key, v)
+		}
+		if err := json.Unmarshal(b, &decoded); err != nil {
+			return nil, fmt.Errorf("%s: %v", key, err)
+		}
+		return decoded, nil
+	default:
+		return nil, fmt.Errorf("%s: %v is invalid; use a JSON array of {name, builtin or command, enabled} objects", key, v)
+	}
 }
 
 // mergePipelineText reads a text value; null reads as unset (empty).

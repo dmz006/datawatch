@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -240,5 +241,88 @@ func TestMergePipelineCLI_RegisteredUnderAutonomous(t *testing.T) {
 	}
 	if !found {
 		t.Error("merge-pipeline is not under autonomous")
+	}
+}
+
+const mergePipelineCLIPostShipConfig = `{"hostname":"h","autonomous":{"merge_pipeline":{"file_name":".datawatch/merge-pipeline.yaml","post_ship":{"enabled":true,"hooks":[{"name":"registry_row","builtin":"registry_row","enabled":true},{"name":"notify","command":"pw send","enabled":false}],"registry_file":".datawatch/registry.yaml","registry_row_pattern":"| {project} | {version} |","companion_repository":"acme/widgets","issue_title_template":"parity: {project} {version}","notify_template":"shipped {project} {version}"}}}}`
+
+func TestMergePipelineCLIPostShipShowText(t *testing.T) {
+	d := newLaneFillCLIDaemon(t, http.StatusOK, mergePipelineCLIPostShipConfig)
+	out, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"post-ship", "show"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.path != "/api/config" || d.query != "" || d.body != "" { // a read, with no body
+		t.Errorf("path=%s query=%q body=%q", d.path, d.query, d.body)
+	}
+	for _, want := range []string{
+		"Post-ship hooks: on\n",
+		"1. registry_row: the built-in registry_row, would run\n",
+		"2. notify: the command pw send, skipped (disabled)\n",
+		"Built-in targets:\n",
+		"registry file: .datawatch/registry.yaml\n",
+		"registry row pattern: | {project} | {version} |\n",
+		"companion repository: acme/widgets\n",
+		"issue title template: parity: {project} {version}\n",
+		"notify template: shipped {project} {version}\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestMergePipelineCLIPostShipShowNoBlockAndJSON(t *testing.T) {
+	newLaneFillCLIDaemon(t, http.StatusOK, `{"hostname":"h"}`)
+	out, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"post-ship", "show"})
+	if err != nil || !strings.Contains(out, "the daemon does not report a post-ship block") {
+		t.Errorf("err=%v out=%s", err, out)
+	}
+	newLaneFillCLIDaemon(t, http.StatusOK, mergePipelineCLIPostShipConfig)
+	out, err = runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"post-ship", "show", "--json"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var block map[string]any
+	if err := json.Unmarshal([]byte(out), &block); err != nil || block["enabled"] != true || block["companion_repository"] != "acme/widgets" {
+		t.Errorf("json block: %s (err=%v)", out, err)
+	}
+}
+
+func TestMergePipelineCLIPostShipSetSendsOneKey(t *testing.T) {
+	d := newLaneFillCLIDaemon(t, http.StatusOK, `{"status":"ok"}`)
+	out, err := runLaneFillCmd(t, newAutonomousMergePipelineCmd(), []string{"post-ship", "set", "registry_file", "sub/registry.yaml"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.path != "/api/config" || d.query != "" {
+		t.Errorf("path=%s query=%q", d.path, d.query)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(d.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := body["autonomous.merge_pipeline.post_ship.registry_file"]; !ok || got != "sub/registry.yaml" || len(body) != 1 {
+		t.Errorf("body=%v", body)
+	}
+	if !strings.Contains(out, "autonomous.merge_pipeline.post_ship.registry_file = sub/registry.yaml") {
+		t.Errorf("out=%s", out)
+	}
+}
+
+func TestMergePipelineCLIPostShipSetValidation(t *testing.T) {
+	cmd := newAutonomousMergePipelineCmd()
+	if _, err := runLaneFillCmd(t, cmd, []string{"post-ship", "set", "no_such_key", "x"}); err == nil || !strings.Contains(err.Error(), "unknown post-ship key") {
+		t.Errorf("err=%v", err)
+	}
+	if _, err := runLaneFillCmd(t, cmd, []string{"post-ship", "set", "enabled", "maybe"}); err == nil || !strings.Contains(err.Error(), "true or false") {
+		t.Errorf("err=%v", err)
+	}
+	if _, err := runLaneFillCmd(t, cmd, []string{"post-ship", "set", "hooks", "not a list"}); err == nil || !strings.Contains(err.Error(), "JSON array") {
+		t.Errorf("err=%v", err)
+	}
+	d := newLaneFillCLIDaemon(t, http.StatusOK, `{"status":"ok"}`)
+	if _, err := runLaneFillCmd(t, cmd, []string{"post-ship", "set", "hooks", "[]"}); err != nil || !strings.Contains(d.body, `"autonomous.merge_pipeline.post_ship.hooks":"[]"`) {
+		t.Errorf("an empty hooks array must pass: err=%v body=%q", err, d.body)
 	}
 }

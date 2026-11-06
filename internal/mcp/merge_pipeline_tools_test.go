@@ -55,8 +55,11 @@ func TestMergePipelineMCP_ReadOnlyHints(t *testing.T) {
 
 func TestMergePipelineMCP_GetText(t *testing.T) {
 	var path, query string
+	first := true
 	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		path, query = r.URL.Path, r.URL.RawQuery
+		if first {
+			path, query, first = r.URL.Path, r.URL.RawQuery, false
+		}
 		_, _ = w.Write([]byte(mergePipelineViewBody))
 	})
 	res, _ := s.handleAutonomousMergePipelineGet(context.Background(), callReq(map[string]any{"project": " demo "}))
@@ -71,6 +74,11 @@ func TestMergePipelineMCP_GetText(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("text lacks %q: %s", want, text)
 		}
+	}
+	// the fixed body answers /api/config too, but carries no settings block,
+	// so no hook detail may appear
+	if strings.Contains(text, "Built-in targets:") || strings.Contains(text, "built-in registry_row") {
+		t.Errorf("no hook detail without a settings block:\n%s", text)
 	}
 }
 
@@ -87,6 +95,81 @@ func TestMergePipelineMCP_GetJSONAndBadFormat(t *testing.T) {
 		if res == nil || !res.IsError {
 			t.Errorf("format %v must be refused", bad)
 		}
+	}
+}
+
+const mergePipelinePostShipConfigBody = `{"hostname":"h","autonomous":{"merge_pipeline":{"file_name":".datawatch/merge-pipeline.yaml","post_ship":{"enabled":true,"hooks":[{"name":"registry_row","builtin":"registry_row","enabled":true},{"name":"notify","command":"pw send","enabled":false}],"registry_file":".datawatch/registry.yaml","registry_row_pattern":"| {project} | {version} |","companion_repository":"acme/widgets","issue_title_template":"parity: {project} {version}","notify_template":"shipped {project} {version}"}}}}`
+
+func TestMergePipelineMCP_GetSurfacesPostShip(t *testing.T) {
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/config" {
+			_, _ = w.Write([]byte(mergePipelinePostShipConfigBody))
+			return
+		}
+		_, _ = w.Write([]byte(mergePipelineViewBody))
+	})
+	res, err := s.handleAutonomousMergePipelineGet(context.Background(), callReq(map[string]any{"project": "demo"}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	text := automationText(t, res)
+	for _, want := range []string{ // every hook, as defined, plus the built-in targets
+		"Merge pipeline for demo",
+		"Post-ship hooks: on",
+		"1. registry_row: the built-in registry_row, would run",
+		"2. notify: the command pw send, skipped (disabled)",
+		"Built-in targets:",
+		"registry file: .datawatch/registry.yaml",
+		"registry row pattern: | {project} | {version} |",
+		"companion repository: acme/widgets",
+		"issue title template: parity: {project} {version}",
+		"notify template: shipped {project} {version}",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text lacks %q:\n%s", want, text)
+		}
+	}
+	if n := strings.Count(text, "Post-ship hooks:"); n != 1 {
+		t.Errorf("the post-ship switch line is written %d times:\n%s", n, text)
+	}
+
+	// In json format the block stays under post_ship, beside the pipeline.
+	res, err = s.handleAutonomousMergePipelineGet(context.Background(), callReq(map[string]any{"format": "json", "project": "demo"}))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("err=%v res=%+v", err, res)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(automationText(t, res)), &obj); err != nil {
+		t.Fatal(err)
+	}
+	ps, ok := obj["post_ship"].(map[string]any)
+	if !ok {
+		t.Fatalf("the json reply lacks post_ship: %v", obj)
+	}
+	hooks, ok := ps["hooks"].([]any)
+	if !ok || len(hooks) != 2 {
+		t.Errorf("hooks: %v", ps["hooks"])
+	}
+	if ps["enabled"] != true || ps["companion_repository"] != "acme/widgets" || !strings.Contains(automationText(t, res), "make test") {
+		t.Errorf("json values: %v", ps)
+	}
+}
+
+func TestMergePipelineMCP_GetPostShipLookupFailsStillAnswers(t *testing.T) {
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/config" {
+			http.Error(w, "settings gone", http.StatusInternalServerError)
+			return
+		}
+		_, _ = w.Write([]byte(mergePipelineViewBody))
+	})
+	res, err := s.handleAutonomousMergePipelineGet(context.Background(), callReq(nil))
+	if err != nil || res == nil || res.IsError {
+		t.Fatalf("a failing settings lookup must not sink the read: err=%v res=%+v", err, res)
+	}
+	text := automationText(t, res)
+	if !strings.Contains(text, "Merge pipeline for ") || strings.Contains(text, "Built-in targets:") {
+		t.Errorf("the read must stand on its own:\n%s", text)
 	}
 }
 
