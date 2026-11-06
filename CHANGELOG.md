@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Session-list **grouping read**: `GET /api/sessions` accepts `group_by=tag|state|node|project|automaton` with an optional `tag_prefix=…` (e.g. `automation:`, `stage:`). The rows the list already returns are collected into groups carrying a key, a count and a per-state mix, with the per-state totals of the whole in the response. A session with several tags that match the axis lands under exactly one of them (the first in sorted order wins) and keeps the rest as chips; rows with no match go to an `ungrouped` group. `group_by=automaton` nests a session under its Automaton id and story, with a progress count, so one Automaton's worker, verifier and planner sessions form one block. An unknown axis is a 400; without `group_by` the response is the unchanged JSON array.
+
 ## v9.70.3 — Link-aware plans folder tidy
 
 The plans folder tidy no longer breaks links or moves documents that are still in use.

@@ -136,6 +136,34 @@ func parseSessionPageOptions(q url.Values) (sessionPageOptions, error) {
 	return o, nil
 }
 
+// sessionGroupOptions holds the grouping-read parameters of the session list
+// (session_group.go). It is inactive without group_by, which keeps the
+// response unchanged.
+type sessionGroupOptions struct {
+	active    bool // group_by was given: serve the grouped response
+	axis      string
+	tagPrefix string
+}
+
+// parseSessionGroupOptions reads and validates group_by / tag_prefix, next to
+// the paging options. An unknown axis is an error (the handler answers 400);
+// no group_by leaves the options inactive.
+func parseSessionGroupOptions(q url.Values) (sessionGroupOptions, error) {
+	var o sessionGroupOptions
+	axis := strings.TrimSpace(q.Get("group_by"))
+	if axis == "" {
+		return o, nil
+	}
+	o.tagPrefix = strings.TrimSpace(q.Get("tag_prefix"))
+	switch axis {
+	case groupAxisTag, groupAxisState, groupAxisNode, groupAxisProject, groupAxisAutomaton:
+		o.axis, o.active = axis, true
+	default:
+		return o, fmt.Errorf("invalid group_by %q: want tag, state, node, project or automaton", axis)
+	}
+	return o, nil
+}
+
 // sessionLess is the stable list order: newest update first, ties by id.
 func sessionLess(a, b *session.Session) bool {
 	if !a.UpdatedAt.Equal(b.UpdatedAt) {
