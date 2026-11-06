@@ -2328,6 +2328,8 @@
   "tag_deleted": "Tag deleted",
   "tag_edit": "Tags",
   "tag_edit_title": "Automaton tags",
+  "tag_inherited_title": "Inherited from this Automaton's sessions (read-only)",
+  "tag_inherited_mark": " (inherited)",
   "tag_err_cycle": "A tag cannot be moved under itself or its own sub-tags",
   "tag_err_has_children": "Tag has child tags — move or delete them first",
   "tag_err_in_use": "Tag is used by %1$d Automata — unassign it first",

@@ -65,8 +65,10 @@ type BudgetView struct {
 type AutomationView struct {
 	*Automation
 	Budget *BudgetView `json:"budget,omitempty"`
-	// Tags is the union of the tag IDs carried by the member Automata. It is
-	// computed on every read and never stored on the Automation.
+	// Tags is the union of the tag IDs carried by the member Automata, plus
+	// each member's inherited tags (the system tags of the member's
+	// sessions). It is computed on every read and never stored on the
+	// Automation.
 	Tags []string `json:"tags,omitempty"`
 }
 

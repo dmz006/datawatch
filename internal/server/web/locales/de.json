@@ -2328,6 +2328,8 @@
   "tag_deleted": "Tag gelöscht",
   "tag_edit": "Tags",
   "tag_edit_title": "Tags des Automaten",
+  "tag_inherited_title": "Geerbt aus den Sitzungen dieses Automaten (schreibgeschützt)",
+  "tag_inherited_mark": " (geerbt)",
   "tag_err_cycle": "Ein Tag kann nicht unter sich selbst oder seine eigenen Untertags verschoben werden",
   "tag_err_has_children": "Der Tag hat Untertags — verschiebe oder lösche sie zuerst",
   "tag_err_in_use": "Der Tag wird von %1$d Automaten verwendet — hebe die Zuweisung zuerst auf",

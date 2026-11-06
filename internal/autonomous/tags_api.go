@@ -174,6 +174,7 @@ func (a *API) AttentionAutomata(statuses []string) []any {
 	out := []any{}
 	for _, p := range prds {
 		view := BuildSummaryView(p)
+		view.InheritedTags = a.M.InheritedTagsForPRD(p.ID)
 		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 {
 			out = append(out, view)
 		}
@@ -221,4 +222,12 @@ func (a *API) AutomatonTagIDs(prdID string) ([]string, bool) {
 // SetSessionTagCounter wires the session-side tag counter used by DeleteTag.
 func (a *API) SetSessionTagCounter(c SessionTagCounter) {
 	a.M.SetSessionTagCounter(c)
+}
+
+// InheritedTagsForPRD returns the read-only inherited tag union of an
+// Automaton: the sorted, de-duplicated union of the system tags carried by
+// the sessions that carry its PRD ID. Never stored on the PRD (see
+// InheritedTagsForPRD on the Manager).
+func (a *API) InheritedTagsForPRD(prdID string) []string {
+	return a.M.InheritedTagsForPRD(prdID)
 }

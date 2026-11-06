@@ -2328,6 +2328,8 @@
   "tag_deleted": "Étiquette supprimée",
   "tag_edit": "Étiquettes",
   "tag_edit_title": "Étiquettes de l'automate",
+  "tag_inherited_title": "Héritée des sessions de cet automate (lecture seule)",
+  "tag_inherited_mark": " (héritée)",
   "tag_err_cycle": "Une étiquette ne peut pas être déplacée sous elle-même ni sous ses propres sous-étiquettes",
   "tag_err_has_children": "L'étiquette a des sous-étiquettes : déplacez-les ou supprimez-les d'abord",
   "tag_err_in_use": "L'étiquette est utilisée par %1$d automates : retirez-la d'abord",
