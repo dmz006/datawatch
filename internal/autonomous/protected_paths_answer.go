@@ -253,7 +253,8 @@ func restoreTaskCommit(ctx context.Context, dir string, files []string, message 
 	if _, err := runGitInCtx(ctx, dir, args...); err == nil {
 		return taskHeadSHA(ctx, dir)
 	}
-	args = append([]string{"commit", "-m", message, "--"}, files...)
+	args = append(gitIdentityArgs(ctx, dir), "commit", "-m", message, "--")
+	args = append(args, files...)
 	if out, err := runGitInCtx(ctx, dir, args...); err != nil {
 		return "", fmt.Errorf("restore commit: git commit in %s: %w: %s", dir, err, strings.TrimSpace(out))
 	}
