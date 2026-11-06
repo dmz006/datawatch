@@ -9049,6 +9049,8 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.request_watch.remediation_options': DOCS_DEFINITIONS + '#autonomous-request-watch-remediation-options',
   gc_pipeline: 'howto/pipeline-chaining.md',
   gc_orchestrator: 'howto/automata-orchestrator.md',
+  // Settings -> General -> Self-config (mcp.allow_self_config alias + audit)
+  gc_selfconfig: DOCS_DEFINITIONS + '#self-config',
   // Settings -> Plugins
   gc_plugins: 'api/plugins.md',
   plugins_list: DOCS_DEFINITIONS + '#plugin-manager',

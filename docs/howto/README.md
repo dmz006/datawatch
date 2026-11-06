@@ -98,6 +98,7 @@ you already have a daemon you can talk to.
 | [Alerts + Notifications](alerts-and-notifications.md) | Alert dock (header badge + slide-out panel), Alerts tab, CLI / REST / MCP / comm surfaces, mobile push |
 | [Channel Routing](channel-routing.md) | Route inbound channel messages (Telegram, Signal, …) to federation peers via pattern rules; owner_peer attribution on sessions + PRDs |
 | [File Service](file-service.md) | Upload, list, and delete files across federation peers; peers/ and discussions/ subdirs; config:read/write caps |
+| [Self-config capability](self-config-capability.md) | What the builtin `self-config` group is, how `mcp.allow_self_config` maps onto it, the enabled default, the documented hardening (close the gate, remove it from the session default, a narrower custom group, read the audit, grant one session the group), the never-gated audit view from every surface, and bootstrap protection |
 | [Discussion Scopes](discussion-scopes.md) | Per-discussion memory namespaces with WAL, federated sync, conflict detection, and 60 ops/min throttle |
 
 > **Looking for something else?** [`docs/setup.md`](../setup.md) has

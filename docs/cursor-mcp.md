@@ -176,6 +176,10 @@ Selected core tools:
 | `vision_describe` | Describe an image file using the configured vision model (requires `vision.enabled: true`) |
 | `web_search_stats` | Web search configuration and stats — provider, URL, engine, query/error counters (requires `web_search.enabled: true`) |
 
+### Changing the daemon's own settings
+
+`get_config` / `config_set` read and change the daemon's settings (session, LLM, autonomous, server, …) over MCP. Self-config is **enabled by default** (`mcp.allow_self_config` aliases the builtin **self-config** capability group, which carries `config:write` in every session's scoped credential); when it is off, config-write tools are refused and the setting is read-only via `get_config`. The alias itself is bootstrap-protected — a session cannot flip it. Every attempt (allowed and refused) is in the self-config audit log, readable with `self_config_audit`. See [howto/self-config-capability.md](howto/self-config-capability.md) for the definition, hardening steps and audit queries.
+
 ## Example Usage in Cursor
 
 Once configured, you can ask Claude in Cursor:
