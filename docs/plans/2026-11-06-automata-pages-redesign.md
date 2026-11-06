@@ -386,3 +386,21 @@ both parts, so it is split: the list of held paths and their actions stay on the
 (the protected paths list, the action word and the rules review source) belong in Settings under Automata. The Settings
 move Automaton (`9f8f0001`) carries the settings part with the other moved configuration; until it ships the card keeps
 both parts on Housekeeping as shipped in 9.104.0.
+
+
+### 12. Tags and counts (asked 2026-11-06 17:25 and 17:45)
+
+Questions asked: which tags every Automata-launched session should carry by default (A add the Automaton id and the
+project; B only the project; C another set), and, as a finding rather than a question, why the 10.0.0 status
+shows 45 PRDs and not the whole history.
+
+Operator answer, quoted: "what were the questions for the tags and for the counting? we want to have the counts
+proper and make sure it's ready for projects so we can have totals overall, and by project/automation/automata. and
+anything we can tag should be tagged".
+
+Decision: everything that can be tagged is tagged, and the counts are corrected and grouped. Tag every session at launch
+(worker, verifier, planner, judge, supervisor), tag the objects too (Automata, Automations, tasks, decision records,
+held questions) with project, arc and Automaton, turn the Automaton, Automation, project and stage axes on by default,
+and sweep existing sessions. Counts: an archived record with every task completed counts as done, and every total is
+available overall and by project, by Automation and by Automaton, with records that have no project shown as (none).
+Filed as drafts `b7910001` (tag everything) and `dae00001` (counts by project); both join the Projects arc.
