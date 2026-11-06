@@ -5,9 +5,12 @@
 //
 // Every headroom surface (this REST pair, the MCP tools, the CLI and the
 // comm-channel verb) reaches the same service: measureNodeHeadroom for the
-// measurement and nodeHeadroomView for the stored view. The measurement is
-// run only on demand, never by a ticker or timer, and only while the node
-// holds no lease. The model gate is the operator's model-pull consent
+// measurement and nodeHeadroomView for the stored view. A measurement an operator
+// asks for is run on demand, and only while the node holds no lease. The
+// daemon also keeps an idle node's measurement fresh on a timer: its
+// verifierHeadroomMeasurer (cmd/datawatch/verifier_headroom_measure.go)
+// re-measures an idle node whose configured verifier count is above 1 and
+// writes to the same store, so a stored measurement does not age out. The model gate is the operator's model-pull consent
 // (autonomous.model_pull_consent), the same allow-list model pulls use.
 //
 // The one store is the daemon's compute.HeadroomStore (SetHeadroomStore);
