@@ -118,7 +118,12 @@ type Server struct {
 	// "unavailable" message.
 	agentAuditPath string
 	agentAuditCEF  bool
-	token          string // bearer token for internal API calls
+
+	// configAudit (BL110 extension) — shared config-write audit sink;
+	// when set, the tool middleware in config_write_audit.go records every
+	// config-write tool call (allowed and denied) as one JSON line.
+	configAudit *federation.ConfigAuditor
+	token       string // bearer token for internal API calls
 	// BL317 — federation peer store for MCP SSE auth (nil = no federation).
 	fedPeerStore FedPeerStore
 	// BL363 T3 — set when this MCP server is a Goose channel subprocess;
@@ -300,6 +305,9 @@ type Options struct {
 	// the cost_report tool serves costreport.Build over the recorded
 	// sessions with this config as its defaults.
 	CostReportCfg config.CostReportConfig
+	// ConfigAudit — shared config-write audit sink (BL110 extension); nil
+	// = MCP config-write calls are not audited.
+	ConfigAudit *federation.ConfigAuditor
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -324,6 +332,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		latestVersion:       opts.LatestVersion,
 		fallbackToken:       opts.FallbackToken,
 		costReportCfg:       opts.CostReportCfg,
+		configAudit:         opts.ConfigAudit,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -358,6 +367,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// was unregistered here, so one panicking tool was a permanent, full
 	// MCP drop (daemon: whole process; bridge: CONNECTION_CLOSED forever).
 	RegisterToolPanicRecovery(mcpSrv)
+	// BL110 extension — single audit point for every MCP config-write
+	// tool (registered after panic recovery, wrapping every handler).
+	RegisterConfigWriteAudit(mcpSrv, s)
 
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

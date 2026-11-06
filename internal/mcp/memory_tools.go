@@ -993,18 +993,17 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 	// group, which defaults to ENABLED. An explicit
 	// allow_self_config: false closes it. Bootstrap protection: the
 	// gate itself cannot be opened via config_set, only via direct
-	// YAML edit + restart.
-	if s.cfg == nil || !s.cfg.SelfConfigEnabled() {
-		return mcpsdk.NewToolResultText(
-			"permission denied: self-modify is disabled (mcp.allow_self_config: false) — remove the explicit false (the default is enabled) and restart to enable",
-		), nil
+	// YAML edit + restart. A denial is an error-flagged result (BL463);
+	// the audited record is emitted by the config-write audit middleware
+	// (config_write_audit.go), not here.
+	if g := s.selfConfigGate(); g != nil {
+		return g, nil
 	}
 	if key == "mcp.allow_self_config" {
-		return mcpsdk.NewToolResultText(
+		return mcpsdk.NewToolResultError(
 			"refused: mcp.allow_self_config is bootstrap-protected; edit the YAML directly to change it",
 		), nil
 	}
-	s.auditSelfConfig(key, value)
 
 	// Route through the HTTP API for proper validation and persistence.
 	// /api/config accepts PUT (not POST).
