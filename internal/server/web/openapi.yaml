@@ -1636,6 +1636,55 @@ paths:
         "500": {description: The branches could not be listed}
         "503": {description: Autonomous is disabled, or no worktree base repo is configured for Automata}
 
+  /api/autonomous/protected-paths:
+    get:
+      summary: Automaton protected-paths status
+      description: |
+        The protected-paths state of the Automata. Some files, such as the
+        project rules file, the supervisor rules document, CODEOWNERS and the
+        workflows directory, must not change inside an Automaton task without the
+        operator. When a task commit changes one, `action` decides what happens.
+        `action` (hold|warn|block|off) and `rules_source` (base_commit|worktree)
+        are the settings in effect (`autonomous.automation.protected_paths_action`
+        and `autonomous.automation.rules_review_source`). `paths` is the
+        effective protected list (`autonomous.automation.protected_paths`; the
+        default list when none is set). `held` lists every task held because its
+        commit changed protected paths: `paths` the changed protected paths,
+        `action` the action in force when the hold was raised, `reason` why,
+        `question_id` the operator question that waits for an answer (approve,
+        reject or change the spec), `since` when the hold was raised,
+        `base_commit` the commit the task started from and `awaiting_spec_change`
+        true once the operator chose to change the task instructions. `authorized`
+        lists every Automaton that authorises protected paths in advance (see
+        `POST /api/autonomous/prds/{id}/set_authorized_paths`). `paths`, `held`
+        and `authorized` are empty lists, never null. The read is built from the
+        stored Automata and makes no git call. Read-only; only GET is served, and
+        a federated peer needs the autonomous read capability.
+      operationId: autonomousProtectedPaths
+      tags: [Autonomous]
+      parameters:
+        - name: automaton
+          in: query
+          required: false
+          schema: {type: string}
+          description: Narrow the held and authorized lists to this Automaton id. An id that matches nothing reads empty lists.
+      responses:
+        "200":
+          description: Protected-paths status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProtectedPathsStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403": {description: Federated peer lacks the autonomous read capability}
+        "405":
+          description: Method not allowed; only GET is served
+          headers:
+            Allow:
+              schema: {type: string, example: GET}
+        "503": {description: Autonomous is disabled}
+
   /api/autonomous/security-failures:
     get:
       summary: Security failure reports
@@ -2174,6 +2223,37 @@ paths:
       responses:
         "200": {description: Updated Automaton, which carries lane_preference when one is set}
         "400": {description: Unknown lane preference; the message names gpu, claude and any}
+        "403": {description: Federated peer lacks the autonomous write capability}
+        "404": {description: Unknown Automaton id}
+        "405": {description: Method not allowed}
+  /api/autonomous/prds/{id}/set_authorized_paths:
+    post:
+      summary: Set the authorised protected paths of an Automaton
+      description: |
+        Sets the protected paths this Automaton's tasks may change without an
+        operator decision. Each entry is a repository-relative exact file, a
+        directory (trailing slash) or a glob; entries are trimmed, cleaned and
+        de-duplicated. An empty list clears the authorisation. An entry that is
+        absolute, has a `..` segment or is longer than 256 bytes, or a list of
+        more than 100 entries, is refused with 400 and a message naming it. The
+        change is recorded on the decision timeline and audited. Needs the
+        autonomous write capability when called by a federated peer.
+      operationId: autonomousPRDSetAuthorizedPaths
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths]
+              properties:
+                paths: {type: array, items: {type: string}, description: "The authorised protected paths; an empty list clears them"}
+      responses:
+        "200": {description: Updated Automaton, which carries authorized_paths when any are set}
+        "400": {description: A refused entry; the message names it}
         "403": {description: Federated peer lacks the autonomous write capability}
         "404": {description: Unknown Automaton id}
         "405": {description: Method not allowed}
@@ -2804,6 +2884,11 @@ paths:
         `uncommitted_work_policy` (hold|warn|off, default hold) and
         `uncommitted_work_scope` (task_files|worktree, default task_files);
         a key that was never set is omitted and reads its default.
+        It also carries the protected-paths settings: `protected_paths` (the
+        list of paths a task commit must not change without the operator; unset
+        reads the default list), `protected_paths_action` (hold|warn|block|off,
+        default hold) and `rules_review_source` (base_commit|worktree, default
+        base_commit); a key that was never set is omitted and reads its default.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses:
@@ -2859,6 +2944,20 @@ paths:
                         enum: [task_files, worktree]
                         default: task_files
                         description: "Which files the per-task check covers: task_files only the files the task declared, worktree every file in the Automaton worktree (autonomous.automation.uncommitted_work_scope)."
+                      protected_paths:
+                        type: array
+                        items: {type: string}
+                        description: "Paths a task commit must not change without the operator: repository-relative exact files, directories (trailing slash) or globs. Unset or empty reads the default list (autonomous.automation.protected_paths)."
+                      protected_paths_action:
+                        type: string
+                        enum: [hold, warn, block, off]
+                        default: hold
+                        description: "What happens when a task commit changes a protected path: hold parks the task and asks the operator, warn records and alerts only, block refuses the commit, off skips the check (autonomous.automation.protected_paths_action)."
+                      rules_review_source:
+                        type: string
+                        enum: [base_commit, worktree]
+                        default: base_commit
+                        description: "Where the rules review reads the project rules: base_commit the rules as committed on the base the work branched from, worktree the rules file in the task working tree (autonomous.automation.rules_review_source)."
     put:
       summary: Replace autonomous config
       description: |
@@ -2907,6 +3006,17 @@ paths:
         `autonomous.automation.uncommitted_work_policy` and
         `autonomous.automation.uncommitted_work_scope`. A change takes effect
         without a restart.
+        The protected-paths settings under `automation` are strict too:
+        `protected_paths_action` must be hold, warn, block or off,
+        `rules_review_source` must be base_commit or worktree, and every entry of
+        `protected_paths` must be repository-relative (not absolute, no `..`
+        segment, at most 256 bytes) with at most 100 entries; a refused value
+        rejects the whole PUT with 400 and a message that names the allowed words
+        or the offending entry. `PUT /api/config` accepts them as
+        `autonomous.automation.protected_paths` (a JSON array or a comma
+        separated string; an empty list reads the default list),
+        `autonomous.automation.protected_paths_action` and
+        `autonomous.automation.rules_review_source`.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -2950,6 +3060,18 @@ paths:
                       type: string
                       enum: [task_files, worktree]
                       description: "The uncommitted-work scope (autonomous.automation.uncommitted_work_scope). Any other value rejects the PUT with 400 naming task_files and worktree."
+                    protected_paths:
+                      type: array
+                      items: {type: string}
+                      description: "The protected-path list (autonomous.automation.protected_paths). An absolute entry, an entry with a .. segment, an entry over 256 bytes or a list over 100 entries rejects the PUT with 400 naming it. An empty list reads the default list."
+                    protected_paths_action:
+                      type: string
+                      enum: [hold, warn, block, off]
+                      description: "The protected-paths action (autonomous.automation.protected_paths_action). Any other value rejects the PUT with 400 naming hold, warn, block and off."
+                    rules_review_source:
+                      type: string
+                      enum: [base_commit, worktree]
+                      description: "Where the rules review reads the project rules (autonomous.automation.rules_review_source). Any other value rejects the PUT with 400 naming base_commit and worktree."
                 scope_lint:
                   type: string
                   enum: [off, warn, enforce]
@@ -3091,6 +3213,13 @@ paths:
         finished one. The `decisions` array is the Automaton's decision log, each
         entry shaped as AutomatonDecisionLogEntry; its entries for operator
         decisions carry `question_id`, `answer_id` and `decision_state`.
+        An Automaton carries `authorized_paths` (the protected paths its tasks
+        may change without an operator decision, set by
+        `POST /api/autonomous/prds/{id}/set_authorized_paths`) when any are set.
+        A task held because its commit changed protected paths carries
+        `protected_path_hold` (shaped as ProtectedPathHold), and a task whose
+        protected paths the operator approved carries `approved_protected_paths`,
+        the paths its commit may change. All three are absent when empty.
       operationId: autonomousPRDGet
       tags: [Autonomous]
       parameters:
@@ -7230,6 +7359,58 @@ components:
         reason: {type: string, description: Why the hold was raised}
         question_id: {type: string, description: The operator question that waits for an answer (commit, discard or retry); absent when no question store was wired}
         held_at: {type: string, format: date-time, description: When the hold was raised}
+    ProtectedPathsStatus:
+      type: object
+      description: |-
+        The protected-paths status, as GET /api/autonomous/protected-paths
+        returns it. `paths`, `held` and `authorized` are empty lists, never null.
+      required: [action, rules_source, paths, held, authorized]
+      properties:
+        action: {type: string, enum: [hold, warn, block, off], description: "The protected-paths action in effect (autonomous.automation.protected_paths_action; default hold)"}
+        rules_source: {type: string, enum: [base_commit, worktree], description: "Where the rules review reads the project rules (autonomous.automation.rules_review_source; default base_commit)"}
+        paths: {type: array, items: {type: string}, description: "The effective protected list (autonomous.automation.protected_paths; the default list when none is set)"}
+        held:
+          type: array
+          items: {$ref: "#/components/schemas/ProtectedPathsHeldEntry"}
+        authorized:
+          type: array
+          items: {$ref: "#/components/schemas/ProtectedPathsAuthorizedEntry"}
+    ProtectedPathsHeldEntry:
+      type: object
+      description: One task held because its commit changed protected paths.
+      required: [automaton_id, automaton_title, task_id, task_title, paths, action, since, awaiting_spec_change]
+      properties:
+        automaton_id: {type: string, description: The Automaton of the held task}
+        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
+        task_id: {type: string, description: The held task}
+        task_title: {type: string, description: The held task title}
+        paths: {type: array, items: {type: string}, description: The changed protected paths, sorted}
+        action: {type: string, description: The protected-paths action in force when the hold was raised}
+        reason: {type: string, description: Why the hold was raised}
+        question_id: {type: string, description: The operator question that waits for an answer (approve, reject or change the spec); absent when no question store was wired}
+        since: {type: string, format: date-time, description: When the hold was raised}
+        base_commit: {type: string, description: The commit the task started from, the state a rejection puts the paths back to}
+        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions and the task waits for that edit}
+    ProtectedPathsAuthorizedEntry:
+      type: object
+      description: One Automaton that authorises protected paths in advance.
+      required: [automaton_id, automaton_title, paths]
+      properties:
+        automaton_id: {type: string, description: The Automaton}
+        automaton_title: {type: string, description: The Automaton title (its id when it has none)}
+        paths: {type: array, items: {type: string}, description: The authorised protected paths, sorted}
+    ProtectedPathHold:
+      type: object
+      description: The hold on a task whose commit changed protected paths, as a task carries it in `protected_path_hold`.
+      required: [paths, action, since]
+      properties:
+        paths: {type: array, items: {type: string}, description: The changed protected paths}
+        action: {type: string, description: The protected-paths action in force when the hold was raised}
+        reason: {type: string, description: Why the hold was raised}
+        question_id: {type: string, description: The operator question that waits for an answer}
+        base_commit: {type: string, description: The commit the task started from}
+        since: {type: string, format: date-time, description: When the hold was raised}
+        awaiting_spec_change: {type: boolean, description: True once the operator chose to change the task instructions}
     CleanupPassStatus:
       type: object
       description: One cleanup pass; owner_* covers this daemon's own finished Automata, net_* the same pass's sweep of everything else

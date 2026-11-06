@@ -1825,6 +1825,26 @@ func (a *API) UncommittedWorkStatus(automatonID string) UncommittedWorkStatus {
 	return a.M.UncommittedWorkStatus(automatonID)
 }
 
+// ProtectedPathsStatus — the protected-paths read surface behind
+// GET /api/autonomous/protected-paths. Without it the route's interface
+// check fails and the route answers 503 in a running daemon.
+func (a *API) ProtectedPathsStatus(automatonID string) ProtectedPathsStatus {
+	return a.M.ProtectedPathsStatus(automatonID)
+}
+
+// SetAuthorizedProtectedPaths sets the protected paths the Automaton's tasks
+// may change without an operator decision (an empty list clears it) and
+// returns the updated Automaton. A validation error comes back unchanged so
+// the caller can show the operator which entry was refused.
+func (a *API) SetAuthorizedProtectedPaths(prdID string, paths []string, actor string) (any, error) {
+	if _, err := a.M.SetAuthorizedProtectedPaths(prdID, paths, actor); err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	prd, _ := a.M.Store().GetPRD(prdID)
+	return prd, nil
+}
+
 func (a *API) GetAutomation(id string) (any, bool) {
 	got, ok := a.M.GetAutomation(id)
 	if !ok {
