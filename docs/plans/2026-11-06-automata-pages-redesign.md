@@ -301,3 +301,48 @@ check the surfaces of one feature each. There is no single audit that proves eve
 every surface, so "all aligned" is not proven today. An audit script and a CI gate are needed (registry row 374).
 Moving the configuration out of the Automata tabs into Settings must keep every one of the six surfaces and file
 the mobile parity issue.
+
+### 8. File the PRDs (asked 2026-11-06 10:15)
+
+Options offered: A file everything in the recommended order, B defect fixes only now, C a different order.
+
+Operator answer, quoted: "a - everything in that order. and are we using a single automation for these or are you
+still doing 1:1 automata to automation? we need to start doing things with the arcs and plans together how will the
+project organize sub automations is it worth organizing these like we will with projects and projects should also
+control order for the automations in them - anything we need to iterate on project details that we didn't before?"
+
+Decision: A. File the six redesign Automata in the order Triage cards, Events, Settings and usage cards,
+Housekeeping, Projects, dashboard data, plus the defect fixes (rows 371, 372, 374, 375, 377).
+
+Open design question raised in the same message (answered in chat, recorded below once the operator answers): how
+Automations, arcs, plans and projects fit together.
+
+## Proposed model: project, arc, Automaton (for the operator to confirm)
+
+- A **project** owns an ordered list of **arcs**. An arc is an Automation: a named body of work with a goal, for
+  example "Automata pages redesign", "10.0.0 release", "Android and iOS alignment". The project sets the order and
+  priority of its arcs and which one the lanes serve first.
+- An **arc** (Automation) holds its **members**: Automata, or nested Automations for a sub-arc. Order inside an arc is
+  the edges between members (the design already supports stages, edges and nested Automations). A plan or design
+  document is attached to the arc and gates it: members of an arc do not run until the plan says `Confirmed: yes`.
+- An **Automaton** stays one body of work with tasks. A standalone Automaton that is run by hand is the exception
+  (rescue), not the way work is started.
+- One Automation per arc, not one per Automaton. Today some Automata sit in an Automation (`ee660001` and `6aca0001`
+  are members of `d954318c`) and some were run directly (`90d60001`, started by the supervisor on 2026-11-06 to fill
+  the Claude lane, against the 2026-10-29 rule that new work runs inside an Automation).
+- Proposed for the redesign: one Automation "Automata pages redesign" with the six Automata chained by edges in the
+  decided order, and one Automation "Defect fixes (2026-11-06)" with the five fixes as parallel members.
+
+## Project details that need iteration (not covered before)
+
+1. The project record today: alias, directory, per-project policy (`projects.<alias>.policy`), merge pipeline.
+2. Missing and wanted: a description and owner; the repository and default branch; the ordered list of arcs with a
+   priority and a state (planned, active, done); a target such as a release (10.0.0) and its definition of done.
+3. Lane and backend defaults per project (GPU or Claude, models), and a share of the Claude weekly allowance, so
+   projects compete for lanes by priority.
+4. Links: the plans and design documents of each arc; the datawatch-app issues (the Android and iOS alignment arc is
+   mostly open issues); the registry rows.
+5. Roll-ups: progress, cost (in points, not API dollars), throughput and history per project and per arc, including
+   the 9.0 to 10.0 history kept from Automaton records.
+6. Retention and cleanup policy per project (how long an archived Automaton keeps its branch), so the unlanded-branch
+   gap does not come back.
