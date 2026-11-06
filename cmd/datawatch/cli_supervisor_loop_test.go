@@ -219,6 +219,7 @@ func TestSupervisorLoopCLIConfigSetKeys(t *testing.T) {
 		{"supervisor_loop.enabled", "true", true},
 		{"supervisor_loop.validator_retries", "4", float64(4)},
 		{"supervisor_loop.run_retention", "200", float64(200)},
+		{"supervisor_loop.archive_cancelled_after_minutes", "15", float64(15)},
 	}
 	for _, c := range cases {
 		d := startInfraRetryConfigDaemon(t)
@@ -231,5 +232,52 @@ func TestSupervisorLoopCLIConfigSetKeys(t *testing.T) {
 		if got := d.config[c.key]; !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: daemon stored %#v, want %#v", c.key, got, c.want)
 		}
+	}
+}
+
+// TestSupervisorLoopCLIArchiveGraceKey: `datawatch config set` sends the
+// archive-grace key to the daemon as a JSON number, in both accepted key
+// spellings, and shows the daemon's refusal text for a negative value.
+func TestSupervisorLoopCLIArchiveGraceKey(t *testing.T) {
+	for _, key := range []string{
+		"supervisor_loop.archive_cancelled_after_minutes",
+		"autonomous.supervisor_loop.archive_cancelled_after_minutes",
+	} {
+		for _, c := range []struct {
+			value string
+			want  float64
+		}{{"15", 15}, {"0", 0}} {
+			d := startInfraRetryConfigDaemon(t)
+			out, err := captureEscalationStdout(t, func() error {
+				return runConfigSet(&config.Config{}, key, c.value)
+			})
+			if err != nil {
+				t.Errorf("%s=%s: %v", key, c.value, err)
+				continue
+			}
+			if got := d.config[key]; got != c.want {
+				t.Errorf("%s=%s: daemon stored %#v, want %v", key, c.value, got, c.want)
+			}
+			if !strings.Contains(out, "Set "+key+" = "+c.value) {
+				t.Errorf("%s=%s: output %q lacks the Set confirmation", key, c.value, out)
+			}
+		}
+	}
+
+	// A negative value is refused by the daemon; the CLI carries its message.
+	const refusal = "supervisor_loop.archive_cancelled_after_minutes: must be >= 0, got -5"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
+		http.Error(w, refusal, http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	prev := serverURL
+	serverURL = srv.URL
+	t.Cleanup(func() { serverURL = prev })
+	_, err := captureEscalationStdout(t, func() error {
+		return runConfigSet(&config.Config{}, "supervisor_loop.archive_cancelled_after_minutes", "-5")
+	})
+	if err == nil || !strings.Contains(err.Error(), refusal) {
+		t.Errorf("negative value: error %v does not carry %q", err, refusal)
 	}
 }
