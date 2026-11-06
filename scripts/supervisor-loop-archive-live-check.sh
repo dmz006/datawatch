@@ -208,6 +208,9 @@ build_project() {
   printf 'readme\n' > "$REPO/README.md"
   printf 'sample directory\n' > "$REPO/$WRITE_SUBDIR/README.md"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$REPO/$VERIFY_SCRIPT"
+  # The daemon's prestart gate requires the verification script to be
+  # executable (and shebang-lead); commit it with the exec bit set.
+  chmod +x "$REPO/$VERIFY_SCRIPT"
   gitr add -A
   gitr commit -q -m "Initial commit"
   gitr push -q -u origin "$PROJECT_DEFAULT_BRANCH"
@@ -272,6 +275,10 @@ def rec(aid, name, mode):
         "status": "pending", "verification_script": verify,
         "created_at": now, "updated_at": now,
     }
+    if mode == "work":
+        # Declared the way the sibling live check declares it: the daemon's
+        # own commit stages exactly the files the task declares.
+        task["files"] = [sub + "/" + aid + ".txt"]
     return {
         "id": aid, "title": name,
         "spec": "Live check sample " + name + " LIVECHECK[%s:%s]" % (mode, aid),
@@ -301,10 +308,14 @@ write_config() {
     -e "s|addr: 127\.0\.0\.1:19080|addr: 127.0.0.1:$HOOK_PORT|g" \
     -e "s|server_url: http://127\.0\.0\.1:19180|server_url: http://127.0.0.1:$NTFY_PORT|g" \
     "$ROOT/testdata/datawatch.yaml" > "$CFG"
+  # The generated documentation artefacts are off: writing them saves the
+  # Automaton between the roll-up's read and its commit, which aborts the
+  # roll-up as stale and leaves the Automaton running although its task
+  # completed. They are not what this check measures.
   # The worktree base repository, the worktree root, the allowed project root
   # and the stand-in worker, through the normal configuration keys.
   sed -i \
-    -e "s|^autonomous:\$|autonomous:\n  verification_backend: shell\n  worktree_base_repo: $REPO\n  worktree_dir: $WTROOT|" \
+    -e "s|^autonomous:\$|autonomous:\n  verification_backend: shell\n  worktree_base_repo: $REPO\n  worktree_dir: $WTROOT\n  generated_artefacts:\n    change_record: false\n    gate_report: false\n    changelog_draft: false\n    parity_draft: false\n    tracker_rows: false\n    registry_row: false\n    combined_docs_task: false|" \
     -e "s|^server:\$|server:\n  allowed_project_roots: [\"$PROJ\", \"$WTROOT\"]|" \
     -e "s|^shell_backend:\$|shell_backend:\n  script_path: $S/bin/worker.sh|" \
     "$CFG"
@@ -343,6 +354,7 @@ is_done() { [[ "$(prd_status "$1")" == completed ]]; }
 
 diag() { # diag <id>: state of one Automaton and the log lines naming it
   say "  DIAG $1: Automaton $(prd_status "$1"); $(task_json "$1" | jq -c '{status, error, wait_reason}')"
+  say "  DIAG decisions: $(prd "$1" | jq -c '[.decisions[]? | {kind, actor, note}]' | cut -c1-900)"
   dlog | grep -F "$1" | tail -8 | cut -c1-240 | sed 's/^/    log: /'
 }
 
@@ -411,7 +423,7 @@ if ! wait_until 180 is_done "$A_WORK"; then diag "$A_WORK"; fi
 ST_W_DONE="$(prd_status "$A_WORK")"
 [[ "$ST_W_DONE" == completed ]]; ck 2 $? "the work-carrying Automaton completes" "Automaton \`$ST_W_DONE\`, task \`$(task_json "$A_WORK" | jq -c '{status}')\`; worker runs: $(grep -c "^$A_WORK " "$STATE/runs.log" 2>/dev/null || true)"
 AHEAD_W_BEFORE="$(ahead_count "$A_WORK")"
-[[ "$AHEAD_W_BEFORE" =~ ^[1-9][0-9]*$ ]]; ck 2 $? "its branch carries a commit the default branch has not merged" "\`${branch_of "$A_WORK"}\` is $AHEAD_W_BEFORE commit(s) ahead of \`${PROJECT_DEFAULT_BRANCH}\`; worktree commit: $(wgit "$A_WORK" log --format='%h %s' -1 2>/dev/null)"
+[[ "$AHEAD_W_BEFORE" =~ ^[1-9][0-9]*$ ]]; ck 2 $? "its branch carries a commit the default branch has not merged" "\`$(branch_of "$A_WORK")\` is $AHEAD_W_BEFORE commit(s) ahead of \`${PROJECT_DEFAULT_BRANCH}\`; worktree commit: $(wgit "$A_WORK" log --format='%h %s' -1 2>/dev/null)"
 CXL_W="$(cancel_prd "$A_WORK")"
 ST_W_CANCEL="$(prd_status "$A_WORK")"
 [[ "$CXL_W" == 200 && "$ST_W_CANCEL" == "cancelled" ]]; ck 2 $? "the cancel returns 200 and leaves the Automaton cancelled" "status route \`$CXL_W\`; status \`$ST_W_CANCEL\`; cancel decision actor: \`$(last_cancel_actor "$A_WORK")\` (operator)"
@@ -425,7 +437,7 @@ ST_W_AFTER="$(prd_status "$A_WORK")"
 [[ "$ST_W_AFTER" == "cancelled" ]]; ck 2 $? "the cancelled Automaton survives the pass (not archived)" "status after the pass: \`$ST_W_AFTER\`; the pass reported it as held within the grace: \`$RES_W\`"
 AHEAD_W_AFTER="$(ahead_count "$A_WORK")"
 WT_W_ALIVE="no"; [[ -d "$(wt_of "$A_WORK")" ]] && WT_W_ALIVE="yes"
-[[ "$AHEAD_W_AFTER" == "$AHEAD_W_BEFORE" && -n "$AHEAD_W_AFTER" ]]; ck 2 $? "the branch work is untouched (still $AHEAD_W_BEFORE commit(s) ahead)" "\`${branch_of "$A_WORK"}\` is $AHEAD_W_AFTER commit(s) ahead of \`$PROJECT_DEFAULT_BRANCH\`; worktree \`$(wt_of "$A_WORK"/)\` still present: $WT_W_ALIVE"
+[[ "$AHEAD_W_AFTER" == "$AHEAD_W_BEFORE" && -n "$AHEAD_W_AFTER" ]]; ck 2 $? "the branch work is untouched (still $AHEAD_W_BEFORE commit(s) ahead)" "\`$(branch_of "$A_WORK")\` is $AHEAD_W_AFTER commit(s) ahead of \`$PROJECT_DEFAULT_BRANCH\`; worktree \`$(wt_of "$A_WORK"/)\` still present: $WT_W_ALIVE"
 rep_block "The run record of the pass (the newest one):" "$(last_cfr | jq -c '{job, outcome, result}')"
 
 # ============================================================================
@@ -441,7 +453,7 @@ ST_N_DONE="$(prd_status "$A_NOWORK")"
 # Its branch carries no work: the ref is gone (released at completion because
 # everything was on the base branch) or exactly in step with the default branch.
 AHEAD_N="$(ahead_count "$A_NOWORK")"
-no_branch_work "$A_NOWORK"; ck 3 $? "its branch carries no work of its own" "branch \`${branch_of "$A_NOWORK"}\`: ahead-of-default = \`$AHEAD_N\` (ref-gone means the daemon already released it, which is the same evidence)"
+no_branch_work "$A_NOWORK"; ck 3 $? "its branch carries no work of its own" "branch \`$(branch_of "$A_NOWORK")\`: ahead-of-default = \`$AHEAD_N\` (ref-gone means the daemon already released it, which is the same evidence)"
 CXL_N="$(cancel_prd "$A_NOWORK")"
 ST_N_CANCEL="$(prd_status "$A_NOWORK")"
 [[ "$CXL_N" == 200 && "$ST_N_CANCEL" == "cancelled" ]]; ck 3 $? "the cancel returns 200 and leaves the Automaton cancelled" "status route \`$CXL_N\`; status \`$ST_N_CANCEL\`; cancel decision actor: \`$(last_cancel_actor "$A_NOWORK")\` (operator)"
