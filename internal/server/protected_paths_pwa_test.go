@@ -58,10 +58,10 @@ func TestProtectedPathsPWA(t *testing.T) {
 			"el: 'automationProtectedPathsCard'",
 			"function _automationProtectedPathsLoader()",
 			"window.protectedPathsCardHtml(status)",
-			// the slot is in the Overview body and the loader is mounted and stopped with its neighbours
+			// the slot is in the Housekeeping body and the loader is mounted and stopped with its neighbours
 			`id="automationProtectedPathsCard"`,
-			"_automationProtectedPathsLoader(), _automationCapacityLoader()",
-			"'automation_protected_paths', 'automation_capacity'",
+			"_automationUncommittedWorkLoader(), _automationProtectedPathsLoader()",
+			"'automation_uncommitted_work', 'automation_protected_paths'",
 			// the Automaton detail: task chip, task paths, Automaton banner, authorised editor
 			"window.protectedPathsChipHtml(task)",
 			"window.protectedPathsTaskHtml(task)",
