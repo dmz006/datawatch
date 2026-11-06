@@ -122,8 +122,100 @@ func TestRenderRecordTexts(t *testing.T) {
 func TestRenderedTextNeverSaysPRD(t *testing.T) {
 	all := RenderViewText(View{Project: "p", Source: "record", Definition: &Definition{Steps: []Step{{Name: "a", Kind: KindTest, Command: "x"}}}}) +
 		RenderValidationText(ReportOf(false, "body", "", "x")) +
-		RenderRecordText(RecordReport{Project: "p"}) + RenderRecordClearedText("p")
+		RenderRecordText(RecordReport{Project: "p"}) + RenderRecordClearedText("p") +
+		RenderPostShipDetailText(PostShipDetail{})
 	if strings.Contains(all, "PRD") {
 		t.Errorf("user-facing text must say Automaton, not PRD:\n%s", all)
+	}
+}
+
+func TestPostShipDetailFromBody(t *testing.T) {
+	body := []byte(`{"hostname":"h","autonomous":{"merge_pipeline":{"file_name":".datawatch/merge-pipeline.yaml","post_ship":{"enabled":true,"hooks":[{"name":"registry_row","builtin":"registry_row","enabled":true},{"name":"notify","command":"pw send","enabled":false}],"registry_file":".datawatch/registry.yaml","registry_row_pattern":"| {project} | {version} |","companion_repository":"acme/widgets","issue_title_template":"parity: {project} {version}","notify_template":"shipped {project} {version}"}}}}`)
+	detail, err := PostShipDetailFromBody(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail == nil {
+		t.Fatal("a reported block must be returned")
+	}
+	d, perr := ParsePostShipDetail(detail)
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	if !d.Enabled || len(d.Hooks) != 2 || d.Hooks[0].Builtin != "registry_row" || d.Hooks[1].Command != "pw send" || d.Hooks[1].Enabled {
+		t.Errorf("parsed: %+v", d)
+	}
+	if d.CompanionRepository != "acme/widgets" || d.NotifyTemplate != "shipped {project} {version}" {
+		t.Errorf("targets: %+v", d)
+	}
+
+	for name, in := range map[string]string{
+		"no autonomous block": `{"hostname":"h"}`,
+		"no merge_pipeline":   `{"autonomous":{"automation":{"enabled":true}}}`,
+		"no post_ship":        `{"autonomous":{"merge_pipeline":{"file_name":"x"}}}`,
+		"null post_ship":      `{"autonomous":{"merge_pipeline":{"post_ship":null}}}`,
+	} {
+		detail, err := PostShipDetailFromBody([]byte(in))
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if detail != nil {
+			t.Errorf("%s: the read must stay as before: %s", name, detail)
+		}
+	}
+	if _, err := PostShipDetailFromBody([]byte("not json")); err == nil {
+		t.Error("an unreadable body must be an error")
+	}
+}
+
+func TestRenderPostShipDetailText(t *testing.T) {
+	d := PostShipDetail{
+		Enabled:      true,
+		Hooks:        []PostShipHook{{Name: "registry_row", Builtin: "registry_row", Enabled: true}, {Name: "notify", Command: "pw send", Enabled: false}},
+		RegistryFile: ".datawatch/registry.yaml", RegistryRowPattern: "| {project} | {version} |",
+		CompanionRepository: "acme/widgets", IssueTitleTemplate: "parity: {project} {version}",
+		NotifyTemplate: "shipped {project} {version}",
+	}
+	text := RenderPostShipDetailText(d)
+	for _, want := range []string{
+		"Post-ship hooks: on",
+		"1. registry_row: the built-in registry_row, would run",
+		"2. notify: the command pw send, skipped (disabled)",
+		"Built-in targets:",
+		"registry file: .datawatch/registry.yaml",
+		"registry row pattern: | {project} | {version} |",
+		"companion repository: acme/widgets",
+		"issue title template: parity: {project} {version}",
+		"notify template: shipped {project} {version}",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("text lacks %q:\n%s", want, text)
+		}
+	}
+	off := RenderPostShipDetailText(PostShipDetail{Hooks: []PostShipHook{{Name: "a", Builtin: "x", Enabled: true}}})
+	if !strings.Contains(off, "Post-ship hooks: off") {
+		t.Errorf("off state:\n%s", off)
+	}
+	none := RenderPostShipDetailText(PostShipDetail{})
+	if !strings.Contains(none, "(no hook defined)") || strings.Contains(none, "Built-in targets:") {
+		t.Errorf("empty block:\n%s", none)
+	}
+}
+
+func TestRenderViewWithPostShipReplacesTheSummary(t *testing.T) {
+	v := View{Project: "demo", Source: "default", Reason: "no file, no record"}
+	d := PostShipDetail{Enabled: true, Hooks: []PostShipHook{{Name: "registry_row", Builtin: "registry_row", Enabled: true}}, RegistryFile: "r.yaml"}
+	text := RenderViewWithPostShip(v, d)
+	if !strings.Contains(text, "Post-ship hooks: on") || !strings.Contains(text, "registry file: r.yaml") {
+		t.Errorf("detail block missing:\n%s", text)
+	}
+	// The one-line summary must be replaced, not added: exactly one post-ship
+	// switch line stays in the text.
+	if n := strings.Count(text, "Post-ship hooks:"); n != 1 {
+		t.Errorf("the post-ship switch line is written %d times:\n%s", n, text)
+	}
+	text = RenderViewText(v)
+	if !strings.Contains(text, "Post-ship hooks: off (none defined)") {
+		t.Errorf("the summary line must stay when there is no detail:\n%s", text)
 	}
 }
