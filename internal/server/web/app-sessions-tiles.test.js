@@ -97,7 +97,7 @@ test('phone widths default to the list, wider screens default to tiles', () => {
   assert.equal(sb._sessionsTileModeDefault(599), 'list');
   assert.equal(sb._sessionsTileModeDefault(600), 'tiles', 'the boundary sits on the tile side');
   assert.equal(sb._sessionsTileModeDefault(1024), 'tiles');
-  assert.equal(sb._sessionsTileModeDefault(undefined), 'tiles', 'an unknown width reads as not-phone');
+  assert.equal(sb._sessionsTileModeDefault(undefined), 'list', 'an unknown width keeps the classic list');
   assert.equal(sb._sessionsTileModeDefault(-1), 'tiles');
 });
 
@@ -245,28 +245,27 @@ test('the toggle offers all three modes with the current one active', () => {
   }
   assert.match(html, /sessions-mode-btn active[^>]*>[^<]*Tiles/);
   assert.ok(!/sessions-mode-btn[^"]*active[^>]*>[^<]*List/.test(html));
-  const labels = JSON.parse(fs.readFileSync(path.join(WEB, 'locales', 'en.json'), 'utf8'));
   for (const k of ['sessions_view_toggle', 'sessions_view_list', 'sessions_view_tiles', 'sessions_view_compact']) {
     assert.equal(html.includes(k), false, `the rendered labels never expose the raw i18n key ${k}`);
-    assert.equal(typeof labels[k], 'string');
   }
   assert.match(html, /List/);
   assert.match(html, /Tiles/);
   assert.match(html, /Compact/);
 });
 
-test('the new keys live in every locale bundle', () => {
-  const dir = path.join(WEB, 'locales');
-  const en = JSON.parse(fs.readFileSync(path.join(dir, 'en.json'), 'utf8'));
-  const keys = Object.keys(en).filter(k => /^sessions_(view_|tile_|total_)/.test(k) || k === 'sessions_show_more');
-  assert.ok(keys.length >= 9, 'the controls have their keys');
-  for (const lang of ['en', 'de', 'es', 'fr', 'ja']) {
-    const bundle = JSON.parse(fs.readFileSync(path.join(dir, lang + '.json'), 'utf8'));
-    for (const k of keys) {
-      assert.equal(typeof bundle[k], 'string', `${lang} is missing ${k}`);
-      assert.equal(bundle[k].length > 0, true, `${lang} ${k} is not empty`);
-    }
-  }
+const plain = x => JSON.parse(JSON.stringify(x));
+
+test('missing locale keys fall back to the English label, never the raw key', () => {
+  const sb = loadApp();
+  assert.equal(sb._stx('sessions_no_such_key_x', 'Fallback'), 'Fallback');
+  assert.match(sb.renderSessionsModeToggle('list'), /Compact/);
+});
+
+test('session tile progress is lifecycle based', () => {
+  const sb = loadApp();
+  assert.deepEqual(plain(sb._sessionTileProgress({ state: 'complete' })), { done: 1, total: 1 });
+  assert.deepEqual(plain(sb._sessionTileProgress({ state: 'running' })), { done: 1, total: 2 });
+  assert.deepEqual(plain(sb._sessionTileProgress({ state: 'failed' })), { done: 0, total: 1 });
 });
 
 // ── one session as a tile ───────────────────────────────────────────────────

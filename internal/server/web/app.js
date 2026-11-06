@@ -3348,6 +3348,12 @@ function renderSessionsView() {
 // is the dense two-row grid; the normal tile grid still follows the width-based
 // mode on resizes via _tileSyncModes, while compact keeps its density there.
 // Tags, filter and search apply before rendering, so they work in every mode.
+// _stx: t() with an English fallback — t() returns the key itself on a miss, so
+// the fallback applies when the key is absent from every bundle.
+function _stx(key, fallback) {
+  const v = t(key);
+  return (v === undefined || v === null || v === key) ? fallback : v;
+}
 const SESSIONS_VIEW_MODES = ['list', 'tiles', 'compact'];
 const SESSIONS_VIEW_MODE_KEY = 'cs_sessions_view_mode';
 const SESSIONS_TILE_PAGE_SIZE = 60;        // first page / one Show-more step (configurable)
@@ -3359,7 +3365,7 @@ function _sessionsViewModeNormalize(mode) {
 
 function _sessionsTileModeDefault(width) {
   const w = Number(width);
-  if (!Number.isFinite(w) || w <= 0) return 'tiles'; // unknown width: treat as not-phone
+  if (!Number.isFinite(w) || w <= 0) return 'list'; // unknown width (no window metrics): keep the classic list
   return w < SESSIONS_MODE_PHONE_WIDTH ? 'list' : 'tiles';
 }
 
@@ -3454,14 +3460,14 @@ window.sessionsShowMore = _sessionsShowMore;
 
 function renderSessionsModeToggle(mode) {
   const defs = [
-    { key: 'list', label: t('sessions_view_list') || 'List', icon: '☰' },
-    { key: 'tiles', label: t('sessions_view_tiles') || 'Tiles', icon: '▦' },
-    { key: 'compact', label: t('sessions_view_compact') || 'Compact', icon: '▤' },
+    { key: 'list', label: _stx('sessions_view_list', 'List'), icon: '☰' },
+    { key: 'tiles', label: _stx('sessions_view_tiles', 'Tiles'), icon: '▦' },
+    { key: 'compact', label: _stx('sessions_view_compact', 'Compact'), icon: '▤' },
   ];
   const btns = defs.map(d =>
     `<button type="button" class="sessions-mode-btn${mode === d.key ? ' active' : ''}" title="${escHtml(d.label)}" onclick="_sessionsSetViewMode('${d.key}')">${d.icon} ${escHtml(d.label)}</button>`
   ).join('');
-  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(t('sessions_view_toggle') || 'Sessions view mode')}">${btns}</div>`;
+  return `<div class="sessions-mode-toggle" role="group" aria-label="${escHtml(_stx('sessions_view_toggle', 'Sessions view mode'))}">${btns}</div>`;
 }
 
 function renderSessionsSummaryBar(sessions) {
@@ -3481,8 +3487,20 @@ function renderSessionsSummaryBar(sessions) {
       <span class="sessions-summary-dot" style="color:${dot[r.state] || 'var(--text2,#9ca3af)'}">●</span>${escHtml(r.state)}
       <span class="sessions-summary-count">${r.count}</span></button>`;
   }).join('');
-  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(t('sessions_total_label') || 'sessions')} ${escHtml(String(sessions.length))}</span></div>`;
+  return `<div class="sessions-summary-bar">${items}<span class="sessions-summary-total">${escHtml(_stx('sessions_total_label', 'sessions'))} ${escHtml(String(sessions.length))}</span></div>`;
 }
+
+// Sessions carry no task counts, so progress is lifecycle based: a finished
+// session fills the bar, a failed or stopped one shows how far it got (empty),
+// and a live session shows a half bar so it reads as in flight.
+function _sessionTileProgress(sess) {
+  const st = sess && sess.state;
+  if (st === 'complete') return { done: 1, total: 1 };
+  if (st === 'running' || st === 'waiting_input' || st === 'rate_limited') return { done: 1, total: 2 };
+  return { done: 0, total: 1 };
+}
+window._stx = _stx;
+window._sessionTileProgress = _sessionTileProgress;
 
 // One session as a work tile: name, state chip, backend · model, node or peer,
 // tags (shared overflow chip), last activity and progress — the session's
@@ -3498,19 +3516,19 @@ function renderSessionTile(sess, nowMs) {
   const backend = [sess.backend_family, sess.llm_ref].filter(Boolean).join(' · ');
   let menu = '';
   if (isActive) {
-    menu += _tileMenuItem('■', t('sessions_tile_stop') || 'Stop', `killSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('■', _stx('sessions_tile_stop', 'Stop'), `killSession('${escHtml(fullId)}')`);
     if (sess.state === 'waiting_input') {
-      menu += _tileMenuItem('⌨', t('sessions_quick_commands') || 'Commands', `showCardCmds('${escHtml(fullId)}')`);
+      menu += _tileMenuItem('⌨', _stx('sessions_quick_commands', 'Commands'), `showCardCmds('${escHtml(fullId)}')`);
     }
   } else {
-    menu += _tileMenuItem('↻', t('sessions_tile_restart') || 'Restart', `restartSession('${escHtml(fullId)}')`);
-    menu += _tileMenuItem('✕', t('sessions_tile_delete') || 'Delete', `deleteSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('↻', _stx('sessions_tile_restart', 'Restart'), `restartSession('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('✕', _stx('sessions_tile_delete', 'Delete'), `deleteSession('${escHtml(fullId)}')`);
   }
   if (state._summarizerEnabled) {
-    menu += _tileMenuItem('🧠', t('sessions_tile_summary') || 'Summary', `manualSummarize('${escHtml(fullId)}')`);
+    menu += _tileMenuItem('🧠', _stx('sessions_tile_summary', 'Summary'), `manualSummarize('${escHtml(fullId)}')`);
   }
-  menu += _tileMenuItem('👁', t('session_action_watch') || 'Watch for updates', `toggleSessionWatch('${escHtml(fullId)}')`);
-  menu += _tileMenuItem('🔕', t('session_action_mute') || 'Mute notifications', `toggleSessionMute('${escHtml(fullId)}')`);
+  menu += _tileMenuItem('👁', _stx('session_action_watch', 'Watch for updates'), `toggleSessionWatch('${escHtml(fullId)}')`);
+  menu += _tileMenuItem('🔕', _stx('session_action_mute', 'Mute notifications'), `toggleSessionMute('${escHtml(fullId)}')`);
   const node = sess.hostname || sess.server || sess.compute_node_ref || '';
   return renderWorkTile({
     id: shortId,
@@ -3523,7 +3541,7 @@ function renderSessionTile(sess, nowMs) {
     backend,
     tagIds: [...(sess.tags || []), ...(sess.inherited_tags || [])],
     tagsById: _tagsState.byId,
-    progress: { done: 0, total: 0 },
+    progress: _sessionTileProgress(sess),
     updatedAt: sess.updated_at || sess.last_activity,
     nowMs: now,
     bodyHtml: node ? `<div class="session-tile-node">${escHtml(node)}</div>` : '',
@@ -3544,7 +3562,7 @@ window.renderSessionTileGrid = renderSessionTileGrid;
 
 function _sessionsShowMoreHTML(paging) {
   if (!paging.hasMore) return '';
-  return `<div class="sessions-show-more"><button type="button" class="btn-secondary" onclick="_sessionsShowMore()">${escHtml(t('sessions_show_more') || 'Show more')} (${paging.shownCount}/${paging.total})</button></div>`;
+  return `<div class="sessions-show-more"><button type="button" class="btn-secondary" onclick="_sessionsShowMore()">${escHtml(_stx('sessions_show_more', 'Show more'))} (${paging.shownCount}/${paging.total})</button></div>`;
 }
 
 function _sessionsLoadMoreHtml() {
