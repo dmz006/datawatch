@@ -167,6 +167,34 @@ Decision: the rule is "fix the data or remove the card". No card is removed now;
 one-line purpose, and a card whose data cannot be fixed is removed. Network and Multi-EKG are kept as ideas to
 rebuild on linked data. New dashboards are welcome.
 
+### 5. The usage page (asked 2026-11-06 08:58)
+
+Options offered: A three small fixed-size cards (weekly allowance, pace line, burn per day) that serve as dashboard
+cards and as a row on the Resources tab, a one-sentence verdict above them, explanations behind a "?" popover, and
+the reading entry, usage policy, extra credit and burn guard moved to Settings under Automata; B the same cards on
+the Resources tab only; C a separate Budget sub-tab.
+
+Operator answer, quoted: "A recommendation is good".
+
+Decision: A, the recommended option.
+
+## Housekeeping finding (checked 2026-11-06 09:00): the worktree concern is real
+
+The operator asked "so many worktrees with so many lines / commits not on main, something seems off on that?!?!?".
+An earlier guess in this session was that rewritten merges make landed branches look unmerged. The branch audit
+(which compares by commit subject) does account for those and lists 13 branches as landed. It also shows:
+
+- 173 directories under `~/.datawatch/prd-worktrees`, 28 GB, and 136 registered git worktrees.
+- 77 branches classed "other": archived Automata whose commits are not found on main by subject (for example
+  `4e190001` 16 commits and `2713dbb9` 16 commits with 0 and 1 matching, `28510001` 5 commits, 0 matching).
+- 4 live branches, which are the running Automata (their commits are not on main yet, as expected).
+
+So the 77 are not explained by squash merges. They are archived work with no sign of landing: dropped, cancelled,
+superseded or lost. Nothing may be deleted until each is classified (rule: never lose features or useful code).
+The Housekeeping card must therefore show these as a reviewable list (Automaton, what it was for, commits, last
+activity, and a recommendation: landed, superseded by `<release>`, or needs a decision), with the action next to
+each. Cleanup of the 28 GB follows only after that review.
+
 ## Data that exists today and can feed the cards (checked 2026-11-06)
 
 - **Progress history.** The progress trend has a point per day since 2026-10-24 (completed Automata 170 on 10-24,
@@ -206,7 +234,6 @@ a decision, held questions and their age); defects found and fixed per day.
 ## Questions still to ask (one at a time)
 
 4. (answered above)
-5. The usage page layout (small bounded dashboards for allowance, pace line and burn; text moved out).
 6. Housekeeping: what stays as an action card (uncommitted work with a commit button, permission errors with a fix)
    and what becomes events.
 7. Setup and policy: which items become Settings entries and which stay as a project page section.
