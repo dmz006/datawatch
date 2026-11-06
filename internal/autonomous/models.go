@@ -1430,6 +1430,10 @@ type Task struct {
 	MergeState  string `json:"merge_state,omitempty"`
 	MergeCommit string `json:"merge_commit,omitempty"`
 
+	// MergeBlock records why the task's merge into the PRD branch cannot
+	// proceed right now (see merge_block.go). Nil when nothing blocks it.
+	MergeBlock *MergeBlock `json:"merge_block,omitempty"`
+
 	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
 	// to an executable verification script (planned location
 	// `.datawatch/verify/<task-id>.sh`) that a future decompose pass
@@ -1959,4 +1963,17 @@ type PlanningRecord struct {
 	// and removes made on the PRD after the record was stored.
 	SupervisorEdits int       `json:"supervisor_edits,omitempty"`
 	RecordedAt      time.Time `json:"recorded_at"`
+}
+
+// MergeBlock describes a condition that is stopping a verified task's branch
+// from being merged into the Automaton branch, so the operator and the retry
+// path can see it instead of finding it only in the daemon log.
+type MergeBlock struct {
+	Kind        string    `json:"kind,omitempty"`
+	Reason      string    `json:"reason,omitempty"`
+	Action      string    `json:"action,omitempty"`
+	Files       []string  `json:"files,omitempty"`
+	Since       time.Time `json:"since,omitempty"`
+	LastRetryAt time.Time `json:"last_retry_at,omitempty"`
+	Attempts    int       `json:"attempts,omitempty"`
 }
