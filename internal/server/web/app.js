@@ -16665,6 +16665,17 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'cost_report.week_start', label: 'Week starts on', labelKey: 'settings_cost_report_week_start', type: 'select', options: ['monday','sunday'] },
     { key: 'cost_report.include_peer_spend', label: 'Include peer spend', labelKey: 'settings_cost_report_include_peer_spend', type: 'toggle' },
   ]},
+  // BL412 — the self-config builtin group (alias: mcp.allow_self_config)
+  // and its audit settings, editable like every other general-config row
+  // (saveGeneralField → PUT /api/config). The card also renders the most
+  // recent self-config audit records — read-only, from
+  // GET /api/audit/self-config (see window.renderSelfConfigAuditRecent,
+  // defined near the cost-report renderers).
+  { id: 'selfconfig', sectionKey: 'settings.self_config', section: 'Self-config', docs: 'datawatch-definitions.md', fields: [
+    { key: 'mcp.allow_self_config', label: 'Allow self-config', labelKey: 'settings.self_config.allow', helpKey: 'settings.self_config.allow_help', type: 'toggle' },
+    { key: 'mcp.self_config_audit_path', label: 'Audit path', labelKey: 'settings.self_config.audit_path', type: 'text', placeholder: '<data dir>/audit/config-self-modify.jsonl' },
+    { key: 'mcp.self_config_audit_denied', label: 'Record denied attempts', labelKey: 'settings.self_config.audit_denied', helpKey: 'settings.self_config.audit_denied_help', type: 'toggle' },
+  ]},
   { id: 'autoupdate', section: 'Auto-Update', docs: 'howto/daemon-operations.md', fields: [
     { key: 'update.enabled', label: 'Enabled', type: 'toggle' },
     { key: 'update.schedule', label: 'Schedule', type: 'select', options: ['hourly','daily','weekly'] },
@@ -18241,7 +18252,18 @@ function loadGeneralConfig() {
             </label>
           </div>`;
         }
+        if (sec.id === 'selfconfig') {
+          // BL412 — the card's recent-records placeholder; filled by
+          // renderSelfConfigAuditRecent after the card is in the DOM.
+          html += `<div id="gcfg_selfconfig_recent" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+            <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(t('settings.self_config_recent') || 'Recent self-config audit records')}</div>
+            <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('settings.self_config_recent_loading') || 'Loading…')}</div>
+          </div>`;
+        }
         el.innerHTML = html;
+        if (sec.id === 'selfconfig') {
+          window.renderSelfConfigAuditRecent(el);
+        }
       }
     })
     .catch(e => {
@@ -27422,6 +27444,57 @@ window.costReportCardHtml = function(report, opts) {
     body += `<div style="font-size:9px;color:var(--text2);margin-top:4px;">${escHtml(t('cost_report_rows_not_shown', [hidden]) || (hidden + ' more groups not shown'))}</div>`;
   }
   return head + notes + body;
+};
+
+// ── BL412 — self-config card ────────────────────────────────────────────
+// Self-config (BL412): the toggle, the audit path and the audit-denied
+// switch are plain GENERAL_CONFIG_FIELDS rows (they save through the
+// same saveGeneralField → PUT /api/config path as every other row).
+// The card additionally shows the most recent self-config audit
+// records, read-only: buildSelfConfigAuditRecentHtml is pure (entries
+// in, HTML out) so it is testable from node without a daemon; the
+// fetcher below wraps GET /api/audit/self-config and degrades to a
+// note on failure instead of an error row.
+window.buildSelfConfigAuditRecentHtml = function(entries) {
+  const max = 5;
+  const list = Array.isArray(entries) ? entries : [];
+  if (list.length === 0) {
+    return `<div style="font-size:10px;color:var(--text2);padding:4px 0;">${escHtml(t('settings.self_config_recent_empty') || 'No self-config audit records yet.')}</div>`;
+  }
+  const rows = list.slice(0, max).map(rec => {
+    const ok = !!(rec && rec.allowed);
+    const mark = ok ? '✓' : '✗';
+    const color = ok ? 'var(--success, #2e9e5b)' : 'var(--error, #c0564f)';
+    const keys = (rec && Array.isArray(rec.keys)) ? rec.keys.join(', ') : '';
+    const parts = [rec && rec.time, rec && rec.surface, rec && rec.tool, keys ? '(' + keys + ')' : '', rec && rec.caller].filter(Boolean);
+    const reason = (rec && !ok && rec.reason) ? rec.reason : '';
+    return `<div style="padding:3px 0;font-size:11px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(parts.join(' · ') + (reason ? ' — ' + reason : ''))}">
+      <span style="color:${color};font-weight:700;margin-right:4px;">${mark}</span>${escHtml(parts.join(' · '))}${reason ? ' — ' + escHtml(reason) : ''}
+    </div>`;
+  }).join('');
+  const hidden = list.length - max;
+  return rows + (hidden > 0
+    ? `<div style="font-size:9px;color:var(--text2);">${escHtml(t('settings.self_config_recent_more', [hidden]) || (hidden + ' older record(s) not shown'))}</div>`
+    : '');
+};
+
+// renderSelfConfigAuditRecent fills the card's recent-records area from
+// the read-only REST view. Failures render a dimmed note — the audit
+// path is decorative here, not load-bearing.
+window.renderSelfConfigAuditRecent = function(card) {
+  if (!card) return;
+  const box = card.querySelector('#gcfg_selfconfig_recent');
+  if (!box) return;
+  apiFetch('/api/audit/self-config?limit=5').then(body => {
+    if (!box.isConnected || !card.isConnected) return;
+    const entries = body && Array.isArray(body.entries) ? body.entries : [];
+    box.innerHTML = `<div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(t('settings.self_config_recent') || 'Recent self-config audit records')}</div>` +
+      window.buildSelfConfigAuditRecentHtml(entries);
+  }).catch(err => {
+    if (!box.isConnected || !card.isConnected) return;
+    box.innerHTML = `<div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(t('settings.self_config_recent') || 'Recent self-config audit records')}</div>
+      <div style="font-size:10px;color:var(--text2);padding:4px 0;">${escHtml(t('settings.self_config_recent_unavailable') || ('Self-config audit log unavailable' + (err ? ': ' + err.message : '')))}</div>`;
+  });
 };
 
 // ── Automata progress card ───────────────────────────────────────────────────

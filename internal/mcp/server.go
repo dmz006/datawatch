@@ -579,6 +579,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolCostReport(), tracked(s.handleCostReport))                       // cost report (internal/costreport)
 	mcpSrv.AddTool(s.toolAuditQuery(), tracked(s.handleAuditQuery))                       // BL9
 	mcpSrv.AddTool(s.toolAuditAccessQuery(), tracked(s.handleAuditAccessQuery))           // GH#201
+	mcpSrv.AddTool(s.toolSelfConfigAudit(), tracked(s.handleSelfConfigAudit))             // BL412 (self-config audit view)
 	mcpSrv.AddTool(s.toolDiagnose(), tracked(s.handleDiagnose))                           // BL37
 	mcpSrv.AddTool(s.toolReload(), tracked(s.handleReload))                               // BL17
 	mcpSrv.AddTool(s.toolAnalytics(), tracked(s.handleAnalytics))                         // BL12
@@ -1380,6 +1381,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolSessionImport, "session_import"},
 		{s.toolSessionSummarize, "session_summarize"},
 		{s.toolAgentAudit, "agent_audit"},
+		{s.toolSelfConfigAudit, "self_config_audit"},
 		{s.toolGetAlerts, "get_alerts"},
 		{s.toolCreateAlert, "create_alert"},
 		{s.toolMarkAlertRead, "mark_alert_read"},

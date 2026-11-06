@@ -3349,5 +3349,16 @@
   "settings_cost_report_default_window_days": "Default window (days)",
   "settings_cost_report_show_usd_estimates": "Show USD estimates",
   "settings_cost_report_week_start": "Week starts on",
-  "settings_cost_report_include_peer_spend": "Include peer spend"
+  "settings_cost_report_include_peer_spend": "Include peer spend",
+  "settings.self_config": "Self-config",
+  "settings.self_config.allow": "Permitir autoconfiguración del agente",
+  "settings.self_config.allow_help": "Activado: un agente con el grupo self-config (mcp.allow_self_config) puede cambiar sus ajustes no sensibles — config, sessions, observers, LLMs, quota. Desactivado: se deniega y se audita cada intento.",
+  "settings.self_config.audit_path": "Ruta del registro de auditoría",
+  "settings.self_config.audit_denied": "Registrar también intentos denegados",
+  "settings.self_config.audit_denied_help": "Activado (predeterminado): los intentos denegados también se registran con su motivo. Desactivado: solo las escrituras permitidas.",
+  "settings.self_config_recent": "Registros recientes de auditoría self-config",
+  "settings.self_config_recent_loading": "Cargando…",
+  "settings.self_config_recent_empty": "Aún no hay registros de auditoría self-config.",
+  "settings.self_config_recent_more": "%1$d registro(s) anterior(es) no mostrado(s)",
+  "settings.self_config_recent_unavailable": "Registro de auditoría self-config no disponible"
 }

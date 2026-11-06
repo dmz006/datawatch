@@ -6032,6 +6032,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
 			"tls_cert":          s.cfg.MCP.TLSCert,
 			"tls_key":           s.cfg.MCP.TLSKey,
+			// BL412 — self-config group (alias: mcp.allow_self_config). The
+			// YAML field is tri-state (absent = enabled); GET reports the
+			// effective value so a read-modify-write round trip preserves the
+			// enabled/disabled state. Audit path and denied-recording flag are
+			// read-only here (mutable via PUT, same as every other mcp.* key).
+			"allow_self_config":        s.cfg.MCP.SelfConfigEnabled(),
+			"self_config_audit_path":   s.cfg.MCP.SelfConfigAuditPath,
+			"self_config_audit_denied": s.cfg.MCP.SelfConfigAuditDeniedOn(),
 		},
 		"detection": map[string]interface{}{
 			"prompt_patterns":       s.cfg.Detection.PromptPatterns,
@@ -7816,6 +7824,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.MCP.TLSCert = toString(v)
 		case "mcp.tls_key":
 			cfg.MCP.TLSKey = toString(v)
+		// BL412 — self-config group. allow_self_config is stored as an
+		// explicit bool (the tri-state "absent = on" default is resolved on
+		// read via SelfConfigEnabled; PUT makes the operator's intent stick).
+		case "mcp.allow_self_config":
+			b := toBool(v)
+			cfg.MCP.AllowSelfConfig = &b
+		case "mcp.self_config_audit_path":
+			if s := toString(v); s != "" {
+				cfg.MCP.SelfConfigAuditPath = s
+			}
+		case "mcp.self_config_audit_denied":
+			b := toBool(v)
+			cfg.MCP.SelfConfigAuditDenied = &b
 		case "update.enabled":
 			cfg.Update.Enabled = toBool(v)
 		case "update.schedule":

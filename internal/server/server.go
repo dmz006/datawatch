@@ -361,6 +361,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/budget/usage", api.handleBudgetUsage)                              // this daemon's own spend only
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
+	apiMux.HandleFunc("/api/audit/self-config", api.handleSelfConfigAudit)                     // BL412 (self-config audit view)
 	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)            // GH#203 (list + mint)
 	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)           // GH#203 (revoke by name)
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
