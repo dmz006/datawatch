@@ -3186,6 +3186,7 @@ function renderSessionsView() {
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
     <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
+    ${_sessionsGroupControl()}
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
     <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
     ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
@@ -3278,10 +3279,13 @@ function renderSessionsView() {
     return;
   }
 
-  // BL348 — tree mode or flat list
+  // BL348 — tree mode, placement-axis groups, or flat list
+  const groupAxis = state.sessionTreeView ? '' : _sessionsGroupAxis();
   const cards = state.sessionTreeView
     ? renderSessionsAsTree(visible)
-    : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join('');
+    : (groupAxis
+      ? (visible.length ? _sessionsGroupCards(visible, groupAxis) : '')
+      : visible.map((sess, idx) => sessionCard(sess, idx, visible.length)).join(''));
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
@@ -17154,6 +17158,24 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.tags.direct_counts_visible', label: 'Show the direct count as a tooltip beside the subtree count', labelKey: 'settings_tags_direct_counts_visible', type: 'toggle' },
     { key: 'autonomous.tags.registry_keeper', label: 'Tag registry keeper (federation peer name; empty = this daemon keeps it and nothing syncs)', labelKey: 'settings_tags_registry_keeper', type: 'text', placeholder: '' },
     { key: 'autonomous.tags.registry_sync_seconds', label: 'Tag registry sync interval (seconds, minimum 5, default 30)', labelKey: 'settings_tags_registry_sync_seconds', type: 'number', placeholder: '30', min: 5, step: 1, default: '30' },
+    // Placement tags — machine-derived system tags, one per axis
+    // (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>, role:<role>,
+    // project:<name>). Stamped on every session the machine creates so the
+    // session list, dashboard and Gantt can group and filter by axis.
+    { label: 'Placement tags', labelKey: 'settings_placement_group', type: 'group', hintKey: 'settings_placement_group_help' },
+    { key: 'autonomous.tags.placement.enabled', label: 'Derive placement tags', labelKey: 'settings_placement_enabled', type: 'toggle' },
+    { key: 'autonomous.tags.placement.compute.enabled', label: 'compute axis', labelKey: 'settings_placement_compute', type: 'toggle' },
+    { key: 'autonomous.tags.placement.peer.enabled', label: 'peer axis', labelKey: 'settings_placement_peer', type: 'toggle' },
+    { key: 'autonomous.tags.placement.backend.enabled', label: 'backend axis', labelKey: 'settings_placement_backend', type: 'toggle' },
+    { key: 'autonomous.tags.placement.lane.enabled', label: 'lane axis', labelKey: 'settings_placement_lane', type: 'toggle' },
+    { key: 'autonomous.tags.placement.role.enabled', label: 'role axis', labelKey: 'settings_placement_role', type: 'toggle' },
+    { key: 'autonomous.tags.placement.project.enabled', label: 'project axis', labelKey: 'settings_placement_project', type: 'toggle' },
+    { key: 'autonomous.tags.placement.compute.template', label: 'compute tag template', labelKey: 'settings_placement_compute_template', type: 'text', placeholder: 'compute:auto' },
+    { key: 'autonomous.tags.placement.peer.template', label: 'peer tag template', labelKey: 'settings_placement_peer_template', type: 'text', placeholder: 'peer:auto' },
+    { key: 'autonomous.tags.placement.backend.template', label: 'backend tag template', labelKey: 'settings_placement_backend_template', type: 'text', placeholder: 'backend:auto' },
+    { key: 'autonomous.tags.placement.lane.template', label: 'lane tag template', labelKey: 'settings_placement_lane_template', type: 'text', placeholder: 'lane:auto' },
+    { key: 'autonomous.tags.placement.role.template', label: 'role tag template', labelKey: 'settings_placement_role_template', type: 'text', placeholder: 'role:auto' },
+    { key: 'autonomous.tags.placement.project.template', label: 'project tag template', labelKey: 'settings_placement_project_template', type: 'text', placeholder: 'project:auto' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -17933,7 +17955,17 @@ function loadGeneralConfig() {
         let html = '';
         for (const f of sec.fields) {
           const parts = (f.key || '').split('.');
-          const val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          let val = parts.reduce((o, k) => (o && o[k] !== undefined) ? o[k] : '', cfg);
+          // autonomous.tags.placement.<axis>.<field> — GET /api/config renders
+          // the block as placement.{enabled, axes:{<axis>:{enabled,template}}},
+          // so a flat dotted key misses the reduce above; fall back to the
+          // axes node (PUT still takes the flat key, per ValidateTagSetting).
+          if ((val === '' || val === undefined) && parts.length === 4 && parts[0] === 'autonomous' && parts[1] === 'tags' && parts[2] === 'placement') {
+            const pl = cfg && cfg.autonomous && cfg.autonomous.tags ? cfg.autonomous.tags.placement : null;
+            if (pl && pl.axes && pl.axes[parts[3]] && pl.axes[parts[3]][f.key.split('.').slice(-1)[0]] !== undefined) {
+              val = pl.axes[parts[3]][f.key.split('.').slice(-1)[0]];
+            }
+          }
           // Resolve label at render time so t() runs after locale loads.
           // GENERAL_CONFIG_FIELDS is a static const (init-time), so any t()
           // calls baked into f.label ran before the bundle was fetched and
@@ -21418,6 +21450,12 @@ function escHtml(str) {
 // reads as an escaped backslash followed by an UNESCAPED quote).
 function escJsAttr(s) {
   return escHtml(String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"));
+}
+
+// escAttr — escape a string for a double-quoted HTML attribute value;
+// escHtml already escapes &amp; &lt; &gt; and both quote characters.
+function escAttr(s) {
+  return escHtml(String(s == null ? '' : s));
 }
 
 // BL374 — render a files_touched path as a viewable + downloadable chip.
@@ -39557,6 +39595,7 @@ function renderDashboardView() {
         <span id="dashStatTasks" style="color:var(--text2);"></span>
         <span id="dashStatGuardrails" style="color:var(--text2);"></span>
         <span id="dashStatBurnRate" style="display:none;color:var(--text2);font-size:10px;font-family:monospace;border-left:1px solid var(--border);padding-left:8px;margin-left:2px;"></span>
+        <span id="dashPlacementFilter" style="display:none;align-items:center;gap:3px;border:1px solid var(--border);border-radius:4px;padding:1px 6px;margin-left:6px;" title="${escHtml(_tagT('dash_filter_placement_tip', 'Filter the dashboard, tree and Gantt to one placement (system) tag, or to a whole axis (compute:*)'))}"><span style="font-size:11px;">⚙️</span><select id="dashPlacementSelect" onchange="dashSetPlacementTag(this.value)" style="border:none;background:transparent;color:var(--text);font-size:11px;padding:0;max-width:180px;cursor:pointer;"></select></span>
         <span style="flex:1;"></span>
         <span style="color:var(--text2);opacity:0.4;font-size:9px;font-family:monospace;">live · ws</span>
         <a href="/diagrams.html#docs/howto/dashboard.md" target="_blank" rel="noopener" title="${escHtml(t('dashboard_help_tip')||'Open the Dashboard howto — explains cards, editing, and adding new ones')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:4px;">?</a>
@@ -39627,8 +39666,84 @@ function _dashCheckEnabled() {
     .catch(() => {});
 }
 
+// _dashPlacementSessionMatch is true when a session carries the dashboard's
+// placement filter value ('' matches all; "axis:*" matches the whole axis;
+// "axis:value" matches that exact tag).
+function _dashPlacementSessionMatch(s) {
+  const f = state.dashPlacementTag;
+  if (!f) return true;
+  const names = _sessionPlacementTags(s) || [];
+  if (f.endsWith(':*')) {
+    const ax = f.slice(0, -2);
+    return names.some(n => _placementAxisOf(n) === ax);
+  }
+  return names.includes(f);
+}
+
+// _dashPlacedPrds applies the dashboard's placement filter to the active PRDs
+// for the tree, Gantt and count consumers. A PRD matches when its own tag
+// names (resolved from registry IDs), its system_tags, or any of its
+// sessions' placement tags contain the filter value.
+function _dashPlacedPrds() {
+  const prds = _dash._prds || [];
+  const f = state.dashPlacementTag;
+  if (!f) return prds;
+  return prds.filter(p => {
+    const byId = (typeof _tagsState !== 'undefined' && _tagsState.byId) || {};
+    const names = new Set(
+      [(p && p.system_tags) || []
+      ].concat(
+        ((p && p.tags) || []).map(id => byId[id] && byId[id].name).filter(Boolean),
+        ((p && p.inherited_tags) || []).map(id => byId[id] && byId[id].name).filter(Boolean)
+      )
+    );
+    const mine = ((state.sessions || []).filter(s => (s.prd_id || s.parent_prd_id) === p.id));
+    mine.forEach(s => _sessionPlacementTags(s).forEach(n => names.add(n)));
+    if (f.endsWith(':*')) {
+      const ax = f.slice(0, -2);
+      return [...names].some(n => _placementAxisOf(n) === ax);
+    }
+    return names.has(f);
+  });
+}
+
+// _dashPlaceFilterRefresh keeps the dashboard header's placement select in
+// step with the known placement tags (idempotent; runs from _dashUpdateStatBar).
+function _dashPlaceFilterRefresh() {
+  const sel = document.getElementById('dashPlacementSelect');
+  const wrap = document.getElementById('dashPlacementFilter');
+  if (!sel || !wrap) return;
+  if (state.dashPlacementTag === undefined) {
+    try { state.dashPlacementTag = localStorage.getItem('dw_dash_placement_tag') || ''; } catch (_e) { state.dashPlacementTag = ''; }
+  }
+  const map = _placementTagsByAxis(state.sessions);
+  const axes = _placementAxisOrder(Object.keys(map));
+  if (!axes.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'inline-flex';
+  const cur = state.dashPlacementTag || '';
+  const opts = [''];
+  for (const ax of axes) {
+    opts.push(ax + ':*');
+    for (const n of (map[ax] || [])) if (n.slice(0, ax.length + 1) === ax + ':') opts.push(n);
+  }
+  const label = (v) => v === '' ? (t('dash_filter_placement_all') || 'All placement tags') : (v.endsWith(':*') ? _tagT('dash_filter_placement_axis', '%1$s (whole axis)', [v.slice(0, -2)]) : v);
+  sel.innerHTML = opts.map(v => `<option value="${escAttr(v)}" ${v === cur ? 'selected' : ''}>${escHtml(label(v))}</option>`).join('');
+}
+
+// dashSetPlacementTag switches the dashboard's placement filter and repaints
+// the cards that consume it.
+window.dashSetPlacementTag = function(v) {
+  state.dashPlacementTag = v || '';
+  try { localStorage.setItem('dw_dash_placement_tag', state.dashPlacementTag); } catch (_e) {}
+  if (typeof _dashUpdateStatBar === 'function') _dashUpdateStatBar();
+  if (typeof _dashRenderTree === 'function') _dashRenderTree();
+  if (typeof _drawGantt === 'function') _drawGantt();
+  if (typeof _dashRenderBurnRate === 'function') _dashRenderBurnRate();
+};
+
 function _dashUpdateStatBar() {
-  const sessions = state.sessions || [];
+  const _allSessionsRaw = state.sessions || [];
+  const sessions = state.dashPlacementTag ? _allSessionsRaw.filter(_dashPlacementSessionMatch) : _allSessionsRaw;
   const running = sessions.filter(s => s.state === 'running' || s.state === 'generating' || s.state === 'waiting_input');
   let taskDone = 0, taskTotal = 0, verdictBlock = 0, verdictWarn = 0;
   for (const b of Object.values(_dash._boards)) {
@@ -39653,7 +39768,8 @@ function _dashUpdateStatBar() {
   const elS = document.getElementById('dashStatSessions');
   const elT = document.getElementById('dashStatTasks');
   const elG = document.getElementById('dashStatGuardrails');
-  if (elS) elS.innerHTML = `<span style="color:var(--text);">${sessions.length}</span> sess · <span style="color:var(--accent);">${running.length} active</span>${costStr}`;
+  if (elS) elS.innerHTML = `<span style="color:var(--text);">${sessions.length}</span> sess · <span style="color:var(--accent);">${running.length} active</span>${state.dashPlacementTag ? ` · <span style="color:var(--success,#10b981);">⚙️ ${escHtml(state.dashPlacementTag)}</span>` : ''}${costStr}`;
+  _dashPlaceFilterRefresh();
   if (elT) elT.innerHTML = taskTotal > 0 ? `<span style="color:var(--success,#10b981);">${taskDone}</span>/<span style="color:var(--text);">${taskTotal}</span> tasks` : '';
   if (elG) elG.innerHTML = verdictBlock > 0
     ? `<span style="color:var(--error);font-weight:700;">⚠ ${verdictBlock} blk</span>${verdictWarn > 0 ? ` <span style="color:var(--warning);">${verdictWarn} warn</span>` : ''}`
@@ -39688,7 +39804,7 @@ function _dashUpdateStatBar() {
 function _dashRenderTree() {
   const el = document.getElementById('dashTree');
   if (!el) return;
-  const prds = _dash._prds || [];
+  const prds = _dashPlacedPrds();
   let html = `<div style="padding:5px 10px 3px;font-size:9px;font-weight:700;color:var(--text2);letter-spacing:0.8px;text-transform:uppercase;">Automata</div>`;
   if (prds.length === 0) {
     html += `<div style="color:var(--text2);padding:5px 10px;font-size:10px;opacity:0.7;">no active automata</div>`;
@@ -39786,7 +39902,7 @@ function _drawGantt() {
   const WIN_MS = 6 * 3600000;
   const winStart = now - WIN_MS;
   const HEADER_H = 24, AUTO_H = 28, STORY_H = 22, GAP = 8;
-  const prds = _dash._prds || [];
+  const prds = _dashPlacedPrds();
   const css = getComputedStyle(document.documentElement);
   const bg = css.getPropertyValue('--bg').trim() || '#0f1117';
   const bg2 = css.getPropertyValue('--bg2').trim() || '#161b2e';
@@ -39971,7 +40087,7 @@ function _dashRenderBurnRate() {
     }
   }
   html += `<div style="margin-top:3px;color:var(--accent);font-size:9px;">${sessions.length} running</div>`;
-  const prds = _dash._prds || [];
+  const prds = _dashPlacedPrds();
   if (prds.length > 0) html += `<div style="font-size:8px;color:var(--text2);">${prds.length} automata</div>`;
   el.innerHTML = html;
 }
@@ -42005,6 +42121,7 @@ function _tagsMenuHTML() {
   const clearBtn = _tagBrowseActiveCount('session')
     ? `<button type="button" class="tags-menu-btn" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>`
     : '';
+  const placementSection = _tagsPlacementMenuHTML();
   const tagsSection = `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(t('tags_menu_button'))}</div>${list}<div class="tags-menu-actions">${modeBtn}${clearBtn}</div></div>`;
   let sessionSection = '';
   const id = state.activeView === 'session-detail' ? state.activeSession : '';
@@ -42015,7 +42132,30 @@ function _tagsMenuHTML() {
       `<button type="button" class="tags-menu-btn" onclick="toggleSessionWatch('${idJ}')">${escHtml(watchLabel)}</button>` +
       `<button type="button" class="tags-menu-btn" onclick="closeTagsMenu();openSessionTagsModal('${idJ}')">${escHtml(t('tags_menu_edit_this'))}</button></div>`;
   }
-  return `<div class="tags-menu-section">${watched}</div>${tagsSection}${sessionSection}`;
+  return `<div class="tags-menu-section">${watched}</div>${placementSection}${tagsSection}${sessionSection}`;
+}
+
+// _tagsPlacementMenuHTML draws the Tags menu's placement section: each system
+// (placement) tag grouped by its axis (compute, peer, backend, lane, role,
+// project, then any custom axis). Checkboxes drive the same session tag
+// selection as the operator tag list below.
+function _tagsPlacementMenuHTML() {
+  if (typeof _tagsState === 'undefined' || !_tagsState.loaded) return '';
+  const byAxis = {};
+  (_tagsState.list || []).forEach(tg => {
+    if (!tg || tg.system !== true) return;
+    const ax = _placementAxisOf(tg.name);
+    if (!ax) return;
+    (byAxis[ax] = byAxis[ax] || []).push(tg);
+  });
+  const axes = _placementAxisOrder(Object.keys(byAxis));
+  if (!axes.length) return '';
+  const row = tg => `<label class="tag-multi-row"><input type="checkbox" ${_tagBrowse.session.sel.includes(tg.id) ? 'checked' : ''} onchange="tagBrowseToggleTag('session','${escJsAttr(tg.id)}',this.checked)"><span class="tag-multi-name">⚙️ ${escHtml(tg.name)}</span></label>`;
+  const body = axes.map(ax => {
+    const head = `<div style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);padding:6px 14px 2px;">${escHtml(ax)}</div>`;
+    return head + byAxis[ax].slice().sort((a, b) => a.name.localeCompare(b.name)).map(row).join('');
+  }).join('');
+  return `<div class="tags-menu-section"><div class="tags-menu-head">${escHtml(_tagT('tags_menu_placement', 'Placement tags (system)'))}</div><div class="tags-menu-list">${body}</div></div>`;
 }
 
 window.toggleTagsMenu = toggleTagsMenu;
@@ -42163,27 +42303,192 @@ window.openPRDTagsModal = function(prdId) {
 // the inherited ones are read-only here and change with the Automaton. Nothing
 // below ever sends an inherited ID: the editor starts from the own tags only.
 
-// _sessionTagChipsHTML draws the own tags as normal chips and the inherited ones
-// as dashed, dimmed chips with a small "inherited" label. IDs the registry does
-// not know are skipped, so nothing renders until the registry has loaded.
+// _sessionTagChipsHTML draws the own tags as normal chips, the inherited ones
+// as dashed, dimmed chips with a small "inherited" label, and the placement
+// (system) tags — compute:<node> and the like — as solid green machine-derived
+// chips. IDs the registry does not know are skipped, so nothing renders until
+// the registry has loaded.
+
+// ── Placement (system) tags: helpers ──────────────────────────────────
+// Placement tags (compute:<node>, peer:<name>, backend:<llm>, lane:<lane>,
+// role:<role>, project:<name>) are system tags the machine derives for each
+// session (autonomous.tags.placement). Sessions carry them as tag-name strings
+// in system_tags; operator tags are registry IDs. The name-based helpers
+// below coexist with the registry-ID-based matching so both keep working.
+const PLACEMENT_AXIS_ORDER = ['compute', 'peer', 'backend', 'lane', 'role', 'project'];
+
+// _placementAxisOf extracts the axis from a tag name ("compute:gpu-1" →
+// "compute"); tags without a colon get ''.
+function _placementAxisOf(name) {
+  const n = String(name || '');
+  const i = n.indexOf(':');
+  if (i <= 0) return '';
+  return n.slice(0, i);
+}
+
+// _placementTagName is one axis:value string the machine recognizes, or null.
+function _placementTagName(name) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const ax = _placementAxisOf(n);
+  return (ax && n.length > ax.length + 1) ? n : null;
+}
+
+// _placementAxisOrder orders axes canonically (compute, peer, backend, lane,
+// role, project, then custom axes alphabetically).
+function _placementAxisOrder(names) {
+  const have = new Set(names || []);
+  const ordered = PLACEMENT_AXIS_ORDER.filter(a => have.has(a));
+  const extras = [...have].filter(a => !PLACEMENT_AXIS_ORDER.includes(a)).sort((a, b) => a.localeCompare(b));
+  return ordered.concat(extras);
+}
+
+// _sessionPlacementTags returns the placement tag names a session carries:
+// its own system_tags, plus inherited tags the registry marks as system (or
+// that look placement-shaped). Deduplicated, order preserved.
+function _sessionPlacementTags(sess) {
+  if (!sess) return [];
+  const out = [];
+  const seen = new Set();
+  const push = (n) => {
+    const name = _placementTagName(n);
+    if (name && !seen.has(name)) { seen.add(name); out.push(name); }
+  };
+  (Array.isArray(sess.system_tags) ? sess.system_tags : []).forEach(push);
+  const byId = _tagsState.byId || {};
+  (Array.isArray(sess.inherited_tags) ? sess.inherited_tags : []).forEach(id => {
+    const tg = byId[id];
+    if (tg && (tg.system === true || _placementTagName(tg.name))) push(tg.name);
+  });
+  return out;
+}
+
+// _placementTagsByAxis maps axis → sorted, deduped tag names from the given
+// sessions' system_tags plus (once loaded) the registry's system tags.
+function _placementTagsByAxis(sessionList) {
+  const map = {};
+  const add = (name) => {
+    const n = _placementTagName(name);
+    if (!n) return;
+    const ax = _placementAxisOf(n);
+    (map[ax] = map[ax] || new Set()).add(n);
+  };
+  (Array.isArray(sessionList) ? sessionList : []).forEach(s => (Array.isArray(s && s.system_tags) ? s.system_tags : []).forEach(add));
+  if (typeof _tagsState !== 'undefined' && _tagsState.loaded) (_tagsState.list || []).forEach(tg => { if (tg && tg.system === true) add(tg.name); });
+  return Object.fromEntries(_placementAxisOrder(Object.keys(map)).map(ax => [ax, [...map[ax]].sort((a, b) => a.localeCompare(b))]));
+}
+
+// _sessionsGroupAxis reads the persisted sessions-list grouping axis (''=off).
+function _sessionsGroupAxis() {
+  if (state.sessionsGroupAxis === undefined) {
+    try { state.sessionsGroupAxis = localStorage.getItem('dw_sessions_group_axis') || ''; } catch (_e) { state.sessionsGroupAxis = ''; }
+  }
+  return state.sessionsGroupAxis;
+}
+
+// setSessionsGroupAxis switches the sessions list grouping and repaints.
+window.setSessionsGroupAxis = function(axis) {
+  state.sessionsGroupAxis = String(axis || '');
+  try { localStorage.setItem('dw_sessions_group_axis', state.sessionsGroupAxis); } catch (_e) {}
+  if (state.activeView === 'sessions' && typeof renderSessionsView === 'function') renderSessionsView();
+};
+
+// _sessionGroupTagClick toggles one placement tag in the session tag
+// selection: the registry ID when the tag is registered, the tag name
+// otherwise; _sessionTagFilter understands both.
+window._sessionGroupTagClick = function(axis, tag) {
+  const sc = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session : null;
+  if (!sc) return;
+  const reg = (typeof _tagsState !== 'undefined' && _tagsState.list || []).find(tg => tg && tg.name === tag);
+  const key = reg ? reg.id : tag;
+  const i = sc.sel.indexOf(key);
+  if (i < 0) sc.sel.push(key); else sc.sel.splice(i, 1);
+  if (typeof _tagBrowseSave === 'function') _tagBrowseSave('session');
+  if (state.activeView === 'sessions' && typeof renderSessionsView === 'function') renderSessionsView();
+};
+
+// _sessionPlacementSelActive is true when the session tag selection contains
+// the given tag (by registry ID or by name).
+function _sessionPlacementSelActive(tag) {
+  const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
+  return sel.some(key => key === tag || ((_tagsState.byId || {})[key] && _tagsState.byId[key].name === tag));
+}
+
+// _sessionGroupHeaderHTML is one group's header: the tag, its session count
+// and a filter toggle.
+function _sessionGroupHeaderHTML(axis, tag, count, selActive) {
+  const countLabel = count === 1 ? (t('session_group_count_one') || '1 session') : (String(count) + ' ' + (t('session_group_count_other') || 'sessions'));
+  const countHtml = `<span style="font-size:11px;color:var(--text2);">${escHtml(countLabel)}</span>`;
+  const filterLabel = selActive ? (_tagT('session_group_filter_off', 'Show all sessions') || 'Show all sessions') : (_tagT('session_group_filter_on', 'Only this tag') || 'Only this tag');
+  return `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:color-mix(in srgb, var(--success,#10b981) 10%, transparent);border-left:3px solid var(--success,#10b981);border-radius:4px;"><span style="font-size:12px;font-weight:700;color:var(--text);">⚙️ ${escHtml(tag)}</span>${countHtml}<button type="button" class="${selActive ? 'btn-primary' : 'btn-secondary'}" style="margin-left:auto;font-size:11px;padding:2px 10px;border-radius:10px;" onclick="_sessionGroupTagClick('${escJsAttr(axis)}','${escJsAttr(tag)}')">${escHtml(filterLabel)}</button></div>`;
+}
+
+// _sessionsGroupCards renders a flat session list grouped by the given
+// placement axis; sessions with no tag on that axis fall under an untagged
+// group (header only shown when the list also has tagged groups).
+function _sessionsGroupCards(sessions, axis) {
+  const groups = {};
+  const ungrouped = [];
+  for (const s of sessions) {
+    const tag = (_sessionPlacementTags(s) || []).find(n => _placementAxisOf(n) === axis);
+    if (tag) (groups[tag] = groups[tag] || []).push(s);
+    else ungrouped.push(s);
+  }
+  let idx = 0;
+  let html = '';
+  for (const tag of Object.keys(groups).sort((a, b) => a.localeCompare(b))) {
+    const g = groups[tag];
+    html += _sessionGroupHeaderHTML(axis, tag, g.length, _sessionPlacementSelActive(tag)) + g.map(s => sessionCard(s, idx++, sessions.length)).join('');
+  }
+  if (ungrouped.length) {
+    if (Object.keys(groups).length) {
+      html += `<div class="sessions-group-header" style="display:flex;align-items:center;gap:8px;padding:5px 12px;margin:12px 8px 4px;background:var(--bg3,rgba(120,120,140,0.12));border-left:3px solid var(--border);border-radius:4px;"><span style="font-size:12px;font-weight:600;color:var(--text2);">${escHtml(_tagT('sessions_group_untagged', 'No %1$s tag', [axis]))} <span style="font-size:11px;font-weight:400;">(${ungrouped.length})</span></div>`;
+    }
+    html += ungrouped.map(s => sessionCard(s, idx++, sessions.length)).join('');
+  }
+  return html;
+}
+
+// _sessionsGroupControl is the sessions toolbar's axis dropdown. It appears
+// while some placement tag is known.
+function _sessionsGroupControl() {
+  const axes = _placementAxisOrder(Object.keys(_placementTagsByAxis(state.sessions)));
+  if (!axes.length) return '';
+  const cur = _sessionsGroupAxis();
+  const opts = [''].concat(axes).map(a => `<option value="${escAttr(a)}" ${a === cur ? 'selected' : ''}>${a ? escHtml(a) : escHtml(_tagT('sessions_group_none', 'No grouping'))}</option>`).join('');
+  return `<span class="backend-filter-badge group-axis-control${cur ? ' active' : ''}" style="display:inline-flex;align-items:center;gap:3px;" title="${escHtml(_tagT('sessions_group_tip', 'Group the session list by a placement (system) tag'))}"><span>⚙️</span><select style="border:none;background:transparent;color:inherit;font:inherit;font-size:11px;padding:0;max-width:96px;" onchange="setSessionsGroupAxis(this.value)" aria-label="${escHtml(t('sessions_group_by_label') || 'Group by placement')}">${opts}</select></span>`;
+}
+
 function _sessionTagChipsHTML(sess) {
   if (!sess) return '';
   const own = (sess.tags || []).map(id => _tagsState.byId[id]).filter(Boolean);
   const ownIds = new Set(own.map(tg => tg.id));
   const inherited = (sess.inherited_tags || []).filter(id => !ownIds.has(id)).map(id => _tagsState.byId[id]).filter(Boolean);
-  if (!own.length && !inherited.length) return '';
   const label = _tagT('tag_inherited_label', 'inherited');
   const tip = _tagT('tag_inherited_tip', 'Inherited from the Automaton; change it there');
   const inheritedChips = inherited.map(tg => {
     const c = tg.color || 'var(--accent2,#60a5fa)';
     return `<span class="tag-chip tag-chip-inherited" data-tag-id="${escHtml(tg.id)}" title="${escHtml(tip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:transparent;color:${escHtml(c)};border:1px dashed ${escHtml(c)};font-weight:600;opacity:0.8;">${escHtml(tg.name)} <span class="tag-chip-inherited-label" style="font-weight:400;font-size:9px;">${escHtml(label)}</span></span>`;
   });
-  return own.map(_tagChipHTML).concat(inheritedChips).join('');
+  // Placement (system) tags: machine-derived axis tags, skipped when already
+  // rendered via the own/inherited rows (same name).
+  const shownNames = new Set([...own, ...inherited].filter(Boolean).map(tg => tg.name));
+  const systemNames = (Array.isArray(sess.system_tags) ? sess.system_tags : []).map(_placementTagName).filter(n => n && !shownNames.has(n));
+  const sysTip = _tagT('placement_tag_tip', 'Placement tag — set by the machine');
+  const systemChips = systemNames.map(n => {
+    return `<span class="tag-chip tag-chip-placement" data-placement="1" title="${escHtml(sysTip)}" style="font-size:10px;padding:1px 7px;border-radius:8px;color:var(--success,#10b981);background:color-mix(in srgb, var(--success,#10b981) 12%, transparent);border:1px solid var(--success,#10b981);font-weight:700;">⚙️ ${escHtml(n)}</span>`;
+  });
+  if (!own.length && !inheritedChips.length && !systemChips.length) return '';
+  return own.map(_tagChipHTML).concat(inheritedChips, systemChips).join('');
 }
 
-// _sessionHasTags is true for a session with tag IDs to name, own or inherited.
+// _sessionHasTags is true for a session with tag IDs to name (own or
+// inherited) or placement (system) tag names.
 function _sessionHasTags(sess) {
-  return !!sess && ((sess.tags || []).length > 0 || (sess.inherited_tags || []).length > 0);
+  if (!sess) return false;
+  if ((sess.tags || []).length > 0) return true;
+  if ((sess.inherited_tags || []).length > 0) return true;
+  return _sessionPlacementTags(sess).length > 0;
 }
 
 // _sessionTagsEnsure loads the registry once when a session view shows a session
@@ -42370,17 +42675,27 @@ function _sessionTagFilter(sessions) {
   const sel = _tagBrowse.session.sel;
   if (!sel || !sel.length) return sessions;
   const tree = _tagBrowseTree(_tagsState.list);
-  const tagIds = sel.filter(id => tree.byId[id]);
-  if (!tagIds.length) return sessions;
+  // Selection entries: registry IDs (operator tags) and placement tag names
+  // ("axis:value" strings not in the registry); stale plain IDs are ignored
+  // as before.
+  const keys = sel.filter(key => (tree.byId[key] && tree.byId[key].name) ? true : String(key).includes(':'));
+  if (!keys.length) return sessions;
   const mode = _tagBrowseMode('session');
-  return sessions.filter(s => {
+  const test = (s, key) => {
     const own = Array.isArray(s.tags) ? s.tags : [];
     const inherited = Array.isArray(s.inherited_tags) ? s.inherited_tags : [];
     const set = _tagBrowseItemSet({ tags: own.concat(inherited) }, tree);
-    return _tagBrowseMatches(set, tagIds, mode);
-  });
+    if (set.has(key)) return true;
+    const tg = tree.byId[key];
+    if (tg && tg.name) {
+      const names = _sessionPlacementTags(s);
+      if (names.includes(tg.name)) return true; // selected registry tag matches a system tag name
+      if (names.includes(String(key))) return true;
+    }
+    return _sessionPlacementTags(s).includes(String(key)); // key is itself a placement tag name
+  };
+  return sessions.filter(s => mode === 'all' ? keys.every(k => test(s, k)) : keys.some(k => test(s, k)));
 }
-
 // _tagBrowseFilter keeps the items that pass every facet: the tag selection (ANY
 // or ALL), the backend and the status. Values inside one facet are OR-ed and the
 // facets are AND-ed. An empty facet passes everything.
