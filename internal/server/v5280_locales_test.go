@@ -346,6 +346,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"uncommitted_work_card_title",
 		"settings_automation_uncommitted_work_policy",
 		"settings_automation_uncommitted_work_scope",
+		// Protected paths: the card title in the Automata overview, the settings group
+		// and the three settings labels.
+		"protected_paths_card_title",
+		"settings_automation_protected_paths_group",
+		"settings_automation_protected_paths",
+		"settings_automation_protected_paths_action",
+		"settings_automation_rules_review_source",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
