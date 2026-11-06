@@ -3393,6 +3393,8 @@ func (m *Manager) resetTaskRecord(prdID, taskID, actor string, force, cleanResta
 				t.Verification = nil
 				// A reset ends an uncommitted-work hold: the task runs again.
 				t.UncommittedWork = nil
+				// ...and a protected-paths hold: the task runs again.
+				t.ProtectedPathHold = nil
 				t.RetryCount = 0
 				// A human reset starts a new count of failed attempts for the
 				// failure escalation policy, so the ladder restarts at step 1.
