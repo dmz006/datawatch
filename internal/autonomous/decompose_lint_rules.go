@@ -79,8 +79,16 @@ func DefaultDecomposeLintRules() []Rule {
 			ID:       "read_only_unverifiable",
 			Severity: config.DecomposeLintSeverityBlock,
 			Message:  "Task is marked read_only and declares neither a verification script nor a report path; without one, a failure of it produces nothing to inspect. Give it a verification script (its own checks, without modifying the tree), or a report path under .datawatch/reports/ where it can record its verdict.",
+			// A task is read-only by its read_only flag or by the
+			// READ-ONLY: marker opening its spec; any_of covers both.
+			// The regex is the first-non-empty-line rule of
+			// specIsReadOnly, so the lint and the plan-coverage gate
+			// agree on which tasks are read-only.
 			Match: config.DecomposeLintMatch{
-				ReadOnly:                &decomposeLintRO,
+				AnyOf: []config.DecomposeLintMatch{
+					{ReadOnly: &decomposeLintRO},
+					{SpecRegex: `(?i)\A\s*` + planReadOnlyMarker},
+				},
 				VerificationScriptEmpty: true,
 				ReportPathEmpty:         true,
 			},

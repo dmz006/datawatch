@@ -38,6 +38,7 @@ func writeFilesReportStories() []Story {
 				},
 				{
 					Title: "Update the report notes", Spec: "READ-ONLY: nothing is edited, the notes are only read.",
+					ReportPath:               ".datawatch/reports/report-notes.md",
 					VerificationScriptReason: "read-only task, nothing to run",
 				},
 			},

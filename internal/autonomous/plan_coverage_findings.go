@@ -137,10 +137,10 @@ const (
 	// that is not read-only (read_only flag or spec READ-ONLY marker);
 	// report_path is only valid on a read_only task.
 	FindingReportPathOnWriterTask = "report_path_on_writer_task"
-	// FindingReadOnlyUnverifiable — a read_only task that declares neither
-	// a verification script nor a usable report path under
-	// .datawatch/reports/; with neither, its failure produces nothing to
-	// inspect. No task kind is exempt.
+	// FindingReadOnlyUnverifiable — a read-only task (read_only flag or
+	// spec READ-ONLY: marker) that declares neither a verification script
+	// nor a usable report path under .datawatch/reports/; with neither,
+	// its failure produces nothing to inspect. No task kind is exempt.
 	FindingReadOnlyUnverifiable = "readonly_unverifiable"
 )
 
@@ -712,15 +712,16 @@ func CheckPlanStructureWithOptions(prd *PRD, stories []Story, opts PlanStructure
 	}
 
 	// --- Rule 9: a read-only task must be verifiable. ---
-	// A read_only task carries no changed files to inspect: when it
+	// A read-only task (the read_only flag, or the READ-ONLY: marker
+	// opening its spec) carries no changed files to inspect: when it
 	// fails, the failure has to be provable by its own check
 	// (verification_script) or by the report it writes under
 	// .datawatch/reports/ (report_path — the only file a read-only task
-	// may write). A read_only task with neither a verification script
+	// may write). A read-only task with neither a verification script
 	// nor a usable report path is unverifiable; no task kind is exempt.
 	for _, s := range stories {
 		for _, t := range s.Tasks {
-			if !t.ReadOnly {
+			if !t.ReadOnly && !specIsReadOnly(t.Spec) {
 				continue
 			}
 			if strings.TrimSpace(t.VerificationScript) != "" || taskHasUsableReportPath(t) {

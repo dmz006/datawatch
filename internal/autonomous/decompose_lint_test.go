@@ -154,7 +154,9 @@ func TestDecomposeLintRulesPerDefaultRule(t *testing.T) {
 				tk.ReportPath = ".datawatch/reports/slice-gate.md"
 				return tk
 			}(),
-			wantMatchedSubstr: "verification_script=<empty>",
+			// The rule's any_of matches on the read_only flag, so the
+			// excerpt names that branch.
+			wantMatchedSubstr: "read_only=true",
 			extraFindings:     []string{"no_verification_script"},
 		},
 		{

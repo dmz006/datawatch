@@ -33,16 +33,7 @@ func lintUnverifiableTask(script, report string) Task {
 // exemption — the task is refused the same as one with no report path
 // at all.
 func TestDecomposeLintRuleReadOnlyUnverifiable(t *testing.T) {
-	rule := config.DecomposeLintRule{
-		ID:       "read_only_unverifiable",
-		Severity: config.DecomposeLintSeverityBlock,
-		Message:  "Test message.",
-		Match: config.DecomposeLintMatch{
-			ReadOnly:                &decomposeLintRO,
-			VerificationScriptEmpty: true,
-			ReportPathEmpty:         true,
-		},
-	}
+	rule := builtinReadOnlyUnverifiableRule(t)
 	cases := []struct {
 		name string
 		task Task
@@ -78,6 +69,90 @@ func TestDecomposeLintRuleReadOnlyUnverifiable(t *testing.T) {
 	other.ReadOnly = false
 	if got := LintTasks([]Story{mkDecomposeLintStory("s", other)}, []Rule{rule}); len(got) != 0 {
 		t.Errorf("non-read-only task: %d findings, want 0: %+v", len(got), got)
+	}
+}
+
+// builtinReadOnlyUnverifiableRule returns the shipped read_only_unverifiable
+// rule from the built-in pack, so the tests exercise the rule the
+// decomposer actually runs rather than a copy that could drift from it.
+func builtinReadOnlyUnverifiableRule(t *testing.T) Rule {
+	t.Helper()
+	for _, r := range DefaultDecomposeLintRules() {
+		if r.ID == "read_only_unverifiable" {
+			return r
+		}
+	}
+	t.Fatal("built-in pack is missing the read_only_unverifiable rule")
+	return Rule{}
+}
+
+// TestDecomposeLintRuleReadOnlyUnverifiableSpecMarker asserts a task
+// made read-only only by the READ-ONLY: marker opening its spec is held
+// to the same rule as a task with the read_only flag: refused with
+// neither proof, exempt with either. A marker on a later line does not
+// make the task read-only, so it is not flagged.
+func TestDecomposeLintRuleReadOnlyUnverifiableSpecMarker(t *testing.T) {
+	rules := []Rule{builtinReadOnlyUnverifiableRule(t)}
+	mk := func(spec, script, report string) Task {
+		return Task{
+			ID:                 "t1",
+			Title:              "Gate the slice",
+			Spec:               spec,
+			VerificationScript: script,
+			ReportPath:         report,
+		}
+	}
+	cases := []struct {
+		name string
+		task Task
+		want int
+	}{
+		{"marker opens spec, neither proof", mk("READ-ONLY: audit the retry paths", "", ""), 1},
+		{"marker after blank lines, neither proof", mk("\n  \nread-only: audit", "", ""), 1},
+		{"marker opens spec, script exempts", mk("READ-ONLY: audit", "go test ./internal/autonomous/", ""), 0},
+		{"marker opens spec, valid report exempts", mk("READ-ONLY: audit", "", ".datawatch/reports/audit.md"), 0},
+		{"marker on a later line is not read-only", mk("Edit things.\nREAD-ONLY: nope", "", ""), 0},
+	}
+	for _, c := range cases {
+		got := LintTasks([]Story{mkDecomposeLintStory("s", c.task)}, rules)
+		if len(got) != c.want {
+			t.Errorf("%s: %d findings, want %d: %+v", c.name, len(got), c.want, got)
+			continue
+		}
+		if c.want == 1 && got[0].RuleID != "read_only_unverifiable" {
+			t.Errorf("%s: finding %s, want read_only_unverifiable", c.name, got[0].RuleID)
+		}
+	}
+}
+
+// TestCheckPlanStructureReadOnlyUnverifiableSpecMarker asserts the
+// structural finding applies to a task made read-only only by its spec
+// marker, the same as to one with the read_only flag.
+func TestCheckPlanStructureReadOnlyUnverifiableSpecMarker(t *testing.T) {
+	mk := func(task Task) *PlanStructureReport {
+		story := Story{
+			ID:     "s1",
+			PRDID:  "p1",
+			Title:  "Slice",
+			Status: StoryInProgress,
+			Tasks:  []Task{task},
+		}
+		return CheckPlanStructure(nil, []Story{story})
+	}
+	marked := Task{ID: "t1", Title: "Audit the slice", Spec: "READ-ONLY: audit the retry paths", Status: TaskQueued}
+	r := mk(marked)
+	if r.Pass {
+		t.Error("marker-only read-only task with neither proof: Pass = true, want false")
+	}
+	if f := findUnverifiableFinding(r); f == nil || f.TaskID != "t1" {
+		t.Fatalf("marker-only read-only task: want a readonly_unverifiable finding on t1, got %+v", r.Findings)
+	}
+
+	proved := marked
+	proved.ID = "t2"
+	proved.ReportPath = ".datawatch/reports/audit.md"
+	if f := findUnverifiableFinding(mk(proved)); f != nil {
+		t.Errorf("marker-only read-only task with a report path: %s, want none", f.Detail)
 	}
 }
 
@@ -219,11 +294,11 @@ func TestCheckPlanStructureReadOnlyUnverifiable(t *testing.T) {
 	}
 }
 
-// TestCheckPlanStructureSmokeAndFinalGateNoExemption asserts that no
-// task kind is exempt from the unverifiable check: a smoke task and a
-// final_gate task that carry neither a verification script nor a
-// report path are findings.
-func TestCheckPlanStructureSmokeAndFinalGateNoExemption(t *testing.T) {
+// TestCheckPlanStructureReadOnlyUnverifiableSmokeAndFinalGateNoExemption
+// asserts that no task kind is exempt from the unverifiable check: a
+// smoke task and a final_gate task that carry neither a verification
+// script nor a report path are findings.
+func TestCheckPlanStructureReadOnlyUnverifiableSmokeAndFinalGateNoExemption(t *testing.T) {
 	mk := func(kind string, id, script, report string) *PlanStructureReport {
 		task := Task{
 			ID:                 id,

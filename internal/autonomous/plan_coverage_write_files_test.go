@@ -140,6 +140,7 @@ func TestWriteTaskWithoutFiles_EveryGatePhraseExempts(t *testing.T) {
 func TestWriteTaskWithoutFiles_ReadOnlyProducesNoFinding(t *testing.T) {
 	stories := []Story{{ID: "s1", Title: "story", Tasks: []Task{{
 		ID: "t1", Title: "Update the docs", Spec: "READ-ONLY: nothing to change",
+		ReportPath:               ".datawatch/reports/docs-check.md",
 		VerificationScriptReason: "test",
 	}}}}
 	if got := CheckPlanStructure(nil, stories).Findings; len(got) != 0 {
