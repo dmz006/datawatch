@@ -86,3 +86,33 @@ func (m *Manager) stampMergeRetry(prd *PRD, since time.Time) {
 		}
 	}
 }
+
+// mergeRetryIdleRecheck is how often the retry loop re-reads the setting while
+// retry ticks are off (merge_retry_seconds 0), so enabling it applies without
+// a restart.
+var mergeRetryIdleRecheck = 15 * time.Second
+
+// runMergeRetryLoop calls MergeRetryPass every autonomous.parallel.merge_retry_seconds.
+// The setting is re-read each tick, so a change applies without a restart; 0
+// means no retry ticks. It exits when ctx is done and runs on its own
+// goroutine, so a slow pass never delays the poll loop.
+func (m *Manager) runMergeRetryLoop(ctx context.Context) {
+	for {
+		wait := mergeRetryIdleRecheck
+		secs := EffectiveMergeRetrySeconds(m.Config().Parallel)
+		if secs > 0 {
+			wait = time.Duration(secs) * time.Second
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		// Re-read: the setting may have changed or been zeroed while waiting.
+		if EffectiveMergeRetrySeconds(m.Config().Parallel) > 0 {
+			m.MergeRetryPass(ctx)
+		}
+	}
+}
