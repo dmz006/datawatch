@@ -37,6 +37,16 @@ Subcommands:
                                   Decision line: the operator decisions, newest first, one line each with
                                   the question, the answer and any task held on it — the same text the
                                   comm verb (autonomous decisions) shows
+  decision-records list [--state open|answered|withdrawn] [--automaton <id>] [--limit N] [--json]
+                         List the decision records (the structured operator decisions), newest first,
+                         with the folder watch status
+  decision-records show <id> [--json]   One record: content, answer, document report, follow-up
+  decision-records create [--title ... --situation ... --deciding ... --option id=label ... --default <id|hold> ...] | [--file <path|->]
+                         Raise a decision: the trade-offs stored for an operator's answer
+  decision-records update <id> [same inputs]
+                         Change the content of an open record
+  decision-records withdraw <id> [--reason <text>]
+                         Withdraw a record and its queue question
   repo-ci-watch [--repo P] [--status S] [--json]
                                   Repo CI watch read: the mode, the alert threshold in whole minutes,
                                   the watched repositories, the last poll, and the stored records
@@ -239,6 +249,8 @@ Subcommands:
 		newAutonomousSecurityFailureCmd(),
 		newAutonomousSupervisorWatchCmd(),
 		newAutonomousDecisionsCmd(),
+		// Decision records: the structured operator decisions on the Automaton.
+		newDecisionRecordsCmd(),
 		newAutonomousMergeCmd(),
 		newAutonomousSafeToDeleteCmd(),
 		newAutonomousCleanupCmd(),
