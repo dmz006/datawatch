@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.100.1 — Fix two lint findings in the placement tag settings
+
+Fixes the two staticcheck findings (S1005, unnecessary assignment to the blank identifier) in `internal/config/tags_settings.go` that made the lint step of the 9.100.0 CI and Release runs fail, so the release artifacts were not built. No behaviour change.
+
 ## v9.100.0 — Placement auto-tags on sessions and Automata
 
 Sessions and Automata now carry automatic placement tags that record where the work ran: the compute node, the federation peer, the backend, the lane, the role and the project.

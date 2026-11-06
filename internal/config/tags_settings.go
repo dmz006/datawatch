@@ -309,7 +309,7 @@ func validatePlacement(p PlacementConfig) error {
 		{"project", p.Project},
 	}
 	for _, a := range axes {
-		placeholder, _ := placementtags.AxisPlaceholders[a.name]
+		placeholder := placementtags.AxisPlaceholders[a.name]
 		if !strings.Contains(a.ax.Template, placeholder) {
 			return fmt.Errorf("%splacement.%s: template %q must contain %s",
 				TagSettingPrefix, a.name, a.ax.Template, placeholder)
@@ -466,7 +466,7 @@ func parsePlacementAxisSetting(name, axis, field string, value interface{}) (int
 	if s == "" {
 		return nil, tagSettingErr(name, "must be a tag template")
 	}
-	placeholder, _ := placementtags.AxisPlaceholders[axis]
+	placeholder := placementtags.AxisPlaceholders[axis]
 	if !strings.Contains(s, placeholder) {
 		return nil, fmt.Errorf("%splacement.%s: template %q must contain %s", TagSettingPrefix, axis, s, placeholder)
 	}

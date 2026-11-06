@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.100.0 (2026-11-06).** Sessions and Automata now carry automatic placement tags for the compute node, peer, backend, lane, role and project, with a filter, grouping and settings. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.100.1 (2026-11-06).** Fixes two lint findings in the placement tag settings that blocked the 9.100.0 release build. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
