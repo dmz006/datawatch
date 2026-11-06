@@ -166,6 +166,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_merge_pipeline_get":        CapAutonomousRead,
 	"autonomous_merge_pipeline_set_record": CapAutonomousWrite,
 	"autonomous_merge_pipeline_validate":   CapAutonomousRead,
+	"autonomous_deploy_get":                CapAutonomousRead,
+	"autonomous_deploy_run":                CapAutonomousWrite,
 	"autonomous_triage":                    CapAutonomousRead,
 	"autonomous_decisions":                 CapAutonomousRead,
 	"autonomous_repo_ci_watch":             CapAutonomousRead,
