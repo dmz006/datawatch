@@ -216,7 +216,7 @@ jobs:
       # ephemeral test daemon.
       - name: ZAP PWA full active scan
         continue-on-error: true  # advisory; runtime errors don't block CI
-        uses: zaproxy/action-full-scan@bdd21ad4090d552d299261226c553efbc216f5ee  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
+        uses: zaproxy/action-full-scan@3c58388149901b9a03b7718852c5ba889646c27c  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 10'
