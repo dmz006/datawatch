@@ -671,6 +671,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSafeToDelete(), tracked(s.handleAutonomousSafeToDelete))
 	mcpSrv.AddTool(s.toolAutonomousCleanupStatus(), tracked(s.handleAutonomousCleanupStatus))
 	mcpSrv.AddTool(s.toolAutonomousUncommittedWork(), tracked(s.handleAutonomousUncommittedWork)) // autonomous_uncommitted_work: policy, scope and held tasks
+	// autonomous_protected_paths: action, rules source, protected list, held tasks and authorised paths
+	mcpSrv.AddTool(s.toolAutonomousProtectedPaths(), tracked(s.handleAutonomousProtectedPaths))
+	// autonomous_prd_set_authorized_paths: replace one Automaton's authorised protected paths
+	mcpSrv.AddTool(s.toolAutonomousPRDSetAuthorizedPaths(), tracked(s.handleAutonomousPRDSetAuthorizedPaths))
 	mcpSrv.AddTool(s.toolAutonomousOverlapSearch(), tracked(s.handleAutonomousOverlapSearch))
 	mcpSrv.AddTool(s.toolSecurityFailureList(), tracked(s.handleSecurityFailureList))
 	mcpSrv.AddTool(s.toolSupervisorWatchList(), tracked(s.handleSupervisorWatchList))
