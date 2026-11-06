@@ -567,3 +567,4 @@ The per-topic design documents live alongside this file, named
   [plugin extension surfaces](2026-10-09-plugin-extension-surfaces.md),
   [PRD git workflow](2026-10-10-prd-git-workflow.md),
   [PWA performance audit](2026-10-14-pwa-performance-audit.md)
+| 381 | Code-scanning alert 758 (rule go/uncontrolled-allocation-size, high) on `internal/autonomous/decision_record_store.go`: the decision record list sized its result slice from the caller limit, already clamped to 1000, but the scanner does not see the clamp through `min`. The list now starts from a small constant capacity and appends; a test lists with limits up to the largest integer and checks it returns at most the maximum without error. The other decision record code (folder watch, sync, server and MCP routes) was checked and sizes allocations only from data already in memory. | done, shipped 9.102.1 (patch); alert closes on the next CodeQL run after the push | 262 |

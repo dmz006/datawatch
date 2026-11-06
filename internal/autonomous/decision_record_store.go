@@ -620,7 +620,9 @@ func (s *DecisionRecordStore) List(f DecisionRecordFilter) []DecisionRecord {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]DecisionRecord, 0, min(limit, len(s.order)))
+	// A small constant capacity: append grows it, so no caller-supplied limit
+	// ever sizes the allocation.
+	out := make([]DecisionRecord, 0, 16)
 	for i := len(s.order) - 1; i >= 0 && len(out) < limit; i-- {
 		r := s.records[s.order[i]]
 		if f.State != "" && r.State != f.State {

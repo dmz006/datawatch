@@ -431,6 +431,11 @@ func TestDecisionRecordStore_ListLimitDefaultsAndMax(t *testing.T) {
 	if n := len(s.List(DecisionRecordFilter{Limit: 5000})); n != maxDecisionListLimit {
 		t.Errorf("limit 5000 gave %d, want the max %d", n, maxDecisionListLimit)
 	}
+	for _, huge := range []int{1 << 30, int(^uint(0) >> 1)} {
+		if n := len(s.List(DecisionRecordFilter{Limit: huge})); n != maxDecisionListLimit {
+			t.Errorf("limit %d gave %d, want the max %d", huge, n, maxDecisionListLimit)
+		}
+	}
 	if n := len(s.List(DecisionRecordFilter{Limit: 7})); n != 7 {
 		t.Errorf("limit 7 gave %d", n)
 	}
