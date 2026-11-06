@@ -61,6 +61,40 @@ func TestRateLimitBackoffHandler_NoResetUsesMaxBackoff(t *testing.T) {
 	}
 }
 
+func TestRateLimitBackoffHandler_StoresResetInDaemonZone(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Autonomous.UsageBackoff = "pause_backend"
+	bo := autonomouspkg.NewBackoff()
+
+	// A reset time parsed from a provider message arrives in the message's zone
+	// (UTC here). The daemon serves the stored deadline as-is with no output
+	// conversion, so it must be converted to the daemon zone on storage — the
+	// same step the burn guard takes — so the reader and the deadline agree.
+	daemonZone := time.FixedZone("TestDaemon", 2*3600)
+	reset := time.Now().Add(2 * time.Hour).Round(time.Second).UTC()
+	if reset.Location() == daemonZone {
+		t.Skip("test assumes a foreign message zone")
+	}
+	h := rateLimitBackoffHandler(cfg, bo, time.Now, func(string, map[string]any) {})
+
+	savedLocal := time.Local
+	time.Local = daemonZone
+	defer func() { time.Local = savedLocal }()
+
+	h("claude-code", reset, true)
+
+	act := bo.Active()
+	if len(act) != 1 || act[0].Backend != "claude-code" {
+		t.Fatalf("active = %+v", act)
+	}
+	if !act[0].Until.Equal(reset) {
+		t.Fatalf("deadline instant changed: got %v want %v", act[0].Until, reset)
+	}
+	if act[0].Until.Location() != daemonZone {
+		t.Fatalf("stored deadline is in %s, want the daemon zone %s (the reset time must be converted on storage)", act[0].Until.Location(), daemonZone)
+	}
+}
+
 func TestRateLimitBackoffHandler_OffModeSkipsAutomaticPath(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Autonomous.UsageBackoff = "off"
