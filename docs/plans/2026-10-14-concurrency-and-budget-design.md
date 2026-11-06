@@ -1930,3 +1930,7 @@ The operator's words: "claude is at 64% and i noticed it resets at 7am sunday no
 ### Reading, 2026-11-06 02:02
 
 The operator's words: "Claude is at66%". The previous reading was 64% at 23:56 on 2026-11-05, so 2 points in 2.1 hours, about 0.95 per hour against 0.60 allowed. Pace line 68.5, headroom 2.5 points, 2.21 days left to the Sunday 07:00 reset. The usage advice projects 116.5% on the recent 24-hour burn (22.9 points) and runs out about 17.3 hours before the reset (Saturday 13:41), but 96.4% on the week average. The burn guard holds Claude at `hold_claude` (its own projection 107.7%), which is why the Claude lane has been idle; the supervisor did not change the guard. The operator was going to be away until the morning.
+
+### Reading, 2026-11-06 07:31
+
+The operator's words: "Claude is at 69%, i did not restart anything at 5, i was asleep". The previous reading was 66% at 02:02, so 3 points in 5.5 hours, about 0.55 per hour against 0.60 allowed. The 05:02 daemon stop was therefore not an operator action; cause still unknown (SIGTERM-clean exit, systemd does not restart on a clean exit).
