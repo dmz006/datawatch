@@ -1982,3 +1982,22 @@ guard held Claude (the burn since was 0.3 points, all supervisor session). The w
 
 The operator's words: "claude is at 77%". The previous reading was 76% at 17:21, so 1 point in about 1 hour (the judge
 and merge-helper runs and this supervisor session; the guard held new Claude work). The weekend plan stands.
+
+### Decision, 2026-11-06 18:21: use the room until 6 hours before the reset, then a low-budget finish
+
+Operator, quoted: "we should aim for 99.9 or 99.8 usage, make it through the week and use what we can with slight buffer
+of a hour hours based on our accurate accounting ... maybe 99.5 as top what is 6 hours of points?" and "the goal even if %
+not shared is if we hit 6 hours before refresh we can stop extra claude and go on low budget supervisor finish and don't
+block local gpu that need supervisor, keep things moving but if we have room we should use it".
+
+Numbers at 18:20 (reading 77% at 18:13, reset Sunday 07:00): 36.7 hours left; to land at 99.5 leaves about 22.4 points,
+0.61 points an hour; 6 hours of points is about 3.7 (the weekly pace is 14.3 a day, 0.6 an hour). The measured burn is
+0.5 to 0.6 an hour including this supervisor session (about 0.3 an hour).
+
+Decision: (1) extra Claude work (decomposes, retries, merge helpers, explicit Claude tasks) may use the room until
+Sunday 01:00, six hours before the reset; (2) from 01:00 the supervisor goes to a low-budget finish (low effort, watch and
+repairs only, no extra Claude) so the pi lanes and the local GPU work stay supervised and are never blocked, aiming to land
+at 99.5 or below with an hour of buffer; (3) to make that possible the burn guard ladder was changed from lower in-flight,
+route to pi, hold Claude to lower in-flight and route to pi only (the hold rung removed) and its hold on Claude cleared at
+2026-11-06 18:21; the supervisor now steers the Claude spend by hand and re-adds the hold rung if the projection passes 99.5; the
+supervisor checks the projection at every watch.
