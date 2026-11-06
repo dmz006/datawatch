@@ -130,3 +130,10 @@ func firstStatusLine(now, baseline string) string {
 	}
 	return "tree changed"
 }
+
+// ReportPathOf is the exported form of reportPathOf: the task's report
+// path when the task is read-only, "" otherwise.
+func ReportPathOf(t *Task) string { return reportPathOf(t) }
+
+// ValidateReportPath is the exported form of validateReportPath.
+func ValidateReportPath(p string) error { return validateReportPath(p) }

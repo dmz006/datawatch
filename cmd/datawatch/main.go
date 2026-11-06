@@ -5992,6 +5992,24 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// signature in the session's own output: a crash mid-run, not a
 					// judgment, is Category "infra" and should be auto-retryable
 					// under BL410 instead of exhausted after one attempt.
+					// A read-only task writes no tree changes; its declared report
+					// file (under the tree-status-excluded .datawatch/) is the output.
+					reportPresent, reportDeclared := readOnlyReportPresent(task, taskDir)
+					if reportVerdict, handled := verdictForReadOnlyReport(reportPresent, reportDeclared); handled && reportVerdict.OK {
+						if strings.TrimSpace(task.VerificationScript) != "" {
+							out, code, rerr := autonomouspkg.RunVerificationScriptExit(task.VerificationScript, taskDir)
+							if rerr != nil || code != 0 {
+								msg := fmt.Sprintf("verifier: read-only report %s exists, but the task's verification script %q failed (exit %d)", reportDeclared, task.VerificationScript, code)
+								issues := scriptFailureIssues(task.VerificationScript, code, out)
+								if rerr != nil {
+									msg = fmt.Sprintf("verifier: read-only report %s exists, but the task's verification script %q could not run: %v", reportDeclared, task.VerificationScript, rerr)
+									issues = []string{msg}
+								}
+								return autonomouspkg.VerificationResult{OK: false, Severity: "medium", Summary: msg, Issues: issues, VerifiedAt: time.Now()}, nil
+							}
+						}
+						return reportVerdict, nil
+					}
 					// Work already landed by an earlier attempt: if the task's own
 					// verification script passes, accept instead of no-output failure.
 					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir, task.PriorAttemptCount); ok {
@@ -5999,6 +6017,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 					category := ""
 					summary := "verifier: no changes detected (diff empty and no new files); task produced no output"
+					if reportDeclared != "" {
+						// Read-only task whose declared report is absent or empty.
+						missing, _ := verdictForReadOnlyReport(false, reportDeclared)
+						summary = missing.Summary
+					}
 					if crashLine := detectHarnessCrash(mgr.TailOutput, task.SessionID); crashLine != "" {
 						category = "infra"
 						summary = "verifier: harness crashed mid-run (" + crashLine + "); diff empty — not a content judgment, retrying as infra"
