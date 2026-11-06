@@ -65,6 +65,14 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Merge pipeline source](#merge-pipeline-source)
   - [Merge conflict policy](#merge-conflict-policy)
   - [Merge conflict model](#merge-conflict-model)
+  - [Deploy after ship](#deploy-after-ship)
+  - [autonomous.deploy.build_command](#autonomous-deploy-build-command)
+  - [autonomous.deploy.install_command](#autonomous-deploy-install-command)
+  - [autonomous.deploy.binary_path](#autonomous-deploy-binary-path)
+  - [autonomous.deploy.restart_command](#autonomous-deploy-restart-command)
+  - [autonomous.deploy.health_check](#autonomous-deploy-health-check)
+  - [autonomous.deploy.drain_timeout](#autonomous-deploy-drain-timeout)
+  - [autonomous.deploy.health_timeout](#autonomous-deploy-health-timeout)
   - [Onboarding report](#onboarding-report)
   - [Onboarding report checks](#onboarding-report-checks)
   - [Onboarding report next steps](#onboarding-report-next-steps)
@@ -1805,6 +1813,38 @@ Where a project's pipeline comes from, and what happens when that source is bad.
 ### Merge conflict model
 
 **Merge conflict model** (`autonomous.merge_pipeline.conflict_model`, a built-in default model name) — the LLM registry entry that proposes a conflict resolution. An unset key uses the default name; an explicit empty string means no model. The setting never adds, edits or deletes a registry entry, so the name must already exist. The proposal is worked out in a scratch worktree and tested there; the project is touched only when the test step passes.
+
+### Deploy after ship
+
+After a release ships, the daemon can build the new binary, install it, restart itself and check it is healthy. The Deploy card in Settings > Automation shows the settings and the last deploy. Each step is a setting, and **an empty value means nothing runs** for that step, so a daemon with no deploy settings never deploys. Every setting is a config key on all five access methods: YAML (`autonomous.deploy.<key>` in the config file), CLI (`datawatch config set autonomous.deploy.<key> <value>`; `datawatch autonomous deploy` shows the state), Web UI (Settings > Automation > Deploy), REST API (`PUT /api/config` with the key, `GET /api/autonomous/deploy` for the state) and comm channel (`configure autonomous.deploy.<key>=<value>`; the `deploy` verb shows the state).
+
+### autonomous.deploy.build_command
+
+**Deploy build command** (`autonomous.deploy.build_command`, empty by default) — a shell command line run in the project that builds the new binary. Empty means nothing runs for this setting. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.build_command`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.build_command=<value>`.
+
+### autonomous.deploy.install_command
+
+**Deploy install command** (`autonomous.deploy.install_command`, empty by default) — a shell command line that installs the new binary over the installed one. It needs the installed binary path; the previous binary is copied aside first. Empty means nothing runs for this setting. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.install_command`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.install_command=<value>`.
+
+### autonomous.deploy.binary_path
+
+**Deploy installed binary path** (`autonomous.deploy.binary_path`, empty by default) — the absolute path of the installed binary that the install command replaces. The previous binary is copied from here before it is replaced, so a failed deploy can go back to it. Empty means nothing runs for this setting. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.binary_path`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.binary_path=<value>`.
+
+### autonomous.deploy.restart_command
+
+**Deploy restart command** (`autonomous.deploy.restart_command`, empty by default) — a shell command line that restarts the daemon after the install. Empty means nothing runs for this setting. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.restart_command`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.restart_command=<value>`.
+
+### autonomous.deploy.health_check
+
+**Deploy health check** (`autonomous.deploy.health_check`, empty by default) — a shell command line whose exit code 0 means the daemon is healthy. Empty means nothing runs for this setting. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.health_check`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.health_check=<value>`.
+
+### autonomous.deploy.drain_timeout
+
+**Deploy drain timeout** (`autonomous.deploy.drain_timeout`, 10 minutes when unset) — a duration such as `10m`: how long the deploy waits for running final-gate tasks to finish before it is deferred. Unset reads 10 minutes; it never turns the deploy on by itself. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.drain_timeout`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.drain_timeout=<value>`.
+
+### autonomous.deploy.health_timeout
+
+**Deploy health timeout** (`autonomous.deploy.health_timeout`, 2 minutes when unset) — a duration such as `2m`: how long the deploy waits for the health check to pass. Unset reads 2 minutes; it never turns the deploy on by itself. Set it in YAML under `autonomous.deploy`, with `datawatch config set autonomous.deploy.health_timeout`, in Settings > Automation > Deploy, through the REST config API, or from a comm channel with `configure autonomous.deploy.health_timeout=<value>`.
 
 ### Onboarding report
 

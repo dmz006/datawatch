@@ -8910,6 +8910,15 @@ function settingsSectionHeader(key, title, docsPath) {
 // and target-choice order; reproduced here, not re-derived.
 const DOCS_DEFINITIONS = 'datawatch-definitions.md';
 const DOCS_LINKS_BY_KEY = {
+  // Deploy after ship: the card and each deploy setting
+  'autonomous.deploy.build_command': DOCS_DEFINITIONS + '#autonomous-deploy-build-command',
+  'autonomous.deploy.install_command': DOCS_DEFINITIONS + '#autonomous-deploy-install-command',
+  'autonomous.deploy.binary_path': DOCS_DEFINITIONS + '#autonomous-deploy-binary-path',
+  'autonomous.deploy.restart_command': DOCS_DEFINITIONS + '#autonomous-deploy-restart-command',
+  'autonomous.deploy.health_check': DOCS_DEFINITIONS + '#autonomous-deploy-health-check',
+  'autonomous.deploy.drain_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-drain-timeout',
+  'autonomous.deploy.health_timeout': DOCS_DEFINITIONS + '#autonomous-deploy-health-timeout',
+  deploy_card_title: DOCS_DEFINITIONS + '#deploy-after-ship',
   // Screen headers
   view_sessions: DOCS_DEFINITIONS + '#sessions-list',
   view_session_detail: DOCS_DEFINITIONS + '#inside-a-session-terminal-area',
@@ -9178,6 +9187,12 @@ const DOCS_MERGE_PIPELINE_LINKS = [
   [['autonomous.merge_pipeline.', 'settings_merge_pipeline_', 'merge_pipeline_'], DOCS_DEFINITIONS + '#merge-pipeline'],
 ];
 
+// The Deploy card and its settings map to the Deploy after ship section; the
+// per-setting keys have their own entries in DOCS_LINKS_BY_KEY above.
+const DOCS_DEPLOY_LINKS = [
+  [['autonomous.deploy.', 'settings_deploy_', 'deploy_'], DOCS_DEFINITIONS + '#deploy-after-ship'],
+];
+
 // Mirrors DocsLinks.kt's forKey(): exact key match first, then the same
 // 4 dynamic-prefix fallbacks (per-panel stats cards, per-backend config
 // dialogs, per-channel-type config, dashboard cards without their own
@@ -9190,6 +9205,9 @@ function docsLinkForKey(key) {
   if (key.startsWith('dash_')) return DOCS_LINKS_BY_KEY['view_dashboard'];
   if (DOCS_INFRA_RETRY_PREFIXES.some(p => key.startsWith(p))) return DOCS_INFRA_RETRY_LINK;
   for (const [prefixes, link] of DOCS_MERGE_PIPELINE_LINKS) {
+    if (prefixes.some(p => key.startsWith(p))) return link;
+  }
+  for (const [prefixes, link] of DOCS_DEPLOY_LINKS) {
     if (prefixes.some(p => key.startsWith(p))) return link;
   }
   for (const [prefixes, link] of DOCS_ONBOARDING_REPORT_LINKS) {
