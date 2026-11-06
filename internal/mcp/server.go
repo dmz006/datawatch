@@ -53,6 +53,7 @@ import (
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/channel"
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
@@ -69,6 +70,10 @@ type Server struct {
 	cfg           *config.MCPConfig
 	costReportCfg config.CostReportConfig // cost_report block (internal/costreport) used by the cost_report tool
 	usageCfg      config.UsageConfig      // usage.billing profiles → the cost_report rows' billing_mode / label fields
+	// headroomStore is the daemon's one verifier headroom store (Options.HeadroomStore);
+	// headroomConfig reads the live autonomous config for its floor and age.
+	headroomStore  *compute.HeadroomStore
+	headroomConfig func() config.AutonomousConfig
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
 	fallbackToken       string
 	dataDir             string
@@ -306,6 +311,15 @@ type Options struct {
 	// API-equivalent, not billed; api_metered → usd_estimate; free_local →
 	// tokens only; unset → assumed api_metered).
 	UsageCfg config.UsageConfig
+	// HeadroomStore is the daemon's one verifier headroom store, the same
+	// instance the REST server and the capacity admission gate read. The node
+	// add and update tools refuse a verifier_slots above 1 the store does not
+	// support before they proxy the write. HeadroomConfig returns the live
+	// autonomous config, read for the free-memory floor and the freshness bound.
+	// Both are nil in the stdio process, which proxies to the daemon's REST
+	// write gate instead.
+	HeadroomStore  *compute.HeadroomStore
+	HeadroomConfig func() config.AutonomousConfig
 }
 
 // New creates a new MCP server backed by the given session manager.
@@ -331,6 +345,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 		fallbackToken:       opts.FallbackToken,
 		costReportCfg:       opts.CostReportCfg,
 		usageCfg:            opts.UsageCfg,
+		headroomStore:       opts.HeadroomStore,
+		headroomConfig:      opts.HeadroomConfig,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get

@@ -10,7 +10,9 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -143,8 +145,30 @@ func (s *Server) handleComputeNodeGetMCP(_ context.Context, req mcpsdk.CallToolR
 	return textOK(string(out)), nil
 }
 
+// checkVerifierSlotsBody refuses, before the proxied write, a verifier_slots
+// above 1 that the daemon's headroom store does not support. It is the same
+// decision the REST write gate makes, so the MCP caller gets the CapRefusal
+// text (naming the node, free MB and shortfall) without a round trip. It does
+// nothing when the server has no store.
+func (s *Server) checkVerifierSlotsBody(body map[string]any) error {
+	if s.headroomStore == nil || s.headroomConfig == nil {
+		return nil
+	}
+	slots, ok := body["verifier_slots"].(int)
+	if !ok || slots <= 1 {
+		return nil
+	}
+	name, _ := body["name"].(string)
+	ac := s.headroomConfig()
+	return compute.CheckVerifierSlotsWrite(s.headroomStore, name, slots,
+		ac.EffectiveVerifierMinFreeMB(), ac.EffectiveVerifierHeadroomMaxAge(), time.Now())
+}
+
 func (s *Server) handleComputeNodeAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := computeBodyFromReq(req)
+	if err := s.checkVerifierSlotsBody(body); err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
 	out, err := s.proxyJSON("POST", "/api/compute/nodes", body)
 	if err != nil {
 		return nil, err
@@ -189,6 +213,9 @@ func (s *Server) handleComputePinSettingsMCP(ctx context.Context, req mcpsdk.Cal
 func (s *Server) handleComputeNodeUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := computeBodyFromReq(req)
 	name := mustString(req, "name")
+	if err := s.checkVerifierSlotsBody(body); err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
+	}
 	out, err := s.proxyJSON("PUT", "/api/compute/nodes/"+name, body)
 	if err != nil {
 		return nil, err

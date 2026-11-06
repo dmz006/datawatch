@@ -9170,6 +9170,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		CostReportCfg:       cfg.CostReport,   // cost_report MCP tool (internal/costreport)
 		UsageCfg:            cfg.Usage,        // usage.billing profiles → cost_report rows' billing fields
+		// The daemon's one headroom store, the same instance the REST server
+		// and the admission gate read; the node tools refuse an unsupported
+		// verifier_slots above 1 with it.
+		HeadroomStore:  headroom.Store,
+		HeadroomConfig: func() config.AutonomousConfig { return cfg.Autonomous },
 		RestartFn: guardRestart(func() {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
