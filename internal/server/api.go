@@ -49,6 +49,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/mergepipeline"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
@@ -267,8 +268,12 @@ type Server struct {
 	scheduleResultStore *session.ScheduleResultStore
 	cmdLib              *session.CmdLibrary
 	alertStore          *alerts.Store
-	filterStore         *session.FilterStore
-	statsCollector      *stats.Collector
+	// mergeShip overrides the merge run route's Ship step (tag/push/deploy
+	// and hook commands); nil runs the production ExecShipRunner. Unit tests
+	// set it to keep those steps off any real remote.
+	mergeShip      mergepipeline.ShipRunner
+	filterStore    *session.FilterStore
+	statsCollector *stats.Collector
 	// F10 sprint 2: profile stores. Wired from main.go via setters so
 	// unit tests can leave them nil (handlers return 503).
 	projectStore *profile.ProjectStore

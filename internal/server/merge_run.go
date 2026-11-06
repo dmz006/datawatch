@@ -13,6 +13,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -33,6 +36,14 @@ type mergeRunner interface {
 	autonomous.MergeRunRecorder
 	MergeBaseRepo() string
 	MergeQuestionStore() *autonomous.QuestionStore
+	// AppendTriageNote appends one annotation to the owning Automaton's
+	// existing triage record, via the same note API the autonomous panel
+	// already uses; the run route adds no note channel of its own.
+	AppendTriageNote(prdID, source, text string) error
+	// AlertSink is the daemon's operator alert callback, nil when the daemon
+	// has not wired one — the same sender autonomous alerts use, so the
+	// notify hook introduces no messaging channel of its own.
+	AlertSink() func(level, title, body string) string
 }
 
 // mergeRunBody is the POST body.
@@ -42,6 +53,11 @@ type mergeRunBody struct {
 	Project  string   `json:"project"`
 	Title    string   `json:"title"`
 	Branches []string `json:"branches"`
+	// Automaton names the Automaton the run belongs to (its PRD id). When
+	// set, a failed post-ship hook is also written to that Automaton's
+	// triage record as a triage note with source "post_ship"; when empty
+	// the hook failures live on the merge run record alone.
+	Automaton string `json:"automaton,omitempty"`
 }
 
 // mergeRunMu allows one merge run at a time.
@@ -60,7 +76,7 @@ func mergeDataDir() string {
 // settings. Nothing here names a repository or path: the project directory is
 // the configured worktree base repo, and the version files, conflict policy
 // and pipeline sources are autonomous.merge_pipeline settings.
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project string) *mergepipeline.Runner {
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project string, ship mergepipeline.ShipRunner) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
 	if rs, err := mergepipeline.NewRecordStore(mergeDataDir()); err == nil {
 		records = rs
@@ -79,8 +95,12 @@ func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, projec
 	runner := &mergepipeline.Runner{
 		Dir: repo, Project: project, Resolver: resolver,
 		VersionFiles: cfg.EffectiveVersionFiles(project),
-		Ship:         mergepipeline.ExecShipRunner{},
+		Ship:         ship,
 		Recorder:     mr,
+		PostShip:     postShipSettings(cfg),
+		// The notify built-in delivers through the daemon's alert callback —
+		// the same sender autonomous alerts use — not a new channel.
+		Notifier: &mergeNotifier{sink: mr.AlertSink(), project: project},
 		ConflictSettings: func() mergepipeline.ConflictSettings {
 			s := mergepipeline.DefaultConflictSettings()
 			// The model is not wired here, so the model policy degrades to
@@ -140,14 +160,91 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project).Run(ctx, mergepipeline.RunRequest{
-		Title: body.Title, Branches: body.Branches,
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.mergeShipRunner()).Run(ctx, mergepipeline.RunRequest{
+		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
+	if err == nil && body.Automaton != "" {
+		writePostShipTriageNotes(mr, body.Automaton, res.Run)
+	}
 	out := map[string]any{"run": res.Run}
 	if err != nil {
 		out["error"] = err.Error()
 	}
 	writeJSONOK(w, out)
+}
+
+// mergeShipRunner is the Runner's Ship step for a run: the test override
+// when set, the production runner otherwise.
+func (s *Server) mergeShipRunner() mergepipeline.ShipRunner {
+	if s.mergeShip != nil {
+		return s.mergeShip
+	}
+	return mergepipeline.ExecShipRunner{}
+}
+
+// mergeNotifier delivers the notify built-in's message through the daemon's
+// alert callback — the same sender autonomous alerts use — so the merge run
+// route introduces no messaging channel of its own.
+type mergeNotifier struct {
+	sink    func(level, title, body string) string
+	project string
+}
+
+// Notify implements mergepipeline.Notifier.
+func (n *mergeNotifier) Notify(_ context.Context, text string) error {
+	if n.sink == nil {
+		return errors.New("the daemon has no alert sink wired, so the notification was not sent")
+	}
+	n.sink("info", "shipped "+n.project, text)
+	return nil
+}
+
+// postShipSettings copies the operator's post-ship hook block into the
+// Runner's shape, hook order preserved.
+func postShipSettings(cfg config.MergePipelineConfig) mergepipeline.PostShipSettings {
+	ps := cfg.EffectivePostShip()
+	hooks := make([]mergepipeline.PostShipHook, 0, len(ps.Hooks))
+	for i := range ps.Hooks {
+		h := &ps.Hooks[i]
+		hooks = append(hooks, mergepipeline.PostShipHook{Name: h.Name, Builtin: h.Builtin, Command: h.Command, Enabled: h.Enabled})
+	}
+	return mergepipeline.PostShipSettings{
+		Enabled:             ps.Enabled,
+		Hooks:               hooks,
+		RegistryFile:        ps.RegistryFile,
+		RegistryRowPattern:  ps.RegistryRowPattern,
+		CompanionRepository: ps.CompanionRepository,
+		IssueTitleTemplate:  ps.IssueTitleTemplate,
+		NotifyTemplate:      ps.NotifyTemplate,
+	}
+}
+
+// postShipFailedSteps are the failed post-ship hooks of a run, in run order.
+func postShipFailedSteps(run autonomous.MergePipelineRun) []autonomous.MergeStepRun {
+	var failed []autonomous.MergeStepRun
+	for _, step := range run.Steps {
+		if step.Source == "post_ship" && step.Result == autonomous.MergeStepFailed {
+			failed = append(failed, step)
+		}
+	}
+	return failed
+}
+
+// writePostShipTriageNotes appends one triage note per failed post-ship hook
+// to the owning Automaton's triage record, so whoever reads the Automaton
+// sees which hooks failed without opening the merge run record. A note that
+// cannot be written (no triage record yet, for instance) is logged and never
+// fails the run: the ship itself is already done.
+func writePostShipTriageNotes(mr mergeRunner, automaton string, run autonomous.MergePipelineRun) {
+	for _, step := range postShipFailedSteps(run) {
+		text := fmt.Sprintf("post-ship hook %q failed", step.Step)
+		if d := step.Detail; d != "" {
+			text += ": " + d
+		}
+		if err := mr.AppendTriageNote(automaton, "post_ship", text); err != nil {
+			log.Printf("[autonomous] automaton %s: triage note for failed post-ship hook %s: %v", automaton, step.Step, err)
+		}
+	}
 }
 
 // mergePipelineConfig returns the operator's autonomous.merge_pipeline block.
