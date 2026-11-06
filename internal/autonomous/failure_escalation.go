@@ -126,16 +126,19 @@ type ReviewSummary struct {
 
 // ReviewResolution is the operator's decision on a task held for review.
 // Action is "retry" or "cancel". A retry may carry a changed spec, a changed
-// worker (task-level backend, model and effort) or a narrowed scope (changed
-// files and/or spec).
+// worker (task-level backend, model and effort), a narrowed scope (changed
+// files and/or spec), a read-only mark (ReadOnly nil leaves it unchanged) and a
+// report path (empty leaves it unchanged; it needs a read-only task).
 type ReviewResolution struct {
-	Action  string   `json:"action"`
-	Spec    string   `json:"spec,omitempty"`
-	Backend string   `json:"backend,omitempty"`
-	Model   string   `json:"model,omitempty"`
-	Effort  Effort   `json:"effort,omitempty"`
-	Files   []string `json:"files,omitempty"`
-	Note    string   `json:"note,omitempty"`
+	Action     string   `json:"action"`
+	Spec       string   `json:"spec,omitempty"`
+	Backend    string   `json:"backend,omitempty"`
+	Model      string   `json:"model,omitempty"`
+	Effort     Effort   `json:"effort,omitempty"`
+	Files      []string `json:"files,omitempty"`
+	ReadOnly   *bool    `json:"read_only,omitempty"`
+	ReportPath string   `json:"report_path,omitempty"`
+	Note       string   `json:"note,omitempty"`
 }
 
 // EscalationSources reports, per field, which level supplied the effective

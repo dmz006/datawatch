@@ -3803,7 +3803,7 @@ autonomous:
     max_retries: 2
     # Operator rules: additions, same-id replacements and disables of the
     # built-in default pack (internal/autonomous/decompose_lint_rules.go —
-    # seven rules: five block, two warn; the pack is the floor, your rules
+    # eight rules: six block, two warn; the pack is the floor, your rules
     # the ceiling over it). Empty (below) = the built-in pack, unmodified.
     # A same-id entry replaces the built-in at its original position; a new
     # id is appended. Severity: block | warn (empty normalizes to warn;
@@ -3811,7 +3811,8 @@ autonomous:
     # active rule. match combines present conditions with AND —
     # spec_regex / title_regex / files_regex over their fields, the
     # read_only tri-state (absent = don't check),
-    # verification_script_empty, and any_of (at least one member) / all_of
+    # verification_script_empty, report_path_empty (no usable report path
+    # under .datawatch/reports/), and any_of (at least one member) / all_of
     # (every member), recursively (nesting capped at depth 8).
     # A bare {id, disabled: true} entry is the canonical way to disable a
     # built-in: its severity/message/match stay unused and unvalidated.

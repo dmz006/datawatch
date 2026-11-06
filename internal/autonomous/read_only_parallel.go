@@ -42,7 +42,7 @@ func reportPathOf(t *Task) string {
 // validateReportPath checks that p is a legal report path for a
 // read-only task: repo-relative (not absolute), no .. segment, already
 // clean, and under .datawatch/reports/. Empty is valid (the task
-// writes nothing).
+// writes nothing.
 func validateReportPath(p string) error {
 	if p == "" {
 		return nil
@@ -62,6 +62,20 @@ func validateReportPath(p string) error {
 		return fmt.Errorf("report path %q must lie under .datawatch/reports/", p)
 	}
 	return nil
+}
+
+// taskHasUsableReportPath reports whether t declares a report path
+// that is a usable report location: non-empty and passing
+// validateReportPath. It is the proof a read-only task can show on
+// failure — a task with neither a verification script nor a usable
+// report path is unverifiable (see the read_only_unverifiable rule and
+// the readonly_unverifiable structural finding).
+func taskHasUsableReportPath(t Task) bool {
+	rp := strings.TrimSpace(t.ReportPath)
+	if rp == "" {
+		return false
+	}
+	return validateReportPath(rp) == nil
 }
 
 // readOnlyTreeStatus returns the porcelain status of the task's tree. ok is
@@ -116,3 +130,10 @@ func firstStatusLine(now, baseline string) string {
 	}
 	return "tree changed"
 }
+
+// ReportPathOf is the exported form of reportPathOf: the task's report
+// path when the task is read-only, "" otherwise.
+func ReportPathOf(t *Task) string { return reportPathOf(t) }
+
+// ValidateReportPath is the exported form of validateReportPath.
+func ValidateReportPath(p string) error { return validateReportPath(p) }

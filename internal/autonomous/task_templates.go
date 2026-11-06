@@ -69,7 +69,32 @@ func RenderTaskTemplateDef(def config.TaskTemplateDef, slots config.TaskTemplate
 	def.Title = config.RenderTaskTemplateSpec(def.Title, slots)
 	def.Spec = config.RenderTaskTemplateSpec(def.Spec, slots)
 	def.Files = config.RenderTaskTemplateSpec(def.Files, slots)
+	// The report path is a file name, so the feature is slugged.
+	pathSlots := slots
+	pathSlots.Feature = slugTemplateFeature(slots.Feature)
+	def.ReportPath = config.RenderTaskTemplateSpec(def.ReportPath, pathSlots)
 	return def
+}
+
+// slugTemplateFeature turns a feature name into a file-name-safe slug
+// (lower-case letters and digits joined by single dashes).
+func slugTemplateFeature(feature string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(feature) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			dash = false
+		} else if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	s := strings.TrimRight(b.String(), "-")
+	if s == "" {
+		return "feature"
+	}
+	return s
 }
 
 // splitTemplateFiles splits a template's files field (plain or
@@ -153,19 +178,30 @@ func taskForTemplate(story Story, def config.TaskTemplateDef, baseDepends []stri
 		}
 	}
 	return Task{
-		ID:           id,
-		StoryID:      story.ID,
-		PRDID:        story.PRDID,
-		Title:        title,
-		Spec:         spec,
-		Status:       TaskQueued,
-		DependsOn:    uniqueStrings(depends),
-		Kind:         def.Kind,
-		ReadOnly:     def.ReadOnly,
-		FilesPlanned: splitTemplateFiles(def.Files),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:                 id,
+		StoryID:            story.ID,
+		PRDID:              story.PRDID,
+		Title:              title,
+		Spec:               spec,
+		Status:             TaskQueued,
+		DependsOn:          uniqueStrings(depends),
+		Kind:               def.Kind,
+		ReadOnly:           def.ReadOnly,
+		VerificationScript: def.VerificationScript,
+		ReportPath:         reportPathForTemplate(def),
+		FilesPlanned:       splitTemplateFiles(def.Files),
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
+}
+
+// reportPathForTemplate returns the rendered report path a template
+// task carries: only a read-only template has one.
+func reportPathForTemplate(def config.TaskTemplateDef) string {
+	if !def.ReadOnly {
+		return ""
+	}
+	return strings.TrimSpace(def.ReportPath)
 }
 
 // uniqueStrings removes duplicate strings, preserving first-seen
@@ -269,7 +305,13 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 		if strings.TrimSpace(def.ID) == "" {
 			continue
 		}
-		if storyAlreadyHasTemplate(story, RenderTaskTemplateDef(def, slots)) {
+		rendered := RenderTaskTemplateDef(def, slots)
+		// A template whose report path is illegal is refused: it is
+		// never instantiated into a task that could not be verified.
+		if err := validateReportPath(reportPathForTemplate(rendered)); err != nil {
+			continue
+		}
+		if storyAlreadyHasTemplate(story, rendered) {
 			continue
 		}
 		addedIDs[def.ID] = templateTaskID(story.ID, def.ID)
@@ -289,7 +331,7 @@ func applyTemplatesToStory(story Story, feature string, templates []config.TaskT
 	}
 	for _, def := range templates {
 		id := strings.TrimSpace(def.ID)
-		if _, ok := addedIDs[id]; !ok {
+		if _, ok := addedIDs[id]; !ok || id == "" {
 			continue
 		}
 		newTasks = append(newTasks, taskForTemplate(story, RenderTaskTemplateDef(def, slots), baseDepends, addedIDs))

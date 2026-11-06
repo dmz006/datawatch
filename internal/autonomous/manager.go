@@ -3739,8 +3739,10 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // blocked, so a stuck task (e.g. one the pre-spawn scope lint rejected)
 // can be corrected and then retried via ResetTask without
 // cancel -> reset_to_draft -> re-decompose regenerating the whole tree.
-// While blocked, only a failed or blocked task may be edited: the point is
-// to patch the one stuck task, not to replan its pending siblings. A
+// While blocked, only a failed, blocked or review_needed (held) task may be
+// edited: the point is to patch the one stuck task, not to replan its pending
+// siblings. Editing never changes the task's status; a held task is then
+// requeued with ResolveTaskReview's retry. A
 // completed task's spec is immutable in every PRD status, since it is the
 // record of work already done. A failed PRD accepts an edit only for a task
 // that failed the pre-spawn scope lint (isScopeLintFailure), so that task can
@@ -3788,16 +3790,28 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 						editErr = fmt.Errorf("task %q is completed; completed task specs are immutable", taskID)
 						return
 					}
-					if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked {
+					if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked && ts != TaskReviewNeeded {
 						if ts == "" {
 							ts = TaskPending
 						}
-						editErr = fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
+						editErr = fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks (or tasks held for review) can be patched in place", taskID, ts, prdID)
 						return
 					}
 					if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
 						editErr = fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
 						return
+					}
+					// Check the report path before anything is written, so a
+					// refused edit leaves the task exactly as it was.
+					if reportPath != "" {
+						readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly
+						if readOnly != nil {
+							readOnlyAfter = *readOnly
+						}
+						if !readOnlyAfter {
+							editErr = fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
+							return
+						}
 					}
 					if newSpec != "" {
 						prd.Story[si].Tasks[ti].Spec = newSpec
@@ -3806,11 +3820,6 @@ func (m *Manager) EditTask(prdID, taskID, newSpec string, readOnly *bool, report
 						prd.Story[si].Tasks[ti].ReadOnly = *readOnly
 					}
 					if reportPath != "" {
-						readOnlyAfter := prd.Story[si].Tasks[ti].ReadOnly || (readOnly != nil && *readOnly)
-						if !readOnlyAfter {
-							editErr = fmt.Errorf("report_path %q requires a read_only task; task %q is not read_only", reportPath, taskID)
-							return
-						}
 						prd.Story[si].Tasks[ti].ReportPath = reportPath
 					}
 					prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
@@ -4330,8 +4339,57 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	m.releaseCapacity(taskID)
 	emitCancelled()
 	m.withdrawInfraHoldQuestions(prdID, taskID, actor, "task cancelled without answering the question")
+	// Operator cancel with a reason closes out the work it cancels. When the
+	// Automaton is blocked and this was the last outstanding task, reopen it
+	// the way the review-cancel path does, so the next Run can roll it up.
+	// Without a reason the operator is just stopping a task; with non-terminal
+	// tasks still in flight the blocked Automaton keeps its hold, both as
+	// before. No Run is started here — the caller (API layer) or the
+	// reconcile loop runs it.
+	if reason != "" && prd.Status == PRDBlocked && !m.nonTerminalRemain(prd) {
+		m.reopenBlockedPRD(prdID, taskID, actor)
+	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
+}
+
+// reopenBlockedPRD is the shared reopen for the review-cancel path
+// (cancelHeldTask) and the operator CancelTask path. It records the
+// review_resolved decision naming the cancelled task, and when the Automaton
+// is blocked it flips the status back to running and clears the blocked
+// reason so the next Run can roll up the remaining work. When it is not
+// blocked the status is left untouched and the PRD's existing flow — a live
+// executor, or the operator's next action — continues. It starts no Run: the
+// caller (API layer) or the reconcile loop does that. The all-terminal
+// precondition the operator CancelTask path applies is checked by the caller.
+func (m *Manager) reopenBlockedPRD(prdID, taskID, actor string) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	now := time.Now()
+	var old PRDStatus
+	reopened := false
+	m.store.WithLock(func() {
+		old = prd.Status
+		if prd.Status == PRDBlocked {
+			prd.Status = PRDRunning
+			prd.BlockedReason = ""
+			reopened = true
+		}
+		prd.UpdatedAt = now
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: now, Kind: reviewDecisionKind, Actor: reviewDecisionActor,
+			Note: fmt.Sprintf("task=%s cancelled by %s", taskID, actor),
+		})
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s record cancel reopen: %v", prdID, err)
+		return
+	}
+	if reopened {
+		m.emitPRDStatus(prd, old, lastDecision(prd, reviewDecisionKind), nil)
+	}
 }
 
 // EditStory (v5.26.32) lets the operator rewrite an LLM-decomposed

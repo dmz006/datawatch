@@ -278,13 +278,17 @@ func newAutonomousFailureEscalationGlobalCmd() *cobra.Command {
 }
 
 func newAutonomousResolveReviewCmd() *cobra.Command {
-	var taskID, action, spec, backend, model, effort, files, note string
+	var taskID, action, spec, backend, model, effort, files, note, reportPath string
+	var readOnly bool
 	cmd := &cobra.Command{
-		Use:   "resolve-review <automaton-id> --task <task-id> --action retry|cancel [--spec ...] [--backend B --model M --effort E] [--files a,b] [--note ...]",
+		Use:   "resolve-review <automaton-id> --task <task-id> --action retry|cancel [--spec ...] [--backend B --model M --effort E] [--files a,b] [--read-only[=false]] [--report-path <path>] [--note ...]",
 		Short: "Retry or cancel a task held for operator review",
 		Long: `The operator's decision on a task held for review (status review_needed).
 retry requeues the task. It may carry a replaced spec, a worker (backend,
-model, effort) for the task, and a narrowed file scope (--files). cancel
+model, effort) for the task, a narrowed file scope (--files), a read-only mark
+(--read-only, or --read-only=false to clear it) and a report path (--report-path,
+under .datawatch/reports/; the task must be read-only). A refused change leaves
+the task held. cancel
 cancels the task. It works while the Automaton is running and other tasks are
 live. A task that is not held answers 409.`,
 		Args: cobra.ExactArgs(1),
@@ -303,6 +307,12 @@ live. A task that is not held answers 409.`,
 				"note":    note,
 				"actor":   "operator",
 			}
+			if cmd.Flags().Changed("read-only") {
+				body["read_only"] = readOnly
+			}
+			if reportPath != "" {
+				body["report_path"] = reportPath
+			}
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/resolve_task_review", body)
 		},
 	}
@@ -313,6 +323,8 @@ live. A task that is not held answers 409.`,
 	cmd.Flags().StringVar(&model, "model", "", "retry only: worker model for the task")
 	cmd.Flags().StringVar(&effort, "effort", "", "retry only: worker effort for the task")
 	cmd.Flags().StringVar(&files, "files", "", "retry only: comma-separated narrowed list of files the task may change")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "retry only: mark the task read-only (changes no files); --read-only=false clears it; omit to leave unchanged")
+	cmd.Flags().StringVar(&reportPath, "report-path", "", "retry only: the one repo-relative report path a read-only task may write (under .datawatch/reports/); requires the task to be read-only")
 	cmd.Flags().StringVar(&note, "note", "", "operator note, recorded on the decision log and given to the next attempt")
 	_ = cmd.MarkFlagRequired("task")
 	_ = cmd.MarkFlagRequired("action")

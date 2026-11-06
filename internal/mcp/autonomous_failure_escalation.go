@@ -50,7 +50,7 @@ func (s *Server) handleAutonomousPRDSetFailureEscalation(_ context.Context, req 
 
 func (s *Server) toolAutonomousPRDResolveTaskReview() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_resolve_task_review",
-		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort) or narrowed file scope (files). action=cancel cancels it. It works while the Automaton is running and other tasks are live. A task that is not held answers 409."),
+		mcpsdk.WithDescription("The operator's decision on a task held for review (status review_needed). action=retry requeues it, optionally with a changed spec, worker (backend, model, effort), narrowed file scope (files), read_only mark or report_path (the one file a read-only task may write, under .datawatch/reports/; the task must be read-only after the change and a read-only task must have no planned files). A refused change leaves the task held. action=cancel cancels it. It works while the Automaton is running and other tasks are live. A task that is not held answers 409."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID held for review")),
 		mcpsdk.WithString("action", mcpsdk.Required(), mcpsdk.Description("retry or cancel")),
@@ -59,13 +59,15 @@ func (s *Server) toolAutonomousPRDResolveTaskReview() mcpsdk.Tool {
 		mcpsdk.WithString("model", mcpsdk.Description("retry only: worker model for the task")),
 		mcpsdk.WithString("effort", mcpsdk.Description("retry only: worker effort for the task")),
 		mcpsdk.WithArray("files", mcpsdk.Description("retry only: narrowed list of files the task may change"), mcpsdk.WithStringItems()),
+		mcpsdk.WithBoolean("read_only", mcpsdk.Description("retry only: mark the task read-only (it changes no files) or clear the mark. Omit to leave unchanged.")),
+		mcpsdk.WithString("report_path", mcpsdk.Description("retry only: the one repo-relative file the read-only task may write, under .datawatch/reports/. The task must be read_only (set read_only in the same call if needed).")),
 		mcpsdk.WithString("note", mcpsdk.Description("operator note, recorded on the decision log and given to the next attempt")),
 	)
 }
 
 func (s *Server) handleAutonomousPRDResolveTaskReview(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]any{
+	resolveBody := map[string]any{
 		"task_id": req.GetString("task_id", ""),
 		"action":  req.GetString("action", ""),
 		"spec":    req.GetString("spec", ""),
@@ -75,7 +77,14 @@ func (s *Server) handleAutonomousPRDResolveTaskReview(_ context.Context, req mcp
 		"files":   stringsArg(req.GetArguments()["files"]),
 		"note":    req.GetString("note", ""),
 		"actor":   "operator",
-	})
+	}
+	if _, present := req.GetArguments()["read_only"]; present {
+		resolveBody["read_only"] = req.GetBool("read_only", false)
+	}
+	if v := req.GetString("report_path", ""); v != "" {
+		resolveBody["report_path"] = v
+	}
+	body, _ := json.Marshal(resolveBody)
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/resolve_task_review", body)
 	if err != nil {
 		return nil, err

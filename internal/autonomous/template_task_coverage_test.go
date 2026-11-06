@@ -74,3 +74,17 @@ func TestTemplateTasksOnAnIdlessPlanResolveCleanly(t *testing.T) {
 		t.Fatalf("the templated plan must resolve: %v", err)
 	}
 }
+
+func TestFinalGateTemplateReportPathBuiltInsNonReadOnlyUnchanged(t *testing.T) {
+	for _, def := range BuiltInTaskTemplates() {
+		if def.ReadOnly {
+			if def.ReportPath == "" && def.VerificationScript == "" {
+				t.Fatalf("read-only built-in %q is unverifiable", def.ID)
+			}
+			continue
+		}
+		if def.ReportPath != "" {
+			t.Fatalf("non-read-only built-in %q must not carry a report path", def.ID)
+		}
+	}
+}

@@ -117,8 +117,8 @@ A stored record says how it went: `attempts` is 1 for the initial pass,
 
 ## 3. The rule pack that ships
 
-The built-in pack is the **floor** every run starts from: seven rules —
-the five `block` rules first, then the two `warn` rules. Your operator
+The built-in pack is the **floor** every run starts from: eight rules —
+the six `block` rules first, then the two `warn` rules. Your operator
 rules are the **ceiling over it** (see §4). The regular expressions are
 deliberately generic: they describe the *shape* of a dangerous task spec
 and never name a particular project, repository or home directory.
@@ -130,6 +130,7 @@ and never name a particular project, repository or home directory.
 | `starts_daemon_outside_sandbox` | block | a spec that starts or restarts a daemon (`systemctl`, `launchctl`, `pm2`, `nohup … &`) |
 | `reads_operator_data_or_config_folders` | block | a spec that reads a home-directory dot folder (`.datawatch`, `.config`, `.ssh`, `.aws`, …) |
 | `read_only_but_writes_files` | block | a task marked `read_only` that still lists files |
+| `read_only_unverifiable` | block | a read-only task (the `read_only` flag, or a spec whose first line is `READ-ONLY:`) with neither a verification script nor a report path under `.datawatch/reports/`; without one, a failure has nothing to inspect |
 | `no_verification_script` | warn | a task with no verification script |
 | `names_tracker_id` | warn | a spec or title that names a tracker id (`BL-0001`, `GH#123`, `#1234`) |
 
@@ -191,6 +192,7 @@ hold for the same task. The leaves:
 | `files_regex` | Go regex against the task's **files list** |
 | `read_only` | tri-state: absent = don't check; `true`/`false` = assert the flag |
 | `verification_script_empty` | assert the task declares no verification script |
+| `report_path_empty` | assert the task has no usable report path (empty, or not a clean path under `.datawatch/reports/`) |
 | `any_of` | at least **one** of these nested conditions must match |
 | `all_of` | **every** one of these nested conditions must match |
 
@@ -204,6 +206,10 @@ validator. Two shapes worth knowing:
 - **Read-only but writes files.** `read_only: true` + `files_regex: ".+"`
   — the built-in `read_only_but_writes_files` — combines a flag predicate
   with a text predicate on one task.
+- **Read-only, however it was declared.** The built-in
+  `read_only_unverifiable` uses `any_of: [{read_only: true}, {spec_regex:
+  "(?i)\\A\\s*READ-ONLY:"}]` so the flag and the spec marker both count,
+  then requires `verification_script_empty` and `report_path_empty`.
 
 ### Turning rules off, three ways
 

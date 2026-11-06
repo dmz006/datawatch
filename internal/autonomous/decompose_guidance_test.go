@@ -35,8 +35,8 @@ func TestDecomposeGuidance_UnsetGeneratesFromDefaultRules(t *testing.T) {
 func TestDecomposeGuidance_LiteralText(t *testing.T) {
 	literal := "Always declare a verification script and keep tasks under one screen of spec."
 	block := BuildDecomposeGuidance(&config.AutonomousConfig{
-		DecomposeLint:      config.DecomposeLintConfig{},
-		DecomposeGuidance:  "  " + literal + "  ",
+		DecomposeLint:     config.DecomposeLintConfig{},
+		DecomposeGuidance: "  " + literal + "  ",
 	})
 	if block != literal {
 		t.Fatalf("guidance = %q, want the literal text %q (trim only, no fallback)", block, literal)
@@ -146,6 +146,7 @@ func TestDecomposeGuidance_NoActiveRulesNoBlock(t *testing.T) {
 				"starts_daemon_outside_sandbox",
 				"reads_operator_data_or_config_folders",
 				"read_only_but_writes_files",
+				"read_only_unverifiable",
 				"no_verification_script",
 				"names_tracker_id",
 			},

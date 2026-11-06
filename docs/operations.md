@@ -875,6 +875,114 @@ When the completion review has blocked an Automaton, or holds it in `needs_revie
 
 This refusal applies to a held Automaton. A plain `blocked` Automaton is not refused on an unchanged head: with the judge verdict cache on, the stored verdict is replayed, and with it off, the judge runs fresh.
 
+### Read-only task without a verification script or report path
+
+A read-only task declares that it changes no files, so the only output it
+can produce is a check it runs for itself or a report it writes. When it
+has neither — no `verification_script` and no `report_path` — it **cannot
+pass**: the verifier's verdict for a task that leaves no diff is
+"no changes detected (diff empty and no new files); task produced no
+output", a medium-severity failure, and with no script to run and no report
+to read there is nothing for a re-attempt to fix. The failure ladder just
+reproduces the same failure until the task is held for review and the
+Automaton is blocked. So datawatch refuses that shape of task at planning
+time and accepts a declared report as the task's output at verification
+time.
+
+**The planning refusals.** Two deterministic checks, no LLM, both refuse a
+read-only task that declares neither a verification script nor a report
+path under `.datawatch/reports/`. "Read-only" means the `read_only` flag,
+or a spec whose first non-empty line begins with `READ-ONLY:`; no task kind is
+exempt:
+
+- The **decompose lint rule `read_only_unverifiable`** (`block`): it fires
+  during decompose and, in `enforce` mode, blocks the decompose and feeds
+  the message back to the decomposer — give the task a verification script
+  (its own checks, without modifying the tree) or a report path under
+  `.datawatch/reports/` where it can record its verdict.
+- The **plan-coverage structural finding `readonly_unverifiable`**: the
+  same condition checked at Approve. In `block` mode (the default) it
+  blocks approval; the operator either fixes the plan or acknowledges
+  exactly that failing surface with a note, as in the
+  [plan-requirement coverage gate](#plan-requirement-coverage-gate-autonomousplan_coverage_check)
+  section below.
+
+To fix the plan, add either a `verification_script` or a `report_path` to
+the task. The path must be a clean repo-relative path under
+`.datawatch/reports/`. The built-in final-gate template already ships in
+this shape: its spec says to write its output to
+`.datawatch/reports/<feature>-final-gate.txt`, sets `report_path` to the
+same file and carries a verification script — a useful example of a
+read-only task that can verify itself.
+
+**The verifier's acceptance rule.** When a read-only task that declares a
+report path finishes with no tree changes, the verifier looks for the
+report instead of failing it: the file must exist under the tree as a
+regular, non-empty file — checked by lstat, so a symlink or a directory is
+refused — and the path must be a valid one. If it does, the verdict is OK
+("read-only task produced no tree changes; declared report … exists and is
+non-empty", severity `low`). A declared report that is absent or empty, or
+a path that is invalid, fails the attempt and names the report path. The
+task's own `verification_script`, when present, is still run and must exit
+0 — a failing script fails the task even with a good report. A task that
+did produce real changes does not use this rule; the usual verification
+path handles its diff.
+
+**Recovering a blocked Automaton — make the task verifiable.** While the
+Automaton is blocked the held task can be patched in place. Edit-task
+patches the held task while it is held — its `spec`, its read-only mark and
+its `report_path`, in one or more calls — and retry (action `retry`) then
+requeues it, carrying the same optional mark and report path along with any
+spec, worker or file-scope change. Both check everything before anything is
+written, so a refused change leaves the task held: a `report_path` is only
+accepted when the task is read-only *after* the change (already flagged, or
+flagged in the same call), and a task that ends read-only must end with no
+planned files. While the Automaton is blocked only a failed, blocked, or
+held (`review_needed`) task can be edited — you patch the stuck task, not
+its pending siblings. Every surface offers both, edit-task and then retry:
+
+```sh
+# CLI — edit the held task, then retry it
+# (edit-task: prd-edit-task; retry: resolve-review)
+datawatch autonomous prd-edit-task <automaton-id> --task <task-id> \
+  --read-only --report-path .datawatch/reports/ci-audit.txt
+datawatch autonomous resolve-review <automaton-id> --task <task-id> --action retry \
+  --note "report holds the verdict"
+
+# REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<automaton-id>/edit_task \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","read_only":true,"report_path":".datawatch/reports/ci-audit.txt","actor":"operator"}'
+curl -sX POST http://localhost:7433/api/autonomous/prds/<automaton-id>/resolve_task_review \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","action":"retry","note":"report holds the verdict","actor":"operator"}'
+```
+
+MCP: `autonomous_prd_edit_task(id="<automaton-id>", task_id="<task-id>",
+read_only=true, report_path=".datawatch/reports/ci-audit.txt")`, then
+`autonomous_prd_resolve_task_review(id="<automaton-id>",
+task_id="<task-id>", action="retry", note="report holds the verdict")`. The
+retry carries the same `spec`, `read_only`, `report_path`, `files` and worker
+fields, so the fix can instead be made in the retry alone — the note is
+recorded on the decision log and given to the next attempt.
+Comm channel: `autonomous edit-task <automaton> <task> read_only=true
+report_path=.datawatch/reports/ci-audit.txt [new-spec…]`, then
+`autonomous review-task <automaton> <task> retry note=...`.
+
+**Cancelling the held task is terminal.** `cancel` records the operator's
+decision with the reason "cancelled after operator review" (your note, when
+given, appended), marks the task cancelled, and reopens a blocked
+Automaton — its status goes back to running and the blocked reason is
+cleared — so the next run can roll up what remains. Dependent tasks fail,
+tasks already running are not interrupted, and when every other task is
+already in a terminal state the rollup walks the Automaton through its
+completion review and on to completion without the held task. This is the
+close-out surface: it is a cancellation *with a reason*, and it counts for
+the completion rollup. Stopping a task while it runs (with no reason
+given) is not: it merely ends the task's work, the blocked Automaton keeps
+its hold, and a cancellation made while other tasks of the Automaton are
+still open also leaves the hold in place.
+
 
 ### Model routing
 
@@ -3144,7 +3252,8 @@ missing / weakened requirement counts and each unmatched requirement with its
 verdict — `covered`, `missing` or `weak`), any **structural findings** (a
 dangling `DependsOn`, a dependency cycle, a plan entry with no file provenance,
 a step with no verification reason, a bad tracker-ID name, a write task that
-declares no files), and — when one
+declares no files, or a read-only task that is neither verifiable by script
+nor by report), and — when one
 exists — the operator `ack` `{by, at, note, fingerprint}`.
 
 **How the `unresolved_file` finding is determined.** File-reference

@@ -79,11 +79,16 @@ func BuiltInTaskTemplates() []config.TaskTemplateDef {
 				"behavior that the docs already describe.",
 		},
 		{
-			ID:       TemplateFinalGate,
-			Title:    "Final gate for {{feature}}",
-			Spec:     "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). This task changes nothing: it writes no files, makes no edits, and never runs a hosting CLI. State the verdict with the evidence.",
-			Kind:     "final_gate",
-			ReadOnly: true,
+			ID:         TemplateFinalGate,
+			Title:      "Final gate for {{feature}}",
+			Spec:       "Read-only final gate for '{{feature}}'. Verify, with read and check only, that the slice is complete: the build is clean, the tests of the touched packages pass, and the touched files hang together ({{files_list}}). Write the verdict and the evidence to one report file, .datawatch/reports/{{feature}}-final-gate.txt (the feature slugged into the file name); that report is the only file this task writes. It makes no other edits and never runs a hosting CLI.",
+			Kind:       "final_gate",
+			ReadOnly:   true,
+			ReportPath: ".datawatch/reports/{{feature}}-final-gate.txt",
+			// Its own check, without modifying the tree: the gate verifies
+			// the build and the package tests, so it must not be an
+			// unverifiable read-only task.
+			VerificationScript: "go build ./... && go test ./...",
 			AppliesWhen: "Always offered as the closing task: a cheap, read-only " +
 				"verdict before the story is considered done.",
 		},

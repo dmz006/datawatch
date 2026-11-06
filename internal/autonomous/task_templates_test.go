@@ -79,15 +79,16 @@ func TestTaskTemplatesBuiltInPackPassesDefaultLintPack(t *testing.T) {
 			spec += " (" + m + ")"
 		}
 		story.Tasks = append(story.Tasks, Task{
-			ID:           templateTaskID(story.ID, def.ID),
-			StoryID:      story.ID,
-			PRDID:        story.PRDID,
-			Title:        rendered.Title,
-			Spec:         spec,
-			Status:       TaskQueued,
-			Kind:         def.Kind,
-			ReadOnly:     def.ReadOnly,
-			FilesPlanned: splitTemplateFiles(def.Files),
+			ID:                 templateTaskID(story.ID, def.ID),
+			StoryID:            story.ID,
+			PRDID:              story.PRDID,
+			Title:              rendered.Title,
+			Spec:               spec,
+			Status:             TaskQueued,
+			Kind:               def.Kind,
+			ReadOnly:           def.ReadOnly,
+			VerificationScript: def.VerificationScript,
+			FilesPlanned:       splitTemplateFiles(def.Files),
 		})
 	}
 	findings := LintTasks([]Story{story}, DefaultDecomposeLintRules())
@@ -411,4 +412,93 @@ func taskTemplateContainsString(list []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// finalGateReportStory applies cfg's templates to the test story and
+// returns the resulting stories.
+func finalGateReportStory(t *testing.T, cfg *config.Config, feature string) []Story {
+	t.Helper()
+	out, _ := ApplyTaskTemplates([]Story{testTaskTemplateStory(t)}, feature, "", cfg)
+	return out
+}
+
+func TestFinalGateTemplateReportPathReadOnlyDefaultsVerifiable(t *testing.T) {
+	stories := finalGateReportStory(t, testTaskTemplateCfg(), "Final Gate: Feature X!")
+	seen := 0
+	for _, task := range stories[0].Tasks {
+		if !task.ReadOnly {
+			continue
+		}
+		seen++
+		if task.ReportPath == "" && strings.TrimSpace(task.VerificationScript) == "" {
+			t.Fatalf("read-only task %q has neither report path nor script", task.ID)
+		}
+		if task.ReportPath != "" {
+			if err := validateReportPath(task.ReportPath); err != nil {
+				t.Fatalf("task %q report path invalid: %v", task.ID, err)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no read-only template task instantiated")
+	}
+}
+
+func TestFinalGateTemplateReportPathOnFinalGate(t *testing.T) {
+	stories := finalGateReportStory(t, testTaskTemplateCfg(), "Final Gate: Feature X!")
+	var gate *Task
+	for i := range stories[0].Tasks {
+		if strings.Contains(stories[0].Tasks[i].ID, TemplateFinalGate) {
+			gate = &stories[0].Tasks[i]
+		}
+	}
+	if gate == nil {
+		t.Fatal("final gate task not instantiated")
+	}
+	if want := ".datawatch/reports/final-gate-feature-x-final-gate.txt"; gate.ReportPath != want {
+		t.Fatalf("report path = %q, want %q", gate.ReportPath, want)
+	}
+	if !taskHasUsableReportPath(*gate) || strings.TrimSpace(gate.VerificationScript) == "" {
+		t.Fatal("final gate must carry a usable report path and a script")
+	}
+	if !strings.Contains(gate.Spec, "only file") {
+		t.Fatalf("spec must state the report is the only file written: %q", gate.Spec)
+	}
+	for _, f := range LintTasks(stories, EffectiveRules(config.DecomposeLintConfig{})) {
+		if f.Task == gate.ID && strings.Contains(f.RuleID, "unverifiable") {
+			t.Fatalf("final gate trips lint rule %s", f.RuleID)
+		}
+	}
+}
+
+func TestFinalGateTemplateReportPathBadUserTemplateRefused(t *testing.T) {
+	for _, bad := range []string{"/etc/passwd", "../x.txt", "docs/out.txt", ".datawatch/reports/../x"} {
+		cfg := testTaskTemplateCfg()
+		cfg.Autonomous.TaskTemplates.Templates = []config.TaskTemplateDef{{
+			ID: "user_gate", Title: "User gate {{feature}}", Spec: "read only",
+			ReadOnly: true, ReportPath: bad,
+		}}
+		for _, task := range finalGateReportStory(t, cfg, "feat")[0].Tasks {
+			if strings.Contains(task.ID, "user_gate") {
+				t.Fatalf("bad report path %q was instantiated", bad)
+			}
+		}
+	}
+	cfg := testTaskTemplateCfg()
+	cfg.Autonomous.TaskTemplates.Templates = []config.TaskTemplateDef{{
+		ID: "user_ok", Title: "User ok", Spec: "read only", ReadOnly: true,
+		ReportPath: ".datawatch/reports/{{feature}}-ok.txt",
+	}}
+	found := false
+	for _, task := range finalGateReportStory(t, cfg, "My Feat")[0].Tasks {
+		if strings.Contains(task.ID, "user_ok") {
+			found = true
+			if task.ReportPath != ".datawatch/reports/my-feat-ok.txt" {
+				t.Fatalf("report path = %q", task.ReportPath)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("valid user template not instantiated")
+	}
 }
