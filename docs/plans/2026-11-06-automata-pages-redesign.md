@@ -404,3 +404,20 @@ held questions) with project, arc and Automaton, turn the Automaton, Automation,
 and sweep existing sessions. Counts: an archived record with every task completed counts as done, and every total is
 available overall and by project, by Automation and by Automaton, with records that have no project shown as (none).
 Filed as drafts `b7910001` (tag everything) and `dae00001` (counts by project); both join the Projects arc.
+
+### 13. Run telemetry, billing modes and the counts in the tick (2026-11-06 17:55)
+
+Operator, quoted: "and make sure with counts, we should have other prd for this, that we capture time, tools, details so
+we can have nice graphs and charts and gantt and other timelines and details and know what time we take and how much
+tokens (or $ if we are using api) - in fact thinking of how we are tracking spend/token/budget we should be sure there
+can be a switch, per cloud LLM for API or pool/consumption/% or whatever the best name is for what we currently have.
+these stats are going to be super helpful later!! (and great dashboards/graphs/reports for eye candy to get people to
+like datawatch). can you update the tick script so it shows the current overall counts and details?"
+
+Decisions: (1) draft Automaton `4aa80001` captures run times, tokens, tools, files, commits, results and cost for every
+session, attempt, verifier, planner and judge run, and adds a per-LLM `billing_mode`: `api` (dollars), `allowance` (the
+plan or pool measured in points or percent, which is what the Claude entry is today) and `local` (no money cost); units
+are never added together; it builds the capture that the spend ledger (`24400001`) and cost report (`090f0001`) read, and
+the Gantt, charts and dashboards. The word "allowance" is the proposed name for what is tracked today; the operator can
+rename it. (2) The tick now runs `scripts/overall-counts.py` before the v10 status table: all records with archived
+finished work counted as done, by kind, backend and Automation, with project filled in once records carry one.
