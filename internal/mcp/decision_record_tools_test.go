@@ -10,6 +10,8 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/session"
+
+	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
 // decisionRecordTestDaemon is a stand-in daemon for the decision-record tools:
@@ -79,31 +81,35 @@ func TestDecisionRecordMCP_Registered(t *testing.T) {
 		t.Fatal(err)
 	}
 	byName := map[string]bool{}
-	ro := map[string]*bool{}
 	for _, tl := range tools {
 		byName[tl.Name] = true
-		ro[tl.Name] = tl.Annotations.ReadOnlyHint
 	}
 	for _, name := range DecisionRecordToolNames() {
 		if !byName[name] {
 			t.Errorf("tool %q is not registered", name)
 		}
 	}
+	// Read-only hints live on the tool itself, not on the compact descriptors
+	// of ListTools, so check the built tools directly (the pattern of
+	// TestDecisionsMCP).
+	built := map[string]mcpsdk.Tool{
+		"autonomous_decision_record_list":     s.toolDecisionRecordList(),
+		"autonomous_decision_record_get":      s.toolDecisionRecordGet(),
+		"autonomous_decision_record_create":   s.toolDecisionRecordCreate(),
+		"autonomous_decision_record_update":   s.toolDecisionRecordUpdate(),
+		"autonomous_decision_record_withdraw": s.toolDecisionRecordWithdraw(),
+	}
 	wantRO := map[string]bool{
-		"autonomous_decision_record_list":  true,
-		"autonomous_decision_record_get":   true,
-		"autonomous_decision_record_create": false,
-		"autonomous_decision_record_update": false,
+		"autonomous_decision_record_list":     true,
+		"autonomous_decision_record_get":      true,
+		"autonomous_decision_record_create":   false,
+		"autonomous_decision_record_update":   false,
 		"autonomous_decision_record_withdraw": false,
 	}
 	for name, want := range wantRO {
-		got, ok := ro[name]
-		if !ok {
-			t.Errorf("no read-only hint found for %q", name)
-			continue
-		}
-		if got == nil || *got != want {
-			t.Errorf("%q read-only hint = %v, want %v", name, got, want)
+		hint := built[name].Annotations.ReadOnlyHint
+		if hint == nil || *hint != want {
+			t.Errorf("%q read-only hint = %v, want %v", name, hint, want)
 		}
 	}
 	wantCap := map[string]string{
@@ -210,9 +216,9 @@ func TestDecisionRecordMCP_CreateForwardsContent(t *testing.T) {
 func TestDecisionRecordMCP_UpdateHitsPutPath(t *testing.T) {
 	d := newDecisionRecordTestDaemon(t, 0, "")
 	res := d.call(t, d.s.handleDecisionRecordUpdate, map[string]any{
-		"id":       "rec-1",
-		"title":    "Pick the question storage",
-		"options":  `[{"id":"jsonl","label":"JSONL"}]`,
+		"id":      "rec-1",
+		"title":   "Pick the question storage",
+		"options": `[{"id":"jsonl","label":"JSONL"}]`,
 	})
 	if res.IsError {
 		t.Fatalf("tool error: %v", res)

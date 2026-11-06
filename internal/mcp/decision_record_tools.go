@@ -27,6 +27,7 @@ func (s *Server) toolDecisionRecordList() mcpsdk.Tool {
 		mcpsdk.WithString("state", mcpsdk.Description("Only records in this state: open, answered or withdrawn (anything else is refused by the daemon)")),
 		mcpsdk.WithString("prd_id", mcpsdk.Description("Only the records linked to this Automaton")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("At most this many records; default 100, maximum 1000")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -57,6 +58,7 @@ func (s *Server) toolDecisionRecordGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_decision_record_get",
 		mcpsdk.WithDescription("Read one decision record by id: the label, the title, the situation, what is being decided, the options, the author's recommendation, the default option, the links, and the bookkeeping the store owns (state, question_id, answer, doc change). The record is the source — the daemon builds the queue question from it — so reading it never changes anything. Read-only. Returns the same object as GET /api/autonomous/decision-records/{id}."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The decision record id")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
 	)
 }
 
@@ -142,7 +144,7 @@ func recordContentToolParams() []mcpsdk.ToolOption {
 		mcpsdk.WithString("deciding", mcpsdk.Description("The decision the operator is being asked to make")),
 		mcpsdk.WithString("options", mcpsdk.Description("The options, a JSON array of {\"id\",\"label\",\"tradeoff\"} objects; the ids are what the answer picks")),
 		mcpsdk.WithString("recommendation", mcpsdk.Description("The author's pick and why, a JSON object {\"option_id\",\"reason\"} (optional)")),
-		mcpsdk.WithString("default", mcpsdk.Description("The option id chosen when the decision times out (optional)")),
+		mcpsdk.WithString("default", mcpsdk.Description("The option id chosen when the decision times out, or the word hold (required)")),
 		mcpsdk.WithString("links", mcpsdk.Description("What the record is about, a JSON object with any of {\"doc\",\"automaton\",\"registry_row\"} (optional)")),
 	}
 }
@@ -154,6 +156,7 @@ func (s *Server) toolDecisionRecordCreate() mcpsdk.Tool {
 		mcpsdk.WithDescription("Create a decision record: the structured decision the operator answers — the label, the title, the situation, what is being decided, the options, the author's recommendation, the default option and the links. The record is the source: the daemon builds the queue question from it and raises it, and the answer comes back on the record. Returns the stored record with its question_id and the quality warnings."),
 	}
 	opts = append(opts, recordContentToolParams()...)
+	opts = append(opts, mcpsdk.WithReadOnlyHintAnnotation(false))
 	return mcpsdk.NewTool("autonomous_decision_record_create", opts...)
 }
 
@@ -173,6 +176,7 @@ func (s *Server) toolDecisionRecordUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The decision record id")),
 	}
 	opts = append(opts, recordContentToolParams()...)
+	opts = append(opts, mcpsdk.WithReadOnlyHintAnnotation(false))
 	return mcpsdk.NewTool("autonomous_decision_record_update", opts...)
 }
 
@@ -195,6 +199,7 @@ func (s *Server) toolDecisionRecordWithdraw() mcpsdk.Tool {
 		mcpsdk.WithDescription("Withdraw a decision record: mark it withdrawn so it can no longer be answered. The daemon's queue question comes from the record, so a withdrawn record stops asking. Returns the record as it stands after the withdrawal."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("The decision record id")),
 		mcpsdk.WithString("reason", mcpsdk.Description("What the operator said when withdrawing (optional)")),
+		mcpsdk.WithReadOnlyHintAnnotation(false),
 	)
 }
 
