@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.101.1 (2026-11-06).** Recovers three small fixes from archived Automata: the usage back-off reset time in the daemon zone, `autonomous:task:` session names, and a bounded wait for question notifications at shutdown. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.102.0 (2026-11-06).** Adds decision records: a structured description of one decision (situation, what is decided, options with cost and risk, recommendation, forced default) from which the daemon builds the operator question, with clarity checks, a stored answer quote, an optional document status line, opt-in follow-ups and a watched folder, on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
