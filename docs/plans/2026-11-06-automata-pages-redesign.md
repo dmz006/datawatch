@@ -278,3 +278,26 @@ Fix in three parts: (1) the one-time review of the 77 (running, results in
 so each one gets an outcome (land, keep as reference, delete after classification); (3) the registry audit rule and
 `branch-audit.py` treat "other" as a finding to be resolved, and the cleaner reports the skipped worktrees by
 reason with the unlanded ones named.
+
+### 7. Setup and policy, and where configuration lives (asked 2026-11-06 09:08)
+
+Options offered: A Setup and policy stops being a tab, everything editable moves to Settings under Automata, the
+per-project parts (project policy, merge pipeline) sit on the project page with a project picker, the supervisor
+loop's runs go to Events with per-project counts on the project page; B keep the tab and make every row clickable
+and editable; C move everything to Settings only with a project dropdown there.
+
+Operator answer, quoted: "q7, move to settings all configuration should be in settings - also are all
+configuratable options fully aligned with parity rule? hopefully ??"
+
+Decision: all configuration lives in Settings (A and C combined: no editable configuration on the Automata pages;
+the project page links to the project's entries in Settings and may show them read-only). Setup and policy as a tab
+goes away; what it showed that is not configuration (supervisor loop runs and counts) goes to Events and the
+project page.
+
+Parity question, answered 2026-11-06: the rule exists (AGENT.md: every option reachable by YAML, web Settings, REST
+`GET` and `PUT /api/config`, the comm channel `configure`, MCP where it has a status tool, and the CLI `config set`,
+plus a datawatch-app issue for PWA changes). It is enforced feature by feature: 47 `*config_surface_test.go` files
+check the surfaces of one feature each. There is no single audit that proves every option in `config.go` reaches
+every surface, so "all aligned" is not proven today. An audit script and a CI gate are needed (registry row 374).
+Moving the configuration out of the Automata tabs into Settings must keep every one of the six surfaces and file
+the mobile parity issue.
