@@ -5152,6 +5152,16 @@ A task whose spec names an [operator decision](howto/automaton-operator-decision
 
 **Monitoring: n/a, with reasons.** The gate adds no subsystem with a state of its own to gauge: a held task is visible as a task status, the shadow record is on the decision log and the one alert covers the first hold.
 
+## Decision records
+
+Operator how-to: [howto/automaton-decision-records.md](howto/automaton-decision-records.md). The settings live under `autonomous.decisions.*` and are read when they are used, so a change needs no restart. The defaults are safe: records are on, the folder watch is off (`folder` empty), clarity checks warn, and the document status line rewrite only reports.
+
+**The folder.** `autonomous.decisions.folder` names a directory of decision files. Only the daemon reads it: give it read access for the daemon's user and nothing wider, and do not point it at a folder other tools write secrets into. The daemon never writes to the folder. It reads files up to 64 KB, at most 200 per scan, matching `folder_glob`, and a file it cannot use is skipped with a message on `GET /api/autonomous/decision-records`.
+
+**Editing documents.** With `doc_status_mode` set to `on`, an answer edits a file under `doc_root` (the daemon's working directory when empty). Paths on a record must stay inside `doc_root`. The recommended path is to leave the mode on `report` until you have reviewed the changes it reports on a few answers, then switch to `on` and review each applied change with `git diff`.
+
+**Follow-ups.** `follow_ups` is empty by default, so nothing runs after an answer. Each entry you add lets an operator start a template or open an Automaton by name.
+
 ## Worker questions
 
 A worker session of an Automaton can ask the operator a design question by printing one line in its output: `DATAWATCH_QUESTION:` followed by a single line of JSON (`question`, `options`, `recommendation`, `default`, `blocked`, and optionally `label` and `risk`). The daemon stores it as an ordinary [operator question](#operator-questions) asked by `worker-<short session id>`, linked to the session and its task, and announces it like any other raise. A line with `"blocked": true` also parks the task on the question until it is decided. How-to: [howto/operator-questions-workers](howto/operator-questions-workers.md). API reference: [api/autonomous](api/autonomous.md#worker-questions).
