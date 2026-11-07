@@ -55,8 +55,7 @@ func (s *Server) handleSecurityEncryptionStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
 	var files []encryptionFileStatus
 
@@ -167,8 +166,7 @@ func (s *Server) handleSecurityEncryptionMigrate(w http.ResponseWriter, r *http.
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
 	migratedDiscussions, err := secfile.MigrateDiscussionWALs(s.statePath("discussions"), s.encKey)
 	if err != nil {
@@ -227,8 +225,7 @@ func (s *Server) handleSecurityWipePlaintext(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	home, _ := os.UserHomeDir()
-	base := filepath.Join(home, ".datawatch")
+	base := s.statePath()
 
 	var wiped []string
 	var skipped []string
