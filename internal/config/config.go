@@ -508,6 +508,28 @@ func (g GitConfig) EffectiveSecretScanAllowList() GitSecretAllowList {
 	return g.SecretScan.AllowList
 }
 
+// ResourceLimitsConfig holds the memory ceiling settings (the
+// resource_limits.* section). Zero values read as unset and are replaced
+// by the defaults when the config loads.
+type ResourceLimitsConfig struct {
+	// MemorySharePercent is the share of host memory, in percent, that
+	// datawatch work may use. Default 50.
+	MemorySharePercent int `yaml:"memory_share_percent" json:"memory_share_percent"`
+	// MemoryFloorMB is the lowest memory ceiling in MB. Default 2048.
+	MemoryFloorMB int `yaml:"memory_floor_mb" json:"memory_floor_mb"`
+	// MemoryCapMB is the highest memory ceiling in MB. Default 16384.
+	MemoryCapMB int `yaml:"memory_cap_mb" json:"memory_cap_mb"`
+}
+
+// DefaultResourceLimits returns the default memory ceiling settings.
+func DefaultResourceLimits() ResourceLimitsConfig {
+	return ResourceLimitsConfig{
+		MemorySharePercent: 50,
+		MemoryFloorMB:      2048,
+		MemoryCapMB:        16384,
+	}
+}
+
 // Config holds all datawatch configuration.
 type Config struct {
 	// DeprecatedKeys lists the deprecated keys (dotted YAML paths) set in
@@ -527,6 +549,9 @@ type Config struct {
 
 	// Git lifecycle settings: push-on-complete policies and push remote.
 	Git GitConfig `yaml:"git" json:"git"`
+
+	// ResourceLimits holds the memory ceiling settings.
+	ResourceLimits ResourceLimitsConfig `yaml:"resource_limits" json:"resource_limits"`
 
 	// Tracing holds the normalized agent trace settings (tracing.mode,
 	// tracing.arg_cap_bytes, tracing.retention_days, tracing.backends).
@@ -6866,7 +6891,8 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
-		Usage: UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
+		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
+		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:          1,
 			MaxConcurrentTasks:      1,
