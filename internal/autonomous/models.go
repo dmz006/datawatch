@@ -351,6 +351,11 @@ type PRD struct {
 	// before BL451; load tolerates the missing field.
 	Rev   int     `json:"rev,omitempty"`
 	Story []Story `json:"stories,omitempty"` // populated after Decompose
+	// SystemTags is the placement-derived tag set this Automaton carries
+	// (project, Automation, itself): derived by ObjectTagsForPRD under
+	// the daemon's tags.placement block. Empty = no project or automation
+	// to name, or the tags not yet derived.
+	SystemTags []string `json:"system_tags,omitempty"`
 
 	// BL191 Q1 (v5.2.0) — review/approve gate. Manager.Run refuses
 	// unless Status == PRDApproved (or the legacy PRDActive for back-
@@ -1197,6 +1202,12 @@ type Task struct {
 	// current incident. It is reset when the task gets a fair attempt; the
 	// InfraRetries history is not.
 	InfraRetryCount int `json:"infra_retry_count,omitempty"`
+	// SystemTags is the placement-derived tag set this task carries (its
+	// Automaton's project, Automation and Automaton, plus the stage the
+	// Automaton's member slot carries): derived by ObjectTagsForTask under
+	// the daemon's tags.placement block. Empty = nothing to name, or the
+	// tags not yet derived.
+	SystemTags []string `json:"system_tags,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`

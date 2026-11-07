@@ -106,6 +106,11 @@ type Automation struct {
 	// autonomous.auto_tags block; nil = the daemon's block applies whole,
 	// and an override's unset fields inherit the daemon's.
 	AutoTags *AutoTagsOverride `json:"auto_tags,omitempty"`
+	// SystemTags is the placement-derived tag set this Automation carries
+	// (itself on the automation axis, and the project of its first member):
+	// derived by ObjectTagsForAutomation under the daemon's tags.placement
+	// block. Empty = no project to name, or the tags not yet derived.
+	SystemTags []string `json:"system_tags,omitempty"`
 
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
