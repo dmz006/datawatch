@@ -113,7 +113,7 @@ func hostTotalMBFrom(path string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("%w: %v", ErrMemTotalUnavailable, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())

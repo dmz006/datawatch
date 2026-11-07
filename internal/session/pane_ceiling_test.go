@@ -17,7 +17,7 @@ type paneFake struct {
 
 func (p *paneFake) NewSessionWithPaneCommand(name string, cols, rows int, cmd []string) error {
 	p.paneCmd = cmd
-	return p.FakeTmux.NewSessionWithSize(name, cols, rows)
+	return p.NewSessionWithSize(name, cols, rows)
 }
 func (p *paneFake) PanePID(string) int { return p.pid }
 
@@ -127,7 +127,7 @@ func TestStartWorkerPane_WatchdogRecordsPath(t *testing.T) {
 	if s.CeilingPath != CeilingPathWatchdog || pf.paneCmd != nil {
 		t.Fatalf("path %q cmd %v", s.CeilingPath, pf.paneCmd)
 	}
-	if !pf.FakeTmux.SessionExists("cs-h-1") {
+	if !pf.SessionExists("cs-h-1") {
 		t.Fatal("plain pane was not created")
 	}
 }

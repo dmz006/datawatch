@@ -272,7 +272,7 @@ func readStatus(path string) (ProcInfo, bool) {
 	if err != nil {
 		return ProcInfo{}, false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var p ProcInfo
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {

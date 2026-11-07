@@ -27,6 +27,7 @@ func TestScopeKillAllocatorHelper(t *testing.T) {
 			b[i] = 1
 		}
 		held = append(held, b)
+		_ = len(held)
 	}
 }
 
@@ -113,7 +114,7 @@ func TestScopeKillIntegration(t *testing.T) {
 			t.Fatalf("allocator exited without error: %v", err)
 		}
 		ws, ok := ee.Sys().(syscall.WaitStatus)
-		if !ok || !(ws.Signaled() && ws.Signal() == syscall.SIGKILL) {
+		if !ok || !ws.Signaled() || ws.Signal() != syscall.SIGKILL {
 			t.Fatalf("allocator was not SIGKILLed: %v", err)
 		}
 	case <-time.After(60 * time.Second):
