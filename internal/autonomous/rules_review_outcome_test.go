@@ -79,3 +79,27 @@ func TestRulesReviewOutcomeReviewNowHonoursClock(t *testing.T) {
 		t.Fatal("reviewNow with no clock must use wall time")
 	}
 }
+
+func TestRulesReviewOutcomeJudgeOutcome(t *testing.T) {
+	cases := []struct {
+		name string
+		v    GuardrailVerdict
+		want string
+	}{
+		{"could not start", GuardrailVerdict{Outcome: "block", Category: "infra", Summary: "task delivery failed: main prompt never appeared within 60s"}, JudgeKindCouldNotStart},
+		{"timed out", GuardrailVerdict{Outcome: "block", Category: JudgeTimeoutCategory, Summary: "timed out"}, JudgeKindTimedOut},
+		{"found problem", GuardrailVerdict{Outcome: "block", Summary: "bad", Issues: []string{"x"}}, JudgeKindFoundProblem},
+		{"no judge ran", GuardrailVerdict{}, ""},
+	}
+	for _, c := range cases {
+		o := newRulesReviewOutcome(c.v, RulesReviewActionFixTaskCreated, "", 1, 1, 0, time.Time{})
+		if o.JudgeOutcome != c.want {
+			t.Errorf("%s: JudgeOutcome = %q, want %q", c.name, o.JudgeOutcome, c.want)
+		}
+		b, _ := json.Marshal(o)
+		has := strings.Contains(string(b), `"judge_outcome"`)
+		if has != (c.want != "") {
+			t.Errorf("%s: json %s omitempty wrong", c.name, b)
+		}
+	}
+}
