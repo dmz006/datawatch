@@ -3,6 +3,7 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,9 @@ type gateGit struct {
 	diff      string
 	untracked string
 	logOut    string
+	// show serves `git show <ref>`: ref ("<sha>:<path>") to content.
+	// A ref it does not know fails, as git does for a path absent at the commit.
+	show map[string]string
 	// noBase makes every base-commit candidate fail to resolve.
 	noBase  bool
 	diffErr error
@@ -57,6 +61,17 @@ func (g *gateGit) run(_ context.Context, _ string, args ...string) (string, erro
 		return g.untracked, nil
 	case "log":
 		return g.logOut, nil
+	case "show":
+		if len(args) < 2 {
+			return "", errors.New("show takes no ref")
+		}
+		if c, ok := g.show[args[1]]; ok {
+			return c, nil
+		}
+		if idx := strings.LastIndex(args[1], ":"); idx > 0 {
+			return "", fmt.Errorf("fatal: path '%s' does not exist in %s", args[1][idx+1:], args[1][:idx])
+		}
+		return "", fmt.Errorf("fatal: ambiguous argument '%s'", args[1])
 	case "symbolic-ref":
 		return "", errors.New("no origin")
 	}
