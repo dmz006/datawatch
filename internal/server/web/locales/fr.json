@@ -4147,5 +4147,15 @@
   "node_backend_none": "Aucun backend sur ce nœud.",
   "node_backend_not_installed": "non installé",
   "node_backend_below_minimum": "sous le minimum",
-  "node_backend_versions_failed": "Impossible de charger les versions des backends : %1$s"
+  "node_backend_versions_failed": "Impossible de charger les versions des backends : %1$s",
+  "settings_resource_limits_memory_share_percent": "Part de mémoire (%)",
+  "settings_resource_limits_memory_share_percent_help": "Part de la mémoire de l'hôte qu'une vérification peut utiliser, de 1 à 100. Le résultat reste entre le plancher et le plafond. Valeur par défaut 50.",
+  "settings_resource_limits_memory_floor_mb": "Plancher de mémoire (Mo)",
+  "settings_resource_limits_memory_floor_mb_help": "Limite de mémoire la plus basse en Mo, nombre entier. Elle ne peut pas dépasser le plafond. Valeur par défaut 2048.",
+  "settings_resource_limits_memory_cap_mb": "Plafond de mémoire (Mo)",
+  "settings_resource_limits_memory_cap_mb_help": "Limite de mémoire la plus haute en Mo, nombre entier. Elle ne peut pas être sous le plancher. Valeur par défaut 16384.",
+  "settings_help_link_label": "Ouvrir la section sur la limite de mémoire de la documentation d'exploitation",
+  "settings_resource_limits_error_share": "Saisissez un nombre entier de 1 à 100.",
+  "settings_resource_limits_error_mb": "Saisissez un nombre entier de Mo, 1 ou plus.",
+  "settings_resource_limits_error_floor_above_cap": "Le plancher de mémoire ne peut pas dépasser le plafond de mémoire."
 }

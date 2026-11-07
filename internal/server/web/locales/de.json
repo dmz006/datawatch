@@ -4147,5 +4147,15 @@
   "node_backend_none": "Keine Backends auf diesem Knoten.",
   "node_backend_not_installed": "nicht installiert",
   "node_backend_below_minimum": "unter Minimum",
-  "node_backend_versions_failed": "Backend-Versionen konnten nicht geladen werden: %1$s"
+  "node_backend_versions_failed": "Backend-Versionen konnten nicht geladen werden: %1$s",
+  "settings_resource_limits_memory_share_percent": "Speicheranteil (%)",
+  "settings_resource_limits_memory_share_percent_help": "Anteil des Hostspeichers, den ein Prüflauf nutzen darf, 1 bis 100. Das Ergebnis liegt zwischen Untergrenze und Obergrenze. Standard 50.",
+  "settings_resource_limits_memory_floor_mb": "Speicher-Untergrenze (MB)",
+  "settings_resource_limits_memory_floor_mb_help": "Niedrigste Speichergrenze in MB, ganze Zahl. Sie darf nicht über der Obergrenze liegen. Standard 2048.",
+  "settings_resource_limits_memory_cap_mb": "Speicher-Obergrenze (MB)",
+  "settings_resource_limits_memory_cap_mb_help": "Höchste Speichergrenze in MB, ganze Zahl. Sie darf nicht unter der Untergrenze liegen. Standard 16384.",
+  "settings_help_link_label": "Abschnitt zur Speichergrenze in der Betriebsdokumentation öffnen",
+  "settings_resource_limits_error_share": "Geben Sie eine ganze Zahl von 1 bis 100 ein.",
+  "settings_resource_limits_error_mb": "Geben Sie eine ganze Zahl in MB ein, mindestens 1.",
+  "settings_resource_limits_error_floor_above_cap": "Die Speicher-Untergrenze darf nicht über der Speicher-Obergrenze liegen."
 }

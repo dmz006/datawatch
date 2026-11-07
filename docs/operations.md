@@ -763,6 +763,26 @@ The project automation policy is the per-project tier of the three policy tiers 
 | **MCP** | `project_upsert` with the `policy` argument; `project_policy_effective(name)` with the optional `automaton` argument |
 | **Comm channel** | `project policy <name> [automaton]` (read) |
 
+### Memory ceiling
+
+A verification run is held to a memory ceiling so one run cannot starve the host. The ceiling is a share of the host memory, kept between a floor and a cap:
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `resource_limits.memory_share_percent` | Share of the host memory a run may use, 1 to 100 | 50 |
+| `resource_limits.memory_floor_mb` | Lowest ceiling, whole MB | 2048 |
+| `resource_limits.memory_cap_mb` | Highest ceiling, whole MB; the floor may not be above it | 16384 |
+
+A project or a task kind can override the result. The effective value, where it came from and how it is enforced show in the `memory_ceiling` object of `GET /api/autonomous/status` and the `autonomous_status` MCP tool.
+
+| Surface | How |
+|---|---|
+| **Web UI** | Settings > General > datawatch: Memory share, Memory floor and Memory cap, each with a **?** help link to this section |
+| **CLI** | `datawatch config set resource_limits.memory_share_percent <n>` (likewise the floor and cap) |
+| **REST API** | `PUT /api/config` with the `resource_limits` keys |
+| **MCP** | `config_set`; `autonomous_status` for the effective ceiling |
+| **Comm channel** | `configure resource_limits.memory_share_percent=<n>` |
+
 ### Verifier node limit
 
 Verifier runs take a lease on the node's own **verifier pool**, not the pool of the workers they check. Each compute node that hosts a local engine gets one verifier slot by default — one verifier at a time in its own pool, running alongside the executor's sessions — so a verification no longer queues behind the worker count on the node. A node that hosts no local engine, or one whose `verifier_slots` is set to `0`, has no verifier pool: a verifier for that node leases its executor pool (the node's `session_slots` / `max_concurrent_sessions` limit) exactly as before. The verifier pool never raises the executor's limit; the two coexist under their own caps, and a node with one GPU runs one verifier at a time by default.
