@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.106.0 — Memory ceiling for worker, verification and guardrail processes
+
+### Added
+
+- **Every worker pane and verification run now has a memory ceiling, so one runaway program can no longer take down the host.** The ceiling is a share of host memory (`resource_limits.memory_share_percent`, default 50), kept between `memory_floor_mb` (default 2048) and `memory_cap_mb` (default 16384). A project can override it with `memory_limit` in its project policy, and a task kind with `autonomous.memory_limit_by_kind`; each takes whole MB or `none` to opt out. It is held by a systemd user scope where one exists, otherwise by a daemon watchdog reading `/proc`; with neither, the run starts without a ceiling.
+  - **How it shows up:** the `memory_ceiling` object in `GET /api/autonomous/status` (and the `autonomous_status` MCP tool) reports the effective ceiling, its source and how it is enforced. A run that exceeds it is ended and the task attempt fails with "the process used more memory than the limit", with a `resource_ceiling_kill` entry in Events and a "Task stopped: memory ceiling exceeded" warning alert. The first such failure is retried; a second in a row moves the task to review.
+  - **Migration:** none is required; the defaults apply on upgrade. A task that legitimately needs more memory should get a higher `memory_limit` or `autonomous.memory_limit_by_kind` entry, or `none`. See `docs/operations.md#memory-ceiling`.
+
 ## v9.105.1 — Automaton list and detail read the archive once for inherited tags
 
 ### Fixed
