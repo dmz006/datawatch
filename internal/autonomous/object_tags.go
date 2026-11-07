@@ -167,3 +167,65 @@ func (m *Manager) ObjectTagFactsForAutomation(auto *Automation) ObjectTagFacts {
 func (m *Manager) ObjectTagsForAutomation(auto *Automation) []string {
 	return DeriveObjectTags(m.ObjectTagFactsForAutomation(auto), m.objectTagsConfig())
 }
+
+// ObjectTagFactsForDecisionRecord is the object fact a decision record
+// carries: the fact of the Automaton its PRDID names, taken from that
+// Automaton (and its Automation and project) — the record itself carries
+// stage and kind of its own. A record that names no Automaton names no
+// axes, and one whose Automaton is gone names no axes on the axes the
+// record can reach; naming a missing Automaton is not an error.
+func (m *Manager) ObjectTagFactsForDecisionRecord(rec *DecisionRecord) ObjectTagFacts {
+	if rec == nil || strings.TrimSpace(rec.PRDID) == "" {
+		return ObjectTagFacts{}
+	}
+	prd, _ := m.store.GetPRD(rec.PRDID)
+	return m.ObjectTagFactsForPRD(prd)
+}
+
+// ObjectTagsForDecisionRecord derives the system tags a decision record
+// takes: the fact of the Automaton it names, under the daemon's current
+// tags.placement block. It derives only; it does not write the field.
+func (m *Manager) ObjectTagsForDecisionRecord(rec *DecisionRecord) []string {
+	return DeriveObjectTags(m.ObjectTagFactsForDecisionRecord(rec), m.objectTagsConfig())
+}
+
+// ObjectTagFactsForQuestion is the object fact a held question carries:
+// the fact of the Automaton its PRDID names, taken from that Automaton
+// (and its Automation and project). A question that names no Automaton
+// (or whose Automaton is gone) names no axes, which is not an error.
+func (m *Manager) ObjectTagFactsForQuestion(q *Question) ObjectTagFacts {
+	if q == nil || strings.TrimSpace(q.PRDID) == "" {
+		return ObjectTagFacts{}
+	}
+	prd, _ := m.store.GetPRD(q.PRDID)
+	return m.ObjectTagFactsForPRD(prd)
+}
+
+// ObjectTagsForQuestion derives the system tags a held question takes:
+// the fact of the Automaton it names, under the daemon's current
+// tags.placement block. It derives only; it does not write the field.
+func (m *Manager) ObjectTagsForQuestion(q *Question) []string {
+	return DeriveObjectTags(m.ObjectTagFactsForQuestion(q), m.objectTagsConfig())
+}
+
+// ObjectTagFactsForTemplate is the object fact a template carries: the
+// fact of the Automaton it was cloned from, when it records one (its
+// SourcePRDID), taken from that Automaton (and its Automation and
+// project). A template with no recorded source — a hand-written or
+// built-in one — names no axes, and one whose source Automaton is gone
+// names none on the axes it can reach; that is not an error.
+func (m *Manager) ObjectTagFactsForTemplate(t *Template) ObjectTagFacts {
+	if t == nil || strings.TrimSpace(t.SourcePRDID) == "" {
+		return ObjectTagFacts{}
+	}
+	prd, _ := m.store.GetPRD(t.SourcePRDID)
+	return m.ObjectTagFactsForPRD(prd)
+}
+
+// ObjectTagsForTemplate derives the system tags a template takes: the
+// fact of the Automaton it was cloned from, when it records one, under
+// the daemon's current tags.placement block. It derives only; it does
+// not write the field.
+func (m *Manager) ObjectTagsForTemplate(t *Template) []string {
+	return DeriveObjectTags(m.ObjectTagFactsForTemplate(t), m.objectTagsConfig())
+}
