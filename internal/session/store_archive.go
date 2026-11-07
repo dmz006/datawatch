@@ -344,11 +344,13 @@ func (s *Store) ArchiveOnce(now time.Time) (int, error) {
 			continue
 		}
 		delete(s.sessions, c.line.ID)
+		delete(s.tagSigs, c.line.ID)
 		s.markRecordDeletedLocked(c.line.ID)
 		moved++
 	}
 	inline := false
 	if moved > 0 {
+		s.tagGen.Add(1)
 		inline = s.markDirtyLocked()
 	}
 	s.mu.Unlock()
@@ -625,6 +627,9 @@ func (s *Store) RestoreFromArchive(id string) (*Session, error) {
 	if err := s.flush(true); err != nil {
 		return nil, err
 	}
+	// Bump again now the archive line is gone: a build between Save and here
+	// saw the session in both places.
+	defer s.tagGen.Add(1)
 	if err := s.appendArchiveLocked([]archiveLine{{ID: full, Del: true}}); err != nil {
 		return sess, fmt.Errorf("restored %s but could not update the archive: %w", full, err)
 	}

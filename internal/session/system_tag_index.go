@@ -47,6 +47,7 @@ type systemTagIndexCache struct {
 	ttl      time.Duration    // 0 = default, <0 = caching off
 	clock    func() time.Time // injectable clock; nil = time.Now
 	inflight *systemTagIndexBuild
+	storeGen uint64 // Store.tagGeneration() when idx was built
 	gen      uint64 // bumped by invalidation so a stale in-flight build is not stored
 }
 
@@ -90,7 +91,8 @@ func (m *Manager) cachedSystemTagIndex() map[string][]string {
 	if ttl == 0 {
 		ttl = defaultInheritedTagsCacheTTL
 	}
-	if ttl > 0 && c.idx != nil && c.nowLocked().Sub(c.builtAt) < ttl {
+	storeGen := m.store.tagGeneration()
+	if ttl > 0 && c.idx != nil && c.storeGen == storeGen && c.nowLocked().Sub(c.builtAt) < ttl {
 		idx := c.idx
 		c.mu.Unlock()
 		return idx
@@ -111,6 +113,7 @@ func (m *Manager) cachedSystemTagIndex() map[string][]string {
 	if ttl > 0 && c.gen == gen {
 		c.idx = b.idx
 		c.builtAt = c.nowLocked()
+		c.storeGen = storeGen // read before the build, so a change during it leaves the cache stale
 	}
 	c.inflight = nil
 	c.mu.Unlock()
