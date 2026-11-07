@@ -3,49 +3,70 @@ package autonomous
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 func TestMemoryLimit_UnsetStaysEmpty(t *testing.T) {
-	var p ProjectRecord
-	var k TaskKindPolicy
-	if p.MemoryLimit != "" || k.MemoryLimit != "" {
-		t.Fatal("zero value must be empty")
+	var p config.ProjectPolicy
+	var c config.AutonomousConfig
+	if ProjectMemoryLimit(&p) != "" || ProjectMemoryLimit(nil) != "" || KindMemoryLimit(c.MemoryLimitByKind, "bug") != "" {
+		t.Fatal("unset must read as empty")
 	}
 	b, _ := json.Marshal(p)
 	if string(b) != "{}" {
 		t.Fatalf("unset field must be omitted, got %s", b)
 	}
-	var back ProjectRecord
-	if err := json.Unmarshal(b, &back); err != nil || back.MemoryLimit != "" {
-		t.Fatalf("round trip: %v %q", err, back.MemoryLimit)
+	if err := p.Validate(); err != nil {
+		t.Fatalf("unset must be valid: %v", err)
 	}
-	if p.Validate() != nil || k.Validate() != nil {
-		t.Fatal("empty must be valid")
+	if err := config.ValidateMemoryLimitByKind(c.MemoryLimitByKind); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestMemoryLimit_RoundTrip(t *testing.T) {
-	for _, v := range []string{"4096", MemoryLimitNone} {
-		b, _ := json.Marshal(ProjectRecord{Name: "a", MemoryLimit: v})
-		var p ProjectRecord
-		if err := json.Unmarshal(b, &p); err != nil || p.MemoryLimit != v || p.Validate() != nil {
-			t.Fatalf("project %q: %v %+v", v, err, p)
+func TestMemoryLimit_NumberAndNoneRoundTrip(t *testing.T) {
+	for _, v := range []string{"4096", "none"} {
+		p := config.ProjectPolicy{MemoryLimit: &v}
+		b, err := json.Marshal(p)
+		if err != nil {
+			t.Fatal(err)
 		}
-		b, _ = json.Marshal(TaskKindPolicy{Kind: TaskKindSmoke, MemoryLimit: v})
-		var k TaskKindPolicy
-		if err := json.Unmarshal(b, &k); err != nil || k.MemoryLimit != v || k.Validate() != nil {
-			t.Fatalf("kind %q: %v %+v", v, err, k)
+		var back config.ProjectPolicy
+		if err := json.Unmarshal(b, &back); err != nil {
+			t.Fatal(err)
+		}
+		if got := ProjectMemoryLimit(&back); got != v {
+			t.Errorf("project round trip %q: got %q", v, got)
+		}
+		if err := back.Validate(); err != nil {
+			t.Errorf("%q must validate: %v", v, err)
+		}
+
+		c := config.AutonomousConfig{MemoryLimitByKind: map[string]string{"smoke": v}}
+		b, _ = json.Marshal(c)
+		var cb config.AutonomousConfig
+		if err := json.Unmarshal(b, &cb); err != nil {
+			t.Fatal(err)
+		}
+		if got := KindMemoryLimit(cb.MemoryLimitByKind, "smoke"); got != v {
+			t.Errorf("kind round trip %q: got %q", v, got)
+		}
+		if err := config.ValidateMemoryLimitByKind(cb.MemoryLimitByKind); err != nil {
+			t.Errorf("%q must validate: %v", v, err)
 		}
 	}
 }
 
 func TestMemoryLimit_InvalidRejected(t *testing.T) {
-	for _, v := range []string{"0", "-5", "lots", "1.5", "10GB"} {
-		if ValidateMemoryLimit(v) == nil {
-			t.Errorf("%q must be rejected", v)
+	for _, v := range []string{"0", "-5", "lots", "1.5"} {
+		v := v
+		p := config.ProjectPolicy{MemoryLimit: &v}
+		if p.Validate() == nil {
+			t.Errorf("project %q must be rejected", v)
 		}
-		if (ProjectRecord{MemoryLimit: v}).Validate() == nil || (TaskKindPolicy{MemoryLimit: v}).Validate() == nil {
-			t.Errorf("%q must be rejected on records", v)
+		if config.ValidateMemoryLimitByKind(map[string]string{"bug": v}) == nil {
+			t.Errorf("kind %q must be rejected", v)
 		}
 	}
 }

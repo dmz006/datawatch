@@ -3528,6 +3528,11 @@ type AutonomousConfig struct {
 	// explicit map edit (including clearing a kind to 0) must survive a JSON
 	// round trip, same gotcha as PlanTierMaxInflight above.
 	PriorityByKind map[string]int `yaml:"priority_by_kind" json:"priority_by_kind"`
+	// MemoryLimitByKind — the per-task-kind memory ceiling override, keyed
+	// by task kind. Each value is a positive MB number or the word "none";
+	// a kind with no entry (or an empty value) uses the default. See
+	// ValidateMemoryLimitByKind.
+	MemoryLimitByKind map[string]string `yaml:"memory_limit_by_kind,omitempty" json:"memory_limit_by_kind,omitempty"`
 	// DefectIntakeAutomation — the name of the Automaton this installation
 	// takes defect intake on. Deliberately empty by default: each installation
 	// chooses its own.

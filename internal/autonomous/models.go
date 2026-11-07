@@ -11,7 +11,6 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/pipeline"
-	"github.com/dmz006/datawatch/internal/resources"
 )
 
 // Status enums — kept in sync with nightwire for cross-tool compat.
@@ -1992,38 +1991,18 @@ type PlanningRecord struct {
 	RecordedAt      time.Time `json:"recorded_at"`
 }
 
-// MemoryLimitNone is the word that opts out of a memory ceiling.
-const MemoryLimitNone = "none"
-
-// ValidateMemoryLimit checks an optional memory_limit value: empty (use the
-// default), the word "none", or a positive MB number. Zero, negative and
-// any other text are rejected.
-func ValidateMemoryLimit(v string) error {
-	_, err := resources.ParseOverride(v)
-	return err
+// ProjectMemoryLimit returns the project's memory_limit override from its
+// policy block (config.ProjectPolicy.MemoryLimit): "" when unset.
+func ProjectMemoryLimit(p *config.ProjectPolicy) string {
+	if p == nil || p.MemoryLimit == nil {
+		return ""
+	}
+	return *p.MemoryLimit
 }
 
-// ProjectRecord is the per-project record the memory ceiling reads. The
-// REST, MCP, channel and Settings surfaces for MemoryLimit are added in the
-// surfaces story.
-type ProjectRecord struct {
-	Name string `json:"name,omitempty"`
-	// MemoryLimit is an optional MB number, the word "none", or empty for
-	// the default.
-	MemoryLimit string `json:"memory_limit,omitempty"`
+// KindMemoryLimit returns the memory_limit override for a task kind from
+// the per-kind table (config.AutonomousConfig.MemoryLimitByKind): "" when
+// the kind has no entry.
+func KindMemoryLimit(table map[string]string, kind string) string {
+	return table[kind]
 }
-
-// Validate checks the record's memory_limit.
-func (p ProjectRecord) Validate() error { return ValidateMemoryLimit(p.MemoryLimit) }
-
-// TaskKindPolicy is the per-task-kind policy (Task.Kind values such as
-// TaskKindSmoke) the memory ceiling reads.
-type TaskKindPolicy struct {
-	Kind string `json:"kind,omitempty"`
-	// MemoryLimit is an optional MB number, the word "none", or empty for
-	// the default.
-	MemoryLimit string `json:"memory_limit,omitempty"`
-}
-
-// Validate checks the policy's memory_limit.
-func (p TaskKindPolicy) Validate() error { return ValidateMemoryLimit(p.MemoryLimit) }
