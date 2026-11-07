@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/platformcontext"
 )
@@ -81,5 +82,69 @@ func TestWriteSessionGuardrails_PlatformContext_DisabledAddsNothing(t *testing.T
 	b, _ := os.ReadFile(target)
 	if strings.Contains(string(b), "datawatch:platform-context") {
 		t.Fatalf("section added while disabled")
+	}
+}
+
+func TestWriteSessionGuardrails_PlatformContext_DisabledRemovesSectionOnly(t *testing.T) {
+	projectDir := t.TempDir()
+	target := filepath.Join(projectDir, "CLAUDE.md")
+	userText := "# My project\n\nUser rule: always be kind.\n"
+	if err := os.WriteFile(target, []byte(userText), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tr, sess, err := newGuardrailsTestSession(t.TempDir(), projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{PlatformContextEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	withSection, _ := os.ReadFile(target)
+	if !strings.Contains(string(withSection), "datawatch:platform-context") {
+		t.Fatalf("setup: section missing")
+	}
+	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(target)
+	if strings.Contains(string(after), "datawatch:platform-context") {
+		t.Fatalf("section not removed:\n%s", after)
+	}
+	if strings.Contains(string(after), strings.TrimSpace(platformcontext.PlatformContext)) {
+		t.Fatalf("section body not removed")
+	}
+	if !strings.Contains(string(after), userText) {
+		t.Fatalf("user text damaged:\n%s", after)
+	}
+}
+
+func TestWriteSessionGuardrails_PlatformContext_DisabledNoSectionNotRewritten(t *testing.T) {
+	projectDir := t.TempDir()
+	target := filepath.Join(projectDir, "CLAUDE.md")
+	if err := os.WriteFile(target, []byte("user\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	tr, sess, err := newGuardrailsTestSession(t.TempDir(), projectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-time.Hour).Truncate(time.Second)
+	if err := os.Chtimes(target, past, past); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(target)
+	if err := tr.WriteSessionGuardrails("", sess, GuardrailsOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(target)
+	fi, _ := os.Stat(target)
+	if string(before) != string(after) {
+		t.Fatalf("content changed")
+	}
+	if !fi.ModTime().Equal(past) {
+		t.Fatalf("file was rewritten (mtime %v != %v)", fi.ModTime(), past)
 	}
 }
