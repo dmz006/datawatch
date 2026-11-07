@@ -1084,6 +1084,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetPlacementTagSettings(func() config.PlacementConfig {
 		return cfg.Autonomous.Tags.Placement
 	})
+	// Memory ceiling: read resource_limits live so PUT /api/config reaches
+	// the verification launcher and the autonomous status memory_ceiling block.
+	amgr.SetResourceLimitsSource(func() config.ResourceLimitsConfig { return cfg.ResourceLimits }, nil)
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)

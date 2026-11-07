@@ -37,7 +37,7 @@ type MemoryCeilingStatus struct {
 // verification scripts run uncapped, so the source is none.
 func (m *Manager) memoryCeilingStatus() MemoryCeilingStatus {
 	m.mu.Lock()
-	lim := m.resourceLimits
+	lim := m.currentResourceLimits()
 	m.mu.Unlock()
 	if lim == nil {
 		return MemoryCeilingStatus{Source: MemoryCeilingSourceNone, EnforcementPath: VerifyCeilingNone}

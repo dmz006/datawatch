@@ -1244,6 +1244,7 @@ type Manager struct {
 	// Memory ceiling for verification script runs (verification_scope.go).
 	// Guarded by mu; nil limits = uncapped.
 	resourceLimits    *config.ResourceLimitsConfig
+	resourceLimitsFn  func() config.ResourceLimitsConfig
 	ceilingOverrideFn func(prd *PRD, t *Task) resources.Override
 	// capacityWaitSpent is the queue time each task's current admission has
 	// used against the capacity wait bound (capacity.go).

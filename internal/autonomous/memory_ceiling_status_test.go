@@ -60,3 +60,27 @@ func TestMemoryCeilingStatus_JSONFieldNames(t *testing.T) {
 		}
 	}
 }
+
+// The production wiring is a live reader of the config, so a change to the
+// settings shows in the status output with no restart and no second call.
+func TestMemoryCeilingStatus_LiveSourceFollowsConfig(t *testing.T) {
+	stubVerifyHost(t, true, true) // 8192 MB host
+	cur := config.ResourceLimitsConfig{MemorySharePercent: 25, MemoryFloorMB: 1024, MemoryCapMB: 8192}
+	m := &Manager{}
+	m.SetResourceLimitsSource(func() config.ResourceLimitsConfig { return cur }, nil)
+	if got := m.memoryCeilingStatus(); got.Source != MemoryCeilingSourceDefault || got.EffectiveMB != 2048 {
+		t.Fatalf("first read = %+v, want default/2048", got)
+	}
+	cur.MemorySharePercent = 50
+	got := m.memoryCeilingStatus()
+	if got.EffectiveMB != 4096 || got.SharePercent != 50 {
+		t.Fatalf("after change = %+v, want 4096 at 50%%", got)
+	}
+	raw, err := json.Marshal(LoopStatus{MemoryCeiling: got})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"memory_ceiling":{"effective_mb":4096`) {
+		t.Fatalf("status JSON lacks memory_ceiling values: %s", raw)
+	}
+}
