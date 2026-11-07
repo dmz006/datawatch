@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.108.2 (2026-11-07).** The protected paths guard now ignores the sections the daemon writes into the rules files, so tasks are no longer held on a false positive, and held tasks are released by a sweep. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.109.0 (2026-11-07).** datawatch now watches and controls imap-mcp, or any service-kind plugin, with a status card, alerts, audit entries and a tokens panel on every surface. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
