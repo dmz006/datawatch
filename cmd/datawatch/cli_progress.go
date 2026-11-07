@@ -154,7 +154,7 @@ func newAutonomousProgressTrendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout())
+			_, _ = fmt.Fprintln(cmd.OutOrStdout())
 			return renderProgressGrouped(cmd.OutOrStdout(), mbody, false, g, project)
 		},
 	}

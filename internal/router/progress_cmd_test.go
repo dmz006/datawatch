@@ -193,7 +193,7 @@ func TestProgressCommGroupedTotals(t *testing.T) {
 		}
 	}
 	a, z, n := strings.Index(got, "alpha"), strings.Index(got, "zeta"), strings.Index(got, "(none)")
-	if !(a < z && z < n) {
+	if a >= z || z >= n {
 		t.Errorf("rows must sort by name with (none) last\n%s", got)
 	}
 }

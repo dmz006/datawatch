@@ -354,7 +354,7 @@ func TestProgressGroupingParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	errBody, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("REST group=bogus = %d; want 400", resp.StatusCode)
 	}
