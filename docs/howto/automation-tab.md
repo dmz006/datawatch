@@ -445,6 +445,25 @@ env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questi
   (`QuestionRaised`, `QuestionAnswered`, `AnswerSuperseded`,
   `QuestionWithdrawn`, `QuestionExpired`, `QuestionAnswerRefused`).
 
+## Judge settings
+
+Settings > General > Automata holds the settings that shape how a judge run
+receives its prompt. Each has a `?` entry that opens this section.
+
+- **Judge prompt file threshold** (`autonomous.judge_prompt_file_threshold_lines`):
+  when a judge prompt is longer than this many lines it is written to a file and
+  the judge is told to read it, instead of the whole text being typed into the
+  session. `0` (the default) always sends the full prompt. Whole number, 0 to 100000.
+- **Judge extra wait per 1000 prompt lines**
+  (`autonomous.judge_delivery_wait_per_thousand_lines_seconds`): extra seconds a
+  judge run waits for a long prompt to be delivered, added for every 1000 lines
+  of the prompt. `0` (the default) adds no wait. Whole number, 0 to 3600.
+
+A value outside the range, or one that is not a whole number, is refused with a
+message and the saved value stays. The same two keys can be set through
+`PUT /api/config`, `datawatch config set`, the comm channel configure verb and
+the MCP autonomous config tools.
+
 ## Related
 
 - [Triage records](../api/autonomous.md#triage-records-get-api-autonomoustriage): the record of every failed or blocked

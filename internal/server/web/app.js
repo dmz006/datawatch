@@ -18001,6 +18001,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.judge_size_threshold_lines', label: 'Judge size threshold (lines, 0=off)', labelKey: 'settings_judge_size_threshold', helpKey: 'settings_judge_size_threshold_help', type: 'number', min: 0, placeholder: '400' },
     { key: 'autonomous.judge_strong_backend', label: 'Strong judge backend (large-diff reroute)', labelKey: 'settings_judge_strong_backend', helpKey: 'settings_judge_strong_backend_help', type: 'text', placeholder: 'claude-opus', default: '' },
     { key: 'autonomous.judge_verdict_cache_enabled', label: 'Judge verdict cache', labelKey: 'settings_judge_verdict_cache', helpKey: 'settings_judge_verdict_cache_help', type: 'toggle', default: true },
+    { key: 'autonomous.judge_prompt_file_threshold_lines', label: 'Judge prompt file threshold (lines, 0=always send in full)', labelKey: 'settings_judge_prompt_file_threshold', helpKey: 'settings_judge_prompt_file_threshold_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 100000, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_prompt_file_threshold_lines', this)" },
+    { key: 'autonomous.judge_delivery_wait_per_thousand_lines_seconds', label: 'Judge extra wait per 1000 prompt lines (sec, 0=none)', labelKey: 'settings_judge_delivery_wait', helpKey: 'settings_judge_delivery_wait_help', helpLabelKey: 'settings_judge_help_link_label', helpDocs: 'howto/automation-tab.md#judge-settings', type: 'number', min: 0, max: 3600, step: 1, placeholder: '0', onchange: "saveJudgePromptNumberField('autonomous.judge_delivery_wait_per_thousand_lines_seconds', this)" },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/
@@ -20356,7 +20358,7 @@ function settingsHelpLink(f) {
   if (localStorage.getItem('cs_show_docs_links') === '0') return '';
   const url = '/diagrams.html#docs/' + f.helpDocs;
   const tip = t(f.helpKey) || '';
-  const lbl = t('settings_help_link_label') || '';
+  const lbl = t(f.helpLabelKey || 'settings_help_link_label') || '';
   return ` <a href="${escHtml(url)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" class="docs-link" title="${escHtml(tip)}" aria-label="${escHtml(lbl)}">?</a>`;
 }
 
@@ -20402,6 +20404,23 @@ function saveResourceLimitField(key, el) {
   saveGeneralConfigPut(key, n);
 }
 window.saveResourceLimitField = saveResourceLimitField;
+
+// saveJudgePromptNumberField validates a judge prompt delivery field before
+// saving it: a whole number from 0 up to the field's max. A bad value shows a
+// toast, restores the saved value and sends nothing.
+function saveJudgePromptNumberField(key, el) {
+  const raw = String(el && el.value != null ? el.value : '').trim();
+  const n = Number(raw);
+  const max = key === 'autonomous.judge_prompt_file_threshold_lines' ? 100000 : 3600;
+  if (raw === '' || !Number.isInteger(n) || n < 0 || n > max) {
+    showToast(t(max === 100000 ? 'settings_judge_prompt_file_threshold_error' : 'settings_judge_delivery_wait_error'), 'error');
+    if (el && el.defaultValue !== undefined) el.value = el.defaultValue;
+    return;
+  }
+  if (el) el.defaultValue = String(n);
+  saveGeneralConfigPut(key, n);
+}
+window.saveJudgePromptNumberField = saveJudgePromptNumberField;
 
 // saveJSONMapSetting saves a name -> whole-number map field. The box holds a
 // JSON object; an empty box clears the map. Anything else is reported and
