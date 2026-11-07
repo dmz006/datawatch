@@ -36,6 +36,8 @@ func TestInfraFailure_ClassifyError(t *testing.T) {
 		{"daemon restart sentinel", ErrDaemonRestart, config.InfraRetryClassDaemonRestart},
 		{"daemon restart wrapped", fmt.Errorf("attempt: %w", ErrDaemonRestart), config.InfraRetryClassDaemonRestart},
 		{"daemon restart joined with context error", errors.Join(context.Canceled, ErrDaemonRestart), config.InfraRetryClassDaemonRestart},
+		{"judge could not start", errors.New("task delivery failed: main prompt never appeared within 2m0s across 3 attempts"), InfraClassJudgeCouldNotStart},
+		{"judge could not start wrapped", fmt.Errorf("judge: %w", errors.New("task delivery failed: main prompt never appeared within 90s")), InfraClassJudgeCouldNotStart},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -66,6 +68,7 @@ func TestInfraFailure_ClassifyErrorNegative(t *testing.T) {
 		{"rate limit", errors.New("rate limit reached, try again later")},
 		{"usage limit", errors.New("usage limit reached for this plan")},
 		{"other errno", syscall.EACCES},
+		{"unrelated delivery error", errors.New("task delivery failed: session rejected the prompt")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,7 +93,10 @@ func TestInfraFailure_ClassifyText(t *testing.T) {
 		{"device is full", "the device is full", config.InfraRetryClassStorageWrite, true},
 		{"quota", "write: disk quota exceeded", config.InfraRetryClassStorageWrite, true},
 		{"read-only", "EROFS: Read-only file system", config.InfraRetryClassStorageWrite, true},
+		{"judge could not start", "task delivery failed: main prompt never appeared within 2m0s across 3 attempts — worker was never given its task", InfraClassJudgeCouldNotStart, true},
+		{"judge could not start mixed case", "Task Delivery Failed: Main Prompt Never Appeared Within 90s", InfraClassJudgeCouldNotStart, true},
 		{"empty", "", "", false},
+		{"prompt text unrelated", "the main prompt looked fine", "", false},
 		{"verifier", "verification failed: missing test", "", false},
 		{"stall", "worker stalled", "", false},
 		{"never started", SessionStartFailureReason + ": no assistant output after 2m0s", "", false},
