@@ -10,6 +10,12 @@
 //   /api/plugins/{name}/widgets/...         BL403, see plugin_widgets.go
 //   GET    /api/plugins/{name}/tokens        secret-ref usage + service
 //                                           token names, see plugin_tokens.go
+//   POST   /api/plugins/{name}/tokens/{secret}/rotate  rotate the
+//                                           referenced secret, never
+//                                           echoes the value, see
+//                                           plugin_tokens.go
+//   DELETE /api/plugins/{name}/tokens/{secret}         delete the
+//                                           referenced secret
 
 package server
 
@@ -201,6 +207,22 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	// for the service. See plugin_tokens.go.
 	if action == "tokens" {
 		s.handlePluginTokens(w, r, name)
+		return
+	}
+	// Per-secret rotate + delete (operator auth only): the named secret
+	// must be one the plugin's manifest actually references. See
+	// plugin_tokens.go.
+	if strings.HasPrefix(action, "tokens/") {
+		sub := strings.TrimPrefix(action, "tokens/")
+		if secret, ok := strings.CutSuffix(sub, "/rotate"); ok && secret != "" {
+			s.handlePluginTokenRotate(w, r, name, secret)
+			return
+		}
+		if sub == "" {
+			http.Error(w, "secret name required", http.StatusBadRequest)
+			return
+		}
+		s.handlePluginTokenRemove(w, r, name, sub)
 		return
 	}
 	if action == "widgets" || strings.HasPrefix(action, "widgets/") {
