@@ -154,3 +154,96 @@ func TestProgressCommReportsDaemonError(t *testing.T) {
 		t.Errorf("reply = %q", got)
 	}
 }
+
+// groupedProgressServer answers the progress route with group totals.
+func groupedProgressServer(t *testing.T, query *string) *httptest.Server {
+	t.Helper()
+	m := progressTestMetrics()
+	m.Completion.SampleRecords, m.Completion.SampleTasks = 6, 16
+	body, err := json.Marshal(map[string]any{
+		"scope": m.Scope, "totals": m.Totals, "groups": m.Groups, "completion": m.Completion,
+		"group": "project",
+		"group_totals": map[string]autonomous.ProgressGroup{
+			"(none)": {PRDs: 3, Done: 1, Tasks: 5, TasksDone: 2, TasksLeft: 3},
+			"zeta":   {PRDs: 2, Done: 2, Tasks: 4, TasksDone: 4},
+			"alpha":  {PRDs: 4, Done: 3, Running: 1, Tasks: 9, TasksDone: 7, TasksLeft: 2},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*query = r.URL.RawQuery
+		_, _ = w.Write(body)
+	}))
+}
+
+func TestProgressCommGroupedTotals(t *testing.T) {
+	var query string
+	srv := groupedProgressServer(t, &query)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+	got := captureSends(r, func() { r.handleProgress("group=project") })
+	if !strings.Contains(query, "group=project") {
+		t.Errorf("query %q lacks group=project", query)
+	}
+	for _, want := range []string{"Totals by project:", "alpha", "zeta", "(none)", "estimate sample: 6 finished Automata, 16 completed tasks"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reply lacks %q\n%s", want, got)
+		}
+	}
+	a, z, n := strings.Index(got, "alpha"), strings.Index(got, "zeta"), strings.Index(got, "(none)")
+	if !(a < z && z < n) {
+		t.Errorf("rows must sort by name with (none) last\n%s", got)
+	}
+}
+
+func TestProgressCommProjectKeepsOneRow(t *testing.T) {
+	var query string
+	srv := groupedProgressServer(t, &query)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+	got := captureSends(r, func() { r.handleProgress("project=(none)") })
+	if !strings.Contains(query, "group=project") {
+		t.Errorf("project= must imply group=project, query %q", query)
+	}
+	if strings.Contains(query, "project=") && strings.Contains(strings.ReplaceAll(query, "group=project", ""), "project=") {
+		t.Errorf("project must be filtered here, not sent: %q", query)
+	}
+	if !strings.Contains(got, "(none)") || strings.Contains(got, "alpha") || strings.Contains(got, "zeta") {
+		t.Errorf("only the (none) row expected\n%s", got)
+	}
+	got = captureSends(r, func() { r.handleProgress("project=missing") })
+	if !strings.Contains(got, `no Automata for project "missing"`) {
+		t.Errorf("reply = %q", got)
+	}
+}
+
+func TestProgressCommAutomationAndAutomatonAxes(t *testing.T) {
+	var query string
+	srv := groupedProgressServer(t, &query)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+	got := captureSends(r, func() { r.handleProgress("group=automation") })
+	if !strings.Contains(query, "group=automation") || !strings.Contains(got, "Totals by automation:") {
+		t.Errorf("query %q reply %q", query, got)
+	}
+	got = captureSends(r, func() { r.handleProgress("automaton=zz") })
+	if !strings.Contains(query, "group=automaton") || !strings.Contains(got, `no Automata for automaton "zz"`) {
+		t.Errorf("query %q reply %q", query, got)
+	}
+}
+
+func TestProgressCommGroupArgumentErrors(t *testing.T) {
+	var query string
+	srv := groupedProgressServer(t, &query)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+	for _, in := range []string{"group=colour", "group=automaton project=a", "project=a automaton=b", "group=", "project="} {
+		query = ""
+		got := captureSends(r, func() { r.handleProgress(in) })
+		if !strings.Contains(got, "usage: progress") || query != "" {
+			t.Errorf("%q: reply %q query %q", in, got, query)
+		}
+	}
+}
