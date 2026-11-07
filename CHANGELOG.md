@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The file secret provider's default folder is now derived from the configured data directory, not the home directory.** `secrets.NewFileProvider` no longer falls back to `~/.datawatch/secrets` when given an empty base directory — callers must pass the folder. A new `secrets.DefaultFileProviderDir(dataDir)` returns `<data_dir>/secrets` (with `~` expansion), and the daemon's startup wiring uses it, so the effective default location (`<data_dir>/secrets`, which is `~/.datawatch/secrets` under the default data directory) is unchanged.
+
 ## v9.108.1 — Read-only task check counts only new dirt
 
 ### Fixed
