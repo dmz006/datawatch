@@ -1,0 +1,2 @@
+# Config-parity exemptions: key | surfaces | reason
+# surfaces: comma list of web,get,put,configure,cli or *; trailing .* on key exempts a prefix.
