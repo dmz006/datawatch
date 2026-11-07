@@ -326,3 +326,129 @@ func TestSystemTagIndexSnapshotIsCopyOnRead(t *testing.T) {
 		t.Fatalf("unknown prd = %v, want empty non-nil", v)
 	}
 }
+
+// ---- invalidation by store generation ----
+
+// tagsOf returns the sorted answer for a PRD.
+func tagsOf(m *Manager, prd string) []string { return sortedCopy(m.SystemTagsByPRD(prd)) }
+
+func newGenTagManager(t *testing.T) *Manager {
+	t.Helper()
+	m, _ := newCachedTagManager(t)
+	m.SetInheritedTagsCacheTTL(time.Hour) // far longer than any test step
+	_ = m.SystemTagsByPRD("prd-a")        // warm the cache
+	m.store.resetArchiveDecodeCount()
+	return m
+}
+
+func TestSystemTagIndexSetSystemTagsInvalidates(t *testing.T) {
+	m := newGenTagManager(t)
+	if err := m.SetSystemTags("a1", []string{"fresh"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := tagsOf(m, "prd-a"), []string{"ci", "docs", "fresh", "gpu"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("prd-a after SetSystemTags = %v, want %v", got, want)
+	}
+	if m.store.archiveDecodeCount() == 0 {
+		t.Fatal("no rebuild after SetSystemTags")
+	}
+}
+
+func TestSystemTagIndexArchiveInvalidates(t *testing.T) {
+	m := newGenTagManager(t)
+	sess, ok := m.GetSession("c1")
+	if !ok {
+		t.Fatal("c1 missing")
+	}
+	// Give c1 tags (an invalidating save), then age it into the archive.
+	if err := m.SetSystemTags("c1", []string{"late"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := tagsOf(m, "prd-c"); !reflect.DeepEqual(got, []string{"late"}) {
+		t.Fatalf("prd-c = %v", got)
+	}
+	m.store.Mutate(func() {
+		sess.State = StateComplete
+		sess.UpdatedAt = time.Now().Add(-30 * day)
+	})
+	m.store.resetArchiveDecodeCount()
+	if n, err := m.ArchiveSessions(time.Now()); err != nil || n != 1 {
+		t.Fatalf("archive moved %d, err %v", n, err)
+	}
+	_ = tagsOf(m, "prd-c")
+	if m.store.archiveDecodeCount() == 0 {
+		t.Fatal("no rebuild after ArchiveOnce")
+	}
+	if got := tagsOf(m, "prd-c"); !reflect.DeepEqual(got, []string{"late"}) {
+		t.Fatalf("prd-c after archive = %v", got)
+	}
+}
+
+func TestSystemTagIndexDeleteInvalidates(t *testing.T) {
+	m := newGenTagManager(t)
+	if err := m.Delete("h-a1", false); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := tagsOf(m, "prd-a"), []string{"ci", "docs", "gpu"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("prd-a after Delete = %v, want %v", got, want)
+	}
+}
+
+func TestSystemTagIndexRestoreInvalidates(t *testing.T) {
+	m := newGenTagManager(t)
+	_ = tagsOf(m, "prd-d")
+	if _, err := m.RestoreArchivedSession("h-d1"); err != nil {
+		t.Fatal(err)
+	}
+	m.store.resetArchiveDecodeCount()
+	if got := tagsOf(m, "prd-d"); !reflect.DeepEqual(got, []string{"sys-d"}) {
+		t.Fatalf("prd-d after restore = %v (must not be doubled or lost)", got)
+	}
+	if m.store.archiveDecodeCount() == 0 {
+		t.Fatal("no rebuild after restore")
+	}
+}
+
+func TestSystemTagIndexPlainSaveDoesNotRebuild(t *testing.T) {
+	m := newGenTagManager(t)
+	before := m.store.tagGeneration()
+	sess, _ := m.GetSession("a1")
+	for i := 0; i < 5; i++ {
+		sess.UpdatedAt = time.Now().Add(time.Duration(i) * time.Second)
+		if err := m.store.Save(sess); err != nil {
+			t.Fatal(err)
+		}
+		_ = m.SystemTagsByPRD("prd-a")
+	}
+	if m.store.tagGeneration() != before {
+		t.Fatal("UpdatedAt-only save bumped the generation")
+	}
+	if got := m.store.archiveDecodeCount(); got != 0 {
+		t.Fatalf("decode counter = %d after plain saves, want 0", got)
+	}
+}
+
+func TestSystemTagIndexMoveSessionTagsViaSave(t *testing.T) {
+	m := newGenTagManager(t)
+	sess, _ := m.GetSession("a1")
+	sess.Tags = []string{"old-tag"}
+	if err := m.store.Save(sess); err != nil {
+		t.Fatal(err)
+	}
+	gen := m.store.tagGeneration()
+	n, err := m.MoveSessionTags("old-tag", "new-tag")
+	if err != nil || n < 1 {
+		t.Fatalf("MoveSessionTags = %d, %v", n, err)
+	}
+	got, _ := m.GetSession("a1")
+	if len(got.Tags) != 1 || got.Tags[0] != "new-tag" {
+		t.Fatalf("tags = %v, want [new-tag] (persisted through Save)", got.Tags)
+	}
+	// Own tags are not in the index, so the answer is unchanged and no rebuild happens.
+	if m.store.tagGeneration() != gen {
+		t.Fatal("MoveSessionTags bumped the generation although system tags did not change")
+	}
+	if want := []string{"ci", "ci", "ci", "docs", "gpu", "gpu"}; !reflect.DeepEqual(tagsOf(m, "prd-a"), want) {
+		t.Fatalf("prd-a = %v, want %v", tagsOf(m, "prd-a"), want)
+	}
+}

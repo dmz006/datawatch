@@ -475,6 +475,8 @@ type Store struct {
 	lockPath string              // advisory lock sidecar file (sessions.json.lock)
 	encKey   []byte              // nil = no encryption
 	sessions map[string]*Session // key: full ID
+	tagSigs  map[string]tagSig   // guarded by mu: PRDID/SystemTags last seen by Save, per full ID
+	tagGen   atomic.Uint64       // system tag index generation (see tagGeneration)
 
 	// Deferred persistence. Save/Delete/Mutate mark the store dirty and wake
 	// one background writer, which writes at most once per flushInterval.
@@ -775,6 +777,18 @@ func recoverSessionStore(data []byte) ([]*Session, int, error) {
 // after Close it happens before Save returns.
 func (s *Store) Save(sess *Session) error {
 	s.mu.Lock()
+	// Bump the tag generation only when the answer of the system tag index
+	// could change: a new session, or a changed PRDID / SystemTags. Callers
+	// often mutate the stored pointer in place, so the previous values are
+	// kept in tagSigs rather than read back from s.sessions.
+	if prev, ok := s.tagSigs[sess.FullID]; !ok || s.sessions[sess.FullID] == nil ||
+		prev.prdID != sess.PRDID || !equalTagLists(prev.tags, sess.SystemTags) {
+		if s.tagSigs == nil {
+			s.tagSigs = map[string]tagSig{}
+		}
+		s.tagSigs[sess.FullID] = tagSig{prdID: sess.PRDID, tags: append([]string(nil), sess.SystemTags...)}
+		s.tagGen.Add(1)
+	}
 	s.sessions[sess.FullID] = sess
 	s.markRecordDirtyLocked(sess.FullID)
 	inline := s.markDirtyLocked()
@@ -933,6 +947,8 @@ func (s *Store) List() []*Session {
 func (s *Store) Delete(fullID string) error {
 	s.mu.Lock()
 	delete(s.sessions, fullID)
+	delete(s.tagSigs, fullID)
+	s.tagGen.Add(1)
 	s.markRecordDeletedLocked(fullID)
 	inline := s.markDirtyLocked()
 	s.mu.Unlock()
@@ -941,6 +957,30 @@ func (s *Store) Delete(fullID string) error {
 	}
 	return nil
 }
+
+// tagSig is what the system tag index reads from a session.
+type tagSig struct {
+	prdID string
+	tags  []string
+}
+
+func equalTagLists(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// tagGeneration is the system tag index generation: it changes whenever a
+// session is added, removed, moved to or from the archive, or has its PRDID or
+// SystemTags changed. The Manager cache is stale when its recorded value
+// differs from this one.
+func (s *Store) tagGeneration() uint64 { return s.tagGen.Load() }
 
 // Flush synchronously writes the current in-memory session set to disk,
 // waiting for any write the background writer has in progress. Callers
