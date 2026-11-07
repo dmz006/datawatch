@@ -20,7 +20,7 @@ func savedVerifyScriptsDir(worktreeDir, prdID string) string {
 func savedVerifyScriptsBase(worktreeDir string) string {
 	d := strings.TrimSpace(worktreeDir)
 	if d == "" {
-		d = defaultWorktreeDir()
+		d = defaultWorktreeDir("")
 	}
 	return filepath.Join(d, ".verify-scripts")
 }

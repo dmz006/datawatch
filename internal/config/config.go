@@ -7903,6 +7903,18 @@ func DefaultPRDWorktreeDir() string {
 	return filepath.Join(home, ".datawatch", "prd-worktrees")
 }
 
+// DefaultPRDWorktreeDirFor is the PRD worktree folder (prd-worktrees) under
+// the given data directory, with a leading "~" expanded to the home
+// directory. An empty data directory falls back to the historical default
+// location under the user's home (DefaultPRDWorktreeDir).
+func DefaultPRDWorktreeDirFor(dataDir string) string {
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		return DefaultPRDWorktreeDir()
+	}
+	return filepath.Join(expandHome(dataDir), "prd-worktrees")
+}
+
 // DefaultWorkspaceRoot is the folder project directories may lie under when
 // session.workspace_root is not set: "workspace" in the user's home
 // directory. It is empty when the home directory cannot be determined.
@@ -7930,7 +7942,7 @@ func (c *Config) AllowedProjectRoots() []string {
 	}
 	base := strings.TrimSpace(c.Autonomous.WorktreeDir)
 	if base == "" {
-		base = DefaultPRDWorktreeDir()
+		base = DefaultPRDWorktreeDirFor(c.DataDir)
 	}
 	roots := []string{expandHome(base)}
 	if ws := strings.TrimSpace(c.Session.WorkspaceRoot); ws != "" {

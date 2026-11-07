@@ -3684,6 +3684,9 @@ func (m *Manager) DeletePRD(id string) error {
 	m.mu.Lock()
 	wtDir := m.cfg.WorktreeDir
 	m.mu.Unlock()
+	if strings.TrimSpace(wtDir) == "" {
+		wtDir = defaultWorktreeDir(m.dataDir)
+	}
 	if err := removeSavedVerifyScripts(wtDir, id); err != nil {
 		log.Printf("[autonomous] removing saved verification scripts for %s: %v", id, err)
 	}
