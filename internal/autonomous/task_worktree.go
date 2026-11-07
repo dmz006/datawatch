@@ -21,7 +21,7 @@ const maxTaskSlugLen = 40
 // sibling of the PRD worktree under the worktree base.
 func taskWorktreeRoot(worktreeDir string, prd *PRD) string {
 	if worktreeDir = strings.TrimSpace(worktreeDir); worktreeDir == "" {
-		worktreeDir = defaultWorktreeDir()
+		worktreeDir = defaultWorktreeDir("")
 	}
 	return filepath.Join(worktreeDir, prd.ID+"-tasks")
 }
@@ -112,7 +112,7 @@ func restoreTaskVerifyScript(prd *PRD, task *Task, path, worktreeDir string) {
 	}
 	base := filepath.Base(script)
 	if strings.TrimSpace(worktreeDir) == "" {
-		worktreeDir = defaultWorktreeDir()
+		worktreeDir = defaultWorktreeDir("")
 	}
 	srcDirs := []string{
 		filepath.Join(worktreeDir, prd.ID, ".datawatch", "verify"),
@@ -152,6 +152,9 @@ func (m *Manager) ensureTaskWorktreeFor(prd *PRD, t *Task) error {
 	m.mu.Unlock()
 	if repo == "" {
 		return nil
+	}
+	if strings.TrimSpace(dir) == "" {
+		dir = defaultWorktreeDir(m.dataDir)
 	}
 	// A PRD worktree that is not a valid linked worktree is for the launch
 	// guard to refuse; do not mask that refusal with a worktree error here.
