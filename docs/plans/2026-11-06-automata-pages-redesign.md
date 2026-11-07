@@ -421,3 +421,9 @@ are never added together; it builds the capture that the spend ledger (`24400001
 the Gantt, charts and dashboards. The word "allowance" is the proposed name for what is tracked today; the operator can
 rename it. (2) The tick now runs `scripts/overall-counts.py` before the v10 status table: all records with archived
 finished work counted as done, by kind, backend and Automation, with project filled in once records carry one.
+
+## Operator decisions, 2026-11-06 late evening
+
+- Burn guard: "yes change the guard and we will watch carefully up to saturday night". The target line is the ceiling less the usage calculator's `safety_points`, not the guard's `margin_points`. `usage.calculator.safety_points` changed from 5 to 0.5, so the target is 99.5. Watch every tick; revert to 5 if the projection nears the line.
+- imap-mcp model: "point imap-mcp to datawatch, load the model there and unload here". The imap-mcp `enrichment.ollama_url` now points at the datawatch node (backup in supervisor-scratch), the service was restarted, and qwen3:1.7b was unloaded on the local node, freeing about 6 GB of GPU memory.
+- imap-mcp tracking: "imap-mcp should be a plugin or integrated as a service ... it should have tracking since it is tied that is a benefit of it being part of datawtach ... this is suppose to support all datawatch users, not just our own dev cycles". Filed as a draft Automaton (service-kind plugin per docs/plans/2026-10-09-plugin-extension-surfaces.md).
