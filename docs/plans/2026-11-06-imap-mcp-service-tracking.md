@@ -1,6 +1,7 @@
 # imap-mcp service tracking: plan
 
 **Date:** 2026-11-06
+**Status:** In Progress — phases 1–12 Done, phase 13 In Progress, phase 14 Planned
 **Automaton:** 784f0001 (tasks a0d00003–a0d00018; this record is a0d0001a)
 **Version:** set at merge time. The merge helper (`scripts/merge-branches-bump-version.sh`) sets the next version above main; this plan names no number and adds no versioned changelog heading.
 **Parity issue:** `docs/plans/parity-issues/imap-mcp-service-tracking.md` (draft owed; to be filed on datawatch-app by the merge step)
@@ -50,9 +51,9 @@ Design source: `docs/plans/2026-10-09-plugin-extension-surfaces.md`. Every row a
 | 9 | CLI subcommands (`datawatch plugins service status|start|stop|restart`, `datawatch plugins widgets list|get`), the `plugin status <name>` comm verb, `configure plugins.services.*` | Done |
 | 10 | `plugins.services` settings block (probe interval, backlog streak, node-load ratio, small-model bounds, per-service lifecycle mode): config load validation, `GET`/`PUT /api/config`, `datawatch config set`, `docs/config-reference.yaml` | Done |
 | 11 | PWA: the plugin service status card in the Plugin Manager, the Settings section (five locales, help entries), the tokens panel with rotate/remove, the models panel with findings | Done |
-| 12 | This plan record | Done (this file) |
-| 13 | Operator docs for the remaining surfaces (CHANGELOG entries for phases 2–4, 6, 9–11; `docs/howto/`; CLI and comm references; `docs/testing-tracker.md` rows) | In progress |
-| 14 | Mobile parity issue draft and filing (datawatch-app, at the merge step) | Not done |
+| 12 | This plan record | Done |
+| 13 | Operator docs for the remaining surfaces (CHANGELOG entries for phases 2–4, 6, 9–11; `docs/howto/`; CLI and comm references; `docs/testing-tracker.md` rows) | In Progress |
+| 14 | Mobile parity issue draft and filing (datawatch-app, at the merge step) | Planned |
 
 Shipped in: the release that carries this change (the merge helper records the number in the changelog).
 
@@ -101,7 +102,7 @@ Excluded: nothing. `internal/messaging/backends/imapmcp/` is deliberately out of
 - [x] Unit tests added and passing (probe, recorder, tokens, models, CEF, config, MCP tools, CLI, comm verb, PWA node tests).
 - [ ] Live test on a sandbox daemon: owed at the merge step (see Decisions).
 - [x] `CHANGELOG.md` entries for the MCP tools, the service-event recorder, and the token routes; `docs/config-reference.yaml`; `docs/mcp.md` and `docs/cursor-mcp.md` for the MCP tools; `docs/api/openapi.yaml` and the web `openapi.yaml`; `docs/testing-tracker.md` section for the token routes.
-- [ ] `CHANGELOG.md` entries and references for the attach probe, status payload, `plugins.services` settings, CLI, comm verb, and the four PWA surfaces; a `docs/howto/` page: owed (phase 13, in progress).
+- [ ] `CHANGELOG.md` entries and references for the attach probe, status payload, `plugins.services` settings, CLI, comm verb, and the four PWA surfaces; a `docs/howto/` page: owed (phase 13, In Progress).
 - [x] Locales in five languages for every new PWA string.
 - [ ] App parity issue: draft owed under `docs/plans/parity-issues/imap-mcp-service-tracking.md`; the merge step files it on datawatch-app.
 - [ ] Open question (the fold) answered by the operator before any folding work starts.
