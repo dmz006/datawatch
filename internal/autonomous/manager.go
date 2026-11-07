@@ -1333,6 +1333,11 @@ type Manager struct {
 	// the inherited_tags read field (placement_tags_inherit.go). Wired by
 	// the daemon; nil = no inherited tags.
 	inheritedTagReader SessionSystemTagReader
+	// tagSweepSessions backs the tag sweep's session pass (tag_sweep.go):
+	// it lists every Automata-owned session (live and archived) and writes
+	// each one's re-derived object system tag. Wired by the daemon; nil =
+	// the sweep examines no sessions (the object passes still run).
+	tagSweepSessions TagSweepSessionStore
 	// tagEventFn receives tag registry and assignment changes (tags_events.go).
 	// Wired by the server; nil = no tag events. Guarded by mu.
 	// defect intake (defect_intake.go): the DefectIntake implementation; the
