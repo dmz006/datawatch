@@ -242,9 +242,10 @@ func mergePipelineSettingsFor(cfg config.MergePipelineConfig, project string) me
 	}
 }
 
-// mergePipelineRecords opens the daemon's record store.
-func mergePipelineRecords() (*mergepipeline.RecordStore, error) {
-	return mergepipeline.NewRecordStore(mergeDataDir())
+// mergePipelineRecords opens the daemon's record store under this server's
+// configured data directory.
+func (s *Server) mergePipelineRecords() (*mergepipeline.RecordStore, error) {
+	return mergepipeline.NewRecordStore(s.statePath())
 }
 
 // mergePipelineGate runs the checks every route shares: the method, the
@@ -289,7 +290,7 @@ func (s *Server) handleMergePipeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg := s.mergePipelineConfig()
-	records, err := mergePipelineRecords()
+	records, err := s.mergePipelineRecords()
 	if err != nil {
 		http.Error(w, "merge pipeline records unavailable: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -386,7 +387,7 @@ func (s *Server) handleMergePipelineRecord(w http.ResponseWriter, r *http.Reques
 		}
 		mergePipelineRecordMu.Lock()
 		defer mergePipelineRecordMu.Unlock()
-		records, err := mergePipelineRecords()
+		records, err := s.mergePipelineRecords()
 		if err != nil {
 			http.Error(w, "merge pipeline records unavailable: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -422,7 +423,7 @@ func (s *Server) handleMergePipelineRecord(w http.ResponseWriter, r *http.Reques
 	}
 	mergePipelineRecordMu.Lock()
 	defer mergePipelineRecordMu.Unlock()
-	records, err := mergePipelineRecords()
+	records, err := s.mergePipelineRecords()
 	if err != nil {
 		http.Error(w, "merge pipeline records unavailable: "+err.Error(), http.StatusInternalServerError)
 		return

@@ -28,9 +28,12 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 		return h
 	}
 	mergeCfg := func() config.MergePipelineConfig { return cfg.Autonomous.MergePipeline.Clone() }
-	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, mergeCfg()) }
+	// No Server is in scope here, so the data directory comes from the
+	// same single source (dataDirPath), with the configured data_dir first.
+	dataDir := dataDirPath(cfg.DataDir)
+	h.Deploy = func(ctx context.Context) (string, error) { return supervisorLoopDeploy(ctx, mgr, dataDir, mergeCfg()) }
 	h.MergeUntilConflict = func(ctx context.Context) (autonomous.SupervisorMergeResult, error) {
-		return supervisorLoopMerge(ctx, mgr, mergeCfg())
+		return supervisorLoopMerge(ctx, mgr, dataDir, mergeCfg())
 	}
 	h.Lanes = supervisorLaneControl{mgr: mgr}
 	return h
@@ -40,13 +43,13 @@ func NewSupervisorLoopHooks(mgr *autonomous.Manager, cfg *config.Config, setting
 // defines: the first deploy-kind step with a command in the project's merge
 // pipeline (mergepipeline.Resolver picks the pipeline), run through the same
 // ShipRunner the pipeline uses. No such step means not configured.
-func supervisorLoopDeploy(ctx context.Context, mgr *autonomous.Manager, cfg config.MergePipelineConfig) (string, error) {
+func supervisorLoopDeploy(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig) (string, error) {
 	repo := mgr.MergeBaseRepo()
 	if repo == "" {
 		return "", autonomous.ErrSupervisorStepNotConfigured
 	}
 	project := filepath.Base(repo)
-	runner := newMergeRunner(mgr, cfg, repo, project, mergepipeline.ExecShipRunner{})
+	runner := newMergeRunner(mgr, cfg, repo, project, dataDir, mergepipeline.ExecShipRunner{})
 	res, err := runner.Resolver.Resolve(project)
 	if err != nil {
 		return "", fmt.Errorf("resolve merge pipeline: %w", err)
@@ -84,7 +87,7 @@ var (
 // the completed Automaton branches waiting to merge, the same set GET
 // /api/autonomous/merge lists as pending. The pipeline stops at the first
 // branch its conflict policy could not settle; that branch is the conflict.
-func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, cfg config.MergePipelineConfig) (autonomous.SupervisorMergeResult, error) {
+func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, dataDir string, cfg config.MergePipelineConfig) (autonomous.SupervisorMergeResult, error) {
 	var out autonomous.SupervisorMergeResult
 	repo := mgr.MergeBaseRepo()
 	if repo == "" {
@@ -108,7 +111,7 @@ func supervisorLoopMerge(ctx context.Context, mgr *autonomous.Manager, cfg confi
 
 	runCtx, cancel := context.WithTimeout(ctx, mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), mergepipeline.ExecShipRunner{}).Run(runCtx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mgr, cfg, repo, filepath.Base(repo), dataDir, mergepipeline.ExecShipRunner{}).Run(runCtx, mergepipeline.RunRequest{
 		Title: "supervisor loop merge", Branches: branches,
 	})
 	if err == nil {

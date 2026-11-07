@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -63,22 +62,15 @@ type mergeRunBody struct {
 // mergeRunMu allows one merge run at a time.
 var mergeRunMu sync.Mutex
 
-// mergeDataDir is the daemon data directory, as the rest of the server finds it.
-func mergeDataDir() string {
-	if d := os.Getenv("DATAWATCH_DATA_DIR"); d != "" {
-		return d
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".datawatch")
-}
-
 // newMergeRunner builds the Runner for one project from the operator's
 // settings. Nothing here names a repository or path: the project directory is
 // the configured worktree base repo, and the version files, conflict policy
-// and pipeline sources are autonomous.merge_pipeline settings.
-func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project string, ship mergepipeline.ShipRunner) *mergepipeline.Runner {
+// and pipeline sources are autonomous.merge_pipeline settings. dataDir is the
+// daemon data directory the record store lives under, resolved by the caller
+// (Server.statePath on the request path).
+func newMergeRunner(mr mergeRunner, cfg config.MergePipelineConfig, repo, project, dataDir string, ship mergepipeline.ShipRunner) *mergepipeline.Runner {
 	var records *mergepipeline.RecordStore
-	if rs, err := mergepipeline.NewRecordStore(mergeDataDir()); err == nil {
+	if rs, err := mergepipeline.NewRecordStore(dataDir); err == nil {
 		records = rs
 	}
 	resolver := &mergepipeline.Resolver{
@@ -160,7 +152,7 @@ func (s *Server) handleAutonomousMergeRun(w http.ResponseWriter, r *http.Request
 
 	ctx, cancel := context.WithTimeout(r.Context(), mergeRunTimeout)
 	defer cancel()
-	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.mergeShipRunner()).Run(ctx, mergepipeline.RunRequest{
+	res, err := newMergeRunner(mr, s.mergePipelineConfig(), repo, project, s.statePath(), s.mergeShipRunner()).Run(ctx, mergepipeline.RunRequest{
 		Title: body.Title, Branches: body.Branches, AutomatonID: body.Automaton,
 	})
 	if err == nil && body.Automaton != "" {

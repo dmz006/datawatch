@@ -21,10 +21,10 @@ func TestSupervisorLoopWiringNoBaseRepoNotConfigured(t *testing.T) {
 	if err != nil {
 		t.Skipf("manager: %v", err)
 	}
-	if _, err := supervisorLoopDeploy(context.Background(), mgr, config.MergePipelineConfig{}); !errors.Is(err, autonomous.ErrSupervisorStepNotConfigured) {
+	if _, err := supervisorLoopDeploy(context.Background(), mgr, t.TempDir(), config.MergePipelineConfig{}); !errors.Is(err, autonomous.ErrSupervisorStepNotConfigured) {
 		t.Errorf("deploy with no base repo: %v", err)
 	}
-	if _, err := supervisorLoopMerge(context.Background(), mgr, config.MergePipelineConfig{}); !errors.Is(err, autonomous.ErrSupervisorStepNotConfigured) {
+	if _, err := supervisorLoopMerge(context.Background(), mgr, t.TempDir(), config.MergePipelineConfig{}); !errors.Is(err, autonomous.ErrSupervisorStepNotConfigured) {
 		t.Errorf("merge with no base repo: %v", err)
 	}
 }
