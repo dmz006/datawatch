@@ -69,8 +69,9 @@ paths:
           description: >-
             Filter by LLM backend (BL361 — this is the session's own backend
             filter, not the backend tag axis: filter the backend axis with
-            ?tag=backend:<value>). The plan's backend axis shortcut is an open
-            naming conflict — the parameter name is already taken here
+            ?tag=backend:<value>). The task's backend axis-shortcut item is
+            settled against the no-regression rule — one parameter cannot be
+            the backend-family filter and the backend axis at once
           schema:
             type: string
         - name: alive

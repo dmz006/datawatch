@@ -85,8 +85,9 @@ func TestSessionsAxisShortcutFilters(t *testing.T) {
 	// Blank values are ignored.
 	check("?role=", "s-system", "s-inherit-project", "s-inherit-stage", "s-plain")
 	// backend keeps its existing meaning (session backend, not an axis
-	// shortcut — that name is already taken here; the backend placement
-	// axis is reachable as ?tag=backend:<value>).
+	// shortcut — one parameter cannot be the backend-family filter and
+	// the backend axis at once; the backend placement axis is reachable
+	// as ?tag=backend:<value>).
 	check("?backend=nosuch")
 	check("?tag=backend:opencode")
 }

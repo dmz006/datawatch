@@ -1982,9 +1982,16 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// is deliberately NOT one of them here: on this endpoint (and on
 	// list_sessions) its name already is the session-backend filter, and a
 	// parameter cannot carry both meanings — the backend placement axis
-	// stays reachable as ?tag=backend:<value>. The open conflict (the plan
-	// lists backend among the wanted shortcuts) is noted in
-	// docs/plans/2026-10-31-tag-listing-filters.md §12, not settled.
+	// stays reachable as ?tag=backend:<value>. The task's `backend`
+	// axis-shortcut item is settled against the no-regression rule: one
+	// parameter cannot be both the BL361 session-backend filter (family
+	// names: claudecode, opencode) and the backend placement axis
+	// (placement backends: claude, pi, ollama, vllm), and the task itself
+	// requires the existing backend filter to keep working; forcing a
+	// backend:<value> tag requirement onto it would silently redefine the
+	// pinned filter, which AGENT.md forbids. The spec item is
+	// self-contradictory (recorded in the plan's §12 Done note); the §12
+	// operator decision is satisfied by the tag path.
 	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
 		if v := strings.TrimSpace(q.Get(axis)); v != "" {
 			tag := axis + ":" + v

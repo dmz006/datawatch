@@ -1736,7 +1736,7 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 			mcpsdk.Description("BL361 — filter by exact state: running, waiting_input, rate_limited, complete, failed, killed. Empty = all."),
 		),
 		mcpsdk.WithString("backend",
-			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all. This is the session's own backend, not an axis shortcut: filter the backend placement axis with tag=backend:<value> (the same name cannot be both, and that open conflict is noted in the tag-listing plan)."),
+			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all. This is the session's own backend, not an axis shortcut: filter the backend placement axis with tag=backend:<value> (the same name cannot be both — one parameter cannot be the backend-family filter and the backend axis; the task's 'backend' shortcut item is settled against the no-regression rule, see the tag-listing plan §12)."),
 		),
 		mcpsdk.WithString("project",
 			mcpsdk.Description("Axis shortcut — expanded to the project:<value> tag filter (a session's own, system, and inherited tags all count). Empty = all."),
@@ -1790,10 +1790,12 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 // sessionTagShortcuts expands the axis shortcut params (project, automaton,
 // automation, stage, kind, role, lane, compute) into axis:value tag filters;
 // an empty or blank value is ignored. The backend param is the session-backend
-// filter and is not an axis shortcut here — the name is already taken; the
-// backend placement axis stays reachable as tag=backend:<value>. The open
-// conflict (the tag-listing plan lists backend among the wanted shortcuts) is
-// noted in docs/plans/2026-10-31-tag-listing-filters.md §12, not settled.
+// filter and is not an axis shortcut here — one parameter cannot be both the
+// backend-family filter (claudecode, opencode; BL361) and the backend
+// placement axis (claude, pi, ollama, vllm), so the task's `backend`
+// axis-shortcut item is settled against the no-regression rule (the axis
+// stays reachable as tag=backend:<value>, recorded in the plan's §12 Done
+// note).
 func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
 	var out []string
 	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
