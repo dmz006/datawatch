@@ -173,6 +173,15 @@ func (a *API) resumeRunningPRDs() {
 		fmt.Printf("[autonomous] boot-resume: reconciled %d guardrail judge session(s)\n", n)
 	}
 
+	// Protected-paths holds left by the previous instance are re-checked
+	// once, now that its question goroutine is gone and the open questions
+	// will not be re-answered: a hold whose diffs are only the daemon's own
+	// injected sections is a false positive, and it releases the task
+	// without operator action.
+	if n := len(a.M.ReleaseFalseProtectedPathHolds(context.Background())); n > 0 {
+		fmt.Printf("[autonomous] boot-resume: released %d false-positive protected-paths hold(s)\n", n)
+	}
+
 	// B165 — counts for the per-PRD decision log + summary line.
 	resumed, parked := 0, 0
 
