@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The guardrail judge can now review a large change.** A judge prompt for a big change used to be typed whole into the judge's session, so delivery failed and the same Automaton kept failing review. A prompt longer than `autonomous.judge_prompt_file_threshold_lines` (default 300) is now written to a file and the judge is told to read it. The judge also waits longer for a long prompt: `autonomous.judge_delivery_wait_per_thousand_lines_seconds` (default 60) adds that many seconds per 1000 prompt lines.
+  - **How it shows up:** a large change gets a real verdict instead of repeated infrastructure failures. The review state, Events entry and PWA review card show the judge outcome kind, so an infrastructure failure is told apart from a real block. Both settings are on every settings surface (YAML, `GET`/`PUT /api/config`, MCP, `datawatch config set`, the chat `configure` verb, PWA Settings).
+  - **Migration:** none; the defaults apply on upgrade. Set the threshold to `0` to always send the full prompt. See `docs/howto/automation-tab.md`.
+
 ## v9.106.0 — Memory ceiling for worker, verification and guardrail processes
 
 ### Added
