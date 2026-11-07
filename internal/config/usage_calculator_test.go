@@ -28,6 +28,7 @@ func TestUsageCalculatorDefaults(t *testing.T) {
 	want := UsageCalculatorConfig{
 		Variant: "all", Policy: "use-all", SafetyPoints: 5, CostPerTaskPoints: 0.1,
 		BaselinePer24h: 3, MaxLanes: 3, ResetWeekday: "sunday", ResetTime: "08:00",
+		AutoLanesMax: 2, AutoLanesSpecialPriority: 1,
 	}
 	if c != want {
 		t.Errorf("default usage.calculator = %+v, want %+v", c, want)
@@ -108,15 +109,46 @@ func TestUsageCalculatorNormalizeWarnsOnOutOfRange(t *testing.T) {
 	logged := captureUsageCalculatorLog(t)
 	c := normalizeUsageCalculator(UsageCalculatorConfig{
 		SafetyPoints: 51, CostPerTaskPoints: -1, BaselinePer24h: 21, MaxLanes: 9,
+		AutoLanesMax: 9, AutoLanesSpecialPriority: -1,
 		ResetTime: "25:00", ResetZone: "Mars/Olympus", Keeper: "bad peer!",
 	}, usageCalculatorLogf)
 	d := DefaultUsageCalculator()
 	if c.SafetyPoints != d.SafetyPoints || c.CostPerTaskPoints != d.CostPerTaskPoints || c.BaselinePer24h != d.BaselinePer24h ||
-		c.MaxLanes != d.MaxLanes || c.ResetTime != d.ResetTime || c.ResetZone != d.ResetZone || c.Keeper != "" {
+		c.MaxLanes != d.MaxLanes || c.AutoLanesMax != d.AutoLanesMax || c.AutoLanesSpecialPriority != d.AutoLanesSpecialPriority ||
+		c.ResetTime != d.ResetTime || c.ResetZone != d.ResetZone || c.Keeper != "" {
 		t.Errorf("not defaulted: %+v", c)
 	}
-	if got := logged(); len(got) != 7 {
-		t.Errorf("logged %d lines, want 7: %v", len(got), got)
+	if got := logged(); len(got) != 9 {
+		t.Errorf("logged %d lines, want 9: %v", len(got), got)
+	}
+}
+
+// TestUsageCalculatorNormalizeAutoLanesZeroValues covers the unset (zero)
+// auto-lanes values: max 0 falls back to the default quietly (like max_lanes),
+// a special priority of 0 is legitimate and survives, and the boolean stays
+// false.
+func TestUsageCalculatorNormalizeAutoLanesZeroValues(t *testing.T) {
+	logged := captureUsageCalculatorLog(t)
+	c := normalizeUsageCalculator(UsageCalculatorConfig{
+		AutoLanesMax:             0,
+		AutoLanesSpecialPriority: 0,
+	}, usageCalculatorLogf)
+	d := DefaultUsageCalculator()
+	if c.AutoLanes {
+		t.Errorf("auto_lanes not false: %+v", c)
+	}
+	if c.AutoLanesMax != d.AutoLanesMax {
+		t.Errorf("unset auto_lanes_max = %d, want default %d", c.AutoLanesMax, d.AutoLanesMax)
+	}
+	if c.AutoLanesSpecialPriority != 0 {
+		t.Errorf("explicit 0 auto_lanes_special_priority rewritten to %d", c.AutoLanesSpecialPriority)
+	}
+	if got := logged(); len(got) != 0 {
+		t.Errorf("a zero auto_lanes_max logged %v", got)
+	}
+	// Explicit in-range values pass through untouched.
+	if c := normalizeUsageCalculator(UsageCalculatorConfig{AutoLanes: true, AutoLanesMax: 8, AutoLanesSpecialPriority: 49}, usageCalculatorLogf); c.AutoLanes != true || c.AutoLanesMax != 8 || c.AutoLanesSpecialPriority != 49 {
+		t.Errorf("explicit auto-lanes values lost: %+v", c)
 	}
 }
 
@@ -150,6 +182,26 @@ func TestValidateUsageCalculatorBounds(t *testing.T) {
 	for _, n := range []int{0, -1, 9} {
 		if ValidateUsageCalculatorMaxLanes(n) == nil {
 			t.Errorf("max_lanes %d accepted", n)
+		}
+	}
+	for _, n := range []int{1, 2, 8} {
+		if err := ValidateUsageCalculatorAutoLanesMax(n); err != nil {
+			t.Errorf("auto_lanes_max %d: %v", n, err)
+		}
+	}
+	for _, n := range []int{0, -1, 9} {
+		if ValidateUsageCalculatorAutoLanesMax(n) == nil {
+			t.Errorf("auto_lanes_max %d accepted", n)
+		}
+	}
+	for _, n := range []int{0, 1, 49, 50} {
+		if err := ValidateUsageCalculatorAutoLanesSpecialPriority(n); err != nil {
+			t.Errorf("auto_lanes_special_priority %d: %v", n, err)
+		}
+	}
+	for _, n := range []int{-1, -100} {
+		if ValidateUsageCalculatorAutoLanesSpecialPriority(n) == nil {
+			t.Errorf("auto_lanes_special_priority %d accepted", n)
 		}
 	}
 }
