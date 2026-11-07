@@ -402,3 +402,58 @@ func (s *Server) handleAutonomousTags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
+
+// tagSweepAPI is the sweep surface the tag-sweep handler asserts the
+// autonomous manager against; it keeps the method out of the
+// AutonomousAPI interface so the existing server-side fakes stay untouched.
+type tagSweepAPI interface {
+	SweepTags(dryRun bool) autonomous.SweepResult
+}
+
+// handleTagSweep applies the in-force tag settings (autonomous.tags.
+// placement — the master switch, the per-axis on/off and template, the
+// custom axes) to everything that already exists under them: one pass over
+// every session and record the Automata own, re-deriving each one's system
+// tags from its stored facts and writing the changed ones back.
+//
+//	POST /api/autonomous/tags/sweep[?dry_run=true]
+//
+// It answers with a per-kind tally (sessions, automata, automations,
+// tasks, templates, decision records, held questions): examined, changed,
+// unchanged, failed. dry_run (query or body) reports the same tally without
+// writing a single tag. The operator's own tags and the inherited tags are
+// a separate field the sweep never reads or writes; a second pass changes
+// nothing; turning an axis off removes that axis's tag and turning it on
+// adds it. The CLI's `autonomous tag-sweep` and the dashboard's sweep
+// button both land here.
+func (s *Server) handleTagSweep(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	sweep, ok := s.autonomousMgr.(tagSweepAPI)
+	if !ok {
+		http.Error(w, "tag sweep not supported", http.StatusServiceUnavailable)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+		return
+	}
+	// The query flag is primary (the CLI and the dashboard use it); the
+	// dry_run body field is accepted on top for clients that post JSON.
+	dryRun := queryBool(r, "dry_run", false)
+	if r.ContentLength > 0 {
+		var body struct {
+			DryRun *bool `json:"dry_run"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.DryRun != nil {
+			dryRun = *body.DryRun
+		}
+	}
+	mode := "run"
+	if dryRun {
+		mode = "dry-run"
+	}
+	s.audit(r.Context(), "sweep", "autonomous_tags", mode, nil)
+	writeJSONOK(w, sweep.SweepTags(dryRun))
+}
