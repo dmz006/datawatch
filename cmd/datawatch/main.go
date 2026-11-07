@@ -1143,6 +1143,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Inherited-tags cache lifetime (0 = default, negative = off) applies
 	// at startup, the same way the other session-manager settings do.
 	mgr.SetInheritedTagsCacheTTL(time.Duration(cfg.Autonomous.InheritedTagsCacheSeconds) * time.Second)
+	mgr.SetJudgeDeliveryWaitPerThousandLines(cfg.Autonomous.JudgeDeliveryWaitPerThousandLinesSeconds)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}

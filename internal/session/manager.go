@@ -330,24 +330,25 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
-	tagIdx systemTagIndexCache // system tag index cache; own mutex, never m.mu
-	hostname       string
-	dataDir        string
-	llmBin         string      // fallback binary path (legacy; prefer launchFn)
-	llmBackend     string      // active backend name
-	launchFn       LaunchFunc  // active backend launch function
-	backendObj     llm.Backend // backend object for optional interface dispatch
-	maxSessions    int
-	workspaceRoot  string // F10: container/PVC base for relative project_dirs
-	store          *Store
-	tmux           TmuxAPI
-	paneChildFn    func(tmuxSession string) bool // busy probe: pane has child processes; nil → paneHasChildProcess
-	idleTimeout    time.Duration
-	autoGitInit    bool   // whether to git init project dir if needed
-	verbose        bool   // enable debug logging
-	mcpMaxRetries  int    // max MCP restart attempts per session (0 = disabled)
-	encKey         []byte // AES-256 key for encrypting session logs (nil = plaintext)
-	secureTracking string // "full" = encrypt tracker .md files too
+	judgeDeliveryPerThousand int                 // extra judge main-prompt wait, seconds per 1000 prompt lines; guarded by mu
+	tagIdx                   systemTagIndexCache // system tag index cache; own mutex, never m.mu
+	hostname                 string
+	dataDir                  string
+	llmBin                   string      // fallback binary path (legacy; prefer launchFn)
+	llmBackend               string      // active backend name
+	launchFn                 LaunchFunc  // active backend launch function
+	backendObj               llm.Backend // backend object for optional interface dispatch
+	maxSessions              int
+	workspaceRoot            string // F10: container/PVC base for relative project_dirs
+	store                    *Store
+	tmux                     TmuxAPI
+	paneChildFn              func(tmuxSession string) bool // busy probe: pane has child processes; nil → paneHasChildProcess
+	idleTimeout              time.Duration
+	autoGitInit              bool   // whether to git init project dir if needed
+	verbose                  bool   // enable debug logging
+	mcpMaxRetries            int    // max MCP restart attempts per session (0 = disabled)
+	encKey                   []byte // AES-256 key for encrypting session logs (nil = plaintext)
+	secureTracking           string // "full" = encrypt tracker .md files too
 
 	// GH#204 Phase 1 — subprocess result-posting credential wiring.
 	resultTokenMinter SessionTokenMinter // mints the per-session scoped token (nil = no token env var)
@@ -5582,6 +5583,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	if window <= 0 {
 		window = defaultTaskDeliveryWindow
 	}
+	window = m.scaledDeliveryWindow(fullID, input, window)
 
 	exited := false
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
