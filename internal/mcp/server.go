@@ -843,6 +843,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPluginWidgetList(), tracked(s.handlePluginWidgetList))
 	mcpSrv.AddTool(s.toolPluginWidgetGet(), tracked(s.handlePluginWidgetGet))
 	mcpSrv.AddTool(s.toolPluginTokenList(), tracked(s.handlePluginTokenList))
+	// Managed-plugin lifecycle writes + token rotation over the same
+	// REST handlers; attach-only plugins are refused by the server.
+	mcpSrv.AddTool(s.toolPluginServiceStart(), tracked(s.handlePluginServiceStart))
+	mcpSrv.AddTool(s.toolPluginServiceStop(), tracked(s.handlePluginServiceStop))
+	mcpSrv.AddTool(s.toolPluginServiceRestart(), tracked(s.handlePluginServiceRestart))
+	mcpSrv.AddTool(s.toolPluginTokenRotate(), tracked(s.handlePluginTokenRotate))
 	// BL242 (v6.4.0) — centralized secrets manager.
 	mcpSrv.AddTool(s.toolSecretList(), tracked(s.handleSecretList))
 	mcpSrv.AddTool(s.toolSecretGet(), tracked(s.handleSecretGet))
