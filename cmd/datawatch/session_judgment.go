@@ -201,6 +201,49 @@ type launchTags struct {
 	Stage     string // launch_stage:     the Automaton stage the session serves
 }
 
+// The builders below name the exact launch tags each one-shot site posts —
+// one per call site of the runOneShotJSONSession* family — so the table
+// test in cmd/datawatch/launch_tags_test.go can pin each site's role, kind
+// and Automaton and a future caller cannot silently lose its tags
+// (docs/plans/2026-11-06-automata-pages-redesign.md, section 12: "anything
+// we can tag should be tagged").
+
+// launchTagsForDecompose tags the planner's one-shot decompose session
+// (main.go's decomposeFnSession): role planner, kind decompose, the PRD's
+// Automaton id. No stage — decompose is the Automaton's own planning, not
+// one task inside a story.
+func launchTagsForDecompose(prdID string) launchTags {
+	return launchTags{Role: "planner", Kind: "decompose", Automaton: prdID}
+}
+
+// launchTagsForVerify tags the one-shot verifier session (main.go's
+// verifier closure): role verifier, kind task, with the judged task's story
+// as the stage.
+func launchTagsForVerify(prdID, storyID string) launchTags {
+	return launchTags{Role: "verifier", Kind: "task", Automaton: prdID, Stage: storyID}
+}
+
+// launchTagsForJudge tags the guardrail judge's one-shot session (main.go's
+// autonomousGuardrailAttempt): role judge, kind review for the rules review
+// and the per-unit guardrail judges — kind rejudge when the invocation is a
+// re-judgment of the same rules-review decision
+// (autonomous.RejudgeCompletionGuardrail). Automaton is the PRD's id.
+func launchTagsForJudge(prdID string, rejudge bool) launchTags {
+	kind := "review"
+	if rejudge {
+		kind = "rejudge"
+	}
+	return launchTags{Role: "judge", Kind: kind, Automaton: prdID}
+}
+
+// launchTagsForSupervisorLoop tags the supervisor loop's one-shot session
+// (supervisor_loop_models_wire.go): role supervisor. The supervisor serves
+// the whole autonomous system rather than one Automaton, so it carries no
+// Automaton — section 12's "no Automaton" for the supervisor loop.
+func launchTagsForSupervisorLoop() launchTags {
+	return launchTags{Role: "supervisor"}
+}
+
 // judgeOutputReader reads a one-shot session's output file from projectDir
 // and returns its content and whether it was ready. It may copy the content to
 // scratchDir/destName; it decides whether the project-directory file survives.

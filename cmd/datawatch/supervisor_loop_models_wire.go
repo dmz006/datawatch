@@ -96,7 +96,7 @@ func supervisorLoopSessionFn(cfg *config.Config) autonomouspkg.SupervisorSession
 		go func() {
 			out, err := runOneShotJSONSession(cfg, "supervisor-loop", dir, backend, model,
 				"supervisor-loop-"+id, task, outputFile, "supervisor-loop-"+id+".txt", supervisorLoopSessionTimeout,
-				launchTags{})
+				launchTagsForSupervisorLoop())
 			ch <- result{out, err}
 		}()
 		select {
