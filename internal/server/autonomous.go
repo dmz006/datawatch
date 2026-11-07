@@ -612,7 +612,17 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			if !s.fedCap(w, r, federation.CapAutonomousList) {
 				return
 			}
-			if tagID := r.URL.Query().Get("tag"); tagID != "" {
+			// ?tag= is shared by two filters. The legacy single managed-tag-id
+			// lookup (?tag=<managed id>[&include_sub=], subtag-aware, {"prds":...})
+			// runs when the request is exactly that shape; every other ?tag= form
+			// — a derived axis:value tag, multiple tags, or a tag_match rule — is
+			// the object tag filter and falls through to writePRDList, which
+			// matches SystemTags and the assigned managed TagIDs.
+			if legacyManagedTagListLookup(r) {
+				tagID := r.URL.Query().Get("tag")
+				if tagID == "" {
+					tagID = r.URL.Query().Get("tag_id")
+				}
 				api, ok := s.tagAPI()
 				if !ok {
 					http.Error(w, "tags not supported", http.StatusNotImplemented)
@@ -867,7 +877,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
 				return
 			}
-			s.writePRDDetail(w, prd, detail, s.prdDetailCap(r))
+			tagSel, terr := objectTagSelectionFromRequest(r)
+			if terr != nil {
+				http.Error(w, terr.Error(), http.StatusBadRequest)
+				return
+			}
+			s.writePRDDetail(w, prd, detail, s.prdDetailCap(r), tagSel)
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return
@@ -3897,7 +3912,7 @@ type automationReq struct {
 	// AutoTags is the optional per-Automation override of the daemon-level
 	// autonomous.auto_tags block; omitted (or null) on an update keeps the
 	// stored setting.
-	AutoTags            *autonomous.AutoTagsOverride  `json:"auto_tags,omitempty"`
+	AutoTags *autonomous.AutoTagsOverride `json:"auto_tags,omitempty"`
 }
 
 // automationInput lifts the wire fields of automationReq into
@@ -4192,6 +4207,102 @@ func shippedSelectionFromQuery(r *http.Request, def string) (wanted bool, set bo
 	return false, false, nil
 }
 
+// objectTagSelectionInPlay reports whether a PRD-list read carries the object
+// tag filter (this feature's repeatable grammar) rather than the legacy
+// single managed-tag-id lookup. A derived / managed axis tag always carries
+// an "axis:value" colon, so any tagged value with a colon, more than one
+// tagged value, a tag_match rule or one of the axis shortcut params names
+// the object filter. A single bare value with no rule is the legacy managed
+// lookup and is left to ListPRDsByTag.
+func objectTagSelectionInPlay(r *http.Request) bool {
+	q := r.URL.Query()
+	if q.Get("tag_match") != "" {
+		return true
+	}
+	for _, name := range []string{"project", "automation", "automaton"} {
+		if q.Get(name) != "" {
+			return true
+		}
+	}
+	if len(q["tag_id"]) > 0 {
+		return true
+	}
+	var values []string
+	for _, v := range q["tag"] {
+		values = append(values, strings.Split(v, ",")...)
+	}
+	if len(values) == 0 {
+		return false
+	}
+	if len(values) > 1 {
+		return true
+	}
+	// A single colon-bearing axis tag is the object filter; a single bare
+	// value is the legacy managed-tag lookup left to ListPRDsByTag.
+	return strings.Contains(values[0], ":")
+}
+
+// legacyManagedTagListLookup is true for exactly the legacy single bare
+// managed-tag-id ?tag= form on the Automaton list the automaton pages' pre
+// filter uses (?tag=<managed id>[&include_sub=]): a single ?tag= value with no
+// colon, no tag_match rule, no axis shortcut and no ?tag_id=. ?tag_id= always
+// names the plain list filter and keeps its ListPRDsByTag-less path.
+func legacyManagedTagListLookup(r *http.Request) bool {
+	q := r.URL.Query()
+	if len(q["tag"]) == 0 {
+		return false
+	}
+	return !objectTagSelectionInPlay(r)
+}
+
+// objectTagSelectionFromRequest parses the object tag selection a list read
+// takes: the repeatable tag (and legacy tag_id) value, the project /
+// automation / automaton shortcuts, and the tag_match rule. The grammar is
+// the one the sessions list (api.go) and the progress backlog (progress.go)
+// share — tag values are repeatable and may be comma-separated, blank and
+// duplicate tags are dropped in first-seen order, and tag_match accepts
+// "any" (the default) or "all" and nothing else (a bad value is a 400). A
+// selection with no tags matches every object. See autonomous
+// ObjectTagSelection for the matching rule and ObjectTagShortcut for the
+// axis shortcuts.
+func objectTagSelectionFromRequest(r *http.Request) (autonomous.ObjectTagSelection, error) {
+	q := r.URL.Query()
+	seen := map[string]bool{}
+	var tags []string
+	add := func(v string) {
+		v = strings.TrimSpace(v)
+		if v != "" && !seen[v] {
+			seen[v] = true
+			tags = append(tags, v)
+		}
+	}
+	for _, name := range []string{"tag", "tag_id"} {
+		for _, v := range q[name] {
+			for _, part := range strings.Split(v, ",") {
+				add(part)
+			}
+		}
+	}
+	// Axis shortcuts: project=x, automation=y, automaton=z each name one tag.
+	if v := q.Get("project"); v != "" {
+		add(autonomous.ObjectTagShortcut("project", v))
+	}
+	if v := q.Get("automation"); v != "" {
+		add(autonomous.ObjectTagShortcut("automation", v))
+	}
+	if v := q.Get("automaton"); v != "" {
+		add(autonomous.ObjectTagShortcut("automaton", v))
+	}
+	match := ""
+	if v := q.Get("tag_match"); v != "" {
+		match = strings.TrimSpace(v)
+	}
+	if match != "" && !autonomous.ValidTagMatch(match) {
+		return autonomous.ObjectTagSelection{}, fmt.Errorf(`tag_match: must be "any" or "all"`)
+	}
+	return autonomous.ObjectTagSelection{Tags: tags, AllMatch: match == autonomous.TagMatchAll}, nil
+}
+
 // rawAutomationOf decodes one raw Automation list entry into an Automation
 // (map or already-typed); a nil or undecodable entry decodes to nil.
 func rawAutomationOf(raw any) *autonomous.Automation {
@@ -4226,18 +4337,33 @@ func (s *Server) filterShippedAutomations(r *http.Request) ([]any, error) {
 	if list == nil {
 		list = []any{}
 	}
-	wanted, set, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
+	tagSel, err := objectTagSelectionFromRequest(r)
 	if err != nil {
 		return nil, err
 	}
-	if !set || !ship.EffectiveEnabled() {
+	shipWanted, shipSet, err := shippedSelectionFromQuery(r, ship.EffectiveFilterDefault())
+	if err != nil {
+		return nil, err
+	}
+	// With no tag selection the shipped rule is the existing behavior:
+	// the shipped filter is active only when shipSet and the shipped surface
+	// is enabled (shippedSelectionFromQuery already applies that default).
+	// When a tag selection is present it is always active — it filters the
+	// whole list on top of whatever the shipped rule says.
+	shipActive := shipSet && ship.EffectiveEnabled()
+	if len(tagSel.Tags) == 0 && !shipActive {
 		return list, nil
 	}
 	kept := make([]any, 0, len(list))
 	for _, x := range list {
-		if autonomous.AutomationShippedMatch(rawAutomationOf(x), true, wanted) {
-			kept = append(kept, x)
+		a := rawAutomationOf(x)
+		if len(tagSel.Tags) > 0 && !tagSel.MatchesObjectTags(a.SystemTags, nil) {
+			continue
 		}
+		if shipActive && !autonomous.AutomationShippedMatch(a, true, shipWanted) {
+			continue
+		}
+		kept = append(kept, x)
 	}
 	return kept, nil
 }
@@ -4379,12 +4505,12 @@ type automationControlReq struct {
 	Edge            string `json:"edge"`
 	// stages/rename: the member stage that is renamed (from) and the new name
 	// (to); both are required and must differ.
-	From string `json:"from"`
-	To   string `json:"to"`
-	OnComplete      string `json:"on_complete"`
-	OnBlocked       string `json:"on_blocked"`
-	OnFailed        string `json:"on_failed"`
-	Member          struct {
+	From       string `json:"from"`
+	To         string `json:"to"`
+	OnComplete string `json:"on_complete"`
+	OnBlocked  string `json:"on_blocked"`
+	OnFailed   string `json:"on_failed"`
+	Member     struct {
 		PRDID string `json:"prd_id"`
 		Name  string `json:"name"`
 		Stage string `json:"stage"` // optional stage label recorded on the inserted member

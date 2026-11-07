@@ -61,6 +61,11 @@ type SummaryView struct {
 	// same shape for an untagged Automaton as for a tagged one.
 	Tags         []string `json:"tags"`
 	PrimaryTagID string   `json:"primary_tag_id"`
+	// SystemTags is the placement-derived system-tag set this Automaton
+	// carries (its project, Automation and itself), copied from the PRD. It
+	// feeds the object tag filter alongside Tags (the managed TagIDs) above
+	// and names the object for the PWA tag browser.
+	SystemTags []string `json:"system_tags,omitempty"`
 	// InheritedTags is the read-only union of the system tags (placement
 	// tags) carried by the sessions owned by this Automaton: a session
 	// belongs to the Automaton when it carries this PRD's ID (Session.PRDID).
@@ -157,6 +162,7 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Backend:            prd.Backend,
 		Tags:               summaryTagIDs(prd.TagIDs),
 		PrimaryTagID:       prd.PrimaryTagID,
+		SystemTags:         prd.SystemTags,
 		ParentPRDID:        prd.ParentPRDID,
 		Priority:           prd.Priority,
 		IsTemplate:         prd.IsTemplate,
