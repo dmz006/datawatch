@@ -9070,7 +9070,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			"autonomous.tags.placement.backend.enabled", "autonomous.tags.placement.backend.template",
 			"autonomous.tags.placement.lane.enabled", "autonomous.tags.placement.lane.template",
 			"autonomous.tags.placement.role.enabled", "autonomous.tags.placement.role.template",
-			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template":
+			"autonomous.tags.placement.project.enabled", "autonomous.tags.placement.project.template",
+			"autonomous.tags.placement.automaton.enabled", "autonomous.tags.placement.automaton.template",
+			"autonomous.tags.placement.automation.enabled", "autonomous.tags.placement.automation.template",
+			"autonomous.tags.placement.stage.enabled", "autonomous.tags.placement.stage.template",
+			"autonomous.tags.placement.kind.enabled", "autonomous.tags.placement.kind.template":
 			_ = cfg.Autonomous.Tags.Set(strings.TrimPrefix(k, config.TagSettingPrefix), v)
 		case "autonomous.plan_coverage_check":
 			// off|warn|block plan-coverage gate (empty normalizes to
