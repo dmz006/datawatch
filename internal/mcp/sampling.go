@@ -215,6 +215,12 @@ func isNoSessionErr(err error) bool {
 	if err == nil {
 		return false
 	}
+	// mcp-go v1.x returns ErrServerInitiatedRequestUnsupported for clients on
+	// protocol 2026-07-28+, which dropped server-initiated requests; treat it
+	// like "no sampling-capable client" so callers degrade gracefully.
+	if errors.Is(err, server.ErrServerInitiatedRequestUnsupported) {
+		return true
+	}
 	msg := err.Error()
 	return msg == "no active session" || msg == "session does not support sampling"
 }
