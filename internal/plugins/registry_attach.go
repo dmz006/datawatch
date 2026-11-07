@@ -133,6 +133,12 @@ func (r *Registry) reconcileAttachProbes(parent context.Context) {
 				fmt.Fprintf(os.Stderr, "[plugins] attach probe %s: %v\n", name, err)
 				continue
 			}
+			// The daemon passes the operator's configured cadence
+			// (plugins.services.health_interval_seconds) to a registry build; zero
+			// keeps attach_health's package default.
+			if r.cfg.HealthInterval > 0 {
+				pr.Interval = r.cfg.HealthInterval
+			}
 			apCtx, cancel := context.WithCancel(r.attachCtx)
 			ap := &attachProbe{probe: pr, cancel: cancel, doneCh: make(chan struct{})}
 			r.attachProbes[name] = ap

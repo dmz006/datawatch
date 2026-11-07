@@ -35,6 +35,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/observer"
 	"github.com/dmz006/datawatch/internal/plugins"
@@ -131,7 +132,33 @@ func (d *defaultModelUseSource) ModelUse(ctx context.Context, name string) (*plu
 	}
 	tok, tokErr := d.tokenFor(m)
 	in.Service = d.serviceModels(ctx, base, tok, tokErr)
-	return plugins.CollectModelUse(name, in, plugins.ModelUseThresholds{}), nil
+	return plugins.CollectModelUse(name, in, d.srv.pluginModelUseThresholds()), nil
+}
+
+// pluginModelUseThresholds supplies the daemon's plugins.services settings
+// (node_load_ratio, small_model_context_tokens) to the model-use findings. A
+// server built without a config (library embed), or a field never PUT, reads
+// the documented config defaults — the Effective* accessors never return an
+// ineffective zero. SmallModelMaxBytes stays the package's byte boundary:
+// Ollama reports memory, not parameter counts, so small_model_max_params
+// _billions is the documented criterion while the byte boundary is the
+// operative one.
+func (s *Server) pluginModelUseThresholds() plugins.ModelUseThresholds {
+	svc := s.pluginsServicesConfig()
+	return plugins.ModelUseThresholds{
+		NodeLoadRatio:    svc.EffectiveNodeLoadRatio(),
+		MinContextTokens: int64(svc.EffectiveSmallModelContextTokens()),
+	}
+}
+
+// pluginsServicesConfig returns the live plugins.services block, or a zero
+// value when the server has no config at all; the zero value reads each
+// documented default through its Effective* accessor.
+func (s *Server) pluginsServicesConfig() config.PluginServicesConfig {
+	if s.cfg == nil {
+		return config.PluginServicesConfig{}
+	}
+	return s.cfg.Plugins.Services
 }
 
 // nodeModels reads one node's served and resident models.
@@ -407,6 +434,9 @@ func (s *Server) defaultModelNodeRecorder() *plugins.ServiceEventRecorder {
 				ctx := context.Background()
 				s.audit(ctx, action, "plugin", subject, details)
 			},
+			// The backlog-growth streak follows plugins.services.backlog
+			// _growth_pulls (default 3).
+			BacklogRisePulls: s.pluginsServicesConfig().EffectiveBacklogGrowthPulls(),
 		})
 	})
 	return defaultModelNodeRec

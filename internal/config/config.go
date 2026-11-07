@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -6540,6 +6541,221 @@ type PluginsConfig struct {
 	// to start/stop; absent = never managed. Only honoured for plugins whose
 	// manifest lifecycle.supported_modes declares "managed".
 	Managed []string `yaml:"managed,omitempty" json:"managed,omitempty"`
+	// Services holds the service-plugin watch settings (plugins.services):
+	// the attach-only health-probe cadence, the enrichment-backlog growth
+	// streak, the model-use thresholds, and the per-service lifecycle mode.
+	// Absent fields read their defaults via the Effective* helpers, so an
+	// operator setting one field does not have to set the rest.
+	Services PluginServicesConfig `yaml:"services,omitempty" json:"services,omitempty"`
+}
+
+// PluginServicesConfig holds the plugins.services block — the settings for
+// the service-kind plugins the daemon watches (attach-only health probes,
+// enrichment-backlog growth, model-use findings) and the per-service
+// lifecycle mode.
+type PluginServicesConfig struct {
+	// HealthIntervalSeconds is how often the daemon health-probes each
+	// attach-only service plugin. Default DefaultPluginServicesHealthInterval;
+	// minimum MinPluginServicesHealthInterval (a value below the minimum is
+	// a config error on load).
+	HealthIntervalSeconds int `yaml:"health_interval_seconds,omitempty" json:"health_interval_seconds,omitempty"`
+	// BacklogGrowthPulls is how many consecutive rises of a plugin's
+	// enrichment backlog (each at or above the minimum rise) the daemon
+	// requires before raising the enrichment_backlog_growing condition.
+	// Default DefaultPluginServicesBacklogGrowthPulls; must be >= 1.
+	BacklogGrowthPulls int `yaml:"backlog_growth_pulls,omitempty" json:"backlog_growth_pulls,omitempty"`
+	// NodeLoadRatio is the node-overload threshold for the model-use report:
+	// a model's node counts as overloaded when it holds more than this many
+	// times the model memory of another node able to serve the same model.
+	// Default DefaultPluginServicesNodeLoadRatio; must be > 0.
+	NodeLoadRatio float64 `yaml:"node_load_ratio,omitempty" json:"node_load_ratio,omitempty"`
+	// SmallModelMaxParamsBillions is the small-model boundary in parameter
+	// count (billions): a model at or above this is not a small model.
+	// Default DefaultPluginServicesSmallModelMaxParamsBillions; must be > 0.
+	SmallModelMaxParamsBillions float64 `yaml:"small_model_max_params_billions,omitempty" json:"small_model_max_params_billions,omitempty"`
+	// SmallModelContextTokens is the context length (tokens) above which a
+	// small model raises the small_model_large_context finding. Default
+	// DefaultPluginServicesSmallModelContextTokens; must be >= 1.
+	SmallModelContextTokens int `yaml:"small_model_context_tokens,omitempty" json:"small_model_context_tokens,omitempty"`
+	// PerService holds one entry per plugin name — today only the lifecycle
+	// mode. Absent entry = "" = the plugin's only supported mode (or
+	// attach_only when it supports both).
+	PerService map[string]PluginServiceOverride `yaml:"per_service,omitempty" json:"per_service,omitempty"`
+}
+
+// PluginServiceOverride is one per_service entry: the settings that vary
+// per named plugin.
+type PluginServiceOverride struct {
+	// LifecycleMode is the named mode: "attach_only" or "managed" (or ""; see
+	// LifecycleMode). Only honoured when the manifest declares the mode in
+	// lifecycle.supported_modes.
+	LifecycleMode string `yaml:"lifecycle_mode,omitempty" json:"lifecycle_mode,omitempty"`
+}
+
+const (
+	// DefaultPluginServicesHealthInterval — attach-only probe cadence,
+	// seconds; a minute keeps the probes quiet on shared endpoints.
+	DefaultPluginServicesHealthInterval = 60
+	// MinPluginServicesHealthInterval — below this (seconds) a config is
+	// rejected at load; the probes would hammer the service.
+	MinPluginServicesHealthInterval = 5
+	// DefaultPluginServicesBacklogGrowthPulls — three consecutive backlog
+	// rises before the daemon says the backlog is growing.
+	DefaultPluginServicesBacklogGrowthPulls = 3
+	// DefaultPluginServicesNodeLoadRatio — one node holding 1.5x another
+	// candidate node's model memory is the overloaded threshold.
+	DefaultPluginServicesNodeLoadRatio = 1.5
+	// DefaultPluginServicesSmallModelMaxParamsBillions — the 8-billion
+	// parameter small-model boundary.
+	DefaultPluginServicesSmallModelMaxParamsBillions = 8.0
+	// DefaultPluginServicesSmallModelContextTokens — a small model pinned
+	// above an 8k context is the large-context finding.
+	DefaultPluginServicesSmallModelContextTokens = 8192
+)
+
+// The two service lifecycle modes a per_service entry may name. They mirror
+// the internal/plugins manifest modes; the config package does not import
+// that one, so the names live here and both sides agree on the strings.
+const (
+	// PluginServiceLifecycleAttachOnly — datawatch observes the service it
+	// attaches to and never owns or restarts that process.
+	PluginServiceLifecycleAttachOnly = "attach_only"
+	// PluginServiceLifecycleManaged — datawatch starts, stops and
+	// restarts the process itself.
+	PluginServiceLifecycleManaged = "managed"
+)
+
+// ValidLifecycleModes — the closed accepted set, in the order the errors
+// that list them should print it.
+var ValidLifecycleModes = []string{PluginServiceLifecycleAttachOnly, PluginServiceLifecycleManaged}
+
+// EffectiveHealthInterval returns the attach-only probe cadence in seconds
+// (stored when >= the minimum, otherwise the default).
+func (s PluginServicesConfig) EffectiveHealthInterval() int {
+	if s.HealthIntervalSeconds >= MinPluginServicesHealthInterval {
+		return s.HealthIntervalSeconds
+	}
+	return DefaultPluginServicesHealthInterval
+}
+
+// EffectiveBacklogGrowthPulls returns the stored streak when >= 1, else
+// the default.
+func (s PluginServicesConfig) EffectiveBacklogGrowthPulls() int {
+	if s.BacklogGrowthPulls >= 1 {
+		return s.BacklogGrowthPulls
+	}
+	return DefaultPluginServicesBacklogGrowthPulls
+}
+
+// EffectiveNodeLoadRatio returns the stored ratio when > 0 and finite,
+// else the default.
+func (s PluginServicesConfig) EffectiveNodeLoadRatio() float64 {
+	if s.NodeLoadRatio > 0 && !math.IsNaN(s.NodeLoadRatio) && !math.IsInf(s.NodeLoadRatio, 0) {
+		return s.NodeLoadRatio
+	}
+	return DefaultPluginServicesNodeLoadRatio
+}
+
+// EffectiveSmallModelMaxParamsBillions returns the stored boundary when
+// > 0 and finite, else the default.
+func (s PluginServicesConfig) EffectiveSmallModelMaxParamsBillions() float64 {
+	if s.SmallModelMaxParamsBillions > 0 && !math.IsNaN(s.SmallModelMaxParamsBillions) && !math.IsInf(s.SmallModelMaxParamsBillions, 0) {
+		return s.SmallModelMaxParamsBillions
+	}
+	return DefaultPluginServicesSmallModelMaxParamsBillions
+}
+
+// EffectiveSmallModelContextTokens returns the stored context length when
+// >= 1, else the default.
+func (s PluginServicesConfig) EffectiveSmallModelContextTokens() int {
+	if s.SmallModelContextTokens >= 1 {
+		return s.SmallModelContextTokens
+	}
+	return DefaultPluginServicesSmallModelContextTokens
+}
+
+// LifecycleMode returns the operator's per-service mode for service —
+// "" (unset), or one of ValidLifecycleModes, lower-cased and trimmed. A
+// direct struct write that bypassed load and PUT and carried some other
+// spelling normalizes to "" rather than a live mode, never to a typo.
+func (s PluginServicesConfig) LifecycleMode(service string) string {
+	mode := strings.ToLower(strings.TrimSpace(s.PerService[service].LifecycleMode))
+	if mode == "" || mode == PluginServiceLifecycleAttachOnly || mode == PluginServiceLifecycleManaged {
+		return mode
+	}
+	return ""
+}
+
+func pluginServicesPrefix(key string) string {
+	if p := strings.TrimSuffix(key, "."); p != "" {
+		return p
+	}
+	return "plugins.services"
+}
+
+// validatePluginServices rejects the values the Effective* helpers would
+// silently paper over. It runs at Load/LoadSecure time (via validateLoaded)
+// and the PUT /api/config path reuses it, so a misconfiguration cannot land
+// on disk and then break the next startup.
+func validatePluginServices(s PluginServicesConfig, prefix string) error {
+	if s.HealthIntervalSeconds != 0 && s.HealthIntervalSeconds < MinPluginServicesHealthInterval {
+		return fmt.Errorf("%s.health_interval_seconds: %d must be a whole number >= %d (seconds; default %d)",
+			prefix, s.HealthIntervalSeconds, MinPluginServicesHealthInterval, DefaultPluginServicesHealthInterval)
+	}
+	if s.BacklogGrowthPulls != 0 && s.BacklogGrowthPulls < 1 {
+		return fmt.Errorf("%s.backlog_growth_pulls: %d must be a whole number >= 1 (default %d)",
+			prefix, s.BacklogGrowthPulls, DefaultPluginServicesBacklogGrowthPulls)
+	}
+	if s.NodeLoadRatio != 0 && (s.NodeLoadRatio <= 0 || math.IsNaN(s.NodeLoadRatio) || math.IsInf(s.NodeLoadRatio, 0)) {
+		return fmt.Errorf("%s.node_load_ratio: %v must be a number > 0 (default %v)",
+			prefix, s.NodeLoadRatio, DefaultPluginServicesNodeLoadRatio)
+	}
+	if s.SmallModelMaxParamsBillions != 0 && (s.SmallModelMaxParamsBillions <= 0 || math.IsNaN(s.SmallModelMaxParamsBillions) || math.IsInf(s.SmallModelMaxParamsBillions, 0)) {
+		return fmt.Errorf("%s.small_model_max_params_billions: %v must be a number > 0 (default %v)",
+			prefix, s.SmallModelMaxParamsBillions, DefaultPluginServicesSmallModelMaxParamsBillions)
+	}
+	if s.SmallModelContextTokens != 0 && s.SmallModelContextTokens < 1 {
+		return fmt.Errorf("%s.small_model_context_tokens: %d must be a whole number >= 1 (tokens; default %d)",
+			prefix, s.SmallModelContextTokens, DefaultPluginServicesSmallModelContextTokens)
+	}
+	names := make([]string, 0, len(s.PerService))
+	for name := range s.PerService {
+		names = append(names, name)
+	}
+	sort.Strings(names) // Deterministic: the first error names one service in a stable order.
+	for _, name := range names {
+		if err := ValidatePluginServiceMode(name, s.PerService[name].LifecycleMode); err != nil {
+			return fmt.Errorf("%s: %w", prefix, err)
+		}
+	}
+	return nil
+}
+
+// ValidatePluginServiceMode reports whether mode is an accepted per_service
+// lifecycle_mode — "" (unset) or one of ValidLifecycleModes, case-insensitive
+// — and, when not, an error naming the service and listing the valid values.
+// Shared by the load-time check and the REST validation so both surfaces
+// reject with the same message.
+func ValidatePluginServiceMode(service, mode string) error {
+	m := strings.ToLower(strings.TrimSpace(mode))
+	if m == "" {
+		return nil
+	}
+	for _, v := range ValidLifecycleModes {
+		if m == v {
+			return nil
+		}
+	}
+	return fmt.Errorf("per_service.%s.lifecycle_mode: %q is not a valid mode (valid values: %s)",
+		service, strings.TrimSpace(mode), strings.Join(ValidLifecycleModes, ", "))
+}
+
+// Validate reports the first misconfigured field in the block — the Load /
+// LoadSecure path (via validateLoaded) and the REST PUT path both call it
+// before anything sticks, so a misconfiguration cannot land on disk and
+// then break the next startup.
+func (s PluginServicesConfig) Validate() error {
+	return validatePluginServices(s, "plugins.services")
 }
 
 // UpdateConfig controls automatic self-update behaviour.
@@ -7494,6 +7710,9 @@ func validateLoaded(cfg *Config) error {
 			t, DefaultAutomationMergePendingAlertMinutes)
 	}
 	if err := validateRepoCIWatch(cfg.Autonomous.Automation.RepoCIWatch); err != nil {
+		return err
+	}
+	if err := validatePluginServices(cfg.Plugins.Services, "plugins.services"); err != nil {
 		return err
 	}
 	if err := ValidateSnapshotNeverStage(cfg.Autonomous.SnapshotNeverStage); err != nil {

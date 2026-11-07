@@ -4393,6 +4393,48 @@ plugins:
   # lists `managed` in lifecycle.supported_modes. Empty = never managed.
   # See docs/api/plugins.md.
   managed: []
+  # Service-plugin watch settings: the attach-only health-probe cadence,
+  # the enrichment-backlog growth streak, the model-use report's thresholds,
+  # and the per-plugin lifecycle mode. Every field is optional and reads its
+  # documented default; a value outside its range fails config load (the
+  # process refuses to start) and the REST PUT is rejected naming the field,
+  # value, rule and default — so the stored value is always exactly the
+  # value the watchers use.
+  services:
+    # How often the daemon health-probes an attach-only service plugin.
+    # Default: 60; minimum: 5 (seconds).
+    health_interval_seconds: 0
+
+    # Consecutive model-node task passes in which the service's
+    # enrichment-backlog depth rose (each >= the service's own minimum
+    # rise) before the daemon says the backlog is growing.
+    # Default: 3; minimum: 1.
+    backlog_growth_pulls: 0
+
+    # The node-overloaded threshold for the model-use report (the average
+    # CPU utilization ratio that marks a node loaded).
+    # Default: 1.5; must be > 0.
+    node_load_ratio: 0
+
+    # A model at or above this many billion parameters is not a small model
+    # for the model-use findings. Default: 8.0; must be > 0.
+    small_model_max_params_billions: 0
+
+    # The context length (tokens) above which a small model raises the
+    # large-context finding. Default: 8192; must be >= 1.
+    small_model_context_tokens: 0
+
+    # Per-plugin entries keyed by plugin name. An absent entry means "the
+    # only mode the plugin's manifest supports, or attach_only when it
+    # supports both"; lifecycle_mode is one of attach_only | managed (""
+    # = unset, the default) and only takes effect when the manifest
+    # declares it in lifecycle.supported_modes — so managed means a managed
+    # service only when the author opted in. See docs/api/plugins.md.
+    per_service:
+      # e.g.
+      # mcp: {lifecycle_mode: attach_only}
+      # ollama: {lifecycle_mode: managed}
+      "": {}
 
 # ── Council Mode (v6.11.0 / v7.0.0) ──
 # Multi-persona structured debate orchestrator. All fields configurable at

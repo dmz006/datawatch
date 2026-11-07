@@ -404,6 +404,11 @@ type Config struct {
 	// the plugin's author-declared lifecycle.supported_modes includes
 	// "managed" — the opt-in can never exceed what the author declared.
 	Managed []string `yaml:"managed,omitempty" json:"managed,omitempty"`
+	// HealthInterval is the attach-only health-probe cadence the daemon
+	// applies to every eligible attach probe it builds (config
+	// plugins.services.health_interval_seconds). Zero = attach_health's
+	// own package default.
+	HealthInterval time.Duration `yaml:"-" json:"-"`
 }
 
 // DefaultConfig — plugins disabled, conservative timeout.
