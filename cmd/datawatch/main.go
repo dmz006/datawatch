@@ -781,18 +781,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// so silent daemon deaths leave a forensic trail.
 	installCrashLog()
 
-	// v9.0.7: a daemon started without inheriting datawatch.env's
-	// TMUX_TMPDIR (e.g. the old daemonize() path from `datawatch restart`,
-	// before this release's systemd delegation) would have every tmux
-	// call in internal/session/tmux.go — all bare exec.Command("tmux",
-	// ...), relying entirely on inherited env — silently hit tmux's
-	// default (no-server) socket instead of the one every live session's
-	// pane actually lives on. Found live on this host: ResumeMonitors
-	// then marked 3 genuinely-alive sessions StateFailed.
-	if d := ensureTmuxTmpdirEnv(); d != "" {
-		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
-	}
-
 	// F10 S3.4 — worker self-registration. When the spawn driver
 	// injected DATAWATCH_BOOTSTRAP_{URL,TOKEN} + DATAWATCH_AGENT_ID
 	// we are running inside a parent-spawned container. Call home
@@ -915,6 +903,19 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("load config: %w", err)
 		}
+	}
+	// v9.0.7: a daemon started without inheriting datawatch.env's
+	// TMUX_TMPDIR (e.g. the old daemonize() path from `datawatch restart`,
+	// before this release's systemd delegation) would have every tmux
+	// call in internal/session/tmux.go — all bare exec.Command("tmux",
+	// ...), relying entirely on inherited env — silently hit tmux's
+	// default (no-server) socket instead of the one every live session's
+	// pane actually lives on. Found live on this host: ResumeMonitors
+	// then marked 3 genuinely-alive sessions StateFailed. Runs after the
+	// config load so the fallback checks the configured data directory
+	// (not just the home default), and before any tmux call in this process.
+	if d := ensureTmuxTmpdirEnv(expandHome(cfg.DataDir)); d != "" {
+		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
 	}
 	// Zero encKey on exit (best-effort; GC will eventually collect it anyway).
 	defer zeroBytes(encKey)
@@ -10844,15 +10845,16 @@ func ensureChannelExtracted(cfg *config.Config) error {
 // ---- stop command ---------------------------------------------------------
 
 // ensureTmuxTmpdirEnv sets TMUX_TMPDIR from the dedicated tmux socket
-// (session.TmuxSocketDir()) when it isn't already in this process's
-// environment, so the daemon's own tmux calls resolve against the right
-// server. Returns the socket dir it set, or "" if nothing needed changing
-// (TMUX_TMPDIR already set, or no dedicated socket exists).
-func ensureTmuxTmpdirEnv() string {
+// (session.TmuxSocketDirFor(dataDir)) when it isn't already in this
+// process's environment, so the daemon's own tmux calls resolve against the
+// right server. dataDir is the daemon's configured, already-expanded data
+// directory. Returns the socket dir it set, or "" if nothing needed
+// changing (TMUX_TMPDIR already set, or no dedicated socket exists).
+func ensureTmuxTmpdirEnv(dataDir string) string {
 	if os.Getenv("TMUX_TMPDIR") != "" {
 		return ""
 	}
-	d := session.TmuxSocketDir()
+	d := session.TmuxSocketDirFor(dataDir)
 	if d == "" {
 		return ""
 	}
@@ -13200,7 +13202,7 @@ func runSessionAttach(cfg *config.Config, id string) error {
 	if !ok {
 		return fmt.Errorf("session not found: %s", id)
 	}
-	fmt.Println(session.TmuxAttachCommand(sess.TmuxSession))
+	fmt.Println(session.TmuxAttachCommand(sess.TmuxSession, expandHome(cfg.DataDir)))
 	return nil
 }
 

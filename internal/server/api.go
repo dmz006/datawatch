@@ -2359,7 +2359,7 @@ func (s *Server) executeCommand(cmd router.Command, raw, origin string) string {
 		if !ok {
 			return "Session not found."
 		}
-		return session.TmuxAttachCommand(sess.TmuxSession)
+		return session.TmuxAttachCommand(sess.TmuxSession, s.manager.DataDir())
 
 	case router.CmdHelp:
 		return router.HelpText(s.hostname)
