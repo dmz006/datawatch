@@ -26,6 +26,7 @@ func TestFirstPromptContext_PrefixedOnceAndFlagged(t *testing.T) {
 func TestFirstPromptContext_RulesFileBackendNotPrefixed(t *testing.T) {
 	mgr := newTestManager(t)
 	sess := newTestSession(t, mgr, "fp02")
+	sess.PlatformContextLocalFile = true // local file written: no prefix
 	if got := mgr.prependPlatformContextOnce(sess, "claude-code", "task"); got != "task" {
 		t.Fatalf("rules_file backend prefixed: %q", got)
 	}
@@ -46,5 +47,50 @@ func TestFirstPromptContext_SettingOffDisables(t *testing.T) {
 	}
 	if FirstPromptContext("pi-prompt", false, false) != "" {
 		t.Fatal("FirstPromptContext returned text with setting off")
+	}
+}
+
+func TestPlatformContextFirstPromptFallback_LocalFileWrittenNoPrefix(t *testing.T) {
+	mgr := newTestManager(t)
+	sess := newTestSession(t, mgr, "fb01")
+	sess.PlatformContextLocalFile = true
+	if got := mgr.prependPlatformContextOnce(sess, "claude-code", "task"); got != "task" {
+		t.Fatalf("prefixed despite local file: %q", got)
+	}
+	if sess.PlatformContextDelivered {
+		t.Fatal("flag set despite local file")
+	}
+}
+
+func TestPlatformContextFirstPromptFallback_LocalFileRefusedPrefixOnce(t *testing.T) {
+	mgr := newTestManager(t)
+	sess := newTestSession(t, mgr, "fb02")
+	got := mgr.prependPlatformContextOnce(sess, "claude-code", "task")
+	if !strings.HasPrefix(got, platformcontext.PlatformContext) || !strings.HasSuffix(got, "task") {
+		t.Fatalf("fallback prefix missing: %q", got)
+	}
+	if !sess.PlatformContextDelivered {
+		t.Fatal("flag not set")
+	}
+}
+
+func TestPlatformContextFirstPromptFallback_SecondPromptNoPrefix(t *testing.T) {
+	mgr := newTestManager(t)
+	sess := newTestSession(t, mgr, "fb03")
+	mgr.prependPlatformContextOnce(sess, "claude-code", "task")
+	if got := mgr.prependPlatformContextOnce(sess, "claude-code", "next"); got != "next" {
+		t.Fatalf("second prompt modified: %q", got)
+	}
+}
+
+func TestPlatformContextFirstPromptFallback_DisabledNoPrefix(t *testing.T) {
+	mgr := newTestManager(t)
+	mgr.platformContextFirstPromptOff = true
+	sess := newTestSession(t, mgr, "fb04")
+	if got := mgr.prependPlatformContextOnce(sess, "claude-code", "task"); got != "task" {
+		t.Fatalf("prefixed while disabled: %q", got)
+	}
+	if sess.PlatformContextDelivered {
+		t.Fatal("flag set while disabled")
 	}
 }
