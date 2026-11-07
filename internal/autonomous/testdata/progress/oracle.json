@@ -1,18 +1,18 @@
 {
  "since": "2026-10-10",
- "elapsed_days": 3.87,
+ "elapsed_days": 3.91,
  "groups": {
   "feature": {
-   "prds": 10,
-   "done": 5,
+   "prds": 11,
+   "done": 6,
    "running": 1,
    "waiting": 3,
    "blocked": 1,
-   "tasks": 23,
-   "tasks_done": 16,
-   "work_h": 26.0,
-   "prd_wall_h": 5,
-   "task_h": 14
+   "tasks": 24,
+   "tasks_done": 17,
+   "work_h": 27.0,
+   "prd_wall_h": 6,
+   "task_h": 15
   },
   "bug": {
    "prds": 3,
@@ -27,16 +27,16 @@
    "task_h": 3
   }
  },
- "completed_prds": 6,
+ "completed_prds": 7,
  "running_prds": 1,
  "existing_prds_left": 7,
  "existing_tasks_left": 8,
  "new_prds_not_yet_filed": 9,
  "remaining_prds": 16,
- "remaining_tasks_est": 35,
- "throughput_per_day": 5.1,
+ "remaining_tasks_est": 34,
+ "throughput_per_day": 6.0,
  "avg_prd_wall_h": 4.0,
- "avg_tasks_per_prd": 2.5,
- "eta_days_by_throughput": 3.2,
- "eta_days_by_lane_math": 7.1
+ "avg_tasks_per_prd": 2.3,
+ "eta_days_by_throughput": 2.7,
+ "eta_days_by_lane_math": 6.6
 }
