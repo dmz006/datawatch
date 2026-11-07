@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/server"
@@ -16,5 +18,17 @@ func TestIsNoSessionErr_ServerInitiatedUnsupported(t *testing.T) {
 	}
 	if isNoSessionErr(fmt.Errorf("boom")) {
 		t.Fatal("unrelated error must not map")
+	}
+}
+
+// The daemon server must opt in to legacy server-initiated requests so that
+// sampling and elicitation keep working for 2026-07-28+ clients.
+func TestServerOptsInToLegacyServerInitiatedRequests(t *testing.T) {
+	b, err := os.ReadFile("server.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "server.WithLegacyServerInitiatedRequests()") {
+		t.Fatal("NewMCPServer must pass WithLegacyServerInitiatedRequests")
 	}
 }

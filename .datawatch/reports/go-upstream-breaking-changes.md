@@ -72,3 +72,10 @@ Other modules: no breaking change found that touches this repo's usage.
 - https://github.com/mautrix/go/releases/tag/v0.32.0
 - https://mau.fi/blog/2025-07-mautrix-release/
 - https://mau.fi/blog/2025-08-mautrix-release/
+
+## mcp-go v1.5.0 migration notes (call-site review)
+
+- Server-initiated requests: v1.x refuses `RequestSampling`/`RequestElicitation` for 2026-07-28+ clients by default. Both `server.NewMCPServer` calls (`internal/mcp/server.go`, `cmd/datawatch-channel/main.go`) now pass `server.WithLegacyServerInitiatedRequests()`, so both features keep working. `ErrServerInitiatedRequestUnsupported` is also mapped to the existing fallback as a safety net. No Blocked bumps.
+- Tool result size limit (v1.3.0): opt-in through `WithToolResultSizeLimit`, default 0 (off). The repo does not set it, so session output is not rejected.
+- Empty arrays instead of null, integer request IDs (v1.2.0/v1.4.0): the full `internal/mcp` and `cmd/datawatch-channel` suites pass, so no test compares against the old shape. The golden tool listing is unchanged.
+- `NewSSEServer` protocol-version/capability checks (v1.2.0) and atomic registry replacement (v1.4.0): `AddResource`, `AddResourceTemplate` and `AddPrompt` are called at startup only, so atomic replacement has no effect. The SSE tests pass.
