@@ -59,6 +59,8 @@ import (
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+
+	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
 const (
@@ -136,7 +138,7 @@ func main() {
 Events arrive as <channel source="datawatch" ...>. Read and act on them.
 When you have a response, use the reply tool to send it back.
 When you need permission for a tool and permission relay is active,
-the request will be forwarded to the user automatically.`),
+the request will be forwarded to the user automatically.`+"\n\n"+platformcontext.PlatformContext),
 	)
 
 	// BL302 S3 — advertise sampling capability so the daemon can request
