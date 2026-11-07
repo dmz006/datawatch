@@ -1191,6 +1191,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleOrchestrator(cmd)
 	case CmdPlugins:
 		r.handlePlugins(cmd)
+	case CmdPluginStatus:
+		r.handlePluginStatus(cmd)
 	case CmdTemplates:
 		r.handleTemplates(cmd)
 	case CmdRouting:

@@ -168,6 +168,12 @@ const (
 	//   "plugins test <name> <hook> [payload]" → invoke hook
 	CmdPlugins CommandType = "plugins"
 
+	// Service-plugin status over chat — every service-kind plugin gets it;
+	// no per-plugin declaration needed.
+	//   "plugin status <name>"       → state, mode, address, version, uptime,
+	//                                  last check, open service event
+	CmdPluginStatus CommandType = "plugin"
+
 	// BL220-G8 — template lifecycle over chat.
 	//   "templates"                  → list templates
 	//   "templates get <name>"       → detail
@@ -1468,6 +1474,15 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdOrchestrator, Text: rest}
 
+	// Service-plugin status (singular "plugin" — distinct from the
+	// "plugins" management verb).
+	case lower == "plugin" || strings.HasPrefix(lower, "plugin "):
+		rest := ""
+		if lower != "plugin" {
+			rest = strings.TrimSpace(text[len("plugin "):])
+		}
+		return Command{Type: CmdPluginStatus, Text: rest}
+
 	// BL220-G5 — plugin management.
 	case lower == "plugins" || strings.HasPrefix(lower, "plugins "):
 		rest := ""
@@ -1957,6 +1972,7 @@ rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templa
 — BL220 surface parity —
 orchestrator [config|verdicts|get <id>|create <title> <proj>|plan <id>|run <id>|delete <id>]
 plugins [get <name>|enable <name>|disable <name>|reload|test <name> <hook> [payload]]
+plugin status <name>             one service plugin's state, mode, address, version, uptime, last check and open event
 templates [get <name>|delete <name>]
 routing [test <task>]            list routing rules or test backend selection
 channel-routing [add <pattern> <peer>|delete <n>|clear]  channel→peer routing
