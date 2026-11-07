@@ -98,9 +98,9 @@ var pluginAuditCases = []pluginAuditCase{
 		subject:  "ollama-mcp",
 		details: map[string]any{
 			"state": "raised",
-			"model": "node = 10.0.0.5|9\n \\x",
+			"model": "node = 192.0.2.5|9\n \\x",
 		},
-		poison: "node = 10.0.0.5|9\n \\x",
+		poison: "node = 192.0.2.5|9\n \\x",
 	},
 	{
 		action:   "plugin_service_start",
