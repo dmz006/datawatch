@@ -45656,6 +45656,197 @@ window.pluginServiceStart = function(name) {
   }).catch(e => showToast(String(e.message || e), 'error'));
 };
 
+// ── Plugin service tokens panel ─────────────────────────────────────────
+// Sits under the service card (loadPluginsPanel, Settings → Plugins):
+// one row per secret the plugin's manifest references — its name, where
+// it is used (the manifest fields that carry the reference) and whether
+// it exists in the secret vault — plus the service tokens minted for
+// the service, by name and creation time. It renders the GET
+// /api/plugins/{name}/tokens payload as-is, and that payload carries no
+// values (the daemon never echoes a secret or a service token), so the
+// panel never displays a value either: a `value` field in the payload
+// is simply not rendered.
+//
+// Rotate opens a type=password input for the new value; Save sends the
+// value ONCE to POST /api/plugins/{name}/tokens/{secret}/rotate and
+// clears the input afterwards (kept clear on failure too — the value
+// already left the DOM exactly once, no lingering copy to leak).
+// Remove calls DELETE /api/plugins/{name}/tokens/{secret} only after
+// the operator confirms a confirm() step.
+
+// _pluginTokSlotOf finds the hidden rotate slot (the type=password input
+// row) that renders immediately after the Rotate button. Whitespace text
+// nodes between the two are skipped.
+function _pluginTokSlotOf(btn) {
+  let node = btn ? btn.nextSibling : null;
+  for (let i = 0; node && i < 8; i++, node = node.nextSibling) {
+    if (node.classList && typeof node.classList.contains === 'function'
+        && node.classList.contains('plugin-token-rotate-slot')) return node;
+  }
+  return null;
+}
+
+// pluginServiceTokensPanelHTML — pure (payload in → escaped HTML out), so
+// the app tests pin the listing, the password input and the escaping
+// against the real renderer. Mirrors the card's style block.
+window.pluginServiceTokensPanelHTML = function(name, data) {
+  data = (data && typeof data === 'object') ? data : {};
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const n = String(name);
+  const secrets = Array.isArray(data.secrets) ? data.secrets : [];
+
+  let rows = '';
+  if (!secrets.length) {
+    rows = `<div style="font-size:11px;opacity:0.7;margin-top:4px;">${label('plugin_service_tokens_none', 'This plugin references no vault secrets.')}</div>`;
+  }
+  for (const sec of secrets) {
+    if (!sec || !sec.name) continue;
+    const nm = String(sec.name);
+    const fields = (Array.isArray(sec.fields) ? sec.fields : [])
+      .filter(f => f !== null && f !== undefined && f !== '')
+      .map(f => escHtml(String(f)));
+    const where = fields.length
+      ? `${label('plugin_service_tokens_used_by', 'Used by')}: ${fields.join(', ')}`
+      : label('plugin_service_tokens_none_fields', 'no manifest fields');
+    const badge = sec.exists
+      ? `<span style="display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:600;background:rgba(16,185,129,0.15);color:var(--success,#10b981);">${label('plugin_service_tokens_in_vault', 'in vault')}</span>`
+      : `<span style="display:inline-block;padding:0 6px;border-radius:8px;font-size:10px;font-weight:600;background:rgba(148,163,184,0.2);color:var(--text2);">${label('plugin_service_tokens_missing', 'missing from vault')}</span>`;
+    // Rotate button's nextSibling IS the rotate slot (no whitespace
+    // between them) so _pluginTokSlotOf / the Save and Cancel buttons
+    // can reach the input without ids or querySelectors on names that
+    // are not valid identifiers.
+    rows += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;">
+      <div style="min-width:0;flex:1 1 180px;">
+        <strong style="font-size:12px;word-break:break-word;">${escHtml(nm)}</strong> ${badge}
+        <div style="font-size:11px;opacity:0.65;word-break:break-word;">${where}</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-left:auto;">
+        <button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginServiceTokensRotate(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_rotate', 'Rotate')}</button><div class="plugin-token-rotate-slot" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;width:100%;">
+          <input type="password" autocomplete="new-password" style="width:200px;max-width:100%;" placeholder="${label('plugin_service_tokens_new_value', 'New value')}"/>
+          <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="pluginServiceTokensRotateSave(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_save', 'Save')}</button>
+          <button class="btn-icon" style="font-size:11px;padding:2px 8px;" onclick="pluginServiceTokensRotateCancel(this,'${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_cancel', 'Cancel')}</button>
+        </div>
+        <span style="font-size:11px;color:var(--error,#ef4444);cursor:pointer;text-decoration:underline;white-space:nowrap;" onclick="pluginServiceTokensRemove('${escJsAttr(n)}','${escJsAttr(nm)}')">${label('plugin_service_tokens_remove', 'Remove')}</span>
+      </div>
+    </div>`;
+  }
+
+  // Service tokens minted for the service: name + creation time only —
+  // the payload (and therefore the panel) never carries the token.
+  const svcs = Array.isArray(data.service_tokens) ? data.service_tokens : [];
+  let svcsHtml = '';
+  const shownSvcs = svcs.filter(s => s && s.name);
+  if (shownSvcs.length) {
+    const lines = shownSvcs.map(s => {
+      const created = s.created_at
+        ? ` <span style="opacity:0.6;">${label('plugin_service_tokens_created', 'Created')} ${escHtml(budgetTime(s.created_at))}</span>`
+        : '';
+      return `<div style="font-size:11px;margin-top:2px;word-break:break-word;"><strong>${escHtml(String(s.name))}</strong>${created}</div>`;
+    }).join('');
+    svcsHtml = `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:5px;">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_tokens_service', 'Service tokens')}</div>
+      ${lines}
+    </div>`;
+  }
+
+  return `<div class="plugin-service-tokens" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_tokens_title', 'Tokens')}</div>
+    ${rows}${svcsHtml}
+  </div>`;
+};
+
+// pluginServiceTokensLoad — async glue: GET the listing and render the
+// panel into the anchor div loadPluginsPanel placed under the service
+// card's row. A listing failure leaves the anchor empty — the token
+// panel is auxiliary, an error there must not blank the plugin list.
+window.pluginServiceTokensLoad = function(name, anchorId) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens')
+    .then(data => {
+      const el = document.getElementById(anchorId);
+      if (el) el.innerHTML = window.pluginServiceTokensPanelHTML(name, data);
+    })
+    .catch(() => {});
+};
+
+// pluginServiceTokensRotate — the Rotate button: reveal the hidden
+// rotate slot (type=password input + Save/Cancel) and focus the input.
+window.pluginServiceTokensRotate = function(btn, name, secret) {
+  const slot = _pluginTokSlotOf(btn);
+  if (slot) {
+    if (slot.style) slot.style.display = 'flex';
+    const input = (typeof slot.querySelector === 'function') ? slot.querySelector('input[type=password]') : null;
+    if (input && typeof input.focus === 'function') input.focus();
+  }
+};
+
+// pluginServiceTokensRotateCancel — hide the slot again and drop the
+// value from the input (it was never submitted).
+window.pluginServiceTokensRotateCancel = function(btn, name, secret) {
+  const slot = _pluginTokSlotOf(btn);
+  if (slot) {
+    if (slot.style) slot.style.display = 'none';
+    const input = (typeof slot.querySelector === 'function') ? slot.querySelector('input[type=password]') : null;
+    if (input) input.value = '';
+  }
+};
+
+// pluginServiceTokensRotateSubmit — the core of Rotate: sends the new
+// value ONCE to the rotate endpoint, then clears the input regardless of
+// the outcome. Pure enough to test with a bare {value} input object —
+// no DOM required. An empty value is refused locally (the daemon would
+// 400 it) instead of being sent.
+window.pluginServiceTokensRotateSubmit = function(name, secret, input) {
+  input = (input && typeof input === 'object') ? input : {};
+  const value = input.value;
+  if (value === null || value === undefined || value === '') return;
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens/' + encodeURIComponent(secret) + '/rotate', {
+    method: 'POST',
+    body: JSON.stringify({ value: value }),
+  }).then(() => {
+    input.value = '';
+    showToast(_pluginServiceLocaleKey('plugin_service_tokens_rotated', 'Secret rotated'), 'success', 2000);
+    if (typeof loadPluginsPanel === 'function') loadPluginsPanel();
+  }).catch(e => {
+    input.value = '';
+    showToast(String(e.message || e), 'error');
+  });
+};
+
+// pluginServiceTokensRotateSave — DOM wrapper for the Save button:
+// reaches the slot's own input (the button's parent IS the slot) and
+// hands off to the submit core.
+window.pluginServiceTokensRotateSave = function(btn, name, secret) {
+  const slot = (btn && btn.parentElement) ? btn.parentElement : null;
+  let input = null;
+  if (slot && typeof slot.querySelectorAll === 'function') {
+    const list = slot.querySelectorAll('input[type=password]');
+    if (list && list.length) input = list[0];
+  }
+  window.pluginServiceTokensRotateSubmit(name, secret, input);
+};
+
+// pluginServiceTokensRemove — the Remove action: DELETE /api/plugins/
+// {name}/tokens/{secret}, but ONLY after the operator confirms the
+// confirm() step (no confirmation, or a declined one, never leaves the
+// client). confirm() is a browser global; guard for sandboxes that do
+// not provide it so a declined-by-absence case degrades to "do nothing".
+window.pluginServiceTokensRemove = function(name, secret) {
+  const key = 'plugin_service_tokens_remove_confirm';
+  const v = t(key, [String(secret)]);
+  const msg = (v && v !== key)
+    ? v
+    : `Remove "${secret}" from the vault? This cannot be undone.`;
+  let ok = false;
+  if (typeof confirm === 'function') ok = confirm(msg) === true;
+  if (!ok) return;
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/tokens/' + encodeURIComponent(secret), {
+    method: 'DELETE',
+  }).then(() => {
+    showToast(_pluginServiceLocaleKey('plugin_service_tokens_removed', 'Secret removed'), 'success', 2000);
+    if (typeof loadPluginsPanel === 'function') loadPluginsPanel();
+  }).catch(e => showToast(String(e.message || e), 'error'));
+};
+
 // BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
 function loadPluginsPanel() {
   const el = document.getElementById('pluginsPanelBody');
@@ -45666,6 +45857,7 @@ function loadPluginsPanel() {
     if (!panel) return;
     const native = (data && data.native) || [];
     const subs = (data && data.plugins) || [];
+    const serviceTokensAnchors = [];
     const renderPlugin = (p, isNative) => {
       const on = !!p.enabled;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;flex-shrink:0;"></span>`;
@@ -45687,9 +45879,18 @@ function loadPluginsPanel() {
       // error, the next action and open service events as a link to the
       // Events entry — every row renders only when it has a value.
       const svcCard = (p.kind === 'service') ? pluginServiceCardHtml(p.name, p.service) : '';
+      // Tokens panel anchor: rendered under the card, filled
+      // asynchronously by pluginServiceTokensLoad after the list is in
+      // the DOM (the listing is an extra GET per service plugin).
+      let tokensAnchor = '';
+      if (p.kind === 'service' && p.name) {
+        const anchorId = 'pluginTokens' + serviceTokensAnchors.length;
+        serviceTokensAnchors.push({ name: String(p.name), anchorId });
+        tokensAnchor = `<div id="${anchorId}"></div>`;
+      }
       const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
       return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}</div>
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}${tokensAnchor}</div>
         ${acts}
       </div>`;
     };
@@ -45697,6 +45898,11 @@ function loadPluginsPanel() {
       + (native.length ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:4px;">Native</div>${native.map(p=>renderPlugin(p,true)).join('')}` : '')
       + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-top:12px;margin-bottom:4px;">Subprocess</div>`
       + (subs.length ? subs.map(p=>renderPlugin(p,false)).join('') : '<div style="opacity:0.7;">no subprocess plugins installed</div>');
+    // Fill the tokens panels (one extra GET per service plugin) now that
+    // the anchors exist in the DOM.
+    for (const tok of serviceTokensAnchors) {
+      window.pluginServiceTokensLoad(tok.name, tok.anchorId);
+    }
   }).catch(err => {
     const panel = document.getElementById('pluginsPanelBody');
     if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
