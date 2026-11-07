@@ -18,8 +18,8 @@ const (
 // opencode-acp, opencode-prompt, goose-prompt, subprocess).
 //
 // A backend is marked rules_file only when it is confirmed to read the file
-// datawatch writes. datawatch writes CLAUDE.md for claude-code and AGENT.md
-// for every other backend (internal/session/tracker.go), but nothing in this
+// datawatch writes. datawatch writes CLAUDE.local.md for claude-code's platform
+// context and AGENT.md for every other backend (internal/session/tracker.go), but nothing in this
 // repository confirms that any non-claude-code backend reads AGENT.md: the
 // backend code never opens it, and docs/session-tracking.md only says
 // datawatch writes it. This task could not read the backends' own upstream
@@ -27,8 +27,9 @@ const (
 // back to first_prompt, which does not depend on the backend's file handling.
 func DeliveryModes() map[string]DeliveryMode {
 	return map[string]DeliveryMode{
-		// claude-code reads CLAUDE.md natively; it also receives the MCP
-		// instructions and the SessionStart hook.
+		// claude-code reads the untracked CLAUDE.local.md that datawatch
+		// writes into the project directory and excludes from git; it also
+		// receives the MCP instructions and the SessionStart hook.
 		"claude-code": DeliveryRulesFile,
 		// pi-prompt: pi sessions are driven by a prompt; no AGENT.md read is confirmed.
 		"pi-prompt": DeliveryFirstPrompt,

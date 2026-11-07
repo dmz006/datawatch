@@ -336,31 +336,23 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 				modified = true
 			}
 
-			if opt.PlatformContextEnabled {
-				upserted := platformcontext.UpsertSection(existingStr, opt.platformContextBody(), platformcontext.PlatformContextVersion)
-				if upserted != existingStr {
-					existingStr = upserted
-					modified = true
-				}
-			} else {
-				// Option off: strip a previously written section, touching
-				// nothing else, and only rewrite when the content changed.
-				if removed := platformcontext.RemoveSection(existingStr); removed != existingStr {
-					existingStr = removed
-					modified = true
-				}
-			}
-
 			if modified {
 				os.WriteFile(targetFile, []byte(existingStr), 0644) //nolint:errcheck
 			}
 		} else {
 			// No file exists — write the full template
-			out := content
-			if opt.PlatformContextEnabled {
-				out = platformcontext.UpsertSection(out, opt.platformContextBody(), platformcontext.PlatformContextVersion)
-			}
-			os.WriteFile(targetFile, []byte(out), 0644) //nolint:errcheck
+			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
+		}
+
+		// The platform context block never goes into a tracked project file:
+		// it lives in the untracked CLAUDE.local.md. The flag records whether
+		// the local file is in place so delivery can fall back when it is not.
+		sess.PlatformContextLocalFile = false
+		if opt.PlatformContextEnabled {
+			_, werr := platformcontext.WritePlatformContextLocalFile(sess.ProjectDir, opt.platformContextBody(), platformcontext.PlatformContextVersion)
+			sess.PlatformContextLocalFile = werr == nil
+		} else {
+			platformcontext.RemovePlatformContextLocalFile(sess.ProjectDir) //nolint:errcheck
 		}
 	}
 
