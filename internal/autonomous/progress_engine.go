@@ -365,10 +365,11 @@ func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]s
 		status := NormalizePRDStatus(p.Status)
 		switch status {
 		case PRDCancelled, PRDRejected, PRDArchived:
-			// A cancelled record whose tasks all completed is merged work whose
-			// record was closed at merge time: it counts as completed. Any other
-			// cancelled, rejected or archived record is replaced or abandoned.
-			if status == PRDCancelled && allTasksCompleted(p) {
+			// A cancelled or archived record whose tasks all completed is merged
+			// work whose record was closed or filed away: it counts as completed.
+			// Any other cancelled, archived or rejected record (unfinished tasks,
+			// no tasks) is replaced or abandoned and stays excluded.
+			if (status == PRDCancelled || status == PRDArchived) && allTasksCompleted(p) {
 				status = PRDCompleted
 			} else {
 				continue
