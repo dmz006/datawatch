@@ -116,7 +116,12 @@ func (m *Manager) checkUncommittedWork(ctx context.Context, prd *PRD, t *Task) (
 
 	var cause string
 	var skippedNote string
-	if paths := InScopeUncommitted(remaining); len(paths) > 0 {
+	// The commit's pathspec: in-scope leftovers minus the files whose only
+	// change is the daemon's own rules-file sections, which nobody in this
+	// task wrote and which must not go into the task's commit. An empty
+	// result skips the commit exactly as an empty list always has.
+	paths := m.pathspecWithoutDaemonOnlyChanges(ctx, dir, InScopeUncommitted(remaining))
+	if len(paths) > 0 {
 		// Classified before the commit so a deletion the commit itself
 		// records is not mistaken for a path that was already gone.
 		_, _, skipped := classifyTaskCommitPaths(ctx, dir, paths)
