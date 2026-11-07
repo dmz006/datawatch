@@ -20245,6 +20245,7 @@ function _taskAttemptsHTML(task) {
         <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
       <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
       ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${a.memory_killed ? `<div class="prd-task-attempt-memory" style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('memory_attempt_over_limit', [String(a.ceiling_mb || 0), a.killed_process || t('memory_attempt_unknown_process'), String(a.peak_memory_mb || 0)]))}</div>` : ''}
       ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
       ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
     </div>`;
@@ -36702,6 +36703,24 @@ function automationStatusLine(row) {
 }
 window.automationStatusLine = automationStatusLine;
 
+// memoryCeilingStatusHTML words the memory_ceiling block of the loop status:
+// the limit in MB, where it came from and how it is enforced. A status with no
+// block says nothing; no ceiling is a warning that gives its reason.
+function memoryCeilingStatusHTML(mc) {
+  if (!mc || typeof mc !== 'object') return '';
+  const sep = '<span style="margin:0 6px;">·</span>';
+  if (mc.source === 'none' || !(Number(mc.effective_mb) > 0)) {
+    const warn = t('memory_ceiling_none_warning', [t('memory_ceiling_none_reason')]);
+    return `${sep}<span class="memory-ceiling-warning" role="alert" style="color:var(--warning,#f59e0b);">⚠ ${escHtml(warn)}</span>`;
+  }
+  const srcLabels = { project: t('memory_ceiling_source_project'), task_kind: t('memory_ceiling_source_task_kind') };
+  const pathLabels = { scope: t('memory_ceiling_path_scope'), watchdog: t('memory_ceiling_path_watchdog') };
+  const src = srcLabels[mc.source] || t('memory_ceiling_source_default');
+  const path = pathLabels[mc.enforcement_path] || t('memory_ceiling_path_none');
+  return `${sep}<span class="memory-ceiling-line">${escHtml(t('memory_ceiling_status', [String(mc.effective_mb), src, path]))}</span>`;
+}
+window.memoryCeilingStatusHTML = memoryCeilingStatusHTML;
+
 // loadAutomationLiveStatus reads automations[] from the loop status and shows
 // the row of the open Automation under its controls.
 function loadAutomationLiveStatus(id) {
@@ -36710,7 +36729,7 @@ function loadAutomationLiveStatus(id) {
     if (!el || _automationState.detailId !== id) return;
     const rows = st && Array.isArray(st.automations) ? st.automations : [];
     const line = automationStatusLine(rows.find(r => r && r.id === id));
-    el.innerHTML = line ? escHtml(line) : '';
+    el.innerHTML = (line ? escHtml(line) : '') + memoryCeilingStatusHTML(st && st.memory_ceiling);
   }, () => {});
 }
 window.loadAutomationLiveStatus = loadAutomationLiveStatus;

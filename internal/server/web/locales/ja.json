@@ -4157,5 +4157,16 @@
   "settings_help_link_label": "運用ドキュメントのメモリ上限のセクションを開く",
   "settings_resource_limits_error_share": "1〜100 の整数を入力してください。",
   "settings_resource_limits_error_mb": "1 以上の整数 (MB) を入力してください。",
-  "settings_resource_limits_error_floor_above_cap": "メモリ下限はメモリ上限を超えられません。"
+  "settings_resource_limits_error_floor_above_cap": "メモリ下限はメモリ上限を超えられません。",
+  "memory_ceiling_status": "メモリ上限: %1$s MB (%2$s, %3$s)",
+  "memory_ceiling_source_default": "既定",
+  "memory_ceiling_source_project": "プロジェクト",
+  "memory_ceiling_source_task_kind": "タスク種別",
+  "memory_ceiling_path_scope": "systemd スコープ",
+  "memory_ceiling_path_watchdog": "ウォッチドッグ",
+  "memory_ceiling_path_none": "強制なし",
+  "memory_ceiling_none_warning": "メモリ上限なし: 検証の実行に上限がありません。理由: %1$s",
+  "memory_ceiling_none_reason": "メモリ上限の設定が読み込まれていません",
+  "memory_attempt_over_limit": "停止: プロセスが上限 %1$s MB を超えるメモリを使用しました (プロセス %2$s、ピーク %3$s MB)",
+  "memory_attempt_unknown_process": "不明"
 }

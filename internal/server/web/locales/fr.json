@@ -4157,5 +4157,16 @@
   "settings_help_link_label": "Ouvrir la section sur la limite de mémoire de la documentation d'exploitation",
   "settings_resource_limits_error_share": "Saisissez un nombre entier de 1 à 100.",
   "settings_resource_limits_error_mb": "Saisissez un nombre entier de Mo, 1 ou plus.",
-  "settings_resource_limits_error_floor_above_cap": "Le plancher de mémoire ne peut pas dépasser le plafond de mémoire."
+  "settings_resource_limits_error_floor_above_cap": "Le plancher de mémoire ne peut pas dépasser le plafond de mémoire.",
+  "memory_ceiling_status": "Limite de mémoire : %1$s Mo (%2$s, %3$s)",
+  "memory_ceiling_source_default": "par défaut",
+  "memory_ceiling_source_project": "projet",
+  "memory_ceiling_source_task_kind": "type de tâche",
+  "memory_ceiling_path_scope": "scope systemd",
+  "memory_ceiling_path_watchdog": "chien de garde",
+  "memory_ceiling_path_none": "non appliquée",
+  "memory_ceiling_none_warning": "Aucune limite de mémoire : les vérifications ne sont pas plafonnées. Raison : %1$s",
+  "memory_ceiling_none_reason": "aucun réglage de limite de mémoire n'est chargé",
+  "memory_attempt_over_limit": "Arrêté : le processus a utilisé plus de mémoire que la limite de %1$s Mo (processus %2$s, pic %3$s Mo)",
+  "memory_attempt_unknown_process": "inconnu"
 }
