@@ -237,3 +237,93 @@ Option 3 first, then option 1 once the operator has answered the decision list i
 
 - The BL332 howto (`docs/howto/discussion-scopes.md`, "What happens on write") says the write ahead log records `origin_wal_seq` so a receiver can detect re-syncs. The receive handler in `internal/server/bl332_discussion_sync.go` calls the append with content, role and origin peer only, so the sender's number is not kept. This record's earlier statement stands. The howto wording is worth a docs fix when someone next edits it; this record does not change it.
 - The earlier paragraph of this record names "the federation-as-mail-transport item" as a neighbour. Its registry identifier is BL446 and its state is not started.
+
+## Downsides of each proposed feature
+
+Status: documents only, nothing decided. This section lists, for each feature proposed above as "needs a feature" and for each skill that carries a cost, what it would cost and what happens if it is left out. It recommends nothing. The recommendation stays where it was given, in the cross-check section.
+
+### What was read for this section
+
+- `internal/server/bl332_discussion_scope.go`: the log entry has the fields sequence, content, role, timestamp, origin peer and an optional administrative op. It has no message identifier, no seat and no stamp kind. Each append is a line written to `~/.datawatch/discussions/<id>/wal.jsonl` and, when an encryption key is set, each line is encrypted. The write path numbers the entry from the existing log.
+- `internal/server/bl332_discussion_sync.go`: the push to each participant runs in a background goroutine, returns on any error without a trace, and closes the reply body without reading it. The receive handler appends content, role and origin peer only, and discards the append result. The write throttle is 60 writes per minute per bearer token, kept in memory.
+- `internal/session/discussion_subs.go` and `internal/mcp/bl358_discussion_subscribe.go`: a subscription is two strings, the discussion identifier and the session name, kept in a JSON file. Dispatch looks up a running session by name, skips it when none is found, and sends the entry as input.
+- `internal/mcp/bl356_exit_hooks.go`: exit hooks carry an enabled flag and a cooldown in seconds (default 300), and have tools to enable and disable them.
+- `internal/mcp/bl357_queue.go`: the work queue is role based (push, claim, complete, fail, list) on the local daemon.
+- `docs/howto/discussion-scopes.md`: the log location and the participant sync description.
+
+### Costs that apply to every feature below
+
+- Flat rate plan. The plan is a flat monthly fee. Every dollar figure the daemon's cost tools show is an API-equivalent estimate, not a charge. The real limit is the plan's usage window. A feature that starts or lengthens model sessions spends that window, and so it can cause a usage back-off, even though no money is billed. The features that spend none of it (receipts, read state, provenance) cost only disk, memory and processor time on the daemon.
+- Settings. Every tunable a feature adds would need a documented setting, a config reference entry and a way to read it through the MCP tools and the docs, which is more work and more surface than the code alone.
+- Release work. Each feature is a minor version bump with the parity items listed in the parity section (REST, MCP, CLI, comm channel, config, PWA, plus parity issues for Android and iPhone). That is documentation, test and surface cost beyond the daemon change.
+- Sequencing. All of it follows the 10.0.0 release work.
+
+### 1. Read-back delivery receipts: downsides
+
+- Complexity added to the daemon: a stable message identifier on the log entry; a receipt step on the receive handler (append, read back, hash, reply); a sender-side receipt store with pending, confirmed and failed states; a retry policy and a timeout for pending receipts; a status read. The push today is a fire-and-forget goroutine, so this turns it into a tracked operation with a lifecycle.
+- New state to keep consistent across peers: one receipt record per message and peer, held on the sender only. The receiver keeps nothing new except the identifier on the entry. The receipt can disagree with reality if the reply is lost after the receiver stored the entry (the sender sees pending or failed while the entry is present), so a retry must be safe to repeat and the receiver must treat a repeat of the same identifier as already stored.
+- Security and privacy surface: the receipt carries a hash of private message content. A hash of a short or guessable message can be tested by anyone who sees it, so the receipt should travel only on the authenticated reply and not be logged or shown beyond the sender. A peer can lie in a receipt, so it proves storage only as far as that peer is trusted. The status read exposes who received what, and that should sit behind the same capability checks as the log read.
+- Cost: no model use. Extra network round trip per participant per write, extra disk for the receipt store. The 10 second push timeout in the current code means a slow peer holds a receipt pending for that long. Nothing here is billed.
+- Upgrade and migration: entries written before the change have no identifier, so they can never get a receipt and a receipt reader must show them as unknown. A peer that has not been upgraded cannot return a hash, so mixed-version pairs show every message as failed or pending unless the sender treats an old reply as unknown. The receive route changes shape, and old and new peers must keep working together for a release or more.
+- If left out: a push to a peer that is down or that fails to append is lost with no sign, the writer never learns whether any peer stored the entry, and the receive handler keeps answering ok after a failed append. Siblings must fall back to a manual read of the other node's log to check.
+
+### 2. Per-seat read state: downsides
+
+- Complexity added to the daemon: a new read-marker record type in the log next to the existing administrative records; a merge rule (latest change per recipient and seat, node name as tie break); a catch-up pull, which is new replication behaviour because replication today is a one-way push with no pull; a clock policy. This is the largest of the four features.
+- New state to keep consistent across peers: one marker per recipient and seat, replicated both ways, plus the sequence or identifier it points at. This is the only proposed feature whose state must converge in both directions. Sequence numbers differ per replica today, so markers must point at the stable identifier from request 1 and not at a line number, which makes request 2 depend on request 1. Markers grow with the store if kept per message, and are cheap but coarse if kept as a high-water mark.
+- Security and privacy surface: a marker reveals when a seat read a message and so reveals activity. A peer that may write markers can mark another seat's mail as read, hide mail from it, or overwrite a correct marker with a later timestamp. With change wins, a forged future timestamp beats every real marker until the clock passes it, so a bounded skew limit is a security need as well as a correctness need. The catch-up pull is a new endpoint that returns log content to a peer and needs its own capability check.
+- Cost: no model use. Disk and network for markers and the pull; marker writes would count against the 60 per minute write throttle unless they are exempted, and an exemption opens a flood path. Nothing is billed.
+- Upgrade and migration: existing discussions have no markers, so everything reads as unread on first use unless a seat sets a starting position. Entries without identifiers (see request 1) cannot be marked individually. A mixed-version group cannot converge, so all peers in a discussion would need the upgrade before the feature is trusted. Rolling back leaves marker records in the log that old code does not understand; whether old code skips or rejects an unknown record type was not checked in this pass.
+- If left out: seats keep the position of their last read in their own notes, which is local to one node and one session. A seat that moves to another node starts over, two seats of the same agent can handle the same message twice, and no one can see what a sibling has read.
+
+### 3. Writer provenance: downsides
+
+- Complexity added to the daemon: three server-set fields on the log entry (stamp kind, writing seat, writing node) plus a separate declared field for what the caller claimed; the write path must resolve the authenticated peer and the session behind each call, through the MCP path and the REST path, and the replication payload must carry the fields unchanged; direct-append detection needs a rule for what an unstamped or out-of-order line looks like.
+- New state to keep consistent across peers: nothing new that needs merging, because the fields travel with the entry and are never edited. The one consistency risk is a receiver stamping its own values over the sender's. The receive handler today builds a new entry from content, role and origin peer, so it would have to be changed to keep the sender's stamp, and a receiver must then decide whether to trust a stamp it did not make, since it can only check the token of the peer that delivered it, not the seat behind that peer.
+- Security and privacy surface: this is the feature that addresses forging, and it only narrows it. Today the origin peer and role are whatever the request body says. A stamp is as strong as the token: two seats sharing one token are told apart only if the seat comes from the session identity, and a compromised peer can stamp anything it likes on entries it forwards. A direct append is detected, not prevented, and an unencrypted log has no integrity check, so someone with file access can still write a line that merely looks stamped. A tamper-evident chain would close that and is a larger change. Seat names and node names become visible to every reader of the log, which leaks which sessions exist.
+- Cost: no model use. A few bytes per entry; a small lookup on each write. Nothing is billed.
+- Upgrade and migration: existing entries have none of the fields and must read as unknown and never as trusted. Readers and tools that show provenance need that third state. Old peers drop the new fields on receive, so entries that pass through an old peer lose their stamp. There is no way to back-fill the past.
+- If left out: the origin peer and role stay caller-declared, a peer can write an entry that claims to come from a sibling, no entry records which of a sibling's seats wrote it, and a direct write to the log file looks the same as any other line.
+
+### 4. Wake on arrival: downsides
+
+- Complexity added to the daemon: the subscription record grows from two strings to include a stored task, an enabled flag and a cooldown; dispatch must start or resume a session, not only send input to a running one; dispatch must also run from the peer receive path and the REST write path, which it does not today, so the receive handler gains a side effect it never had; loop protection between two waking sessions; interaction with the capacity and usage guards when a wake is refused.
+- New state to keep consistent across peers: the wake settings are per recipient and live on the node that runs the session. They are not replicated, so a kill switch set on one node does nothing on another node that also holds a subscription for the same agent. Last-wake times for the cooldown are runtime state on one node.
+- Security and privacy surface: this is the highest-risk feature. A message from a peer can start a paid session on the recipient's node, and the entry text goes into that session as input, so a peer that may write can steer a model session (prompt injection) and can spend the recipient's usage window. The message content is private and enters the session transcript and any memory the session saves. A forged origin (request 3) makes a sender allow list unreliable until stamps exist. The kill switch has to be reachable from a comm channel, since an operator needs to stop a wake from a phone. The silent skip of a missing session today is safe in one respect: nothing starts. Removing it removes that safety.
+- Cost: this is the only feature of the six that spends model usage. Each wake starts or resumes a model session, and that session reads the message and then works. The dollar cost the tools report is API-equivalent only; the real cost is the plan's usage window, which a burst of wakes, a ping-pong between two agents, or one noisy peer can drain, and which can trigger the usage back-off for every other session on the plan. The cooldown limits the rate, not the length of each session. A per-sender allow list and a daily cap are not in the smallest design and are the likely next asks.
+- Upgrade and migration: the subscription file is a list of two-field records, so old records load with the new fields empty. Whether an empty enabled field must mean off, so that an upgrade never starts waking sessions that were only receiving input before, is a design choice that this record leaves open. Old peers do not know about wake, so nothing changes for them, but a wake on a peer-delivered entry needs the receive path change on the recipient's node.
+- If left out: a message reaches a session only if that session is already running under the subscribed name and the write was made through MCP on the same node. A message from a peer, or a write by REST, never reaches a session, and a missing session drops the message from delivery with no trace (it stays in the log). The stopgap is a scheduled spawn that polls, which spends a session start on every poll whether or not mail arrived, and that cost is real usage-window spend.
+
+### 5. Skill: agent-inbox-per-seat: downsides
+
+- Complexity added to the daemon: none. It is a skill that uses existing tools.
+- New state to keep consistent across peers: the saved read position is a memory note local to the seat and is not replicated, so it can be lost or can differ between nodes. One discussion per seat means many logs and many participant lists that someone must create, name consistently and clean up. There is no tool to list or retire them in bulk.
+- Security and privacy surface: the skill depends on a naming convention, not enforcement. Any peer allowed to write to a discussion can write to any seat's inbox, and any participant reads the whole inbox. Seats on the same node can read each other's inbox logs. Messages are stored in the log and, on the writing node, also in the memory store, so private content is held in more than one place. The skill adds no stamp, so the sender claimed in an entry is unverified (request 3).
+- Cost: no model use beyond the seat's own reading. A seat that long-polls holds its session open while it waits, and an open session spends usage window only while it is generating, but it occupies a session slot under the capacity limits. A poll loop that wakes a model to check an empty inbox spends usage on nothing. The skill inherits the 60 per minute write throttle and the lost-push behaviour of request 1.
+- Upgrade and migration: none for the daemon. The skill would be a registry or local skill, and a later rename of its tools or a change to the log read would need the skill to be revised. If features 1 to 3 are built later, the skill's saved position would have to be rewritten to use the stable identifier.
+- If left out: request 5 has no documented answer and each seat invents its own naming and position-keeping, with no shared convention across siblings. Nothing breaks.
+
+### 6. Skill: seat-handoff: downsides
+
+- Complexity added to the daemon: none. It is a skill that uses existing tools.
+- New state to keep consistent across peers: a handoff note and an acknowledgement in a handoff discussion, plus an identity backup on the outgoing node. If the incoming seat runs on another node, the note arrives by the one-way push and can be lost, so the outgoing seat can wait for an acknowledgement that never comes.
+- Security and privacy surface: the handoff note holds identity, working knowledge and open obligations, which is the densest private content in the whole design, and it travels over peer push to every participant of the handoff discussion. The identity update call changes the daemon's identity record, which belongs to the operator. A note that can name which identity fields to merge lets a forged or mistaken note rewrite them. The restore call on a failed handoff overwrites the current identity with the backup, so a handoff that races with an operator edit can lose that edit. The identity backups already exist to limit this, and the skill must use them.
+- Cost: no model use beyond the two seats doing the work. The note-writing and note-reading steps are model turns on both sides, and they are billed against the plan's usage window like any other turns. A long handoff note is a long read.
+- Upgrade and migration: none for the daemon. If the identity is meant to be per sibling and not per daemon, the skill has no place to put it and would have to be rewritten against the personal agents design (BL456), so some of its content could be discarded.
+- If left out: handoffs are ad hoc. The outgoing seat's identity, knowledge and open obligations reach the incoming seat only if someone remembers to carry them, there is no acknowledgement, and the identity record is not protected by a backup taken at the right moment.
+
+### Features and skills compared on one point
+
+| Item | Model usage spent | New state across peers | Needs a peer upgrade to be trusted |
+|---|---|---|---|
+| 1 Receipts | none | sender-side receipt store | yes |
+| 2 Read state | none | both-way merged markers | yes |
+| 3 Provenance | none | none (fields travel with the entry) | yes |
+| 4 Wake on arrival | yes, per wake | per-node wake settings | receive path on the recipient's node |
+| 5 Skill: inbox per seat | seat's own turns only | local saved position | no |
+| 6 Skill: seat handoff | both seats' turns | handoff note and acknowledgement | no |
+
+### Corrections found while checking
+
+- The earlier section "How the building blocks behave today" says the push drops every error. The code in `internal/server/bl332_discussion_sync.go` does drop errors (the comment on the function says they are logged, but no log call exists in it). The earlier statement stands and the comment is wrong. This record does not change the code.
+- Whether old code skips or rejects an unknown log record type was not verified in this pass, and is marked above as unchecked.
