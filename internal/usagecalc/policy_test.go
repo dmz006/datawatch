@@ -210,3 +210,33 @@ func TestPolicyTargetSerializesAsNullUnderFinishEarly(t *testing.T) {
 		t.Errorf("use-all advice JSON lacks policy_target 100: %s", body)
 	}
 }
+
+// TestAutoLanesPolicyFirstNote checks the auto lane mode's first note: off (the zero
+// value) every policy keeps the operator-chooses note, and on, every policy's first note
+// says the daemon sets the lane count within the operator maximum, while the calculator
+// never stops a lane.
+func TestAutoLanesPolicyFirstNote(t *testing.T) {
+	for _, policy := range Policies() {
+		in := workedExample(t)
+		in.Policy = policy
+		if got := Advise(in).Advice.Notes[0]; got != operatorChoosesNote {
+			t.Errorf("%s, auto lane mode off: first note = %q, want %q", policy, got, operatorChoosesNote)
+		}
+	}
+	for _, policy := range Policies() {
+		in := workedExample(t)
+		in.Policy = policy
+		in.AutoLanes = true
+		if got := Advise(in).Advice.Notes[0]; got != autoDaemonNote {
+			t.Errorf("%s, auto lane mode on: first note = %q, want %q", policy, got, autoDaemonNote)
+		}
+	}
+	// The needs-path advice, built before any reading, carries the same swapped note.
+	in := workedExample(t)
+	in.Reset = ResetSpec{}
+	in.AutoLanes = true
+	got := Advise(in).Advice.Notes[0]
+	if got != autoDaemonNote {
+		t.Errorf("needs path, auto lane mode on: first note = %q, want %q", got, autoDaemonNote)
+	}
+}

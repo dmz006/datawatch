@@ -48,6 +48,10 @@ const (
 	WorkInUseEstimate   = "estimate"
 	WorkInUseNone       = "none"
 	operatorChoosesNote = "The operator chooses the number of lanes; this is advice only."
+	// autoDaemonNote replaces operatorChoosesNote as the first note of the advice while
+	// the auto lane mode is on: the daemon sets the lane count itself, within the
+	// operator maximum, and under either wording the calculator never stops a lane.
+	autoDaemonNote = "The daemon sets the number of lanes within the operator maximum; this calculator never stops or slows a lane."
 )
 
 // LanesSource values: how the keeper arrived at Reading.Lanes.
@@ -116,6 +120,10 @@ type Input struct {
 	SafetyPoints *float64 `json:"safety_points,omitempty"`
 	// Policy is use-all, pace or finish-early; empty or unknown means use-all.
 	Policy        string        `json:"policy"`
+	// AutoLanes switches the auto lane mode on: the first note of the advice then says
+	// the daemon sets the lane count within the operator maximum, and the calculator
+	// still never stops a lane.
+	AutoLanes     bool          `json:"auto_lanes"`
 	RemainingWork RemainingWork `json:"remaining_work"`
 }
 
@@ -264,6 +272,7 @@ type settings struct {
 	baseline    float64
 	safety      float64
 	policy      string
+	autoLanes   bool
 }
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
@@ -278,11 +287,12 @@ func clampPoints(v, fallback float64) float64 {
 
 func newSettings(in Input) settings {
 	s := settings{
-		extra:    clampPoints(in.ExtraCreditPoints, 0),
-		maxLanes: in.MaxLanes,
-		baseline: DefaultBaselinePer24h,
-		safety:   DefaultSafetyPoints,
-		policy:   normalizePolicy(in.Policy),
+		extra:     clampPoints(in.ExtraCreditPoints, 0),
+		maxLanes:  in.MaxLanes,
+		baseline:  DefaultBaselinePer24h,
+		safety:    DefaultSafetyPoints,
+		policy:    normalizePolicy(in.Policy),
+		autoLanes: in.AutoLanes,
 	}
 	if s.maxLanes <= 0 {
 		s.maxLanes = DefaultMaxLanes
@@ -387,7 +397,7 @@ func Advise(in Input) Advice {
 		ByLanes:           []LaneRow{},
 		Series:            []SeriesPoint{},
 		Daily:             []DayUse{},
-		Advice:            PolicyAdvice{Policy: cfg.policy, Notes: []string{operatorChoosesNote}},
+		Advice:            PolicyAdvice{Policy: cfg.policy, Notes: []string{leadNote(cfg)}},
 	}
 
 	out.Zone = in.Reset.Zone

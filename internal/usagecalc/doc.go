@@ -28,6 +28,8 @@
 //     suggestion and the finish block of the advice. Every number of the reading is the
 //     same under all three policies.
 //   - The first note under every policy says the operator chooses the lane count, and the
-//     calculator never stops or slows a lane.
+//     calculator never stops or slows a lane. With the auto lane mode on, the first note
+//     instead says the daemon sets the lane count within the operator maximum, and the
+//     calculator still never stops or slows a lane.
 //   - No infinite or NaN value appears in the output, so the result always marshals to JSON.
 package usagecalc
