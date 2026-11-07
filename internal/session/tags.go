@@ -132,7 +132,7 @@ func (m *Manager) SystemTagsByPRD(prdID string) []string {
 	if prdID == "" {
 		return out
 	}
-	out = append(out, m.systemTagIndex()[prdID]...)
+	out = append(out, m.cachedSystemTagIndex()[prdID]...)
 	return out
 }
 
