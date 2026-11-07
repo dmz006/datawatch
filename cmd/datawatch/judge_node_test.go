@@ -51,7 +51,7 @@ func TestGuardrailJudgeRunsOnHeldNode(t *testing.T) {
 	cfg.DataDir = t.TempDir()
 	if _, _, err := runOneShotJudgeSessionCaptureID(cfg, "prd-g", projectDir, "pi", "ollama/q", "",
 		"autonomous:guardrail:unit-1", prompt, outputFile, "guardrail-unit-1-sec.json",
-		10*time.Second, node); err != nil {
+		10*time.Second, node, launchTags{}); err != nil {
 		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
 	}
 	if got := started["compute_node"]; got != "fast" {

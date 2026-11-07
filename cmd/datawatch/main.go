@@ -4806,7 +4806,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
 			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
-				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
+				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout,
+				launchTags{})
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// One live-config snapshot for this invocation (see
@@ -6375,7 +6376,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode,
+					launchTags{})
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -6550,7 +6552,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
 							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)
+								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode,
+								launchTags{})
 							if serr != nil {
 								att.TimedOut = isOneShotTimeout(serr)
 								// BL410 Phase 0 — the SESSION itself failed (timeout,
