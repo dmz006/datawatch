@@ -568,6 +568,8 @@ type Manager struct {
 
 	// probeClaudeAliveFunc (BL355) — test injection point; overrides probeClaudeAlive.
 	probeClaudeAliveFunc func(sess *Session) bool
+	// paneCommandFn — test injection point for the pane foreground command; nil → paneForegroundCommand.
+	paneCommandFn func(tmuxSession string) (string, error)
 
 	// cfg holds the full config reference for per-LLM settings lookup.
 	cfg *config.Config
@@ -6844,10 +6846,16 @@ func (m *Manager) StartReconciler(ctx context.Context) {
 }
 
 // probeClaudeAlive (BL355) — returns true when the AI process is alive in the
-// tmux pane. Uses `tmux display-message -p -t <session> '#{pane_current_command}'`
-// to read the foreground command. If it is a shell (bash/sh/zsh/fish/dash/ksh/tcsh),
-// Claude has exited and the session is a zombie. Virtual sessions (no TmuxSession)
-// are always considered alive.
+// tmux pane. It reads the pane's foreground command (Manager.paneCommandFn,
+// defaulting to paneForegroundCommand). The rule:
+//   - virtual sessions (no TmuxSession) are always alive;
+//   - an unreadable or empty command means dead;
+//   - a foreground command that is not a shell (bash/sh/zsh/fish/dash/ksh/tcsh)
+//     means alive;
+//   - a shell foreground is not proof of death, because a pipeline pane
+//     (for example pi piped through tee) reports the shell. In that case the
+//     answer is paneProcessAlive: alive when the pane process has a live
+//     child, dead for a bare shell with no child.
 func (m *Manager) probeClaudeAlive(sess *Session) bool {
 	if m.probeClaudeAliveFunc != nil {
 		return m.probeClaudeAliveFunc(sess)
@@ -6855,22 +6863,34 @@ func (m *Manager) probeClaudeAlive(sess *Session) bool {
 	if sess.TmuxSession == "" {
 		return true // virtual sessions (council, agent, etc.) have no pane
 	}
-	out, err := exec.Command("tmux", "display-message", "-p", "-t", sess.TmuxSession, "#{pane_current_command}").Output()
+	cmdFn := m.paneCommandFn
+	if cmdFn == nil {
+		cmdFn = paneForegroundCommand
+	}
+	paneCmd, err := cmdFn(sess.TmuxSession)
 	if err != nil {
 		return false
 	}
-	paneCmd := strings.TrimSpace(string(out))
+	paneCmd = strings.TrimSpace(paneCmd)
 	if paneCmd == "" {
 		return false
 	}
-	// If the foreground command is a shell, Claude has exited
 	shells := []string{"bash", "sh", "zsh", "fish", "dash", "ksh", "tcsh"}
 	for _, shell := range shells {
 		if paneCmd == shell {
-			return false
+			return m.paneProcessAlive(sess)
 		}
 	}
 	return true
+}
+
+// paneForegroundCommand returns the trimmed foreground command of a tmux pane.
+func paneForegroundCommand(tmuxSession string) (string, error) {
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", tmuxSession, "#{pane_current_command}").Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 func (m *Manager) reconcileSessions(ctx context.Context) {
