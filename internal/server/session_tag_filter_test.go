@@ -51,7 +51,7 @@ func checkIDs(t *testing.T, got []string, want ...string) {
 
 func TestSessionsAxisShortcutFilters(t *testing.T) {
 	tm, add := newTagShortcutTestManager(t)
-	add("s-system", "", []string{"plain"}, []string{"project:datawatch", "stage:build"})
+	add("s-system", "", []string{"plain"}, []string{"project:datawatch", "stage:build", "compute:north"})
 	add("s-inherit-project", "22220002", []string{"web"}, nil) // inherits project:datawatch
 	add("s-inherit-stage", "33330003", []string{"web"}, nil)   // inherits stage:build
 	add("s-plain", "", nil, nil)
@@ -75,6 +75,7 @@ func TestSessionsAxisShortcutFilters(t *testing.T) {
 	check("?stage=build", "s-system", "s-inherit-stage")
 	check("?automaton=nosuch")
 	check("?role=supervisor")
+	check("?compute=north", "s-system")
 	// Combinations under tag_match.
 	check("?project=datawatch&stage=build", "s-system", "s-inherit-project", "s-inherit-stage")
 	check("?project=datawatch&stage=build&tag_match=all", "s-system")
@@ -83,8 +84,11 @@ func TestSessionsAxisShortcutFilters(t *testing.T) {
 	check("?tag=stage:build&stage=build", "s-system", "s-inherit-stage") // duplicated once
 	// Blank values are ignored.
 	check("?role=", "s-system", "s-inherit-project", "s-inherit-stage", "s-plain")
-	// backend keeps its existing meaning (session backend, not an axis tag).
+	// backend keeps its existing meaning (session backend, not an axis
+	// shortcut — that name is already taken here; the backend placement
+	// axis is reachable as ?tag=backend:<value>).
 	check("?backend=nosuch")
+	check("?tag=backend:opencode")
 }
 
 // A tag appearing on several of one session's lists counts once.
@@ -159,9 +163,9 @@ func TestSessionsTagInventoryEndpoint(t *testing.T) {
 	}{
 		{"kind:worker", "kind", "worker", 1},
 		{"lane:fill", "lane", "fill", 1},
-		{"plain", "", "plain", 2},
 		{"project:datawatch", "project", "datawatch", 2}, // system + inherited
 		{"stage:build", "stage", "build", 1},
+		{"plain", "", "plain", 2}, // a tag with no axis sorts last
 	}
 	for _, w := range want {
 		e, ok := byTag[w.tag]
@@ -176,20 +180,16 @@ func TestSessionsTagInventoryEndpoint(t *testing.T) {
 	if len(out.Tags) != len(want) {
 		t.Errorf("got %d entries, want %d: %v", len(out.Tags), len(want), out.Tags)
 	}
-	// Sorted by axis, then count desc, then tag.
-	sorted := append([]inventoryEntry(nil), out.Tags...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		if sorted[i].Axis != sorted[j].Axis {
-			return sorted[i].Axis < sorted[j].Axis
-		}
-		if sorted[i].Count != sorted[j].Count {
-			return sorted[i].Count > sorted[j].Count
-		}
-		return sorted[i].Tag < sorted[j].Tag
-	})
-	for i := range out.Tags {
-		if out.Tags[i] != sorted[i] {
-			t.Errorf("entries not sorted: got %v, want %v", out.Tags, sorted)
+	// The order is pinned: tagged axes ascending, then the axis-less tag
+	// last: kind(1) < lane(1) < project(2) < stage(1) < plain.
+	wantTags := []string{"kind:worker", "lane:fill", "project:datawatch", "stage:build", "plain"}
+	var gotTags []string
+	for _, e := range out.Tags {
+		gotTags = append(gotTags, e.Tag)
+	}
+	for i := range wantTags {
+		if i >= len(gotTags) || gotTags[i] != wantTags[i] {
+			t.Errorf("order = %v, want %v", gotTags, wantTags)
 			break
 		}
 	}

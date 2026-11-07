@@ -1736,7 +1736,7 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 			mcpsdk.Description("BL361 — filter by exact state: running, waiting_input, rate_limited, complete, failed, killed. Empty = all."),
 		),
 		mcpsdk.WithString("backend",
-			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all (this is the session's backend, not an axis shortcut)."),
+			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all. This is the session's own backend, not an axis shortcut: filter the backend placement axis with tag=backend:<value> (the same name cannot be both, and that open conflict is noted in the tag-listing plan)."),
 		),
 		mcpsdk.WithString("project",
 			mcpsdk.Description("Axis shortcut — expanded to the project:<value> tag filter (a session's own, system, and inherited tags all count). Empty = all."),
@@ -1759,6 +1759,9 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("lane",
 			mcpsdk.Description("Axis shortcut — expanded to the lane:<value> tag filter. Empty = all."),
 		),
+		mcpsdk.WithString("compute",
+			mcpsdk.Description("Axis shortcut — expanded to the compute:<value> tag filter (the compute node the work was placed on). Empty = all."),
+		),
 		mcpsdk.WithString("alive",
 			mcpsdk.Description("BL361 — filter by claude_alive field: true, false, or any (default). Empty = any."),
 		),
@@ -1776,7 +1779,7 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		),
 		mcpsdk.WithArray("tags",
 			mcpsdk.WithStringItems(),
-			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags, its system tags, and the tags it inherits from the Automaton that spawned it all count. The axis shortcut params (project, automaton, automation, stage, kind, role, lane) expand to axis:value tags and combine with this list under tag_match."),
+			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags, its system tags, and the tags it inherits from the Automaton that spawned it all count. The axis shortcut params (project, automaton, automation, stage, kind, role, lane, compute) expand to axis:value tags and combine with this list under tag_match."),
 		),
 		mcpsdk.WithString("tag_match",
 			mcpsdk.Description("any (default): the session needs at least one of tags (or an expanded shortcut); all: every tag."),
@@ -1785,12 +1788,15 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 }
 
 // sessionTagShortcuts expands the axis shortcut params (project, automaton,
-// automation, stage, kind, role, lane) into axis:value tag filters; an empty
-// or blank value is ignored. The backend param is the backend family filter
-// and is not an axis shortcut.
+// automation, stage, kind, role, lane, compute) into axis:value tag filters;
+// an empty or blank value is ignored. The backend param is the session-backend
+// filter and is not an axis shortcut here — the name is already taken; the
+// backend placement axis stays reachable as tag=backend:<value>. The open
+// conflict (the tag-listing plan lists backend among the wanted shortcuts) is
+// noted in docs/plans/2026-10-31-tag-listing-filters.md §12, not settled.
 func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
 	var out []string
-	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane"} {
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
 		if v := strings.TrimSpace(req.GetString(axis, "")); v != "" {
 			out = append(out, axis+":"+v)
 		}
@@ -1803,7 +1809,7 @@ func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
 // counted over the sessions that carry it.
 func (s *Server) toolSessionTagList() mcpsdk.Tool {
 	return mcpsdk.NewTool("session_tag_list",
-		mcpsdk.WithDescription("List the tags in use across live and archived sessions. Each entry has the tag, its axis and value from the axis:value form (axis is empty for a plain tag), and the number of sessions that carry it — a session counts once per tag even when it appears on several of the session's tag lists (own, system, and inherited tags all count). Entries are sorted by axis, then count (descending), then tag. Read-only."),
+		mcpsdk.WithDescription("List the tags in use across live and archived sessions. Each entry has the tag, its axis and value from the axis:value form (axis is empty for a plain tag), and the number of sessions that carry it — a session counts once per tag even when it appears on several of the session's tag lists (own, system, and inherited tags all count). Entries are sorted by axis (tags without an axis last), then count (descending), then tag. Read-only."),
 	)
 }
 

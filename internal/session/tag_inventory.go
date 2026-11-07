@@ -28,8 +28,9 @@ func tagAxisValue(tag string) (axis, value string) {
 // each split into its axis and value and counted over the sessions that carry
 // it. A tag counts once per session even when it appears on more than one of
 // the session's tag lists (its own, system and inherited tags all count).
-// The result is sorted by axis, then count (descending), then tag, so the
-// axis groups come out grouped and ordered.
+// The result is sorted by axis (tags carrying no axis last), then count
+// (descending), then tag, so the axis groups come out grouped and ordered
+// and untagged tags read at the end.
 func (m *Manager) TagInventory() []TagInventoryEntry {
 	counts := make(map[string]int)
 	mark := func(sess *Session) {
@@ -49,13 +50,21 @@ func (m *Manager) TagInventory() []TagInventoryEntry {
 		out = append(out, TagInventoryEntry{Tag: tag, Axis: axis, Value: value, Count: n})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if out[i].Axis != out[j].Axis {
-			return out[i].Axis < out[j].Axis
+		if out[i].Axis == out[j].Axis {
+			if out[i].Count != out[j].Count {
+				return out[i].Count > out[j].Count
+			}
+			return out[i].Tag < out[j].Tag
 		}
-		if out[i].Count != out[j].Count {
-			return out[i].Count > out[j].Count
+		// A tag with no axis sorts after every axis-tagged one, then the
+		// tagged axes sort ascending.
+		if out[i].Axis == "" {
+			return false
 		}
-		return out[i].Tag < out[j].Tag
+		if out[j].Axis == "" {
+			return true
+		}
+		return out[i].Axis < out[j].Axis
 	})
 	return out
 }

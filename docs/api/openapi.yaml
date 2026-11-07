@@ -66,7 +66,11 @@ paths:
         - name: backend
           in: query
           required: false
-          description: Filter by LLM backend
+          description: >-
+            Filter by LLM backend (BL361 — this is the session's own backend
+            filter, not the backend tag axis: filter the backend axis with
+            ?tag=backend:<value>). The plan's backend axis shortcut is an open
+            naming conflict — the parameter name is already taken here
           schema:
             type: string
         - name: alive
@@ -133,6 +137,12 @@ paths:
           in: query
           required: false
           description: "Axis shortcut - expands to the `lane:<value>` tag filter"
+          schema:
+            type: string
+        - name: compute
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `compute:<value>` tag filter (the compute node the work was placed on)"
           schema:
             type: string
         - name: view

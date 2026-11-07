@@ -1978,9 +1978,14 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Axis shortcuts expand to axis:value tag filters and combine with the
-	// explicit tag list under tag_match (the backend param is the backend
-	// family filter, not an axis shortcut). Empty values are ignored.
-	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane"} {
+	// explicit tag list under tag_match. Empty values are ignored. backend
+	// is deliberately NOT one of them here: on this endpoint (and on
+	// list_sessions) its name already is the session-backend filter, and a
+	// parameter cannot carry both meanings — the backend placement axis
+	// stays reachable as ?tag=backend:<value>. The open conflict (the plan
+	// lists backend among the wanted shortcuts) is noted in
+	// docs/plans/2026-10-31-tag-listing-filters.md §12, not settled.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
 		if v := strings.TrimSpace(q.Get(axis)); v != "" {
 			tag := axis + ":" + v
 			if !tagSeen[tag] {

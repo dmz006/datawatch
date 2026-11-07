@@ -36,7 +36,7 @@ func TestSessionTagListToolDeclaration(t *testing.T) {
 func TestListSessionsDeclaresAxisShortcuts(t *testing.T) {
 	s := &Server{}
 	props := s.toolListSessions().InputSchema.Properties
-	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane"} {
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
 		if _, ok := props[axis]; !ok {
 			t.Errorf("list_sessions should declare the %q axis shortcut param", axis)
 		}
@@ -81,9 +81,9 @@ func TestHandleSessionTagListCounts(t *testing.T) {
 		t.Fatalf("bad json: %v: %s", err, text)
 	}
 	want := []session.TagInventoryEntry{
-		{Tag: "alpha", Axis: "", Value: "alpha", Count: 2},
 		{Tag: "project:datawatch", Axis: "project", Value: "datawatch", Count: 1},
 		{Tag: "stage:build", Axis: "stage", Value: "build", Count: 1},
+		{Tag: "alpha", Axis: "", Value: "alpha", Count: 2}, // a tag with no axis sorts last
 	}
 	if len(out.Tags) != len(want) {
 		t.Fatalf("got %v, want %v", out.Tags, want)
@@ -104,7 +104,7 @@ func TestListSessionsAxisShortcutFilter(t *testing.T) {
 		owners: map[string][]string{"22220002": {"automaton:supervisor"}},
 	})
 	for _, sr := range []*session.Session{
-		{ID: "ax11", FullID: "testhost-ax11", State: session.StateRunning, SystemTags: []string{"automaton:supervisor", "web"}},
+		{ID: "ax11", FullID: "testhost-ax11", State: session.StateRunning, SystemTags: []string{"automaton:supervisor", "web", "compute:north"}},
 		{ID: "ax22", FullID: "testhost-ax22", State: session.StateRunning, PRDID: "22220002", Tags: []string{"web"}},
 		{ID: "ax33", FullID: "testhost-ax33", State: session.StateRunning, Tags: []string{"web"}},
 	} {
@@ -149,6 +149,11 @@ func TestListSessionsAxisShortcutFilter(t *testing.T) {
 		t.Errorf("unknown axis value should list nothing: %s", none)
 	}
 
+	cn := text(map[string]any{"format": "json", "compute": "north"})
+	if !strings.Contains(cn, `"ax11"`) || strings.Contains(cn, `"ax33"`) {
+		t.Errorf("compute shortcut should keep only ax11: %s", cn)
+	}
+
 	blank := text(map[string]any{"format": "json", "lane": ""})
 	if !strings.Contains(blank, `"ax33"`) {
 		t.Errorf("blank shortcut should be ignored: %s", blank)
@@ -163,12 +168,13 @@ func TestListSessionsViewQueryAxisShortcuts(t *testing.T) {
 		"project": "datawatch",
 		"lane":  "", // blank → ignored
 		"role":  " supervisor ", // trimmed
+		"compute": "north",
 		"tags":  []any{"web"},
 	}))
 	if !ok || errMsg != "" {
 		t.Fatalf("ok=%v err=%q", ok, errMsg)
 	}
-	want := []string{"web", "project:datawatch", "stage:build", "role:supervisor"} // canonical axis order
+	want := []string{"web", "project:datawatch", "stage:build", "role:supervisor", "compute:north"} // canonical axis order
 	got := q["tag"]
 	if len(got) != len(want) {
 		t.Fatalf("tag params = %v, want %v", got, want)
