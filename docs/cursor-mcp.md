@@ -209,6 +209,10 @@ Selected core tools:
 | `get_my_scope` | Self-scope confirmation: own identity, per-session MCP server name, mode (host vs container), and every session's name/state (BL463) |
 | `vision_describe` | Describe an image file using the configured vision model (requires `vision.enabled: true`) |
 | `web_search_stats` | Web search configuration and stats — provider, URL, engine, query/error counters (requires `web_search.enabled: true`) |
+| `plugin_service_status` | Read one plugin's service status (lifecycle mode, state, address, version, uptime, last health check) — the `service` object of `GET /api/plugins/{name}`; takes `name`; read-only |
+| `plugin_widget_list` | List a plugin's declared widgets with each widget's latest value (null until one arrived) — same body as `GET /api/plugins/{name}/widgets`; takes `name`; read-only |
+| `plugin_widget_get` | Fetch one widget as declared plus its latest value — same body as `GET /api/plugins/{name}/widgets/{widget_id}`; takes `name` and `widget_id`; read-only |
+| `plugin_token_list` | List a plugin's token usage: the secret names it references (with the manifest fields and whether each exists) and the service token names with creation times — same body as `GET /api/plugins/{name}/tokens`; takes `name`; read-only; never returns a secret or token value; operator-token-only (a federation peer gets the REST 403) |
 
 ## Example Usage in Cursor
 

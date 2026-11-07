@@ -837,6 +837,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL325 (v8.1.0) — community registry install + browse.
 	mcpSrv.AddTool(s.toolPluginInstall(), tracked(s.handlePluginInstall))
 	mcpSrv.AddTool(s.toolPluginBrowseRegistry(), tracked(s.handlePluginBrowseRegistry))
+	// BL403 (plugin service reads) — service status, widgets and token
+	// usage over the same REST handlers the widget/token routes use.
+	mcpSrv.AddTool(s.toolPluginServiceStatus(), tracked(s.handlePluginServiceStatus))
+	mcpSrv.AddTool(s.toolPluginWidgetList(), tracked(s.handlePluginWidgetList))
+	mcpSrv.AddTool(s.toolPluginWidgetGet(), tracked(s.handlePluginWidgetGet))
+	mcpSrv.AddTool(s.toolPluginTokenList(), tracked(s.handlePluginTokenList))
 	// BL242 (v6.4.0) — centralized secrets manager.
 	mcpSrv.AddTool(s.toolSecretList(), tracked(s.handleSecretList))
 	mcpSrv.AddTool(s.toolSecretGet(), tracked(s.handleSecretGet))
