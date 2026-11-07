@@ -442,8 +442,10 @@ restarts.
 3. Give an important Automaton a higher priority so its tasks go first:
    `POST /api/autonomous/prds/{id}/set_priority {"priority": 10}` (PWA:
    Automaton settings > Priority).
-4. Cancel or reset a waiting task like any other; cancelling removes it
-   from the queue.
+4. Reset a waiting task to re-admit it (it has not started, so no
+   force is needed — the reset keeps its place in the capacity queue,
+   retargeting its target pool if the worker resolution changed, with
+   a fresh wait budget); cancelling removes it from the queue outright.
 5. After a daemon restart, waiting tasks are put back in the queue.
 
 An alert is raised when a task has waited 30 minutes.

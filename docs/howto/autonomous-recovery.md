@@ -15,7 +15,7 @@ exec_steps:
     args: {id: "{{params.prd_id}}"}
     read_only: false
   - tool: autonomous_prd_reset_task
-    description: Reset a failed/blocked task to pending, or force-requeue a completed/cancelled one
+    description: Reset a failed, blocked, or waiting-for-capacity task to pending, or force-requeue a completed/cancelled one
     args: {id: "{{params.prd_id}}", task_id: "{{params.task_id}}", force: true}
     read_only: false
 ---
@@ -34,7 +34,11 @@ Three operator-facing repair tools, all scoped to a single story or task
 so you never have to discard a partially-completed run:
 
 - **`reset_task`** — puts one task back to pending so the run picks it
-  up again. Without `force`, only `failed`/`blocked` tasks qualify. With
+  up again. Without `force`, `failed`, `blocked`, and `waiting_capacity`
+  tasks qualify (a waiting task has not started, so no force is needed);
+  the daemon re-admits it — it keeps its place in the capacity queue
+  (its target pool retargets if the worker resolution changed) with a
+  fresh wait budget. With
   `force: true`, it also requeues a `completed` or `cancelled` task —
   and, as of v8.36.6, this works even when the *Automaton* itself has
   already reached `completed`, and correctly reopens the task's story if
