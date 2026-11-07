@@ -1,2 +1,26 @@
-# Config-parity exemptions: key | surfaces | reason
-# surfaces: comma list of web,get,put,configure,cli or *; trailing .* on key exempts a prefix.
+# Config parity exemptions
+#
+# Lists configuration keys that are intentionally not exposed on every
+# operator surface. The config parity audit reads this file and skips the
+# listed key/surface pairs when it reports gaps.
+#
+# Line format (one entry per line):
+#
+#   key | surfaces | reason
+#
+#   key      The configuration key, written as a dotted path. A trailing
+#            ".*" exempts every key under that prefix.
+#   surfaces Comma-separated list of surfaces the exemption covers. Valid
+#            surfaces are: web, get, put, configure, cli. Use "*" to
+#            cover all of them.
+#   reason   Required. Say why the surface does not apply to this key, or
+#            point at the gap report that lists it. An entry with no
+#            reason is rejected.
+#
+# Blank lines and lines starting with "#" are ignored.
+#
+# Example (commented out, so it is not an active entry):
+#
+#   automata.example_key | web,cli | Set only by the daemon at startup; operators never edit it by hand.
+#
+# No active entries yet.
