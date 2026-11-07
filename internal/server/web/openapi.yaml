@@ -4085,6 +4085,13 @@ paths:
         deleted, on the Automaton branch against its merge base, lock files left
         out) above which the judges try `claude-code` first, default 400; 0 turns
         the size rule off.
+        `judge_prompt_file_threshold_lines` (whole number 0 to 100000; PUT key
+        `autonomous.judge_prompt_file_threshold_lines`) is the judge prompt length
+        in lines above which the prompt is delivered as a file; 0 always sends the
+        full prompt. `judge_delivery_wait_per_thousand_lines_seconds` (whole number
+        0 to 3600; PUT key `autonomous.judge_delivery_wait_per_thousand_lines_seconds`)
+        is the extra delivery wait per thousand prompt lines. Out-of-range values
+        are rejected with 400.
         `priority_by_kind` is the kind → capacity-queue priority table:
         kind name → integer, higher values line up closer to the front.
         Shipped defaults: bug=80, maintenance=70, feature=20, other=0
