@@ -152,7 +152,7 @@ func TestSupervisorLoopRunUnknownJob404(t *testing.T) {
 func TestSupervisorLoopPutThenGetRoundTrip(t *testing.T) {
 	// A non-default value for every key.
 	want := map[string]any{"enabled": false, "validator_retries": 4, "escalate_after_failures": 3,
-		"run_retention": 100, "lane_count.min": 1, "lane_count.max": 6}
+		"run_retention": 100, "archive_cancelled_after_minutes": 15, "lane_count.min": 1, "lane_count.max": 6}
 	for _, n := range supervisorloop.StepNames {
 		want[n+".enabled"] = false
 	}
@@ -223,6 +223,68 @@ func TestSupervisorLoopPutBadValueRefusesWholePut(t *testing.T) {
 		if s.supervisorLoopSettings().RunRetention == 77 {
 			t.Errorf("%s: the good sibling key was applied", key)
 		}
+	}
+}
+
+// TestSupervisorLoopArchiveGraceRoundTrip: the archive grace is served and
+// stored by the generic supervisor_loop path (it derives from
+// supervisorloop.Settings, no key list of its own). A PUT is read back by GET
+// in both key spellings, 0 is accepted, and a negative value refuses the whole
+// PUT, naming the key, without applying its good sibling.
+func TestSupervisorLoopArchiveGraceRoundTrip(t *testing.T) {
+	const key = "archive_cancelled_after_minutes"
+	grace := func(s *Server) any {
+		var surf map[string]any
+		if err := json.Unmarshal(getAutonomousConfigMap(t, s)["supervisor_loop"], &surf); err != nil {
+			t.Fatal(err)
+		}
+		return surf[key]
+	}
+
+	s, _ := newLoopServer(t)
+	if g := grace(s); g != float64(60) {
+		t.Fatalf("GET default = %v, want 60", g)
+	}
+	for _, prefix := range []string{"autonomous.supervisor_loop.", "supervisor_loop."} {
+		for _, v := range []int{15, 0, 240} {
+			putJSON(t, s.handlePutConfig, "/api/config", map[string]any{prefix + key: v})
+			if g := grace(s); g != float64(v) {
+				t.Errorf("%s%s: PUT %d, GET %v", prefix, key, v, g)
+			}
+			if got := s.supervisorLoopSettings().ArchiveCancelledAfterMinutes; got != v {
+				t.Errorf("%s%s: live settings = %d, want %d", prefix, key, got, v)
+			}
+		}
+	}
+
+	// A negative value refuses the whole PUT.
+	s, _ = newLoopServer(t)
+	putJSON(t, s.handlePutConfig, "/api/config", map[string]any{"autonomous.supervisor_loop." + key: 15})
+	b, _ := json.Marshal(map[string]any{
+		"autonomous.supervisor_loop.run_retention": 77, // good sibling must not apply
+		"autonomous.supervisor_loop." + key:        -1,
+	})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(string(b))))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("negative: want 400, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), key) {
+		t.Errorf("error does not name the key: %q", rr.Body.String())
+	}
+	if g := grace(s); g != float64(15) {
+		t.Errorf("refused PUT changed the grace to %v, want 15", g)
+	}
+	if s.supervisorLoopSettings().RunRetention == 77 {
+		t.Error("the good sibling key was applied")
+	}
+
+	// A non-number is refused too.
+	b, _ = json.Marshal(map[string]any{"autonomous.supervisor_loop." + key: "soon"})
+	rr = httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(string(b))))
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("string value: want 400, got %d", rr.Code)
 	}
 }
 

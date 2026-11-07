@@ -98,3 +98,75 @@ func TestSettingsLaneBounds(t *testing.T) {
 		t.Error("non-integer max accepted")
 	}
 }
+
+func TestArchiveCancelledAfterMinutesDefault(t *testing.T) {
+	s := DefaultSettings()
+	if s.ArchiveCancelledAfterMinutes != 60 {
+		t.Fatalf("default = %d, want 60", s.ArchiveCancelledAfterMinutes)
+	}
+	if got := s.Flat()[KeyArchiveCancelledAfterMinutes]; got != 60 {
+		t.Errorf("Flat default = %v, want 60", got)
+	}
+	if !IsKey(KeyArchiveCancelledAfterMinutes) || KeyArchiveCancelledAfterMinutes != "supervisor_loop.archive_cancelled_after_minutes" {
+		t.Errorf("key not registered: %q", KeyArchiveCancelledAfterMinutes)
+	}
+	found := false
+	for _, k := range Keys() {
+		if k == KeyArchiveCancelledAfterMinutes {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("Keys() omits the key")
+	}
+}
+
+func TestArchiveCancelledAfterMinutesSetFlatRoundTrip(t *testing.T) {
+	s := DefaultSettings()
+	if err := s.Set(KeyArchiveCancelledAfterMinutes, 15); err != nil {
+		t.Fatal(err)
+	}
+	if s.ArchiveCancelledAfterMinutes != 15 {
+		t.Fatalf("field = %d, want 15", s.ArchiveCancelledAfterMinutes)
+	}
+	flat := s.Flat()
+	if flat[KeyArchiveCancelledAfterMinutes] != 15 {
+		t.Fatalf("Flat = %v, want 15", flat[KeyArchiveCancelledAfterMinutes])
+	}
+	back, reset := ParseSettings(flat)
+	if len(reset) != 0 || back.ArchiveCancelledAfterMinutes != 15 {
+		t.Fatalf("round trip: %d reset=%v", back.ArchiveCancelledAfterMinutes, reset)
+	}
+}
+
+func TestArchiveCancelledAfterMinutesNegativeRefused(t *testing.T) {
+	s := DefaultSettings()
+	s.ArchiveCancelledAfterMinutes = -1
+	if err := s.Validate(); err == nil || !strings.Contains(err.Error(), KeyArchiveCancelledAfterMinutes) {
+		t.Errorf("Validate: %v", err)
+	}
+	s = DefaultSettings()
+	err := s.Set(KeyArchiveCancelledAfterMinutes, -5)
+	if err == nil || !strings.Contains(err.Error(), KeyArchiveCancelledAfterMinutes) {
+		t.Errorf("Set: %v", err)
+	}
+	if s.ArchiveCancelledAfterMinutes != 60 {
+		t.Errorf("refused Set mutated the value to %d", s.ArchiveCancelledAfterMinutes)
+	}
+	if err := s.Set(KeyArchiveCancelledAfterMinutes, "soon"); err == nil {
+		t.Error("non-integer accepted")
+	}
+}
+
+func TestArchiveCancelledAfterMinutesZeroAccepted(t *testing.T) {
+	s := DefaultSettings()
+	if err := s.Set(KeyArchiveCancelledAfterMinutes, 0); err != nil {
+		t.Fatalf("Set 0: %v", err)
+	}
+	if s.ArchiveCancelledAfterMinutes != 0 {
+		t.Errorf("field = %d, want 0", s.ArchiveCancelledAfterMinutes)
+	}
+	if err := s.Validate(); err != nil {
+		t.Errorf("Validate 0: %v", err)
+	}
+}

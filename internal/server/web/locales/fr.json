@@ -3689,6 +3689,8 @@
   "supervisor_loop_validator_retries": "Nouvelles tentatives du validateur (après une vérification échouée, 2 par défaut)",
   "supervisor_loop_escalate_after_failures": "Escalader après des échecs (exécutions échouées avant qu'un modèle plus fort prenne le relais, 2 par défaut)",
   "supervisor_loop_run_retention": "Historique d'exécutions conservé (nombre d'exécutions récentes, 500 par défaut)",
+  "supervisor_loop_archive_cancelled_after_minutes": "Archiver un automate annulé après (minutes depuis la dernière annulation, 0 = immédiatement, 60 par défaut)",
+  "supervisor_loop_archive_cancelled_after_minutes_hint": "Délai avant que la boucle archive un automate annulé ; pendant ce délai, la branche peut encore être inspectée ou réannulée.",
   "supervisor_loop_lane_count_min": "Minimum de voies (le plus petit nombre que la boucle peut fixer)",
   "supervisor_loop_lane_count_max": "Maximum de voies (le plus grand nombre que la boucle peut fixer, 0 = aucune borne, l'étape ne change rien)",
   "supervisor_loop_group_title": "Boucle de supervision",

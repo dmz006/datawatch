@@ -3689,6 +3689,8 @@
   "supervisor_loop_validator_retries": "バリデーターの再試行回数（チェック失敗後、既定 2）",
   "supervisor_loop_escalate_after_failures": "失敗後にエスカレーション（より強いモデルに引き継ぐまでの失敗回数、既定 2）",
   "supervisor_loop_run_retention": "保持する実行履歴（最近の実行数、既定 500）",
+  "supervisor_loop_archive_cancelled_after_minutes": "キャンセル済みオートマトンをアーカイブする猶予（最後のキャンセルからの分、0 = 即座、既定 60）",
+  "supervisor_loop_archive_cancelled_after_minutes_hint": "ループがキャンセル済みオートマトンをアーカイブするまでの猶予。猶予中はブランチの検査や再キャンセルが可能です。",
   "supervisor_loop_lane_count_min": "レーン数の下限（ループが設定できる最小レーン数）",
   "supervisor_loop_lane_count_max": "レーン数の上限（ループが設定できる最大レーン数、0 = 範囲なしでステップは何も変更しない）",
   "supervisor_loop_group_title": "スーパーバイザーループ",

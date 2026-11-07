@@ -3689,6 +3689,8 @@
   "supervisor_loop_validator_retries": "Reintentos del validador (reintentos tras una comprobación fallida, 2 por defecto)",
   "supervisor_loop_escalate_after_failures": "Escalar tras fallos (ejecuciones fallidas antes de que un modelo más fuerte tome el relevo, 2 por defecto)",
   "supervisor_loop_run_retention": "Historial de ejecuciones conservado (número de ejecuciones recientes, 500 por defecto)",
+  "supervisor_loop_archive_cancelled_after_minutes": "Archivar un autómata cancelado tras (minutos desde el último cancel, 0 = de inmediato, 60 por defecto)",
+  "supervisor_loop_archive_cancelled_after_minutes_hint": "Ventana antes de que el bucle archive un autómata cancelado; mientras dura, la rama aún puede inspeccionarse o cancelarse de nuevo.",
   "supervisor_loop_lane_count_min": "Mínimo de carriles (el menor número que el bucle puede fijar)",
   "supervisor_loop_lane_count_max": "Máximo de carriles (el mayor número que el bucle puede fijar, 0 = sin límites y el paso no cambia nada)",
   "supervisor_loop_group_title": "Bucle del supervisor",

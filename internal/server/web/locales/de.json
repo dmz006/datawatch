@@ -3689,6 +3689,8 @@
   "supervisor_loop_validator_retries": "Validator-Wiederholungen (Wiederholungen nach fehlgeschlagener Prüfung, Standard 2)",
   "supervisor_loop_escalate_after_failures": "Eskalieren nach Fehlschlägen (fehlgeschlagene Läufe, bevor ein stärkeres Modell übernimmt, Standard 2)",
   "supervisor_loop_run_retention": "Gespeicherter Laufverlauf (Anzahl der letzten Läufe, Standard 500)",
+  "supervisor_loop_archive_cancelled_after_minutes": "Stornierte Automaten archivieren nach (Minuten seit der letzten Stornierung, 0 = sofort, Standard 60)",
+  "supervisor_loop_archive_cancelled_after_minutes_hint": "Zeitfenster, bevor die Schleife einen stornierten Automaten archiviert; solange kann die Zweigarbeit noch geprüft oder erneut storniert werden.",
   "supervisor_loop_lane_count_min": "Mindestanzahl Lanes (niedrigste Lane-Anzahl, die die Schleife setzen darf)",
   "supervisor_loop_lane_count_max": "Höchstanzahl Lanes (höchste Lane-Anzahl, die die Schleife setzen darf, 0 = keine Grenzen, der Schritt ändert nichts)",
   "supervisor_loop_group_title": "Supervisor-Schleife",

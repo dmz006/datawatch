@@ -16,7 +16,7 @@ const MODEL_JOBS = ['draft_spec', 'classify_ci_failure', 'pick_backend'];
 const EXPECTED_KEYS = ['enabled']
   .concat(STEPS.map(s => s + '.enabled'))
   .concat(MODEL_JOBS.reduce((a, j) => a.concat([j + '.style', j + '.backend', j + '.model']), []))
-  .concat(['validator_retries', 'escalate_after_failures', 'run_retention', 'lane_count.min', 'lane_count.max']);
+  .concat(['validator_retries', 'escalate_after_failures', 'run_retention', 'archive_cancelled_after_minutes', 'lane_count.min', 'lane_count.max']);
 
 const JOBS_BODY = {
   enabled: true,
@@ -123,6 +123,22 @@ test('every supervisor_loop_ key exists in all five locale files', () => {
       assert.ok(enKeys.includes(k), l + ' has extra ' + k);
       assert.ok(!/\bPRDs?\b|\bBL\d+/.test(b[k]), l + ' ' + k + ' must not say PRD or carry a tracker ID');
     }
+  }
+});
+
+test('the archive grace field renders as a number input with minimum 0', () => {
+  const s = loadApp();
+  const f = JSON.parse(vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(x => x.id === 'autonomous')).fields.find(f => f.key === 'autonomous.supervisor_loop.archive_cancelled_after_minutes'))", s));
+  assert.ok(f, 'the archive grace field exists');
+  assert.equal(f.type, 'number', 'the field is a number input');
+  assert.equal(f.min, 0, 'the field renders with minimum 0');
+  const en = readLocale('en');
+  assert.ok(en[f.labelKey], 'en label for the field');
+  assert.ok(en[f.hintKey], 'en hint for the field');
+  for (const l of LOCALES) {
+    const b = readLocale(l);
+    assert.ok(b[f.labelKey] && b[f.hintKey], l + ' has both the label and the hint');
   }
 });
 

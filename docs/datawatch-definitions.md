@@ -1943,7 +1943,7 @@ The settings under `autonomous.decisions` (Settings → Automata) control the de
 <a id="supervisor-loop-enabled"></a>
 - **`supervisor_loop.enabled`** — Master switch for the whole loop. On by default.
 <a id="supervisor-loop-close-finished-records-enabled"></a>
-- **`supervisor_loop.close_finished_records.enabled`** — Turns the close finished records step on or off. The step closes the records of Automata that have finished. On by default.
+- **`supervisor_loop.close_finished_records.enabled`** — Turns the close finished records step on or off. The step closes the records of Automata that have finished: completed and rejected ones are archived on the next idle pass; a cancelled one is archived once the [`supervisor_loop.archive_cancelled_after_minutes`](#supervisor-loop-archive-cancelled-after-minutes) grace has passed since its most recent cancel. A cancelled Automaton whose branch holds commits that are not on the base branch is not archived by the loop — you archive it, its work is merged, or its branch is deleted. The loop's archives are recorded with the actor `supervisor-loop`; your own archive is unaffected and is recorded with the actor `operator`. On by default.
 <a id="supervisor-loop-deploy-after-ship-enabled"></a>
 - **`supervisor_loop.deploy_after_ship.enabled`** — Turns the deploy after ship step on or off. The step deploys the daemon after a release ships. On by default.
 <a id="supervisor-loop-retry-failed-infra-enabled"></a>
@@ -1982,6 +1982,8 @@ The settings under `autonomous.decisions` (Settings → Automata) control the de
 - **`supervisor_loop.escalate_after_failures`** — How many failed attempts in one run before you are asked. Default 2.
 <a id="supervisor-loop-run-retention"></a>
 - **`supervisor_loop.run_retention`** — How many recent run records are kept. Default 500.
+<a id="supervisor-loop-archive-cancelled-after-minutes"></a>
+- **`supervisor_loop.archive_cancelled_after_minutes`** — The grace, in minutes, before a cancelled Automaton is archived: it is archived only once the time since its most recent cancel reaches this value (0 archives it at once). It exists so a cancelled branch can still be inspected, or re-cancelled to push it back, before it disappears. Separately from this grace, the loop never archives a cancelled Automaton whose branch still holds commits that are not on the base branch. Default 60.
 <a id="supervisor-loop-lane-count-min"></a>
 - **`supervisor_loop.lane_count.min`** — The lowest lane count the loop may set.
 <a id="supervisor-loop-lane-count-max"></a>

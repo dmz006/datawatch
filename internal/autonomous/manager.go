@@ -3612,7 +3612,10 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 // Archive moves a terminal PRD (completed/rejected/cancelled) to
 // PRDArchived status so it disappears from the active list without
 // being permanently deleted.
-func (m *Manager) Archive(id string) (*PRD, error) {
+func (m *Manager) Archive(id, actor string) (*PRD, error) {
+	if actor == "" {
+		return nil, fmt.Errorf("archive prd %q: actor is required", id)
+	}
 	prd, ok := m.store.GetPRD(id)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", id)
@@ -3632,7 +3635,7 @@ func (m *Manager) Archive(id string) (*PRD, error) {
 		old = prd.Status
 		prd.Status = PRDArchived
 		prd.UpdatedAt = now
-		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: "operator"})
+		prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: actor})
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

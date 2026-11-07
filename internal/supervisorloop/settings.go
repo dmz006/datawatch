@@ -4,17 +4,20 @@ import "fmt"
 
 // Setting keys.
 const (
-	KeyEnabled           = "supervisor_loop.enabled"
-	KeyValidatorRetries  = "supervisor_loop.validator_retries"
-	KeyEscalateAfter     = "supervisor_loop.escalate_after_failures"
-	KeyRunRetention      = "supervisor_loop.run_retention"
-	KeyLaneMin           = "supervisor_loop.lane_count.min"
-	KeyLaneMax           = "supervisor_loop.lane_count.max"
-	keyStepSuffixEnabled = ".enabled"
-	keyJobSuffixStyle    = ".style"
-	keyJobSuffixBackend  = ".backend"
-	keyJobSuffixModel    = ".model"
-	settingsPrefix       = "supervisor_loop."
+	KeyEnabled          = "supervisor_loop.enabled"
+	KeyValidatorRetries = "supervisor_loop.validator_retries"
+	KeyEscalateAfter    = "supervisor_loop.escalate_after_failures"
+	KeyRunRetention     = "supervisor_loop.run_retention"
+	// KeyArchiveCancelledAfterMinutes is the grace, in minutes, before a
+	// cancelled Automaton is archived. 0 archives it at once.
+	KeyArchiveCancelledAfterMinutes = "supervisor_loop.archive_cancelled_after_minutes"
+	KeyLaneMin                      = "supervisor_loop.lane_count.min"
+	KeyLaneMax                      = "supervisor_loop.lane_count.max"
+	keyStepSuffixEnabled            = ".enabled"
+	keyJobSuffixStyle               = ".style"
+	keyJobSuffixBackend             = ".backend"
+	keyJobSuffixModel               = ".model"
+	settingsPrefix                  = "supervisor_loop."
 )
 
 // StepNames are the mechanical steps with an enabled switch.
@@ -41,6 +44,9 @@ type Settings struct {
 	ValidatorRetries int
 	EscalateAfter    int
 	RunRetention     int
+	// ArchiveCancelledAfterMinutes is the grace before a cancelled Automaton
+	// is archived. 0 means archive at once.
+	ArchiveCancelledAfterMinutes int
 	// LaneMin and LaneMax are the operator's lane bounds for the lane_count
 	// step. LaneMax 0 means no bounds are configured, and the step moves
 	// nothing.
@@ -52,7 +58,7 @@ type Settings struct {
 func DefaultSettings() Settings {
 	s := Settings{
 		Enabled: true, Steps: map[string]bool{}, Jobs: map[string]JobSetting{},
-		ValidatorRetries: 2, EscalateAfter: 2, RunRetention: 500,
+		ValidatorRetries: 2, EscalateAfter: 2, RunRetention: 500, ArchiveCancelledAfterMinutes: 60,
 	}
 	for _, n := range StepNames {
 		s.Steps[n] = true
@@ -73,6 +79,9 @@ func (s Settings) Validate() error {
 	}
 	if s.RunRetention < 1 {
 		return fmt.Errorf("%s: must be >= 1, got %d", KeyRunRetention, s.RunRetention)
+	}
+	if s.ArchiveCancelledAfterMinutes < 0 {
+		return fmt.Errorf("%s: must be >= 0, got %d", KeyArchiveCancelledAfterMinutes, s.ArchiveCancelledAfterMinutes)
 	}
 	if s.LaneMin < 0 {
 		return fmt.Errorf("%s: must be >= 0, got %d", KeyLaneMin, s.LaneMin)
@@ -140,7 +149,7 @@ func (s *Settings) apply(key string, v any) error {
 		}
 		s.Enabled = b
 		return nil
-	case KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyLaneMin, KeyLaneMax:
+	case KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyArchiveCancelledAfterMinutes, KeyLaneMin, KeyLaneMax:
 		n, ok := toInt(v)
 		if !ok {
 			return bad("integer")
@@ -148,6 +157,8 @@ func (s *Settings) apply(key string, v any) error {
 		switch key {
 		case KeyValidatorRetries:
 			s.ValidatorRetries = n
+		case KeyArchiveCancelledAfterMinutes:
+			s.ArchiveCancelledAfterMinutes = n
 		case KeyLaneMin:
 			s.LaneMin = n
 		case KeyLaneMax:
@@ -217,14 +228,14 @@ func Keys() []string {
 		p := settingsPrefix + n
 		keys = append(keys, p+keyJobSuffixStyle, p+keyJobSuffixBackend, p+keyJobSuffixModel)
 	}
-	return append(keys, KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyLaneMin, KeyLaneMax)
+	return append(keys, KeyValidatorRetries, KeyEscalateAfter, KeyRunRetention, KeyArchiveCancelledAfterMinutes, KeyLaneMin, KeyLaneMax)
 }
 
 // Flat returns the settings in effect as a flat map keyed like Keys.
 func (s Settings) Flat() map[string]any {
 	out := map[string]any{
 		KeyEnabled: s.Enabled, KeyValidatorRetries: s.ValidatorRetries, KeyEscalateAfter: s.EscalateAfter,
-		KeyRunRetention: s.RunRetention, KeyLaneMin: s.LaneMin, KeyLaneMax: s.LaneMax,
+		KeyRunRetention: s.RunRetention, KeyArchiveCancelledAfterMinutes: s.ArchiveCancelledAfterMinutes, KeyLaneMin: s.LaneMin, KeyLaneMax: s.LaneMax,
 	}
 	for _, n := range StepNames {
 		on, ok := s.Steps[n]

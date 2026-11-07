@@ -2344,7 +2344,8 @@ steps (no model call) and three model jobs, each run recorded. See
   `run_merge_until_conflict`), `supervisor_loop.<job>.style|backend|model` for
   the three model jobs (`draft_spec`, `classify_ci_failure`, `pick_backend`),
   `validator_retries` (default 2), `escalate_after_failures` (default 2),
-  `run_retention` (default 500) and `lane_count.min` / `lane_count.max` (default
+  `run_retention` (default 500), `archive_cancelled_after_minutes`
+  (default 60) and `lane_count.min` / `lane_count.max` (default
   0; max 0 means no bounds, so the lane count step moves nothing; max must be at
   least min). Over `PUT /api/config`, the CLI `config set` and the comm
   `configure` verb the key is `autonomous.supervisor_loop.<key>` without the
@@ -2357,6 +2358,21 @@ steps (no model call) and three model jobs, each run recorded. See
   coordinator's idle tick. An empty backend and model use the decision
   assistant's; with none configured a model job escalates to the operator and
   never falls back to a hosted model.
+- **Close step (archive grace + branch guard):** `closeFinishedRecords`
+  (`internal/autonomous/supervisor_loop_steps.go`) runs first every pass and
+  walks terminal-state PRDs. `completed` and `rejected` are archived on the
+  same pass. `cancelled` are held while `now - lastCancel` is below
+  `archive_cancelled_after_minutes` (default 60; 0 archives at once), where
+  `lastCancel` is the timestamp of the record's latest `cancel` decision
+  (falling back to `UpdatedAt`), so a re-cancel restarts the grace. A held
+  cancelled PRD additionally fails `archiveKeepsBranch` (`internal/autonomous/supervisor_loop_archive_branch.go`) while its branch is present and holds commits ahead of its base branch (`Git.BaseBranch`, default `main`); the guard is read-only (`for-each-ref` plus
+  `CompareBranchToMain`) and conservative — no base repository, a git error,
+  or an unknown comparison keeps the record — only a missing branch, no
+  recorded branch, or zero commits ahead lets it go. The loop archives
+  through `Manager.Archive` under the actor `supervisor-loop` (the
+  `supervisorLoopActor` constant); the operator Archive path is unchanged and
+  records under the actor `operator`. The step's run detail reports closed /
+  held-in-grace / kept-for-branch counts.
 - **Surfaces:** REST `GET /api/supervisor-loop/jobs|runs|stats`,
   `POST /api/supervisor-loop/jobs/{name}/run` and `POST /api/supervisor-loop/eval`
   (`internal/server/supervisor_loop.go`, federation capability

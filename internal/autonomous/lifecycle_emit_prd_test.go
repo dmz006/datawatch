@@ -100,7 +100,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 			setup: func(t *testing.T) (*Manager, string, func() error) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDCompleted)
-				return m, p.ID, func() error { _, err := m.Archive(p.ID); return err }
+				return m, p.ID, func() error { _, err := m.Archive(p.ID, "operator"); return err }
 			},
 		},
 		{
