@@ -108,6 +108,10 @@ type MemoryConfig struct {
 	RetentionChunkDays int `yaml:"retention_chunk_days,omitempty"`
 }
 
+// PlatformContextNoteMaxLen is the longest operator note, in bytes, the config
+// surfaces accept for platform_context.note.
+const PlatformContextNoteMaxLen = 2000
+
 // PlatformContextConfig controls the platform context text delivered to sessions.
 type PlatformContextConfig struct {
 	// Enabled turns the platform context section on or off (default true; nil = true).
