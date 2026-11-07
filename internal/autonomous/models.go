@@ -1242,6 +1242,10 @@ type Task struct {
 	// stall and cleared once recordFailedAttempt has copied it into the
 	// attempt record.
 	RunnerEvidence *RunnerEvidence `json:"runner_evidence,omitempty"`
+	// CeilingKill is set when a verification run was ended for passing its
+	// memory ceiling, and cleared once recordFailedAttempt has copied it into
+	// the attempt record.
+	CeilingKill *CeilingKill `json:"ceiling_kill,omitempty"`
 	// DecisionResume records the worker question the coordinator tick last
 	// resumed this task for (question_tick.go), so a later tick never resumes
 	// it twice for the same answer. Nil = never resumed for a question.

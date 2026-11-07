@@ -4157,5 +4157,17 @@
   "settings_help_link_label": "Abschnitt zur Speichergrenze in der Betriebsdokumentation öffnen",
   "settings_resource_limits_error_share": "Geben Sie eine ganze Zahl von 1 bis 100 ein.",
   "settings_resource_limits_error_mb": "Geben Sie eine ganze Zahl in MB ein, mindestens 1.",
-  "settings_resource_limits_error_floor_above_cap": "Die Speicher-Untergrenze darf nicht über der Speicher-Obergrenze liegen."
+  "settings_resource_limits_error_floor_above_cap": "Die Speicher-Untergrenze darf nicht über der Speicher-Obergrenze liegen.",
+  "memory_ceiling_status": "Speicherlimit: %1$s MB (%2$s, %3$s)",
+  "memory_ceiling_source_default": "Standard",
+  "memory_ceiling_source_project": "Projekt",
+  "memory_ceiling_source_task_kind": "Aufgabenart",
+  "memory_ceiling_path_scope": "systemd-Scope",
+  "memory_ceiling_path_watchdog": "Watchdog",
+  "memory_ceiling_path_none": "nicht durchgesetzt",
+  "memory_ceiling_none_warning": "Kein Speicherlimit: Prüfläufe sind nicht begrenzt. Grund: %1$s",
+  "memory_ceiling_none_reason": "keine Einstellungen für das Speicherlimit geladen",
+  "memory_ceiling_none_reason_unenforced": "der Host hat weder einen systemd-Benutzer-Scope noch /proc",
+  "memory_attempt_over_limit": "Gestoppt: Der Prozess hat mehr Speicher als das Limit von %1$s MB verbraucht (Prozess %2$s, Spitze %3$s MB)",
+  "memory_attempt_unknown_process": "unbekannt"
 }

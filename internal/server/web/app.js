@@ -6588,7 +6588,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   area.innerHTML = `
     ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
-      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
+      <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}${memoryCeilingStatusHTML(board.memory_ceiling)}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
     ${sprintCard}
@@ -20245,6 +20245,7 @@ function _taskAttemptsHTML(task) {
         <span style="color:var(--text2);font-size:11px;"> · ${escHtml(_fmtDurationSeconds(a.duration_seconds))}</span></div>
       <div style="font-size:11px;color:var(--text2);">${escHtml(t('review_attempt_outcome'))}: ${escHtml(a.outcome || '—')}${a.failure_category ? ' (' + escHtml(a.failure_category) + ')' : ''}</div>
       ${a.failure_summary ? `<div style="font-size:11px;">${escHtml(a.failure_summary)}</div>` : ''}
+      ${a.memory_killed ? `<div class="prd-task-attempt-memory" style="font-size:11px;color:var(--warning,#f59e0b);">${escHtml(t('memory_attempt_over_limit', [String(a.ceiling_mb || 0), a.killed_process || t('memory_attempt_unknown_process'), String(a.peak_memory_mb || 0)]))}</div>` : ''}
       ${files ? `<div style="font-size:11px;">${escHtml(t('review_attempt_files'))}:</div><ul class="prd-task-attempt-files">${files}</ul>` : ''}
       ${verifier ? `<div style="font-size:11px;">${verifier}</div>` : ''}
     </div>`;
@@ -36701,6 +36702,26 @@ function automationStatusLine(row) {
   return t('automation_live_status', [current, Number(row.pending_members) || 0, idle]);
 }
 window.automationStatusLine = automationStatusLine;
+
+// memoryCeilingStatusHTML words the memory_ceiling block of the session status:
+// the limit in MB, where it came from and how it is enforced. A status with no
+// block says nothing; a missing or unenforced ceiling is a warning that gives
+// its reason.
+function memoryCeilingStatusHTML(mc) {
+  if (!mc || typeof mc !== 'object') return '';
+  const sep = '<span style="margin:0 6px;">·</span>';
+  if (mc.warning || mc.source === 'none' || !(Number(mc.effective_mb) > 0)) {
+    const reason = mc.reason === 'no_enforcement' ? t('memory_ceiling_none_reason_unenforced') : t('memory_ceiling_none_reason');
+    const warn = t('memory_ceiling_none_warning', [reason]);
+    return `${sep}<span class="memory-ceiling-warning" role="alert" style="color:var(--warning,#f59e0b);">⚠ ${escHtml(warn)}</span>`;
+  }
+  const srcLabels = { project: t('memory_ceiling_source_project'), task_kind: t('memory_ceiling_source_task_kind') };
+  const pathLabels = { scope: t('memory_ceiling_path_scope'), watchdog: t('memory_ceiling_path_watchdog') };
+  const src = srcLabels[mc.source] || t('memory_ceiling_source_default');
+  const path = pathLabels[mc.enforcement_path] || t('memory_ceiling_path_none');
+  return `${sep}<span class="memory-ceiling-line">${escHtml(t('memory_ceiling_status', [String(mc.effective_mb), src, path]))}</span>`;
+}
+window.memoryCeilingStatusHTML = memoryCeilingStatusHTML;
 
 // loadAutomationLiveStatus reads automations[] from the loop status and shows
 // the row of the open Automation under its controls.

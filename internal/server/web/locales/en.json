@@ -4157,5 +4157,17 @@
   "settings_help_link_label": "Open the memory ceiling section of the operations docs",
   "settings_resource_limits_error_share": "Enter a whole number from 1 to 100.",
   "settings_resource_limits_error_mb": "Enter a whole number of MB, 1 or more.",
-  "settings_resource_limits_error_floor_above_cap": "The memory floor cannot be above the memory cap."
+  "settings_resource_limits_error_floor_above_cap": "The memory floor cannot be above the memory cap.",
+  "memory_ceiling_status": "Memory limit: %1$s MB (%2$s, %3$s)",
+  "memory_ceiling_source_default": "default",
+  "memory_ceiling_source_project": "project",
+  "memory_ceiling_source_task_kind": "task kind",
+  "memory_ceiling_path_scope": "systemd scope",
+  "memory_ceiling_path_watchdog": "watchdog",
+  "memory_ceiling_path_none": "not enforced",
+  "memory_ceiling_none_warning": "No memory limit: verification runs are not capped. Reason: %1$s",
+  "memory_ceiling_none_reason": "no memory limit settings are loaded",
+  "memory_ceiling_none_reason_unenforced": "the host has neither a systemd user scope nor /proc",
+  "memory_attempt_over_limit": "Stopped: the process used more memory than the limit of %1$s MB (process %2$s, peak %3$s MB)",
+  "memory_attempt_unknown_process": "unknown"
 }

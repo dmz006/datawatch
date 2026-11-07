@@ -193,6 +193,14 @@ func (m *Manager) recordFailedAttempt(ctx context.Context, prd *PRD, t *Task, ru
 			rec.RunnerProcesses = append([]string(nil), ev.Processes...)
 			t.RunnerEvidence = nil
 		}
+		if k := t.CeilingKill; k != nil {
+			rec.MemoryKilled, rec.PeakMemoryMB, rec.CeilingMB = true, k.PeakMB, k.CeilingMB
+			rec.KilledProcess = k.Process
+			if rec.KilledProcess == "" {
+				rec.KilledProcess = "unknown"
+			}
+			t.CeilingKill = nil
+		}
 		rec.Number = len(t.Attempts) + 1
 		t.Attempts = append(t.Attempts, rec)
 		if !f.Requeue {

@@ -103,6 +103,10 @@ type SessionStatusBoard struct {
 	// Automaton — structured PRD/story/task detail for autonomous task
 	// sessions, built from daemon-side data (no hook payload needed).
 	Automaton *SessionAutomatonDetail `json:"automaton,omitempty"`
+	// MemoryCeiling — the effective memory ceiling of verification runs
+	// (MB, source, enforcement path). Omitted when the daemon has no
+	// autonomous manager.
+	MemoryCeiling *SessionMemoryCeiling `json:"memory_ceiling,omitempty"`
 	// Result — latest structured result payload posted by the agent for
 	// this session (result panel; always set when a result is posted).
 	Result    *session.ResultPayload `json:"result,omitempty"`
@@ -524,6 +528,11 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	board := globalHookStore.board(sid)
+	if mc := s.sessionMemoryCeiling(); mc != nil {
+		boardCopy := *board
+		boardCopy.MemoryCeiling = mc
+		board = &boardCopy
+	}
 	// Autonomous task sessions get an `automaton` block built from the
 	// PRD/task store. v8.20.9 — when the agent sent no sprint payload, the
 	// legacy `sprint` map is synthesized from the same data so older

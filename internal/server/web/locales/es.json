@@ -4157,5 +4157,17 @@
   "settings_help_link_label": "Abrir la sección del límite de memoria en la documentación de operaciones",
   "settings_resource_limits_error_share": "Introduzca un número entero de 1 a 100.",
   "settings_resource_limits_error_mb": "Introduzca un número entero de MB, 1 o más.",
-  "settings_resource_limits_error_floor_above_cap": "La memoria mínima no puede superar la memoria máxima."
+  "settings_resource_limits_error_floor_above_cap": "La memoria mínima no puede superar la memoria máxima.",
+  "memory_ceiling_status": "Límite de memoria: %1$s MB (%2$s, %3$s)",
+  "memory_ceiling_source_default": "predeterminado",
+  "memory_ceiling_source_project": "proyecto",
+  "memory_ceiling_source_task_kind": "tipo de tarea",
+  "memory_ceiling_path_scope": "ámbito de systemd",
+  "memory_ceiling_path_watchdog": "vigilante",
+  "memory_ceiling_path_none": "sin aplicar",
+  "memory_ceiling_none_warning": "Sin límite de memoria: las verificaciones no tienen tope. Motivo: %1$s",
+  "memory_ceiling_none_reason": "no hay ajustes de límite de memoria cargados",
+  "memory_ceiling_none_reason_unenforced": "el host no tiene ni un scope de usuario de systemd ni /proc",
+  "memory_attempt_over_limit": "Detenido: el proceso usó más memoria que el límite de %1$s MB (proceso %2$s, pico %3$s MB)",
+  "memory_attempt_unknown_process": "desconocido"
 }

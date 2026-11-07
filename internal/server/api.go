@@ -14319,3 +14319,42 @@ func validateLivenessPatch(patch map[string]interface{}, known []string) error {
 	}
 	return config.ValidateLivenessSettings(window, overrides, known)
 }
+
+// SessionMemoryCeiling is the effective memory ceiling shown on the session
+// status: the limit in MB, where it came from, and how it is enforced (scope,
+// watchdog or none). Warning is true and Reason says why when nothing caps
+// verification runs.
+type SessionMemoryCeiling struct {
+	EffectiveMB     int    `json:"effective_mb"`
+	Source          string `json:"source"`
+	EnforcementPath string `json:"enforcement_path"`
+	Warning         bool   `json:"warning,omitempty"`
+	// Reason is "no_settings" (no ceiling settings installed) or
+	// "no_enforcement" (host has neither a user scope nor /proc); empty
+	// when a ceiling is enforced.
+	Reason string `json:"reason,omitempty"`
+}
+
+// memoryCeilingProvider is implemented by the autonomous Manager.
+type memoryCeilingProvider interface {
+	MemoryCeiling() autonomous.MemoryCeilingStatus
+}
+
+// sessionMemoryCeiling builds the ceiling block of the session status. It
+// returns nil when no autonomous manager is wired, so a status with nothing to
+// say carries no block.
+func (s *Server) sessionMemoryCeiling() *SessionMemoryCeiling {
+	p, ok := s.autonomousMgr.(memoryCeilingProvider)
+	if !ok || p == nil {
+		return nil
+	}
+	st := p.MemoryCeiling()
+	out := &SessionMemoryCeiling{EffectiveMB: st.EffectiveMB, Source: st.Source, EnforcementPath: st.EnforcementPath}
+	switch {
+	case st.Source == autonomous.MemoryCeilingSourceNone || st.EffectiveMB <= 0:
+		out.Warning, out.Reason = true, "no_settings"
+	case st.EnforcementPath == autonomous.VerifyCeilingNone:
+		out.Warning, out.Reason = true, "no_enforcement"
+	}
+	return out
+}
