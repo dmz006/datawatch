@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The protected-paths guard no longer counts the daemon's own rules-file sections as a task change, so a task is no longer held on rules the task never edited.** The first false hold was found 2026-11-07 05:07, in the first hour after v9.107.0 shipped. Every session start, the daemon writes its own marked sections into the project rules file — the session guardrails header, the memory, RTK, cross-session and, new with v9.107.0, the platform context section — and the rules file (`AGENT.md`, or the file named by `autonomous.rules_file`) is a default protected path. The guard compares the rules file with the commit the work started from, and the daemon's own write registered as a change *made by the task*, so a task that started right after a session start was parked as blocked with a `protected_paths` question asking you to approve the daemon's own injection. The guard now strips the daemon's marked sections from both the base side and the task side before comparing: a protected rules file counts as changed only when its content changes outside those sections, and a real edit to the rules is still held and asked, exactly as before. The same protected list and the same `autonomous.automation.protected_paths_action` apply, and there is no new setting behind this.
+- **Tasks already parked by a false hold come back without an operator answer.** The daemon re-checks them on its next start every task held on a protected path against the commit stored on the hold: when none of the held paths shows a non-daemon difference against that base, the hold is treated as a false positive — its open `protected_paths` question is withdrawn with no new one raised, the hold and the task error are cleared, one `protected_paths_false_positive_released` decision is recorded on the Automaton, and the task is returned to the queue and runs on. Holds whose paths show a real change against the base commit, and holds from the `block` action (which store no base commit), are left held for an explicit operator decision, with a log line naming why. No migration step: the guard behaves correctly from the first task after you upgrade, the sweep runs itself at each daemon start, and once it ships the `platform_context.enabled` setting that you may have switched off while the false holds appeared can be switched back on by you — the daemon does not do that.
+
+The how-to covers both sides: [howto/automaton-protected-paths.md](docs/howto/automaton-protected-paths.md); the background is in `docs/plans/2026-11-07-daemon-sections-protected-paths.md`.
+
 ## v9.107.0 — Platform context awareness for every datawatch session
 
 ### Added
