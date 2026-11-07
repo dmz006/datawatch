@@ -4147,5 +4147,12 @@
   "node_backend_none": "No backends on this node.",
   "node_backend_not_installed": "not installed",
   "node_backend_below_minimum": "below minimum",
-  "node_backend_versions_failed": "Could not load the backend versions: %1$s"
+  "node_backend_versions_failed": "Could not load the backend versions: %1$s",
+  "settings_platform_context_title": "Platform context",
+  "settings_platform_context_enabled": "Platform context",
+  "settings_platform_context_help": "Docs",
+  "settings_platform_context_note": "Project note",
+  "settings_platform_context_note_hint": "Optional text appended to the platform context every session receives.",
+  "settings_platform_context_state_enabled": "Platform context is enabled (datawatch %1$s).",
+  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s)."
 }

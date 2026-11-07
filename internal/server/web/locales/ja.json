@@ -4147,5 +4147,12 @@
   "node_backend_none": "このノードにはバックエンドがありません。",
   "node_backend_not_installed": "未インストール",
   "node_backend_below_minimum": "最低値未満",
-  "node_backend_versions_failed": "バックエンドのバージョンを読み込めませんでした: %1$s"
+  "node_backend_versions_failed": "バックエンドのバージョンを読み込めませんでした: %1$s",
+  "settings_platform_context_title": "Platform context",
+  "settings_platform_context_enabled": "Platform context",
+  "settings_platform_context_help": "Docs",
+  "settings_platform_context_note": "Project note",
+  "settings_platform_context_note_hint": "Optional text appended to the platform context every session receives.",
+  "settings_platform_context_state_enabled": "Platform context is enabled (datawatch %1$s).",
+  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s)."
 }
