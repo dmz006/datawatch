@@ -131,3 +131,9 @@ func (m *Manager) SystemTagIndexSnapshot() func(prdID string) []string {
 		return append([]string{}, idx[prdID]...)
 	}
 }
+
+// SystemTagSnapshot implements autonomous.SystemTagSnapshotter: it is
+// SystemTagIndexSnapshot under the name the reader side looks for.
+func (m *Manager) SystemTagSnapshot() func(prdID string) []string {
+	return m.SystemTagIndexSnapshot()
+}

@@ -186,9 +186,10 @@ func (a *API) AttentionAutomata(statuses []string) []any {
 		return prdBefore(prds[i].UpdatedAt, prds[i].ID, prds[j].UpdatedAt, prds[j].ID)
 	})
 	out := []any{}
+	inherited := a.M.InheritedTagsSnapshot()
 	for _, p := range prds {
 		view := BuildSummaryView(p)
-		view.InheritedTags = a.M.InheritedTagsForPRD(p.ID)
+		view.InheritedTags = inherited(p.ID)
 		if want[string(p.Status)] || len(view.ReviewNeeded) > 0 || reviewBlockHoldText(p) != "" {
 			out = append(out, view)
 		}
@@ -258,4 +259,10 @@ func (a *API) SyncAutoTagsAll() {
 // InheritedTagsForPRD on the Manager).
 func (a *API) InheritedTagsForPRD(prdID string) []string {
 	return a.M.InheritedTagsForPRD(prdID)
+}
+
+// InheritedTagsSnapshot returns a lookup of the inherited tags of any
+// Automaton, computed from one snapshot. List handlers take it once per call.
+func (a *API) InheritedTagsSnapshot() func(prdID string) []string {
+	return a.M.InheritedTagsSnapshot()
 }

@@ -153,6 +153,25 @@ type inheritedTagReader interface {
 	InheritedTagsForPRD(prdID string) []string
 }
 
+// inheritedTagSnapshotter is the optional AutonomousAPI extension that gives a
+// per-call lookup of the inherited tags, built from one snapshot of the
+// sessions. List handlers use it so they read the sessions once per call.
+type inheritedTagSnapshotter interface {
+	InheritedTagsSnapshot() func(prdID string) []string
+}
+
+// inheritedTagFiller returns a function that fills a summary view's
+// inherited_tags. It takes the snapshot once, when called; the returned
+// function is cheap per Automaton. It falls back to the per-Automaton reader
+// when the manager has no snapshot, and does nothing when it has no reader.
+func (s *Server) inheritedTagFiller() func(view *autonomous.SummaryView) {
+	if sn, ok := s.autonomousMgr.(inheritedTagSnapshotter); ok {
+		lookup := sn.InheritedTagsSnapshot()
+		return func(view *autonomous.SummaryView) { view.InheritedTags = lookup(view.ID) }
+	}
+	return s.fillInheritedTags
+}
+
 // fillInheritedTags sets the view's read-only inherited_tags field — the
 // union of the system tags carried by the Automaton's sessions — when the
 // manager provides the reader. The stored PRD record is never changed.
