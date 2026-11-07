@@ -3073,6 +3073,15 @@ type AutonomousConfig struct {
 	// default. No omitempty, for the same round-trip reason as
 	// JudgeSizeThresholdLines: an explicit 0 must reach the saved config.
 	JudgePromptFileThresholdLines int `yaml:"judge_prompt_file_threshold_lines" json:"judge_prompt_file_threshold_lines"`
+	// JudgeDeliveryWaitPerThousandLinesSeconds is the extra time, in
+	// seconds, the daemon waits for the main prompt to be delivered for
+	// every 1000 lines the prompt contains, on top of the base delivery
+	// window. A longer prompt takes longer to type into the session, so
+	// this stretches the wait with its size. Default 60; 0 adds nothing, so
+	// the wait stays the same however long the prompt is, and is kept as 0,
+	// never mapped to the default. No omitempty, so an explicit 0 reaches
+	// the saved config.
+	JudgeDeliveryWaitPerThousandLinesSeconds int `yaml:"judge_delivery_wait_per_thousand_lines_seconds" json:"judge_delivery_wait_per_thousand_lines_seconds"`
 	// JudgeStrongBackend names the strong judge backend a large diff is
 	// routed to first when the changed-line count exceeds
 	// JudgeSizeThresholdLines (see config.JudgeSizeStrongFirst). Empty (the
@@ -6912,17 +6921,18 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			AutoFixRetries:                1,
-			MaxConcurrentTasks:            1,
-			UsageBackoff:                  UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:         BackoffMaxWaitDefaultMinutes,
-			RoleScanIntervalSeconds:       RoleScanIntervalDefaultSeconds,
-			ResumeMaxAgeSeconds:           3600,
-			MaxEnginesPerNode:             1,
-			JudgeSizeThresholdLines:       JudgeSizeThresholdDefaultLines,
-			JudgePromptFileThresholdLines: JudgePromptFileThresholdDefaultLines,
-			GateDisagreement:              autonomousGateDisagreementWarn,
-			FailureEscalation:             DefaultFailureEscalationConfig(),
+			AutoFixRetries:                           1,
+			MaxConcurrentTasks:                       1,
+			UsageBackoff:                             UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:                    BackoffMaxWaitDefaultMinutes,
+			RoleScanIntervalSeconds:                  RoleScanIntervalDefaultSeconds,
+			ResumeMaxAgeSeconds:                      3600,
+			MaxEnginesPerNode:                        1,
+			JudgeSizeThresholdLines:                  JudgeSizeThresholdDefaultLines,
+			JudgePromptFileThresholdLines:            JudgePromptFileThresholdDefaultLines,
+			JudgeDeliveryWaitPerThousandLinesSeconds: 60,
+			GateDisagreement:                         autonomousGateDisagreementWarn,
+			FailureEscalation:                        DefaultFailureEscalationConfig(),
 			// Starting plan-tier table — operator policy, see the field
 			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
 			// budget is a later phase.
