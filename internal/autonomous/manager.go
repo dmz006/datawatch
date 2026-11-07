@@ -1212,6 +1212,14 @@ type GuardrailInvocation struct {
 	// GuardrailBackend is the global default fallback
 	// (cfg.VerificationBackend) or nothing resolved.
 	GuardrailPinned bool
+	// Rejudge marks this invocation as a re-judgment of the same decision —
+	// autonomous.RejudgeCompletionGuardrail re-running the completion
+	// rules review after the operator asks for the call to be judged
+	// again. Set for tagging only: the judge prompt, model choice and
+	// budget accounting are identical to a first judgment, and the launch
+	// side uses it to tag the one-shot judge session launch_kind rejudge
+	// instead of review (2026-11-06-automata-pages-redesign.md §12).
+	Rejudge bool
 	// Prompt, when set, is the whole judge prompt, used instead of the
 	// generated guardrail prompt. The plan-review judge sets it: its reply
 	// uses the same outcome/severity/summary/issues JSON, but it judges a
