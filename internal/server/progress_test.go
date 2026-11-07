@@ -501,3 +501,142 @@ func TestProgressRESTTrendFromSeededSnapshots(t *testing.T) {
 		t.Fatalf("an untagged trend reports its scope, got %s", scope)
 	}
 }
+
+func TestProgressRESTGroupAxes(t *testing.T) {
+	prds := progressPRDs()
+	prds[0].ProjectProfile = "alpha"
+	prds[1].ProjectProfile = "alpha"
+	s := progressServer(t, &progressFake{prds: prds}, t.TempDir())
+
+	type grouped struct {
+		autonomous.ProgressMetrics
+		Group       string                              `json:"group"`
+		GroupTotals map[string]autonomous.ProgressGroup `json:"group_totals"`
+	}
+	get := func(target string) grouped {
+		t.Helper()
+		rec := progressGet(s.handleAutonomousProgress, target)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: want 200, got %d: %s", target, rec.Code, rec.Body.String())
+		}
+		var g grouped
+		if err := json.Unmarshal(rec.Body.Bytes(), &g); err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+
+	byProject := get("/api/autonomous/progress?group=project")
+	if byProject.Group != "project" {
+		t.Fatalf("group = %q", byProject.Group)
+	}
+	if byProject.GroupTotals["alpha"].PRDs != 2 || byProject.GroupTotals[autonomous.ProjectKeyNone].PRDs != 2 {
+		t.Fatalf("by project: %+v", byProject.GroupTotals)
+	}
+	sum := 0
+	for _, g := range byProject.GroupTotals {
+		sum += g.PRDs
+	}
+	if sum != byProject.Totals.PRDs {
+		t.Fatalf("project groups sum to %d, totals say %d", sum, byProject.Totals.PRDs)
+	}
+	if byProject.Grouped.Totals.PRDs != byProject.Totals.PRDs {
+		t.Fatal("the grouped block must carry the same overall totals")
+	}
+
+	byAutomation := get("/api/autonomous/progress?group=Automation")
+	if byAutomation.Group != "automation" || byAutomation.GroupTotals["auto1"].PRDs != 1 ||
+		byAutomation.GroupTotals[autonomous.ProgressKeyNone].PRDs != 3 {
+		t.Fatalf("by automation: %q %+v", byAutomation.Group, byAutomation.GroupTotals)
+	}
+
+	byAutomaton := get("/api/autonomous/progress?group=automaton")
+	if byAutomaton.Group != "automaton" || len(byAutomaton.GroupTotals) != 4 || byAutomaton.GroupTotals["aaaa0003"].PRDs != 1 {
+		t.Fatalf("by automaton: %q %+v", byAutomaton.Group, byAutomaton.GroupTotals)
+	}
+
+	// Without group the body has no group fields and carries the grouped block.
+	rec := progressGet(s.handleAutonomousProgress, "/api/autonomous/progress")
+	var keys map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &keys); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := keys["group"]; ok {
+		t.Fatal("group must be absent when not asked for")
+	}
+	if _, ok := keys["grouped"]; !ok {
+		t.Fatal("grouped totals must be in the progress response")
+	}
+
+	// The scope filter applies before grouping.
+	scoped := get("/api/autonomous/progress?group=project&automation_id=auto1")
+	if len(scoped.GroupTotals) != 1 || scoped.GroupTotals["alpha"].PRDs != 1 {
+		t.Fatalf("scoped: %+v", scoped.GroupTotals)
+	}
+
+	// An empty group value is the same as none.
+	if g := get("/api/autonomous/progress?group="); g.Group != "" {
+		t.Fatalf("empty group gave %q", g.Group)
+	}
+
+	for _, bad := range []string{"tag", "projects", "all"} {
+		rec := progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?group="+bad)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("group=%s: want 400, got %d", bad, rec.Code)
+		}
+	}
+}
+
+func TestProgressRESTGroupWithoutSourceIsEmpty(t *testing.T) {
+	s := progressServer(t, &progressFake{}, t.TempDir())
+	rec := progressGet(s.handleAutonomousProgress, "/api/autonomous/progress?group=project")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var body struct {
+		GroupTotals map[string]autonomous.ProgressGroup `json:"group_totals"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.GroupTotals == nil || len(body.GroupTotals) != 0 {
+		t.Fatalf("want an empty object, got %v", body.GroupTotals)
+	}
+}
+
+func TestProgressRESTTrendProjectFilter(t *testing.T) {
+	store, _, err := autonomous.NewProgressSnapshotStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prds := progressPRDs()
+	prds[0].ProjectProfile = "alpha"
+	for _, day := range []int{21, 22, 23} {
+		m := autonomous.CollectProgress(progressFakeSource{prds: prds}, nil, nil,
+			autonomous.ProgressOptions{Now: time.Date(2026, 10, day, 6, 0, 0, 0, time.UTC)})
+		if err := store.RecordDaily(time.Date(2026, 10, day, 6, 0, 0, 0, time.UTC), m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := progressServer(t, &progressFake{snaps: store}, t.TempDir())
+
+	rec := progressGet(s.handleAutonomousProgressTrend, "/api/autonomous/progress/trend?days=7&project=alpha")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var tr progressTrendResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &tr); err != nil {
+		t.Fatal(err)
+	}
+	if tr.Project != "alpha" || len(tr.ProjectPoints) != 3 || tr.ProjectPoints[0].PRDs != 1 {
+		t.Fatalf("project trend: %+v", tr)
+	}
+
+	rec = progressGet(s.handleAutonomousProgressTrend, "/api/autonomous/progress/trend?days=7&project=nobody")
+	if err := json.Unmarshal(rec.Body.Bytes(), &tr); err != nil {
+		t.Fatal(err)
+	}
+	if tr.Project != "nobody" || tr.ProjectPoints[0].PRDs != 0 {
+		t.Fatalf("unknown project should give zero counts: %+v", tr)
+	}
+}

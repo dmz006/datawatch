@@ -2698,6 +2698,7 @@ paths:
         - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
         - {name: since, in: query, required: false, description: "First day counted, YYYY-MM-DD", schema: {type: string, format: date}}
         - {name: until, in: query, required: false, description: "Last day counted, YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
+        - {name: group, in: query, required: false, description: "Also return the totals grouped by this axis as group and group_totals; records with no project or Automation are counted under (none)", schema: {type: string, enum: [project, automation, automaton]}}
       responses:
         "200":
           description: Metrics object
@@ -2714,6 +2715,9 @@ paths:
                   lanes: {type: integer}
                   groups: {type: object, description: "feature, bug and other, each a count block", additionalProperties: {type: object}}
                   totals: {type: object, description: Count block over all kinds}
+                  grouped: {type: object, description: "The overall totals plus the same counts by project, by Automation and by Automaton (totals, by_project, by_automation, by_automaton, no_project)"}
+                  group: {type: string, description: "The axis asked for with the group parameter (absent without it)"}
+                  group_totals: {type: object, description: "Count block per key of the chosen axis (present with group)", additionalProperties: {type: object}}
                   completed_prds: {type: integer}
                   running_prds: {type: integer}
                   throughput: {type: object}
@@ -2725,7 +2729,7 @@ paths:
                   unfiled_rows: {type: array, items: {type: object}}
                   backlog_available: {type: boolean}
                   not_measured: {type: array, items: {type: string}}
-        "400": {description: Invalid since or until, until before since, or a tag_match other than any or all}
+        "400": {description: Invalid since or until, until before since, a group other than project, automation or automaton, or a tag_match other than any or all}
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403": {description: Federated peer lacks the autonomous read capability}
@@ -2745,6 +2749,7 @@ paths:
       tags: [Autonomous]
       parameters:
         - {name: days, in: query, required: false, description: "How many days back to read, 1 to 365 (default 30)", schema: {type: integer, minimum: 1, maximum: 365, default: 30}}
+        - {name: project, in: query, required: false, description: "Also return the daily counts of this project (use (none) for records with no project) as project and project_points", schema: {type: string}}
         - {name: tag, in: query, required: false, description: Count only the Automata carrying this tag; repeat the parameter for several (or pass a comma list), combined with tag_match, schema: {type: string}}
         - {name: tag_id, in: query, required: false, description: "Legacy single-tag spelling of tag", schema: {type: string}}
         - {name: tag_match, in: query, required: false, description: "Whether the listed tags must all be present (all) or any of them (any, the default)", schema: {type: string, enum: [any, all], default: any}}
@@ -2774,6 +2779,8 @@ paths:
                         utilization: {type: number}
                         completed_prds: {type: integer}
                   direction: {type: string, enum: [converging, widening, flat, unknown]}
+                  project: {type: string, description: "The project asked for (absent without the project parameter)"}
+                  project_points: {type: array, items: {type: object}, description: "Daily counts for that project, oldest first"}
         "400": {description: days is not a whole number from 1 to 365, or a tag_match other than any or all}
         "401":
           $ref: "#/components/responses/Unauthorized"
