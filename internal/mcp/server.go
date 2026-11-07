@@ -391,6 +391,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	}
 
 	mcpSrv.AddTool(s.toolListSessions(), tracked(s.handleListSessions))
+	mcpSrv.AddTool(s.toolSessionTagList(), tracked(s.handleSessionTagList))
 	mcpSrv.AddTool(s.toolStartSession(), tracked(s.handleStartSession))
 	mcpSrv.AddTool(s.toolSessionChildren(), tracked(s.handleSessionChildren))
 	mcpSrv.AddTool(s.toolReplyToParent(), tracked(s.handleReplyToParent))
@@ -1735,7 +1736,31 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 			mcpsdk.Description("BL361 — filter by exact state: running, waiting_input, rate_limited, complete, failed, killed. Empty = all."),
 		),
 		mcpsdk.WithString("backend",
-			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all."),
+			mcpsdk.Description("BL361 — filter by backend family name (e.g. opencode, claudecode). Empty = all. This is the session's own backend, not an axis shortcut: filter the backend placement axis with tag=backend:<value> (the same name cannot be both — one parameter cannot be the backend-family filter and the backend axis; the task's 'backend' shortcut item is settled against the no-regression rule, see the tag-listing plan §12)."),
+		),
+		mcpsdk.WithString("project",
+			mcpsdk.Description("Axis shortcut — expanded to the project:<value> tag filter (a session's own, system, and inherited tags all count). Empty = all."),
+		),
+		mcpsdk.WithString("automaton",
+			mcpsdk.Description("Axis shortcut — expanded to the automaton:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("automation",
+			mcpsdk.Description("Axis shortcut — expanded to the automation:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("stage",
+			mcpsdk.Description("Axis shortcut — expanded to the stage:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("kind",
+			mcpsdk.Description("Axis shortcut — expanded to the kind:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("role",
+			mcpsdk.Description("Axis shortcut — expanded to the role:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("lane",
+			mcpsdk.Description("Axis shortcut — expanded to the lane:<value> tag filter. Empty = all."),
+		),
+		mcpsdk.WithString("compute",
+			mcpsdk.Description("Axis shortcut — expanded to the compute:<value> tag filter (the compute node the work was placed on). Empty = all."),
 		),
 		mcpsdk.WithString("alive",
 			mcpsdk.Description("BL361 — filter by claude_alive field: true, false, or any (default). Empty = any."),
@@ -1754,12 +1779,55 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		),
 		mcpsdk.WithArray("tags",
 			mcpsdk.WithStringItems(),
-			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags and the tags it inherits from the Automaton that spawned it both count."),
+			mcpsdk.Description("Filter to sessions that carry at least one of these tags (tag_match=all: every tag). A session's own tags, its system tags, and the tags it inherits from the Automaton that spawned it all count. The axis shortcut params (project, automaton, automation, stage, kind, role, lane, compute) expand to axis:value tags and combine with this list under tag_match."),
 		),
 		mcpsdk.WithString("tag_match",
-			mcpsdk.Description("any (default): the session needs at least one of tags; all: every tag in tags."),
+			mcpsdk.Description("any (default): the session needs at least one of tags (or an expanded shortcut); all: every tag."),
 		),
 	)
+}
+
+// sessionTagShortcuts expands the axis shortcut params (project, automaton,
+// automation, stage, kind, role, lane, compute) into axis:value tag filters;
+// an empty or blank value is ignored. The backend param is handled by the
+// session filter itself: it matches the backend family OR the backend:<value>
+// placement tag, so it needs no expansion here.
+func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
+	var out []string
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
+		if v := strings.TrimSpace(req.GetString(axis, "")); v != "" {
+			out = append(out, axis+":"+v)
+		}
+	}
+	return out
+}
+
+// toolSessionTagList declares the session_tag_list tool: the tags in use
+// across live and archived sessions, each split into its axis and value and
+// counted over the sessions that carry it.
+func (s *Server) toolSessionTagList() mcpsdk.Tool {
+	return mcpsdk.NewTool("session_tag_list",
+		mcpsdk.WithDescription("List the tags in use across live and archived sessions. Each entry has the tag, its axis and value from the axis:value form (axis is empty for a plain tag), and the number of sessions that carry it — a session counts once per tag even when it appears on several of the session's tag lists (own, system, and inherited tags all count). Entries are sorted by axis (tags without an axis last), then count (descending), then tag. Read-only."),
+	)
+}
+
+// handleSessionTagList answers the session_tag_list tool call in-process from
+// the session manager (no HTTP hop), so it works with or without the REST
+// view. Read-only.
+func (s *Server) handleSessionTagList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	entries := s.manager.TagInventory()
+	if entries == nil {
+		entries = []session.TagInventoryEntry{}
+	}
+	out, err := json.Marshal(map[string]any{"tags": entries})
+	if err != nil {
+		return toolErrorf("session_tag_list", "marshal: %v", err), nil
+	}
+	return &mcpsdk.CallToolResult{
+		Content: []mcpsdk.Content{
+			mcpsdk.TextContent{Type: "text", Text: string(out)},
+		},
+	}, nil
 }
 
 func (s *Server) toolStartSession() mcpsdk.Tool {
@@ -2145,6 +2213,8 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 		Tags:     req.GetStringSlice("tags", nil),
 		TagMatch: req.GetString("tag_match", ""),
 	}
+	// Axis shortcuts expand to axis:value tag filters under tag_match.
+	filter.Tags = append(filter.Tags, sessionTagShortcuts(req)...)
 	sessions := s.manager.ListSessionsFiltered(filter)
 
 	// BL350 — orphaned=true filter.

@@ -1964,8 +1964,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		Backend: q.Get("backend"),
 		Alive:   q.Get("alive"),
 	}
-	// Tags repeatable; own or inherited. tag_match is any (default) or all; a
-	// value outside that set is rejected before anything is read.
+	// Tags repeatable; own, system and inherited tags count. tag_match is any
+	// (default) or all; a value outside that set is rejected before anything is
+	// read.
 	tagSeen := map[string]bool{}
 	for _, v := range q["tag"] {
 		for _, part := range strings.Split(v, ",") {
@@ -1973,6 +1974,21 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 			if part != "" && !tagSeen[part] {
 				tagSeen[part] = true
 				filter.Tags = append(filter.Tags, part)
+			}
+		}
+	}
+	// Axis shortcuts expand to axis:value tag filters and combine with the
+	// explicit tag list under tag_match. Empty values are ignored. backend is
+	// not expanded here: it stays the BL361 session-backend filter, which
+	// also accepts the backend:<value> placement tag (a session matches on
+	// its family name OR that tag, see Manager.sessionMatchesBackend), so
+	// no earlier result is lost and ?backend=<axis value> works.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
+		if v := strings.TrimSpace(q.Get(axis)); v != "" {
+			tag := axis + ":" + v
+			if !tagSeen[tag] {
+				tagSeen[tag] = true
+				filter.Tags = append(filter.Tags, tag)
 			}
 		}
 	}

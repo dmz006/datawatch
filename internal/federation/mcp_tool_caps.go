@@ -568,6 +568,7 @@ var MCPToolCap = map[string]string{
 	"session_rollback":                    CapSessionsWrite,
 	"session_set_state":                   CapSessionsWrite,
 	"session_summarize":                   CapSessionsWrite,
+	"session_tag_list":                    CapSessionsList,
 	"session_timeline":                    CapSessionsRead,
 	"sessions_stale":                      CapSessionsList,
 	"set_identity":                        CapConfigWrite,
