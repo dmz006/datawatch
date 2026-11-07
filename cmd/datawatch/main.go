@@ -941,7 +941,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// BL334 T43d — migrate operational data files (discussion WAL,
 		// participants.json, channel_routing.json) to encrypted format.
 		home, _ := os.UserHomeDir()
-		discussionsDir := filepath.Join(home, ".datawatch", "discussions")
+		dataDir := expandHome(cfg.DataDir)
+		discussionsDir := filepath.Join(dataDir, "discussions")
 		if _, err := secfile.MigrateDiscussionWALs(discussionsDir, encKey); err != nil {
 			fmt.Printf("[warn] discussion migration: %v\n", err)
 		}
@@ -950,7 +951,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Printf("[warn] channel_routing migration: %v\n", err)
 		}
 		// BL334 T43g — migrate JSON stores added in v8.5.x.
-		dataDir := expandHome(cfg.DataDir)
 		for _, store := range []struct{ path, label string }{
 			{filepath.Join(dataDir, "servers.json"), "servers.json"},
 			{filepath.Join(dataDir, "skills.json"), "skills.json"},
