@@ -1851,17 +1851,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// the same session: SetSystemTags replaces the whole list, so the
 			// old node's compute and peer tags are gone. Master switch off
 			// clears the list instead of writing (TagTaskPlacement).
-			m.TagTaskPlacement(t.ID, sr.SessionID, Placement{
-				Node:       placedNode,
-				Backend:    backend,
-				Model:      model,
-				Lane:       laneForBackend(backend),
-				Role:       string(capacity.RoleWorker),
-				Project:    path.Base(taskDir),
-				Automaton:  prd.ID,
-				Automation: prd.AutomationID,
-				Kind:       "task",
-			})
+			m.TagTaskPlacement(t.ID, sr.SessionID, m.workerLaunchPlacement(prd, placedNode, backend, model, path.Base(taskDir)))
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
