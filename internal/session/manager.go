@@ -329,6 +329,11 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
+	// platformContextFirstPromptOff disables first-prompt delivery of the
+	// platform context. The zero value keeps it on, matching the guardrails
+	// default.
+	platformContextFirstPromptOff bool
+
 	hostname       string
 	dataDir        string
 	llmBin         string      // fallback binary path (legacy; prefer launchFn)
@@ -2736,6 +2741,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if sess.OneShot && strings.HasPrefix(task, "!") {
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
+	launchTask = m.prependPlatformContextOnce(sess, backendName, launchTask)
 	m.scrubPaneTmuxEnv(sess)
 	m.notifySessionCreated(sess)
 	if launchFn != nil {
