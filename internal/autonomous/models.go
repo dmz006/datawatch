@@ -1990,3 +1990,19 @@ type PlanningRecord struct {
 	SupervisorEdits int       `json:"supervisor_edits,omitempty"`
 	RecordedAt      time.Time `json:"recorded_at"`
 }
+
+// ProjectMemoryLimit returns the project's memory_limit override from its
+// policy block (config.ProjectPolicy.MemoryLimit): "" when unset.
+func ProjectMemoryLimit(p *config.ProjectPolicy) string {
+	if p == nil || p.MemoryLimit == nil {
+		return ""
+	}
+	return *p.MemoryLimit
+}
+
+// KindMemoryLimit returns the memory_limit override for a task kind from
+// the per-kind table (config.AutonomousConfig.MemoryLimitByKind): "" when
+// the kind has no entry.
+func KindMemoryLimit(table map[string]string, kind string) string {
+	return table[kind]
+}
