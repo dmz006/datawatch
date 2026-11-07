@@ -1012,7 +1012,7 @@ paths:
         `notes` telling the operator to set the zone explicitly, and its `zone` field
         reports the effective zone with `server_zone` set when the operator left it unset).
 
-        Self-config group (BL412), operator- or session-token write, never masked:
+        Self-config group, operator- or session-token write, never masked:
         `mcp.allow_self_config` (boolean default true; the self-config builtin group —
         when an agent holds it, a config-write MCP tool may change the non-secret
         settings of its own configuration scope: the groups config, session, observers,
@@ -6242,7 +6242,7 @@ paths:
       responses: {"200": {description: OK}, "400": {description: since or until is not RFC 3339}}
   /api/audit/self-config:
     get:
-      summary: Query the self-config audit log (BL412)
+      summary: Query the self-config audit log
       description: |
         One record per attempt through the self-config path on this daemon — a
         config-write MCP tool (surface `mcp`), a session- or peer-origin REST config
@@ -8429,7 +8429,7 @@ components:
             to: { type: string }
         mcp:
           type: object
-          description: The MCP section of the config, including the self-config group (BL412)
+          description: The MCP section of the config, including the self-config group
           properties:
             allow_self_config:
               type: boolean

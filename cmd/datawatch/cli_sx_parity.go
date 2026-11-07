@@ -569,8 +569,8 @@ func newSelfConfigAuditCmd() *cobra.Command {
 	var sLimit int
 	cmd := &cobra.Command{
 		Use:   "self-config",
-		Short: "Query the self-config audit log (BL412)",
-		Long: "Query the self-config audit log (BL412), newest-first.\n\n" +
+		Short: "Query the self-config audit log",
+		Long: "Query the self-config audit log, newest-first.\n\n" +
 			"One record per attempt through the self-config path — config-write\n" +
 			"MCP tools, session/peer REST config PUTs, comm configure — allowed\n" +
 			"and (by default) denied, with the changed key(s), caller, and denial\n" +
