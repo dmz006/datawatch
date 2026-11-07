@@ -1847,6 +1847,10 @@ type LoopStatus struct {
 	// ReviewNeeded lists every task held for operator review across all
 	// Automata, oldest hold first. Omitted when none is held.
 	ReviewNeeded []HeldTaskStatus `json:"review_needed,omitempty"`
+
+	// MemoryCeiling is the effective memory ceiling of a verification run with
+	// no project or task kind override: its size, source and enforcement path.
+	MemoryCeiling MemoryCeilingStatus `json:"memory_ceiling"`
 	// Notify reports the notify-events resolution state: the effective
 	// global default tier and which non-finished Automata override it
 	// with an automaton- or profile-tier event list. Always present, with

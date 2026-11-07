@@ -48,10 +48,33 @@ func (m *Manager) SetResourceCeiling(limits config.ResourceLimitsConfig, overrid
 	m.mu.Unlock()
 }
 
+// SetResourceLimitsSource wires a live reader for the resource_limits settings,
+// so a change made through PUT /api/config applies to the next verification
+// script and to the status output without a restart. It is the production
+// wiring; SetResourceCeiling remains for a fixed snapshot.
+func (m *Manager) SetResourceLimitsSource(src func() config.ResourceLimitsConfig, override func(prd *PRD, t *Task) resources.Override) {
+	m.mu.Lock()
+	m.resourceLimitsFn = src
+	if override != nil {
+		m.ceilingOverrideFn = override
+	}
+	m.mu.Unlock()
+}
+
+// currentResourceLimits returns the wired settings, or nil when none are wired.
+// The caller must hold m.mu.
+func (m *Manager) currentResourceLimits() *config.ResourceLimitsConfig {
+	if m.resourceLimitsFn != nil {
+		l := m.resourceLimitsFn()
+		return &l
+	}
+	return m.resourceLimits
+}
+
 // planVerifyLaunch resolves the ceiling and the path for a task's script.
 func (m *Manager) planVerifyLaunch(prd *PRD, t *Task) *verifyLaunch {
 	m.mu.Lock()
-	lim, ovFn := m.resourceLimits, m.ceilingOverrideFn
+	lim, ovFn := m.currentResourceLimits(), m.ceilingOverrideFn
 	m.mu.Unlock()
 	if lim == nil || t == nil {
 		return nil
