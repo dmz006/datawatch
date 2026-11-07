@@ -599,6 +599,7 @@ const (
 	SessionVerbOrphaned         = "orphaned"          // BL350
 	SessionVerbRestart          = "restart"           // BL359
 	SessionVerbGuardrailApprove = "guardrail-approve" // GH#153
+	SessionVerbTags             = "tags"              // list the tags sessions carry (with counts)
 )
 
 // parseBL353ScheduleParams parses a BL353 key=value style schedule command.
@@ -989,7 +990,7 @@ func Parse(text string) Command {
 		rest := strings.TrimSpace(strings.TrimPrefix(text, "session"))
 		parts := strings.Fields(rest)
 		if len(parts) < 1 {
-			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned | session restart id=<id>|name=<n> [task=<task>]"}
+			return Command{Type: CmdSession, Text: "usage: session reconcile [apply] | session import <dir|id> | session summarize <id> | session self | session orphaned | session restart id=<id>|name=<n> [task=<task>] | session tags"}
 		}
 		verb := strings.ToLower(parts[0])
 		cmd := Command{Type: CmdSession, SessionVerb: verb}
@@ -1052,6 +1053,8 @@ func Parse(text string) Command {
 			}
 			cmd.SessionRestartTask = params["task"]
 			return cmd
+		case SessionVerbTags:
+			return cmd // no args: list the tags sessions carry, with counts
 		case SessionVerbGuardrailApprove:
 			// GH#153 — "session guardrail-approve id=<id> guardrail=<name> [note=<...>]"
 			params := make(map[string]string)
@@ -1864,7 +1867,7 @@ func HelpText(hostname string) string {
 	return fmt.Sprintf(`[%s] datawatch commands:
 new: <task>                     start session in default project dir
 new: /path/to/project: <task>   start session in specific directory
-list [--active|--inactive|--all] list sessions (default: all)
+list [--active|--inactive|--all] [tag=<axis:value>] [tag_match=any|all] list sessions (default: all)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session

@@ -12163,6 +12163,11 @@ func newSessionCmd() *cobra.Command {
 	var listTagMatch string
 	sessionListCmd.Flags().StringArrayVar(&listTags, "tag", nil, "filter to sessions carrying this tag (repeatable); own or inherited from the Automaton that spawned it")
 	sessionListCmd.Flags().StringVar(&listTagMatch, "tag-match", "", "match at least one --tag (any, default) or every --tag (all)")
+	// Axis shortcuts: each adds one "<axis>:<value>" tag, combined with --tag
+	// under the same --tag-match rule.
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
+		sessionListCmd.Flags().String(axis, "", "axis shortcut: filter by tag "+axis+":<value> (same as --tag "+axis+":<value>)")
+	}
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"
