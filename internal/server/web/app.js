@@ -14762,6 +14762,27 @@ window.reviewTimedOutBadgeHtml = function(prd) {
   </span>`;
 };
 
+// Judge result line on the review card: the plain-language outcome text from
+// review_state.judge_outcome_text under a "Judge result" label, plus one line
+// saying what the operator can do next. Nothing renders without the text.
+window.judgeOutcomeCardHtml = function(prd) {
+  const rs = prd && prd.review_state;
+  if (!rs || !rs.judge_outcome_text) return '';
+  const keys = {
+    judge_could_not_start: 'couldNotStart',
+    judge_timed_out: 'timedOut',
+    judge_found_problem: 'foundProblem',
+  };
+  const k = keys[rs.judge_outcome];
+  const next = k ? t('automation.review.judgeOutcome.next.' + k) : '';
+  const label = t('automation.review.judgeOutcome.label') || 'Judge result';
+  const text = (k && t('automation.review.judgeOutcome.' + k)) || rs.judge_outcome_text;
+  return `<div class="review-judge-outcome" style="font-size:12px;line-height:1.5;padding:6px 10px;background:var(--bg2);border-left:3px solid #f59e0b;border-radius:0 4px 4px 0;">
+    <div><span style="font-weight:700;">${escHtml(label)}:</span> ${escHtml(text)}</div>
+    ${next ? `<div style="color:var(--text2);">${escHtml(next)}</div>` : ''}
+  </div>`;
+};
+
 // Run the re-judgment: without a backend (Retry — same judge policy order)
 // or pinned to a named backend (Reroute — the PRD's stronger guardrail
 // backend). Success → toast + refresh so the new review state renders in
@@ -32117,6 +32138,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       </div>
       ${shippedDetailLineHtml(prd)}
       ${window.reviewTimedOutBadgeHtml ? `<div style="margin-bottom:8px;">${window.reviewTimedOutBadgeHtml(prd)}</div>` : ''}
+      ${window.judgeOutcomeCardHtml ? `<div style="margin-bottom:8px;">${window.judgeOutcomeCardHtml(prd)}</div>` : ''}
       ${specSnippet ? `<div class="prd-detail-spec-row" style="font-size:12px;color:var(--text2);line-height:1.4;margin-bottom:8px;padding:6px 10px;background:var(--bg2);border-left:3px solid var(--accent2,#60a5fa);border-radius:0 4px 4px 0;">
         <span id="prdSpecCollapsed" style="white-space:pre-wrap;">${escHtml(specSnippet.length > 280 ? specSnippet.slice(0, 280) : specSnippet)}${specSnippet.length > 280 ? `<span id="prdSpecEllipsis">… <button onclick="document.getElementById('prdSpecCollapsed').style.display='none';document.getElementById('prdSpecFull').style.display='';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_show_full')||'show full')}</button></span>` : ''}</span>
         ${specSnippet.length > 280 ? `<span id="prdSpecFull" style="white-space:pre-wrap;display:none;">${escHtml(specSnippet)} <button onclick="document.getElementById('prdSpecCollapsed').style.display='';document.getElementById('prdSpecFull').style.display='none';return false;" style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:11px;padding:0;">${escHtml(t('automata_spec_hide')||'collapse')}</button></span>` : ''}
