@@ -1960,7 +1960,7 @@ List one plugin's declared widgets with each widget's latest stored value (the v
     {
       "id": "queue_depth",
       "surface": "dashboard",
-      "kind": "number",
+      "kind": "stat_tile",
       "data_mode": "push",
       "value": {
         "plugin": "embeddings",
@@ -1970,7 +1970,7 @@ List one plugin's declared widgets with each widget's latest stored value (the v
         "source": "push"
       }
     },
-    { "id": "pending", "surface": "dashboard", "kind": "number", "data_mode": "push", "value": null }
+    { "id": "pending", "surface": "dashboard", "kind": "stat_tile", "data_mode": "push", "value": null }
   ]
 }
 ```
@@ -1991,7 +1991,7 @@ Fetch one widget as declared plus its latest value, same body as `GET /api/plugi
 {
   "id": "queue_depth",
   "surface": "dashboard",
-  "kind": "number",
+  "kind": "stat_tile",
   "data_mode": "push",
   "value": {
     "plugin": "embeddings",
