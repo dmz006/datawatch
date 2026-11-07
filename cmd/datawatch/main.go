@@ -942,7 +942,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// participants.json, channel_routing.json) to encrypted format.
 		home, _ := os.UserHomeDir()
 		dataDir := expandHome(cfg.DataDir)
-		discussionsDir := filepath.Join(dataDir, "discussions")
+		discussionsDir := startupDiscussionsDir(cfg.DataDir)
 		if _, err := secfile.MigrateDiscussionWALs(discussionsDir, encKey); err != nil {
 			fmt.Printf("[warn] discussion migration: %v\n", err)
 		}
