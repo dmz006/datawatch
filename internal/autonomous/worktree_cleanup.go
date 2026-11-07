@@ -96,7 +96,9 @@ const (
 	// cleanupSkipPrimary: the entry is the main checkout, which is
 	// never touched.
 	cleanupSkipPrimary = "primary"
-	// cleanupSkipDirty: the work tree has uncommitted changes.
+	// cleanupSkipDirty: the work tree has uncommitted changes (a
+	// daemon-section-only change does not count — the daemon rewrites its
+	// own block at the next session start).
 	cleanupSkipDirty = "dirty"
 	// cleanupSkipCommits: commits on the branch are not all on the
 	// base branch.
@@ -309,6 +311,16 @@ func CleanupWorktrees(opts WorktreeCleanupOptions) WorktreeCleanupResult {
 				failed(cleanupStageStatus, "git status: %v: %s", serr, strings.TrimSpace(status))
 				continue
 			}
+			// A tracked file whose only difference from HEAD is the daemon's
+			// own marked sections (daemonSectionsOnlyChange) does not count
+			// as uncommitted work: removing a work tree that holds only a
+			// daemon section loses nothing, because the daemon rewrites that
+			// block at the next session start. A work tree with a real edit —
+			// or a change that cannot be established as daemon-only — is
+			// still skipped as dirty.
+			status = filterDaemonOnlyPorcelain(ctx, e.Worktree, status, func(ctx context.Context, dir string, args ...string) (string, error) {
+				return opts.Git.Run(ctx, dir, args...)
+			})
 			if strings.TrimSpace(status) != "" {
 				skip(cleanupSkipDirty, "the work tree has uncommitted changes: "+firstLine(status))
 				continue
