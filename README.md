@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.107.0 (2026-11-07).** Every datawatch session now learns it runs on datawatch and which tools and services that gives it, with a setting to turn it off or add your own note. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.107.1 (2026-11-07).** Large guardrail judge prompts are now delivered through a file, infrastructure failures retry, and the review shows the judge outcome kind. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
