@@ -332,6 +332,13 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 					existingStr = upserted
 					modified = true
 				}
+			} else {
+				// Option off: strip a previously written section, touching
+				// nothing else, and only rewrite when the content changed.
+				if removed := platformcontext.RemoveSection(existingStr); removed != existingStr {
+					existingStr = removed
+					modified = true
+				}
 			}
 
 			if modified {
