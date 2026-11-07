@@ -3211,6 +3211,7 @@ function loadSessionsList() {
     clearTimeout(l.timer);
     if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
     if (rows.length) onSessionsUpdated();
+    if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
     if (state.activeView === 'sessions') renderSessionsView();
     return rows;
   });
@@ -3272,6 +3273,82 @@ function _ensureFullSession(sessionId, sess) {
     }
   }).catch(() => { delete state._fullSessionFetch[sess.full_id]; });
 }
+
+// ── Sessions toolbar tag filter ─────────────────────────────────────────────
+// The canonical order of the tag axes for the toolbar chip groups; axes
+// outside the list (custom axes) sort after, tags with no axis go under
+// the Other group.
+const _SESSION_TAG_AXIS_ORDER = ['project', 'automaton', 'automation', 'stage', 'kind', 'role', 'lane', 'backend', 'compute'];
+
+// _sessionTagInventoryFetch reads the tag inventory (GET /api/sessions/tags):
+// every tag a live or archived session carries, with its axis, value and the
+// session count. Cached in state so a toolbar paint never blocks on a
+// request.
+function _sessionTagInventoryFetch() {
+  return apiFetch('/api/sessions/tags').then(d => {
+    state._sessionTagInventory = { loaded: true, stale: false, entries: (d && d.tags) || [] };
+    return state._sessionTagInventory.entries;
+  }).catch(() => (state._sessionTagInventory && state._sessionTagInventory.entries) || []);
+}
+
+// _sessionTagInventoryRefresh loads the inventory on first use and again
+// whenever it was marked stale (tag updates, session churn). A repaint
+// follows only while the sessions view is up; a stale-but-unchanged cache
+// costs nothing (no request, no render).
+function _sessionTagInventoryRefresh() {
+  const inv = state._sessionTagInventory;
+  if (inv && inv.loaded && !inv.stale) return;
+  _sessionTagInventoryFetch().then(() => {
+    if (state.activeView === 'sessions') renderSessionsView();
+  });
+}
+
+// _sessionTagFilterPanelHTML draws the toolbar tag filter: chips grouped by
+// axis (canonical order, custom axes after, tags with no axis under Other),
+// each chip its value with the session count, plus the any/all mode and a
+// clear action. The selection lives in _tagBrowse.session, so the same
+// server-side tag query, client-side _sessionTagFilter and header Tags menu
+// all apply it. Empty before the inventory loads — the button is hidden
+// anyway until it arrives.
+function _sessionTagFilterPanelHTML() {
+  const inv = state._sessionTagInventory;
+  const entries = (inv && inv.loaded) ? (inv.entries || []) : [];
+  if (!entries.length) return '';
+  const groups = {};
+  entries.forEach(e => { if (e && e.tag) (groups[e.axis || ''] = groups[e.axis || ''] || []).push(e); });
+  const axes = _SESSION_TAG_AXIS_ORDER.filter(a => (groups[a] || []).length);
+  axes.push(...Object.keys(groups).filter(a => a && !axes.includes(a)).sort((a, b) => a.localeCompare(b)));
+  const sel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
+  const label = e => {
+    if (e.axis) return escHtml(e.value);
+    const reg = (typeof _tagsState !== 'undefined' && _tagsState.byId) ? _tagsState.byId[e.tag] : null;
+    return escHtml((reg && reg.name) ? reg.name : e.tag);
+  };
+  const chip = e => {
+    const on = sel.indexOf(e.tag) >= 0;
+    return `<button type="button" class="backend-filter-badge ${on ? 'active' : ''}" title="${escHtml(t('session_tag_chip_tip', [e.tag, e.count || 0]))}" onclick="sessionTagChipToggle('${escJsAttr(e.tag)}')">${label(e)}<span class="badge-count">${e.count || 0}</span></button>`;
+  };
+  const head = ax => `<span style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;color:var(--text2);margin-left:6px;">${escHtml(ax)}</span>`;
+  const body = axes.map(a => head(a) + groups[a].map(chip).join('')).join('');
+  const other = groups[''] ? head(t('tag_filter_group_other')) + groups[''].map(chip).join('') : '';
+  const mode = (typeof _tagBrowseMode === 'function') ? _tagBrowseMode('session') : 'any';
+  const modeLabel = mode === 'all' ? t('tag_browse_match_all') : t('tag_browse_match_any');
+  const actions = `<button type="button" class="backend-filter-badge ${mode === 'all' ? 'active' : ''}" title="${escHtml(t('tag_browse_mode_title'))}" aria-pressed="${mode === 'all'}" onclick="tagBrowseToggleMode('session')">${escHtml(modeLabel)}</button>` +
+    (sel.length ? `<button type="button" class="backend-filter-badge" title="${escHtml(t('session_tag_clear_tip'))}" onclick="tagBrowseClear('session')">${escHtml(t('tags_menu_clear'))}</button>` : '');
+  return body + other + `<span style="flex-basis:100%;display:flex;gap:4px;align-items:center;">${actions}</span>`;
+}
+
+// sessionTagChipToggle flips one inventory tag in the session tag selection.
+// Placement tags are their "axis:value" name, operator tags their registry
+// id; both travel through the same tag query and client-side filter.
+window.sessionTagChipToggle = function(tag) {
+  if (typeof _tagBrowse === 'undefined' || !_tagBrowse.session) return;
+  const sc = _tagBrowse.session;
+  const i = sc.sel.indexOf(tag);
+  if (i < 0) sc.sel.push(tag); else sc.sel.splice(i, 1);
+  _tagBrowseSave('session');
+  _tagBrowseRepaint('session');
+};
 
 function renderSessionsView() {
   const view = document.getElementById('view');
@@ -3403,6 +3480,26 @@ function renderSessionsView() {
     const isActive = chip === c.key;
     return `<button class="backend-filter-badge ${isActive ? 'active' : ''}" onclick="setSessionStateChip('${c.key}')" title="${escHtml(c.label)} (${stateCounts[c.key]||0})" style="border-left:3px solid ${c.color};"><span style="color:${c.color};">●</span> ${escHtml(c.label)}<span class="badge-count">${stateCounts[c.key]||0}</span></button>`;
   }).join('');
+  // Tag filter — chip list grouped by axis, drawn from the tag inventory
+  // (GET /api/sessions/tags). Shown only while some session carries a tag:
+  // an empty control would just be noise. Selection lives in
+  // _tagBrowse.session, so the server-side tag query, the client-side
+  // _sessionTagFilter and the header Tags menu all stay in step.
+  if (state._tagFilterOpen === undefined) state._tagFilterOpen = false;
+  const tagInv = state._sessionTagInventory;
+  const tagInvLoaded = !!(tagInv && tagInv.loaded);
+  const tagInvEntries = tagInvLoaded ? (tagInv.entries || []) : [];
+  const tagSomeTagged = state.sessions.some(_sessionHasTags);
+  const tagBtnVisible = tagInvLoaded ? tagInvEntries.length > 0 : tagSomeTagged;
+  let tagFilterBtn = '', tagFilterPanel = '';
+  if (tagBtnVisible) {
+    _sessionTagInventoryRefresh();
+    const tagSel = (typeof _tagBrowse !== 'undefined' && _tagBrowse.session) ? _tagBrowse.session.sel : [];
+    const tagBtnCount = tagSel.length || (tagInvLoaded ? tagInvEntries.length : state.sessions.length);
+    tagFilterBtn = `<button class="backend-filter-badge ${state._tagFilterOpen ? 'active' : ''}${tagSel.length ? ' active' : ''}" onclick="state._tagFilterOpen=!state._tagFilterOpen;renderSessionsView()" title="${escHtml(t('session_tag_filter_tip'))}">${escHtml(t('session_tag_filter_btn', [tagBtnCount]))} ${state._tagFilterOpen ? '▾' : '▸'}</button>
+    <a href="/diagrams.html#docs/howto/automata-tags.md" target="_blank" rel="noopener" title="${escHtml(t('session_tag_help_tip'))}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>`;
+    tagFilterPanel = `<div class="tag-filter-chips filter-chips-collapse${state._tagFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;">${_sessionTagFilterPanelHTML()}</div>`;
+  }
 
   const toolbarBody = collapsed ? '' : `<div class="sessions-toolbar">
     <div class="session-filter-wrap" style="flex:1.1;">
@@ -3413,11 +3510,12 @@ function renderSessionsView() {
     </div>
     ${backendTypes.length > 1 ? `<button class="backend-filter-badge ${state._llmFilterOpen ? 'active' : ''}${llmActiveLabel ? ' active' : ''}" onclick="state._llmFilterOpen=!state._llmFilterOpen;renderSessionsView()" title="${escHtml(t('llm_filter_btn_tip')||'Toggle LLM/backend filter')}">${llmBtnLabel} ${state._llmFilterOpen ? '▾' : '▸'}</button>` : ''}
     <button class="backend-filter-badge ${state._stateFilterOpen ? 'active' : ''}${stateActiveKey ? ' active' : ''}" onclick="state._stateFilterOpen=!state._stateFilterOpen;renderSessionsView()" title="${escHtml(t('state_filter_btn_tip')||'Toggle state filter')}">${stateBtnLabel} ${state._stateFilterOpen ? '▾' : '▸'}</button>
+    ${tagFilterBtn}
     <button class="backend-filter-badge ${state.sessionWatchFilter ? 'active' : ''}" onclick="toggleSessionWatchFilter()" title="${escHtml(t('session_watch_filter_tip')||'Show watched only')}">👁 ${state.watchedSessions.size}</button>
     ${_sessionsGroupControl()}
     ${backendTypes.length > 1 ? `<div class="backend-filter-badges filter-chips-collapse${state._llmFilterOpen ? ' open' : ''}" style="flex-wrap:wrap;">${backendBadges}</div>` : ''}
     <div class="state-filter-chips filter-chips-collapse${state._stateFilterOpen ? ' open' : ''}" style="display:flex;flex-wrap:wrap;gap:4px;">${stateBadges}</div>
-    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
+    ${tagFilterPanel}    ${state.activeServer && state.activeServer !== 'local' ? `<span class="server-indicator" style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--accent2);color:var(--bg);cursor:pointer;" onclick="selectServer(null)" title="${escHtml(t('server_indicator_return_tip', [_localHostname || (t('server_local_label') || 'this server')]) || 'Click to return')}">&#127760; ${escHtml(state.activeServer)}</span>` : ''}
     <span id="schedBadge" style="display:none;"></span>
     <button class="btn-toggle-history ${state.sessionTreeView ? 'active' : ''}" onclick="toggleSessionTreeView()" title="${t('session_tree_view_tip')||'Toggle tree view — groups sessions by parent/child lineage'}">
       ${t('session_tree_btn')||'Tree'}
@@ -46846,14 +46944,17 @@ function _sessionTagsRefresh() {
       .then(full => { if (full && full.full_id) { delete full.truncated_fields; applySessionUpdate(full); } })
       .catch(() => {});
   }
-  return Promise.all([_tagsLoad(true), rows]).then(() => _sessionTagsRepaint());
+  return Promise.all([_tagsLoad(true), rows]).then(() => {
+    if (state._sessionTagInventory && state._sessionTagInventory.loaded) state._sessionTagInventory.stale = true;
+    return _sessionTagsRepaint();
+  });
 }
 
 // _sessionTagsRepaint redraws whichever session view is on screen from the
 // sessions held in state.
 function _sessionTagsRepaint() {
   _tagsMenuRefresh();
-  if (state.activeView === 'sessions') renderSessionsView();
+  if (state.activeView === 'sessions') { renderSessionsView(); _sessionTagInventoryRefresh(); }
   else if (state.activeView === 'session-detail') _renderSessionDetailTagRow(_sessionFind(state.activeSession));
 }
 
