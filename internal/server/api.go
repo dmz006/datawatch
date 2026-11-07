@@ -4952,9 +4952,22 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Tags (BL461) — the session's own tag IDs. Each must exist in the
 		// tag registry; an unknown ID refuses the start.
 		Tags []string `json:"tags,omitempty"`
+		// Launch tagging (2026-11-06-automata-pages-redesign.md §12) —
+		// optional session-launch facts: the role the session plays, the
+		// kind of work it does, the Automaton (PRD) it runs for and the
+		// Automaton stage it belongs to. Absent = no launch tags, exactly
+		// as before. All handling lives in session_launch_tags.go.
+		LaunchRole      string `json:"launch_role,omitempty"`
+		LaunchKind      string `json:"launch_kind,omitempty"`
+		LaunchAutomaton string `json:"launch_automaton,omitempty"`
+		LaunchStage     string `json:"launch_stage,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := validateSessionLaunch(req.LaunchRole, req.LaunchKind); err != nil {
+		jsonError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	startTags, tagErr := s.manager.ValidateTagIDs(req.Tags)
@@ -5450,6 +5463,15 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		to := memory.ScopeRef{Scope: memory.ScopeSessionLocal, SessionID: sess.FullID}
 		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
+	// Launch tagging (2026-11-06-automata-pages-redesign.md §12) — the only
+	// call api.go makes: no launch fields → no-op, otherwise the placement
+	// tags land in the session's system tags before we broadcast.
+	s.applySessionLaunchTags(sess, launchFacts{
+		Role:      req.LaunchRole,
+		Kind:      req.LaunchKind,
+		Automaton: req.LaunchAutomaton,
+		Stage:     req.LaunchStage,
+	})
 	s.broadcastSessionsAsync()
 	// GH#201 Phase 4 — session lifecycle was the plan's own leading
 	// example of a state-changing action access-logging alone can't
