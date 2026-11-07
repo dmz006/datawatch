@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.104.2 (2026-11-06).** The zombie indicator no longer flags one-shot workers that are still running. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.105.0 (2026-11-07).** The Automata progress counts now include finished work that was filed away, and the Progress card can group the totals by project, Automation or Automaton. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.105.0 — Automata counts corrected and grouped by project, Automation and Automaton
+
+### Fixed
+
+- **The Automata progress counts now include finished work that was filed away, and can be grouped by project.** A cancelled or archived Automaton whose tasks all completed is merged work, so it now counts as done in every total, in the rates and in the estimate sample. Cancelled, archived or rejected Automata with unfinished or no tasks stay out. On the Progress card (Automation sub-tab, *Progress and cost*) a *Group the totals* selector switches the table between *Overall*, *By project*, *By Automation* and *By Automaton*; records with no project or Automation appear in one *(none)* row, last, so rows add up to the total. The card also says what the estimate rests on ("Estimate based on N finished records and M completed tasks") and has a purpose line with a help link. `GET /api/autonomous/progress` gains the `group` query, `grouped.*` maps and `completion.sample_records` / `sample_tasks`. The new labels ship in EN, DE, ES, FR and JA; the how-to and API mapping are updated, and a datawatch-app parity issue is filed. No migration step: counts are recomputed on read.
+
 ## v9.104.2 — Pane process liveness for the zombie indicator
 
 ### Fixed
