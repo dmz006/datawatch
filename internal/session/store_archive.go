@@ -78,9 +78,22 @@ type archiveState struct {
 	size    int64
 	after   atomic.Int64 // time.Duration; atomic: read while other locks are held
 	fieldCp atomic.Int64
+	decodes atomic.Int64 // archived-record decodes (readArchivedAt calls); tests read it, lock-free
 	started bool
 	passMu  sync.Mutex // one archive pass at a time
 	wg      sync.WaitGroup
+}
+
+// archiveDecodeCount returns how many archived lines readArchivedAt has decoded
+// since the store was opened or resetArchiveDecodeCount was last called. Tests
+// use it to check how many records a listing or lookup actually read.
+func (s *Store) archiveDecodeCount() int64 {
+	return s.arc.decodes.Load()
+}
+
+// resetArchiveDecodeCount sets the decode counter back to zero. Tests only.
+func (s *Store) resetArchiveDecodeCount() {
+	s.arc.decodes.Store(0)
 }
 
 func (s *Store) archivePath() string { return filepath.Join(filepath.Dir(s.path), archiveFileName) }
@@ -241,6 +254,7 @@ func (s *Store) decodeRec(rec json.RawMessage) (*Session, error) {
 // arc.mu: the archive file is append-only and never rewritten, so a ref copied
 // from the index keeps pointing at the same complete line.
 func (s *Store) readArchivedAt(ref archiveRef) (*Session, error) {
+	s.arc.decodes.Add(1)
 	f, err := os.Open(s.archivePath())
 	if err != nil {
 		return nil, err
