@@ -402,6 +402,20 @@ func (s *Store) ListPRDs() []*PRD {
 	return out
 }
 
+// ListTasks returns pointers to every task the store holds, newest PRD
+// first for stable ordering. It is the enumeration the tag sweep uses to
+// re-derive the object system tags of existing task records;
+// Store's tasks map has no other read API.
+func (s *Store) ListTasks() []*Task {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Task, 0, len(s.tasks))
+	for _, t := range s.tasks {
+		out = append(out, t)
+	}
+	return out
+}
+
 // storiesSnapshot returns copies of the stories the store holds for prdID,
 // as persisted (used to verify a decompose actually stored its stories).
 func (s *Store) storiesSnapshot(prdID string) []Story {
