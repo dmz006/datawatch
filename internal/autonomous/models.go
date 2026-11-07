@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/pipeline"
+	"github.com/dmz006/datawatch/internal/resources"
 )
 
 // Status enums — kept in sync with nightwire for cross-tool compat.
@@ -1990,3 +1991,39 @@ type PlanningRecord struct {
 	SupervisorEdits int       `json:"supervisor_edits,omitempty"`
 	RecordedAt      time.Time `json:"recorded_at"`
 }
+
+// MemoryLimitNone is the word that opts out of a memory ceiling.
+const MemoryLimitNone = "none"
+
+// ValidateMemoryLimit checks an optional memory_limit value: empty (use the
+// default), the word "none", or a positive MB number. Zero, negative and
+// any other text are rejected.
+func ValidateMemoryLimit(v string) error {
+	_, err := resources.ParseOverride(v)
+	return err
+}
+
+// ProjectRecord is the per-project record the memory ceiling reads. The
+// REST, MCP, channel and Settings surfaces for MemoryLimit are added in the
+// surfaces story.
+type ProjectRecord struct {
+	Name string `json:"name,omitempty"`
+	// MemoryLimit is an optional MB number, the word "none", or empty for
+	// the default.
+	MemoryLimit string `json:"memory_limit,omitempty"`
+}
+
+// Validate checks the record's memory_limit.
+func (p ProjectRecord) Validate() error { return ValidateMemoryLimit(p.MemoryLimit) }
+
+// TaskKindPolicy is the per-task-kind policy (Task.Kind values such as
+// TaskKindSmoke) the memory ceiling reads.
+type TaskKindPolicy struct {
+	Kind string `json:"kind,omitempty"`
+	// MemoryLimit is an optional MB number, the word "none", or empty for
+	// the default.
+	MemoryLimit string `json:"memory_limit,omitempty"`
+}
+
+// Validate checks the policy's memory_limit.
+func (p TaskKindPolicy) Validate() error { return ValidateMemoryLimit(p.MemoryLimit) }
