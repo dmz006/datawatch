@@ -9,7 +9,7 @@
 # standalone imap-mcp instance as a client; the lifecycle block declares
 # the supervision modes the author built and tested.
 #
-# Evidence: .datawatch/reports/imap-mcp-rest-contract.md (PRD 784f0001).
+# Evidence: the imap-mcp REST contract report (.datawatch/reports/imap-mcp-rest-contract.md).
 # - health path: GET /api/health, the one endpoint exempt from the
 #   bearer token (docs/config-reference.yaml:532-533,
 #   internal/messaging/backends/imapmcp/backend.go:49-50).

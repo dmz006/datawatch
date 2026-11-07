@@ -1,3 +1,39 @@
+---
+docs:
+  index: true
+  topics: [imap-mcp, plugins, service, attach, managed]
+exec_params:
+  - {name: plugin, required: false, default: "imap-mcp", description: "Plugin name as the daemon scans it"}
+exec_steps:
+  - tool: plugins_list
+    description: List the discovered plugins and their enabled state
+    args: {}
+    read_only: true
+  - tool: plugin_enable
+    description: Enable the service plugin in the daemon
+    args: {name: "{{params.plugin}}"}
+    read_only: false
+  - tool: plugin_service_status
+    description: Read state, mode, address, version, uptime and last health check
+    args: {name: "{{params.plugin}}"}
+    read_only: true
+  - tool: plugin_service_start
+    description: Start the supervised child (managed mode)
+    args: {name: "{{params.plugin}}"}
+    read_only: false
+  - tool: plugin_service_stop
+    description: Stop the supervised child
+    args: {name: "{{params.plugin}}"}
+    read_only: false
+  - tool: plugin_widget_list
+    description: List the plugin's widgets with their latest values
+    args: {name: "{{params.plugin}}"}
+    read_only: true
+  - tool: plugin_token_list
+    description: Show which vault secrets and service tokens the plugin references (names only)
+    args: {name: "{{params.plugin}}"}
+    read_only: true
+---
 # How to: run imap-mcp as a watched service
 
 This walks an imap-mcp deployment through datawatch's service surface, in the
