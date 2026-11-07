@@ -258,7 +258,6 @@ platform_context:
   enabled: true
   note: ""
 
-
 # ── UI ──
 # Top-level UI display settings (the ui.* section). Unset keys read the
 # defaults; an explicit 0 is a real value, distinct from unset.

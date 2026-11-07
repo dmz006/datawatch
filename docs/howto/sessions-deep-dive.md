@@ -505,13 +505,12 @@ tmux ls | grep cs-                     # tmux sessions
 
 Reconcile by killing the orphan: `tmux kill-session -t cs-<orphan-id>`.
 
-## Common pitfalls
 ## What a session is told about datawatch
 
 Every session starts with a short platform context: what datawatch is, how its sessions, Automata and channels fit together, and where to look for help. It is delivered in one or both of two ways, depending on the backend:
 
-- **Rules file.** datawatch writes the text into the session's rules file (`CLAUDE.md` for claude-code, `AGENT.md` for the others). A marked block is kept up to date, and anything you wrote outside the block is left alone.
-- **First prompt.** The text is placed at the start of the session's first prompt.
+- **Rules file (claude-code only).** datawatch writes the text into the session's `CLAUDE.md`. A marked block is kept up to date, and anything you wrote outside the block is left alone.
+- **First prompt (every other backend).** The text is placed at the start of the session's first prompt.
 
 `platform_context_status` (MCP) shows, for one session, whether it is enabled, any project override, the text version and which delivery the session's backend uses (`rules_file`, `first_prompt` or `rules_file_and_first_prompt`).
 
@@ -523,10 +522,9 @@ Every session starts with a short platform context: what datawatch is, how its s
 
 A change applies to sessions started afterwards; a running session keeps what it already received.
 
-**Where it is re-delivered.** When a session's conversation is compacted or cleared, the text would normally be lost. For **claude-code** datawatch installs a SessionStart hook (matching `compact` and `clear`) that prints the text again, so the session gets it back. **No other backend can be re-delivered after compaction**: the first-prompt text is sent once, and only backends that read the rules file again keep seeing it. That covers pi, pi-prompt, aider, gemini, goose, ollama, opencode (all session families), openwebui, shell and subprocess sessions. If one of these backends compacts a long session, restart the session or re-send what it needs.
+**Where it is re-delivered.** When a session's conversation is compacted or cleared, the text would normally be lost. For **claude-code** datawatch installs a SessionStart hook (matching `compact` and `clear`) that prints the text again, so the session gets it back. **No other backend can be re-delivered after compaction**: the first-prompt text is sent once and is not repeated. That covers pi, pi-prompt, aider, gemini, goose, goose-prompt, ollama, opencode, opencode-acp, opencode-prompt, openwebui, shell and subprocess sessions. If one of these backends compacts a long session, restart the session or re-send what it needs.
 
-
-
+## Common pitfalls
 - **Editing `state.json` by hand.** Race-prone. Use the API.
 - **Confusing `last_channel_event_at` with `updated_at`.** UpdatedAt
   is bumped by daemon-internal housekeeping (rate-limit timer,

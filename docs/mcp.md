@@ -241,6 +241,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Family | Tools |
 |--------|-------|
 | Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent`, `get_my_session_id`, `get_my_scope` |
+| Platform context | `platform_context_status` |
 | Vision | `vision_describe` |
 | Web Search | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`, `web_search_stats` (deprecated alias) |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
@@ -619,15 +620,6 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`restart_interruptions`** — report what a daemon restart now would interrupt: the running tasks (executing worker, running tests or verifying) and the live sessions, with ids and counts, plus the restart policy in force (`autonomous.restart_policy`: `immediate`, `wait_quiet` or `drain`). No arguments. Read-only; the same object as `GET /api/autonomous/restart-interruptions`. `restart_daemon` applies the policy and returns the same counts.
 - **`rules_context_status`** — read the rules and context settings that shape how Automata are planned: the configured values (rules file, context files, digest mode, digest size limit, per-project overrides) and the policy resolved for a project. Optional `project_dir` (resolve for that project) and `prd` (an Automaton id; adds its planning record: file names, hashes, sizes, missing files, digest size, never content). Read-only; the same object as `GET /api/autonomous/rules-context`.
 - **`rules_context_set`** — change those settings; only the fields given change. Optional `rules_file`, `context_files` (list, at most 8, empty clears), `digest_mode` (`off`, `no_tools` or `all`), `digest_max_bytes` (0 or 512 to 65536) and `project_dir` (change that project's override instead of the global values). File names must be relative with no `..`. Writes the configuration file; the same change as `PUT /api/autonomous/rules-context`.
-- **`platform_context_status`** — read the platform context state for one session: `enabled` (effective for that session), `project_override` (the project's own value, null when none), `text_version` and `delivery` (`rules_file`, `first_prompt` or `rules_file_and_first_prompt`). Optional `hint` is a session id (short or full); without it the call reports for the calling session. Read-only; an unknown session is a tool error.
-
-  ```
-  platform_context_status(hint="a1b2")
-  ```
-  returns
-  ```json
-  {"session": "host-a1b2", "enabled": true, "project_override": null, "text_version": 1, "delivery": "rules_file"}
-  ```
 
 - **`security_failure_list`** — list the stored security failure reports, newest first, as a JSON list. Each entry carries the failing security run's identity (`repo`, `ref_kind`, `ref_name`, `workflow`, `run_id`, `run_url`, `status`) and the report stored for it under `report`: `dependency`, `advisory_ids`, `workflow`, `run_id`, `run_url`, `sha`, `published_at`, `fixed_version`, the accepted-risks registry result (`registry_found`, `registry_id`, `registry_first_added`, `registry_added`, `registry_expires`, `registry_error`), `lookup_error`, `recommendation`, `note`, the `mode` it was made under, the `action` the Automaton line received (`report_only`, `would_stop` or `stopped`) and `assessed_at`. Read-only: listing never reruns, cancels, stops or edits anything. Returns the same list as `GET /api/autonomous/security-failures`; nothing matching is `[]`.
 - **`supervisor_watch_stats`** — read the supervisor watch as numbers: `mode`, `last_poll_at` and `last_poll_age_seconds` (-1 when the coordinator never polled), `findings_open`, `findings_would_alert`, `findings_alerted`, `findings_resolved` and `agreed_days` (days of full agreement with the supervisor script). Takes no arguments; any argument is refused. Read-only. Returns the same object as `GET /api/autonomous/supervisor-watch/stats`.
@@ -1229,6 +1221,26 @@ Input sent to session a3f2.
 ```
 
 ---
+
+### `platform_context_status`
+
+Read the platform context state for one session: `enabled` (effective for that session), `project_override` (the project's own value, null when none), `text_version` and `delivery` (`rules_file`, `first_prompt` or `rules_file_and_first_prompt`).
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `hint` | no | Session id (short or full). Without it the call reports for the calling session. |
+
+Read-only; an unknown session is a tool error.
+
+```
+platform_context_status(hint="a1b2")
+```
+
+returns
+
+```json
+{"session": "host-a1b2", "enabled": true, "project_override": null, "text_version": 1, "delivery": "rules_file"}
+```
 
 ### `audit_access_query`
 
