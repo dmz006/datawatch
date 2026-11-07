@@ -140,6 +140,15 @@ A file that was already modified or untracked **before** the task started is
 your own earlier work and is left out, unless a commit made since the base
 touched it.
 
+The rules file has one more exception. When a session starts, the daemon
+writes its own sections into it — the session guardrails header, the memory,
+RTK, cross-session and platform context sections — and those do not count.
+The gate compares the rules file with those marked sections stripped on both
+the base side and the task side, so a protected rules file counts as changed
+only when its content changes outside them. A real edit to the rules is still
+held and asked, exactly as before, and there is no new setting behind any of
+this: the same protected list and the same action apply.
+
 The check runs in direct mode and in worktree mode. It is not skipped for an
 Automaton that works on its own branch.
 
