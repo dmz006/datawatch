@@ -250,6 +250,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
 | Automata | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_kind/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_prd_plan_coverage_get`, `autonomous_learnings`, `autonomous_progress`, `autonomous_progress_trend`, `autonomous_lane_fill_status`, `autonomous_infra_retries`, `autonomous_defect_intake`, `autonomous_defect_batches`, `autonomous_defect_batch_split`, `autonomous_defect_tinyfix_check`, `onboarding_report`, `autonomous_triage`, `checks_status`, `ship_status`, `rules_context_status`, `rules_context_set`, `autonomous_uncommitted_work`, `autonomous_protected_paths`, `planning_routing_get/set/test`, `planning_scorecard`, `autonomous_request_watch`, `security_failure_list`, `supervisor_watch_list`, `supervisor_watch_stats`, `supervisor_loop_jobs`, `supervisor_loop_runs`, `supervisor_loop_run_job`, `supervisor_loop_eval`, `supervisor_loop_stats`, `autonomous_decisions`, `autonomous_decision_record_list/get/create/update/withdraw`, `autonomous_merge`, `autonomous_safe_to_delete`, `automation_merged_members`, `autonomous_prd_set_lane_preference`, `autonomous_prd_set_authorized_paths`, `capacity_status`, `autonomous_shipped_record`, `autonomous_shipped_backfill`, `autonomous_shipped_counts` |
 | Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
+| Tags and placement | `autonomous_tag_list/create/rename/set_parent/set_color/delete`, `autonomous_prd_set_tags`, `autonomous_tag_sweep`, `session_set_tags`, `session_tag_list` |
 | Automation requirements and model pull | `automation_requirements_report`, `automation_model_pull_consent_get`, `automation_model_pull_consent_set`, `compute_node_backend_versions` |
 | Usage calculator | `usage_advice`, `usage_readings`, `usage_reading_add`, `usage_reading_delete`, `usage_extra_credit_set`, `usage_remaining_work_set` |
 | Burn guard | `burn_guard_status`, `burn_guard_run`, `burn_guard_config_get`, `burn_guard_config_set` |
@@ -1117,12 +1118,20 @@ List all AI coding sessions on this host, including their state and task descrip
 |---|---|---|---|
 | `name` | string | No | BL361 — glob pattern to filter sessions by name (e.g. `worker-*`, `agent-?`). Empty = all. |
 | `state` | string | No | BL361 — filter by exact state: `running`, `waiting_input`, `rate_limited`, `complete`, `failed`, `killed`. Empty = all. |
-| `backend` | string | No | BL361 — filter by backend family name (e.g. `opencode`, `claudecode`). Empty = all. |
+| `backend` | string | No | BL361 — filter by backend family name (e.g. `opencode`, `claudecode`). Empty = all. The session's own backend — not an axis shortcut; to filter the backend placement axis, pass `backend:<value>` in `tags`. |
 | `alive` | string | No | BL361 — filter by `claude_alive` field: `true`, `false`, or `any` (default). Empty = any. |
 | `format` | string | No | BL361 — output format: `text` (default) or `json`. `json` returns a structured JSON array. |
 | `orphaned` | boolean | No | BL350 — when `true`, return only sessions whose `parent_id` points to a session that no longer exists (orphaned by parent death or eviction). |
 | `tags` | array of strings | No | Count only sessions that carry at least one of the tags — their own tags or the tags inherited from the Automaton that started them (the auto tags of the Automation, stage and kind) |
 | `tag_match` | string | No | With several `tags`: `any` (default) needs at least one, `all` needs every tag named |
+| `project` | string | No | Axis shortcut — expanded to the `project:<value>` tag filter (a session's own, system, and inherited tags all count). Empty = all. |
+| `automaton` | string | No | Axis shortcut — expanded to the `automaton:<value>` tag filter. Empty = all. |
+| `automation` | string | No | Axis shortcut — expanded to the `automation:<value>` tag filter. Empty = all. |
+| `stage` | string | No | Axis shortcut — expanded to the `stage:<value>` tag filter. Empty = all. |
+| `kind` | string | No | Axis shortcut — expanded to the `kind:<value>` tag filter. Empty = all. |
+| `role` | string | No | Axis shortcut — expanded to the `role:<value>` tag filter. Empty = all. |
+| `lane` | string | No | Axis shortcut — expanded to the `lane:<value>` tag filter. Empty = all. |
+| `compute` | string | No | Axis shortcut — expanded to the `compute:<value>` tag filter (the compute node the work was placed on). Empty = all. |
 
 **Example response:**
 ```
@@ -1543,6 +1552,20 @@ The full surface — the CLI `datawatch question` group, the comm
 verbs, the PWA automation queue, the answer log and the
 supersession rule — is walked through in
 [`howto/operator-questions-answering.md`](howto/operator-questions-answering.md).
+
+### Placement tags: sweep and tags in use
+
+- **`autonomous_tag_sweep`** — re-derive the system tags of every existing Automata object (Automata, Automations, tasks, templates, decision records, held questions) and every Automata-owned session under the `tags.placement` settings in effect now, replacing each object's derived system tags with the newly derived set: turning a placement axis off removes its tag, turning it on adds the tag wherever the fact exists. The operator's own tags are a separate list that the sweep never touches, and a second run is a no-op (it changes zero objects and writes nothing). Returns the per-kind tally `{sessions, automata, automations, tasks, templates, decision_records, questions}`, each `{examined, changed, unchanged, failed}`.
+
+  | Parameter | Type | Required | Description |
+  |---|---|---|---|
+  | `dry_run` | boolean | No | `true`: re-derive and report the would-be counts without writing; `false` or absent: the sweep writes (default) |
+
+  Proxies `POST /api/autonomous/tags/sweep` (`?dry_run=true` when set). The same pass also runs automatically when a `tags.placement.*` change is saved (after the save answers), and once at daemon startup, after the lease backfill, when the block has changed since the last sweep.
+
+- **`session_tag_list`** — read-only, no parameters. Lists the tags in use across live and archived sessions. Each entry has the tag, its axis and value from the `axis:value` form (axis is empty for a plain tag), and the number of sessions that carry it — a session counts once per tag, and its own, system, and inherited tags all count. Sorted by axis (tags without an axis last), then count (descending), then tag. The same object as `GET /api/sessions/tags` (comm `autonomous session-tags list`) — the fastest way to see what values an axis actually has before filtering on one.
+
+- **Object tag filters (REST)** — the list endpoints for Automata (`/api/autonomous/prds`), Automations, templates, decision records and held questions share one filter over the object axes: `?tag=<axis>:<value>` (repeatable), `?tag_match=any` (default) or `all`; the single-value shortcuts `?project=`, `?automation=`, `?automaton=`; and `?tag_id=` for a registry tag id. For example `GET /api/autonomous/prds?tag=stage:task&tag=project:web&tag_match=all`. See the [Placement axes entry](datawatch-definitions.md) and [automata-tags](howto/automata-tags.md).
 
 ### Decision records
 
