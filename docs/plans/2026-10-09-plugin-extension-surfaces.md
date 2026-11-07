@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-09
 - **Version at planning**: v9.0.7
-- **Status**: Planned — not started
+- **Status**: Phases 1 to 5 shipped (manifest v3, service supervision, widget data model v9.0.40, widget renderer v9.0.41, federation capability gating v9.0.50). Phases 6 to 9 are being built by Automaton `784f0001` (status 2026-11-07: branch not merged; audit events, parity surfaces, health probe, tokens, model use, the imap-mcp manifest and a service card are on its branch, held for an overlap review against the shipped widget renderer). Phase 8 (mobile parity) and Phase 10 are open.
 - **Backlog**: BL403 (next free number after BL402, confirmed via `grep -oE "BL[0-9]+" docs/plans/README.md | sort -n | tail`)
 
 ## Context
