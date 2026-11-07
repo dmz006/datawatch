@@ -45,12 +45,16 @@ func placementForDisplay(p config.PlacementConfig) map[string]interface{} {
 	return map[string]interface{}{
 		"enabled": p.Enabled,
 		"axes": map[string]interface{}{
-			"compute": axisForDisplay(p.Compute),
-			"peer":    axisForDisplay(p.Peer),
-			"backend": axisForDisplay(p.Backend),
-			"lane":    axisForDisplay(p.Lane),
-			"role":    axisForDisplay(p.Role),
-			"project": axisForDisplay(p.Project),
+			"compute":    axisForDisplay(p.Compute),
+			"peer":       axisForDisplay(p.Peer),
+			"backend":    axisForDisplay(p.Backend),
+			"lane":       axisForDisplay(p.Lane),
+			"role":       axisForDisplay(p.Role),
+			"project":    axisForDisplay(p.Project),
+			"automaton":  axisForDisplay(p.Automaton),
+			"automation": axisForDisplay(p.Automation),
+			"stage":      axisForDisplay(p.Stage),
+			"kind":       axisForDisplay(p.Kind),
 		},
 		"custom": customAxesForDisplay(p.Custom),
 	}

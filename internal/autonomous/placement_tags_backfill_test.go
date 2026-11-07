@@ -103,7 +103,11 @@ func TestPlacementTags_StartupBackfill_FillsMissing(t *testing.T) {
 	led := &backfillLedger{leases: []capacity.Lease{leaseForSess1}}
 	res := BackfillPlacementTags(led, store, backfillPlacementConfig())
 
-	want := []string{"compute:node-a", "model:qwen3:8b", "prd:prd1"}
+	// The default axes now carry the lease's facts too: the automaton id the
+	// lease holds (the backfill knows no Automation, so that axis is empty)
+	// joins the model and PRD custom axes.
+	want := []string{"compute:node-a", "model:qwen3:8b", "prd:prd1",
+		"automaton:prd1"}
 	if !reflect.DeepEqual(res, BackfillResult{Leases: 1, Backfilled: 1, Skipped: 0, Failed: 0}) {
 		t.Fatalf("result = %+v, want {Leases:1 Backfilled:1}", res)
 	}
@@ -181,7 +185,8 @@ func TestPlacementTags_StartupBackfill_UpdatesDiffering(t *testing.T) {
 	if res.Backfilled != 1 || res.Failed != 0 {
 		t.Fatalf("res = %+v, want exactly one backfill", res)
 	}
-	want := []string{"compute:node-a", "model:qwen3:8b", "prd:prd1"}
+	want := []string{"compute:node-a", "model:qwen3:8b", "prd:prd1",
+		"automaton:prd1"}
 	if got := store.systemTagsOf("sess1"); !reflect.DeepEqual(sortedTags(got), sortedTags(want)) {
 		t.Fatalf("sess1 system tags = %v, want %v", got, want)
 	}

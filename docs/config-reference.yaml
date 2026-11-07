@@ -2277,10 +2277,10 @@ autonomous:
     # false turns the whole block off. Each named axis has `enabled` and a
     # `template` that must contain that axis's placeholder, which is replaced
     # with the fact value. A piece of work missing an axis's fact value
-    # yields no tag for that axis. Defaults: compute, peer, backend, lane and
-    # role on and project off, each with its conventional template
-    # ("<axis>:<placeholder>"). Set an axis off by writing `enabled: false`
-    # for it.
+    # yields no tag for that axis. All built-in axes default on, each with
+    # its conventional template ("<axis>:<placeholder>"): compute, peer,
+    # backend, lane, role, project, automaton, automation, stage and kind.
+    # Set an axis off by writing `enabled: false` for it.
     placement:
       enabled: true
       # Replaced with the compute node name.
@@ -2303,15 +2303,32 @@ autonomous:
       role:
         enabled: true
         template: "role:{role}"
-      # Replaced with the project alias. Off by default.
+      # Replaced with the project alias.
       project:
-        enabled: false
+        enabled: true
         template: "project:{project}"
+      # Replaced with the Automaton (PRD) id of the work the session runs.
+      automaton:
+        enabled: true
+        template: "automaton:{automaton}"
+      # Replaced with the Automation that owns the work.
+      automation:
+        enabled: true
+        template: "automation:{automation}"
+      # Replaced with the stage the work runs in.
+      stage:
+        enabled: true
+        template: "stage:{stage}"
+      # Replaced with the kind the work is (e.g. task, step, fork, join).
+      kind:
+        enabled: true
+        template: "kind:{kind}"
       # User-defined axes (empty by default). Each entry has:
       #   name: lowercase letters, digits and hyphens; unique; not a built-in
-      #     axis name (compute, peer, backend, lane, role, project).
+      #     axis name (compute, peer, backend, lane, role, project, automaton,
+      #     automation, stage, kind).
       #   field: one of the session fields Name, Backend, Model, Node, PRDID,
-      #     Role, Project.
+      #     Role, Project, Automaton, Automation, Stage, Kind.
       #   template: must contain the placeholder {value}, replaced with the
       #     field's value.
       #   enabled: on or off for this axis.

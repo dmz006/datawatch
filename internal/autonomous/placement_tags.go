@@ -17,15 +17,18 @@ type Placement struct {
 	Node string
 	// Peer is the federated peer name for work that runs on a remote
 	// datawatch peer; empty for work that runs locally.
-	Peer string
+	Peer    string
 	Backend string
 	Model   string
 	Lane    string // "gpu" | "claude" | ""
 	Role    string // "worker" | "verifier" | "planner" | "judge" | ""
 	Project string
-	// Automation is the PRD/Automaton (or Automation) the work belongs to:
-	// the fact the custom axes read under "PRDID" and "Automation".
+	// Automation is the Automation the work runs under (empty for work that
+	// has none): the fact the custom axes read under "Automation".
 	Automation string
+	// Automaton is the Automaton (PRD) the work belongs to: the fact the
+	// custom axes read under "PRDID".
+	Automaton string
 	// Stage is the stage of the work (empty when it is not stage-typed).
 	Stage string
 	// Kind is the kind of the work ("task", "decompose", ...; empty when
@@ -43,13 +46,20 @@ func (p Placement) ToFacts() placementtags.PlacementFacts {
 		Lane:    p.Lane,
 		Role:    p.Role,
 		Project: p.Project,
+		// The stage and kind facts ride along when the work has them; a field
+		// left empty takes no tag.
+		Automaton:  p.Automaton,
+		Automation: p.Automation,
+		Stage:      p.Stage,
+		Kind:       p.Kind,
 		Fields: map[string]string{
 			"Model":      p.Model,
 			"Node":       p.Node,
 			"Backend":    p.Backend,
 			"Role":       p.Role,
 			"Project":    p.Project,
-			"PRDID":      p.Automation,
+			"PRDID":      p.Automaton,
+			"Automaton":  p.Automaton,
 			"Automation": p.Automation,
 			"Stage":      p.Stage,
 			"Kind":       p.Kind,
@@ -65,12 +75,16 @@ func placementTagsSettings(pc config.PlacementConfig) placementtags.Settings {
 		return placementtags.AxisSetting{Enabled: a.Enabled, Template: a.Template}
 	}
 	s := placementtags.Settings{
-		Compute: ax(pc.Compute),
-		Peer:    ax(pc.Peer),
-		Backend: ax(pc.Backend),
-		Lane:    ax(pc.Lane),
-		Role:    ax(pc.Role),
-		Project: ax(pc.Project),
+		Compute:    ax(pc.Compute),
+		Peer:       ax(pc.Peer),
+		Backend:    ax(pc.Backend),
+		Lane:       ax(pc.Lane),
+		Role:       ax(pc.Role),
+		Project:    ax(pc.Project),
+		Automaton:  ax(pc.Automaton),
+		Automation: ax(pc.Automation),
+		Stage:      ax(pc.Stage),
+		Kind:       ax(pc.Kind),
 	}
 	if len(pc.Custom) > 0 {
 		s.Custom = make([]placementtags.CustomAxis, 0, len(pc.Custom))
@@ -170,7 +184,6 @@ func (m *Manager) TagTaskPlacement(taskID, sessionID string, p Placement) {
 		log.Printf("[autonomous] placement tags: task=%s session=%s: %v", taskID, sessionID, err)
 	}
 }
-
 
 // SetPlacementTagSink wires the sink TagTaskPlacement writes the placement
 // tags through (session.Manager implements it). Wired by the daemon; nil

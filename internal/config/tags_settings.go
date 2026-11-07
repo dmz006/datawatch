@@ -83,7 +83,9 @@ type TagsConfig struct {
 // autonomous.tags.placement: whether the axis is on, and the template its tag
 // is built from. The template must contain the axis's placeholder ({node} for
 // compute, {peer} for peer, {backend} for backend, {lane} for lane, {role} for
-// role, {project} for project), which is replaced with the fact value.
+// role, {project} for project, {automaton} for automaton, {automation} for
+// automation, {stage} for stage, {kind} for kind), which is replaced with the
+// fact value.
 type PlacementAxis struct {
 	// Enabled turns the axis on or off. A disabled axis never yields a tag.
 	Enabled bool `yaml:"enabled" json:"enabled"`
@@ -100,7 +102,7 @@ type PlacementCustomAxis struct {
 	Name string `yaml:"name" json:"name"`
 	// Field is the session field the axis reads. One of
 	// placementtags.SessionFields: Name, Backend, Model, Node, PRDID, Role,
-	// Project.
+	// Project, Automaton, Automation, Stage, Kind.
 	Field string `yaml:"field" json:"field"`
 	// Template is the tag template; it must contain the {value} placeholder.
 	Template string `yaml:"template" json:"template"`
@@ -123,29 +125,43 @@ type PlacementConfig struct {
 	Lane    PlacementAxis `yaml:"lane" json:"lane"`
 	Role    PlacementAxis `yaml:"role" json:"role"`
 	Project PlacementAxis `yaml:"project" json:"project"`
+	// Automaton tags the Automaton the work belongs to.
+	Automaton PlacementAxis `yaml:"automaton" json:"automaton"`
+	// Automation tags the Automation the work runs under.
+	Automation PlacementAxis `yaml:"automation" json:"automation"`
+	// Stage tags the pipeline stage the work is at.
+	Stage PlacementAxis `yaml:"stage" json:"stage"`
+	// Kind tags the work kind.
+	Kind PlacementAxis `yaml:"kind" json:"kind"`
 	// Custom holds user-defined axes, empty by default.
 	Custom []PlacementCustomAxis `yaml:"custom" json:"custom"`
 }
 
 // defaultPlacementAxis builds one built-in axis's default: on with the
-// conventional "<axis>:<placeholder>" template, except project, which is off.
+// conventional "<axis>:<placeholder>" template. Every built-in axis, project
+// included, is on by default.
 func defaultPlacementAxis(name string) PlacementAxis {
 	template, _ := placementtags.DefaultTemplate(name)
-	return PlacementAxis{Enabled: name != "project", Template: template}
+	return PlacementAxis{Enabled: true, Template: template}
 }
 
 // DefaultPlacementConfig returns the placement block's defaults: the master
-// switch on; compute, peer, backend, lane and role on and project off, each
-// with its conventional template; no custom axes.
+// switch on; every built-in axis (compute, peer, backend, lane, role,
+// project, automaton, automation, stage and kind) on, each with its
+// conventional template; no custom axes.
 func DefaultPlacementConfig() PlacementConfig {
 	return PlacementConfig{
-		Enabled: true,
-		Compute: defaultPlacementAxis("compute"),
-		Peer:    defaultPlacementAxis("peer"),
-		Backend: defaultPlacementAxis("backend"),
-		Lane:    defaultPlacementAxis("lane"),
-		Role:    defaultPlacementAxis("role"),
-		Project: defaultPlacementAxis("project"),
+		Enabled:    true,
+		Compute:    defaultPlacementAxis("compute"),
+		Peer:       defaultPlacementAxis("peer"),
+		Backend:    defaultPlacementAxis("backend"),
+		Lane:       defaultPlacementAxis("lane"),
+		Role:       defaultPlacementAxis("role"),
+		Project:    defaultPlacementAxis("project"),
+		Automaton:  defaultPlacementAxis("automaton"),
+		Automation: defaultPlacementAxis("automation"),
+		Stage:      defaultPlacementAxis("stage"),
+		Kind:       defaultPlacementAxis("kind"),
 	}
 }
 
@@ -157,7 +173,8 @@ func (p PlacementConfig) EffectivePlacement() PlacementConfig {
 	out := p
 	if p.Compute.Template == "" && p.Peer.Template == "" && p.Backend.Template == "" &&
 		p.Lane.Template == "" && p.Role.Template == "" && p.Project.Template == "" &&
-		len(p.Custom) == 0 {
+		p.Automaton.Template == "" && p.Automation.Template == "" && p.Stage.Template == "" &&
+		p.Kind.Template == "" && len(p.Custom) == 0 {
 		return DefaultPlacementConfig()
 	}
 	defaultAxes := []struct {
@@ -170,6 +187,10 @@ func (p PlacementConfig) EffectivePlacement() PlacementConfig {
 		{ax: &out.Lane, def: defaultPlacementAxis("lane")},
 		{ax: &out.Role, def: defaultPlacementAxis("role")},
 		{ax: &out.Project, def: defaultPlacementAxis("project")},
+		{ax: &out.Automaton, def: defaultPlacementAxis("automaton")},
+		{ax: &out.Automation, def: defaultPlacementAxis("automation")},
+		{ax: &out.Stage, def: defaultPlacementAxis("stage")},
+		{ax: &out.Kind, def: defaultPlacementAxis("kind")},
 	}
 	for _, e := range defaultAxes {
 		if e.ax.Template == "" {
@@ -307,6 +328,10 @@ func validatePlacement(p PlacementConfig) error {
 		{"lane", p.Lane},
 		{"role", p.Role},
 		{"project", p.Project},
+		{"automaton", p.Automaton},
+		{"automation", p.Automation},
+		{"stage", p.Stage},
+		{"kind", p.Kind},
 	}
 	for _, a := range axes {
 		placeholder := placementtags.AxisPlaceholders[a.name]
@@ -430,6 +455,14 @@ func (t *TagsConfig) PlacementAxisSetting(axis string) *PlacementAxis {
 		return &t.Placement.Role
 	case "project":
 		return &t.Placement.Project
+	case "automaton":
+		return &t.Placement.Automaton
+	case "automation":
+		return &t.Placement.Automation
+	case "stage":
+		return &t.Placement.Stage
+	case "kind":
+		return &t.Placement.Kind
 	}
 	return nil
 }

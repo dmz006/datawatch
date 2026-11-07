@@ -95,13 +95,17 @@ func TestPlacementTags_LocalNode(t *testing.T) {
 		Lane:       "gpu",
 		Role:       "worker",
 		Project:    "datawatch",
-		Automation: "prd1",
+		Automaton:  "prd1",
+		Automation: "auto1",
 	}
 	if err := ApplyPlacementTags(store, node, "task1", "sess1", p, pc); err != nil {
 		t.Fatalf("ApplyPlacementTags: %v", err)
 	}
 	tags := store.tags("sess1")
-	for _, want := range []string{"compute:node-a", "backend:pi", "lane:gpu", "role:worker"} {
+	// Every axis with a fact is on by default (config.DefaultPlacementConfig),
+	// project and the automation-context axes included.
+	for _, want := range []string{"compute:node-a", "backend:pi", "lane:gpu", "role:worker",
+		"project:datawatch", "automaton:prd1", "automation:auto1"} {
 		if !store.has("sess1", want) {
 			t.Fatalf("placement tag %q missing; got %q", want, tags)
 		}
@@ -109,12 +113,11 @@ func TestPlacementTags_LocalNode(t *testing.T) {
 	if hasPeerTag(tags) {
 		t.Fatalf("local work must not yield a peer tag, got %q", tags)
 	}
-	// The project axis is off by default (config.DefaultPlacementConfig); when
-	// the operator turns it on, the tag follows the placement.
-	projPC := pc
-	projPC.Project.Enabled = true
-	if got := DerivePlacementTags(p, projPC); !listContains(got, "project:datawatch") {
-		t.Fatalf("project tag missing once the axis is enabled; got %q", got)
+	// When the operator turns an axis off, its tag stops being derived.
+	offPC := pc
+	offPC.Project.Enabled = false
+	if got := DerivePlacementTags(p, offPC); listContains(got, "project:datawatch") {
+		t.Fatalf("project tag must be gone once the axis is disabled; got %q", got)
 	}
 }
 
@@ -139,11 +142,11 @@ func TestPlacementTags_RetryOnAnotherNode(t *testing.T) {
 
 	// First placement: node-a, on a remote peer.
 	first := Placement{
-		Node:  "",
-		Peer:  "peerA",
+		Node:    "",
+		Peer:    "peerA",
 		Backend: "claude",
-		Lane:  "claude",
-		Role:  "worker",
+		Lane:    "claude",
+		Role:    "worker",
 		Project: "datawatch",
 	}
 	if err := ApplyPlacementTags(store, node, "task1", "sess1", first, pc); err != nil {
