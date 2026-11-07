@@ -40,6 +40,10 @@ type AutomationStore struct {
 	// advance"): each Automation gets its own mutex, keyed by ID, so two
 	// different Automations never block each other. Guarded by s.mu.
 	locks map[string]*sync.Mutex
+	// objectTagDeriver, when wired (NewManager does), replaces an
+	// Automation's SystemTags with the derived list on Create and Update
+	// (see ObjectTagDeriver). A nil deriver leaves SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // NewAutomationStore opens (or creates) automations.jsonl under dir —
@@ -317,6 +321,11 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	}
 	normalizeMemberStages(a)
 	normalizeActiveCursors(a)
+	if d := s.objectTagDeriver; d != nil {
+		// Object system tags: the full derived list replaces the stored
+		// one (no-op when equal), before validation and the persist.
+		a.SystemTags = replaceSystemTags(a.SystemTags, d.ObjectTagsForAutomation(a))
+	}
 	if err := validateAutomation(a); err != nil {
 		return nil, err
 	}
@@ -387,6 +396,12 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 		clone.ID = id // the store's identity cannot be renamed through mutate
 		normalizeMemberStages(clone)
 		normalizeActiveCursors(clone)
+		if d := s.objectTagDeriver; d != nil {
+			// Re-derive on every update: a membership or config change is
+			// picked up here (the full derived list replaces the stored
+			// one, no-op when equal) before the persist.
+			clone.SystemTags = replaceSystemTags(clone.SystemTags, d.ObjectTagsForAutomation(clone))
+		}
 		if err := validateAutomation(clone); err != nil {
 			return err
 		}
@@ -421,6 +436,13 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 		return nil, err
 	}
 	return out, nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into Create and
+// Update: the Automation's SystemTags are replaced with the derived list
+// before the write (see ObjectTagDeriver and replaceSystemTags).
+func (s *AutomationStore) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // Delete removes the Automation with id. Only draft, completed and cancelled

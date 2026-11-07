@@ -1608,7 +1608,10 @@ func (a *API) ListTemplates() []any {
 }
 
 func (a *API) CreateTemplate(title, description, spec, typ string, tags []string) (any, error) {
-	return a.M.Templates().Create(title, description, spec, typ, tags)
+	// An operator-created template names no source Automaton: empty
+	// sourcePRDID, so its object system tags derive to nothing (that is
+	// the record-only path; CloneToTemplate records the source).
+	return a.M.Templates().Create(title, description, spec, typ, "", tags)
 }
 
 func (a *API) GetTemplate(id string) (any, bool) {
