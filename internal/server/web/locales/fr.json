@@ -1909,6 +1909,8 @@
   "settings_resume_max_age_hint": "Appliqué au redémarrage du daemon : un Automate laissé en cours est repris uniquement si son activité la plus récente date de moins que ce nombre de secondes. 0 = jamais de reprise automatique, -1 = sans limite d'ancienneté (un répertoire projet manquant bloque la reprise dans tous les cas). Un Automate non repris est mis en pause comme bloqué avec un motif et déclenche une alerte opérateur.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
+  "settings_inherited_tags_cache": "Cache des tags hérités (sec, 0=15, négatif=désactivé)",
+  "settings_inherited_tags_cache_help": "Durée pendant laquelle le cache partagé des tags hérités d'un automate est conservé avant d'être reconstruit. 0 utilise la valeur par défaut (15 secondes) ; une valeur négative désactive le cache et reconstruit l'index à chaque lecture. Le lien de documentation ouvre le howto des tags des automates.",
   "settings_block_on_file_drift": "Bloquer en cas de dérive de fichiers",
   "settings_scope_lint": "Contrôle du périmètre des tâches",
   "settings_capacity_gpu_util": "Hold tasks while node GPU is above (% util, 0=off)",
