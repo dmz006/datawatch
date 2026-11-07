@@ -64,7 +64,11 @@ func TestAuditSelfConfig_CLIRegistration(t *testing.T) {
 	if f.DefValue != "100" {
 		t.Errorf("--limit default = %q, want 100", f.DefValue)
 	}
-	if !strings.Contains(sub.Short, "BL412") && !strings.Contains(sub.Long, "BL412") {
-		t.Errorf("self-config help does not name BL412: %q / %q", sub.Short, sub.Long)
+	if sub.Short == "" || !strings.Contains(sub.Short, "self-config audit log") {
+		t.Errorf("self-config help does not name the self-config audit log: %q", sub.Short)
+	}
+	// The help is operator-facing and must not leak internal tracker IDs.
+	if strings.Contains(sub.Short, "BL412") || strings.Contains(sub.Long, "BL412") {
+		t.Errorf("self-config help leaks an internal tracker id: %q / %q", sub.Short, sub.Long)
 	}
 }

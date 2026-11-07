@@ -31,9 +31,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // ConfigAuditRecord is one line of the audit file / stderr sink.
@@ -58,6 +61,7 @@ type ConfigAuditor struct {
 	mu     sync.Mutex
 	path   string
 	denied bool // also record denied attempts (mcp.self_config_audit_denied)
+	cef    bool // also mirror every record as a CEF line to <path>.cef
 }
 
 // NewConfigAuditor creates a sink writing to stderr (always) +, when
@@ -67,6 +71,48 @@ type ConfigAuditor struct {
 // attempt is an attempt.
 func NewConfigAuditor(path string, recordDenied bool) *ConfigAuditor {
 	return &ConfigAuditor{path: path, denied: recordDenied}
+}
+
+// EnableCEFMirror turns on the CEF (ArcSight Common Event Format)
+// mirror: from then on, every record that lands in the JSONL file also
+// appends one CEF:0 line to <path>.cef for SIEM forwarding (AGENT.md's
+// Audit Logging Rule — every audit-style event is emittable in both
+// JSON-lines and CEF). The JSONL file stays the single source of truth
+// for the read-back surfaces (GET /api/audit/self-config, the
+// self_config_audit MCP tool, the CLI). A nil receiver or a sink with no
+// file path is a no-op. Call before the first Record.
+func (a *ConfigAuditor) EnableCEFMirror() {
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.cef = true
+}
+
+// configAuditCEFEntry maps one config-write record onto the shared
+// audit.Entry shape so the CEF line uses the same escaping, signature
+// table and header the operator audit log uses (audit.FormatCEFLine).
+func configAuditCEFEntry(rec ConfigAuditRecord) audit.Entry {
+	ts, err := time.Parse(time.RFC3339, rec.Time)
+	if err != nil {
+		ts = time.Now().UTC()
+	}
+	details := map[string]any{
+		"surface": rec.Surface,
+		"allowed": strconv.FormatBool(rec.Allowed),
+		"keys":    strings.Join(rec.Keys, ","),
+	}
+	if rec.Reason != "" {
+		details["reason"] = rec.Reason
+	}
+	return audit.Entry{
+		Timestamp: ts,
+		Actor:     rec.Caller,
+		Action:    audit.ActionConfigWrite,
+		Subject:   rec.Tool,
+		Details:   details,
+	}
 }
 
 // Path returns the JSONL file the sink appends to ("" when the sink was
@@ -120,6 +166,16 @@ func (a *ConfigAuditor) Record(rec ConfigAuditRecord) {
 	}
 	defer f.Close() //nolint:errcheck
 	_, _ = f.Write(append(raw, '\n'))
+	if a.cef {
+		line := audit.FormatCEFLine(configAuditCEFEntry(rec))
+		cf, err := os.OpenFile(a.path+".cef", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[config-audit] cef open: %v\n", err)
+			return
+		}
+		defer cf.Close() //nolint:errcheck
+		_, _ = cf.Write([]byte(line + "\n"))
+	}
 }
 
 // secretKeyHints — a key containing any of these (or a value shaped like

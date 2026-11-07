@@ -20,7 +20,7 @@ import (
 // toolSelfConfigAudit declares the read-only self-config audit view.
 func (s *Server) toolSelfConfigAudit() mcpsdk.Tool {
 	return mcpsdk.NewTool("self_config_audit",
-		mcpsdk.WithDescription("Read the self-config audit log (BL412): one record per attempt through the "+
+		mcpsdk.WithDescription("Read the self-config audit log: one record per attempt through the "+
 			"self-config path on this daemon (config-write MCP tools, session/peer REST config PUTs, comm "+
 			"configure), allowed AND (by default) denied, newest-first. Each record names the time, surface "+
 			"(mcp/rest/comm), tool or route, the changed key(s) with secret values redacted, the caller "+

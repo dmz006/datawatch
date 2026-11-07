@@ -220,6 +220,8 @@ func cefSignature(action string) (int, string, int) {
 		return 63, "UIPromptNotCleared", 3
 	case ActionUIPromptRefused:
 		return 64, "UIPromptRefused", 4
+	case ActionConfigWrite:
+		return 65, "ConfigWrite", 5
 	default:
 		return 0, "AuditEvent", 3
 	}

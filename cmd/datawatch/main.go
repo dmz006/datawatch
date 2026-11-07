@@ -10319,7 +10319,15 @@ func configAuditSinkFor(cfg *config.Config) *federation.ConfigAuditor {
 		cfg.MCP.SelfConfigAuditPath = filepath.Join(expandHome(cfg.DataDir),
 			"audit", "config-self-modify.jsonl")
 	}
-	return federation.NewConfigAuditor(cfg.MCP.SelfConfigAuditPath, cfg.MCP.SelfConfigAuditDeniedOn())
+	sink := federation.NewConfigAuditor(cfg.MCP.SelfConfigAuditPath, cfg.MCP.SelfConfigAuditDeniedOn())
+	// AGENT.md's Audit Logging Rule: the config-write sink, like the operator
+	// audit log, is emittable in both JSON-lines and CEF. When the daemon
+	// mirrors the operator audit log to CEF (audit.cef_mirror_enabled), the
+	// self-config audit trail mirrors too (<path>.cef).
+	if cfg.Audit.CEFMirrorEnabled {
+		sink.EnableCEFMirror()
+	}
+	return sink
 }
 
 func expandHome(p string) string {

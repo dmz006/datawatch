@@ -307,7 +307,7 @@ var BuiltinGroups = map[string]*CapabilityGroup{
 	// grant (session.capabilities) can remove or narrow it.
 	SelfConfigGroup: {
 		Name:        SelfConfigGroup,
-		Description: "Session config-write surface (BL412 option C): the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded by operator answer (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
+		Description: "Session config-write surface: the setting writers a session may run — config:write, autonomous:write, observers:write, llms:write, usage:write. Excluded (non-secret settings only) and recorded here: secrets (secret_*), federation (so server_add/server_update stay outside), identity (set_identity/update_identity/configure_identity/restore/reset_identity) and daemon control (restart_daemon, reload) — see IsConfigWriteTool for the per-tool boundary",
 		Builtin:     true,
 		Caps:        []string{CapConfigWrite, CapAutonomousWrite, CapObserversWrite, CapLLMsWrite, CapUsageWrite},
 	},

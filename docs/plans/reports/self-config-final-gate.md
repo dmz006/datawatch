@@ -67,3 +67,66 @@
 ## Scratch hygiene
 
 - Scratch lived at `<worktree>/scratch/` (untracked, outside any commit), was deleted after the proof, and nothing from it is staged or in `git status` (only the report file and the howto fix are new).
+## Rules-review remediation — live smoke evidence (2026-11-06)
+
+Sandbox runs only — every check below went to an isolated scratch daemon on a random
+127.0.0.1 port with a fresh data dir (production daemon untouched, scratch daemon and
+workdir torn down afterwards; no local port or dir recorded in this report).
+
+### release-smoke §93 — "Self-config audit trail — REST view and CLI read"
+
+New section 93 of `scripts/release-smoke.sh`, run isolated
+(`SMOKE_ONLY=93`, `DW_SKIP_TIDY_CHECK=1` — the tidy pre-gate fails on pre-existing
+unclassified `docs/plans/` files unrelated to this change; the skip flag is the script's
+own mechanism, same as §85's live note):
+
+| Check | Result |
+|---|---|
+| `GET /api/audit/self-config` answers 200 with `count`/`entries`/`path`, every entry's `surface` ∈ {mcp, rest, comm}, `count == len(entries) ≤ 100` | PASS |
+| `?limit=1` accepted (200) | PASS |
+| `?limit=0` refused with a 400 | PASS |
+| Route is read-only — POST answers 405 | PASS |
+| `datawatch audit self-config` reads the trail (exit 0, non-empty) | PASS |
+
+### CEF mirror (AGENT.md Audit Logging Rule)
+
+- The self-config audit sink now mirrors CEF when `audit.cef_mirror_enabled` is set
+  (default false — the same opt-in as the operator audit log): `federation.ConfigAuditor`
+  gains `EnableCEFMirror()`, and `Record()` appends a
+  `CEF:0|datawatch|datawatch|<v>|65|ConfigWrite|5|…` line to `<path>.cef`, signature
+  `65/ConfigWrite`, severity 5, header + extension values escaped with the operator-log
+  rules (backslash, `=`, `\n`, `\r`).
+- Live: a scratch daemon started with `audit.cef_mirror_enabled: true` boots clean and the
+  trail resolves to `<data>/audit/config-self-modify.jsonl` (sink constructed, CEF path
+  wired). By design, records are emitted only for agent-surface callers (session/peer) — a
+  scratch daemon exposes only operator/admin credentials, and admin writes are
+  intentionally not audited as session writes (`internal/server/config_audit.go`) — so live
+  record generation is covered by the unit suite instead: `TestRestConfigAudit_*`
+  (allowed + denied + cost-rates), the MCP `config_set` and comm `configure` audit tests
+  (all green in the 5988-test package run below).
+- CEF line format verified by `TestConfigAuditor_CEFSignature` (signature/severity,
+  JSONL unaffected) and `TestConfigAuditor_CEFEscaping` (escaping parity with the operator
+  log), alongside the existing `internal/audit` CEF tests.
+
+### Tracker-ID hygiene
+
+- `BL412` removed from every user-facing surface: `docs/api/openapi.yaml` (summary + 2
+  descriptions), `docs/mcp.md`, `docs/implementation.md`, the `self_config_audit` MCP tool
+  description, the comm verb help line, and the `datawatch audit self-config` CLI help.
+  Remaining `BL412` occurrences are internal code comments/tests only.
+- `scripts/check-no-internal-refs.sh` → `PASS: no internal refs in user-facing surfaces`.
+
+### Operator docs
+
+- `README.md` Security section: self-config gate bullet (PWA Settings card,
+  `datawatch audit self-config`, `GET /api/audit/self-config`).
+- `docs/commands.md`: `datawatch audit self-config [--limit N]` entry under `audit query`.
+- `docs/testing.md`: CEF-mirror test row in the BL table.
+
+### Gate re-run (2026-11-06)
+
+`go build ./...` clean; `go test -count=1` on the six touched packages
+(`./internal/federation/ ./internal/audit/ ./internal/mcp/ ./internal/router/
+./internal/server/ ./cmd/datawatch/`) → **5988 passed, 0 failed** (includes the new CEF
+tests, the updated `audit self-config` help assertion, and the router/MCP/server parity
+suites that read the changed help/description strings).
