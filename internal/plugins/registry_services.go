@@ -86,6 +86,27 @@ func (r *Registry) emitServiceEvent(ev ServiceEvent) {
 	}
 }
 
+// SetHealthObserver wires an observer that receives every attach or
+// managed health probe result for a plugin: healthy outcome and the HTTP
+// status code (0 when the request never completed). It is invoked once
+// per completed check, never while a registry or probe lock is held;
+// it must not block for long. Probes created afterwards pick it up.
+func (r *Registry) SetHealthObserver(fn func(plugin string, healthy bool, statusCode int)) {
+	r.mu.Lock()
+	r.healthObserver = fn
+	r.mu.Unlock()
+}
+
+// observeHealth forwards one probe outcome to the configured observer.
+func (r *Registry) observeHealth(plugin string, healthy bool, statusCode int) {
+	r.mu.Lock()
+	fn := r.healthObserver
+	r.mu.Unlock()
+	if fn != nil {
+		fn(plugin, healthy, statusCode)
+	}
+}
+
 // SetManaged changes the runtime operator opt-in for a plugin (in memory,
 // like SetEnabled; plugins.managed in config is the persistent source).
 // It returns false when the plugin is unknown or its author did not
@@ -192,6 +213,7 @@ func (r *Registry) reconcileServicesLocked(restartIdle bool) (start, stop []*Ser
 			continue
 		}
 		s.OnEvent = r.emitServiceEvent
+		s.OnProbe = func(healthy bool) { r.observeHealth(p.Name, healthy, 0) }
 		r.supervisors[name] = s
 		start = append(start, s)
 	}

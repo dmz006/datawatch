@@ -60,6 +60,12 @@ type AttachHealthProbe struct {
 	authHeader string
 	client     *http.Client
 
+	// OnResult — invoked once per completed check, after the probe's
+	// lock is released, with the check's outcome (healthy) and HTTP
+	// status code (0 when the request never completed). Nil-safe; set
+	// once before Run. Used to feed the service event recorder.
+	OnResult func(healthy bool, statusCode int)
+
 	mu       sync.Mutex
 	status   AttachHealthStatus
 	lastAt   time.Time
@@ -216,7 +222,6 @@ func (a *AttachHealthProbe) check(ctx context.Context) {
 // otherwise the previously recorded version, if any, is kept.
 func (a *AttachHealthProbe) record(status AttachHealthStatus, at time.Time, code int, dur time.Duration, errStr, version string) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	wasUp := a.status == AttachHealthUp
 	a.status = status
 	a.lastAt = at
@@ -231,5 +236,9 @@ func (a *AttachHealthProbe) record(status AttachHealthStatus, at time.Time, code
 	}
 	if version != "" {
 		a.version = version
+	}
+	a.mu.Unlock()
+	if fn := a.OnResult; fn != nil {
+		fn(status == AttachHealthUp, code)
 	}
 }

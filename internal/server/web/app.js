@@ -45543,6 +45543,119 @@ window.deleteSecret = function(name) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
+// ── Plugin service status card ──────────────────────────────────────────────
+// One status card per kind:service plugin, under its Plugin Manager row.
+// Pure (data in → escaped HTML out): it renders exactly what the plugin's
+// `service` object (internal/plugins serviceView) carries — name, state
+// (up/down/unknown), lifecycle mode, address, version, uptime, last health
+// check time, last error, a next-action line and the open service events
+// as a link to the Events entry. Every row renders only when it has a
+// value: an "off", "none", "never" or empty row is omitted outright, and
+// open service events are never rendered as a status strip. No service
+// object → '' so the card hides itself.
+
+// _pluginServiceStateOf normalizes the two service views (managed
+// supervisor states; the attach-only probe status) to up/down/unknown.
+function _pluginServiceStateOf(svc) {
+  svc = (svc && typeof svc === 'object') ? svc : {};
+  if (svc.state) {
+    switch (svc.state) {
+      case 'healthy': return 'up';
+      case 'unhealthy':
+      case 'crashed':
+      case 'failed':
+      case 'stopped': return 'down';
+      case 'starting':
+      case 'restarting':
+      case 'stopping':
+      default: return 'unknown'; // in transition, or a value we do not map
+    }
+  }
+  // Attach-only view carries no state — the last probe result is the state.
+  if (svc.last_health_status === 'up') return 'up';
+  if (svc.last_health_status === 'down') return 'down';
+  return 'unknown';
+}
+
+// pluginServiceUptimeLabel — seconds → compact "1h 1m" / "12m 30s" / "40s".
+function pluginServiceUptimeLabel(secs) {
+  const s = Math.max(0, Math.floor(Number(secs) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  if (h) return h + 'h ' + m + 'm';
+  if (m) return m + 'm ' + r + 's';
+  return r + 's';
+}
+
+window.pluginServiceCardHtml = function(name, svc) {
+  if (!svc || typeof svc !== 'object') return '';
+  const state = _pluginServiceStateOf(svc);
+  const stateKey = state === 'up' ? 'plugin_service_up' : (state === 'down' ? 'plugin_service_down' : 'plugin_service_unknown');
+  const stateStyle = state === 'up'
+    ? { color: 'var(--success,#10b981)', bg: 'rgba(16,185,129,0.12)' }
+    : state === 'down'
+      ? { color: 'var(--error,#ef4444)', bg: 'rgba(239,68,68,0.12)' }
+      : { color: 'var(--text2)', bg: 'rgba(148,163,184,0.15)' };
+  const managed = svc.mode === 'managed';
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const row = (lab, valueHtml) => `<div style="display:flex;gap:8px;font-size:12px;margin-top:3px;"><span style="opacity:0.65;min-width:96px;flex-shrink:0;">${lab}</span><span style="color:var(--text);word-break:break-word;">${valueHtml}</span></div>`;
+
+  const addressRow = svc.address ? row(label('plugin_service_address', 'Address'), escHtml(svc.address)) : '';
+  const versionRow = svc.version ? row(label('plugin_service_version', 'Version'), escHtml(svc.version)) : '';
+  const uptimeRow = (typeof svc.uptime_seconds === 'number') ? row(label('plugin_service_uptime', 'Uptime'), escHtml(pluginServiceUptimeLabel(svc.uptime_seconds))) : '';
+  const checkRow = svc.last_health_check ? row(label('plugin_service_last_check', 'Last health check'), escHtml(budgetTime(svc.last_health_check))) : '';
+  const lastError = (managed ? (svc.last_error || svc.last_health_error) : (svc.last_health_error || svc.last_error));
+  const errorRow = lastError ? row(label('plugin_service_last_error', 'Last error'), `<span style="color:var(--error,#ef4444);">${escHtml(lastError)}</span>`) : '';
+
+  // Next action: a managed service that is not up is started from here
+  // (the enable route with the managed opt-in); an attach-only service
+  // that is down (or cannot be verified) gets the plain "check it is
+  // running" hint. A service that is up has no next action to show, so
+  // the row is omitted.
+  let action = '';
+  if (state !== 'up') {
+    if (managed) {
+      const esc = escJsAttr(String(name));
+      action = `<div style="margin-top:6px;"><a onclick="pluginServiceStart('${esc}')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${label('plugin_service_action_start', 'Start it from here')} →</a></div>`;
+    } else {
+      action = `<div style="margin-top:6px;font-size:12px;color:var(--warning,#f59e0b);">${label('plugin_service_action_check_running', 'Check that the service is running')}</div>`;
+    }
+  }
+
+  // Open service events (active service event conditions reported by the
+  // backend on the plugin's service object) are a link to the Events
+  // entry (the dashboard Live Events feed) — never a status strip inside
+  // the card.
+  let events = '';
+  const openEvents = Number(svc.open_events) > 0 ? Number(svc.open_events) : 0;
+  if (openEvents > 0) {
+    const evKey = 'plugin_service_events_link';
+    const evLabel = t(evKey, [openEvents]) !== evKey
+      ? t(evKey, [openEvents])
+      : openEvents + ' open service events — Events →';
+    events = `<div style="margin-top:4px;"><a onclick="navigate('dashboard')" style="color:var(--accent2,#60a5fa);cursor:pointer;text-decoration:underline;font-size:12px;">${escHtml(evLabel)}</a></div>`;
+  }
+
+  return `<div class="plugin-service-card" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><strong style="font-size:12px;">${escHtml(name || '')}</strong><span style="display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600;background:${stateStyle.bg};color:${stateStyle.color};">${escHtml(_pluginServiceLocaleKey(stateKey, state))}</span><span style="font-size:11px;opacity:0.65;">${managed ? label('plugin_service_mode_managed', 'managed') : label('plugin_service_mode_attach_only', 'attach-only')}</span></div>
+    ${addressRow}${versionRow}${uptimeRow}${checkRow}${errorRow}${action}${events}
+  </div>`;
+};
+
+// pluginServiceStart — the card's "Start it from here" action: the shared
+// enable route with the managed opt-in (the daemon answers 400 for a
+// service whose manifest declines managed lifecycle support; the error
+// toast surfaces the reason). Refreshes the Plugin Manager list so the
+// card re-renders with the new state.
+window.pluginServiceStart = function(name) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/enable', {
+    method: 'POST',
+    body: JSON.stringify({ managed: true }),
+  }).then(() => {
+    showToast('Plugin ' + name + ' service start requested', 'success', 2000);
+    loadPluginsPanel();
+  }).catch(e => showToast(String(e.message || e), 'error'));
+};
+
 // BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
 function loadPluginsPanel() {
   const el = document.getElementById('pluginsPanelBody');
@@ -45569,9 +45682,14 @@ function loadPluginsPanel() {
         ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_mobile'))}:</strong> ${p.mobile.endpoints.map(ep=>escHtml(ep.name)).join(', ')}</div>` : '';
       const sessInj = (p.session_injection && p.session_injection.types && p.session_injection.types.length)
         ? `<div style="font-size:11px;margin-top:2px;opacity:0.8;"><strong>${escHtml(t('plugin_detail_session_injection'))}:</strong> ${p.session_injection.types.map(ty=>escHtml(ty)).join(', ')}</div>` : '';
+      // Status card for service-kind plugins: name, state (up/down/unknown),
+      // lifecycle mode, address, version, uptime, last health check, last
+      // error, the next action and open service events as a link to the
+      // Events entry — every row renders only when it has a value.
+      const svcCard = (p.kind === 'service') ? pluginServiceCardHtml(p.name, p.service) : '';
       const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
       return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}</div>
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}</div>
         ${acts}
       </div>`;
     };

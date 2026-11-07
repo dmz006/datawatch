@@ -129,6 +129,11 @@ type ServiceSupervisor struct {
 	// while the supervisor's mutex is held, but it is called from the
 	// supervision goroutine, so it must not block for long.
 	OnEvent func(ev ServiceEvent)
+	// OnProbe, when set, is invoked once per completed health probe with
+	// its outcome (true = up). It is not called while the supervisor's
+	// mutex is held. It is set once before the supervisor starts and may
+	// be nil. Used to feed the service event recorder.
+	OnProbe func(healthy bool)
 
 	name          string
 	entry         string
@@ -676,14 +681,18 @@ func (s *ServiceSupervisor) probe(ctx context.Context) (version string, err erro
 	return version, nil
 }
 
-// recordProbe stores the latest health probe outcome for status reporting.
+// recordProbe stores the latest health probe outcome for status reporting
+// and, when OnProbe is set, reports the outcome to it (outside s.mu).
 func (s *ServiceSupervisor) recordProbe(ok bool, version string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.lastProbeAt = time.Now()
 	s.lastProbeOK = ok
 	if ok && version != "" {
 		s.version = version
+	}
+	s.mu.Unlock()
+	if fn := s.OnProbe; fn != nil {
+		fn(ok)
 	}
 }
 

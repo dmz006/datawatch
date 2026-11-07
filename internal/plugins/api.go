@@ -8,14 +8,48 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 )
 
 // API wraps a *Registry for the REST/MCP/CLI layers.
-type API struct{ R *Registry }
+type API struct {
+	R *Registry
+
+	mu sync.Mutex
+	// openEventsFn reports how many service events are currently open
+	// for one plugin (an "open" service event is an active condition on
+	// the service event recorder — for example service_down or
+	// token_rejected). The service views carry the count as
+	// open_events; 0 means none and the field is omitted. Nil means the
+	// server did not wire one (open_events is always 0 for then).
+	openEventsFn func(plugin string) int
+}
 
 // NewAPI is a convenience constructor.
 func NewAPI(r *Registry) *API { return &API{R: r} }
+
+// SetOpenEventsCounter wires fn, which reports the number of open
+// service events for one plugin (active conditions on the service event
+// recorder). It may be called before or after the API is in use and is
+// safe to call concurrently with view rendering.
+func (a *API) SetOpenEventsCounter(fn func(plugin string) int) {
+	a.mu.Lock()
+	a.openEventsFn = fn
+	a.mu.Unlock()
+}
+
+// openEvents reports the open service events for plugin (0 when no
+// counter is wired).
+func (a *API) openEvents(plugin string) int {
+	a.mu.Lock()
+	fn := a.openEventsFn
+	a.mu.Unlock()
+	if fn == nil {
+		return 0
+	}
+	return fn(plugin)
+}
 
 // pluginView is the JSON shape of a plugin: the plugin itself plus, for a
 // service-kind plugin, a service status object. Non-service plugins
@@ -40,6 +74,11 @@ type serviceView struct {
 	PID              int          `json:"pid,omitempty"`
 	Restarts         int          `json:"restarts"`
 	LastError        string       `json:"last_error,omitempty"`
+	// OpenEvents — how many service events are currently open for this
+	// plugin (active service-down, token-rejected, enrichment-backlog or
+	// model-node conditions). 0 is omitted; the client renders an
+	// "N open service events — Events →" link only when it is > 0.
+	OpenEvents int `json:"open_events,omitempty"`
 }
 
 // attachServiceView is the service object for a plugin datawatch only
@@ -54,6 +93,10 @@ type attachServiceView struct {
 	LastHealthCheck  *time.Time `json:"last_health_check,omitempty"`
 	LastHealthStatus string     `json:"last_health_status,omitempty"`
 	LastHealthError  string     `json:"last_health_error,omitempty"`
+	// OpenEvents — see serviceView; the same count applies to an
+	// attach-only plugin's service (its probe results feed the same
+	// recorder).
+	OpenEvents int `json:"open_events,omitempty"`
 }
 
 // view renders p for the API: a service-kind plugin always carries the
@@ -82,9 +125,11 @@ func (a *API) view(p *Plugin) any {
 			PID:              st.PID,
 			Restarts:         st.Restarts,
 			LastError:        st.LastError,
+			OpenEvents:       a.openEvents(p.Name),
 		}}
 	}
 	sv := &attachServiceView{Mode: a.serviceMode(p), Address: connAddress(p)}
+	sv.OpenEvents = a.openEvents(p.Name)
 	if rep, ok := a.R.AttachHealth(p.Name); ok {
 		if !rep.LastCheck.IsZero() {
 			sv.Version = rep.Version

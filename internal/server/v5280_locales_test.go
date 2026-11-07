@@ -635,6 +635,15 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"settings_automation_protected_paths",
 		"settings_automation_protected_paths_action",
 		"settings_automation_rules_review_source",
+		// Plugin service status card (kind:service cards in the Plugin Manager):
+		// the card title, the three state labels and the two next-action hints —
+		// all of them are what the operator actually sees on a service plugin.
+		"plugin_service_card_title",
+		"plugin_service_up",
+		"plugin_service_down",
+		"plugin_service_unknown",
+		"plugin_service_action_start",
+		"plugin_service_action_check_running",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
