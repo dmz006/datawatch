@@ -22,8 +22,9 @@ import (
 func TestEnsureTmuxTmpdirEnv(t *testing.T) {
 	t.Run("leaves an already-set TMUX_TMPDIR alone", func(t *testing.T) {
 		t.Setenv("TMUX_TMPDIR", "/run/dw-tmux")
-		if got := ensureTmuxTmpdirEnv(); got != "" {
-			t.Fatalf("ensureTmuxTmpdirEnv() = %q, want \"\" (already set)", got)
+		dataDir := t.TempDir()
+		if got := ensureTmuxTmpdirEnv(dataDir); got != "" {
+			t.Fatalf("ensureTmuxTmpdirEnv(%q) = %q, want \"\" (already set)", dataDir, got)
 		}
 		if got := os.Getenv("TMUX_TMPDIR"); got != "/run/dw-tmux" {
 			t.Fatalf("TMUX_TMPDIR = %q, want unchanged", got)
@@ -33,8 +34,9 @@ func TestEnsureTmuxTmpdirEnv(t *testing.T) {
 	t.Run("no dedicated socket present — stays unset", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		t.Setenv("TMUX_TMPDIR", "")
-		if got := ensureTmuxTmpdirEnv(); got != "" {
-			t.Fatalf("ensureTmuxTmpdirEnv() = %q, want \"\" with no dedicated socket", got)
+		dataDir := t.TempDir()
+		if got := ensureTmuxTmpdirEnv(dataDir); got != "" {
+			t.Fatalf("ensureTmuxTmpdirEnv(%q) = %q, want \"\" with no dedicated socket", dataDir, got)
 		}
 		if got := os.Getenv("TMUX_TMPDIR"); got != "" {
 			t.Fatalf("TMUX_TMPDIR = %q, want still unset", got)
@@ -42,15 +44,17 @@ func TestEnsureTmuxTmpdirEnv(t *testing.T) {
 	})
 
 	// Reproduces the exact incident: a daemon started with TMUX_TMPDIR
-	// unset must still find the dedicated ~/.datawatch/tmux socket
+	// unset must still find the dedicated <dataDir>/tmux socket
 	// datawatch-tmux.service (or a prior daemon generation) already
 	// created, and set it in its own environment before any tmux call.
-	t.Run("falls back to the dedicated ~/.datawatch/tmux socket", func(t *testing.T) {
-		home := t.TempDir()
-		t.Setenv("HOME", home)
+	t.Run("falls back to the dedicated <dataDir>/tmux socket", func(t *testing.T) {
+		// HOME deliberately different from the configured data dir — the
+		// fallback is anchored at dataDir, not $HOME.
+		t.Setenv("HOME", t.TempDir())
 		t.Setenv("TMUX_TMPDIR", "")
 
-		dir := filepath.Join(home, ".datawatch", "tmux")
+		dataDir := t.TempDir()
+		dir := filepath.Join(dataDir, "tmux")
 		sockDir := filepath.Join(dir, fmt.Sprintf("tmux-%d", os.Getuid()))
 		if err := os.MkdirAll(sockDir, 0o700); err != nil {
 			t.Fatal(err)
@@ -59,9 +63,9 @@ func TestEnsureTmuxTmpdirEnv(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		got := ensureTmuxTmpdirEnv()
+		got := ensureTmuxTmpdirEnv(dataDir)
 		if got != dir {
-			t.Fatalf("ensureTmuxTmpdirEnv() = %q, want %q", got, dir)
+			t.Fatalf("ensureTmuxTmpdirEnv(%q) = %q, want %q", dataDir, got, dir)
 		}
 		if envVal := os.Getenv("TMUX_TMPDIR"); envVal != dir {
 			t.Fatalf("TMUX_TMPDIR after ensureTmuxTmpdirEnv() = %q, want %q — subsequent tmux exec.Command calls would still miss the dedicated socket", envVal, dir)
