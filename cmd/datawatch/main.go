@@ -11764,7 +11764,9 @@ func newConfigSetCmd() *cobra.Command {
 			"autonomous.parallel.merge_conflict_model (model name; empty = strongest planning model).\n\n" +
 			"Backend liveness keys: session.liveness_window_seconds (whole seconds >= 0; 0 = default), " +
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
-			"an unknown backend or a non-whole-number value is refused).",
+			"an unknown backend or a non-whole-number value is refused).\n\n" +
+			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
+			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()
