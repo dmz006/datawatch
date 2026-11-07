@@ -38,7 +38,7 @@ func progressTextFixture() ProgressMetrics {
 		},
 		Completion: CompletionRange{
 			ByPRDRateDays: ptrF(5.3), ByTaskRateDays: ptrF(8.7), ByWorkerHoursDays: ptrF(7.1),
-			LowDays: ptrF(5.3), HighDays: ptrF(8.7), CalendarDays: ptrF(9.0),
+			LowDays: ptrF(5.3), HighDays: ptrF(8.7), CalendarDays: ptrF(9.0), SampleRecords: 3, SampleTasks: 7,
 			Drivers: []string{driverUtilization, driverSparse},
 			Method:  map[string]string{methodPRDRate: "Assumes Automata finish at the rate of the last three active days."},
 		},
@@ -59,6 +59,7 @@ LEFT  known: 5 Automata not done (2 running, 3 waiting or blocked) with 18 tasks
       estimated: 3 Automata not filed yet; about 21 tasks (7.0 tasks per Automaton)
       combined estimate: about 8 Automata and about 39 tasks (known plus estimated)
 ETA   5.3 to 8.7 active days (estimate; a range, not a promise)
+      based on 3 Automata and 7 tasks (too few to rely on)
       by Automaton rate: 5.3 days - Assumes Automata finish at the rate of the last three active days.
       by task rate: 8.7 days
       by task rate, last 24 h: not measured

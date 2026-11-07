@@ -182,6 +182,7 @@ func progressEtaLines(sb *strings.Builder, m ProgressMetrics) {
 	} else {
 		fmt.Fprintf(sb, "ETA   %.1f to %.1f active days (estimate; a range, not a promise)\n", *c.LowDays, *c.HighDays)
 	}
+	fmt.Fprintf(sb, "      %s\n", progressSampleText(c))
 	vals := map[string]*float64{
 		methodPRDRate:     c.ByPRDRateDays,
 		methodTaskRate:    c.ByTaskRateDays,
@@ -320,4 +321,22 @@ func ParseProgressTrend(body []byte) (ProgressTrendBody, error) {
 		return t, fmt.Errorf("unreadable progress trend response: %w", err)
 	}
 	return t, nil
+}
+
+// progressSampleText says how many finished Automata and tasks the completion
+// estimate is based on, and flags a thin sample.
+func progressSampleText(c CompletionRange) string {
+	noun := "Automata"
+	if c.SampleRecords == 1 {
+		noun = "Automaton"
+	}
+	tn := "tasks"
+	if c.SampleTasks == 1 {
+		tn = "task"
+	}
+	s := fmt.Sprintf("based on %d %s and %d %s", c.SampleRecords, noun, c.SampleTasks, tn)
+	if c.SampleRecords < sparseHistoryLimit {
+		s += " (too few to rely on)"
+	}
+	return s
 }
