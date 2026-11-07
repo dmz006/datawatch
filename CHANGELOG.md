@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The zombie indicator no longer flags one-shot workers that are still running.** A session's liveness probe read its tmux pane's foreground command and treated a shell in the foreground as a dead worker. One-shot workers such as a pi run are started as a shell pipeline (`pi | tee`), so tmux reported `bash` as the foreground even while the worker and its pipe were still alive — the amber `⚠ zombie` badge in the web app, the `[ZOMBIE]` mark in the session lists, `claude_alive` set to false, the warn alert, and any session exit hook wired to `restart` all mis-fired on sessions that were doing work. A shell foreground now means zombie only when that shell has no live child process; a pipeline pane with live children stays marked alive until they finish, and a truly dead session — worker gone, only a bare shell left — is flagged exactly as before, with the same badge, alert and hook behaviour. Nothing to migrate: the probe takes effect on the first reconcile tick after you upgrade and restart the daemon, with no configuration change. The liveness rule is defined under *Session zombie detection* in [docs/datawatch-definitions.md](docs/datawatch-definitions.md), and the pipeline-pane and dead-pane cases are covered by `internal/session/pane_liveness_probe_test.go`.
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed
