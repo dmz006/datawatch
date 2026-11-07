@@ -593,9 +593,11 @@ func (m *Manager) resolveRefuseDirtyTree(prd *PRD) bool {
 // dirtyTreeRefused implements admitTree's dirty-tree check: when the
 // gate is on and the task's canonical tree has uncommitted changes
 // (git status --porcelain non-empty), it returns an error hard-blocking
-// the task. A tree where git can't report status (not a repo, git
-// missing) is passed through — the gate only reasons about dirt it can
-// observe.
+// the task. A tracked file whose only difference from HEAD is the
+// daemon's own marked blocks (daemonSectionsOnlyChange) is the daemon's
+// work, not dirt — it never refuses. A tree where git can't report
+// status (not a repo, git missing) is passed through — the gate only
+// reasons about dirt it can observe.
 func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) error {
 	if !m.resolveRefuseDirtyTree(prd) {
 		return nil
@@ -604,11 +606,15 @@ func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) er
 	if err != nil {
 		return nil // no resolvable tree — nothing to refuse on
 	}
-	out, err := gitProbe(ctx, treeRoot, "status", "--porcelain")
+	// runGitInCtx, not gitProbe: porcelain XY columns are significant and
+	// trimming output would mangle the first line's status column.
+	out, err := runGitInCtx(ctx, treeRoot, "status", "--porcelain")
 	if err != nil {
 		return nil
 	}
-	dirt := strings.TrimSpace(out)
+	// A tracked file changed only by the daemon's own marked blocks is
+	// not an operator's uncommitted work.
+	dirt := strings.TrimSpace(filterDaemonOnlyPorcelain(ctx, treeRoot, out, runGitInCtx))
 	if dirt == "" {
 		return nil
 	}
