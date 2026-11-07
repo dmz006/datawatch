@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -1887,6 +1888,8 @@ progress [automation=<id>] [tag=<id>] [since=<date>] [until=<date>]  Automata pr
 progress trend [days]           how the completion range moved over the saved daily snapshots
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
+configure platform_context enabled on|off   turn the platform context on or off
+configure platform_context note <text>      set the platform context note
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
 version / about                 show datawatch version and info
 restart                         restart the datawatch daemon
@@ -2232,4 +2235,47 @@ func dashboardConsoleOneLiner(body string) (string, error) {
 		parts = append(parts, fmt.Sprintf("%s %d — %s", id, s.Count, s.Summary))
 	}
 	return strings.Join(parts, " | "), nil
+}
+
+// platformContextConfigure is a parsed "platform_context ..." configure verb.
+type platformContextConfigure struct {
+	Key   string // config key: platform_context.enabled or platform_context.note
+	Value string // value handed to the config set path
+	Err   string // usage message when the verb is malformed
+}
+
+const platformContextUsage = "Usage: configure platform_context enabled on|off, or configure platform_context note <text>"
+
+// parsePlatformContextConfigure parses the configure text "platform_context
+// enabled on|off" and "platform_context note <text>". ok is false when the text
+// is not a platform_context verb at all (so key=value forms fall through);
+// a malformed verb returns ok true with Err set.
+func parsePlatformContextConfigure(text string) (platformContextConfigure, bool) {
+	f := strings.Fields(text)
+	if len(f) == 0 || !strings.EqualFold(f[0], "platform_context") {
+		return platformContextConfigure{}, false
+	}
+	if len(f) < 2 {
+		return platformContextConfigure{Err: platformContextUsage}, true
+	}
+	switch strings.ToLower(f[1]) {
+	case "enabled":
+		if len(f) != 3 {
+			return platformContextConfigure{Err: platformContextUsage}, true
+		}
+		switch strings.ToLower(f[2]) {
+		case "on":
+			return platformContextConfigure{Key: "platform_context.enabled", Value: "true"}, true
+		case "off":
+			return platformContextConfigure{Key: "platform_context.enabled", Value: "false"}, true
+		}
+		return platformContextConfigure{Err: platformContextUsage}, true
+	case "note":
+		note := strings.TrimSpace(text[strings.Index(strings.ToLower(text), "note")+len("note"):])
+		if len(note) > config.PlatformContextNoteMaxLen {
+			return platformContextConfigure{Err: fmt.Sprintf("platform_context note is too long (%d bytes, max %d).", len(note), config.PlatformContextNoteMaxLen)}, true
+		}
+		return platformContextConfigure{Key: "platform_context.note", Value: note}, true
+	}
+	return platformContextConfigure{Err: platformContextUsage}, true
 }
