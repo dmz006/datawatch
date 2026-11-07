@@ -270,6 +270,7 @@ Subcommands:
 		newAutonomousTagDeleteCmd(),
 		newAutonomousTagRegistryCmd(),
 		newAutonomousTagRegistryDismissCmd(),
+		newAutonomousTagSweepCmd(),
 		newAutonomousAttentionCmd(),
 		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),

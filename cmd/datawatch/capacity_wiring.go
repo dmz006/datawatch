@@ -1084,6 +1084,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetPlacementTagSettings(func() config.PlacementConfig {
 		return cfg.Autonomous.Tags.Placement
 	})
+	// Tag sweep: the sweep's session pass lists and writes every
+	// Automata-owned session through the session manager, rebuilding each
+	// one's placement from the session's own stored facts (its backend,
+	// model, node, project; the Automaton's Automation and stage; the role
+	// and kind its name carries)
+	amgr.SetTagSweepSessions(autonomous.NewSessionTagSweepStore(amgr, mgr))
 	amgr.SetPiDefaultModel(piDefaultModel(cfg))
 	amgr.SetNodeLoad(nodeLoader(httpServer.ComputeRegistry), nodeAlerts)
 	amgr.SetCapacityAudit(capacityAudit)

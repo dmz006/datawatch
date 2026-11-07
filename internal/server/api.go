@@ -7606,6 +7606,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+	// The tags.placement block (autonomous.tags.placement.*) follows the
+	// live config without a restart too: new placements already read it on
+	// every derivation (SetPlacementTagSettings), and one tag-sweep pass
+	// re-derives the existing sessions' and records' system tags, so
+	// turning an axis off strips its tag and a template change re-stamps
+	// it where the fact exists. The operator's own tags are a separate
+	// field the sweep never touches.
+	for k := range patch {
+		if strings.HasPrefix(k, "autonomous.tags.placement") {
+			if a, ok := s.autonomousMgr.(tagSweepAPI); ok {
+				a.SweepTags(false)
+			}
+			break
+		}
+	}
 	// BL368 — re-initialize visioner when vision config changes via PUT.
 	for k := range patch {
 		if strings.HasPrefix(k, "vision.") {

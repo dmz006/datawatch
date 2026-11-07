@@ -599,6 +599,41 @@ func (s *Store) RestoreFromArchive(id string) (*Session, error) {
 	return sess, nil
 }
 
+// UpdateArchived records a new version of one archived session by appending
+// a line for it — the file is append-only, so an update is a line under the
+// same id (the later line, and the index entry it leaves, win; the earlier
+// lines stay, nothing in the file is ever deleted or rewritten). It errors
+// when the session is active or not in the archive at all.
+func (s *Store) UpdateArchived(updated *Session) error {
+	if updated == nil || updated.FullID == "" {
+		return errors.New("update archive: empty session")
+	}
+	s.arc.mu.Lock()
+	defer s.arc.mu.Unlock()
+	if err := s.loadArchiveIndexLocked(); err != nil {
+		return err
+	}
+	full, ok := s.resolveArchivedLocked(updated.FullID)
+	if !ok {
+		return fmt.Errorf("session %q is not in the archive", updated.FullID)
+	}
+	if s.activeLocked(full) {
+		return fmt.Errorf("session %q is active, not archived", full)
+	}
+	data, side, err := s.marshalCapped(updated)
+	if err != nil {
+		return err
+	}
+	rec, err := s.encodeRec(data)
+	if err != nil {
+		return err
+	}
+	if err := s.writeSideFiles(side); err != nil {
+		return err
+	}
+	return s.appendArchiveLocked([]archiveLine{{ID: full, TS: time.Now().UnixNano(), Rec: rec}})
+}
+
 // ---- per-field size cap ----
 
 // sideFile is the full text of a truncated field.
