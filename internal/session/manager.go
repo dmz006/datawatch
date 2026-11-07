@@ -2435,7 +2435,8 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		home, _ := os.UserHomeDir()
 		templatePath = filepath.Join(home, ".local", "share", "datawatch", "templates", "session-guardrails.md")
 	}
-	guardrailOpts := GuardrailsOptions{}
+	// Default on until the operator-facing setting exists.
+	guardrailOpts := GuardrailsOptions{PlatformContextEnabled: true}
 	if m.cfg != nil {
 		// Fix: cfg.Memory.SessionAwareness (documented "injects memory
 		// instructions into session guardrails, default true") was never

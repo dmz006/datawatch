@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/platformcontext"
 	"github.com/dmz006/datawatch/internal/secfile"
 )
 
@@ -215,6 +216,9 @@ type GuardrailsOptions struct {
 	MemoryEnabled       bool
 	RTKEnabled          bool
 	CrossSessionEnabled bool
+	// PlatformContextEnabled upserts the versioned platform context section
+	// into the project's rules file.
+	PlatformContextEnabled bool
 }
 
 // WriteSessionGuardrails writes a guardrails file to the session tracking folder and,
@@ -322,12 +326,24 @@ func (t *Tracker) WriteSessionGuardrails(templatePath string, sess *Session, opt
 				modified = true
 			}
 
+			if opt.PlatformContextEnabled {
+				upserted := platformcontext.UpsertSection(existingStr, platformcontext.PlatformContext, platformcontext.PlatformContextVersion)
+				if upserted != existingStr {
+					existingStr = upserted
+					modified = true
+				}
+			}
+
 			if modified {
 				os.WriteFile(targetFile, []byte(existingStr), 0644) //nolint:errcheck
 			}
 		} else {
 			// No file exists — write the full template
-			os.WriteFile(targetFile, []byte(content), 0644) //nolint:errcheck
+			out := content
+			if opt.PlatformContextEnabled {
+				out = platformcontext.UpsertSection(out, platformcontext.PlatformContext, platformcontext.PlatformContextVersion)
+			}
+			os.WriteFile(targetFile, []byte(out), 0644) //nolint:errcheck
 		}
 	}
 
