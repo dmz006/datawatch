@@ -7354,6 +7354,26 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			} else if res.Backfilled > 0 {
 				log.Printf("[autonomous] placement tags backfill: restored system tags on %d running session(s)", res.Backfilled)
 			}
+			// Tag sweep — once per tags.placement settings change: re-derive the
+			// system tags of every existing session and record under the live
+			// block ("anything we can tag should be tagged"), guarded by a done
+			// marker holding the settings hash it last ran against, so a restart
+			// with unchanged settings does not repeat the pass and a settings
+			// change does.
+			if swept, res, err := amgr.SweepTagsOnce(autonomouspkg.PlacementSettingsHash(cfg.Autonomous.Tags.Placement)); err != nil {
+				log.Printf("[autonomous] tag sweep: marker write: %v", err)
+			} else if swept {
+				log.Printf("[autonomous] tag sweep: sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			} else {
+				log.Printf("[autonomous] tag sweep: settings unchanged since last sweep, skipping")
+			}
 			// Resource-fingerprint reconciliation (§3c): match store under the
 			// data dir, exporter + matches wired to the server, slow syncer
 			// over opted-in peers, and the shared-node admission gate composed

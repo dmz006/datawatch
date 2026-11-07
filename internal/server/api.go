@@ -7573,6 +7573,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	// Does this PUT touch the tags.placement block at all? The sweep trigger
+	// after the save keys off this, so a request that changes no placement
+	// key never sweeps.
+	placementChanged := false
+	for k := range patch {
+		if strings.HasPrefix(k, "autonomous.tags.placement") {
+			placementChanged = true
+			break
+		}
+	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// Keep the ship step's policy in step with the live autonomous.ship config.
 	autonomous.SetShipConfig(s.cfg.Autonomous.Ship)
@@ -7602,21 +7612,6 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(k, config.AutoTagsSettingPrefix) {
 			if a, ok := s.autonomousMgr.(autoTagsSyncAPI); ok {
 				a.SyncAutoTagsAll()
-			}
-			break
-		}
-	}
-	// The tags.placement block (autonomous.tags.placement.*) follows the
-	// live config without a restart too: new placements already read it on
-	// every derivation (SetPlacementTagSettings), and one tag-sweep pass
-	// re-derives the existing sessions' and records' system tags, so
-	// turning an axis off strips its tag and a template change re-stamps
-	// it where the fact exists. The operator's own tags are a separate
-	// field the sweep never touches.
-	for k := range patch {
-		if strings.HasPrefix(k, "autonomous.tags.placement") {
-			if a, ok := s.autonomousMgr.(tagSweepAPI); ok {
-				a.SweepTags(false)
 			}
 			break
 		}
@@ -7680,6 +7675,31 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// The tags.placement block (autonomous.tags.placement.*) follows the
+	// live config without a restart: new placements already read it on every
+	// derivation (SetPlacementTagSettings), and one tag-sweep pass
+	// re-derives the existing sessions' and records' system tags under the
+	// new block — turning an axis off strips its tag, a template change
+	// re-stamps it where the fact exists; the operator's own tags are a
+	// separate field the sweep never touches. The pass runs in the
+	// background after the config is saved, so the PUT answers without
+	// waiting on the whole-history sweep; a request that changed no
+	// placement key never reaches this point.
+	if placementChanged && s.autonomousMgr != nil {
+		if a, ok := s.autonomousMgr.(tagSweepAPI); ok {
+			go func() {
+				res := a.SweepTags(false)
+				log.Printf("[autonomous] tag sweep (placement settings changed): sessions %d/%d changed, automata %d/%d, automations %d/%d, tasks %d/%d, templates %d/%d, decision records %d/%d, questions %d/%d",
+					res.Sessions.Changed, res.Sessions.Examined,
+					res.Automata.Changed, res.Automata.Examined,
+					res.Automations.Changed, res.Automations.Examined,
+					res.Tasks.Changed, res.Tasks.Examined,
+					res.Templates.Changed, res.Templates.Examined,
+					res.DecisionRecords.Changed, res.DecisionRecords.Examined,
+					res.Questions.Changed, res.Questions.Examined)
+			}()
+		}
 	}
 	// A config write can create a model-to-node collision, so re-check and log
 	// every one that now exists.
