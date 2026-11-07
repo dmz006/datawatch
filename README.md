@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.104.1 (2026-11-06).** The protected-paths restore commit no longer needs a git identity on the host; this release also carries everything v9.104.0 announced. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.104.2 (2026-11-06).** The zombie indicator no longer flags one-shot workers that are still running. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
