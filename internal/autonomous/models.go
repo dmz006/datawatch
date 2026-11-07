@@ -2016,3 +2016,7 @@ func ProjectMemoryLimit(p *config.ProjectPolicy) string {
 func KindMemoryLimit(table map[string]string, kind string) string {
 	return table[kind]
 }
+
+// AttemptMemoryKillReason is the failure reason recorded on a task attempt
+// that was stopped for using more memory than its limit.
+const AttemptMemoryKillReason = "the process used more memory than the limit"

@@ -92,6 +92,14 @@ type TaskAttempt struct {
 	ChangedFiles    []string `json:"changed_files,omitempty"`
 	// SnapshotRef names the saved state of the work tree after the attempt.
 	SnapshotRef string `json:"snapshot_ref,omitempty"`
+	// MemoryKilled is true when the attempt was stopped for using more
+	// memory than its ceiling.
+	MemoryKilled bool `json:"memory_killed,omitempty"`
+	// PeakMemoryMB is the peak memory the attempt used, in MB.
+	PeakMemoryMB int `json:"peak_memory_mb,omitempty"`
+	// KilledProcess names the process that was using the most memory;
+	// "unknown" when not known.
+	KilledProcess string `json:"killed_process,omitempty"`
 	// Escalated is true when this attempt ran on an escalation step rather
 	// than the task's normally resolved worker.
 	Escalated bool `json:"escalated,omitempty"`
