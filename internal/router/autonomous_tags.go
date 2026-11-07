@@ -1,8 +1,9 @@
 // Comm-channel verbs for the Automata tag registry, per-Automaton and
-// per-session tag assignment, the primary tag and the attention list:
-// autonomous tags [counts]|tag-create|tag-rename|tag-move|tag-color|tag-delete|
-// set-tags|set-primary|session-tags|attention|tag-registry|
-// tag-registry-dismiss. Each verb proxies the matching REST endpoint.
+// per-session tag assignment, the primary tag, the attention list and the
+// tag sweep: autonomous tags [counts]|tags sweep [dry-run]|tag-create|
+// tag-rename|tag-move|tag-color|tag-delete|set-tags|set-primary|
+// session-tags|attention|tag-registry|tag-registry-dismiss. Each verb
+// proxies the matching REST endpoint.
 
 package router
 
@@ -47,8 +48,15 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 			return commTagRequest{method: http.MethodGet, path: base}, ""
 		case len(args) == 2 && args[1] == "counts":
 			return commTagRequest{method: http.MethodGet, path: base + "?counts=true"}, ""
+		case len(args) == 2 && args[1] == "sweep":
+			// The tag sweep: apply the in-force tag settings to every
+			// existing Automata session and record; POST only, no body.
+			return commTagRequest{method: http.MethodPost, path: base + "/sweep"}, ""
+		case len(args) == 3 && args[1] == "sweep" &&
+			(strings.EqualFold(args[2], "dry-run") || strings.EqualFold(args[2], "dry_run")):
+			return commTagRequest{method: http.MethodPost, path: base + "/sweep?dry_run=true"}, ""
 		}
-		return req, "usage: autonomous tags [counts]"
+		return req, "usage: autonomous tags [counts|sweep [dry-run]]"
 	case "tag-registry":
 		if len(args) != 1 {
 			return req, "usage: autonomous tag-registry"

@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
@@ -52,6 +54,11 @@ func newAutonomousTagListCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&counts, "counts", false, "add subtree and direct counts (Automata and sessions) per tag, plus an untagged total")
 	cmd.Flags().StringVar(&system, "system", "", "true or false: keep only the system tags (true) or only the operator tags (false); omit to keep every tag")
 	cmd.Flags().StringVar(&axis, "axis", "", "keep only the tags of one placement axis (e.g. lane), i.e. its \"<axis>:<value>\" names; omit to keep every axis")
+	// The sweep is the \"apply the in-force tag settings to what already
+	// exists\" pass; it hangs under the tags group so both
+	// `datawatch autonomous tags sweep` and `datawatch autonomous
+	// tag-list sweep` reach it.
+	cmd.AddCommand(newAutonomousTagsSweepCmd())
 	return cmd
 }
 
@@ -266,4 +273,105 @@ func registryObjectFromTagsReply(body []byte) ([]byte, error) {
 		return nil, fmt.Errorf("tags reply has no registry object")
 	}
 	return reply.Registry, nil
+}
+
+// tagsSweepTally is one kind's row of the tag sweep's reply (POST
+// /api/autonomous/tags/sweep): how many objects of that kind the sweep read,
+// re-derived, left alone or failed to write.
+type tagsSweepTally struct {
+	Examined  int `json:"examined"`
+	Changed   int `json:"changed"`
+	Unchanged int `json:"unchanged"`
+	Failed    int `json:"failed"`
+}
+
+// tagsSweepResult is the sweep's reply as the daemon sends it (the
+// autonomous.SweepResult): one tally per kind of object the sweep covers.
+type tagsSweepResult struct {
+	Sessions        tagsSweepTally `json:"sessions"`
+	Automata        tagsSweepTally `json:"automata"`
+	Automations     tagsSweepTally `json:"automations"`
+	Tasks           tagsSweepTally `json:"tasks"`
+	Templates       tagsSweepTally `json:"templates"`
+	DecisionRecords tagsSweepTally `json:"decision_records"`
+	Questions       tagsSweepTally `json:"questions"`
+}
+
+// printTagSweepTally renders the sweep's reply as a short per-kind table:
+// one row per kind with its examined / changed / unchanged / failed counts.
+func printTagSweepTally(body []byte) error {
+	var res tagsSweepResult
+	if err := json.Unmarshal(body, &res); err != nil {
+		return fmt.Errorf("decode sweep result: %w", err)
+	}
+	rows := []struct {
+		name string
+		c    tagsSweepTally
+	}{
+		{"sessions", res.Sessions},
+		{"automata", res.Automata},
+		{"automations", res.Automations},
+		{"tasks", res.Tasks},
+		{"templates", res.Templates},
+		{"decision records", res.DecisionRecords},
+		{"held questions", res.Questions},
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "KIND\tEXAMINED\tCHANGED\tUNCHANGED\tFAILED")
+	for _, r := range rows {
+		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d\n", r.name, r.c.Examined, r.c.Changed, r.c.Unchanged, r.c.Failed)
+	}
+	return w.Flush()
+}
+
+// newAutonomousTagsSweepCmd is the `tags sweep` subcommand (registered under
+// the tag-list command, so it is reachable as `autonomous tags sweep` and
+// `autonomous tag-list sweep`): apply the in-force tag settings to every
+// existing Automata session and record and print the per-kind tally. The
+// daemon does the whole pass (POST /api/autonomous/tags/sweep); this command
+// only sends dry_run and renders the reply. `--json` prints the reply
+// (the SweepResult) untouched; the default prints the short per-kind table.
+func newAutonomousTagsSweepCmd() *cobra.Command {
+	var dryRun, asJSON bool
+	cmd := &cobra.Command{
+		Use:   "sweep",
+		Short: "Apply the in-force tag settings to every existing Automata session and record",
+		Long: `Apply the in-force tag settings (autonomous.tags.placement) to
+everything that already exists under them: one pass over every session and
+record the Automata own, re-deriving each one's system tags from its stored
+facts. Turning an axis off removes that axis's tag from everything; turning
+it on adds it where the fact exists.
+
+The daemon does the whole pass; this command only sends dry_run and prints
+the per-kind tally it answers with (sessions, automata, automations, tasks,
+templates, decision records and held questions — each with examined,
+changed, unchanged and failed counts).
+
+Safe to run any time: it only ever writes the derived system tags (the
+operator's own tags are a separate field that never changes) and a second
+pass changes nothing. Use --dry-run to see the tally a run would produce
+without writing a single tag, then run it for real.
+
+--json prints the reply (the SweepResult) as JSON; the default prints the
+short per-kind table.`,
+		Args: cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			path := autonomousTagsPath + "/sweep"
+			if dryRun {
+				path += "?dry_run=true"
+			}
+			body, err := daemonJSONBody(http.MethodPost, path, nil)
+			if err != nil {
+				return err
+			}
+			if asJSON {
+				_, err = os.Stdout.Write(append(body, '\n'))
+				return err
+			}
+			return printTagSweepTally(body)
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report the tally without writing any tag")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the SweepResult reply as JSON instead of the table")
+	return cmd
 }
