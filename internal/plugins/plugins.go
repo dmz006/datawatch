@@ -429,6 +429,13 @@ type Registry struct {
 	serviceEventFn func(ServiceEvent)
 	started        bool
 
+	// Manifest v3 attach-only health (see registry_attach.go): one health
+	// probe per attach-eligible service plugin, scoped by attachCtx until
+	// StopAttachProbes. Probes run only after StartAttachProbes.
+	attachProbes map[string]*attachProbe
+	attachCtx    context.Context
+	attachCancel context.CancelFunc
+
 	// changeFn is called after every rediscover and enable/disable toggle,
 	// outside r.mu (see SetChangeFn).
 	changeFn func()
@@ -581,6 +588,7 @@ func (r *Registry) SetEnabled(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.syncAttachProbes()
 	r.notifyChange()
 	return true
 }

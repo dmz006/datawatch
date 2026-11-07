@@ -55,6 +55,18 @@ func (r *Registry) isManagedLocked(p *Plugin) bool {
 	return declaresManaged(p) && p.Enabled && r.managed[p.Name]
 }
 
+// IsManaged reports whether the operator has opted the named plugin in
+// for managed supervision and the plugin is currently eligible for it.
+func (r *Registry) IsManaged(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.byName[name]
+	if !ok {
+		return false
+	}
+	return r.isManagedLocked(p)
+}
+
 // SetServiceEventFn sets the sink that receives every managed service's
 // lifecycle events. fn must not block for long and must not call back into
 // methods that start or stop services.
@@ -98,6 +110,9 @@ func (r *Registry) SetManaged(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	// The mode flip changes attach eligibility: a plugin that went managed
+	// loses its attach probe, one that left managed may gain one.
+	r.syncAttachProbes()
 	return true
 }
 

@@ -8,6 +8,7 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"time"
 )
 
 // API wraps a *Registry for the REST/MCP/CLI layers.
@@ -16,30 +17,146 @@ type API struct{ R *Registry }
 // NewAPI is a convenience constructor.
 func NewAPI(r *Registry) *API { return &API{R: r} }
 
-// pluginView is the JSON shape of a plugin: the plugin itself plus, when a
-// managed-service supervisor exists for it, a service status object.
-// Plugins without a supervisor encode exactly as before.
+// pluginView is the JSON shape of a plugin: the plugin itself plus, for a
+// service-kind plugin, a service status object. Non-service plugins
+// encode exactly as before.
 type pluginView struct {
 	*Plugin
-	Service *serviceView `json:"service,omitempty"`
+	Service any `json:"service,omitempty"`
 }
 
-// serviceView is the operator-facing subset of ServiceStatus.
+// serviceView is the operator-facing status of a managed service-kind
+// plugin. Fields that have no value (no health data yet, service not up,
+// never restarted) are omitted rather than sent as placeholders.
 type serviceView struct {
-	State     ServiceState `json:"state"`
-	PID       int          `json:"pid,omitempty"`
-	Restarts  int          `json:"restarts"`
-	LastError string       `json:"last_error,omitempty"`
+	Mode             string       `json:"mode"` // "managed" | "attach_only"
+	State            ServiceState `json:"state,omitempty"`
+	Address          string       `json:"address,omitempty"`
+	Version          string       `json:"version,omitempty"`        // from the health response when it carries one
+	UptimeSeconds    *int64       `json:"uptime_seconds,omitempty"` // set while the service is up
+	LastHealthCheck  *time.Time   `json:"last_health_check,omitempty"`
+	LastHealthStatus string       `json:"last_health_status,omitempty"` // "up" or "down" of the last probe
+	LastHealthError  string       `json:"last_health_error,omitempty"`
+	PID              int          `json:"pid,omitempty"`
+	Restarts         int          `json:"restarts"`
+	LastError        string       `json:"last_error,omitempty"`
 }
 
+// attachServiceView is the service object for a plugin datawatch only
+// attaches to (never launches): no lifecycle state, PID or restart
+// accounting exists for it. Everything is omitted until the first health
+// probe has completed.
+type attachServiceView struct {
+	Mode             string     `json:"mode"`
+	Address          string     `json:"address,omitempty"`
+	Version          string     `json:"version,omitempty"`
+	UptimeSeconds    *int64     `json:"uptime_seconds,omitempty"` // set while the service is up
+	LastHealthCheck  *time.Time `json:"last_health_check,omitempty"`
+	LastHealthStatus string     `json:"last_health_status,omitempty"`
+	LastHealthError  string     `json:"last_health_error,omitempty"`
+}
+
+// view renders p for the API: a service-kind plugin always carries the
+// service object, populated from the supervisor when the plugin is
+// managed or from the attach health probe otherwise; other kinds encode
+// the manifest as-is.
 func (a *API) view(p *Plugin) any {
-	st, ok := a.R.ServiceStatus(p.Name)
-	if !ok {
+	if p.Kind != KindService {
 		return p
 	}
-	return pluginView{Plugin: p, Service: &serviceView{
-		State: st.State, PID: st.PID, Restarts: st.Restarts, LastError: st.LastError,
-	}}
+	if st, ok := a.R.ServiceStatus(p.Name); ok {
+		var lhc *time.Time
+		if !st.LastHealthCheck.IsZero() {
+			t := st.LastHealthCheck
+			lhc = &t
+		}
+		return pluginView{Plugin: p, Service: &serviceView{
+			Mode:             LifecycleManaged,
+			State:            st.State,
+			Address:          connAddress(p),
+			Version:          st.Version,
+			UptimeSeconds:    uptimePtr(runningUptimeSeconds(st)),
+			LastHealthCheck:  lhc,
+			LastHealthStatus: st.LastHealthStatus,
+			LastHealthError:  st.LastError,
+			PID:              st.PID,
+			Restarts:         st.Restarts,
+			LastError:        st.LastError,
+		}}
+	}
+	sv := &attachServiceView{Mode: a.serviceMode(p), Address: connAddress(p)}
+	if rep, ok := a.R.AttachHealth(p.Name); ok {
+		if !rep.LastCheck.IsZero() {
+			sv.Version = rep.Version
+			t := rep.LastCheck
+			sv.LastHealthCheck = &t
+			sv.LastHealthStatus = string(rep.Status)
+			sv.LastHealthError = rep.LastError
+		}
+		if rep.Status == AttachHealthUp && !rep.UpSince.IsZero() {
+			u := int64(time.Since(rep.UpSince).Seconds())
+			sv.UptimeSeconds = &u
+		}
+	}
+	return pluginView{Plugin: p, Service: sv}
+}
+
+// serviceMode resolves the lifecycle mode a service-kind plugin runs in:
+// the operator's choice (managed opt-in) when the author supports both,
+// otherwise the single supported mode. A plugin with no lifecycle block
+// is attach-only by construction.
+func (a *API) serviceMode(p *Plugin) string {
+	attach, managed := false, false
+	if p.Lifecycle != nil {
+		for _, m := range p.Lifecycle.SupportedModes {
+			switch m {
+			case LifecycleAttachOnly:
+				attach = true
+			case LifecycleManaged:
+				managed = true
+			}
+		}
+		if attach && managed {
+			if a.R.IsManaged(p.Name) {
+				return LifecycleManaged
+			}
+			return LifecycleAttachOnly
+		}
+		if managed {
+			return LifecycleManaged
+		}
+	}
+	return LifecycleAttachOnly
+}
+
+// connAddress is the plugin's connection address ("" when undeclared).
+func connAddress(p *Plugin) string {
+	if p.Connection == nil {
+		return ""
+	}
+	return p.Connection.BaseURL
+}
+
+// runningUptimeSeconds is the elapsed time since the supervised service
+// last came up; ok is false when it is not running or never started.
+func runningUptimeSeconds(st ServiceStatus) (int64, bool) {
+	if st.StartedAt.IsZero() {
+		return 0, false
+	}
+	switch st.State {
+	case StateStarting, StateHealthy, StateUnhealthy, StateRestarting, StateStopping:
+		return int64(time.Since(st.StartedAt).Seconds()), true
+	}
+	return 0, false
+}
+
+// uptimePtr renders an uptime result as the view's pointer field (nil =
+// not running, so the JSON field is omitted).
+func uptimePtr(secs int64, ok bool) *int64 {
+	if !ok {
+		return nil
+	}
+	return &secs
 }
 
 func (a *API) List() []any {

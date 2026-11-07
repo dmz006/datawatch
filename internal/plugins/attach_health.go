@@ -67,6 +67,7 @@ type AttachHealthProbe struct {
 	lastDur  time.Duration
 	lastErr  string
 	version  string
+	upSince  time.Time // when the probe first reported up in the current up-streak
 }
 
 // NewAttachHealthProbe builds a probe for a kind: service plugin's
@@ -141,6 +142,9 @@ func (a *AttachHealthProbe) Version() string {
 // LastCheck returns the last probe's outcome: time, HTTP status (0 for a
 // transport failure), latency and error ("" on success), plus the
 // recorded version. LastCheck is zero when no probe has completed.
+// UpSince is set while the service is reported up: the moment the probe
+// first saw it up in the current up-streak (zero otherwise), so the
+// elapsed time since the service last came up is computable.
 func (a *AttachHealthProbe) LastCheck() AttachHealthReport {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -151,6 +155,7 @@ func (a *AttachHealthProbe) LastCheck() AttachHealthReport {
 		Latency:    a.lastDur,
 		LastError:  a.lastErr,
 		Version:    a.version,
+		UpSince:    a.upSince,
 	}
 }
 
@@ -162,6 +167,7 @@ type AttachHealthReport struct {
 	Latency    time.Duration      `json:"latency,omitempty"`
 	LastError  string             `json:"last_error,omitempty"`
 	Version    string             `json:"version,omitempty"`
+	UpSince    time.Time          `json:"up_since,omitempty"`
 }
 
 // check performs one probe and records its outcome.
@@ -211,11 +217,18 @@ func (a *AttachHealthProbe) check(ctx context.Context) {
 func (a *AttachHealthProbe) record(status AttachHealthStatus, at time.Time, code int, dur time.Duration, errStr, version string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	wasUp := a.status == AttachHealthUp
 	a.status = status
 	a.lastAt = at
 	a.lastCode = code
 	a.lastDur = dur
 	a.lastErr = errStr
+	if status == AttachHealthUp && !wasUp {
+		a.upSince = at // the service just came up
+	}
+	if status != AttachHealthUp {
+		a.upSince = time.Time{} // down again: no uptime to report
+	}
 	if version != "" {
 		a.version = version
 	}
