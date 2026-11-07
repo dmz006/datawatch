@@ -59,6 +59,12 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
+      # Gates configuration parity across surfaces; any gap not in the
+      # recorded baseline exemptions fails. Exemptions live in
+      # scripts/config-parity-exemptions.txt.
+      - name: configuration parity audit
+        run: python3 scripts/config-parity-audit.py
+
       # Unscoped `tmux kill-server` / `kill-session -a` audit.
       - name: unscoped tmux kill check
         run: bash scripts/check-no-unscoped-tmux.sh
