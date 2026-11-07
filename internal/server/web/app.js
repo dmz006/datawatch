@@ -9390,6 +9390,7 @@ const DOCS_LINKS_BY_KEY = {
   // Settings -> Plugins
   gc_plugins: 'api/plugins.md',
   plugins_list: DOCS_DEFINITIONS + '#plugin-manager',
+  plugins_services: 'plugins.md',
   community_plugins: 'api/plugins.md',
   // Settings -> About
   about: DOCS_DEFINITIONS + '#settings-about',
@@ -10853,6 +10854,23 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- Plugin services card (Settings → Plugins): one field per key of
+             the plugins.services config block (attach-only health-probe
+             cadence, backlog-growth streak, small-model-use threshold) plus
+             a lifecycle_mode select per installed service plugin, each
+             select's options limited to the modes that plugin's manifest
+             declares in lifecycle.supported_modes. Every field carries a
+             '?' docs pill linking to docs/plugins.md. Reads GET /api/config
+             (and GET /api/plugins for the service list) and saves through
+             the shared saveGeneralConfigPut → PUT /api/config only — no
+             other write path. -->
+        <div class="settings-section" data-group="plugins" style="${stab!=='plugins'?'display:none':''}">
+          ${settingsSectionHeader('plugins_services', t('settings_plugin_services_title')||'Plugin services', 'plugins.md')}
+          <div id="settings-sec-plugins_services" style="${secContent('plugins_services')}">
+            <div id="pluginServiceSettingsBody" style="color:var(--text2);font-size:13px;padding:4px 0;">${loadingEyeBlock(t('settings_plugin_services_loading'))}</div>
+          </div>
+        </div>
+
         <!-- v6.12.4 — Proxy Resilience now appears AFTER Communication
              Configuration per operator request. -->
         <div class="settings-section" data-group="comms" style="${stab!=='comms'?'display:none':''}">
@@ -11035,6 +11053,7 @@ function renderSettingsView() {
   loadClusterProfiles();
   loadAgentsConfig();
   loadPluginsPanel();
+  loadPluginServiceSettings(); // Plugins → Plugin services card
   loadCommunityPluginsPanel(); // GH#191
   loadRoutingPanel();
   loadChannelRoutingPanel(); // BL331 parity
@@ -45566,6 +45585,145 @@ function loadPluginsPanel() {
   });
 }
 window.loadPluginsPanel = loadPluginsPanel;
+
+// Plugin services card (Settings → Plugins) — the plugins.services config
+// block (v9.0.32+): one field per global key, plus one lifecycle_mode
+// select per installed service-kind plugin. GET-only sources: /api/config
+// (the stored block) and /api/plugins (which services exist and which
+// lifecycle modes their manifests declare). Writes go through the shared
+// saveGeneralConfigPut → PUT /api/config single-key path, which the daemon
+// validates block-level (a PUT can never store a state Load would reject).
+//
+// PLUGIN_SERVICES_FIELDS is the DECLARATIVE field list for the global
+// keys: every plugins.services.* config key gets exactly one entry, in
+// declaration order. The per-service lifecycle_mode rows are derived
+// (one row per service) by pluginServiceLifecycleSelectHTML below; both
+// renderers are pure (no fetch, no DOM) so the app tests can pin the
+// field list, the mode limits and the docs links against real fixtures.
+const PLUGIN_SERVICES_DOCS = 'plugins.md';
+const PLUGIN_SERVICES_FIELDS = [
+  { key: 'plugins.services.health_interval_seconds', label: 'Health probe interval (seconds)', labelKey: 'settings_plugin_services_health_interval', placeholder: '0 (default)' },
+  { key: 'plugins.services.backlog_growth_pulls', label: 'Backlog growth streak (pulls)', labelKey: 'settings_plugin_services_backlog_growth', placeholder: '0 (default)' },
+  { key: 'plugins.services.node_load_ratio', label: 'Node load ratio', labelKey: 'settings_plugin_services_node_load', placeholder: '0 (default)' },
+  { key: 'plugins.services.small_model_max_params_billions', label: 'Small-model max params (billions)', labelKey: 'settings_plugin_services_small_max_params', placeholder: '0 (default)' },
+  { key: 'plugins.services.small_model_context_tokens', label: 'Small-model context (tokens)', labelKey: 'settings_plugin_services_small_context_tokens', placeholder: '0 (default)' },
+];
+
+// _pluginServiceLocaleKey resolves a locale key, falling back to the
+// declarative English text when the bundle lacks the key (t() returns
+// the key string itself on a miss, so a plain (t(k) || fallback) is
+// never reliable).
+function _pluginServiceLocaleKey(key, fallback) {
+  const v = t(key);
+  return (v && v !== key) ? v : fallback;
+}
+
+// pluginServiceDocsPill — the per-field '?' help entry: links to
+// docs/plugins.md in the embedded docs viewer, same style as the other
+// settings "?" pills (hidden when the operator turns off inline docs
+// links, like every pill that goes through docsLink).
+function pluginServiceDocsPill() {
+  return docsLink(PLUGIN_SERVICES_DOCS, '?');
+}
+
+// pluginServiceNumberHTML renders one plugins.services global field
+// (pure: value comes from the GET /api/config block the caller passed
+// in; saving goes through the shared saveGeneralConfigPut → PUT
+// /api/config). Empty input = stored default (the daemon's Effective*
+// accessors apply the documented default).
+function pluginServiceNumberHTML(field, value) {
+  const label = _pluginServiceLocaleKey(field.labelKey, field.label);
+  const v = (value === 0 || value) ? String(value) : '';
+  return `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+    <div class="settings-label">${escHtml(label)}${pluginServiceDocsPill()}</div>
+    <input type="number" min="0" class="form-input general-cfg-input" style="width:130px;" value="${escHtml(v)}" placeholder="${escHtml(field.placeholder || '')}"
+      onchange="saveGeneralField('${field.key}', this.value === '' ? '' : Number(this.value))" />
+  </div>`;
+}
+
+// pluginServiceLifecycleSelectHTML renders the lifecycle_mode select for
+// one service plugin (pure). The options are exactly the modes that
+// service's manifest declares (lifecycle.supported_modes), plus the "" =
+// use-default entry so a wrong mode can be cleared; no other mode is ever
+// offered. `name` is embedded in a single-quoted JS string inside
+// onclick/onchange attributes, so a name containing a quote is neutralized
+// with backslashes the same way the onclick strings in this codebase do
+// (escHtml alone would leave the string literal open).
+function pluginServiceLifecycleSelectHTML(name, modes, currentValue) {
+  const label = _pluginServiceLocaleKey('settings_plugin_services_lifecycle', 'Lifecycle mode');
+  const esc = String(name).replace(/\\/g, '\\\\').replace(/'/g, "'\\'");
+  if (!Array.isArray(modes) || modes.length === 0) modes = ['attach_only', 'managed'];
+  const defLabel = _pluginServiceLocaleKey('settings_plugin_services_lifecycle_default', '(default)');
+  const cur = String(currentValue || '');
+  const opts = [`<option value=""${cur === '' ? ' selected' : ''}>${escHtml(defLabel)}</option>`].concat(
+    modes.map(m => `<option value="${escHtml(m)}"${m === cur ? ' selected' : ''}>${escHtml(m)}</option>`)
+  ).join('');
+  return `<div class="settings-row" style="justify-content:space-between;align-items:center;">
+    <div class="settings-label" title="${escHtml(name)}">${label} — <strong>${escHtml(name)}</strong>${pluginServiceDocsPill()}</div>
+    <select class="form-select general-cfg-input" style="width:170px;" onchange="savePluginServiceLifecycleMode('${esc}', this.value)">${opts}</select>
+  </div>`;
+}
+
+// pluginServiceSettingsHTML — the full card body: the five declarative
+// globals, then one lifecycle select per service plugin (a service with
+// no declared modes — invalid for kind: service, defensive only — falls
+// back to the two valid modes).
+function pluginServiceSettingsHTML(svc, services) {
+  const g = (svc && typeof svc === 'object') ? svc : {};
+  const rows = PLUGIN_SERVICES_FIELDS.map(f =>
+    pluginServiceNumberHTML(f, g[(f.key || '').replace(/^plugins\.services\./, '')])
+  ).join('');
+  const list = (Array.isArray(services) ? services : []).filter(s => s && s.name);
+  let lifecycle = '';
+  if (list.length) {
+    lifecycle = `<div style="margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--border);">
+      <div style="font-weight:700;font-size:12px;color:var(--text);">${escHtml(_pluginServiceLocaleKey('settings_plugin_services_per_service', 'Per-plugin lifecycle mode'))}</div>
+    </div>` +
+      list.map(s => {
+        return pluginServiceLifecycleSelectHTML(s.name,
+          (Array.isArray(s.modes) ? s.modes : []).filter(Boolean),
+          (s.perService && s.perService.lifecycle_mode) || '');
+      }).join('');
+  } else {
+    lifecycle = `<div style="opacity:0.6;font-size:12px;margin-top:10px;">${escHtml(_pluginServiceLocaleKey('settings_plugin_services_no_services', 'No service plugins installed.'))}</div>`;
+  }
+  return rows + lifecycle;
+}
+
+// loadPluginServiceSettings populates #pluginServiceSettingsBody. /api/config
+// failing is a hard error (nothing to show); /api/plugins failing degrades
+// to the globals plus the no-service note, since both endpoints are
+// best-effort on a read-only card.
+function loadPluginServiceSettings() {
+  const el = document.getElementById('pluginServiceSettingsBody');
+  if (!el) return;
+  el.innerHTML = loadingEyeBlock();
+  apiFetch('/api/config').catch(() => null)
+    .then(cfg => apiFetch('/api/plugins').catch(() => null).then(plugins => ({ cfg, plugins })))
+    .then(({ cfg, plugins }) => {
+      const panel = document.getElementById('pluginServiceSettingsBody');
+      if (!panel) return;
+      if (!cfg) { showToast(t('settings_plugin_services_error') || 'Could not load plugin service settings.', 'error', 2500); panel.innerHTML = ''; return; }
+      const svc = (cfg.plugins && cfg.plugins.services) || {};
+      const per = (svc.per_service && typeof svc.per_service === 'object') ? svc.per_service : {};
+      const subs = ((plugins && plugins.plugins) || []).filter(p => p && p.kind === 'service' && p.name).map(p => ({
+        name: p.name,
+        modes: (p.lifecycle && Array.isArray(p.lifecycle.supported_modes)) ? p.lifecycle.supported_modes : [],
+        perService: per[p.name] || {},
+      }));
+      panel.innerHTML = pluginServiceSettingsHTML(svc, subs);
+    });
+}
+window.loadPluginServiceSettings = loadPluginServiceSettings;
+
+// savePluginServiceLifecycleMode — the card's single write path: the
+// shared saveGeneralConfigPut PUTs one key ({ key: value }) to
+// /api/config; '' clears the override (the daemon's load-time default
+// applies again).
+function savePluginServiceLifecycleMode(name, mode) {
+  saveGeneralField('plugins.services.per_service.' + name + '.lifecycle_mode', mode);
+}
+window.savePluginServiceLifecycleMode = savePluginServiceLifecycleMode;
 
 // GH#191 — Community Plugins card: browse + install from a connected
 // registry (parity with the Android card). Registries are shared with
