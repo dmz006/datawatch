@@ -17,13 +17,12 @@ The Progress card on the PWA Automation sub-tab (*Progress and cost*) now answer
 | Item | Value |
 |---|---|
 | Query `group` | `project`, `automation` or `automaton`; any other value is a 400 naming it. Adds `group` and `group_totals` (row name to totals) to the reply. |
-| Query `project` | One project's row name; `(none)` reads the records with no project. The API still returns every row. |
 | `grouped.by_project`, `grouped.by_automation`, `grouped.by_automaton` | Always present in the reply, one map per axis (row name to totals, `(none)` included). The PWA card reads these, so the app can switch axes without another request. |
 | `completion.sample_records` | Finished Automata the estimate rests on, archived finished work included. |
 | `completion.sample_tasks` | Completed tasks the estimate rests on. |
 | Row figures | Automata, done, running, waiting, blocked, tasks, tasks done and left, worker hours, median and mean times. |
 
-`GET /api/autonomous/progress/trend`: with `project`, the reply adds `project_points` (date, reason, prds, done, running, waiting, blocked, tasks, tasks_done, tasks_left, work_hours), oldest first; `(none)` for records with no project. The route does not read `group`.
+`GET /api/autonomous/progress/trend`: with `project`, the reply adds `project_points` (date, reason, prds, done, running, waiting, blocked, tasks, tasks_done, tasks_left, work_hours), oldest first; `(none)` for records with no project. The route does not read `group`. The progress route does not read `project`; it is honoured only on the trend route, so the app should take one project's row from `grouped.by_project`.
 
 ## Locale keys added
 
@@ -55,7 +54,7 @@ Please send translations through the Compose Multiplatform pipeline, using the a
 
 - The app's progress view offers the four groupings, defaulting to overall, and shows a *(none)* row last on the project and Automation axes.
 - The estimate basis line shows the two sample counts and is hidden when either is missing.
-- The app reads `group`, `project`, `grouped.*` and `completion.sample_*` from the progress route and `project_points` from the trend route; no new status value is added.
+- The app reads `group`, `grouped.*` and `completion.sample_*` from the progress route and `project_points` from the trend route; no new status value is added.
 - All labels are localized in EN, DE, ES, FR and JA.
 
 ## Filing record
