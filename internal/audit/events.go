@@ -295,4 +295,49 @@ const (
 	// not answer. Subject: the plugin, with model in Details. Details:
 	// state, plugin, model.
 	ActionPluginServiceModelNodeUnreachable = "plugin_service_model_node_unreachable"
+
+	// Managed-service lifecycle — the plugins package's ServiceSupervisor
+	// emits these once per transition and the server records them
+	// (AuditPluginService). Subject: the plugin. Details: pid/reason/etc.
+	// per the transition itself.
+
+	// ActionPluginServiceStart — a supervised service child started. Details:
+	// pid, restarts.
+	ActionPluginServiceStart = "plugin_service_start"
+	// ActionPluginServiceStop — a supervised service stopped (operator
+	// request or supervisor shutdown). Details: reason, exit_code.
+	ActionPluginServiceStop = "plugin_service_stop"
+	// ActionPluginServiceRestart — a crashed unhealthy service was
+	// restarted per the manifest restart policy. Details: reason, attempt.
+	ActionPluginServiceRestart = "plugin_service_restart"
+	// ActionPluginServiceHealthFail — a single health probe failed (below
+	// the threshold that raises plugin_service_down). Details: reason,
+	// consecutive_failures, threshold.
+	ActionPluginServiceHealthFail = "plugin_service_health_fail"
+
+	// Plugin widget + service-token surfaces — the server records these when a
+	// widget registers or receives a push, a widget push token is issued,
+	// or a plugin service token rotates or is removed. Subject: the plugin
+	// (or, for the token actions, the secret being changed with the plugin
+	// in Details).
+
+	// ActionPluginWidgetRegistered — a plugin registered a widget for its
+	// status surface. Details: widget_id, mode.
+	ActionPluginWidgetRegistered = "plugin_widget_registered"
+	// ActionPluginWidgetPush — a plugin pushed a value to one of its
+	// push-mode widgets. Details: widget_id, value.
+	ActionPluginWidgetPush = "plugin_widget_push"
+	// ActionPluginWidgetTokenIssue — the plugin's push token was minted or
+	// rotated. Details: plugin, rotated.
+	ActionPluginWidgetTokenIssue = "plugin_widget_token_issue"
+	// ActionPluginTokenRotate — a plugin service token was rotated
+	// through the secrets vault. Details: plugin, note.
+	ActionPluginTokenRotate = "plugin_token_rotate"
+	// ActionPluginTokenRemove — a plugin service token was removed
+	// from the secrets vault. Details: plugin, reason.
+	ActionPluginTokenRemove = "plugin_token_remove"
+	// ActionPluginWidgetPullFailed — a widget pull answered with an error
+	// (transport failure or a non-2xx body, value never usable). Details:
+	// widget_id, error.
+	ActionPluginWidgetPullFailed = "plugin_widget_pull_failed"
 )
