@@ -232,6 +232,9 @@ type progressTrendResponse struct {
 	Scope     string                          `json:"scope"`
 	Points    []autonomous.ProgressTrendPoint `json:"points"`
 	Direction string                          `json:"direction"`
+	// Project and ProjectPoints answer the project query argument.
+	Project       string                            `json:"project,omitempty"`
+	ProjectPoints []autonomous.ProgressProjectPoint `json:"project_points,omitempty"`
 }
 
 // handleAutonomousProgressTrend serves GET /api/autonomous/progress/trend.
@@ -268,11 +271,13 @@ func (s *Server) handleAutonomousProgressTrend(w http.ResponseWriter, r *http.Re
 			snaps = store.List(days, s.progressClock())
 		}
 	}
-	t := autonomous.Trend(snaps)
+	t := autonomous.Trend(snaps, q.Get("project"))
 	writeJSONOK(w, progressTrendResponse{
-		Days:      days,
-		Scope:     autonomous.ProgressScope(autonomous.ProgressOptions{TagIDs: tags, TagMatch: tagMatch}),
-		Points:    t.Points,
-		Direction: t.Direction,
+		Days:          days,
+		Scope:         autonomous.ProgressScope(autonomous.ProgressOptions{TagIDs: tags, TagMatch: tagMatch}),
+		Points:        t.Points,
+		Direction:     t.Direction,
+		Project:       t.Project,
+		ProjectPoints: t.ProjectPoints,
 	})
 }
