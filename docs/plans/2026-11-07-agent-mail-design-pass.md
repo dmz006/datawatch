@@ -334,7 +334,7 @@ Status: questions only, documents only, nothing decided. Each question is one de
 
 ### Question 1: Build a separate mail feature, or extend the work queue and the discussion scopes?
 
-The work queue (`queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list`) is role based, lives on one daemon and has no per-recipient addressing (`internal/mcp/bl357_queue.go`). The discussion scopes already replicate entries between peers, keep a write ahead log and page by cursor (`internal/server/bl332_discussion_sync.go`, `internal/mcp/bl332_discussion_tools.go`). The operator's answer of 2026-10-15 said the work builds on those and is not a parallel messaging layer.
+The work queue (`queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list`) is role based, lives on one daemon and has no per-recipient addressing (`internal/mcp/bl357_queue.go`). The discussion scopes already replicate entries between peers, keep a write ahead log and page by cursor (`internal/server/bl332_discussion_sync.go`, `internal/mcp/bl332_discussion_tools.go`). The operator's public answer of 2026-10-15, quoted in "The operator's words" above, said the work is a design pass that builds on those and is not a parallel messaging layer. That answer comes from the issue thread and is not recorded in any file under `docs/plans/`, so this pass could not check it against a file; the operator should confirm that it still stands, which is part of this question.
 
 Options:
 
@@ -343,7 +343,7 @@ Options:
 - C. Build a separate mail feature with its own store and routes.
 - D. Build nothing yet and publish only the two skills (requests 5 and 6).
 
-Recommendation: A, with D done first. The discussion scopes already carry the replication and the log, and the queue would need both added. C contradicts the 2026-10-15 answer. Nothing is decided.
+Recommendation: A, with D done first. The discussion scopes already carry the replication and the log, and the queue would need both added. C contradicts the 2026-10-15 answer as quoted above, if it still stands. Nothing is decided.
 
 ### Question 2: Is wake on arrival in scope?
 
@@ -359,7 +359,7 @@ Recommendation: B. A wake that trusts a caller-declared sender is unsafe, and pr
 
 ### Question 3: How is provenance forgery by a peer handled?
 
-The origin peer and the role on an entry are values the caller sends. The server does not set them from the authenticated identity (`internal/server/bl332_discussion_sync.go`). A peer allowed to write can therefore claim to be a sibling.
+The origin peer and the role on an entry are values the caller sends. The server does not set them from the authenticated identity (the write handler in `internal/server/bl332_discussion_scope.go` reads `origin_peer` and `role` from the request body; the peer receive handler in `internal/server/bl332_discussion_sync.go` appends them as sent). A peer allowed to write can therefore claim to be a sibling.
 
 Options:
 
@@ -385,7 +385,7 @@ Recommendation: none. This is a layout and design choice that belongs to the ope
 
 ### Question 5: Is the requester's change wins merge code adopted?
 
-The requester offered their change wins merge code and tests. That code is not in this repository, and this pass has not read it. The discussion conflict resolver today is a pick-a-winner tool over duplicate content, not a field merge (`internal/server/bl332_discussion_scope.go`).
+The requester offered their change wins merge code and tests. That code is not in this repository, and this pass has not read it. The discussion conflict resolver today is a pick-a-winner tool over duplicate content, not a field merge (`discussionDetectConflicts` and `handleDiscussionConflictResolve` in `internal/server/bl332_discussion_sync.go`).
 
 Options:
 
@@ -454,7 +454,7 @@ The requester has offered two things. Neither is in this repository, and this pa
 
 Thank you for the detailed requests. We checked all six against what datawatch already has, and against our completed and open Automata. None of them is built today.
 
-Two are possible with no code change, as skills: a per-seat inbox using discussion scopes (request 5), and a seat handoff note using the identity and memory tools (request 6). Four need a feature: read-back receipts, per-seat read state with change wins merge, server-stamped writer provenance, and wake on arrival. They build on the existing work queue and discussion scopes, not a separate mail system. Wake on arrival is the only one that spends model usage, so it carries a kill switch and a cooldown.
+Two are possible with no code change, as skills: a per-seat inbox using discussion scopes (request 5), and a seat handoff note using the identity and memory tools (request 6). Four need a feature: read-back receipts, per-seat read state with change wins merge, server-stamped writer provenance, and wake on arrival. The operator's 2026-10-15 answer was that this builds on the existing work queue and discussion scopes and is not a parallel messaging layer; whether to extend them or build a separate feature is still an open question for the operator. Wake on arrival is the only one that spends model usage, so we suggest a kill switch and a cooldown, but whether it is in scope at all is also open.
 
 This is a design pass only. Nothing is decided and nothing is built. The decisions are with the operator, and the work follows the 10.0.0 release work.
 
