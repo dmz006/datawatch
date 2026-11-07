@@ -380,3 +380,63 @@ func TestStoreArchiveConcurrent(t *testing.T) {
 		}
 	}
 }
+
+// A listing decodes outside arc.mu: while one ListArchivedFiltered is blocked
+// inside its Match, a GetArchived and a listing with a different filter still
+// complete.
+func TestStoreArchiveListDecodesOutsideLock(t *testing.T) {
+	s, _ := archStore(t, nil)
+	for i := 0; i < 5; i++ {
+		_ = s.Save(archSess(fmt.Sprintf("bb%02d", i), StateComplete, 30*day))
+	}
+	if n, err := s.ArchiveOnce(time.Now()); err != nil || n != 5 {
+		t.Fatalf("archived %d, err %v; want 5", n, err)
+	}
+
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	firstDone := make(chan error, 1)
+	go func() {
+		_, _, err := s.ListArchivedFiltered(ArchivedQuery{Match: func(*Session) bool {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+			return true
+		}})
+		firstDone <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first listing never reached Match")
+	}
+
+	secondDone := make(chan struct{})
+	var got []*Session
+	var total int
+	var getOK bool
+	var secondErr error
+	go func() {
+		defer close(secondDone)
+		_, getOK = s.GetArchived("h-bb01")
+		got, total, secondErr = s.ListArchivedFiltered(ArchivedQuery{Text: "task bb02"})
+	}()
+	select {
+	case <-secondDone:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("second archive read blocked behind the first listing's decode")
+	}
+	close(release)
+	if err := <-firstDone; err != nil {
+		t.Fatalf("first listing: %v", err)
+	}
+	if !getOK {
+		t.Fatal("GetArchived(h-bb01) failed while a listing was decoding")
+	}
+	if secondErr != nil || total != 1 || len(got) != 1 || got[0].FullID != "h-bb02" {
+		t.Fatalf("second listing = %d sessions, total %d, err %v", len(got), total, secondErr)
+	}
+}
