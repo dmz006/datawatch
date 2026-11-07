@@ -45847,6 +45847,94 @@ window.pluginServiceTokensRemove = function(name, secret) {
   }).catch(e => showToast(String(e.message || e), 'error'));
 };
 
+// ── Plugin service model-use panel ─────────────────────────────────────
+// Sits under the service card (loadPluginsPanel, Settings → Plugins):
+// each model the service calls with its Ollama node, the call count over
+// the window, and the memory the model holds. Findings are shown as the
+// report's sentence plus its next action (a small model pinned with a
+// large context, a node more loaded than another eligible node); when the
+// report carries no findings the findings area is omitted entirely —
+// the panel never shows "none". Node-unreachable is an Events entry
+// (raised/cleared by the background model-node events task), not a row
+// here: the report's nodes[] reachability and notes are never rendered.
+//
+// window.pluginServiceModelsPanelHTML is pure (payload in → escaped
+// HTML out), so the app tests pin the table, the findings omission and
+// the escaping against the real renderer. Field names are the ones
+// served by GET /api/plugins/{name}/models (plugins.ModelUseReport):
+// models[] (model, node, held_bytes, calls, calls_documented) and
+// findings[] (sentence, next_action).
+window.pluginServiceModelsPanelHTML = function(name, data) {
+  data = (data && typeof data === 'object') ? data : {};
+  const label = (key, fb) => escHtml(_pluginServiceLocaleKey(key, fb));
+  const models = Array.isArray(data.models) ? data.models : [];
+  const findings = Array.isArray(data.findings) ? data.findings : [];
+
+  const grid = 'display:grid;grid-template-columns:1.3fr 0.9fr 0.9fr 1fr;gap:6px;';
+  let table = '';
+  if (!models.length) {
+    table = `<div style="font-size:11px;opacity:0.7;margin-top:4px;">${label('plugin_service_models_none', 'No models reported.')}</div>`;
+  } else {
+    table = `<div style="${grid}font-size:11px;font-weight:600;opacity:0.6;margin-top:2px;">
+      <span>${label('plugin_service_models_model', 'Model')}</span>
+      <span>${label('plugin_service_models_node', 'Node')}</span>
+      <span>${label('plugin_service_models_held', 'Memory held')}</span>
+      <span>${label('plugin_service_models_calls', 'Calls (window)')}</span>
+    </div>`;
+    for (const m of models) {
+      if (!m || !m.model) continue;
+      const node = (m.node && String(m.node).trim())
+        ? escHtml(String(m.node))
+        : '<span style="opacity:0.6;">—</span>';
+      const held = (Number(m.held_bytes) > 0)
+        ? escHtml(fmtBytesCompact(m.held_bytes))
+        : '<span style="opacity:0.6;">—</span>';
+      const calls = m.calls_documented
+        ? escHtml(String(Number(m.calls) || 0))
+        : `<span style="opacity:0.6;">${label('plugin_service_models_calls_undocumented', 'not documented')}</span>`;
+      table += `<div style="${grid}font-size:12px;margin-top:4px;"><span style="word-break:break-word;">${escHtml(String(m.model))}</span><span>${node}</span><span>${held}</span><span>${calls}</span></div>`;
+    }
+  }
+
+  // Findings area: each finding is its report sentence with its next
+  // action. Omitted entirely when there are none — never "none".
+  let findingsHtml = '';
+  if (findings.length) {
+    let items = '';
+    for (const f of findings) {
+      if (!f) continue;
+      const sentence = f.sentence ? escHtml(String(f.sentence)) : '';
+      const action = f.next_action ? escHtml(String(f.next_action)) : '';
+      items += `<div style="margin-top:5px;font-size:12px;color:var(--warning,#f59e0b);">${sentence}${action ? ` <span style="opacity:0.85;">${label('plugin_service_models_next_action', 'Next action')}: ${action}</span>` : ''}</div>`;
+    }
+    if (items) {
+      findingsHtml = `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:5px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_models_findings', 'Findings')}</div>
+        ${items}
+      </div>`;
+    }
+  }
+
+  return `<div class="plugin-service-models" style="margin:6px 0 0;padding:8px 10px;background:var(--bg3,rgba(0,0,0,0.15));border:1px solid var(--border);border-radius:8px;max-width:520px;">
+    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;">${label('plugin_service_models_title', 'Model use')}</div>
+    ${table}${findingsHtml}
+  </div>`;
+};
+
+// pluginServiceModelsLoad — async glue: GET the model-use report and
+// render the panel into the anchor div loadPluginsPanel placed under
+// the service card's row (mirrors pluginServiceTokensLoad). A report
+// failure leaves the anchor empty — the panel is auxiliary, an error
+// there must not blank the plugin list.
+window.pluginServiceModelsLoad = function(name, anchorId) {
+  apiFetch('/api/plugins/' + encodeURIComponent(name) + '/models')
+    .then(data => {
+      const el = document.getElementById(anchorId);
+      if (el) el.innerHTML = window.pluginServiceModelsPanelHTML(name, data);
+    })
+    .catch(() => {});
+};
+
 // BL238 — loadPluginsPanel: populates #pluginsPanelBody inside Settings → Plugins sub-tab.
 function loadPluginsPanel() {
   const el = document.getElementById('pluginsPanelBody');
@@ -45858,6 +45946,7 @@ function loadPluginsPanel() {
     const native = (data && data.native) || [];
     const subs = (data && data.plugins) || [];
     const serviceTokensAnchors = [];
+    const serviceModelsAnchors = [];
     const renderPlugin = (p, isNative) => {
       const on = !!p.enabled;
       const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;flex-shrink:0;"></span>`;
@@ -45888,9 +45977,18 @@ function loadPluginsPanel() {
         serviceTokensAnchors.push({ name: String(p.name), anchorId });
         tokensAnchor = `<div id="${anchorId}"></div>`;
       }
+      // Model-use panel anchor: rendered under the card, filled
+      // asynchronously by pluginServiceModelsLoad (one extra GET per
+      // service plugin: GET /api/plugins/{name}/models).
+      let modelsAnchor = '';
+      if (p.kind === 'service' && p.name) {
+        const anchorId = 'pluginModelsPanel' + serviceModelsAnchors.length;
+        serviceModelsAnchors.push({ name: String(p.name), anchorId });
+        modelsAnchor = `<div id="${anchorId}"></div>`;
+      }
       const acts = isNative ? '' : `<button class="btn-icon" style="font-size:11px;padding:2px 8px;white-space:nowrap;" onclick="pluginAction('${escHtml(p.name)}','${on?'disable':'enable'}')">${on?'Disable':'Enable'}</button>`;
       return `<div style="padding:8px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:8px;">
-        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}${tokensAnchor}</div>
+        <div style="flex:1;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${lastErr}${commCmds}${cliSubs}${mobileSec}${sessInj}${svcCard}${modelsAnchor}${tokensAnchor}</div>
         ${acts}
       </div>`;
     };
@@ -45898,8 +45996,11 @@ function loadPluginsPanel() {
       + (native.length ? `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:4px;">Native</div>${native.map(p=>renderPlugin(p,true)).join('')}` : '')
       + `<div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-top:12px;margin-bottom:4px;">Subprocess</div>`
       + (subs.length ? subs.map(p=>renderPlugin(p,false)).join('') : '<div style="opacity:0.7;">no subprocess plugins installed</div>');
-    // Fill the tokens panels (one extra GET per service plugin) now that
-    // the anchors exist in the DOM.
+    // Fill the model-use and tokens panels (one extra GET per service
+    // plugin each) now that the anchors exist in the DOM.
+    for (const mod of serviceModelsAnchors) {
+      window.pluginServiceModelsLoad(mod.name, mod.anchorId);
+    }
     for (const tok of serviceTokensAnchors) {
       window.pluginServiceTokensLoad(tok.name, tok.anchorId);
     }
