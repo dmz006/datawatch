@@ -1789,13 +1789,9 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 
 // sessionTagShortcuts expands the axis shortcut params (project, automaton,
 // automation, stage, kind, role, lane, compute) into axis:value tag filters;
-// an empty or blank value is ignored. The backend param is the session-backend
-// filter and is not an axis shortcut here — one parameter cannot be both the
-// backend-family filter (claudecode, opencode; BL361) and the backend
-// placement axis (claude, pi, ollama, vllm), so the task's `backend`
-// axis-shortcut item is settled against the no-regression rule (the axis
-// stays reachable as tag=backend:<value>, recorded in the plan's §12 Done
-// note).
+// an empty or blank value is ignored. The backend param is handled by the
+// session filter itself: it matches the backend family OR the backend:<value>
+// placement tag, so it needs no expansion here.
 func sessionTagShortcuts(req mcpsdk.CallToolRequest) []string {
 	var out []string
 	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {

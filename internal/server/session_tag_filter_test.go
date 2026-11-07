@@ -55,6 +55,10 @@ func TestSessionsAxisShortcutFilters(t *testing.T) {
 	add("s-inherit-project", "22220002", []string{"web"}, nil) // inherits project:datawatch
 	add("s-inherit-stage", "33330003", []string{"web"}, nil)   // inherits stage:build
 	add("s-plain", "", nil, nil)
+	add("s-backend-tag", "", nil, []string{"backend:pi"})
+	if err := tm.sm.SaveSession(&session.Session{ID: "s-family", FullID: "testhost-s-family", State: session.StateRunning, BackendFamily: "opencode"}); err != nil {
+		t.Fatal(err)
+	}
 
 	s := &Server{token: "admin-token", manager: tm.sm}
 	list := func(rawQuery string) []string {
@@ -83,13 +87,13 @@ func TestSessionsAxisShortcutFilters(t *testing.T) {
 	check("?tag=stage:build&project=datawatch", "s-system", "s-inherit-project", "s-inherit-stage")
 	check("?tag=stage:build&stage=build", "s-system", "s-inherit-stage") // duplicated once
 	// Blank values are ignored.
-	check("?role=", "s-system", "s-inherit-project", "s-inherit-stage", "s-plain")
-	// backend keeps its existing meaning (session backend, not an axis
-	// shortcut — one parameter cannot be the backend-family filter and
-	// the backend axis at once; the backend placement axis is reachable
-	// as ?tag=backend:<value>).
+	check("?role=", "s-system", "s-inherit-project", "s-inherit-stage", "s-plain", "s-backend-tag", "s-family")
+	// backend is both the session-backend family filter and the backend
+	// axis shortcut: family equals value OR the backend:<value> tag.
 	check("?backend=nosuch")
-	check("?tag=backend:opencode")
+	check("?backend=opencode", "s-family")
+	check("?backend=pi", "s-backend-tag")
+	check("?tag=backend:pi", "s-backend-tag")
 }
 
 // A tag appearing on several of one session's lists counts once.

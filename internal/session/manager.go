@@ -5907,7 +5907,7 @@ func (m *Manager) ListArchivedSessions(f SessionFilter, extra func(*Session) boo
 	out, _, err := m.store.ListArchivedFiltered(ArchivedQuery{
 		Text: text, Before: before, Limit: limit,
 		Match: func(sess *Session) bool {
-			return f.matches(sess) && m.sessionMatchesTagFilter(f, sess) && (extra == nil || extra(sess))
+			return f.matches(sess) && m.sessionMatchesBackend(f, sess) && m.sessionMatchesTagFilter(f, sess) && (extra == nil || extra(sess))
 		},
 	})
 	if err != nil {
@@ -5969,9 +5969,8 @@ func (f SessionFilter) matches(sess *Session) bool {
 	if f.State != "" && string(sess.State) != f.State {
 		return false
 	}
-	if f.Backend != "" && sess.BackendFamily != f.Backend {
-		return false
-	}
+	// Backend is checked by Manager.sessionMatchesBackend (family name or
+	// the backend:<value> placement-axis tag).
 	switch f.Alive {
 	case "true":
 		if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
@@ -5994,11 +5993,30 @@ func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
 	}
 	out := make([]*Session, 0, len(all))
 	for _, sess := range all {
-		if f.matches(sess) && m.sessionMatchesTagFilter(f, sess) {
+		if f.matches(sess) && m.sessionMatchesBackend(f, sess) && m.sessionMatchesTagFilter(f, sess) {
 			out = append(out, sess)
 		}
 	}
 	return out
+}
+
+// sessionMatchesBackend applies the backend filter. The value is both the
+// BL361 session-backend family name (claudecode, opencode) and the backend
+// placement-axis shortcut (backend:<value>: claude, pi, ollama, vllm): a
+// session matches when its family equals the value OR it carries the
+// backend:<value> tag, so every result the family filter returned before
+// is still returned.
+func (m *Manager) sessionMatchesBackend(f SessionFilter, sess *Session) bool {
+	if f.Backend == "" || sess.BackendFamily == f.Backend {
+		return true
+	}
+	want := "backend:" + f.Backend
+	for _, t := range m.sessionEffectiveTagIDs(sess) {
+		if t == want {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionEffectiveTagIDs returns the session's own tag IDs, its system tag

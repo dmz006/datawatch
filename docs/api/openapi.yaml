@@ -67,11 +67,9 @@ paths:
           in: query
           required: false
           description: >-
-            Filter by LLM backend (BL361 — this is the session's own backend
-            filter, not the backend tag axis: filter the backend axis with
-            ?tag=backend:<value>). The task's backend axis-shortcut item is
-            settled against the no-regression rule — one parameter cannot be
-            the backend-family filter and the backend axis at once
+            Filter by LLM backend (BL361) and backend axis shortcut: a
+            session matches when its backend family equals the value or it
+            carries the backend:<value> tag, so no earlier result is lost
           schema:
             type: string
         - name: alive

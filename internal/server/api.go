@@ -1978,20 +1978,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Axis shortcuts expand to axis:value tag filters and combine with the
-	// explicit tag list under tag_match. Empty values are ignored. backend
-	// is deliberately NOT one of them here: on this endpoint (and on
-	// list_sessions) its name already is the session-backend filter, and a
-	// parameter cannot carry both meanings — the backend placement axis
-	// stays reachable as ?tag=backend:<value>. The task's `backend`
-	// axis-shortcut item is settled against the no-regression rule: one
-	// parameter cannot be both the BL361 session-backend filter (family
-	// names: claudecode, opencode) and the backend placement axis
-	// (placement backends: claude, pi, ollama, vllm), and the task itself
-	// requires the existing backend filter to keep working; forcing a
-	// backend:<value> tag requirement onto it would silently redefine the
-	// pinned filter, which AGENT.md forbids. The spec item is
-	// self-contradictory (recorded in the plan's §12 Done note); the §12
-	// operator decision is satisfied by the tag path.
+	// explicit tag list under tag_match. Empty values are ignored. backend is
+	// not expanded here: it stays the BL361 session-backend filter, which
+	// also accepts the backend:<value> placement tag (a session matches on
+	// its family name OR that tag, see Manager.sessionMatchesBackend), so
+	// no earlier result is lost and ?backend=<axis value> works.
 	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role", "lane", "compute"} {
 		if v := strings.TrimSpace(q.Get(axis)); v != "" {
 			tag := axis + ":" + v
