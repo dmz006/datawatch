@@ -194,15 +194,21 @@ func newAutonomousPRDSetTagsCmd() *cobra.Command {
 	return cmd
 }
 
-// newSessionTagsCmd sets the tags a session carries itself. Inherited tags
-// come from the owning Automaton and are not set here.
+// newSessionTagsCmd lists the tags sessions carry with counts (no session
+// id), or replaces the tags a session itself carries (with a session id and
+// --tags; an empty --tags value clears them). Inherited tags come from the
+// owning Automaton and are not set here.
 func newSessionTagsCmd() *cobra.Command {
 	var tags string
+	var asJSON bool
 	cmd := &cobra.Command{
-		Use:   "tags <session-id> --tags <id1,id2,...>",
-		Short: "Replace the tags a session carries itself (an empty --tags value clears them)",
-		Args:  cobra.ExactArgs(1),
+		Use:   "tags [session-id] [--tags <id1,id2,...>]",
+		Short: "List the tags sessions carry (with counts), or replace the tags a session itself carries (--tags <ids>; empty clears)",
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return runSessionTagInventory(asJSON)
+			}
 			if !cmd.Flags().Changed("tags") {
 				return cmd.Usage()
 			}
@@ -211,7 +217,47 @@ func newSessionTagsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&tags, "tags", "", "comma-separated tag IDs (empty clears)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "for the listing: print the raw JSON reply instead of the table")
 	return cmd
+}
+
+// sessionTagEntry is one row of the GET /api/sessions/tags reply: one tag
+// name and how many sessions (live or archived) carry it.
+type sessionTagEntry struct {
+	Tag   string `json:"tag"`
+	Axis  string `json:"axis"`
+	Value string `json:"value"`
+	Count int    `json:"count"`
+}
+
+// runSessionTagInventory fetches GET /api/sessions/tags and prints the tag
+// names with their counts; --json prints the raw reply.
+func runSessionTagInventory(asJSON bool) error {
+	body, err := daemonJSONBody(http.MethodGet, "/api/sessions/tags", nil)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		_, err = os.Stdout.Write(append(body, '\n'))
+		return err
+	}
+	var reply struct {
+		Tags []sessionTagEntry `json:"tags"`
+	}
+	if err := json.Unmarshal(body, &reply); err != nil {
+		fmt.Println(strings.TrimSpace(string(body)))
+		return nil
+	}
+	if len(reply.Tags) == 0 {
+		fmt.Println("no tags on any session")
+		return nil
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "TAG\tAXIS\tVALUE\tCOUNT")
+	for _, e := range reply.Tags {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", e.Tag, e.Axis, e.Value, e.Count)
+	}
+	return w.Flush()
 }
 
 // parseTagIDList splits a comma-separated tag-ID list, dropping blanks. An

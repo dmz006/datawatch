@@ -74,8 +74,11 @@ func buildCommTagRequest(verb string, args []string) (req commTagRequest, usage 
 		}
 		return commTagRequest{method: http.MethodGet, path: "/api/autonomous/attention"}, ""
 	case "session-tags":
+		if len(args) == 2 && strings.EqualFold(args[1], "list") {
+			return commTagRequest{method: http.MethodGet, path: "/api/sessions/tags"}, ""
+		}
 		if len(args) < 2 || len(args) > 3 {
-			return req, "usage: autonomous session-tags <session-id> <tag-id1,tag-id2,...> (omit the list to clear)"
+			return req, "usage: autonomous session-tags list | session-tags <session-id> [tag-id1,tag-id2,...] (omit the list to clear)"
 		}
 		list := ""
 		if len(args) == 3 {

@@ -34,6 +34,8 @@ func (r *Router) handleSessionCmd(cmd Command) {
 		r.sessionRestart(cmd)
 	case SessionVerbGuardrailApprove: // GH#153
 		r.sessionGuardrailApprove(cmd)
+	case SessionVerbTags:
+		r.sessionTagsList()
 	default:
 		r.send(sessionHelpText(r.hostname, "unknown verb: "+cmd.SessionVerb))
 	}
@@ -168,6 +170,21 @@ func (r *Router) sessionOrphaned() {
 	r.send(strings.Join(lines, "\n"))
 }
 
+// sessionTagsList handles "session tags": list the tags sessions carry
+// (with counts), from the same inventory GET /api/sessions/tags serves.
+func (r *Router) sessionTagsList() {
+	tags := r.manager.TagInventory()
+	if len(tags) == 0 {
+		r.send(fmt.Sprintf("[%s] no tags on any session", r.hostname))
+		return
+	}
+	lines := []string{fmt.Sprintf("[%s] session tags (%d):", r.hostname, len(tags))}
+	for _, e := range tags {
+		lines = append(lines, fmt.Sprintf("  %s count=%d", e.Tag, e.Count))
+	}
+	r.send(strings.Join(lines, "\n"))
+}
+
 // sessionRestart handles "session restart id=<id>|name=<name> [task=<task>]" (BL359).
 func (r *Router) sessionRestart(cmd Command) {
 	// Resolve ID or name.
@@ -247,6 +264,7 @@ func sessionHelpText(hostname, note string) string {
 		"  session summarize <id>    — summarize last session output",
 		"  session self              — show the current channel-ready session",
 		"  session orphaned          — list sessions with a missing parent",
+		"  session tags              — list the tags sessions carry (with counts)",
 		"  session restart id=<id>   — restart session from any state (BL359)",
 		"  session restart name=<n>  — restart session by name",
 		"  session restart id=<id> task=<task>  — restart with new task",

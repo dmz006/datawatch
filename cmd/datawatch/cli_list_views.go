@@ -42,6 +42,15 @@ func sessionListQuery(cmd *cobra.Command) url.Values {
 	if v, _ := cmd.Flags().GetString("tag-match"); v != "" {
 		q.Set("tag_match", v)
 	}
+	// Axis shortcuts: each non-empty flag adds one "<axis>:<value>" tag so
+	// that e.g. --project web --stage task filters by both of those tags
+	// (combined with --tag, under the same --tag-match rule).
+	for _, axis := range []string{"project", "automaton", "automation", "stage", "kind", "role"} {
+		v, _ := cmd.Flags().GetString(axis)
+		if v = strings.TrimSpace(v); v != "" {
+			q.Add("tag", axis+":"+v)
+		}
+	}
 	if summary, _ := cmd.Flags().GetBool("summary"); summary {
 		q.Set("view", "summary")
 	}
