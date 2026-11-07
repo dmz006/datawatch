@@ -3205,3 +3205,8 @@ is stored, it does not append.
 For the write-path rules per surface and the operator workflow, see the
 two how-to guides above and the "Model pull consent" / "Automation
 requirements report" entries in `docs/operations.md`.
+
+## Memory ceiling settings (resource_limits)
+
+- **Config:** `resource_limits.memory_share_percent` (1 to 100, default 50), `resource_limits.memory_floor_mb` and `resource_limits.memory_cap_mb` (whole MB, floor not above cap). Set them with `PUT /api/config`, `datawatch config set`, the chat command `configure <key>=<value>` (listed under `configure help` and `configure list`) or the `config_set` MCP tool.
+- **Status:** `GET /api/autonomous/status` and the `autonomous_status` MCP tool carry a `memory_ceiling` object: `effective_mb` (0 when none), `source` (`default`, `project`, `task_kind` or `none`), `enforcement_path` (`scope`, `watchdog` or `none`) and the `share_percent`, `floor_mb` and `cap_mb` it comes from. It describes a verification run with no project or task kind override; `source` is `none` while no ceiling settings are installed in the autonomous manager. Code: `internal/autonomous/memory_ceiling_status.go`.

@@ -6366,10 +6366,12 @@ func (m *Manager) Status() LoopStatus {
 	// this runs before m.mu is taken, as the PRD reads above do).
 	var held []HeldTaskStatus
 	m.store.WithLock(func() { held = heldTasksAcrossPRDs(m.store.prds) })
+	memCeiling := m.memoryCeilingStatus() // takes m.mu itself
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
 	st.ReviewNeeded = held
+	st.MemoryCeiling = memCeiling
 	st.Budgets = budgets
 	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)

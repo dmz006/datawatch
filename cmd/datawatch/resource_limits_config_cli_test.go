@@ -50,3 +50,21 @@ func want0(v string) float64 {
 	n, _ := strconv.Atoi(v)
 	return float64(n)
 }
+
+// A chat configure of a memory ceiling key reaches PUT /api/config as a JSON
+// number, so the daemon's whole-number check accepts it.
+func TestConfigureRequestBody_ResourceLimitsAreNumbers(t *testing.T) {
+	for _, key := range []string{
+		"resource_limits.memory_share_percent",
+		"resource_limits.memory_floor_mb",
+		"resource_limits.memory_cap_mb",
+	} {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(configureRequestBody(key, "2048")), &m); err != nil {
+			t.Fatal(err)
+		}
+		if n, ok := m[key].(float64); !ok || n != 2048 {
+			t.Fatalf("%s sent as %#v, want the number 2048", key, m[key])
+		}
+	}
+}
