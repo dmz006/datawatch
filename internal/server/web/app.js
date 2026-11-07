@@ -9204,6 +9204,9 @@ const DOCS_LINKS_BY_KEY = {
   'autonomous.model_routing.unknown_node_policy': DOCS_DEFINITIONS + '#unreachable-node-policy',
   'autonomous.model_routing.probe_timeout_seconds': DOCS_DEFINITIONS + '#node-probe-timeout',
   'autonomous.model_routing.alert_on_refusal': DOCS_DEFINITIONS + '#model-routing-refusal-alert',
+  // Inherited (system) tags per Automaton: the settings card's help link opens
+  // the Automata tags howto.
+  'autonomous.inherited_tags_cache_seconds': 'howto/automata-tags.md',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -17940,6 +17943,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_fallthrough', label: 'Pool fall-through (admit on another idle allowed pool when the requested one is full)', labelKey: 'settings_capacity_fallthrough', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
+    { key: 'autonomous.inherited_tags_cache_seconds', label: 'Inherited tags cache (sec, 0=15, negative=off)', labelKey: 'settings_inherited_tags_cache', helpKey: 'settings_inherited_tags_cache_help', docsKey: 'autonomous.inherited_tags_cache_seconds', type: 'number', placeholder: '15' },
     { key: 'autonomous.capacity_strict_node_limit', label: 'Strict per-node limit (verifier and resumed workers never over-admit a node)', labelKey: 'settings_capacity_strict_node_limit', type: 'toggle' },
     { key: 'autonomous.capacity_count_pool_by_node', label: 'Count each LLM pool by node', labelKey: 'settings_capacity_count_pool_by_node', type: 'toggle' },
     { key: 'autonomous.capacity_adopt_before_admit', label: 'After a restart, admit resumed workers before new work', labelKey: 'settings_capacity_adopt_before_admit', type: 'toggle' },
