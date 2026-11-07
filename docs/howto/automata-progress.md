@@ -77,10 +77,17 @@ median and mean times. Records that have no project, or that belong to no
 Automation, are shown together in a row named **(none)**, so the rows always
 add up to the overall total and nothing is dropped.
 
-Name one row to read just that project or Automaton (`project` / `--project`;
-`automaton` on the chat channel). Naming a project turns the project split on
-by itself. Use `(none)` as the name to read the records with no project.
-Asking for a project together with a different group is refused.
+Name one row to read just that project or Automaton: `--project NAME` on the
+CLI, `project=NAME` on the chat channel, `project=NAME` in the API query, and
+`automaton=ID` on the chat channel for one Automaton. Naming a project turns
+the project split on by itself, and `(none)` as the name reads the records
+with no project. The name filters the rows of the chosen axis: the chat
+channel refuses a name that does not fit the axis (a project together with a
+different group, or `project=` together with `automaton=`). The CLI and the
+API take the combination instead: the API always returns every row of the
+tables, and on the CLI the name then merely picks a row in the chosen axis's
+table, which a name of another axis does not match (so the table comes back
+empty rather than being refused).
 
 ### History per project
 
@@ -330,14 +337,14 @@ written.
 | What you want | YAML | CLI | Web UI | REST | Chat |
 |---|---|---|---|---|---|
 | Read the numbers | - | `datawatch autonomous progress [--group project|automation|automaton] [--project NAME] [--automation ID] [--tag ID]... [--tag-match any|all] [--since D] [--until D] [--json]` | Automation sub-tab > *Progress and cost* > *Progress* card, *Group the totals* choice | `GET /api/autonomous/progress[?group=project\|automation\|automaton&project=NAME]` | `progress [group=project|automation|automaton] [project=NAME] [automaton=ID] [automation=ID] [tag=ID] [tag_match=any|all] [since=D] [until=D]` |
-| Read the trend | - | `datawatch autonomous progress-trend [--days N] [--group project|automation|automaton] [--project NAME] [--tag ID]... [--tag-match any|all] [--json]` | *Trend* section of the card | `GET /api/autonomous/progress/trend?days=N[&project=NAME&group=project][&tag=ID&tag_match=all]` | `progress trend [days] [tag=ID] [tag_match=all]` |
+| Read the trend | - | `datawatch autonomous progress-trend [--days N] [--group project|automation|automaton] [--project NAME] [--tag ID]... [--tag-match any|all] [--json]` | *Trend* section of the card | `GET /api/autonomous/progress/trend?days=N[&project=NAME][&tag=ID&tag_match=all]` | `progress trend [days] [tag=ID] [tag_match=all]` |
 | Set an Automaton kind | - | `datawatch autonomous prd-set-kind ID KIND` | Automaton settings > *Kind* | `POST /api/autonomous/prds/{id}/set_kind` | `autonomous set-kind ID KIND` |
 | Change a setting | `autonomous.progress.*` | `datawatch config set autonomous.progress.lanes 5` | Settings > General > Autonomous > *Progress ...* | `PUT /api/config` `{"autonomous.progress.lanes": 5}` | `configure autonomous.progress.lanes=5` |
 
-MCP agents use `autonomous_progress` (arguments `group` and `project` add
-the split) and `autonomous_progress_trend` (`project` returns that project's
-points),
-`autonomous_prd_set_kind`, and `config_set` (or the `progress_*` arguments of
+MCP agents use `autonomous_progress` (argument `group` adds the split and
+`project` is the row name) and `autonomous_progress_trend` (`project` returns
+that project's points), `autonomous_prd_set_kind`, and `config_set` (or the
+`progress_*` arguments of
 `autonomous_config_set`). The commands and tools print or return the **same
 object** as the REST route, so every surface shows the same figures.
 
@@ -360,7 +367,7 @@ tell exactly what the numbers cover. The trend reply appends
 |---|---|
 | Web UI, Automation sub-tab | The *Progress* card on the **Progress and cost** sub-tab of the Automation sub-tab (the list itself is on the **Automations** sub-tab): the kind table, work left, completion range with methods and drivers, throughput, utilization, inactive windows, unfiled backlog count and the trend. It loads when the sub-tab is selected and stops refreshing when you leave — nothing keeps polling after that — and it is not shown on the Automata or Templates sub-tabs. It keeps the last good data and says so when a refresh fails or the data is over five minutes old. |
 | `datawatch autonomous progress` | The status table as text (`--json` for the raw object); with `--group`, the totals split by project, Automation or Automaton, `(none)` included, and the estimate sample line. |
-| `datawatch autonomous progress-trend` | The saved snapshots and the direction. |
+| `datawatch autonomous progress-trend` | The saved snapshots and the direction; with `--project`, that project's own points; with `--group`, the current totals split by that axis, appended after the points (they come from the live progress route, not the snapshots). |
 | Chat channels | `progress` and `progress trend` reply with the same text as the CLI, including `group=`, `project=` and `automaton=`. |
 | REST / MCP | The metrics object and the trend object as JSON, for dashboards and scripts. With `group`, the reply adds `group` and `group_totals` (row name to totals, `(none)` for records with no project or Automation); the completion range carries `sample_records` and `sample_tasks`. |
 | Android and iOS apps | Not yet; the web UI is the only graphical view today. |
