@@ -272,4 +272,27 @@ const (
 	// autonomous.model_pull_consent block (its models or publisher list).
 	// Details: the now-current models and publishers lists, and origin.
 	ActionModelPullConsentChanged = "model_pull_consent_changed"
+
+	// Plugin service health — the plugins package's service event recorder
+	// emits these once per transition (never per poll). Every entry is
+	// subjected by the plugin name and carries state ("raised" or
+	// "cleared") in Details; recovery entries reuse the same action.
+
+	// ActionPluginServiceDown — an attach-only or managed health probe
+	// failed past the configured threshold and the condition raised. The
+	// recovery entry (state "cleared") is written when the probe passes.
+	// Details: state, plugin, consecutive_failures, threshold.
+	ActionPluginServiceDown = "plugin_service_down"
+	// ActionPluginServiceTokenRejected — a plugin service answered 401 or
+	// 403 to a probe or a widget pull. Details: state, plugin, status_code,
+	// source (probe or widget_pull).
+	ActionPluginServiceTokenRejected = "plugin_service_token_rejected"
+	// ActionPluginServiceEnrichmentBacklog — a plugin's pending count rose
+	// across N consecutive pulls. Details: state, plugin, streak, pulls,
+	// min_rise, last_pending.
+	ActionPluginServiceEnrichmentBacklog = "plugin_service_enrichment_backlog"
+	// ActionPluginServiceModelNodeUnreachable — a model's Ollama node did
+	// not answer. Subject: the plugin, with model in Details. Details:
+	// state, plugin, model.
+	ActionPluginServiceModelNodeUnreachable = "plugin_service_model_node_unreachable"
 )
