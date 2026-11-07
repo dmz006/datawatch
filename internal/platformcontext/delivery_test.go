@@ -19,7 +19,7 @@ func TestDeliveryModesCoverEveryBackendDirectory(t *testing.T) {
 			t.Errorf("backend %q has no delivery mode", e.Name())
 		}
 	}
-	for _, fam := range []string{"claude-code", "pi-prompt"} {
+	for _, fam := range []string{"claude-code", "pi-prompt", "opencode-acp", "opencode-prompt", "goose-prompt", "subprocess"} {
 		if _, ok := modes[fam]; !ok {
 			t.Errorf("family %q has no delivery mode", fam)
 		}

@@ -13,13 +13,18 @@ const (
 )
 
 // DeliveryModes returns the delivery mode of every backend family: each
-// directory under internal/llm/backends, plus the claude-code and pi-prompt
-// session families (the BackendFamily values in internal/session).
+// directory under internal/llm/backends, plus every session family name used
+// as a Session.BackendFamily in internal/session (claude-code, pi-prompt,
+// opencode-acp, opencode-prompt, goose-prompt, subprocess).
 //
-// A backend is marked rules_file only when its code or documentation confirms
-// it reads AGENT.md. The repository's backend code and docs confirm no such
-// read for any backend other than claude-code, so every other entry is
-// first_prompt, which does not depend on the backend's file handling.
+// A backend is marked rules_file only when it is confirmed to read the file
+// datawatch writes. datawatch writes CLAUDE.md for claude-code and AGENT.md
+// for every other backend (internal/session/tracker.go), but nothing in this
+// repository confirms that any non-claude-code backend reads AGENT.md: the
+// backend code never opens it, and docs/session-tracking.md only says
+// datawatch writes it. This task could not read the backends' own upstream
+// documentation, so those entries rest on the repo evidence alone and fall
+// back to first_prompt, which does not depend on the backend's file handling.
 func DeliveryModes() map[string]DeliveryMode {
 	return map[string]DeliveryMode{
 		// claude-code reads CLAUDE.md natively; it also receives the MCP
@@ -27,22 +32,29 @@ func DeliveryModes() map[string]DeliveryMode {
 		"claude-code": DeliveryRulesFile,
 		// pi-prompt: pi sessions are driven by a prompt; no AGENT.md read is confirmed.
 		"pi-prompt": DeliveryFirstPrompt,
-		// aider reads files named with --read or its config; AGENT.md is not
-		// among them in the backend code or docs.
+		// aider: no AGENT.md read is confirmed in the backend code or repo docs.
 		"aider": DeliveryFirstPrompt,
-		// gemini reads GEMINI.md, not AGENT.md; nothing here confirms otherwise.
+		// gemini: no AGENT.md read is confirmed in the backend code or repo docs.
 		"gemini": DeliveryFirstPrompt,
-		// goose reads .goosehints; no AGENT.md read is confirmed.
+		// goose: no AGENT.md read is confirmed in the backend code or repo docs.
 		"goose": DeliveryFirstPrompt,
+		// goose-prompt: session family of the goose backend; same reason as goose.
+		"goose-prompt": DeliveryFirstPrompt,
 		// ollama is a chat API with no file access: the prompt is the only channel.
 		"ollama": DeliveryFirstPrompt,
-		// opencode's own convention is AGENTS.md; an AGENT.md read is not confirmed.
+		// opencode: no AGENT.md read is confirmed in the backend code or repo docs.
 		"opencode": DeliveryFirstPrompt,
+		// opencode-acp: ACP session family of opencode; same reason as opencode.
+		"opencode-acp": DeliveryFirstPrompt,
+		// opencode-prompt: prompt-driven session family of opencode; same reason.
+		"opencode-prompt": DeliveryFirstPrompt,
 		// openwebui is a chat API with no file access: the prompt is the only channel.
 		"openwebui": DeliveryFirstPrompt,
-		// pi: no AGENT.md read is confirmed in the backend code or docs.
+		// pi: no AGENT.md read is confirmed in the backend code or repo docs.
 		"pi": DeliveryFirstPrompt,
 		// shell runs commands, not an LLM; the prompt is the only channel.
 		"shell": DeliveryFirstPrompt,
+		// subprocess sessions run a command via bash -c with no LLM to read a file.
+		"subprocess": DeliveryFirstPrompt,
 	}
 }
