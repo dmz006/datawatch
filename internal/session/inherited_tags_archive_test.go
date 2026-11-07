@@ -20,6 +20,11 @@ const (
 	inheritedTagsArchiveTotal        = inheritedTagsArchiveAutomata * inheritedTagsArchivePerAutomaton
 )
 
+// inheritedTagsListLimit is the single timing limit for the inherited-tags
+// list path: one cold index snapshot plus the per-Automaton lookups against
+// it must stay under it.
+const inheritedTagsListLimit = time.Second
+
 // inheritedTagsArchiveFixture holds the fixture layout and, per Automaton, the
 // sorted system tags a list handler must see for it (archived and active
 // sessions combined).
@@ -28,9 +33,16 @@ type inheritedTagsArchiveFixture struct {
 	expected map[string][]string
 }
 
+// seedSupport is satisfied by both *testing.T and *testing.B; seedInheritedTagsArchive
+// needs nothing else, so the benchmark can reuse the same fixture helper.
+type seedSupport interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}
+
 // seedInheritedTagsArchive creates the fixture in a fresh manager and moves the
 // terminal sessions into the archive file.
-func seedInheritedTagsArchive(t *testing.T, m *Manager) *inheritedTagsArchiveFixture {
+func seedInheritedTagsArchive(t seedSupport, m *Manager) *inheritedTagsArchiveFixture {
 	t.Helper()
 	f := &inheritedTagsArchiveFixture{expected: map[string][]string{}}
 	now := time.Now()
@@ -115,6 +127,57 @@ func TestInheritedTagsArchiveListDecodesEachFileOnce(t *testing.T) {
 			t.Fatalf("decode count after cached SystemTagsByPRD = %d, still want %d (no re-decode)", got, inheritedTagsArchiveTotal)
 		}
 	})
+}
+
+// TestInheritedTagsArchiveListUnderOneSecond is the timing assertion for the
+// list path: the fixture (300 archived sessions across 100 Automata) is
+// built before the clock starts, and only the one cold list pass (index
+// snapshot plus the 100 per-Automaton lookups) is measured, so the
+// assertion cannot be flaky on a loaded machine.
+func TestInheritedTagsArchiveListUnderOneSecond(t *testing.T) {
+	m := newTestManager(t)
+	f := seedInheritedTagsArchive(t, m) // fixture outside the timed region
+
+	start := time.Now()
+	snap := m.SystemTagIndexSnapshot() // one list call takes one snapshot
+	for _, prd := range f.automata {   // the 100 per-Automaton lookups
+		if got, want := sortedCopy(snap(prd)), f.expected[prd]; !reflect.DeepEqual(got, want) {
+			t.Fatalf("snapshot(%q) tags = %v, want %v", prd, got, want)
+		}
+	}
+	elapsed := time.Since(start)
+	if elapsed >= inheritedTagsListLimit {
+		t.Fatalf("inherited-tags list pass took %v (measured over %d archived sessions across %d Automata: one SystemTagIndexSnapshot plus %d lookups), limit is %v",
+			elapsed, inheritedTagsArchiveTotal, inheritedTagsArchiveAutomata, inheritedTagsArchiveAutomata, inheritedTagsListLimit)
+	}
+}
+
+func newTestManagerForB(b *testing.B) *Manager {
+	b.Helper()
+	dir := b.TempDir()
+	store, err := NewStore(dir + "/sessions.json")
+	if err != nil {
+		b.Fatalf("NewStore: %v", err)
+	}
+	b.Cleanup(func() { _ = store.Close() })
+	return &Manager{store: store, hostname: "testhost"}
+}
+
+// BenchmarkInheritedTagsList tracks the cost of the same pass the timing
+// test asserts on: one SystemTagIndexSnapshot plus the per-Automaton lookups
+// against it, over the 300-archived-session / 100-Automaton fixture.
+func BenchmarkInheritedTagsList(b *testing.B) {
+	m := newTestManagerForB(b) // fixture built before the timer starts
+	f := seedInheritedTagsArchive(b, m)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		snap := m.SystemTagIndexSnapshot() // one list call takes one snapshot
+		for _, prd := range f.automata {   // the 100 per-Automaton lookups
+			if len(snap(prd)) == 0 {
+				b.FailNow()
+			}
+		}
+	}
 }
 
 // TestInheritedTagsArchiveCachingOffSingleSnapshot checks that with caching
