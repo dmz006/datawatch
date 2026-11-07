@@ -5950,8 +5950,8 @@ type SessionFilter struct {
 	Backend string // exact BackendFamily match, empty = all
 	Alive   string // "true", "false", "" or "any" = no filter
 	// Tags are the tag IDs a session must carry, counting the tags the
-	// session itself has and the tags it inherits from the Automaton that
-	// spawned it; empty = no filter.
+	// session itself has, its system tags, and the tags it inherits from
+	// the Automaton that spawned it; empty = no filter.
 	Tags []string
 	// TagMatch is "any" (default): the session needs at least one of Tags,
 	// or "all": every tag in Tags.
@@ -6001,19 +6001,21 @@ func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
 	return out
 }
 
-// sessionEffectiveTagIDs returns the session's own tag IDs followed by the
-// tags it inherits from the Automaton that spawned it, duplicates dropped.
+// sessionEffectiveTagIDs returns the session's own tag IDs, its system tag
+// IDs, and the tags it inherits from the Automaton that spawned it,
+// duplicates dropped.
 func (m *Manager) sessionEffectiveTagIDs(sess *Session) []string {
 	if sess == nil {
 		return nil
 	}
 	inherited := m.InheritedTags(sess)
-	return dedupeTagIDs(append(append([]string{}, sess.Tags...), inherited...))
+	ids := append(append([]string{}, sess.Tags...), sess.SystemTags...)
+	return dedupeTagIDs(append(ids, inherited...))
 }
 
 // sessionMatchesTagFilter reports whether sess satisfies f's tag criteria,
-// counting the session's own tags and the tags it inherits from the Automaton
-// that spawned it. An empty Tags list passes every session.
+// counting the session's own tags, its system tags, and the tags it inherits
+// from the Automaton that spawned it. An empty Tags list passes every session.
 func (m *Manager) sessionMatchesTagFilter(f SessionFilter, sess *Session) bool {
 	wanted := dedupeTagIDs(f.Tags)
 	if len(wanted) == 0 {

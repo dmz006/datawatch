@@ -76,6 +76,65 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: tag
+          in: query
+          required: false
+          description: >-
+            Keep only the sessions that carry this tag — their own, a system
+            tag, or one they inherit from their Automaton; repeat the parameter
+            for several (or pass a comma list), combined with tag_match
+          schema:
+            type: string
+        - name: tag_match
+          in: query
+          required: false
+          description: Whether the listed tags must all be present (all) or any of them (any, the default)
+          schema:
+            type: string
+            enum: ["any", "all"]
+            default: "any"
+        - name: project
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `project:<value>` tag filter (combines with `tag` under `tag_match`; blank values are ignored)"
+          schema:
+            type: string
+        - name: automaton
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `automaton:<value>` tag filter"
+          schema:
+            type: string
+        - name: automation
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `automation:<value>` tag filter"
+          schema:
+            type: string
+        - name: stage
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `stage:<value>` tag filter"
+          schema:
+            type: string
+        - name: kind
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `kind:<value>` tag filter"
+          schema:
+            type: string
+        - name: role
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `role:<value>` tag filter"
+          schema:
+            type: string
+        - name: lane
+          in: query
+          required: false
+          description: "Axis shortcut - expands to the `lane:<value>` tag filter"
+          schema:
+            type: string
         - name: view
           in: query
           required: false
@@ -615,6 +674,52 @@ paths:
           $ref: "#/components/responses/Unauthorized"
 
   /api/sessions/tags:
+    get:
+      summary: List the tags in use across live and archived sessions
+      description: |
+        The tag inventory: every tag a live or archived session carries — its
+        own, its system tags, or tags inherited from its Automaton — with the
+        tag split into its axis and value and the number of sessions that
+        carry it. A session is counted once per tag no matter which of those
+        three tag sets carries the tag. Tags without an axis sort last; order
+        is by axis, then count descending. Read-only: it needs the sessions
+        list capability, not the sessions write capability the POST on this
+        same route uses.
+      operationId: listSessionTagInventory
+      tags: [Sessions]
+      responses:
+        "200":
+          description: The tag inventory
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags:
+                    type: array
+                    items:
+                      type: object
+                      required: [tag, axis, value, count]
+                      properties:
+                        tag:
+                          type: string
+                          description: The tag text
+                          example: "stage:build"
+                        axis:
+                          type: string
+                          description: Axis (empty for tags without one)
+                          example: "stage"
+                        value:
+                          type: string
+                          description: Value part (the whole tag when there is no axis)
+                          example: "build"
+                        count:
+                          type: integer
+                          description: Number of sessions that carry the tag
+                          example: 3
+        "401":
+          $ref: "#/components/responses/Unauthorized"
     post:
       summary: Replace a session's own tags
       description: |

@@ -112,15 +112,21 @@ func (s *Server) sessionViews(sessions []*session.Session) []sessionTagView {
 	return out
 }
 
-// handleSessionTags replaces a session's own tags.
+// handleSessionTags serves the session tag routes:
 //
-//	POST /api/sessions/tags  {"id":"<session>","tag_ids":["<tag>",...]}
+//	GET  /api/sessions/tags   — the tags in use across live and archived sessions
+//	POST /api/sessions/tags   — replace a session's own tags
 //
-// id is the full or short session ID. A tag ID the registry does not know
-// is refused with 404 and nothing is written; duplicates are dropped, first
-// occurrence wins. The response is the updated session with inherited_tags.
-// Requires the sessions write capability.
+// POST: {"id":"<session>","tag_ids":["<tag>",...]} — id is the full or short
+// session ID. A tag ID the registry does not know is refused with 404 and
+// nothing is written; duplicates are dropped, first occurrence wins. The
+// response is the updated session with inherited_tags. Requires the sessions
+// write capability.
 func (s *Server) handleSessionTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		s.handleSessionTagInventory(w, r)
+		return
+	}
 	if !s.fedCap(w, r, federation.CapSessionsWrite) {
 		return
 	}
