@@ -26,6 +26,10 @@ func tagCall(t *testing.T, s *Server, method, path, body string) *httptest.Respo
 	t.Helper()
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	rec := httptest.NewRecorder()
+	if strings.Contains(path, "/tags/sweep") {
+		s.handleTagSweep(rec, req)
+		return rec
+	}
 	if strings.HasPrefix(path, "/api/autonomous/tags") {
 		s.handleAutonomousTags(rec, req)
 	} else {
@@ -187,7 +191,7 @@ func TestTagPatchSystemRefusedRenameReparentDelete(t *testing.T) {
 	}
 
 	// Rename, reparent and delete are all 409 with the system-tag refusal.
-	for _, c := range []struct{
+	for _, c := range []struct {
 		label  string
 		method string
 		body   string

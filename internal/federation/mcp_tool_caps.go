@@ -618,6 +618,8 @@ var MCPToolCap = map[string]string{
 	// Automata tag registry status and note dismissal.
 	"autonomous_tag_registry_status":       CapAutonomousRead,
 	"autonomous_tag_registry_dismiss_note": CapAutonomousWrite,
+	// Automata tag sweep: re-derives existing objects' system tags.
+	"autonomous_tag_sweep": CapAutonomousWrite,
 }
 
 // RequiredCapForMCPTool returns the capability required to invoke

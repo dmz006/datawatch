@@ -3317,6 +3317,39 @@ paths:
         "405": {description: "POST only"}
         "503": {description: "Tag registry is not wired into this server"}
 
+  /api/autonomous/tags/sweep:
+    post:
+      summary: Re-derive the system tags of every existing Automata object and session
+      description: |
+        Applies the `tags.placement` settings in effect now to what already exists:
+        re-derives the system tags of every existing Automata object (Automaton,
+        Automation, task, template, decision record, held question) and every
+        Automata-owned session, replacing each object's derived set with the newly
+        derived one. Turning a placement axis off removes the axis's tag from
+        everything the sweep re-derives; turning it on adds the tag where the fact
+        exists. The operator's own tags are a separate list the sweep never touches,
+        and a second run is a no-op (it changes zero objects and writes nothing).
+        `?dry_run=true` runs the full re-derivation and reports the objects whose
+        system tags would be changed without writing any.
+      operationId: autonomousTagSweep
+      tags: [Autonomous]
+      parameters:
+        - name: dry_run
+          in: query
+          required: false
+          schema: {type: boolean}
+          description: "true: report the would-be counts without writing; default false (the sweep writes)"
+      responses:
+        "200":
+          description: |
+            Per-kind tally: each of `sessions`, `automata`, `automations`, `tasks`,
+            `templates`, `decision_records`, `questions` carries
+            `examined`, `changed`, `unchanged`, `failed`
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: "Federated peer lacks the autonomous write capability"}
+        "405": {description: "POST only"}
+        "503": {description: "Tag sweep is not wired into this server"}
+
   /api/autonomous/attention:
     get:
       summary: List the Automata that need the operator's attention

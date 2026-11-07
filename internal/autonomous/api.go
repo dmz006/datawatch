@@ -2261,6 +2261,17 @@ func (a *API) ShippedBackfillOnce(dryRun bool) (any, error) {
 	return report, nil
 }
 
+// SweepTags re-derives the system tags of every existing Automata object
+// and session under the tags.placement settings in effect now (see
+// Manager.SweepTags for the full contract): the REST tag-sweep route and
+// the MCP autonomous_tag_sweep tool funnel through this entry point, and
+// from it through Manager.SweepTags, the single implementation. dryRun
+// performs the full re-derivation and reports the would-be counts but
+// writes nothing.
+func (a *API) SweepTags(dryRun bool) SweepResult {
+	return a.M.SweepTags(dryRun)
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

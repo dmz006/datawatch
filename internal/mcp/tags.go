@@ -84,6 +84,31 @@ func (s *Server) patchTag(tool, id string, fields map[string]string) (*mcpsdk.Ca
 	return textOK(string(out)), nil
 }
 
+// toolAutonomousTagSweep + handler serve the operator/LLM "apply the current
+// tags.placement settings to what already exists" action: it proxies the
+// server's POST /api/autonomous/tags/sweep endpoint, which re-derives the
+// system tags of every existing Automata object and Automata-owned session
+// under the settings in effect now and reports a per-kind tally. dry_run=true
+// performs the full re-derivation and reports the would-be counts without
+// writing; absent (the default, like every other surface) the sweep writes.
+func (s *Server) toolAutonomousTagSweep() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_tag_sweep",
+		mcpsdk.WithDescription("Re-derive the system tags of every existing Automata object (Automata, Automations, tasks, templates, decision records, held questions) and every Automata-owned session under the tags.placement settings in effect now, replacing each object's derived system tags with the newly derived set: turning a placement axis off removes its tag everywhere the sweep re-derives, turning it on adds the tag wherever the fact exists. The operator's own tags are a separate list that is never touched, and a second run is a no-op (it changes zero objects and writes nothing). Returns the per-kind tally {sessions, automata, automations, tasks, templates, decision_records, questions}, each {examined, changed, unchanged, failed}. Set dry_run=true to run the full re-derivation and report the would-be counts without writing; absent or false the sweep writes (the default)."),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("true: re-derive and report the would-be counts without writing; false or absent: the sweep writes (default)")),
+	)
+}
+func (s *Server) handleAutonomousTagSweep(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	path := "/api/autonomous/tags/sweep"
+	if req.GetBool("dry_run", false) {
+		path += "?dry_run=true"
+	}
+	out, err := s.proxyJSON(http.MethodPost, path, nil)
+	if err != nil {
+		return toolError("autonomous_tag_sweep", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousTagRename() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_tag_rename",
 		mcpsdk.WithDescription("Rename an Automata tag."),
