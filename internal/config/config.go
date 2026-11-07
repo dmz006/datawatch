@@ -3065,6 +3065,14 @@ type AutonomousConfig struct {
 	// omitempty, for the same round-trip reason as JudgePolicy: an explicit 0
 	// must reach the saved config.
 	JudgeSizeThresholdLines int `yaml:"judge_size_threshold_lines" json:"judge_size_threshold_lines"`
+	// JudgePromptFileThresholdLines is the judge prompt length, in lines,
+	// above which the prompt is handed to the judge as a file rather than
+	// sent in full. Shorter prompts are sent inline. Default 300 (see
+	// JudgePromptFileThresholdDefaultLines); 0 always sends the full prompt,
+	// which disables the file route, and is kept as 0, never mapped to the
+	// default. No omitempty, for the same round-trip reason as
+	// JudgeSizeThresholdLines: an explicit 0 must reach the saved config.
+	JudgePromptFileThresholdLines int `yaml:"judge_prompt_file_threshold_lines" json:"judge_prompt_file_threshold_lines"`
 	// JudgeStrongBackend names the strong judge backend a large diff is
 	// routed to first when the changed-line count exceeds
 	// JudgeSizeThresholdLines (see config.JudgeSizeStrongFirst). Empty (the
@@ -6904,16 +6912,17 @@ func DefaultConfig() *Config {
 		Usage:          UsageConfig{Calculator: DefaultUsageCalculator(), BurnGuard: DefaultBurnGuard()},
 		ResourceLimits: DefaultResourceLimits(),
 		Autonomous: AutonomousConfig{
-			AutoFixRetries:          1,
-			MaxConcurrentTasks:      1,
-			UsageBackoff:            UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes:   BackoffMaxWaitDefaultMinutes,
-			RoleScanIntervalSeconds: RoleScanIntervalDefaultSeconds,
-			ResumeMaxAgeSeconds:     3600,
-			MaxEnginesPerNode:       1,
-			JudgeSizeThresholdLines: JudgeSizeThresholdDefaultLines,
-			GateDisagreement:        autonomousGateDisagreementWarn,
-			FailureEscalation:       DefaultFailureEscalationConfig(),
+			AutoFixRetries:                1,
+			MaxConcurrentTasks:            1,
+			UsageBackoff:                  UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:         BackoffMaxWaitDefaultMinutes,
+			RoleScanIntervalSeconds:       RoleScanIntervalDefaultSeconds,
+			ResumeMaxAgeSeconds:           3600,
+			MaxEnginesPerNode:             1,
+			JudgeSizeThresholdLines:       JudgeSizeThresholdDefaultLines,
+			JudgePromptFileThresholdLines: JudgePromptFileThresholdDefaultLines,
+			GateDisagreement:              autonomousGateDisagreementWarn,
+			FailureEscalation:             DefaultFailureEscalationConfig(),
 			// Starting plan-tier table — operator policy, see the field
 			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
 			// budget is a later phase.
@@ -6934,14 +6943,14 @@ func DefaultConfig() *Config {
 			StuckRunningSeconds: StuckRunningDefaultSeconds,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
-			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
-			RetryCeilingTotal:       5,
-			InfraRetryEscalateAfter: 2,
-			CIWatchTimeoutSeconds:   1500,
-			DetailTextCapBytes:      4096,
+			RetryPolicy:               map[string]int{"infra": 4, "scope": 0},
+			RetryCeilingTotal:         5,
+			InfraRetryEscalateAfter:   2,
+			CIWatchTimeoutSeconds:     1500,
+			DetailTextCapBytes:        4096,
 			InheritedTagsCacheSeconds: 15,
-			ContentAutoFixEnabled:   true,
-			AutoFixSkipApproval:     true,
+			ContentAutoFixEnabled:     true,
+			AutoFixSkipApproval:       true,
 			// The never-stage list ships populated (scratch, temp and local
 			// data folders). A nil list is saved as an empty list (the field
 			// has no omitempty), and a reload reads an empty list as "never-

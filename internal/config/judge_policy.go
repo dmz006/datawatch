@@ -28,6 +28,13 @@ func NormalizeJudgeTimeoutSeconds(v int) int {
 // when the key is absent; an explicit 0 turns the rule off and stays 0.
 const JudgeSizeThresholdDefaultLines = 400
 
+// JudgePromptFileThresholdDefaultLines is the default for
+// autonomous.judge_prompt_file_threshold_lines: a judge prompt longer than
+// this many lines is handed to the judge as a file instead of being sent
+// inline. It is applied by DefaultConfig when the key is absent; an explicit
+// 0 means the full prompt is always sent and stays 0.
+const JudgePromptFileThresholdDefaultLines = 300
+
 // JudgeSizeRuleEnabled reports whether the size-aware judge routing rule is
 // on for the configured threshold: any positive value enables it, 0 turns it
 // off.
