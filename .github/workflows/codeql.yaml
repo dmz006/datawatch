@@ -55,6 +55,12 @@ jobs:
     # line "No analysis for" is the real missing-analysis timeout. This check
     # never reruns security workflows to get green.
     steps:
+      # Both steps below shell out to scripts/codeql-alert-gate.sh, which only
+      # exists in the repository — the runner starts with an empty workspace,
+      # so the checkout must land before either of them runs.
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+
       - name: Wait for the default setup analyses
         if: github.event_name == 'push' || github.event_name == 'pull_request'
         env:

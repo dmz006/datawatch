@@ -47,6 +47,9 @@ Covered (wait-analyses unless stated):
      ("Resource not accessible by integration (HTTP 403)") exits 1 and
      the clean message is never printed.
   8. An unknown subcommand exits 2.
+  9. .github/workflows/codeql.yaml checks out the repository (actions/checkout)
+     before it invokes bash scripts/codeql-alert-gate.sh (a missing checkout
+     made every CI run fail with the script absent from the runner).
 """
 
 import os
@@ -297,6 +300,31 @@ class CodeqlAlertGateRateLimitTest(unittest.TestCase):
         proc = self.run_gate("frobnicate")
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("unknown subcommand", proc.stderr)
+
+
+# 9. The CI workflow must check out the repository before it invokes the
+# gate script: without it, the step runs `bash scripts/codeql-alert-gate.sh`
+# on an empty runner workspace and fails on every run. This test was added
+# after exactly that defect shipped once (the job invoked the script with no
+# actions/checkout step in the file). The tests above always call the script
+# from a working checkout, so none of them can catch it.
+class WorkflowInvocationTest(unittest.TestCase):
+    def test_workflow_checks_out_before_invoking_gate_script(self):
+        path = os.path.join(
+            REPO_ROOT, ".github", "workflows", "codeql.yaml")
+        with open(path) as fh:
+            lines = fh.readlines()
+        checkout = [i for i, l in enumerate(lines)
+                    if "uses:" in l and "actions/checkout" in l]
+        invoke = [i for i, l in enumerate(lines)
+                  if "bash scripts/codeql-alert-gate.sh" in l]
+        self.assertTrue(invoke,
+                        "workflow no longer invokes the gate script")
+        self.assertTrue(checkout, "workflow invokes the script but has no "
+                                  "actions/checkout step")
+        self.assertLess(min(checkout), min(invoke),
+                        "actions/checkout must precede the first invocation "
+                        "of scripts/codeql-alert-gate.sh")
 
 
 if __name__ == "__main__":
