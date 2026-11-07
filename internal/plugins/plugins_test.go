@@ -519,15 +519,24 @@ func TestRegistry_Managed_StartAndStopOnDisable(t *testing.T) {
 		t.Errorf("stop events = %d, want 1", log.count(EventServiceStop))
 	}
 
-	// …and omits it once there is no supervisor.
+	// …and once there is no supervisor the service object reflects the
+	// attach view: mode and address, no runtime state.
 	got, _ = NewAPI(r).Get("svc")
 	b, _ = json.Marshal(got)
-	var plain map[string]any
-	if err := json.Unmarshal(b, &plain); err != nil {
+	var svcPlain struct {
+		Service *struct {
+			Mode    string `json:"mode"`
+			Address string `json:"address"`
+			State   string `json:"state"`
+			PID     int    `json:"pid"`
+		} `json:"service"`
+	}
+	if err := json.Unmarshal(b, &svcPlain); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if _, has := plain["service"]; has {
-		t.Errorf("unsupervised plugin JSON has a service object: %s", b)
+	if svcPlain.Service == nil || svcPlain.Service.Mode != LifecycleManaged ||
+		svcPlain.Service.State != "" || svcPlain.Service.PID != 0 {
+		t.Errorf("unsupervised plugin service object = %+v, want mode=%q with no runtime state: %s", svcPlain.Service, LifecycleManaged, b)
 	}
 
 	// Re-enabling an eligible plugin after StartManaged starts it again.

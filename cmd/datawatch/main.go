@@ -7886,6 +7886,12 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				httpServer.AuditPluginService(ev.Plugin, ev.Action, ev.Details)
 			})
 			reg.StartManaged(ctx)
+			// Attach-only service-kind plugins: health-probe their
+			// endpoints (attach_health.go) so the API can report version,
+			// uptime and the last health check. No process is ever
+			// launched for these; the probes are read-only HTTP.
+			reg.StartAttachProbes(ctx)
+			defer reg.StopAttachProbes()
 			// Deferred so it runs on every return from runStart — signal
 			// shutdown (ctx cancelled) and normal exit alike — reaping the
 			// supervised children before the process exits.
