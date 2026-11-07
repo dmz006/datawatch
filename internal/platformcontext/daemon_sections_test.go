@@ -36,7 +36,7 @@ Use memory_recall to check similar work.
 Session: a6050001 | Task: add helper
 
 ## Constraints
-- Work only within: /home/dmz/repo
+- Work only within: /path/to/project
 - When done: output DATAWATCH_COMPLETE`
 )
 
