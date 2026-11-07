@@ -381,7 +381,7 @@ Options (listed for the operator to choose among, or to replace with their own):
 - C. A new sub-tab on a page the operator names.
 - D. No new web view in the first release. Status is read through REST, MCP, the command line and the comm channel only, and the web view follows later.
 
-Recommendation: none. This is a layout and design choice that belongs to the operator, so please say where it goes. If a default is needed to size the work, D is the cheapest and defers the choice. Nothing is decided.
+Recommendation: no placement is recommended, because this layout choice belongs to the operator; please say where it goes. If a default is needed to size the work, D is the cheapest and defers the choice. Nothing is decided.
 
 ### Question 5: Is the requester's change wins merge code adopted?
 
@@ -452,7 +452,7 @@ The requester has offered two things. Neither is in this repository, and this pa
 
 ## Summary for the issue thread
 
-Thank you for the detailed requests. We checked all six against what datawatch already has, and against our completed and open Automata. None of them is built today.
+Thank you for the detailed requests. We checked all six against what datawatch has today and our Automata. None is built.
 
 Two are possible with no code change, as skills: a per-seat inbox using discussion scopes (request 5), and a seat handoff note using the identity and memory tools (request 6). Four need a feature: read-back receipts, per-seat read state with change wins merge, server-stamped writer provenance, and wake on arrival. The operator's 2026-10-15 answer was that this builds on the existing work queue and discussion scopes and is not a parallel messaging layer; whether to extend them or build a separate feature is still an open question for the operator. Wake on arrival is the only one that spends model usage, so we suggest a kill switch and a cooldown, but whether it is in scope at all is also open.
 
