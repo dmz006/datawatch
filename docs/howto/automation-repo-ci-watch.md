@@ -97,6 +97,16 @@ That is the whole contract. `policy` and `code_or_test` share the same shape: th
 watch records the verdict and the run URL; the disposition belongs to the
 policy process or the change owner.
 
+One red that needs the job log to read: a CodeQL run that was
+red only because the gate hit the API rate limit while it was waiting for
+analyses or reading alerts. The run is red, so the watch records it as a
+failing `security` run and stays out of it the same way — a rate limit earns
+no separate classification, and nothing here re-runs the run for you. In that
+case the job log is the check: a `Rate limited` line means the gate was
+waiting on the API, so wait until the reset time it names, then push a new
+commit or start the check again yourself; a `No analysis for` line is the real
+missing-analysis timeout and the one worth investigating.
+
 ## The alert
 
 Once a run has been non-green — `failing`, `pending` or `hung` — for longer

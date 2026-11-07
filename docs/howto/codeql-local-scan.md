@@ -102,6 +102,28 @@ alerts already dismissed on GitHub are subtracted (see the `--compare` step).
    pinned version at the top of `scripts/codeql-local.sh`, re-run `--install` and
    treat comparisons made on the old version as out of date.
 
+### Red check from a rate limit
+
+The CodeQL workflow's alert-gate job makes two kinds of call to the
+code-scanning API: it waits for the default setup analyses to appear for
+the commit, and then it reads the open alerts once. Both steps treat a
+rate-limited response as wait-and-retry — the gate waits, longer when GitHub
+reports a reset time, and tries again within the job's total wait budget — so
+a rate limit can turn the run red even when nothing is wrong with the code.
+
+The step log is the check that tells the two red outcomes apart:
+
+- **`Rate limited`, with a reset time**, is a wait-and-retry that used up its
+  budget, not a finding. Wait until the reset time, then push a new commit or
+  start the check again yourself.
+- **`No analysis for`** is the real missing-analysis timeout: the API answered,
+  but the analyses never appeared within the budget. That one is worth
+  investigating.
+
+The gate's exit codes are unchanged by the rate-limit handling: they still mean
+what the table above says, and a spent rate-limit budget exits 1 with the
+rate-limit notice rather than being reported as a code-scanning result.
+
 ## Optional: run it before every push
 
 A pre-push hook scans only the languages the pushed commits touch (`.go`, `.js`,
