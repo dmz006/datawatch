@@ -139,6 +139,10 @@ type ProjectPolicy struct {
 	// ParallelWorktreePerTask: each parallel task runs in its own worktree
 	// (daemon-side key autonomous.parallel.worktree_per_task).
 	ParallelWorktreePerTask *bool `yaml:"parallel_worktree_per_task,omitempty" json:"parallel_worktree_per_task,omitempty"`
+
+	// PlatformContextEnabled overrides the global platform_context.enabled for
+	// this project's sessions (nil = use the global value).
+	PlatformContextEnabled *bool `yaml:"platform_context_enabled,omitempty" json:"platform_context_enabled,omitempty"`
 }
 
 // FailureEscalationLevel is one tier's view of the failure escalation

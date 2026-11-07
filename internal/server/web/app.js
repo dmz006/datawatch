@@ -9342,6 +9342,7 @@ const DOCS_LINKS_BY_KEY = {
   // Rules and context settings (planning record and digest).
   settings_rules_context_title: DOCS_DEFINITIONS + '#rules-and-context',
   rules_context_howto: 'howto/automata-rules-and-context.md',
+  settings_platform_context_title: DOCS_DEFINITIONS + '#platform-context',
   settings_parallel_task_group: DOCS_DEFINITIONS + '#parallel-task-worktrees',
   'autonomous.parallel.read_only_tasks': DOCS_DEFINITIONS + '#read-only-tasks',
   'autonomous.parallel.worktree_per_task': DOCS_DEFINITIONS + '#parallel-task-worktrees',
@@ -18181,6 +18182,10 @@ const GENERAL_CONFIG_FIELDS = [
     // through GET and PUT /api/autonomous/rules-context.
     { label: 'Rules and context', labelKey: 'settings_rules_context_title', docsKey: 'settings_rules_context_title', type: 'group' },
     { type: 'rules_context_card' },
+    // Platform context — the toggle and the project note. Reads GET /api/config and writes
+    // through PUT /api/config (platform_context.enabled, platform_context.note).
+    { label: 'Platform context', labelKey: 'settings_platform_context_title', docsKey: 'settings_platform_context_title', type: 'group' },
+    { type: 'platform_context_card' },
     { label: 'Ship steps', labelKey: 'settings_ship_group', docsKey: 'settings_ship_group', type: 'group' },
     { key: 'autonomous.ship.push', label: 'Ship push (off, shadow or on; default on)', labelKey: 'settings_ship_push', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
     { key: 'autonomous.ship.tag', label: 'Ship tag (off, shadow or on; default on)', labelKey: 'settings_ship_tag', type: 'select', options: ['off', 'shadow', 'on'], default: 'on' },
@@ -19308,6 +19313,8 @@ function loadGeneralConfig() {
             </div>`;
           } else if (f.type === 'rules_context_card') {
             html += '<div id="rulesContextCard"></div>';
+          } else if (f.type === 'platform_context_card') {
+            html += platformContextCardHtml(cfg && cfg.platform_context, state._daemonVersion);
           } else if (f.type === 'llm_select') {
             const opts = enabledBackends.map(n =>
               `<option value="${escHtml(n)}" ${String(val) === n ? 'selected' : ''}>${escHtml(n)}</option>`
@@ -30023,6 +30030,33 @@ window.uncommittedWorkBannerHtml = function(automaton) {
     _uncommittedWorkFilesHtml('uncommitted_work_files', files, 'uncommitted-work-files') +
     _uncommittedWorkFilesHtml('uncommitted_work_outside_scope', _uncommittedWorkStrings(h.outside_scope), 'uncommitted-work-outside') +
     reason + (open ? `<div style="margin-top:4px;">${open}</div>` : '') + `</div>`;
+};
+
+// ── Platform context settings card ──────────────────────────────────────────
+// Settings > Automata. Reads platform_context from GET /api/config and writes
+// platform_context.enabled and platform_context.note through PUT /api/config.
+// Off is a normal state, so it is a plain state line and never an alert.
+window.platformContextCardHtml = function (pc, version) {
+  pc = pc || {};
+  const on = pc.enabled !== false;
+  const ver = version ? String(version) : '—';
+  const stateText = on ? t('settings_platform_context_state_enabled', [ver]) : t('settings_platform_context_state_off', [ver]);
+  return `<div class="platform-context-card" data-platform-context="card">
+    <div class="settings-row" style="justify-content:space-between;">
+      <div class="settings-label">${escHtml(t('settings_platform_context_enabled'))}${docsLink('howto/platform-context.md', t('settings_platform_context_help'))}</div>
+      <label class="toggle-switch">
+        <input type="checkbox" id="platformContextEnabled"${on ? ' checked' : ''} onchange="saveGeneralField('platform_context.enabled', this.checked)" />
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="settings-row" style="flex-direction:column;align-items:stretch;">
+      <div class="settings-label">${escHtml(t('settings_platform_context_note'))}</div>
+      <textarea id="platformContextNote" class="form-input general-cfg-input" rows="3" style="margin-top:4px;resize:vertical;font-size:11px;"
+        onchange="saveGeneralField('platform_context.note', this.value)">${escHtml(String(pc.note || ''))}</textarea>
+      <div style="font-size:10px;color:var(--text2);margin-top:2px;">${escHtml(t('settings_platform_context_note_hint'))}</div>
+    </div>
+    <div data-platform-context="state" data-state="${on ? 'enabled' : 'off'}" role="status" style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(stateText)}</div>
+  </div>`;
 };
 
 // ── Rules and context settings card ─────────────────────────────────────────

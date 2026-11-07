@@ -11769,7 +11769,10 @@ func newConfigSetCmd() *cobra.Command {
 			"session.liveness_idle_timeout_overrides (a JSON object such as '{\"pi\":300}' or backend=seconds pairs such as pi=300,goose=0; " +
 			"an unknown backend or a non-whole-number value is refused).\n\n" +
 			"Memory ceiling keys: resource_limits.memory_share_percent (1 to 100), " +
-			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).",
+			"resource_limits.memory_floor_mb and resource_limits.memory_cap_mb (whole MB; the floor may not be above the cap).\n\n" +
+			"Platform context keys: platform_context.enabled (true|false; default true) turns the platform context " +
+			"section delivered to each session on or off, and a project can override it; " +
+			"platform_context.note (text, at most 2000 bytes; empty = none) is operator text appended to that section.",
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			cfg, err := loadConfig()

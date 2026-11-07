@@ -108,6 +108,46 @@ type MemoryConfig struct {
 	RetentionChunkDays int `yaml:"retention_chunk_days,omitempty"`
 }
 
+// PlatformContextNoteMaxLen is the longest operator note, in bytes, the config
+// surfaces accept for platform_context.note.
+const PlatformContextNoteMaxLen = 2000
+
+// PlatformContextConfig controls the platform context text delivered to sessions.
+type PlatformContextConfig struct {
+	// Enabled turns the platform context section on or off (default true; nil = true).
+	Enabled *bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Note is optional operator text appended after the platform context text
+	// inside the section. Appended only when non-empty.
+	Note string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
+// IsEnabled returns whether platform context is enabled (default true).
+func (p PlatformContextConfig) IsEnabled() bool {
+	if p.Enabled == nil {
+		return true
+	}
+	return *p.Enabled
+}
+
+// EffectiveEnabled resolves the value for a session: the project override when
+// set, otherwise the global value.
+func (p PlatformContextConfig) EffectiveEnabled(project *ProjectPolicy) bool {
+	if project != nil && project.PlatformContextEnabled != nil {
+		return *project.PlatformContextEnabled
+	}
+	return p.IsEnabled()
+}
+
+// AppendNote returns text with the Note appended after it, only when Note is
+// non-empty (after trimming whitespace).
+func (p PlatformContextConfig) AppendNote(text string) string {
+	note := strings.TrimSpace(p.Note)
+	if note == "" {
+		return text
+	}
+	return strings.TrimRight(text, "\n") + "\n\n" + note
+}
+
 // IsAutoHooks returns whether auto-hook installation is enabled (defaults to true).
 func (m MemoryConfig) IsAutoHooks() bool {
 	if m.AutoHooks == nil {
@@ -666,6 +706,10 @@ type Config struct {
 
 	// Memory controls the episodic memory system — vector-indexed project knowledge.
 	Memory MemoryConfig `yaml:"memory" json:"memory"`
+
+	// PlatformContext controls the platform context text delivered to sessions
+	// (default enabled). A ProjectPolicy override takes precedence.
+	PlatformContext PlatformContextConfig `yaml:"platform_context" json:"platform_context"`
 
 	// CrossSession controls whether spawned claude-code sessions are
 	// instructed to prefer datawatch's own audited memory/comm MCP

@@ -1818,6 +1818,11 @@ The registry check (`autonomous.checks.registry_readme`) compares the registry t
 
 The rules and context policy (`autonomous.rules_context.*`) names the files that carry a project's working rules and background. **Rules file** is one name relative to the project directory (default `AGENT.md`); **context files** are up to eight such names (default `CONTEXT.md`); **digest mode** is `off`, `no_tools` (only for backends without file tools, the default) or `all`; **digest size limit** is 0 for the default of 4096 or 512 to 65536 bytes. A project can override all four, and the older `autonomous.rules_file` and `autonomous.context_file` keys remain a fallback below the global values. Set them on the **Rules and context** card in Settings, with `GET`/`PUT /api/autonomous/rules-context`, the `rules_context_status` and `rules_context_set` MCP tools, `datawatch autonomous rules-context` or `autonomous rules` on the comm channel. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md).
 
+### Platform context
+
+The platform context is a short section of text that tells every session what datawatch is and how to work with it. The setting `platform_context.enabled` (default on) turns it on or off for all sessions; `platform_context.note` adds your own text after it (up to 2000 bytes). A project can override the enabled value with its own `platform_context_enabled`. Set it on the **Platform context** card in Settings, with `configure platform_context enabled on|off` or `configure platform_context note <text>` on the comm channel, or read it with the `platform_context_status` MCP tool. See [howto/sessions-deep-dive.md](howto/sessions-deep-dive.md#what-a-session-is-told-about-datawatch).
+
+
 ### Rules digest
 
 The rules digest is a short, deterministic summary of the rules file for a planning backend that cannot read files: every heading, and under each only the lines with a mandatory word (must, mandatory, required, never, always, "no exceptions"), plus the headings of each context file. It is cut to the digest size limit, built only for the backends the digest mode names, and cached by the file's content hash. The planning record states whether one was injected and how large it was. See [howto/automata-rules-and-context.md](howto/automata-rules-and-context.md#the-rules-digest).

@@ -4189,5 +4189,12 @@
   "memory_ceiling_none_reason": "keine Einstellungen für das Speicherlimit geladen",
   "memory_ceiling_none_reason_unenforced": "der Host hat weder einen systemd-Benutzer-Scope noch /proc",
   "memory_attempt_over_limit": "Gestoppt: Der Prozess hat mehr Speicher als das Limit von %1$s MB verbraucht (Prozess %2$s, Spitze %3$s MB)",
-  "memory_attempt_unknown_process": "unbekannt"
+  "memory_attempt_unknown_process": "unbekannt",
+  "settings_platform_context_title": "Platform context",
+  "settings_platform_context_enabled": "Platform context",
+  "settings_platform_context_help": "Docs",
+  "settings_platform_context_note": "Project note",
+  "settings_platform_context_note_hint": "Optional text appended to the platform context every session receives.",
+  "settings_platform_context_state_enabled": "Platform context is enabled (datawatch %1$s).",
+  "settings_platform_context_state_off": "Platform context is off (datawatch %1$s)."
 }

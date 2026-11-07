@@ -6699,6 +6699,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_awareness":  s.cfg.Memory.IsSessionAwareness(),
 			"session_broadcast":  s.cfg.Memory.IsSessionBroadcast(),
 		},
+		// Platform context: only the toggle and the operator note are exposed.
+		// The platform context text itself is never returned for editing.
+		"platform_context": map[string]interface{}{
+			"enabled": s.cfg.PlatformContext.IsEnabled(),
+			"note":    s.cfg.PlatformContext.Note,
+		},
 		"cross_session": map[string]interface{}{
 			"enabled": s.cfg.CrossSession.IsEnabled(),
 		},
@@ -6904,6 +6910,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["mcp.public_url"]; ok {
 		if _, verr := config.NormalizePublicURL(toString(v)); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// platform_context.note is appended to every session's context text, so an
+	// over-long value is rejected before anything is applied.
+	if v, ok := patch["platform_context.note"]; ok {
+		if n := len(toString(v)); n > config.PlatformContextNoteMaxLen {
+			http.Error(w, fmt.Sprintf("platform_context.note: too long (%d bytes, max %d)", n, config.PlatformContextNoteMaxLen), http.StatusBadRequest)
 			return
 		}
 	}
@@ -8489,6 +8503,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "memory.session_awareness":
 			val := toBool(v)
 			cfg.Memory.SessionAwareness = &val
+		case "platform_context.enabled":
+			val := toBool(v)
+			cfg.PlatformContext.Enabled = &val
+		case "platform_context.note":
+			if n := toString(v); len(n) <= config.PlatformContextNoteMaxLen {
+				cfg.PlatformContext.Note = n
+			}
 		case "cross_session.enabled":
 			val := toBool(v)
 			cfg.CrossSession.Enabled = &val
