@@ -232,9 +232,13 @@ python3 scripts/tests/test_codeql_alert_gate.py
 is
 
 ```
-Ran 8 tests in 0.218s
+Ran 8 tests in 0.228s
 OK
 ```
+
+(The run's elapsed seconds are a wall-clock figure and shift by a few
+hundredths of a second between runs; `Ran 8 tests` and `OK` are the stable
+parts, and the exit code is 0 either way.)
 
 ## Test daemon cleanup rules
 

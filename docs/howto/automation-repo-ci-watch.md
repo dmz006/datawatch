@@ -97,15 +97,15 @@ That is the whole contract. `policy` and `code_or_test` share the same shape: th
 watch records the verdict and the run URL; the disposition belongs to the
 policy process or the change owner.
 
-One red that needs the job log to read: a CodeQL run that was
-red only because the gate hit the API rate limit while it was waiting for
-analyses or reading alerts. The run is red, so the watch records it as a
-failing `security` run and stays out of it the same way — a rate limit earns
-no separate classification, and nothing here re-runs the run for you. In that
-case the job log is the check: a `Rate limited` line means the gate was
-waiting on the API, so wait until the reset time it names, then push a new
-commit or start the check again yourself; a `No analysis for` line is the real
-missing-analysis timeout and the one worth investigating.
+One red that needs the job log to read: a CodeQL run that is red only because
+the alert gate hit the API rate limit while it was waiting for the analyses
+or reading the alerts. The run is red, so Automation records it the way it
+records any other failing `security` run — as a record, and nothing more: a
+rate limit earns no separate classification, and Automation never re-runs it.
+In that case the job log is the check that tells the two reds apart: a
+`Rate limited` line means the gate was waiting on the API, so wait until the
+reset time it names; a `No analysis for` line is the real missing-analysis
+timeout and the one worth investigating.
 
 ## The alert
 

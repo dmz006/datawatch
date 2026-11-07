@@ -120,9 +120,10 @@ The step log is the check that tells the two red outcomes apart:
   but the analyses never appeared within the budget. That one is worth
   investigating.
 
-The gate's exit codes are unchanged by the rate-limit handling: they still mean
-what the table above says, and a spent rate-limit budget exits 1 with the
-rate-limit notice rather than being reported as a code-scanning result.
+The gate's exit codes are unchanged by the rate-limit handling: both steps
+still exit 0 when clean and 2 on a usage error, and a spent rate-limit budget
+exits 1 with the `Rate limited` notice — reported as a rate limit, never as a
+missing analysis or as a zero-alert read.
 
 ## Optional: run it before every push
 
