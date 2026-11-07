@@ -3105,6 +3105,15 @@ autonomous:
   # Cache file: judge_verdict_cache.json in the PRD store directory; it
   # survives daemon restarts.
   judge_verdict_cache_enabled: true
+  # Judge prompt size limit, in lines. A judge prompt longer than this is
+  # written to a file and the judge is told to read it, instead of the whole
+  # text being typed into its session. 0 turns the file route off (the full
+  # prompt is always sent). Whole number, 0 to 100000. Default 300.
+  judge_prompt_file_threshold_lines: 300
+  # Extra seconds a judge run waits for a long prompt to be delivered, added
+  # for every 1000 lines of the prompt. 0 adds no extra wait. Whole number,
+  # 0 to 3600. Default 60.
+  judge_delivery_wait_per_thousand_lines_seconds: 60
   # --- Plan review before approval (off by default) ---
   # LLM backend that reviews each PRD's plan (spec vs. decomposed stories/
   # tasks) after decompose. Empty (default) = no review; the PRD goes to
