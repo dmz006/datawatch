@@ -1858,6 +1858,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Lane:       laneForBackend(backend),
 				Role:       string(capacity.RoleWorker),
 				Project:    path.Base(taskDir),
+				Automaton:  prd.ID,
 				Automation: prd.AutomationID,
 				Kind:       "task",
 			})

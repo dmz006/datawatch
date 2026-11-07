@@ -30,8 +30,8 @@ func TestPlacementTags_APIRoundTrip(t *testing.T) {
 	s, _ := newTagSettingsServer(t)
 
 	// A default config carries the placement block: the master switch on,
-	// every built-in axis on with its conventional template except project,
-	// which is off, and no custom axes.
+	// every built-in axis on with its conventional template, and no custom
+	// axes.
 	if got, want := placementDisplay(t, s), defaultPlacementDisplay(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("GET placement = %v, want %v", got, want)
 	}

@@ -310,7 +310,7 @@ delete them; you use them to see at a glance which node ran what, on which
 peer, under which backend or lane — and to filter and group the session
 list, the dashboard and the Gantt by exactly that.
 
-### The six axes
+### The ten axes
 
 | Axis | Default tag shape | Records |
 |---|---|---|
@@ -320,10 +320,15 @@ list, the dashboard and the Gantt by exactly that.
 | `lane` | `lane:<name>` | the lane that ran the session |
 | `role` | `role:<name>` | the capacity role (e.g. `worker`) |
 | `project` | `project:<name>` | the project the work belongs to |
+| `automaton` | `automaton:<id>` | the Automaton the work belongs to |
+| `automation` | `automation:<id>` | the Automation the work runs under |
+| `stage` | `stage:<name>` | the stage the work runs in |
+| `kind` | `kind:<name>` | the kind of work (e.g. `task`) |
 
-**Defaults:** `compute`, `peer`, `backend`, `lane` and `role` are **on**.
-`project` is **off** — that axis is the one you opt into, because it repeats
-other information you already have. A master switch covers all of them.
+**Defaults:** every axis is **on** — `compute`, `peer`, `backend`, `lane`,
+`role`, `project`, `automaton`, `automation`, `stage` and `kind` — so a task
+that sets all its facts is tagged along every axis by default; turn an axis
+off with `enabled: false`. A master switch covers all of them.
 
 A tag is written **per enabled axis with a value**. A missing value is not an
 error and produces no tag: local work writes **no `peer:` tag at all**, and
@@ -430,7 +435,7 @@ Under `autonomous.tags.placement`, one key per axis, plus the master:
 | Key | Default | Meaning |
 |---|---|---|
 | `autonomous.tags.placement.enabled` | `true` | master switch; `false` turns the whole block off |
-| `autonomous.tags.placement.<axis>.enabled` | `true` (`project` is `false`) | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`) |
+| `autonomous.tags.placement.<axis>.enabled` | `true` | on/off for that axis (`<axis>` is `compute`, `peer`, `backend`, `lane`, `role`, `project`, `automaton`, `automation`, `stage`, `kind`) |
 | `autonomous.tags.placement.<axis>.template` | `<axis>:<placeholder>` (see the table above) | the tag text with the axis's placeholder |
 | `autonomous.tags.placement.custom` | empty list | user-defined axes (YAML file or full config write) |
 
