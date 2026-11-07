@@ -4189,5 +4189,12 @@
   "memory_ceiling_none_reason": "メモリ上限の設定が読み込まれていません",
   "memory_ceiling_none_reason_unenforced": "ホストに systemd ユーザースコープも /proc もありません",
   "memory_attempt_over_limit": "停止: プロセスが上限 %1$s MB を超えるメモリを使用しました (プロセス %2$s、ピーク %3$s MB)",
-  "memory_attempt_unknown_process": "不明"
+  "memory_attempt_unknown_process": "不明",
+  "automation.review.judgeOutcome.label": "判定結果",
+  "automation.review.judgeOutcome.couldNotStart": "判定を開始できませんでした",
+  "automation.review.judgeOutcome.timedOut": "判定がタイムアウトしました",
+  "automation.review.judgeOutcome.foundProblem": "判定で問題が見つかりました",
+  "automation.review.judgeOutcome.next.couldNotStart": "対応は不要です。再試行されます。",
+  "automation.review.judgeOutcome.next.timedOut": "対応は不要です。再試行されます。または「イベント」を確認してください。",
+  "automation.review.judgeOutcome.next.foundProblem": "検出内容を開いてください。"
 }

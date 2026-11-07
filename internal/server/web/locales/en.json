@@ -4189,5 +4189,12 @@
   "memory_ceiling_none_reason": "no memory limit settings are loaded",
   "memory_ceiling_none_reason_unenforced": "the host has neither a systemd user scope nor /proc",
   "memory_attempt_over_limit": "Stopped: the process used more memory than the limit of %1$s MB (process %2$s, peak %3$s MB)",
-  "memory_attempt_unknown_process": "unknown"
+  "memory_attempt_unknown_process": "unknown",
+  "automation.review.judgeOutcome.label": "Judge result",
+  "automation.review.judgeOutcome.couldNotStart": "Judge could not start",
+  "automation.review.judgeOutcome.timedOut": "Judge timed out",
+  "automation.review.judgeOutcome.foundProblem": "Judge found a problem",
+  "automation.review.judgeOutcome.next.couldNotStart": "Nothing to do — it is retried.",
+  "automation.review.judgeOutcome.next.timedOut": "Nothing to do — it is retried, or see Events.",
+  "automation.review.judgeOutcome.next.foundProblem": "Open the finding."
 }

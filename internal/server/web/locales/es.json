@@ -4189,5 +4189,12 @@
   "memory_ceiling_none_reason": "no hay ajustes de límite de memoria cargados",
   "memory_ceiling_none_reason_unenforced": "el host no tiene ni un scope de usuario de systemd ni /proc",
   "memory_attempt_over_limit": "Detenido: el proceso usó más memoria que el límite de %1$s MB (proceso %2$s, pico %3$s MB)",
-  "memory_attempt_unknown_process": "desconocido"
+  "memory_attempt_unknown_process": "desconocido",
+  "automation.review.judgeOutcome.label": "Resultado del juez",
+  "automation.review.judgeOutcome.couldNotStart": "El juez no pudo iniciar",
+  "automation.review.judgeOutcome.timedOut": "El juez agotó el tiempo",
+  "automation.review.judgeOutcome.foundProblem": "El juez encontró un problema",
+  "automation.review.judgeOutcome.next.couldNotStart": "No hay nada que hacer: se reintenta.",
+  "automation.review.judgeOutcome.next.timedOut": "No hay nada que hacer: se reintenta, o consulte Eventos.",
+  "automation.review.judgeOutcome.next.foundProblem": "Abra el hallazgo."
 }
