@@ -5903,6 +5903,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"week_start":          s.cfg.CostReport.EffectiveWeekStart(),
 			"include_peer_spend":  s.cfg.CostReport.EffectiveIncludePeerSpend(),
 		},
+		// resource_limits — the memory ceiling settings.
+		"resource_limits": map[string]interface{}{
+			"memory_share_percent": s.cfg.ResourceLimits.MemorySharePercent,
+			"memory_floor_mb":      s.cfg.ResourceLimits.MemoryFloorMB,
+			"memory_cap_mb":        s.cfg.ResourceLimits.MemoryCapMB,
+		},
 		"server": map[string]interface{}{
 			"enabled":                        s.cfg.Server.Enabled,
 			"host":                           s.cfg.Server.Host,
@@ -7405,6 +7411,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// identity.backups_to_keep: a bad value rejects the whole PUT before
 	// anything is applied, by the same rule the config file load uses.
 	if err := validateIdentityBackupsPatch(patch); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// resource_limits.*: share 1 to 100, floor not above cap; a bad value
+	// rejects the whole PUT before anything is applied.
+	if err := validateResourceLimitsPatch(s.cfg.ResourceLimits, patch); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -9501,6 +9513,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.decisions.enabled", "autonomous.decisions.folder", "autonomous.decisions.folder_glob", "autonomous.decisions.front_matter_delimiter", "autonomous.decisions.front_matter_separator", "autonomous.decisions.front_matter_field_separator", "autonomous.decisions.front_matter_keys", "autonomous.decisions.folder_withdraw_on_delete", "autonomous.decisions.clarity_mode", "autonomous.decisions.clarity_min_text_chars", "autonomous.decisions.clarity_require_tradeoffs", "autonomous.decisions.clarity_require_label", "autonomous.decisions.clarity_tracker_id_pattern", "autonomous.decisions.doc_root", "autonomous.decisions.doc_status_mode", "autonomous.decisions.doc_status_pattern", "autonomous.decisions.doc_status_template", "autonomous.decisions.follow_ups":
 			// Validated in handlePutConfig (validateDecisionRecordPatch).
 			applyDecisionRecordKey(&cfg.Autonomous.Decisions, k, v)
+		case "resource_limits.memory_share_percent":
+			// Validated in handlePutConfig (validateResourceLimitsPatch).
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemorySharePercent = n
+			}
+		case "resource_limits.memory_floor_mb":
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemoryFloorMB = n
+			}
+		case "resource_limits.memory_cap_mb":
+			if n, ok := toInt(v); ok {
+				cfg.ResourceLimits.MemoryCapMB = n
+			}
 		case "identity.backups_to_keep":
 			// Validated in handlePutConfig to a whole number >= 1.
 			if n, ok := toInt(v); ok {
@@ -11465,6 +11490,51 @@ func decisionRecordSurface(d config.AutonomousDecisionsConfig) map[string]interf
 		"doc_status_template":          d.EffectiveDocStatusTemplate(),
 		"follow_ups":                   d.EffectiveFollowUps(),
 	}
+}
+
+// validateResourceLimitsPatch checks the resource_limits.* keys in a PUT:
+// each is a whole number, share is 1 to 100, floor and cap are >= 1, and the
+// resulting floor (patched or current) is not above the resulting cap.
+func validateResourceLimitsPatch(cur config.ResourceLimitsConfig, patch map[string]interface{}) error {
+	next := cur
+	fields := []struct {
+		key string
+		dst *int
+	}{
+		{"resource_limits.memory_share_percent", &next.MemorySharePercent},
+		{"resource_limits.memory_floor_mb", &next.MemoryFloorMB},
+		{"resource_limits.memory_cap_mb", &next.MemoryCapMB},
+	}
+	touched := false
+	for _, f := range fields {
+		v, ok := patch[f.key]
+		if !ok {
+			continue
+		}
+		touched = true
+		n, whole := wholeNumber(v)
+		if !whole {
+			return fmt.Errorf("%s: %v is invalid; use a whole number", f.key, v)
+		}
+		*f.dst = n
+	}
+	if !touched {
+		return nil
+	}
+	if _, ok := patch["resource_limits.memory_share_percent"]; ok &&
+		(next.MemorySharePercent < 1 || next.MemorySharePercent > 100) {
+		return fmt.Errorf("resource_limits.memory_share_percent: %d is invalid; use 1 to 100", next.MemorySharePercent)
+	}
+	for _, f := range fields[1:] {
+		if _, ok := patch[f.key]; ok && *f.dst < 1 {
+			return fmt.Errorf("%s: %d is invalid; use a whole number >= 1", f.key, *f.dst)
+		}
+	}
+	if next.MemoryFloorMB > next.MemoryCapMB {
+		return fmt.Errorf("resource_limits.memory_floor_mb (%d) must not be above resource_limits.memory_cap_mb (%d)",
+			next.MemoryFloorMB, next.MemoryCapMB)
+	}
+	return nil
 }
 
 // validateIdentityBackupsPatch checks identity.backups_to_keep: a whole
