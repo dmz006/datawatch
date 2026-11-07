@@ -529,3 +529,26 @@ func (m *Manager) synthesizeCorrectiveWorkAttempt(prd *PRD, verdict GuardrailVer
 	}
 	return createdStory, task, nil
 }
+
+// ceilingRetryParagraph returns the fixed paragraph added to the next worker
+// prompt when the previous attempt was stopped for using more memory than its
+// limit. It returns "" when t has no attempts or the last attempt was not a
+// ceiling kill. The limit, process name and peak come from the attempt record;
+// an empty process name reads as "unknown". The caller must hold the store
+// lock when t is shared.
+func ceilingRetryParagraph(t *Task) string {
+	if t == nil || len(t.Attempts) == 0 {
+		return ""
+	}
+	a := t.Attempts[len(t.Attempts)-1]
+	if !a.MemoryKilled {
+		return ""
+	}
+	name := a.KilledProcess
+	if name == "" {
+		name = "unknown"
+	}
+	return fmt.Sprintf("The previous run was stopped because the process used more memory than the limit of %d MB (process %s, peak %d MB). "+
+		"Bound your program: avoid unbounded recursion, stream instead of holding data, cap collection sizes, and test with a small input first.",
+		a.CeilingMB, name, a.PeakMemoryMB)
+}

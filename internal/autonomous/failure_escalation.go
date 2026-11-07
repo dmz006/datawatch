@@ -97,6 +97,8 @@ type TaskAttempt struct {
 	MemoryKilled bool `json:"memory_killed,omitempty"`
 	// PeakMemoryMB is the peak memory the attempt used, in MB.
 	PeakMemoryMB int `json:"peak_memory_mb,omitempty"`
+	// CeilingMB is the memory limit, in MB, the attempt was held to.
+	CeilingMB int `json:"ceiling_mb,omitempty"`
 	// KilledProcess names the process that was using the most memory;
 	// "unknown" when not known.
 	KilledProcess string `json:"killed_process,omitempty"`
