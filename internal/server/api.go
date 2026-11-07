@@ -5189,12 +5189,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// Clone target: <data_dir>/workspaces/<profile>-<8char-random>/
 		// Random suffix prevents collision when the same profile is
 		// reused across simultaneous PRD spawns.
-		dataDir := os.Getenv("DATAWATCH_DATA_DIR")
-		if dataDir == "" {
-			home, _ := os.UserHomeDir()
-			dataDir = filepath.Join(home, ".datawatch")
-		}
-		cloneRoot := filepath.Join(dataDir, "workspaces")
+		cloneRoot := s.statePath("workspaces")
 		if err := os.MkdirAll(cloneRoot, 0o755); err != nil {
 			http.Error(w, "create workspace root: "+err.Error(), http.StatusInternalServerError)
 			return
