@@ -3220,6 +3220,8 @@ keep, `""` to clear. The task's `verification` result records
 `executor_source` (`task`, `story`, `prd`, `automation` or `global`): the
 level that supplied the backend it ran on.
 
+Judge prompt size: `autonomous.judge_prompt_file_threshold_lines` (default 300; 0 turns the file route off) hands a longer judge prompt to the judge as a file, and `autonomous.judge_delivery_wait_per_thousand_lines_seconds` (default 60) adds delivery wait per 1000 prompt lines; see `docs/howto/automation-tab.md`.
+
 **Automation model defaults.** An Automation can carry its own default
 execution, verification and planning LLM for the member Automata it runs.
 The Automation level sits between the Automaton and the global default for

@@ -447,22 +447,57 @@ env -u TMUX -u TMUX_TMPDIR rtk curl -sS -X POST http://127.0.0.1:8787/api/questi
 
 ## Judge settings
 
-Settings > General > Automata holds the settings that shape how a judge run
-receives its prompt. Each has a `?` entry that opens this section.
+A judge reads the work of an Automaton and decides whether it passes. When the
+text it is given is very long, typing it into the judge's session is slow and can
+fail. Two settings control how a long prompt reaches the judge. Settings >
+General > Automata holds both, and each has a `?` entry that opens this section.
+
+### What the file route does
+
+When a judge prompt is longer than the size limit, datawatch writes the prompt to
+a file in the Automaton's working directory and types only a short instruction
+telling the judge to read that file. A shorter prompt is typed in full, as before.
+The judge sees the same text either way.
 
 - **Judge prompt file threshold** (`autonomous.judge_prompt_file_threshold_lines`):
-  when a judge prompt is longer than this many lines it is written to a file and
-  the judge is told to read it, instead of the whole text being typed into the
-  session. `0` (the default) always sends the full prompt. Whole number, 0 to 100000.
+  the size limit, in lines. The default is `300`. Set it to `0` to turn the file
+  route off, so the full prompt is always typed in. Whole number, 0 to 100000.
 - **Judge extra wait per 1000 prompt lines**
   (`autonomous.judge_delivery_wait_per_thousand_lines_seconds`): extra seconds a
   judge run waits for a long prompt to be delivered, added for every 1000 lines
-  of the prompt. `0` (the default) adds no wait. Whole number, 0 to 3600.
+  of the prompt. The default is `60` seconds. `0` adds no extra wait. Whole
+  number, 0 to 3600.
 
 A value outside the range, or one that is not a whole number, is refused with a
-message and the saved value stays. The same two keys can be set through
-`PUT /api/config`, `datawatch config set`, the comm channel configure verb and
-the MCP autonomous config tools.
+message and the saved value stays.
+
+### See which outcome a judge had
+
+When a judge does not pass an Automaton, the Automaton shows one of three
+outcomes, in plain words, on its detail view:
+
+- **Could not start** (`judge_could_not_start`): the prompt never reached the
+  judge, so it never ran. This is an infrastructure problem, not a verdict on the
+  work. Lower the file threshold or raise the delivery wait.
+- **Timed out** (`judge_timed_out`): the judge ran but hit its time limit
+  (`autonomous.judge_timeout_seconds`).
+- **Found a problem** (`judge_found_problem`): the judge ran and blocked the work
+  with real findings to fix.
+
+The same outcome is the `judge_outcome` and `judge_outcome_text` fields of the
+Automaton's review state over REST and MCP, and each one is written to the audit
+log as `autonomous_judge_outcome`.
+
+### Tune both settings
+
+- **Settings page:** Settings > General > Automata, the two fields above.
+- **CLI:** `datawatch config set autonomous.judge_prompt_file_threshold_lines 300`
+  and `datawatch config set autonomous.judge_delivery_wait_per_thousand_lines_seconds 60`.
+- **Comm channel:** `configure autonomous.judge_prompt_file_threshold_lines=300`,
+  or `autonomous judge-policy-set judge_prompt_file_threshold_lines=300
+  judge_delivery_wait_per_thousand_lines_seconds=60`.
+- **REST and MCP:** `PUT /api/config`, `PUT /api/autonomous/config` and the
+  `autonomous_config_set` tool take the same two keys.
 
 ## Related
 
