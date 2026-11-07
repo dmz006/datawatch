@@ -69,6 +69,11 @@ func DetectUncommittedWork(ctx context.Context, dir string, run driftGitRunner) 
 		if isIgnoreFileName(f.Path) && isDaemonIgnoreChange(ctx, dir, f.Path, run) {
 			continue
 		}
+		// A modified tracked file whose only difference from HEAD is the
+		// daemon's own marked blocks is not the task's work.
+		if f.Status != "??" && daemonSectionsOnlyChange(ctx, dir, f.Path, run) {
+			continue
+		}
 		seen[f.Path] = true
 		result = append(result, f)
 	}
