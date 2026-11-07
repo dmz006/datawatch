@@ -374,6 +374,9 @@ func (m *Manager) treeHasUnpushedWork(prd *PRD, t *Task) bool {
 // output — gitProbe converts empty output into an error. The .datawatch
 // advisory-lock directory is excluded: it is datawatch's own machinery, not
 // worker output, and it must not count as unpushed work for its own holder.
+// Tracked files changed only by the daemon's own marked blocks
+// (daemonSectionsOnlyChange) are the daemon's work, not uncommitted work —
+// they never mark the tree dirty.
 func (m *Manager) treeNotClean(ctx context.Context, dir string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -381,7 +384,7 @@ func (m *Manager) treeNotClean(ctx context.Context, dir string) bool {
 	if err != nil {
 		return true // uncertain → conservative
 	}
-	return strings.TrimSpace(string(out)) != ""
+	return strings.TrimSpace(filterDaemonOnlyPorcelain(ctx, dir, string(out), runGitInCtx)) != ""
 }
 
 // emitAwaitReleaseAudit fires the autonomous_idle_wait_release audit event

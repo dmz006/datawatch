@@ -54,3 +54,40 @@ func daemonSectionsOnlyChange(ctx context.Context, dir, rel string, run driftGit
 	}
 	return platformcontext.StripDaemonSections(string(cur)) == platformcontext.StripDaemonSections(head)
 }
+
+// filterDaemonOnlyPorcelain removes from line-based `git status --porcelain`
+// output every record that reports a tracked file whose only difference from
+// HEAD is the daemon's own marked blocks (daemonSectionsOnlyChange), and
+// keeps every other line — untracked files, deletions, staged and renamed
+// entries, and anything that cannot be established either way all stay as
+// dirt. The result is the remaining dirt for a dirty-tree gate to judge: an
+// empty result means the tree is clean as far as the gate should care, a
+// non-empty one still refuses.
+func filterDaemonOnlyPorcelain(ctx context.Context, dir string, porcelain string, run driftGitRunner) string {
+	var kept []string
+	for _, line := range strings.Split(porcelain, "\n") {
+		if ignoreDaemonOnlyPorcelainLine(ctx, dir, line, run) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	return strings.Join(kept, "\n")
+}
+
+// ignoreDaemonOnlyPorcelainLine judges one line of `git status --porcelain`
+// ("XY path"). Only an unstaged modification of a tracked file (" M") is a
+// candidate: the daemon writes its marked blocks into the working copy and
+// never stages. Every other record — staged, deleted, untracked, renamed, or
+// a quoted/unparseable path — is kept, and a " M" line is dropped only when
+// daemonSectionsOnlyChange positively establishes it as daemon-only. Fails
+// closed: any doubt keeps the line.
+func ignoreDaemonOnlyPorcelainLine(ctx context.Context, dir, line string, run driftGitRunner) bool {
+	if len(line) < 4 || line[2] != ' ' || line[:2] != " M" {
+		return false
+	}
+	p := line[3:]
+	if p == "" || p[0] == '"' {
+		return false // quoted paths carry git's C-style escapes; do not interpret them here
+	}
+	return daemonSectionsOnlyChange(ctx, dir, p, run)
+}
