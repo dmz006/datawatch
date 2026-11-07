@@ -7857,6 +7857,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			TimeoutMs: cfg.Plugins.TimeoutMs,
 			Disabled:  cfg.Plugins.Disabled,
 			Managed:   cfg.Plugins.Managed,
+			HealthInterval: time.Duration(cfg.Plugins.Services.EffectiveHealthInterval()) * time.Second,
 		}
 		if pcfg.Dir == "" {
 			pcfg.Dir = filepath.Join(expandHome(cfg.DataDir), "plugins")
