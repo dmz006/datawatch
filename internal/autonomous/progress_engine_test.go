@@ -676,3 +676,24 @@ func TestProgressEngineDoesNotChangeItsInput(t *testing.T) {
 		t.Fatalf("windows were reordered: %+v", windows)
 	}
 }
+
+func TestProgressEngineArchivedFinishedWorkCountsDone(t *testing.T) {
+	cd := "2026-10-12T00:00:00Z"
+	done := peDone(t, "2026-10-13T00:00:00Z", "2026-10-13T01:00:00Z")
+	prds := []*PRD{
+		pePRD(t, "f0000001", PRDArchived, cd, done),
+		pePRD(t, "f0000002", PRDArchived, cd, done, peTask(t, TaskPending, "", "")),
+		pePRD(t, "f0000003", PRDRejected, cd, done),
+		pePRD(t, "f0000004", PRDArchived, cd),
+	}
+	recs := selectProgressRecords(prds, peOpts(t), nil)
+	if len(recs) != 1 {
+		t.Fatalf("got %d records, want 1", len(recs))
+	}
+	if recs[0].prd.ID != "f0000001" || recs[0].status != PRDCompleted {
+		t.Fatalf("got %s %s, want f0000001 completed", recs[0].prd.ID, recs[0].status)
+	}
+	if n := len(progressTasks(recs[0].prd)); n != 1 {
+		t.Fatalf("got %d tasks, want 1", n)
+	}
+}
