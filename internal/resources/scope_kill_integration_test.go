@@ -52,6 +52,7 @@ func TestScopeKillIntegration(t *testing.T) {
 	t.Cleanup(func() {
 		for _, u := range []string{allocUnit, sibUnit} {
 			_ = exec.Command("systemctl", "--user", "stop", u+".scope").Run()
+			_ = exec.Command("systemctl", "--user", "reset-failed", u+".scope").Run()
 		}
 	})
 
@@ -63,7 +64,8 @@ func TestScopeKillIntegration(t *testing.T) {
 	}
 	sib := exec.Command(bin, args...)
 	if err := sib.Start(); err != nil {
-		t.Skipf("no systemd user scope on this host (sibling start failed: %v)", err)
+		t.Logf("sibling start failed: %v", err)
+		t.Skip("no systemd user scope on this host")
 	}
 	sibDone := make(chan error, 1)
 	go func() { sibDone <- sib.Wait() }()
@@ -71,7 +73,8 @@ func TestScopeKillIntegration(t *testing.T) {
 	for !scopeUnitActive(sibUnit) {
 		select {
 		case err := <-sibDone:
-			t.Skipf("no systemd user scope on this host (sibling exited: %v)", err)
+			t.Logf("sibling exited: %v", err)
+			t.Skip("no systemd user scope on this host")
 		default:
 		}
 		if time.Now().After(deadline) {
@@ -80,12 +83,20 @@ func TestScopeKillIntegration(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Allocator scope. A background sleep keeps the cgroup alive after the
-	// allocator is killed so memory.events and memory.peak stay readable.
+	// Allocator scope. systemd's default OOMPolicy=stop tears the whole scope
+	// down on an OOM kill, removing the cgroup before it can be read, so the
+	// test sets OOMPolicy=continue; a background sleep then keeps the cgroup
+	// alive so memory.events and memory.peak stay readable.
 	allocSpec.Command = []string{"sh", "-c", `sleep 120 </dev/null >/dev/null 2>&1 & exec "$0" -test.run=^TestScopeKillAllocatorHelper$`, exe}
 	bin, args, err = ScopeCommand(allocSpec)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for i, a := range args {
+		if a == "MemoryAccounting=yes" {
+			args = append(args[:i+1], append([]string{"-p", "OOMPolicy=continue"}, args[i+1:]...)...)
+			break
+		}
 	}
 	alloc := exec.Command(bin, args...)
 	alloc.Env = append(os.Environ(), allocatorEnv+"=1")
