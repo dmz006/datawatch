@@ -326,10 +326,10 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tags":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"models":[{"name":"qwen3:1.7b"}]}`))
+			_, _ = w.Write([]byte(`{"models":[{"name":"qwen3:1.7b"}]}`))
 		case "/api/ps":
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"models":[{"name":"qwen3:1.7b","size":0,"size_vram":536870912,"details":{"num_ctx":131072}}]}`))
+			_, _ = w.Write([]byte(`{"models":[{"name":"qwen3:1.7b","size":0,"size_vram":536870912,"details":{"num_ctx":131072}}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -348,9 +348,9 @@ func TestPluginModels_DefaultSource(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/models":
-			w.Write([]byte(`{"models":["qwen3:1.7b"]}`))
+			_, _ = w.Write([]byte(`{"models":["qwen3:1.7b"]}`))
 		case "/api/stats":
-			w.Write([]byte(`{"models":{"qwen3:1.7b":7}}`))
+			_, _ = w.Write([]byte(`{"models":{"qwen3:1.7b":7}}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

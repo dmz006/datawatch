@@ -6782,13 +6782,6 @@ func (s PluginServicesConfig) LifecycleMode(service string) string {
 	return ""
 }
 
-func pluginServicesPrefix(key string) string {
-	if p := strings.TrimSuffix(key, "."); p != "" {
-		return p
-	}
-	return "plugins.services"
-}
-
 // validatePluginServices rejects the values the Effective* helpers would
 // silently paper over. It runs at Load/LoadSecure time (via validateLoaded)
 // and the PUT /api/config path reuses it, so a misconfiguration cannot land

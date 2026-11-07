@@ -66,7 +66,7 @@ func (r *Registry) StartAttachProbes(ctx context.Context) {
 // StopAttachProbes stops every attach health probe and forgets it. Safe
 // to call when nothing is running.
 func (r *Registry) StopAttachProbes() {
-	r.reconcileAttachProbes(nil)
+	r.reconcileAttachProbes(nil) //nolint:staticcheck // nil context means stop every probe
 }
 
 // AttachHealth returns the probe snapshot for a plugin, or ok=false when

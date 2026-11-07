@@ -99,7 +99,7 @@ func runPluginCLI(t *testing.T, srv *httptest.Server, c *cobra.Command, args []s
 		t.Fatalf("pipe: %v", pipeErr)
 	}
 	var runErr error
-	withServerURL(t, srv, func() error {
+	_ = withServerURL(t, srv, func() error {
 		os.Stdout = writer
 		defer func() { os.Stdout = oldStdout }()
 		runErr = c.RunE(c, args)

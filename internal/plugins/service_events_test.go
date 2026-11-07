@@ -28,8 +28,6 @@ type eventSinks struct {
 	mu      sync.Mutex
 	alerts  []recordedAlert
 	audits  []recordedAudit
-	alertsN int
-	auditsN int
 }
 
 func (s *eventSinks) addAlert(a recordedAlert) {

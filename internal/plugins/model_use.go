@@ -418,10 +418,7 @@ func formatRatio(r float64) string {
 		return fmt.Sprintf("%d", int64(r))
 	}
 	s := fmt.Sprintf("%.1f", r)
-	if strings.HasSuffix(s, "0") {
-		s = s[:len(s)-1]
-	}
-	return s
+	return strings.TrimSuffix(s, "0")
 }
 
 // RecordModelUseNodes feeds the report's per-node reachability to the

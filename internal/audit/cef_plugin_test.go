@@ -245,17 +245,6 @@ func (c pluginAuditCase) entry() Entry {
 	}
 }
 
-// pluginAuditActions returns every action in pluginAuditCases; the
-// signature table must map each one (never fall through to the generic
-// default) for every test below to be meaningful.
-func pluginAuditActions() []string {
-	out := make([]string, 0, len(pluginAuditCases))
-	for _, c := range pluginAuditCases {
-		out = append(out, c.action)
-	}
-	return out
-}
-
 func TestPluginAudit_SignatureTriples(t *testing.T) {
 	for _, c := range pluginAuditCases {
 		sigID, name, severity := cefSignature(c.action)
