@@ -45,6 +45,23 @@ type ProgressSnapshot struct {
 	Reason  string          `json:"reason"`
 	Label   string          `json:"label,omitempty"` // set on milestone snapshots
 	Metrics ProgressMetrics `json:"metrics"`
+	// Grouped is the totals by project, Automation and Automaton as they stood
+	// when the snapshot was taken, so the whole history can be read per
+	// project. Snapshots written before the field existed load with it empty.
+	Grouped ProgressGrouped `json:"grouped"`
+}
+
+// hasGroups reports whether the snapshot carries any grouped totals.
+func (s ProgressSnapshot) hasGroups() bool {
+	return s.Grouped.ByProject != nil || s.Grouped.ByAutomation != nil || s.Grouped.ByAutomaton != nil
+}
+
+// normalizeGroups fills Grouped from the metrics when the snapshot was written
+// without the top-level field but its metrics already carried the totals.
+func (s *ProgressSnapshot) normalizeGroups() {
+	if !s.hasGroups() && (s.Metrics.Grouped.ByProject != nil || s.Metrics.Grouped.ByAutomation != nil || s.Metrics.Grouped.ByAutomaton != nil) {
+		s.Grouped = s.Metrics.Grouped
+	}
 }
 
 // ProgressSnapshotStore is the JSONL-backed snapshot store, persisted next to
@@ -71,6 +88,7 @@ func NewProgressSnapshotStore(dir string) (*ProgressSnapshotStore, int, error) {
 			skipped++
 			return nil
 		}
+		snap.normalizeGroups()
 		s.snaps = append(s.snaps, snap)
 		return nil
 	})
@@ -100,7 +118,7 @@ func snapshotDate(t time.Time) string {
 // leaves one.
 func (s *ProgressSnapshotStore) RecordDaily(now time.Time, m ProgressMetrics) error {
 	date := snapshotDate(now)
-	snap := ProgressSnapshot{Date: date, TakenAt: now.UTC(), Reason: ProgressSnapshotDaily, Metrics: m}
+	snap := ProgressSnapshot{Date: date, TakenAt: now.UTC(), Reason: ProgressSnapshotDaily, Metrics: m, Grouped: m.Grouped}
 	return s.mutate(func(snaps []ProgressSnapshot) ([]ProgressSnapshot, bool) {
 		out := make([]ProgressSnapshot, 0, len(snaps)+1)
 		for _, e := range snaps {
@@ -116,7 +134,7 @@ func (s *ProgressSnapshotStore) RecordDaily(now time.Time, m ProgressMetrics) er
 // RecordMilestone always appends a milestone snapshot taken at now, tagged with
 // label.
 func (s *ProgressSnapshotStore) RecordMilestone(now time.Time, m ProgressMetrics, label string) error {
-	snap := ProgressSnapshot{Date: snapshotDate(now), TakenAt: now.UTC(), Reason: ProgressSnapshotMilestone, Label: label, Metrics: m}
+	snap := ProgressSnapshot{Date: snapshotDate(now), TakenAt: now.UTC(), Reason: ProgressSnapshotMilestone, Label: label, Metrics: m, Grouped: m.Grouped}
 	return s.mutate(func(snaps []ProgressSnapshot) ([]ProgressSnapshot, bool) {
 		return append(snaps, snap), true
 	})
@@ -227,6 +245,22 @@ type ProgressTrendPoint struct {
 	CompletedPRDs      int      `json:"completed_prds"`
 }
 
+// ProgressProjectPoint is one snapshot reduced to the counts of a single
+// project.
+type ProgressProjectPoint struct {
+	Date      string  `json:"date"`
+	Reason    string  `json:"reason"`
+	PRDs      int     `json:"prds"`
+	Done      int     `json:"done"`
+	Running   int     `json:"running"`
+	Waiting   int     `json:"waiting"`
+	Blocked   int     `json:"blocked"`
+	Tasks     int     `json:"tasks"`
+	TasksDone int     `json:"tasks_done"`
+	TasksLeft int     `json:"tasks_left"`
+	WorkHours float64 `json:"work_hours"`
+}
+
 // ProgressTrend is the points oldest first and the way the completion range is
 // moving. WidthChangePercent is the change of the range width (high minus low)
 // from the first to the last point that has a range; it is nil when Direction is
@@ -235,6 +269,10 @@ type ProgressTrend struct {
 	Points             []ProgressTrendPoint `json:"points"`
 	Direction          string               `json:"direction"`
 	WidthChangePercent *float64             `json:"width_change_percent"`
+	// Project and ProjectPoints are set when a project was asked for: the
+	// counts of that project at each snapshot that carries grouped totals.
+	Project       string                 `json:"project,omitempty"`
+	ProjectPoints []ProgressProjectPoint `json:"project_points,omitempty"`
 }
 
 // Trend builds the trend over snaps, taken in the order given (List returns
@@ -242,8 +280,17 @@ type ProgressTrend struct {
 // at the first and the last point that has one: converging when it shrank by
 // more than 10 percent, widening when it grew by more than 10 percent, flat
 // otherwise, unknown when fewer than two points have a range.
-func Trend(snaps []ProgressSnapshot) ProgressTrend {
+//
+// A non-empty project also fills the per-project series: one point for each
+// snapshot that carries grouped totals, with zero counts where the project had
+// no Automata then. Use ProjectKeyNone ("(none)") for Automata with no project.
+// Snapshots written before grouped totals existed are left out of that series.
+func Trend(snaps []ProgressSnapshot, project string) ProgressTrend {
 	t := ProgressTrend{Points: make([]ProgressTrendPoint, 0, len(snaps)), Direction: ProgressTrendUnknown}
+	if project != "" {
+		t.Project = project
+		t.ProjectPoints = []ProgressProjectPoint{}
+	}
 	var widths []float64
 	for _, s := range snaps {
 		m := s.Metrics
@@ -260,6 +307,14 @@ func Trend(snaps []ProgressSnapshot) ProgressTrend {
 			CompletedPRDs:      m.CompletedPRDs,
 		}
 		t.Points = append(t.Points, p)
+		if project != "" && s.hasGroups() {
+			g := s.Grouped.ByProject[project]
+			t.ProjectPoints = append(t.ProjectPoints, ProgressProjectPoint{
+				Date: s.Date, Reason: s.Reason,
+				PRDs: g.PRDs, Done: g.Done, Running: g.Running, Waiting: g.Waiting, Blocked: g.Blocked,
+				Tasks: g.Tasks, TasksDone: g.TasksDone, TasksLeft: g.TasksLeft, WorkHours: g.WorkHours,
+			})
+		}
 		if p.CompletionLowDays != nil && p.CompletionHighDays != nil {
 			widths = append(widths, *p.CompletionHighDays-*p.CompletionLowDays)
 		}

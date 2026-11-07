@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -301,7 +302,7 @@ func TestProgressTrendDirection(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := Trend(c.snaps)
+			got := Trend(c.snaps, "")
 			if got.Direction != c.want {
 				t.Fatalf("direction = %s, want %s", got.Direction, c.want)
 			}
@@ -324,7 +325,7 @@ func TestProgressTrendPointsAndNulls(t *testing.T) {
 		{Date: "2026-10-19", Reason: "daily", Metrics: m},
 		{Date: "2026-10-20", Reason: "milestone", Metrics: ProgressMetrics{}},
 	}
-	tr := Trend(snaps)
+	tr := Trend(snaps, "")
 	p := tr.Points[0]
 	if p.Date != "2026-10-19" || p.Reason != "daily" || *p.CompletionLowDays != 3 || *p.CompletionHighDays != 9 ||
 		p.KnownTasks != 12 || p.EstimatedTasks != 30.5 || p.Throughput3d != 2.25 || p.Utilization != 0.8 || p.CompletedPRDs != 4 {
@@ -351,7 +352,7 @@ func TestProgressTrendWidthChangePercent(t *testing.T) {
 		{Date: "2026-10-10", Metrics: snapMetrics(fp(0), fp(10), 0)},
 		{Date: "2026-10-11", Metrics: snapMetrics(fp(0), fp(5), 0)},
 	}
-	tr := Trend(snaps)
+	tr := Trend(snaps, "")
 	if tr.WidthChangePercent == nil || *tr.WidthChangePercent != -50 {
 		t.Fatalf("want -50, got %v", tr.WidthChangePercent)
 	}
@@ -360,4 +361,133 @@ func TestProgressTrendWidthChangePercent(t *testing.T) {
 func jsonMarshalForTest(v any) (string, error) {
 	b, err := json.Marshal(v)
 	return string(b), err
+}
+
+func groupedFor(project string, prds, done, tasks int) ProgressGrouped {
+	g := ProgressGroup{PRDs: prds, Done: done, Tasks: tasks, TasksDone: done, TasksLeft: tasks - done, WorkHours: float64(tasks)}
+	return ProgressGrouped{
+		Totals:       g,
+		ByProject:    map[string]ProgressGroup{project: g},
+		ByAutomation: map[string]ProgressGroup{"arc1": g},
+		ByAutomaton:  map[string]ProgressGroup{"a1": g},
+	}
+}
+
+func TestProgressSnapshotGroupedRoundTrip(t *testing.T) {
+	s, dir := newSnapStore(t)
+	m := snapMetrics(nil, nil, 1)
+	m.Grouped = groupedFor("alpha", 2, 1, 4)
+	if err := s.RecordDaily(day(20, 6), m); err != nil {
+		t.Fatal(err)
+	}
+	m2 := snapMetrics(nil, nil, 2)
+	m2.Grouped = groupedFor("alpha", 3, 2, 6)
+	if err := s.RecordMilestone(day(20, 9), m2, "completed:x"); err != nil {
+		t.Fatal(err)
+	}
+	re, skipped, err := NewProgressSnapshotStore(dir)
+	if err != nil || skipped != 0 {
+		t.Fatalf("reload: err=%v skipped=%d", err, skipped)
+	}
+	got := re.List(0, day(21, 0))
+	if len(got) != 2 {
+		t.Fatalf("want 2 snapshots, got %d", len(got))
+	}
+	if !reflect.DeepEqual(got[0].Grouped, groupedFor("alpha", 2, 1, 4)) {
+		t.Fatalf("daily grouped lost: %+v", got[0].Grouped)
+	}
+	if g := got[1].Grouped.ByProject["alpha"]; g.PRDs != 3 || g.Tasks != 6 {
+		t.Fatalf("milestone grouped lost: %+v", g)
+	}
+	raw, _ := os.ReadFile(filepath.Join(dir, progressSnapshotFile))
+	if !strings.Contains(string(raw), `"by_project"`) || !strings.Contains(string(raw), `"by_automaton"`) {
+		t.Fatalf("snapshot line missing the grouped totals: %s", raw)
+	}
+}
+
+func TestProgressSnapshotOldFormatLoads(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"date":"2026-10-18","taken_at":"2026-10-18T06:00:00Z","reason":"daily","metrics":{"completed_prds":3}}` + "\n"
+	// Written after metrics carried the totals but before the snapshot did.
+	mid := `{"date":"2026-10-19","taken_at":"2026-10-19T06:00:00Z","reason":"daily","metrics":{"completed_prds":4,"grouped":{"by_project":{"alpha":{"prds":2}}}}}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, progressSnapshotFile), []byte(old+mid), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, skipped, err := NewProgressSnapshotStore(dir)
+	if err != nil || skipped != 0 {
+		t.Fatalf("old file must load cleanly: err=%v skipped=%d", err, skipped)
+	}
+	got := s.List(0, day(21, 0))
+	if len(got) != 2 || got[0].Metrics.CompletedPRDs != 3 {
+		t.Fatalf("old snapshots not loaded: %+v", got)
+	}
+	if got[0].hasGroups() {
+		t.Fatal("a snapshot without the field must have no groups")
+	}
+	if got[1].Grouped.ByProject["alpha"].PRDs != 2 {
+		t.Fatalf("groups in metrics must be carried over: %+v", got[1].Grouped)
+	}
+	// Per-project trend skips the snapshot with no groups and never fails.
+	tr := Trend(got, "alpha")
+	if len(tr.Points) != 2 || len(tr.ProjectPoints) != 1 || tr.ProjectPoints[0].PRDs != 2 {
+		t.Fatalf("trend over old data: %+v", tr)
+	}
+	// Writing back keeps the old line loadable.
+	if err := s.RecordDaily(day(20, 6), ProgressMetrics{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProgressTrendPerProject(t *testing.T) {
+	mk := func(date string, g ProgressGrouped) ProgressSnapshot {
+		return ProgressSnapshot{Date: date, Reason: ProgressSnapshotDaily, Grouped: g}
+	}
+	both := func(a, b int) ProgressGrouped {
+		ga := ProgressGroup{PRDs: a, Done: a - 1, Tasks: a * 2, TasksDone: a, TasksLeft: a, WorkHours: 1.5}
+		gb := ProgressGroup{PRDs: b}
+		return ProgressGrouped{ByProject: map[string]ProgressGroup{"alpha": ga, "beta": gb}}
+	}
+	snaps := []ProgressSnapshot{
+		mk("2026-10-18", both(1, 1)),
+		mk("2026-10-19", both(3, 2)),
+		mk("2026-10-20", groupedFor("beta", 5, 0, 0)),       // alpha absent: zero point
+		{Date: "2026-10-21", Reason: ProgressSnapshotDaily}, // old format: no series point
+	}
+	tr := Trend(snaps, "alpha")
+	if tr.Project != "alpha" || len(tr.ProjectPoints) != 3 || len(tr.Points) != 4 {
+		t.Fatalf("alpha series: %+v", tr)
+	}
+	p := tr.ProjectPoints[1]
+	if p.Date != "2026-10-19" || p.PRDs != 3 || p.Done != 2 || p.Tasks != 6 || p.TasksDone != 3 || p.TasksLeft != 3 || p.WorkHours != 1.5 {
+		t.Fatalf("alpha point: %+v", p)
+	}
+	if z := tr.ProjectPoints[2]; z.PRDs != 0 || z.Date != "2026-10-20" {
+		t.Fatalf("absent project must be a zero point: %+v", z)
+	}
+	if b := Trend(snaps, "beta"); len(b.ProjectPoints) != 3 || b.ProjectPoints[2].PRDs != 5 {
+		t.Fatalf("beta series: %+v", b)
+	}
+	// No project: no series, and the overall points are unchanged.
+	all := Trend(snaps, "")
+	if all.Project != "" || all.ProjectPoints != nil || len(all.Points) != 4 {
+		t.Fatalf("overall trend: %+v", all)
+	}
+	// Unknown project: empty, non-nil series.
+	if u := Trend(snaps, "nope"); u.ProjectPoints == nil || len(u.ProjectPoints) != 3 || u.ProjectPoints[0].PRDs != 0 {
+		t.Fatalf("unknown project: %+v", u)
+	}
+	// JSON carries the series only when asked.
+	b, _ := json.Marshal(all)
+	if strings.Contains(string(b), "project_points") {
+		t.Fatalf("overall trend must omit project_points: %s", b)
+	}
+}
+
+func TestProgressTrendNoneProjectInHistory(t *testing.T) {
+	g := ProgressGrouped{ByProject: map[string]ProgressGroup{ProjectKeyNone: {PRDs: 2, Tasks: 3}}}
+	snaps := []ProgressSnapshot{{Date: "2026-10-20", Reason: ProgressSnapshotDaily, Grouped: g}}
+	tr := Trend(snaps, ProjectKeyNone)
+	if len(tr.ProjectPoints) != 1 || tr.ProjectPoints[0].PRDs != 2 || tr.ProjectPoints[0].Tasks != 3 {
+		t.Fatalf("(none) project series: %+v", tr.ProjectPoints)
+	}
 }

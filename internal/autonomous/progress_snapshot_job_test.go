@@ -423,3 +423,46 @@ func TestProgressSnapshotManagerStartRunsRunner(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+func TestProgressSnapshotRunnerRecordsGroupsPerProject(t *testing.T) {
+	a := pePRD(t, "a1", PRDCompleted, "2026-10-12T00:00:00Z",
+		peDone(t, "2026-10-12T01:00:00Z", "2026-10-12T03:00:00Z"))
+	a.ProjectProfile, a.AutomationID = "alpha", "arc1"
+	b := pePRD(t, "b1", PRDRunning, "2026-10-13T00:00:00Z", peTask(t, TaskPending, "", ""))
+	// b carries no project and no Automation: it is counted under (none).
+	compute := NewProgressCompute(fakeProgressSource{prds: []*PRD{a, b}}, func() ProgressSnapshotSettings {
+		return ProgressSnapshotSettings{}
+	})
+	clk := newSnapClock(time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC))
+	store, _, err := NewProgressSnapshotStore(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewProgressSnapshotRunner(store, compute, nil)
+	r.Now = clk.Now
+	if ok, err := r.EnsureDaily(context.Background()); err != nil || !ok {
+		t.Fatalf("EnsureDaily: ok=%v err=%v", ok, err)
+	}
+	if err := r.RecordMilestone(context.Background(), "completed:a1"); err != nil {
+		t.Fatal(err)
+	}
+	snaps := store.List(0, clk.Now())
+	if len(snaps) != 2 {
+		t.Fatalf("want daily and milestone, got %d", len(snaps))
+	}
+	for _, s := range snaps {
+		if s.Grouped.ByProject["alpha"].PRDs != 1 || s.Grouped.ByProject[ProjectKeyNone].PRDs != 1 {
+			t.Fatalf("%s snapshot lacks the project totals: %+v", s.Reason, s.Grouped.ByProject)
+		}
+		if s.Grouped.ByAutomation["arc1"].PRDs != 1 || s.Grouped.ByAutomation[ProgressKeyNone].PRDs != 1 {
+			t.Fatalf("%s snapshot lacks the Automation totals: %+v", s.Reason, s.Grouped.ByAutomation)
+		}
+		if len(s.Grouped.ByAutomaton) != 2 || s.Grouped.NoProject.Count != 1 {
+			t.Fatalf("%s snapshot lacks the Automaton totals: %+v", s.Reason, s.Grouped)
+		}
+	}
+	none := Trend(snaps, ProjectKeyNone)
+	if len(none.ProjectPoints) != 2 || none.ProjectPoints[0].PRDs != 1 {
+		t.Fatalf("(none) series: %+v", none.ProjectPoints)
+	}
+}
