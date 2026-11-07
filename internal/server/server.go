@@ -1333,6 +1333,13 @@ func (s *HTTPServer) SetPluginWidgets(src PluginWidgetSource, store *plugins.Wid
 	s.api.SetPluginWidgets(src, store, tokens)
 }
 
+// SetPluginTokens wires the per-plugin token-usage listing
+// (GET /api/plugins/{name}/tokens): manifest secret-ref scan +
+// service-token names. Nil disables the endpoint (handlers return 503).
+func (s *HTTPServer) SetPluginTokens(src PluginTokensSource) {
+	s.api.SetPluginTokens(src)
+}
+
 // AuditPluginService records a managed plugin service lifecycle event in
 // the audit log. The daemon passes it to the plugin registry's service
 // event sink.

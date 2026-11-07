@@ -176,6 +176,17 @@ func (a *API) Get(name string) (any, bool) {
 	return a.view(p), true
 }
 
+// Manifest returns the manifest plugin name declares, for surfaces that
+// need manifest-level fields rather than a rendered view (e.g. the
+// per-plugin token-usage listing). (zero Manifest, false) when unknown.
+func (a *API) Manifest(name string) (Manifest, bool) {
+	p, ok := a.R.Get(name)
+	if !ok {
+		return Manifest{}, false
+	}
+	return p.Manifest, true
+}
+
 // Widgets returns the widgets plugin name declares in its manifest (BL403).
 func (a *API) Widgets(name string) ([]Widget, bool) {
 	p, ok := a.R.Get(name)
