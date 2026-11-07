@@ -11,12 +11,26 @@ package server
 //
 // The scan covers every non-test .go file directly in internal/server and
 // flags any call to os.UserHomeDir(...) or os.Getenv("HOME"). A flagged call
-// is permitted only if its file and enclosing function appear in
-// statePathAllowList below, and every allow-list entry must match a current
-// hit (a stale entry is a failure, so the list cannot outlive its reason).
+// is classified exactly one of two ways, in the same test file:
 //
-// Classification of every remaining hit (verified against current code):
+//  - statePathAllowList (an allow-list constant): the call reads the
+//    operator's own workspace or their own folders — never datawatch-owned
+//    state. Every line carries a one-line reason, and every line must
+//    match a current hit (a stale line is a failure, so the list cannot
+//    outlive its reason).
+//  - statePathReportedBlockers: datawatch-owned home-derived state paths
+//    the scan still finds. These are NOT allowed; per the task they are
+//    reported as blockers. They are deliberately kept out of the allow
+//    list so the blocker stays visible, and each line must also match a
+//    current hit (if the code moves, the blocker must be re-reviewed).
 //
+// Any flagged call in a file/function on NEITHER list is a new,
+// unclassified home-derived state path and fails the test: report it as a
+// blocker, do not add it to the allow list.
+//
+// Classification of every current hit (verified against current code):
+//
+// ALLOWS — operator-owned reads, never datawatch state:
 //   - api.go handleStartSession / handleWS — default project directory for a
 //     new session: the operator's own workspace, not daemon state.
 //   - api.go handleFiles / handleFilesMkdir / handleFilesDownload — file
@@ -29,14 +43,20 @@ package server
 //     read-only, PI_CODING_AGENT_DIR environment override checked first.
 //   - v52710_channel_info.go scanStaleMCPJSON — read-only staleness check of
 //     the operator's own project MCP file ($HOME/.mcp.json).
-//   - state_paths.go dataDirPath — the designated single-source data
-//     directory path builder; its only home use expands a leading "~/..."
-//     the operator wrote, and it is never called when an explicit data
-//     directory is configured. New handlers must build state paths through
-//     this, never through os.UserHomeDir directly.
 //
-// Any datawatch-owned state path found in a file/function not listed here
-// is a blocker, not an allow-list addition.
+// BLOCKER — datawatch-owned state, reported, not allowed:
+//   - state_paths.go dataDirPath — the designated single-source data
+//     directory path builder, but with an empty dataDir it falls back to
+//     config.DefaultConfig().DataDir, which internal/config builds as
+//     $HOME/.datawatch from os.UserHomeDir() (internal/config/config.go,
+//     DefaultConfig: `DataDir: filepath.Join(home, ".datawatch")`). So
+//     datawatch-owned state is still home-derived by default, and the
+//     home read happens inside internal/config, which this scan does not
+//     cover — the guard cannot see it, which is exactly why the home use
+//     stays classified as a reported blocker instead of an allow-list
+//     exemption. Until the config package derives the default data
+//     directory without $HOME (or the default is operator-declared), this
+//     is open work, not a permission.
 
 import (
 	"go/ast"
@@ -48,39 +68,65 @@ import (
 	"testing"
 )
 
-// One-line reasons for the allow list. Entries reference these constants;
-// adding a row without a stated reason is a review rejection.
-const (
-	reasonAPIProjectDir   = "default project directory for a new session — the operator's own workspace, not daemon state"
-	reasonAPIFileBrowser  = "file browser on the operator's own workspace, not daemon state"
-	reasonFileServiceRoot = "user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix"
-	reasonPiSessionLogs   = "pi tool session JSONL logs, read-only; PI_CODING_AGENT_DIR environment override is checked first"
-	reasonOperatorMCPFile = "read-only staleness check of the operator's own project MCP file ($HOME/.mcp.json)"
-	reasonDataDirSource   = "designated single-source data dir path builder; home only expands a ~/... prefix the operator wrote"
-)
-
-// statePathAllowList is the closed allow list for home-derived path calls.
-// File and function must both match a current hit (see the scan below); a
-// row matching nothing is a stale-entry failure, a hit matching no row is a
-// new-state blocker.
-var statePathAllowList = []struct {
+// A classified call site: the file, its enclosing top-level function, and a
+// one-line reason. Adding a line without a stated reason is a review
+// rejection.
+type statePathEntry struct {
 	file   string
 	fun    string
 	reason string
-}{
-	{file: "api.go", fun: "handleStartSession", reason: reasonAPIProjectDir},
-	{file: "api.go", fun: "handleWS", reason: reasonAPIProjectDir},
-	{file: "api.go", fun: "handleFiles", reason: reasonAPIFileBrowser},
-	{file: "api.go", fun: "handleFilesMkdir", reason: reasonAPIFileBrowser},
-	{file: "api.go", fun: "handleFilesDownload", reason: reasonAPIFileBrowser},
-	{file: "bl333_file_service.go", fun: "sessionRoot", reason: reasonFileServiceRoot},
-	{file: "bl333_file_service.go", fun: "fileServiceRoot", reason: reasonFileServiceRoot},
-	{file: "bl333_file_service.go", fun: "handleFilesJSONUpload", reason: reasonFileServiceRoot},
-	{file: "bl333_file_service.go", fun: "handleFilesUpload", reason: reasonFileServiceRoot},
-	{file: "bl333_file_service.go", fun: "handleFilesDelete", reason: reasonFileServiceRoot},
-	{file: "session_progress.go", fun: "piSessionsRootServer", reason: reasonPiSessionLogs},
-	{file: "v52710_channel_info.go", fun: "scanStaleMCPJSON", reason: reasonOperatorMCPFile},
-	{file: "state_paths.go", fun: "dataDirPath", reason: reasonDataDirSource},
+}
+
+// statePathAllowList is the closed allow list for home-derived path calls.
+// Format: one line per entry, "file<TAB>function<TAB>one-line reason". A
+// row matching no current hit is a stale-entry failure; a hit matching no
+// row (and no blocker row) is a new-state blocker. Blank lines are ignored.
+const statePathAllowList = `
+	api.go	handleStartSession	default project directory for a new session — the operator's own workspace, not daemon state
+	api.go	handleWS	default project directory for a new session — the operator's own workspace, not daemon state
+	api.go	handleFiles	file browser on the operator's own workspace, not daemon state
+	api.go	handleFilesMkdir	file browser on the operator's own workspace, not daemon state
+	api.go	handleFilesDownload	file browser on the operator's own workspace, not daemon state
+	bl333_file_service.go	sessionRoot	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	bl333_file_service.go	fileServiceRoot	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	bl333_file_service.go	handleFilesJSONUpload	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	bl333_file_service.go	handleFilesUpload	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	bl333_file_service.go	handleFilesDelete	user file root — operator-chosen folder (FileServiceRoot/RootPath) or its ~/... tilde prefix
+	session_progress.go	piSessionsRootServer	pi tool session JSONL logs, read-only; PI_CODING_AGENT_DIR environment override is checked first
+	v52710_channel_info.go	scanStaleMCPJSON	read-only staleness check of the operator's own project MCP file ($HOME/.mcp.json)
+`
+
+// statePathReportedBlockers records datawatch-owned home-derived state
+// paths the scan still finds. These are reported blockers, NOT exemptions:
+// the point of keeping them in a separate constant is that they stay
+// visible as open work and can never be mistaken for an allowed read. The
+// test fails if a blocker row stops matching a current hit, so a change
+// that removes (or moves) the home-derived state forces a re-classification
+// instead of silently retiring the blocker.
+const statePathReportedBlockers = `
+	state_paths.go	dataDirPath	BLOCKER: with an empty dataDir it falls back to config.DefaultConfig().DataDir, which internal/config builds as $HOME/.datawatch from os.UserHomeDir() — datawatch-owned state is still home-derived, and the fallback lives in internal/config, outside this scan; report, do not allow-list
+`
+
+// parseStatePathList splits an "file<TAB>function<TAB>reason" constant into
+// entries, failing on malformed lines.
+func parseStatePathList(t *testing.T, name, raw string) []statePathEntry {
+	t.Helper()
+	var out []statePathEntry
+	for _, line := range strings.Split(raw, "\n") {
+		line = strings.TrimLeft(line, "\t ")
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) != 3 || fields[0] == "" || fields[1] == "" || fields[2] == "" {
+			t.Fatalf("%s: malformed line %q — expected \"file<TAB>function<TAB>one-line reason\"", name, line)
+		}
+		out = append(out, statePathEntry{file: fields[0], fun: fields[1], reason: fields[2]})
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s is empty — the constant must be listed explicitly, not inferred", name)
+	}
+	return out
 }
 
 func TestStatePathGuardNoHomeStateOutsideAllowList(t *testing.T) {
@@ -146,36 +192,53 @@ func TestStatePathGuardNoHomeStateOutsideAllowList(t *testing.T) {
 	}
 
 	if len(hits) == 0 {
-		t.Fatal("scan found no os.UserHomeDir / os.Getenv(\"HOME\") calls at all — scan machinery is broken or the allow list has gone fully stale")
+		t.Fatal("scan found no os.UserHomeDir / os.Getenv(\"HOME\") calls at all — scan machinery is broken or the classification has gone fully stale")
 	}
 
+	allowed := parseStatePathList(t, "statePathAllowList", statePathAllowList)
+	blockers := parseStatePathList(t, "statePathReportedBlockers", statePathReportedBlockers)
+
 	key := func(f, fn string) string { return f + "\x00" + fn }
-	allowed := make(map[string]bool, len(statePathAllowList))
-	for _, a := range statePathAllowList {
-		allowed[key(a.file, a.fun)] = true
+	allowedSet := make(map[string]bool, len(allowed))
+	for _, a := range allowed {
+		allowedSet[key(a.file, a.fun)] = true
+	}
+	blockerSet := make(map[string]bool, len(blockers))
+	for _, b := range blockers {
+		if allowedSet[key(b.file, b.fun)] {
+			t.Fatalf("state path guard: %s :: %s appears in BOTH statePathAllowList and statePathReportedBlockers — it is one thing: allow it (with a true reason) or keep it a blocker", b.file, b.fun)
+		}
+		blockerSet[key(b.file, b.fun)] = true
 	}
 	hitSet := make(map[string]bool, len(hits))
 	for _, h := range hits {
 		hitSet[key(h.file, h.fun)] = true
 	}
 
-	var unallowed []hit
+	var unclassified []hit
 	for _, h := range hits {
-		if !allowed[key(h.file, h.fun)] {
-			unallowed = append(unallowed, h)
+		if !allowedSet[key(h.file, h.fun)] && !blockerSet[key(h.file, h.fun)] {
+			unclassified = append(unclassified, h)
 		}
 	}
-	if len(unallowed) > 0 {
-		sort.Slice(unallowed, func(i, j int) bool { return unallowed[i].line < unallowed[j].line })
-		t.Errorf("state path guard: %d flagged call(s) outside the allow list. A datawatch-owned state path here is a blocker — do not add it to the allow list:\n", len(unallowed))
-		for _, h := range unallowed {
+	if len(unclassified) > 0 {
+		sort.Slice(unclassified, func(i, j int) bool { return unclassified[i].line < unclassified[j].line })
+		t.Errorf("state path guard: %d flagged call(s) are on NEITHER list. A datawatch-owned state path like this is a new blocker — report it, do not add it to the allow list:", len(unclassified))
+		for _, h := range unclassified {
 			t.Errorf("  %s:%d in %s", h.file, h.line, h.fun)
 		}
 	}
-	for _, a := range statePathAllowList {
+	for _, a := range allowed {
 		if !hitSet[key(a.file, a.fun)] {
 			t.Errorf("state path guard: stale allow-list entry %s :: %s (%s) — no current hit matches; remove the row", a.file, a.fun, a.reason)
 		}
+	}
+	for _, b := range blockers {
+		if !hitSet[key(b.file, b.fun)] {
+			t.Errorf("state path guard: blocker %s :: %s (%s) no longer matches a current hit — the code moved or the home-derived state is gone; re-classify it deliberately instead of letting the blocker retire silently", b.file, b.fun, b.reason)
+		}
+		// Keep the blocker in the record: every run must name it.
+		t.Logf("RECORDED BLOCKER (reported, not allowed): %s :: %s — %s", b.file, b.fun, b.reason)
 	}
 }
 
