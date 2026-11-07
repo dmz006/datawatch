@@ -479,7 +479,7 @@ func TestProgressRemainingJSONShapeIsStable(t *testing.T) {
 	if err := json.Unmarshal(top["completion"], &comp); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"by_prd_rate_days", "by_task_rate_days", "by_task_rate_24h_days", "by_worker_hours_days", "low_days", "high_days", "drivers", "method", "calendar_days"} {
+	for _, k := range []string{"by_prd_rate_days", "by_task_rate_days", "by_task_rate_24h_days", "by_worker_hours_days", "low_days", "high_days", "drivers", "method", "calendar_days", "sample_records", "sample_tasks"} {
 		if _, ok := comp[k]; !ok {
 			t.Errorf("completion lacks %q", k)
 		}
@@ -503,5 +503,38 @@ func TestProgressRemainingDoesNotChangeItsInput(t *testing.T) {
 	after, _ := json.Marshal(ProgressInput{PRDs: prds, Backlog: rows, Options: peOpts(t)})
 	if string(before) != string(after) {
 		t.Fatal("the computation changed its input")
+	}
+}
+
+func TestProgressRemainingSampleSizeCountsFinishedAndArchived(t *testing.T) {
+	arch := pePRD(t, "a0a0a0a0", PRDArchived, "2026-10-19T00:00:00Z", peDone(t, "2026-10-19T01:00:00Z", "2026-10-19T02:00:00Z"))
+	prds := append(peWorked(t), arch)
+	m := ComputeProgress(ProgressInput{PRDs: prds, Options: peOpts(t)})
+	if m.Completion.SampleRecords != m.Totals.Done || m.Completion.SampleTasks != m.Totals.TasksDone {
+		t.Fatalf("sample = %d/%d, totals = %d/%d", m.Completion.SampleRecords, m.Completion.SampleTasks, m.Totals.Done, m.Totals.TasksDone)
+	}
+	base := ComputeProgress(ProgressInput{PRDs: peWorked(t), Options: peOpts(t)})
+	if m.Completion.SampleRecords != base.Completion.SampleRecords+1 || m.Completion.SampleTasks != base.Completion.SampleTasks+1 {
+		t.Fatalf("archived finished record not counted: %d/%d vs %d/%d", m.Completion.SampleRecords, m.Completion.SampleTasks, base.Completion.SampleRecords, base.Completion.SampleTasks)
+	}
+}
+
+func TestProgressTextSamplePhrase(t *testing.T) {
+	few := CompletionRange{SampleRecords: 3, SampleTasks: 7}
+	got := progressSampleText(few)
+	if got != "based on 3 Automata and 7 tasks (too few to rely on)" {
+		t.Fatalf("few = %q", got)
+	}
+	one := progressSampleText(CompletionRange{SampleRecords: 1, SampleTasks: 1})
+	if !strings.Contains(one, "1 Automaton and 1 task") || !strings.Contains(one, "too few") {
+		t.Fatalf("one = %q", one)
+	}
+	enough := progressSampleText(CompletionRange{SampleRecords: 12, SampleTasks: 40})
+	if enough != "based on 12 Automata and 40 tasks" {
+		t.Fatalf("enough = %q", enough)
+	}
+	m := ComputeProgress(ProgressInput{PRDs: peWorked(t), Options: peOpts(t)})
+	if txt := RenderProgressText(m); !strings.Contains(txt, "based on ") {
+		t.Fatalf("text lacks sample phrase:\n%s", txt)
 	}
 }

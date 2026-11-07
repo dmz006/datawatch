@@ -167,6 +167,11 @@ func completionRange(m *ProgressMetrics, comb RemainingCombined) CompletionRange
 		c.Method[k] = v
 	}
 
+	// The rates come from the finished records kept by selectProgressRecords,
+	// which counts archived and cancelled records whose tasks all completed.
+	c.SampleRecords = m.Totals.Done
+	c.SampleTasks = m.Totals.TasksDone
+
 	tp := m.Throughput
 	c.ByPRDRateDays = divPtr(float64(comb.PRDs), tp.PRDsPerDay3d)
 	c.ByTaskRateDays = divPtr(comb.Tasks, tp.TasksPerDay)

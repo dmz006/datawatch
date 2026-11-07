@@ -29,7 +29,7 @@ const (
 	progressScopeAll            = "all"
 	progressScopeAutomationPart = "automation:"
 	progressScopeTagPart        = "tag:"
-	progressScopeTagsPart       = "tags:" // several tags, at-least-one rule
+	progressScopeTagsPart       = "tags:"      // several tags, at-least-one rule
 	progressScopeTagsAllPart    = "tags(all):" // several tags, all-of-them rule
 )
 
@@ -41,10 +41,10 @@ type ProgressOptions struct {
 	Lanes        int             `json:"lanes"`     // 0 means 5
 	GapHours     float64         `json:"gap_hours"` // 0 means 3
 	AutomationID string          `json:"automation_id"`
-	TagID        string          `json:"tag_id"`     // legacy single-tag filter; merged into TagIDs
+	TagID        string          `json:"tag_id"` // legacy single-tag filter; merged into TagIDs
 	TagIDs       []string        `json:"tag_ids,omitempty"`
 	TagMatch     string          `json:"tag_match,omitempty"` // TagMatchAny (default) or TagMatchAll
-	MemberIDs    map[string]bool `json:"member_ids"` // explicit member filter for an Automation
+	MemberIDs    map[string]bool `json:"member_ids"`          // explicit member filter for an Automation
 }
 
 // ProgressInput is everything ComputeProgress reads.
@@ -164,6 +164,10 @@ type CompletionRange struct {
 	Drivers           []string          `json:"drivers"`
 	Method            map[string]string `json:"method"`
 	CalendarDays      *float64          `json:"calendar_days"`
+	// SampleRecords and SampleTasks are the finished records and completed tasks
+	// the rates are based on (archived finished work included).
+	SampleRecords int `json:"sample_records"`
+	SampleTasks   int `json:"sample_tasks"`
 }
 
 // ProgressMetrics is the result of one computation.
