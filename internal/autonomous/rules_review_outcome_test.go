@@ -89,6 +89,10 @@ func TestRulesReviewOutcomeJudgeOutcome(t *testing.T) {
 		{"could not start", GuardrailVerdict{Outcome: "block", Category: "infra", Summary: "task delivery failed: main prompt never appeared within 60s"}, JudgeKindCouldNotStart},
 		{"timed out", GuardrailVerdict{Outcome: "block", Category: JudgeTimeoutCategory, Summary: "timed out"}, JudgeKindTimedOut},
 		{"found problem", GuardrailVerdict{Outcome: "block", Summary: "bad", Issues: []string{"x"}}, JudgeKindFoundProblem},
+		{"policy problem", GuardrailVerdict{Outcome: "block", Category: "policy", Summary: "bad"}, JudgeKindFoundProblem},
+		{"scope problem", GuardrailVerdict{Outcome: "block", Category: "scope", Summary: "bad"}, JudgeKindFoundProblem},
+		{"unparseable response", GuardrailVerdict{Outcome: "block", Category: "invalid-response"}, ""},
+		{"pass", GuardrailVerdict{Outcome: "pass"}, ""},
 		{"no judge ran", GuardrailVerdict{}, ""},
 	}
 	for _, c := range cases {

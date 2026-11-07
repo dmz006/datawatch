@@ -14,32 +14,6 @@ const (
 	RulesReviewActionAutoFixDisabled = "auto_fix_disabled"
 )
 
-// Judge outcome kinds recorded in RulesReviewOutcome.JudgeOutcome. The field
-// is empty when no judge ran (a deterministic check, or no verdict).
-const (
-	// JudgeKindCouldNotStart: the judge's main prompt was never delivered.
-	JudgeKindCouldNotStart = "judge_could_not_start"
-	// JudgeKindTimedOut: the judge hit its time limit (30 minutes by default).
-	JudgeKindTimedOut = "judge_timed_out"
-	// JudgeKindFoundProblem: the judge ran and its verdict found a problem.
-	JudgeKindFoundProblem = "judge_found_problem"
-)
-
-// RulesReviewOutcome records one blocked completion rules review.
-type RulesReviewOutcome struct {
-	Action       string   `json:"action"`
-	Findings     []string `json:"findings"`
-	Summary      string   `json:"summary"`
-	Attempt      int      `json:"attempt"`
-	RetryBudget  int      `json:"retry_budget"`
-	RetriesSpent int      `json:"retries_spent"`
-	Reason       string   `json:"reason,omitempty"`
-	// JudgeOutcome says how the judge ended: one of the JudgeKind constants,
-	// empty when no judge ran.
-	JudgeOutcome string    `json:"judge_outcome,omitempty"`
-	At           time.Time `json:"at"`
-}
-
 // newRulesReviewOutcome builds the record from a verdict. Findings are the
 // verdict's Issues, or the Summary as a single finding when there are no
 // issues; Findings is never nil.
@@ -72,7 +46,9 @@ func judgeOutcomeKind(v GuardrailVerdict) string {
 		return JudgeKindCouldNotStart
 	case IsJudgeTimeoutHold(v):
 		return JudgeKindTimedOut
-	case v.Outcome == "block" && (v.Category == "" || v.Category == "content"):
+	case v.Outcome == "block" && v.Category != "infra" && v.Category != "invalid-response":
+		// Any other block (content, policy, test, scope, verification, ...)
+		// is a judge that ran and found a problem.
 		return JudgeKindFoundProblem
 	}
 	return ""
