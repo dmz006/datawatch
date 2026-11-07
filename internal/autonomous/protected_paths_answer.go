@@ -319,6 +319,12 @@ func (m *Manager) answerProtectedPathsReject(ctx context.Context, r *protectedPa
 		}
 	}
 
+	// A restored rules file whose content equals its HEAD content once the
+	// daemon's own sections are stripped from both sides has nothing of the
+	// task's to commit, so it stays out of the restore pathspec; when that
+	// empties the list the commit is skipped, as for an empty list.
+	toCommit = m.pathspecWithoutDaemonOnlyChanges(ctx, r.dir, toCommit)
+
 	var sha string
 	if len(toCommit) > 0 {
 		var err error
