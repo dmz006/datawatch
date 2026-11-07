@@ -442,3 +442,52 @@ func TestDashboardConsoleConfigGetPUTRoundTrip(t *testing.T) {
 		t.Errorf("after PUT show_usage=true: got false")
 	}
 }
+
+func TestPlatformContextConfigGetPUTRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s := &Server{cfg: &config.Config{}, cfgPath: t.TempDir() + "/config.yaml"}
+
+	get := func() map[string]any {
+		t.Helper()
+		rr := httptest.NewRecorder()
+		s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+		var got map[string]any
+		if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+			t.Fatalf("decode GET: %v", err)
+		}
+		pc, _ := got["platform_context"].(map[string]any)
+		if pc == nil {
+			t.Fatalf("GET: platform_context block absent")
+		}
+		if len(pc) != 2 {
+			t.Errorf("platform_context must expose only enabled and note, got %v", pc)
+		}
+		return pc
+	}
+	put := func(patch map[string]any) int {
+		t.Helper()
+		b, _ := json.Marshal(patch)
+		rr := httptest.NewRecorder()
+		s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", strings.NewReader(string(b))))
+		return rr.Code
+	}
+
+	pc := get()
+	if pc["enabled"] != true || pc["note"] != "" {
+		t.Errorf("defaults: %v", pc)
+	}
+	if code := put(map[string]any{"platform_context.enabled": false, "platform_context.note": "extra"}); code != http.StatusOK {
+		t.Fatalf("PUT: want 200, got %d", code)
+	}
+	pc = get()
+	if pc["enabled"] != false || pc["note"] != "extra" {
+		t.Errorf("after PUT: %v", pc)
+	}
+	long := strings.Repeat("x", config.PlatformContextNoteMaxLen+1)
+	if code := put(map[string]any{"platform_context.note": long}); code != http.StatusBadRequest {
+		t.Errorf("over-long note: want 400, got %d", code)
+	}
+	if pc = get(); pc["note"] != "extra" {
+		t.Errorf("rejected PUT changed the note: %v", pc["note"])
+	}
+}
