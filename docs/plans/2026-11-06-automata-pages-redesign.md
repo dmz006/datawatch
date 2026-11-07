@@ -432,3 +432,8 @@ finished work counted as done, by kind, backend and Automation, with project fil
 
 - Claude budget reading, quoted: "Claude is at 89%, probably need to activate guard for a while". The reading at 23:20 on 2026-11-06 was 80%; burn since was about 1.5 points per hour at the end, far over the allowed 0.6. At 89% the weekly projection was 123% at the recent burn (running out Saturday 13:57). The burn guard ladder was set back to `lower_inflight`, `route_pi_prompt`, `hold_claude` and the guard stepped to rung 3 at 05:54 (new Claude work held, running sessions continue, mechanical work on pi-prompt). Release it when a reading shows the projection back under 99.5%.
 - Parity audit, quoted: "no parity audit until am features are done". The configuration parity audit (Automaton `70900001`) stays parked; its CI workflow change was not approved (question answered "change the spec" so the task stays blocked) until every feature is finished.
+
+## Operator and supervisor decisions, 2026-11-07 midday
+
+- Operator, quoted: "You're plan for claude is ok, dependabot issue need to be addressed, ok to proceed and fix breaking changes". Claude spend: one lane, hold back above about 0.6 points per hour. Dependabot: the dependency Automaton (`5e000001`) bumps all open pull requests including majors and fixes breaking changes.
+- Supervisor answer under that instruction, 12:22: the protected paths question for the setup-qemu pin bump in three workflow files (task `d310000f`) was approved because the change is only the pinned commit, identical to dependabot's own branch. The CodeQL workflow change of the CI rate limit fix (`30c00004`) is not a version pin (it changes the gate logic), so it still waits for the operator.
