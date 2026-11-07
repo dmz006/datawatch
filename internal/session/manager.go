@@ -5585,8 +5585,19 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	}
 	window = m.scaledDeliveryWindow(fullID, input, window)
 
+	promptLines := strings.Count(input, "\n") + 1
+	isJudge := false
+	if sess, ok := m.GetSession(fullID); ok && sess != nil {
+		isJudge = strings.HasPrefix(sess.Name, judgeSessionNamePrefix)
+	}
+
 	exited := false
+	attemptsMade := 0
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		attemptsMade = attempt
+		if isJudge {
+			m.debugf("judge prompt delivery: %d lines, attempt %d of %d, waiting up to %ds", promptLines, attempt, maxAttempts, int(window/time.Second))
+		}
 		switch outcome := m.awaitOneShotPrompt(fullID, window); outcome {
 		case oneShotReady:
 			err := m.SendInput(fullID, input, "channel-task")
@@ -5618,7 +5629,7 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 	if exited {
 		reason = "task delivery failed: session ended before the task was delivered"
 	} else {
-		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task", window, maxAttempts)
+		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task (prompt %d lines, total wait used %s)", window, maxAttempts, promptLines, window*time.Duration(attemptsMade))
 	}
 	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
 
