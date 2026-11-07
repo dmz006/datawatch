@@ -204,3 +204,87 @@ func TestProgressCLIRejectsUnreadableBody(t *testing.T) {
 		t.Errorf("error = %v", err)
 	}
 }
+
+func progressGroupedBody() []byte {
+	m := progressCLIMetrics()
+	m.Completion.SampleRecords, m.Completion.SampleTasks = 7, 31
+	raw, _ := json.Marshal(m)
+	var obj map[string]any
+	_ = json.Unmarshal(raw, &obj)
+	obj["group"] = "project"
+	obj["group_totals"] = map[string]autonomous.ProgressGroup{
+		"(none)":    {PRDs: 2, Done: 1, Tasks: 4, TasksDone: 2, TasksLeft: 2},
+		"datawatch": {PRDs: 5, Done: 3, Tasks: 20, TasksDone: 15, TasksLeft: 5},
+		"alpha":     {PRDs: 1},
+	}
+	b, _ := json.Marshal(obj)
+	return b
+}
+
+func TestProgressCLIGroupTable(t *testing.T) {
+	var uri string
+	progressCLIServer(t, progressGroupedBody(), []byte(`{}`), &uri)
+	out, err := runProgressCmd(t, "progress", "--group", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(uri, "group=project") {
+		t.Errorf("request %q lacks group=project", uri)
+	}
+	for _, want := range []string{"Totals by project", "datawatch", "(none)", "estimate sample: 7 finished Automata, 31 completed tasks"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "alpha") > strings.Index(out, "datawatch") || strings.Index(out, "datawatch") > strings.Index(out, "(none)") {
+		t.Errorf("rows not sorted with (none) last:\n%s", out)
+	}
+	if strings.Contains(out, "PRD") {
+		t.Errorf("output names PRD:\n%s", out)
+	}
+}
+
+func TestProgressCLIProjectFilter(t *testing.T) {
+	var uri string
+	progressCLIServer(t, progressGroupedBody(), []byte(`{}`), &uri)
+	out, err := runProgressCmd(t, "progress", "--project", "(none)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(uri, "group=project") || !strings.Contains(uri, "project=%28none%29") {
+		t.Errorf("request %q should carry group=project and the project", uri)
+	}
+	if strings.Contains(out, "alpha") || !strings.Contains(out, "(none)") {
+		t.Errorf("filter should keep only the (none) row:\n%s", out)
+	}
+	out, _ = runProgressCmd(t, "progress", "--project", "missing")
+	if !strings.Contains(out, `no Automata for project "missing"`) {
+		t.Errorf("unknown project not reported:\n%s", out)
+	}
+}
+
+func TestProgressCLIGroupRejectsBadAxis(t *testing.T) {
+	var uri string
+	progressCLIServer(t, progressGroupedBody(), []byte(`{}`), &uri)
+	if _, err := runProgressCmd(t, "progress", "--group", "bogus"); err == nil {
+		t.Error("bad --group should fail")
+	}
+	if _, err := runProgressCmd(t, "progress-trend", "--group", "bogus"); err == nil {
+		t.Error("bad --group should fail on the trend")
+	}
+}
+
+func TestProgressCLITrendProjectAndGroup(t *testing.T) {
+	var uri string
+	trend := `{"days":30,"points":[],"direction":"unknown","project":"datawatch","project_points":[{"date":"2026-11-01","reason":"daily","prds":5,"done":3,"tasks":20,"tasks_done":15,"tasks_left":5}]}`
+	progressCLIServer(t, progressGroupedBody(), []byte(trend), &uri)
+	out, err := runProgressCmd(t, "progress-trend", "--project", "datawatch", "--group", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Project datawatch over the same snapshots", "2026-11-01", "Totals by project", "estimate sample"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}

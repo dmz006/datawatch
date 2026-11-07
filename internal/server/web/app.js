@@ -30775,7 +30775,44 @@ function _pcSection(titleKey, body) {
   return `<div class="progress-card-section" style="margin-top:8px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t(titleKey))}</div>${body}</div>`;
 }
 
-function _pcTable(data) {
+const PC_GROUP_FIELDS = { project: 'by_project', automation: 'by_automation', automaton: 'by_automaton' };
+const PC_GROUP_AXES = [
+  ['overall', 'progress_group_overall', 'Overall'], ['project', 'progress_group_by_project', 'By project'],
+  ['automation', 'progress_group_by_automation', 'By Automation'], ['automaton', 'progress_group_by_automaton', 'By Automaton'],
+];
+// _pgT is t() with a fallback for a key the locale bundles do not carry yet.
+function _pgT(key, fallback, vars) {
+  const r = t(key, vars);
+  if (r !== key) return r;
+  return vars ? String(fallback).replace(/%(\d+)\$[sd]/g, (_, n) => (vars[parseInt(n, 10) - 1] !== undefined ? String(vars[parseInt(n, 10) - 1]) : '')) : fallback;
+}
+function _pcGroupSelector(axis) {
+  const btns = PC_GROUP_AXES.map(([id, key, fb]) => {
+    const on = id === axis;
+    return `<button type="button" class="btn-secondary progress-group-btn${on ? ' active' : ''}" data-progress-group="${id}" aria-pressed="${on}" onclick="window.setProgressGroup('${id}')" style="font-size:11px;padding:2px 8px;${on ? 'border-color:var(--accent2,#60a5fa);font-weight:600;' : ''}">${escHtml(_pgT(key, fb))}</button>`;
+  }).join('');
+  return `<div class="progress-group-selector" role="group" aria-label="${escHtml(_pgT('progress_group_label', 'Group the totals'))}" style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0;">${btns}</div>`;
+}
+// The line that says what the card is for, its state, why, and the next step.
+function _pcPurpose(data, stale) {
+  const tot = data.totals || {};
+  const state = stale ? _pgT('progress_state_stale', 'Numbers are out of date') : (tot.running > 0 ? _pgT('progress_state_running', 'Work is running') : _pgT('progress_state_idle', 'Nothing is running'));
+  const why = stale ? _pgT('progress_why_stale', 'The last refresh failed or is older than five minutes.')
+    : _pgT('progress_why_counts', '%1$s Automata, %2$s tasks left.', [_pcNumT(tot.prds), _pcNumT(tot.tasks_left)]);
+  const next = stale ? _pgT('progress_next_stale', 'Reload the card to refresh it.') : _pgT('progress_next_pick', 'Pick a grouping to see where the work sits.');
+  return `<div class="progress-card-purpose" style="font-size:12px;color:var(--text2);">${escHtml(_pgT('progress_purpose', 'How far along the Automata are and roughly when the rest will be done.'))} ` +
+    `<strong>${escHtml(state)}</strong> · ${escHtml(why)} ${escHtml(next)}</div>`;
+}
+function _pcEstimateBasis(data) {
+  const c = data.completion || {};
+  if (!_pcIsNum(c.sample_records) || !_pcIsNum(c.sample_tasks)) return '';
+  return `<div class="progress-card-estimate-basis" style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(_pgT('progress_estimate_basis', 'Estimate based on %1$s finished records and %2$s completed tasks.', [c.sample_records, c.sample_tasks]))}</div>`;
+}
+function _pcHelp() {
+  return `<a class="progress-card-help" href="/diagrams.html#docs/howto/automata-progress.md#what-it-is" target="_blank" rel="noopener" title="${escHtml(_pgT('progress_help_tip', 'Open the progress howto'))}" aria-label="${escHtml(_pgT('progress_help_label', 'Help'))}" style="color:var(--accent2,#60a5fa);text-decoration:none;font-size:11px;border:1px solid var(--accent2,#60a5fa);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;margin-left:6px;">?</a>`;
+}
+
+function _pcTable(data, axis) {
   const groups = (data && data.groups) || {};
   const cols = ['records', 'done', 'running', 'waiting', 'blocked', 'tasks', 'tasks_done', 'left', 'work_time', 'median', 'mean_task'];
   const head = cols.map(c => `<th style="text-align:right;padding:2px 6px;font-weight:600;white-space:nowrap;">${escHtml(t(PC_KEYS.col[c]))}</th>`).join('');
@@ -30787,8 +30824,15 @@ function _pcTable(data) {
       cell(_pcNum(g.tasks)) + cell(_pcNum(g.tasks_done)) + cell(_pcNum(g.tasks_left)) +
       cell(_pcHours(g.work_hours)) + cell(_pcHours(g.median_prd_wall_hours)) + cell(_pcHours(g.mean_task_hours)) + '</tr>';
   };
-  const rows = ['feature', 'bug', 'other'].filter(k => k !== 'other' || (groups.other && groups.other.prds > 0))
-    .map(k => rowHtml(t(PC_KEYS.kind[k]), groups[k])).join('');
+  let rows;
+  if (axis && axis !== 'overall') {
+    const gm = (data && data.grouped && data.grouped[PC_GROUP_FIELDS[axis]]) || {};
+    rows = Object.keys(gm).sort((a, b) => (a === '(none)') - (b === '(none)') || a.localeCompare(b))
+      .map(k => rowHtml(k === '(none)' ? _pgT('progress_group_none', '(none)') : k, gm[k])).join('');
+  } else {
+    rows = ['feature', 'bug', 'other'].filter(k => k !== 'other' || (groups.other && groups.other.prds > 0))
+      .map(k => rowHtml(t(PC_KEYS.kind[k]), groups[k])).join('');
+  }
   return `<div style="overflow-x:auto;"><table class="progress-card-table" style="border-collapse:collapse;font-size:12px;min-width:100%;"><thead><tr><th></th>${head}</tr></thead><tbody>${rows}${rowHtml(t('progress_card_row_total'), data && data.totals)}</tbody></table></div>`;
 }
 
@@ -30859,7 +30903,7 @@ window.progressCardHtml = function(state, opts) {
   state = state || {};
   const now = _pcIsNum(opts.now) ? opts.now : Date.now();
   const data = (state.data && typeof state.data === 'object') ? state.data : null;
-  const title = `<div class="cap-title">${escHtml(t('progress_card_title'))}</div>`;
+  const title = `<div class="cap-title">${escHtml(t('progress_card_title'))}${_pcHelp()}</div>`;
   const wrap = (status, inner) => `<div class="prd-capacity-card progress-card" data-progress-status="${escHtml(status)}">${title}${inner}</div>`;
   if (!data) {
     if (state.status === 'failed') {
@@ -30880,6 +30924,12 @@ window.progressCardHtml = function(state, opts) {
     banner = `<div class="progress-card-stale" role="status" style="color:var(--warning,#f59e0b);font-size:12px;">${escHtml(t('progress_card_stale'))} · ${escHtml(t('last_updated_ago', [ageSec]))}` +
       (state.error ? ` · ${escHtml(state.error)}` : '') + '</div>';
   }
+  // No open work yet: no table, just the next action.
+  if (!(data.totals && data.totals.prds > 0)) {
+    return wrap('empty', `<div class="progress-card-empty" role="status" style="color:var(--text2);">${escHtml(t('progress_empty_next'))} ` +
+      `<button type="button" class="btn-secondary progress-card-new" onclick="window.openLaunchAutomatonWizard()">${escHtml(t('fab_launch_auto'))}</button></div>`);
+  }
+  const axis = PC_GROUP_FIELDS[state.group] ? state.group : 'overall';
   const tp = data.throughput || {}, ut = data.utilization || {};
   const throughput = _pcSection('progress_card_throughput_title',
     _pcRow(t('progress_card_throughput_24h'), _pcFmt('progress_card_throughput_24h_value', [_pcNumT(tp.prds_last_24h), _pcNumT(tp.tasks_last_24h)])) +
@@ -30893,10 +30943,14 @@ window.progressCardHtml = function(state, opts) {
   const trendLabel = !dir || dir === 'unknown' ? _pcNm()
     : escHtml(_pcKey('trend', dir) ? t(_pcKey('trend', dir)) : String(dir));
   const trend = _pcSection('progress_card_trend_title', _pcRow(t('progress_card_trend_label'), trendLabel));
-  return wrap(stale ? 'stale' : 'ok', banner + _pcTable(data) + _pcRemaining(data) + _pcCompletion(data) + throughput + util + _pcWindows(data) + backlog + trend);
+  return wrap(stale ? 'stale' : 'ok', banner + _pcPurpose(data, stale) + _pcGroupSelector(axis) + _pcTable(data, axis) + _pcEstimateBasis(data) + _pcRemaining(data) + _pcCompletion(data) + throughput + util + _pcWindows(data) + backlog + trend);
 };
 
-window._progressCardState = window._progressCardState || { status: 'loading', data: null, error: '', fetchedAt: 0, trend: null, attemptedAt: 0, inflight: null };
+window.setProgressGroup = function(g) {
+  window._progressCardState.group = PC_GROUP_FIELDS[g] ? g : 'overall';
+  window.paintProgressCard();
+};
+window._progressCardState = window._progressCardState || { group: 'overall', status: 'loading', data: null, error: '', fetchedAt: 0, trend: null, attemptedAt: 0, inflight: null };
 
 // paintProgressCard draws the current state into the slot on the Automation
 // sub-tab and hides the slot on any other sub-tab.

@@ -29,7 +29,7 @@ const (
 	progressScopeAll            = "all"
 	progressScopeAutomationPart = "automation:"
 	progressScopeTagPart        = "tag:"
-	progressScopeTagsPart       = "tags:" // several tags, at-least-one rule
+	progressScopeTagsPart       = "tags:"      // several tags, at-least-one rule
 	progressScopeTagsAllPart    = "tags(all):" // several tags, all-of-them rule
 )
 
@@ -41,10 +41,10 @@ type ProgressOptions struct {
 	Lanes        int             `json:"lanes"`     // 0 means 5
 	GapHours     float64         `json:"gap_hours"` // 0 means 3
 	AutomationID string          `json:"automation_id"`
-	TagID        string          `json:"tag_id"`     // legacy single-tag filter; merged into TagIDs
+	TagID        string          `json:"tag_id"` // legacy single-tag filter; merged into TagIDs
 	TagIDs       []string        `json:"tag_ids,omitempty"`
 	TagMatch     string          `json:"tag_match,omitempty"` // TagMatchAny (default) or TagMatchAll
-	MemberIDs    map[string]bool `json:"member_ids"` // explicit member filter for an Automation
+	MemberIDs    map[string]bool `json:"member_ids"`          // explicit member filter for an Automation
 }
 
 // ProgressInput is everything ComputeProgress reads.
@@ -164,6 +164,10 @@ type CompletionRange struct {
 	Drivers           []string          `json:"drivers"`
 	Method            map[string]string `json:"method"`
 	CalendarDays      *float64          `json:"calendar_days"`
+	// SampleRecords and SampleTasks are the finished records and completed tasks
+	// the rates are based on (archived finished work included).
+	SampleRecords int `json:"sample_records"`
+	SampleTasks   int `json:"sample_tasks"`
 }
 
 // ProgressMetrics is the result of one computation.
@@ -187,6 +191,7 @@ type ProgressMetrics struct {
 	UnfiledRows      []BacklogRow             `json:"unfiled_rows"`
 	BacklogAvailable bool                     `json:"backlog_available"`
 	NotMeasured      []string                 `json:"not_measured"`
+	Grouped          ProgressGrouped          `json:"grouped"`
 }
 
 // ProgressSource supplies the Automata the engine counts.
@@ -365,10 +370,11 @@ func selectProgressRecords(prds []*PRD, o ProgressOptions, rowKinds map[string]s
 		status := NormalizePRDStatus(p.Status)
 		switch status {
 		case PRDCancelled, PRDRejected, PRDArchived:
-			// A cancelled record whose tasks all completed is merged work whose
-			// record was closed at merge time: it counts as completed. Any other
-			// cancelled, rejected or archived record is replaced or abandoned.
-			if status == PRDCancelled && allTasksCompleted(p) {
+			// A cancelled or archived record whose tasks all completed is merged
+			// work whose record was closed or filed away: it counts as completed.
+			// Any other cancelled, archived or rejected record (unfinished tasks,
+			// no tasks) is replaced or abandoned and stays excluded.
+			if (status == PRDCancelled || status == PRDArchived) && allTasksCompleted(p) {
 				status = PRDCompleted
 			} else {
 				continue
@@ -468,6 +474,47 @@ func firstTaskStart(p *PRD) (time.Time, bool) {
 	return first, found
 }
 
+// accumulateRecord adds one selected record to acc: its status count, its
+// tasks, the worker time of its completed tasks and, for a completed record,
+// its working wall time. ComputeProgress and ProgressGroupTotals share it so
+// every group is counted by the same rules.
+func accumulateRecord(acc *progressAcc, r progressRec) {
+	p := r.prd
+	acc.g.PRDs++
+	switch r.status {
+	case PRDCompleted:
+		acc.g.Done++
+	case PRDRunning, PRDPlanning:
+		acc.g.Running++
+	case PRDBlocked, PRDFailed:
+		acc.g.Blocked++
+	default:
+		acc.g.Waiting++
+	}
+	for _, t := range progressTasks(p) {
+		acc.g.Tasks++
+		if t.Status != TaskCompleted {
+			continue
+		}
+		acc.g.TasksDone++
+		if t.StartedAt != nil && t.CompletedAt != nil && t.CompletedAt.After(*t.StartedAt) {
+			h := Hours(*t.StartedAt, *t.CompletedAt)
+			acc.g.WorkHours += h
+			acc.taskHours = append(acc.taskHours, h)
+		}
+	}
+	if r.status == PRDCompleted {
+		// Time the record was actually being worked: first task start to
+		// last task completion. Approval to last update is wrong: it holds
+		// weeks of waiting and every later edit.
+		s, okS := firstTaskStart(p)
+		e, okE := lastTaskDone(p)
+		if okS && okE && e.After(s) {
+			acc.walls = append(acc.walls, Hours(s, e))
+		}
+	}
+}
+
 // ComputeProgress computes the metrics. It reads only its input.
 func ComputeProgress(in ProgressInput) ProgressMetrics {
 	o := normalizeProgressOptions(in.Options)
@@ -490,22 +537,11 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 		if acc == nil {
 			acc = accs[PRDKindOther]
 		}
-		acc.g.PRDs++
-		switch r.status {
-		case PRDCompleted:
-			acc.g.Done++
-		case PRDRunning, PRDPlanning:
-			acc.g.Running++
-		case PRDBlocked, PRDFailed:
-			acc.g.Blocked++
-		default:
-			acc.g.Waiting++
-		}
+		accumulateRecord(acc, r)
 		if !p.CreatedAt.IsZero() && (!haveFirst || p.CreatedAt.Before(first)) {
 			first, haveFirst = p.CreatedAt, true
 		}
 		for _, t := range progressTasks(p) {
-			acc.g.Tasks++
 			if t.StartedAt != nil {
 				events = append(events, *t.StartedAt)
 			}
@@ -515,27 +551,11 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 			if t.Status != TaskCompleted {
 				continue
 			}
-			acc.g.TasksDone++
 			doneTasks++
 			// The status script counts a completed task with no completion time
 			// as recent, because a missing time reads as "now".
 			if t.CompletedAt == nil || !t.CompletedAt.Before(cut24) {
 				doneTasksLast24h++
-			}
-			if t.StartedAt != nil && t.CompletedAt != nil && t.CompletedAt.After(*t.StartedAt) {
-				h := Hours(*t.StartedAt, *t.CompletedAt)
-				acc.g.WorkHours += h
-				acc.taskHours = append(acc.taskHours, h)
-			}
-		}
-		if r.status == PRDCompleted {
-			// Time the record was actually being worked: first task start to
-			// last task completion. Approval to last update is wrong: it holds
-			// weeks of waiting and every later edit.
-			s, okS := firstTaskStart(p)
-			e, okE := lastTaskDone(p)
-			if okS && okE && e.After(s) {
-				acc.walls = append(acc.walls, Hours(s, e))
 			}
 		}
 	}
@@ -628,6 +648,7 @@ func ComputeProgress(in ProgressInput) ProgressMetrics {
 	m.LeadTime, m.NotMeasured = computeLeadTime(recs)
 
 	computeRemaining(&m, in, recs)
+	m.Grouped = ProgressGroupTotals(recs)
 	return m
 }
 

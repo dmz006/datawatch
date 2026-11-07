@@ -317,3 +317,81 @@ func progressParityCommReply(t *testing.T, srv *httptest.Server, text string) st
 	r.SetWebPort(port)
 	return strings.Join(r.HandleTestMessage(text), "\n")
 }
+
+// progressGroupAxes is the set of grouping options every surface offers.
+var progressGroupAxes = []string{"project", "automation", "automaton"}
+
+// TestProgressGroupingParity checks that REST, MCP, the CLI and the comm
+// channel offer the same grouping options (project, automation, automaton),
+// refuse anything else, and each show the (none) group for records with no
+// project or Automation.
+func TestProgressGroupingParity(t *testing.T) {
+	srv := progressParityDaemon(t)
+	mcpSrv := progressParityMCP(t, srv)
+
+	// Every surface names every option in its own help text.
+	var mcpHelp string
+	tools, err := mcpSrv.ListTools()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range tools {
+		if tool.Name == "autonomous_progress" {
+			mcpHelp = tool.Description + " " + string(tool.InputSchema)
+		}
+	}
+	var cliHelp string
+	for _, c := range newAutonomousCmd().Commands() {
+		if c.Name() == "progress" {
+			if f := c.Flags().Lookup("group"); f != nil {
+				cliHelp = f.Usage
+			}
+		}
+	}
+	commErr := progressParityCommReply(t, srv, "progress group=bogus")
+	resp, err := http.Get(srv.URL + "/api/autonomous/progress?group=bogus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	errBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("REST group=bogus = %d; want 400", resp.StatusCode)
+	}
+	restErr := string(errBody)
+	for name, help := range map[string]string{"MCP": mcpHelp, "CLI": cliHelp, "comm channel": commErr, "REST": restErr} {
+		if help == "" {
+			t.Errorf("%s has no grouping help text", name)
+			continue
+		}
+		for _, axis := range progressGroupAxes {
+			if !strings.Contains(help, axis) {
+				t.Errorf("%s does not name the grouping option %q: %s", name, axis, help)
+			}
+		}
+	}
+	if !strings.Contains(cliHelp, "(none)") {
+		t.Errorf("CLI help does not name the (none) group: %s", cliHelp)
+	}
+
+	for _, axis := range progressGroupAxes {
+		t.Run(axis, func(t *testing.T) {
+			rest := progressParityGet(t, srv.URL, "/api/autonomous/progress?group="+axis)
+			restObj := progressParityDecode(t, "REST body", rest)
+			totals, _ := restObj["group_totals"].(map[string]any)
+			// Every Automaton has an id, so only project and automation can have
+			// a (none) group.
+			if totals == nil || (axis != "automaton" && totals["(none)"] == nil) {
+				t.Fatalf("REST group=%s has no (none) group: %s", axis, rest)
+			}
+			cli := progressParityDecode(t, "CLI --json", progressParityCLIBody(t, srv, "progress", "--group", axis))
+			viaMCP := progressParityDecode(t, "MCP result", progressParityMCPBody(t, mcpSrv, "autonomous_progress", map[string]any{"group": axis}))
+			if !reflect.DeepEqual(restObj, cli) || !reflect.DeepEqual(restObj, viaMCP) {
+				t.Errorf("group=%s objects differ\nREST: %s", axis, rest)
+			}
+			if reply := progressParityCommReply(t, srv, "progress group="+axis); axis != "automaton" && !strings.Contains(reply, "(none)") {
+				t.Errorf("comm reply for group=%s does not show the (none) group:\n%s", axis, reply)
+			}
+		})
+	}
+}

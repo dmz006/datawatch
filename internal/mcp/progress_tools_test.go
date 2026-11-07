@@ -55,7 +55,7 @@ func TestProgressToolShapes(t *testing.T) {
 	if p.Name != "autonomous_progress" {
 		t.Fatalf("name = %q", p.Name)
 	}
-	for _, k := range []string{"automation_id", "tags", "tag_match", "since", "until"} {
+	for _, k := range []string{"automation_id", "tags", "tag_match", "group", "project", "since", "until"} {
 		if _, ok := p.InputSchema.Properties[k]; !ok {
 			t.Errorf("autonomous_progress lacks the %s parameter", k)
 		}
@@ -67,7 +67,7 @@ func TestProgressToolShapes(t *testing.T) {
 	if tr.Name != "autonomous_progress_trend" {
 		t.Fatalf("name = %q", tr.Name)
 	}
-	for _, k := range []string{"days", "tags", "tag_match"} {
+	for _, k := range []string{"days", "tags", "tag_match", "group", "project"} {
 		if _, ok := tr.InputSchema.Properties[k]; !ok {
 			t.Errorf("autonomous_progress_trend lacks the %s parameter", k)
 		}
@@ -185,5 +185,34 @@ func TestProgressToolsWithoutLoopback(t *testing.T) {
 	s := &Server{}
 	if _, err := s.handleAutonomousProgress(context.Background(), callReq(nil)); err == nil {
 		t.Fatal("want an error when the REST loopback is unavailable")
+	}
+}
+
+func TestProgressToolsForwardGroupAndProject(t *testing.T) {
+	var path, rawQuery string
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		path, rawQuery = r.URL.Path, r.URL.RawQuery
+		_, _ = w.Write([]byte(`{}`))
+	})
+	args := map[string]any{"group": "project", "project": "alpha"}
+	if _, err := s.handleAutonomousProgress(context.Background(), callReq(args)); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/api/autonomous/progress" || rawQuery != "group=project&project=alpha" {
+		t.Fatalf("progress proxied %s?%s", path, rawQuery)
+	}
+	if _, err := s.handleAutonomousProgressTrend(context.Background(), callReq(args)); err != nil {
+		t.Fatal(err)
+	}
+	if path != "/api/autonomous/progress/trend" || rawQuery != "group=project&project=alpha" {
+		t.Fatalf("trend proxied %s?%s", path, rawQuery)
+	}
+	for _, g := range []string{"automation", "automaton"} {
+		if _, err := s.handleAutonomousProgress(context.Background(), callReq(map[string]any{"group": g})); err != nil {
+			t.Fatal(err)
+		}
+		if rawQuery != "group="+g {
+			t.Fatalf("group %s proxied %q", g, rawQuery)
+		}
 	}
 }

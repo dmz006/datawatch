@@ -1,9 +1,10 @@
 // REST surface for the progress metrics.
 //
 //   GET /api/autonomous/progress        the metrics object
-//                                       (query: automation_id, tag_id, since, until)
+//                                       (query: automation_id, tag_id, since, until,
+//                                       group = project, automation or automaton)
 //   GET /api/autonomous/progress/trend  the saved daily snapshots, reduced to a trend
-//                                       (query: days, default 30, 1..365)
+//                                       (query: days, default 30, 1..365, project)
 //
 // Both are read-only and return the same object the MCP tools, the CLI, the
 // comm channels and the PWA read.
@@ -205,6 +206,36 @@ func (s *Server) computeProgress(opts autonomous.ProgressOptions) autonomous.Pro
 	return autonomous.CollectProgress(src, loadProgressBacklog(backlogPath), loadProgressWindows(backlogPath), opts)
 }
 
+// Progress group axes accepted by the group query parameter.
+const (
+	progressGroupProject    = "project"
+	progressGroupAutomation = "automation"
+	progressGroupAutomaton  = "automaton"
+)
+
+// progressGroupParam reads the optional group query value. It returns "" when
+// absent and an error for anything but project, automation or automaton.
+func progressGroupParam(q map[string][]string) (string, error) {
+	vals := q["group"]
+	if len(vals) == 0 || strings.TrimSpace(vals[0]) == "" {
+		return "", nil
+	}
+	g := strings.ToLower(strings.TrimSpace(vals[0]))
+	switch g {
+	case progressGroupProject, progressGroupAutomation, progressGroupAutomaton:
+		return g, nil
+	}
+	return "", &progressParamError{"group: " + strconv.Quote(vals[0]) + " is not one of project, automation, automaton"}
+}
+
+// progressGroupedResponse is the metrics object plus the totals of one chosen
+// group axis, returned when the group query parameter is given.
+type progressGroupedResponse struct {
+	autonomous.ProgressMetrics
+	Group       string                              `json:"group"`
+	GroupTotals map[string]autonomous.ProgressGroup `json:"group_totals"`
+}
+
 // handleAutonomousProgress serves GET /api/autonomous/progress.
 func (s *Server) handleAutonomousProgress(w http.ResponseWriter, r *http.Request) {
 	if s.autonomousMgr == nil {
@@ -223,7 +254,29 @@ func (s *Server) handleAutonomousProgress(w http.ResponseWriter, r *http.Request
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	writeJSONOK(w, s.computeProgress(opts))
+	group, err := progressGroupParam(r.URL.Query())
+	if err != nil {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	m := s.computeProgress(opts)
+	if group == "" {
+		writeJSONOK(w, m)
+		return
+	}
+	var totals map[string]autonomous.ProgressGroup
+	switch group {
+	case progressGroupProject:
+		totals = m.Grouped.ByProject
+	case progressGroupAutomation:
+		totals = m.Grouped.ByAutomation
+	default:
+		totals = m.Grouped.ByAutomaton
+	}
+	if totals == nil {
+		totals = map[string]autonomous.ProgressGroup{}
+	}
+	writeJSONOK(w, progressGroupedResponse{ProgressMetrics: m, Group: group, GroupTotals: totals})
 }
 
 // progressTrendResponse is the body of GET /api/autonomous/progress/trend.
@@ -232,6 +285,9 @@ type progressTrendResponse struct {
 	Scope     string                          `json:"scope"`
 	Points    []autonomous.ProgressTrendPoint `json:"points"`
 	Direction string                          `json:"direction"`
+	// Project and ProjectPoints answer the project query argument.
+	Project       string                            `json:"project,omitempty"`
+	ProjectPoints []autonomous.ProgressProjectPoint `json:"project_points,omitempty"`
 }
 
 // handleAutonomousProgressTrend serves GET /api/autonomous/progress/trend.
@@ -268,11 +324,13 @@ func (s *Server) handleAutonomousProgressTrend(w http.ResponseWriter, r *http.Re
 			snaps = store.List(days, s.progressClock())
 		}
 	}
-	t := autonomous.Trend(snaps)
+	t := autonomous.Trend(snaps, q.Get("project"))
 	writeJSONOK(w, progressTrendResponse{
-		Days:      days,
-		Scope:     autonomous.ProgressScope(autonomous.ProgressOptions{TagIDs: tags, TagMatch: tagMatch}),
-		Points:    t.Points,
-		Direction: t.Direction,
+		Days:          days,
+		Scope:         autonomous.ProgressScope(autonomous.ProgressOptions{TagIDs: tags, TagMatch: tagMatch}),
+		Points:        t.Points,
+		Direction:     t.Direction,
+		Project:       t.Project,
+		ProjectPoints: t.ProjectPoints,
 	})
 }
