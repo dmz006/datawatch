@@ -2857,8 +2857,10 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
 		inv.GuardrailPinned = pinned
 	}
+	inv.scriptLaunch = m.planVerifyLaunch(prd, t)
 	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
 	if inv.ScriptRan {
+		m.recordVerifyCeiling(t, inv.scriptLaunch)
 		m.noteTaskCommand(t.ID, t.VerificationScript, inv.ScriptExitCode, inv.ScriptOutput)
 	}
 	for _, g := range guardrails {
@@ -3041,7 +3043,7 @@ func prepareScriptEvidence(inv *GuardrailInvocation, script, projectDir string) 
 	if script == "" {
 		return false
 	}
-	output, exitCode, err := runVerificationScript(script, projectDir)
+	output, exitCode, err := runVerificationScriptCapped(script, projectDir, inv.scriptLaunch)
 	inv.ScriptRan = true
 	inv.ScriptExitCode = exitCode
 	inv.ScriptOutput = output
