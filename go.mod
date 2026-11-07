@@ -66,3 +66,5 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+replace github.com/klauspost/compress => github.com/klauspost/compress v1.18.7
