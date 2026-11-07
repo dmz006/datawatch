@@ -22,17 +22,15 @@ import (
 )
 
 // testServerWithDir returns a minimal Server whose channel routing config
-// lives in a temp dir, and a cleanup function.
+// lives in a temp dir (via its configured data directory), and a cleanup
+// function.
 func testServerWithDir(t *testing.T) (*Server, string) {
 	t.Helper()
 	dir := t.TempDir()
-	// Override UserHomeDir resolution by pointing the routing path at dir.
-	// We do this by writing the file ourselves and using handleChannelRouting
-	// indirectly via the path helper — no patch needed since channelRoutingPath
-	// uses os.UserHomeDir. We mount a sub-dir here and override below.
-	s := &Server{token: "admin-token"}
-	// Monkey-patch: set the home via env so os.UserHomeDir returns dir.
-	t.Setenv("HOME", dir)
+	// channelRoutingPath is built on s.statePath, so setting the data
+	// directory roots the config file under the temp dir with no HOME
+	// patching needed.
+	s := &Server{token: "admin-token", dataDir: dir}
 	return s, dir
 }
 

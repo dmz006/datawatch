@@ -1,8 +1,8 @@
 // BL331 — /api/channel/routing REST handler.
 //
 // Stores a simple JSON config that maps channel identity patterns to
-// federation peer names and automata configs. The config is persisted
-// to ~/.datawatch/channel_routing.json.
+// federation peer names and automata configs. The config is persisted to
+// channel_routing.json under the configured data directory
 //
 // Routes:
 //
@@ -35,9 +35,10 @@ type channelRoutingConfig struct {
 	Rules []channelRoutingRule `json:"rules"`
 }
 
+// channelRoutingPath returns the channel routing config path under this
+// server's configured data directory (see Server.statePath).
 func (s *Server) channelRoutingPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".datawatch", "channel_routing.json")
+	return s.statePath("channel_routing.json")
 }
 
 func (s *Server) handleChannelRouting(w http.ResponseWriter, r *http.Request) {
