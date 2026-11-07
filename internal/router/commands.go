@@ -1883,7 +1883,7 @@ alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 capacity                        show Automata capacity pools, holders and wait queue
 capacity admission <backend> [node] [model]  would a start be admitted now, queued or moved elsewhere (changes nothing)
-progress [automation=<id>] [tag=<id>] [since=<date>] [until=<date>]  Automata progress: counts, rates, work left, completion range
+progress [automation=<id>] [project=<id>] [automaton=<id>] [group=<project|automation|automaton>] [tag=<id>] [since=<date>] [until=<date>]  Automata progress: counts, rates, work left, completion range, totals by group
 progress trend [days]           how the completion range moved over the saved daily snapshots
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
