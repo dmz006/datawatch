@@ -327,3 +327,135 @@ Status: documents only, nothing decided. This section lists, for each feature pr
 
 - The earlier section "How the building blocks behave today" says the push drops every error. The code in `internal/server/bl332_discussion_sync.go` does drop errors (the comment on the function says they are logged, but no log call exists in it). The earlier statement stands and the comment is wrong. This record does not change the code.
 - Whether old code skips or rejects an unknown log record type was not verified in this pass, and is marked above as unchecked.
+
+## Decisions for the operator
+
+Status: questions only, documents only, nothing decided. Each question is one decision. Each lists the options and a recommendation. The recommendation is advice, and no option is chosen until the operator answers. The facts behind the questions come from the sections above and were checked against `docs/howto/discussion-scopes.md`, `docs/plans/README.md` (rows 390, 412 and 414, and the tracker item BL446), `internal/server/bl332_discussion_scope.go`, `internal/server/bl332_discussion_sync.go`, `internal/mcp/bl357_queue.go`, `internal/mcp/bl358_discussion_subscribe.go` and `internal/server/web/app.js` (the Discussion Scopes card in Settings, General).
+
+### Question 1: Build a separate mail feature, or extend the work queue and the discussion scopes?
+
+The work queue (`queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list`) is role based, lives on one daemon and has no per-recipient addressing (`internal/mcp/bl357_queue.go`). The discussion scopes already replicate entries between peers, keep a write ahead log and page by cursor (`internal/server/bl332_discussion_sync.go`, `internal/mcp/bl332_discussion_tools.go`). The operator's answer of 2026-10-15 said the work builds on those and is not a parallel messaging layer.
+
+Options:
+
+- A. Extend the discussion scopes (stable message identifier, receipts, read markers, server-set stamps, wake on the existing subscription). The work queue stays as it is.
+- B. Extend the work queue with per-recipient addressing and cross-node replication, and leave the discussion scopes as they are.
+- C. Build a separate mail feature with its own store and routes.
+- D. Build nothing yet and publish only the two skills (requests 5 and 6).
+
+Recommendation: A, with D done first. The discussion scopes already carry the replication and the log, and the queue would need both added. C contradicts the 2026-10-15 answer. Nothing is decided.
+
+### Question 2: Is wake on arrival in scope?
+
+Wake on arrival is the only one of the six requests that spends model usage (see "Downsides of each proposed feature", item 4). Today a subscription only sends input to a session that is already running, and only for a write made through MCP on the same node (`internal/mcp/bl358_discussion_subscribe.go`).
+
+Options:
+
+- A. In scope, in the first release of the work, with the kill switch off by default, a cooldown and a loop guard.
+- B. In scope, but as a later step after receipts and provenance exist, so a sender allow list can be trusted.
+- C. Out of scope. Use a scheduled spawn that polls, as a stopgap the requester accepts.
+
+Recommendation: B. A wake that trusts a caller-declared sender is unsafe, and provenance comes first. The stopgap in C costs a session start on every poll. Nothing is decided.
+
+### Question 3: How is provenance forgery by a peer handled?
+
+The origin peer and the role on an entry are values the caller sends. The server does not set them from the authenticated identity (`internal/server/bl332_discussion_sync.go`). A peer allowed to write can therefore claim to be a sibling.
+
+Options:
+
+- A. Server-set stamp fields (stamp kind, writing seat, writing node) kept apart from a caller-declared field, as described in request 3. This narrows forgery to the strength of the token.
+- B. Option A plus a tamper-evident chain over the entries, so a direct append to the log file is caught as well as detected.
+- C. Leave the fields as declared and treat provenance as advisory only, shown with an unverified label.
+- D. Restrict who may write to a discussion with a per-discussion allow list of peers, and add no stamp.
+
+Recommendation: A now, with B as its own later decision, because a chain is a larger change. A is the minimum that makes a sender allow list for wake meaningful. Nothing is decided.
+
+### Question 4: Where does any new view sit in the web interface?
+
+This record does not assume a place. The current discussion view is the Discussion Scopes card in Settings, General (`internal/server/web/app.js`, the `discussion_scopes` section). A receipt and read state view, and a wake switch, would each need a home. Per the operator's rule, placement of any new card, tab or sub-tab is the operator's call, and the question is asked here before anything is filed.
+
+Options (listed for the operator to choose among, or to replace with their own):
+
+- A. Extend the existing Discussion Scopes card with a receipts and read state panel, and put the wake switch in the same card.
+- B. A new card in Settings, General, beside the Discussion Scopes card.
+- C. A new sub-tab on a page the operator names.
+- D. No new web view in the first release. Status is read through REST, MCP, the command line and the comm channel only, and the web view follows later.
+
+Recommendation: none. This is a layout and design choice that belongs to the operator, so please say where it goes. If a default is needed to size the work, D is the cheapest and defers the choice. Nothing is decided.
+
+### Question 5: Is the requester's change wins merge code adopted?
+
+The requester offered their change wins merge code and tests. That code is not in this repository, and this pass has not read it. The discussion conflict resolver today is a pick-a-winner tool over duplicate content, not a field merge (`internal/server/bl332_discussion_scope.go`).
+
+Options:
+
+- A. Adopt it as offered, after a review of its licence, its clock handling, its tests and how it fits the log record type, and keep the requester as its author.
+- B. Use it as a reference and its tests as a specification, and write the merge in the project's own code.
+- C. Decline it and write the merge from the design in request 2.
+- D. Decide after reading it. Ask the requester to supply it (see "What the requester must provide") and judge it then.
+
+Recommendation: D, then B unless the code fits cleanly. The clock policy (wall clock within a stated skew, or a logical clock) is decided first, because it decides whether the offered code can be used at all. Nothing is decided.
+
+### Question 6: Which replication model and message identifier?
+
+Requests 1, 2 and 3 all need a stable message identifier separate from the per-node line number, and requests 1 and 2 need catch-up after an outage. Replication today is a one-way push with no pull (`internal/server/bl332_discussion_sync.go`).
+
+Options:
+
+- A. A generated identifier, with push only and receipts showing the gaps.
+- B. A generated identifier, with a catch-up pull step added to the discussion scopes.
+- C. A content hash as the identifier, with either replication model.
+
+Recommendation: A for the first step, B only when the read state feature is built. A generated identifier avoids two identical messages sharing one hash. Nothing is decided.
+
+### Question 7: Is the identity handoff about the operator record or a persona per sibling?
+
+The identity tools hold one operator level record per daemon. A persona per sibling needs the personal agents design (BL456, a placeholder that says it needs a real design session first).
+
+Options:
+
+- A. The operator identity record only. Publish the seat-handoff skill as outlined.
+- B. A persona per sibling. Hold the skill until the personal agents design exists.
+
+Recommendation: A, with the limit stated in the skill. Nothing is decided.
+
+### Question 8: Does BL446 own the features, or stay separate?
+
+BL446 (federation as a sibling agent mail transport) is not started and has no specification. It is the closest overlap.
+
+Options:
+
+- A. BL446 becomes the single owner of the features for requests 1 to 4.
+- B. Separate small Automata under issue 211, with BL446 left as a link.
+
+Recommendation: A, so one transport has one owner. Nothing is decided.
+
+## Proposed order and size
+
+Status: a proposal, not a plan. Nothing is decided and no Automaton is filed by this record. The sizes are rough guesses from reading the code, not measured.
+
+Place in the sequence: all of it comes after the 10.0.0 release work. The sequencing rule of the 2026-10-15 answer stands, and the registry holds a final stage that runs once every 10.0.0 feature and defect is done (row 227 in `docs/plans/README.md`). Nothing here should start before that, and no lane should be filled with it ahead of the operator's decisions above.
+
+Smallest useful first step: the two skills, `agent-inbox-per-seat` (request 5) and `seat-handoff` (request 6). They need no code change and no setting, and they give the requester two of the six requests at once. Rough size: two skill documents and one how-to page each, a few hours of writing and one pass of testing the steps against a running pair of nodes, so about one to two working days. The seat-handoff skill waits for the answer to Question 7.
+
+Next step, if the operator chooses to build: the stable message identifier and the server-set stamp fields (requests 1 and 3), since requests 1, 2 and 3 all depend on them. Rough size: a small feature, about a week including the surfaces listed in the parity section. Receipts (request 1) follow on the receive path, about another week.
+
+Later and larger: the read marker record and the catch-up pull (request 2), the largest part, about two to three weeks and best left until the first two prove out. Wake on arrival (request 4) is small in code, about a few days, and comes with its safety decisions (Questions 2 and 3).
+
+## What the requester must provide
+
+The requester has offered two things. Neither is in this repository, and this pass has not read either, so the list below is what to ask for.
+
+- Their written design from June: the 13 principles and the 12 requirements. They are needed to check this record's reading of the six requests against what the requester meant, and to confirm that the six requests cover all 12 requirements or to show which requirements remain uncovered. Ask for them as a file or a link the operator can read.
+- Their change wins merge code and its tests, which they offered. They are needed to answer Question 5. Ask for the source, the licence it is offered under, the language and the test suite, how it takes its clock (wall clock or logical), and whether its tests run without the requester's own tooling.
+- Also useful, to be asked at the same time: which of the 12 requirements they would drop if only the first step were built.
+
+## Summary for the issue thread
+
+Thank you for the detailed requests. We checked all six against what datawatch already has, and against our completed and open Automata. None of them is built today.
+
+Two are possible with no code change, as skills: a per-seat inbox using discussion scopes (request 5), and a seat handoff note using the identity and memory tools (request 6). Four need a feature: read-back receipts, per-seat read state with change wins merge, server-stamped writer provenance, and wake on arrival. They build on the existing work queue and discussion scopes, not a separate mail system. Wake on arrival is the only one that spends model usage, so it carries a kill switch and a cooldown.
+
+This is a design pass only. Nothing is decided and nothing is built. The decisions are with the operator, and the work follows the 10.0.0 release work.
+
+To help, please send your June design (the 13 principles and 12 requirements) and the change wins merge code and tests you offered, with their licence.
