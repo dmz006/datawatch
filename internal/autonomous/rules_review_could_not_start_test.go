@@ -3,6 +3,8 @@ package autonomous
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -67,5 +69,40 @@ func TestRulesReviewJudgeCouldNotStartSameBackendThenGivesUp(t *testing.T) {
 	max := m.infraRetryConfig().EffectiveMaxTries()
 	if calls != max+1 || len(delays) != max {
 		t.Fatalf("calls=%d delays=%d, want %d calls and %d waits", calls, len(delays), max+1, max)
+	}
+}
+
+// The production completion review goes through the could-not-start retry: a
+// judge that could not start once, then passes, records no block verdict.
+func TestRunPRDCompletionRulesReview_CouldNotStartRetriedNotBlocked(t *testing.T) {
+	old := infraSleep
+	infraSleep = func(context.Context, time.Duration) error { return nil }
+	defer func() { infraSleep = old }()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newRulesReviewManager(t, Config{VerificationModel: "ollama/qwen3.8:27b"})
+	prd := &PRD{ID: "p1", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
+	calls := 0
+	m.SetGuardrail(func(context.Context, GuardrailInvocation) (GuardrailVerdict, error) {
+		calls++
+		if calls == 1 {
+			return GuardrailVerdict{}, errors.New(couldNotStartMsg)
+		}
+		return GuardrailVerdict{Outcome: "pass"}, nil
+	})
+	blocked, _, err := m.runPRDCompletionRulesReview(context.Background(), prd)
+	if err != nil || blocked {
+		t.Fatalf("blocked=%v err=%v, want neither", blocked, err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want 2 (retry through production path)", calls)
+	}
+	for _, v := range prd.Verdicts {
+		if v.Outcome == "block" {
+			t.Fatalf("unexpected block verdict recorded: %+v", v)
+		}
 	}
 }

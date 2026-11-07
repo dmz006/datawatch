@@ -261,7 +261,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	if resErr != nil {
 		v = NoGuardrailModelVerdict("rules-review", resErr)
 	} else {
-		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+		v, ferr = m.runRulesReviewJudge(ctx, prd, inv, fn)
 		v = m.classifyGate(ctx, inv, v)
 	}
 	if ferr != nil {
