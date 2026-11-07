@@ -99,6 +99,17 @@ func (s *HTTPServer) SetUsageCalculator(c *usagecalc.Service) {
 	}
 }
 
+// UsageCalculator returns the attached advice service, or nil when no API
+// server is wired or the service was never attached. The hourly auto-lanes
+// loop reads the freshest advice through this so it reasons with the same
+// settings, readings series and store as the REST surface.
+func (s *HTTPServer) UsageCalculator() *usagecalc.Service {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.UsageCalculator()
+}
+
 // AttachUsageCalculator composes the advice service on the embedded API server (see
 // (*Server) AttachUsageCalculator); the daemon's own configuration, series and store are
 // used.
