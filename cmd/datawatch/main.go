@@ -6375,7 +6375,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			if useSession {
 				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
 				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
-				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
+				deliverPrompt := autonomouspkg.JudgePromptForDelivery(taskDir, task.ID+"-verify", vbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
+				sessionTask := sessionJudgmentTask(deliverPrompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg), vnode)
@@ -6550,7 +6551,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							}
 							specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 							outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
-							sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
+							deliverPrompt := autonomouspkg.JudgePromptForDelivery(req.ProjectDir, req.UnitID+"-"+req.Guardrail, gbackend, prompt, cfg.Autonomous.JudgePromptFileThresholdLines)
+							sessionTask := sessionJudgmentTask(deliverPrompt, req.ProjectDir, outputFile)
 							content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 								"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 								"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", judgeSessionTimeout(gcfg), judgeNode)

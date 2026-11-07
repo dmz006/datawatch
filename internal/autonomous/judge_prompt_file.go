@@ -3,6 +3,7 @@ package autonomous
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -91,4 +92,70 @@ func writeJudgePromptFile(worktree, attemptKey, prompt string) (string, error) {
 		return "", fmt.Errorf("write judge prompt file: %w", err)
 	}
 	return rel, nil
+}
+
+// judgeBackendHasFileTools reports whether the judge backend can read a named
+// file with its own file tools: the Claude Code backend and the pi backend
+// (one-shot and interactive). Every other backend gets the full prompt.
+func judgeBackendHasFileTools(backend string) bool {
+	switch backend {
+	case claudeCodeBackendName, "pi", "pi-prompt":
+		return true
+	}
+	return false
+}
+
+// shortJudgePromptVerdictFormat is the required verdict format, unchanged from
+// the full judge prompt.
+const shortJudgePromptVerdictFormat = `Reply with STRICT JSON:
+{"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`
+
+// shortJudgePrompt builds the short prompt (well under 20 lines) that names
+// the file holding the full judge prompt, by its worktree-relative path.
+func shortJudgePrompt(relPath string) string {
+	return "Your full judging instructions are too long to send inline.\n" +
+		"Before judging, you MUST read the file below with your file tools. Do not judge from this message alone.\n" +
+		"\n" +
+		"File (relative to your working directory): " + filepath.ToSlash(relPath) + "\n" +
+		"\n" +
+		"Treat the file's content as the complete judge prompt, then judge it.\n" +
+		"\n" +
+		shortJudgePromptVerdictFormat
+}
+
+// judgePromptLineCount counts the lines of prompt.
+func judgePromptLineCount(prompt string) int {
+	if prompt == "" {
+		return 0
+	}
+	return strings.Count(strings.TrimSuffix(prompt, "\n"), "\n") + 1
+}
+
+// judgePromptForDelivery returns the prompt to send to the judge. When the
+// full prompt has more lines than thresholdLines (and the threshold is above
+// 0) and the backend has file tools, it writes the full prompt to a worktree
+// file, logs one line, and returns the short prompt naming that file. On any
+// other path, or when the file cannot be written, it returns the full prompt.
+func judgePromptForDelivery(worktree, attemptKey, backend, prompt string, thresholdLines int) string {
+	if thresholdLines <= 0 || worktree == "" || !judgeBackendHasFileTools(backend) {
+		return prompt
+	}
+	lines := judgePromptLineCount(prompt)
+	if lines <= thresholdLines {
+		return prompt
+	}
+	rel, err := writeJudgePromptFile(worktree, attemptKey, prompt)
+	if err != nil {
+		log.Printf("[autonomous] judge prompt file route failed, sending the full prompt: %v", err)
+		return prompt
+	}
+	log.Printf("[autonomous] judge prompt sent as a file: %d lines, path %s", lines, rel)
+	return shortJudgePrompt(rel)
+}
+
+// JudgePromptForDelivery is the exported entry point of judgePromptForDelivery
+// for the judge launcher in cmd/datawatch.
+func JudgePromptForDelivery(worktree, attemptKey, backend, prompt string, thresholdLines int) string {
+	return judgePromptForDelivery(worktree, attemptKey, backend, prompt, thresholdLines)
 }
