@@ -1779,6 +1779,26 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// auto-fix attempt: TaskLaunchKind reads the same value as the
 			// launch session's kind.
 			retryHint := m.escalationRetryHint(prd, t, hint)
+			// prd is the shared map pointer: while this task builds its spawn
+			// request a sibling task of the same PRD may be writing
+			// prd.Git.PushState/PushWarning via recordPushOutcome under
+			// store.WithLock. The raw reads of prd.Git, prd.ProjectProfile and
+			// prd.WriteDirs below would race that write under -race, so take a
+			// value snapshot under the store lock (TaskSnapshot discipline) and
+			// build the git-related spawn fields from it.
+			var snapGit GitWorkflow
+			var snapProjectProfile string
+			var snapWriteDirs []string
+			m.store.WithLock(func() {
+				snapGit = prd.Git
+				snapProjectProfile = prd.ProjectProfile
+				snapWriteDirs = append([]string(nil), prd.WriteDirs...)
+			})
+			snapAutoCommits := prdAutoCommits(&PRD{
+				Git:            snapGit,
+				ProjectProfile: snapProjectProfile,
+				WriteDirs:      snapWriteDirs,
+			})
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:           t.ID,
@@ -1793,14 +1813,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				PermissionMode:   permMode,
 				ThinkingLevel:    thinkingLevel,
 				RetryHint:        retryHint,
-				ProjectProfile:   prd.ProjectProfile,               // v5.26.19
+				ProjectProfile:   snapProjectProfile,               // v5.26.19
 				ClusterProfile:   prd.ClusterProfile,               // v5.26.19
-				Branch:           prd.Git.Branch,                   // BL407 Phase 4
-				Git:              prdAutoCommits(prd) && !readOnly, // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
+				Branch:           snapGit.Branch,                   // BL407 Phase 4
+				Git:              snapAutoCommits && !readOnly,     // read-only: no commit step; git activity/auto-commit only in worktree mode or with declared write dirs
 				ContextPrepend:   contextPrepend,                   // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                                               // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
+				SkipDirtyCapture: snapGit.Branch != "",                                         // worktree mode: nothing pre-dirty to protect
 				WriteScope:       readOnlyWriteScope(readOnly, EffectiveTaskWriteDirs(prd, t)), // auto-commit staging scope
 				AttemptRefs:      t.AttemptRefs,                                                // preserved attempt work to restore
 				CleanRestart:     t.CleanRestart,                                               // operator clean restart: skip the restore once

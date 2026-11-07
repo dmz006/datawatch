@@ -154,6 +154,21 @@ func NewDecisionRecords(records *DecisionRecordStore, questions *QuestionStore,
 	}
 }
 
+// RecordStore returns the decision record store this service persists to.
+// Exposed so a Manager attaching the service can wire the object system
+// tag derivation into its save paths (ObjectTagDeriver);
+// NewDecisionRecords itself stays store-agnostic.
+func (s *DecisionRecords) RecordStore() *DecisionRecordStore {
+	return s.records
+}
+
+// QuestionStore returns the question store this service raises into. The
+// same exposure as RecordStore: the Manager wires its object system tag
+// derivation into the store's Raise and Update paths.
+func (s *DecisionRecords) QuestionStore() *QuestionStore {
+	return s.questions
+}
+
 func (s *DecisionRecords) decisionsConfig() config.AutonomousDecisionsConfig {
 	if s.decisionsCfg == nil {
 		return config.AutonomousDecisionsConfig{}

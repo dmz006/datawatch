@@ -114,6 +114,17 @@ func (m *Manager) ObjectTagsForPRD(prd *PRD) []string {
 	return DeriveObjectTags(m.ObjectTagFactsForPRD(prd), m.objectTagsConfig())
 }
 
+// getPRD is a fact read against the Manager's PRD store that tolerates a
+// Manager that carries no store (partially-constructed managers in tests
+// and the zero value): it names the Automaton as missing instead of
+// panicking, which is the same answer as an Automaton that is gone.
+func (m *Manager) getPRD(id string) (*PRD, bool) {
+	if m == nil || m.store == nil {
+		return nil, false
+	}
+	return m.store.GetPRD(id)
+}
+
 // ObjectTagFactsForTask is the object fact a task carries: the same fact
 // its Automaton carries (project, Automation, Automaton) plus the stage
 // its member slot carries, when the Automaton is stage-typed. A task
@@ -121,6 +132,9 @@ func (m *Manager) ObjectTagsForPRD(prd *PRD) []string {
 // no project directory names no project on either.
 func (m *Manager) ObjectTagFactsForTask(task *Task) ObjectTagFacts {
 	if task == nil {
+		return ObjectTagFacts{}
+	}
+	if m == nil || m.store == nil {
 		return ObjectTagFacts{}
 	}
 	prd, _ := m.store.GetPRD(task.PRDID)
@@ -152,7 +166,7 @@ func (m *Manager) ObjectTagFactsForAutomation(auto *Automation) ObjectTagFacts {
 		if member.PRDID == "" {
 			continue
 		}
-		if prd, ok := m.store.GetPRD(member.PRDID); ok {
+		if prd, ok := m.getPRD(member.PRDID); ok {
 			facts.Project = objectProjectName(prd.ProjectDir)
 			break
 		}
@@ -178,7 +192,10 @@ func (m *Manager) ObjectTagFactsForDecisionRecord(rec *DecisionRecord) ObjectTag
 	if rec == nil || strings.TrimSpace(rec.PRDID) == "" {
 		return ObjectTagFacts{}
 	}
-	prd, _ := m.store.GetPRD(rec.PRDID)
+	prd, _ := m.getPRD(rec.PRDID)
+	if m == nil || prd == nil {
+		return ObjectTagFacts{}
+	}
 	return m.ObjectTagFactsForPRD(prd)
 }
 
@@ -197,7 +214,10 @@ func (m *Manager) ObjectTagFactsForQuestion(q *Question) ObjectTagFacts {
 	if q == nil || strings.TrimSpace(q.PRDID) == "" {
 		return ObjectTagFacts{}
 	}
-	prd, _ := m.store.GetPRD(q.PRDID)
+	prd, _ := m.getPRD(q.PRDID)
+	if m == nil || prd == nil {
+		return ObjectTagFacts{}
+	}
 	return m.ObjectTagFactsForPRD(prd)
 }
 
@@ -218,7 +238,10 @@ func (m *Manager) ObjectTagFactsForTemplate(t *Template) ObjectTagFacts {
 	if t == nil || strings.TrimSpace(t.SourcePRDID) == "" {
 		return ObjectTagFacts{}
 	}
-	prd, _ := m.store.GetPRD(t.SourcePRDID)
+	prd, _ := m.getPRD(t.SourcePRDID)
+	if m == nil || prd == nil {
+		return ObjectTagFacts{}
+	}
 	return m.ObjectTagFactsForPRD(prd)
 }
 
@@ -228,4 +251,39 @@ func (m *Manager) ObjectTagFactsForTemplate(t *Template) ObjectTagFacts {
 // not write the field.
 func (m *Manager) ObjectTagsForTemplate(t *Template) []string {
 	return DeriveObjectTags(m.ObjectTagFactsForTemplate(t), m.objectTagsConfig())
+}
+
+// ObjectTagDeriver derives the full set of object-derived SystemTags an
+// object takes: one method per persisted object type. A Manager always
+// satisfies it (each method reads the live tags.placement source), and a
+// store that has one wired replaces the record's SystemTags with the
+// derived list before it writes the record — on every save of the object,
+// so a config edit or a fact change (an Automation moving, an axis
+// switched off) is picked up on the next save with no backfill pass. A
+// record whose store carries no deriver (standalone stores, older callers
+// and tests that want raw writes) keeps whatever SystemTags it holds.
+type ObjectTagDeriver interface {
+	ObjectTagsForPRD(prd *PRD) []string
+	ObjectTagsForTask(task *Task) []string
+	ObjectTagsForAutomation(a *Automation) []string
+	ObjectTagsForTemplate(t *Template) []string
+	ObjectTagsForDecisionRecord(rec *DecisionRecord) []string
+	ObjectTagsForQuestion(q *Question) []string
+}
+
+var _ ObjectTagDeriver = (*Manager)(nil)
+
+// replaceSystemTags picks the list a save stores as the object's
+// SystemTags: the derived list, unless it equals the list already held —
+// then the held one, so an unchanged re-save writes the same JSON and
+// does not churn the field. An empty derivation clears the list (nil,
+// matching the field's omitempty) once the axes no longer apply.
+func replaceSystemTags(current, derived []string) []string {
+	if tagsEqual(current, derived) {
+		return current
+	}
+	if len(derived) == 0 {
+		return nil
+	}
+	return derived
 }

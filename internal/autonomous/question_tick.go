@@ -118,6 +118,19 @@ func (c *Coordinator) questionPass(ctx context.Context) {
 // SetDecisionRecords attaches the decision record service the coordinator
 // tick reconciles on every poll.
 func (m *Manager) SetDecisionRecords(d *DecisionRecords) {
+	// The service's underlying stores save decision records and held
+	// questions, so they take the object system tag derivation like every
+	// other store the Manager wires (see ObjectTagDeriver): every Create
+	// and Update re-derives the object's tags under the live
+	// tags.placement block.
+	if d != nil {
+		if rs := d.RecordStore(); rs != nil {
+			rs.SetObjectTagDeriver(m)
+		}
+		if qs := d.QuestionStore(); qs != nil {
+			qs.SetObjectTagDeriver(m)
+		}
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.decisionRecords = d

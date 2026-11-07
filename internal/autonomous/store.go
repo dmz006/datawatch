@@ -43,6 +43,12 @@ type Store struct {
 	// SavePRD rejects the save with an error. Nil in production — behavior
 	// is unchanged when unset.
 	SavePRDFailHook func(prd *PRD) bool
+
+	// objectTagDeriver, when wired (NewManager does), re-derives the
+	// object system tags under the live tags.placement block and replaces
+	// the record's SystemTags on SavePRD/SaveTask (see ObjectTagDeriver).
+	// Nil stores leave SystemTags untouched.
+	objectTagDeriver ObjectTagDeriver
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -65,6 +71,15 @@ func NewStore(dataDir string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// SetObjectTagDeriver wires object-derived system tags into this store's
+// save paths: SavePRD and SaveTask replace the record's SystemTags with
+// the derived list before the write (see ObjectTagDeriver and
+// replaceSystemTags). A nil deriver leaves SystemTags exactly as held —
+// the behaviour of any store the Manager does not wire.
+func (s *Store) SetObjectTagDeriver(d ObjectTagDeriver) {
+	s.objectTagDeriver = d
 }
 
 // CreatePRD generates an ID, persists, and returns the new PRD.
@@ -213,10 +228,23 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 // + re-run hundreds of times grows multi-MB Decisions slices that bloat
 // every JSONL row + the in-memory store snapshot the loop reads.
 func (s *Store) SavePRD(p *PRD) error {
+	d := s.objectTagDeriver
+	var derived []string
+	if d != nil {
+		// Object system tags: derived before the lock (the fact read is
+		// a store read and must not run under s.mu). The full derived
+		// list replaces the stored one below — no-op when equal — with
+		// the assignment inside the lock so it is ordered against the
+		// persist encode of this PRD.
+		derived = d.ObjectTagsForPRD(p)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.SavePRDFailHook != nil && s.SavePRDFailHook(p) {
 		return errors.New("SavePRD: forced failure (test hook)")
+	}
+	if d != nil {
+		p.SystemTags = replaceSystemTags(p.SystemTags, derived)
 	}
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
@@ -699,8 +727,21 @@ func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 
 // SaveTask updates one task's state.
 func (s *Store) SaveTask(t *Task) error {
+	d := s.objectTagDeriver
+	var derived []string
+	if d != nil {
+		// Same discipline as SavePRD: derivation (a fact read that must
+		// not run under s.mu) before the lock; the full derived list
+		// replaces the stored one — no-op when equal — with the
+		// assignment inside the lock, ordered against the persist encode
+		// of the PRD's task list.
+		derived = d.ObjectTagsForTask(t)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if d != nil {
+		t.SystemTags = replaceSystemTags(t.SystemTags, derived)
+	}
 	t.UpdatedAt = time.Now()
 	s.tasks[t.ID] = t
 	return s.persistPRD(t.PRDID)

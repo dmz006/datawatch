@@ -2642,6 +2642,16 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
 	m.installDefaultMergeResolver()
+	// Object system tags — the plan's "anything we can tag should be
+	// tagged": the Manager holds the live tags.placement source, so it
+	// wires itself into the save paths of the stores it owns. Every
+	// SavePRD/SaveTask, Automation Create/Update and Template
+	// Create/Update then re-derives the object's tags under that live
+	// source and replaces the stored list (no-op when unchanged). See
+	// ObjectTagDeriver and replaceSystemTags.
+	st.SetObjectTagDeriver(m)
+	automs.SetObjectTagDeriver(m)
+	m.templates.SetObjectTagDeriver(m)
 	return m, nil
 }
 
@@ -6740,7 +6750,7 @@ func (m *Manager) CloneToTemplate(prdID, description, actor string) (*Template, 
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	return m.templates.Create(prd.Title, description, prd.Spec, "", nil)
+	return m.templates.Create(prd.Title, description, prd.Spec, "", prd.ID, nil)
 }
 
 // InstantiateFromTemplateStore (BL221 v6.2.0) — substitutes vars in a
