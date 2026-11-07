@@ -3,7 +3,11 @@ package hookinstaller
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
 func TestInstallWritesNestedHookFormat(t *testing.T) {
@@ -108,5 +112,35 @@ func TestInstallUpgradesOldFlatFormat(t *testing.T) {
 	}
 	if _, ok := group["hooks"]; !ok {
 		t.Fatal("second entry missing inner hooks array (not nested format)")
+	}
+}
+
+func TestInstallSessionStartHookOnceAndPrintsContext(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 3; i++ {
+		if err := Install(dir, "test:ss", "https://localhost:8443", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, _ := os.ReadFile(dir + "/.claude/settings.json")
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	arr, _ := doc["hooks"].(map[string]any)["SessionStart"].([]any)
+	if len(arr) != 1 {
+		t.Fatalf("SessionStart entries = %d, want 1", len(arr))
+	}
+	group := arr[0].(map[string]any)
+	if group["matcher"] != "compact|clear" {
+		t.Fatalf("matcher = %v", group["matcher"])
+	}
+	cmd := group["hooks"].([]any)[0].(map[string]any)["command"].(string)
+	out, err := exec.Command("bash", "-c", cmd).Output()
+	if err != nil {
+		t.Fatalf("run hook: %v", err)
+	}
+	if !strings.Contains(string(out), platformcontext.PlatformContext) {
+		t.Fatalf("hook output missing platform context: %q", out)
 	}
 }

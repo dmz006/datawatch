@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/dmz006/datawatch/internal/platformcontext"
 )
 
 // Install writes the .claude/sprint/* files into projectDir. Returns
@@ -92,7 +94,7 @@ func Install(projectDir, sessionFullID, daemonURL, token string) error {
 		}
 		return false
 	}
-	addIfMissing := func(eventName, cmd string) {
+	addIfMissing := func(eventName, cmd string, matcher ...string) {
 		var arr []any
 		switch v := hooks[eventName].(type) {
 		case []any:
@@ -105,13 +107,22 @@ func Install(projectDir, sessionFullID, daemonURL, token string) error {
 		if hasOurEntry(arr) {
 			return // already present in either old or new format
 		}
-		arr = append(arr, wantGroup(cmd))
+		group := wantGroup(cmd)
+		if len(matcher) > 0 {
+			group["matcher"] = matcher[0]
+		}
+		arr = append(arr, group)
 		hooks[eventName] = arr
 	}
 	addIfMissing("Stop", hookCmdBase+" Stop")
 	addIfMissing("PostToolUse", hookCmdBase+" PostToolUse $TOOL_NAME")
 	addIfMissing("UserPromptSubmit", hookCmdBase+" UserPromptSubmit")
 	addIfMissing("SubagentStop", hookCmdBase+" SubagentStop")
+	// SessionStart re-delivers the platform context after the session
+	// context is compacted or cleared. The matcher is a regex over the
+	// SessionStart source ("startup", "resume", "clear", "compact");
+	// stdout of a SessionStart hook is added to the session context.
+	addIfMissing("SessionStart", hookCmdBase+" SessionStart", "compact|clear")
 	doc["hooks"] = hooks
 	body, _ := json.MarshalIndent(doc, "", "  ")
 	_ = os.WriteFile(settingsPath, body, 0o644)
@@ -128,6 +139,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVENT="${1:-}"
 TOOL="${2:-}"
 [[ -z "$EVENT" ]] && exit 0
+
+# SessionStart (compact/clear): print the platform context to stdout so
+# claude-code adds it to the session context. No daemon POST.
+if [[ "$EVENT" == "SessionStart" ]]; then
+  [[ -f "$SCRIPT_DIR/platform-context.txt" ]] && cat "$SCRIPT_DIR/platform-context.txt"
+  exit 0
+fi
 
 # Read stdin (Claude Code passes hook data as JSON for PostToolUse).
 STDIN_DATA=""
@@ -168,6 +186,12 @@ curl -ks -X POST "${DAEMON_URL:-https://localhost:8443}/api/sessions/${SESSION_I
 	scriptPath := filepath.Join(sprintDir, "post-event.sh")
 	if err := os.WriteFile(scriptPath, []byte(scriptBody), 0o755); err != nil {
 		return fmt.Errorf("hookinstaller: write post-event.sh: %w", err)
+	}
+
+	// platform-context.txt — printed by the SessionStart hook.
+	ctxPath := filepath.Join(sprintDir, "platform-context.txt")
+	if err := os.WriteFile(ctxPath, []byte(platformcontext.PlatformContext+"\n"), 0o644); err != nil {
+		return fmt.Errorf("hookinstaller: write platform-context.txt: %w", err)
 	}
 
 	// .dw-env — rewritten per session (chmod 600 — contains bearer token).
