@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.108.1 — Read-only task check counts only new dirt
+
+### Fixed
+
+- **The read-only task check now fails a task only when it added dirt, not when pre-existing dirt went away.** The check compared `git status` after the task against the baseline from its start and failed on any difference, so a read-only task that changed nothing could still fail when dirt that existed before the task disappeared while it ran (for example a parallel task committing or cleaning it). It now fails only when a status entry in the after status was not in the before status: dirt already present at start keeps not counting against the task, and dirt that disappears during the run no longer counts either. When the tree cannot be inspected, no violation is reported, as before.
+  - **How it shows up:** a read-only task that merely observed the tree gets past the check; a task that still adds a file, an edit or a deletion fails exactly as before, with the same "read-only task changed the tree: git status is dirty after it finished (\<entry\>)" error. See [docs/howto/automaton-parallel-tasks.md](docs/howto/automaton-parallel-tasks.md).
+  - **Migration:** none; the check takes effect on the next read-only task after you update.
+
 ## v9.108.0 — Grace period and unmerged-work guard for cancelled Automata
 
 ### Added

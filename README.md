@@ -29,7 +29,7 @@ It began as a way to answer an AI coding session from Signal or Telegram. It now
 
 ## Current release
 
-**Current release: v9.108.0 (2026-11-07).** Cancelled Automata are now kept for a configurable grace period and are never auto-archived while their branch holds unmerged work. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
+**Current release: v9.108.1 (2026-11-07).** A read-only task now fails only when it adds new dirt, so dirt that disappears while it runs no longer fails it. Full history: [CHANGELOG.md](CHANGELOG.md). Older highlights: [docs/release-highlights.md](docs/release-highlights.md).
 
 Recent changes, newest first:
 
