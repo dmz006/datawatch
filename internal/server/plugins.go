@@ -8,6 +8,8 @@
 //   POST   /api/plugins/{name}/disable
 //   POST   /api/plugins/{name}/test        body: {hook, payload}
 //   /api/plugins/{name}/widgets/...         BL403, see plugin_widgets.go
+//   GET    /api/plugins/{name}/tokens        secret-ref usage + service
+//                                           token names, see plugin_tokens.go
 
 package server
 
@@ -193,6 +195,13 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) == 2 {
 		action = parts[1]
+	}
+	// Per-plugin token usage (operator auth only, never a value): the
+	// secret refs the manifest uses + the service token names minted
+	// for the service. See plugin_tokens.go.
+	if action == "tokens" {
+		s.handlePluginTokens(w, r, name)
+		return
 	}
 	if action == "widgets" || strings.HasPrefix(action, "widgets/") {
 		s.handlePluginWidgets(w, r, name, strings.TrimPrefix(strings.TrimPrefix(action, "widgets"), "/"))

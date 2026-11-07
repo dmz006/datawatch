@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-plugin token usage listing (`GET /api/plugins/{name}/tokens`).** For a service plugin, the operator can now list each secret the manifest references — the manifest fields that carry the reference (`connection.auth.token`, `env.<KEY>`) and whether that secret exists in the store — plus the names and creation times of the service tokens minted for that service. The response carries names and fields only; it never returns a secret value or a service token value. Only the operator token may use the route: a missing or wrong token gets 401, and a federation peer (even with full control) or a session-scoped credential is refused with 403; an unknown plugin gets 404, a non-GET method gets 405, and with no plugin wiring the route reports 503.
+
 ## v9.104.1 — Protected-paths restore commit needs no git identity
 
 ### Fixed

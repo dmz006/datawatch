@@ -7914,6 +7914,10 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			// push-token registry and the pull scheduler. Only when plugins
 			// are enabled; otherwise the widget endpoints stay 503.
 			if cfg.Plugins.Enabled {
+				// Per-plugin token usage (GET /api/plugins/{name}/tokens):
+				// secret refs the manifest uses + service token names;
+				// values never.
+				httpServer.SetPluginTokens(pluginspkg.NewAPI(reg))
 				dataDir := expandHome(cfg.DataDir)
 				widgetStore, wsErr := pluginspkg.NewWidgetStore(dataDir)
 				if wsErr != nil {

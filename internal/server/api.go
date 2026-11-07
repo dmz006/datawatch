@@ -608,6 +608,11 @@ type Server struct {
 	widgetStore     *plugins.WidgetStore
 	pluginTokens    PluginTokensAPI
 
+	// Per-plugin token-usage listing (GET /api/plugins/{name}/tokens):
+	// manifest secret-ref scan + service-token names. Nil until main.go
+	// wires it; the handler returns 503 in that case.
+	pluginTokensSrc PluginTokensSource
+
 	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
 	// main.go; nil when orchestrator.enabled=false. Handlers return
 	// 503 in that case.
