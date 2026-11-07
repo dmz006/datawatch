@@ -248,6 +248,16 @@ session:
     # prohibits file names, identifiers, error codes, and markdown formatting.
     prompt: ""
 
+# ── Platform context ──
+# The short text every session is told about datawatch. A change applies to
+# sessions started afterwards. A project can override `enabled` with its own
+# platform_context_enabled policy value.
+#   enabled: default true. false = deliver nothing.
+#   note: optional text appended after the platform context; max 2000 bytes.
+platform_context:
+  enabled: true
+  note: ""
+
 # ── UI ──
 # Top-level UI display settings (the ui.* section). Unset keys read the
 # defaults; an explicit 0 is a real value, distinct from unset.
