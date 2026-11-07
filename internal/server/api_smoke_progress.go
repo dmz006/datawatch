@@ -13,23 +13,20 @@ import (
 	"github.com/dmz006/datawatch/internal/pathsafe"
 )
 
-// smokeRunsDir returns ~/.datawatch/smoke-runs, creating it on demand.
-func smokeRunsDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	d := filepath.Join(home, ".datawatch", "smoke-runs")
+// smokeRunsDir returns the smoke-runs directory under this server's data
+// directory (see Server.statePath), creating it on demand.
+func (s *Server) smokeRunsDir() (string, error) {
+	d := s.statePath("smoke-runs")
 	if err := os.MkdirAll(d, 0755); err != nil {
 		return "", err
 	}
 	return d, nil
 }
 
-// legacyProgressPath returns the old single-file path for migration.
-func legacyProgressPath() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".datawatch", "smoke-progress.json")
+// legacyProgressPath returns the old single-file path (under this server's
+// data directory) for migration.
+func (s *Server) legacyProgressPath() string {
+	return s.statePath("smoke-progress.json")
 }
 
 // smokeForwardClient is a shared HTTP client for forwarding smoke progress.
@@ -128,14 +125,14 @@ func (s *Server) handleSmokeProgress(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	runsDir, err := smokeRunsDir()
+	runsDir, err := s.smokeRunsDir()
 	if err != nil {
 		http.Error(w, "could not access smoke-runs dir: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Migrate legacy single file into runs dir on first access
-	if legacy := legacyProgressPath(); runID == "" {
+	if legacy := s.legacyProgressPath(); runID == "" {
 		if data, err2 := os.ReadFile(legacy); err2 == nil {
 			var raw map[string]any
 			if json.Unmarshal(data, &raw) == nil {
